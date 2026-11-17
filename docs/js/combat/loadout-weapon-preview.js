@@ -12,7 +12,8 @@
   const FRAME_INTERVAL_MS = 1000 / 30; // Limits the separate WebGL viewport to 30 fps; gameplay keeps its own unchanged render rate.
   const state = {
     key: null, sourcePlane: null, sourceGeometryVersion: -1, sourceMap: null, sourceMaterial: null,
-    renderer: null, scene: null, camera: null, model: null, plane: null,
+    renderer: null, scene: null, camera: null, model: null, content: null, plane: null,
+    sourceParts: [], sourceMeshes: [], previewTargets: [], // Preview copies and masks are read-only snapshots of cached equipment.
     vfx: null, frame: 0, lastTime: 0, lastRenderAt: -Infinity, lastSourceCheck: -Infinity, contextLost: false,
     yaw: 0, pitch: 0, dragPointer: null, dragX: 0, dragY: 0,
     status: 'idle', error: null, frames: 0,
@@ -58,9 +59,16 @@
     state.vfx?.dispose?.();
     state.vfx = null;
     if (state.model) state.scene?.remove(state.model);
-    state.plane?.geometry?.dispose?.(); // Clone-owned geometry; never dispose gameplay's geometry.
-    state.plane?.material?.dispose?.(); // Clone-owned material; texture/map belongs to the shared game cache.
+    for (const entry of state.sourceMeshes) {
+      entry.copy.geometry?.dispose?.(); // Each viewport mesh owns its geometry, never gameplay's geometry.
+      const materials = Array.isArray(entry.copy.material) ? entry.copy.material : [entry.copy.material];
+      for (const material of materials) material?.dispose?.(); // Maps/textures remain shared with the live verdigris renderer.
+    }
+    state.sourceMeshes = [];
+    state.sourceParts = [];
+    state.previewTargets = [];
     state.model = null;
+    state.content = null;
     state.plane = null;
     state.sourcePlane = null;
     state.sourceMap = null;
@@ -128,19 +136,28 @@
 
   function fitCamera() {
     if (!state.camera || !state.plane) return;
-    const geometry = state.plane.geometry; // Recenter even modular composites with off-axis haft/head extents.
-    geometry.computeBoundingBox();
-    const bounds = geometry.boundingBox;
-    if (!bounds) return;
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    bounds.getSize(size);
-    bounds.getCenter(center);
-    state.plane.position.set(-center.x, -center.y, 0);
+    let size, center; // The full visible flail (haft, rope and all head layers) must fit, not only the haft geometry.
+    if (typeof THREE.Box3 === 'function') {
+      state.content.position.set(0, 0, 0); // Reset previous centering before measuring a rebuilt assembly.
+      state.model.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(state.content);
+      if (bounds.isEmpty()) return;
+      size = bounds.getSize(new THREE.Vector3());
+      center = bounds.getCenter(new THREE.Vector3());
+      state.content.position.set(-center.x, -center.y, -center.z); // Rotate the complete assembly around its visual center.
+    } else {
+      // Keeps small renderer test harnesses without Box3 usable.
+      const geometry = state.plane.geometry;
+      geometry.computeBoundingBox();
+      if (!geometry.boundingBox) return;
+      size = geometry.boundingBox.getSize(new THREE.Vector3());
+      center = geometry.boundingBox.getCenter(new THREE.Vector3());
+      state.plane.position.set(-center.x, -center.y, 0);
+    }
     const verticalHalfAngle = state.camera.fov * Math.PI / 360;
     const requiredByHeight = Math.max(0.1, size.y) / (2 * Math.tan(verticalHalfAngle));
     const requiredByWidth = Math.max(0.1, size.x) / (2 * Math.tan(verticalHalfAngle) * Math.max(0.1, state.camera.aspect));
-    state.camera.position.z = Math.max(0.8, requiredByHeight, requiredByWidth) * 1.22;
+    state.camera.position.z = Math.max(0.8, requiredByHeight, requiredByWidth, size.z * 0.5 + 0.6) * 1.22;
     state.camera.lookAt(0, 0, 0);
     state.camera.updateMatrixWorld();
   }
@@ -149,25 +166,103 @@
     return source?.geometry?.attributes?.position?.version ?? 0; // Detects ModularWeapons.fitPlaneGeometry editing a shared quad after sprite composition.
   }
 
-  function rebuildFromSource(source) {
+  function rememberMesh(source, copy) {
+    state.sourceMeshes.push({
+      source, copy, geometry: source.geometry, material: source.material,
+      map: source.material?.map, version: geometryVersion(source),
+    }); // Only the viewport copies are disposed; material/map identity detects asynchronous head recolors and replacement.
+  }
+
+  function cloneArtwork(node, copies) {
+    if (node.userData?.weaponInterleavedVfx || node.userData?.weaponEnchantmentVfx) return null;
+    const children = (node.children || []).map(child => cloneArtwork(child, copies)).filter(Boolean); // Keep authored groups/transforms, not gameplay particles.
+    if (!node.isMesh && !children.length) return null;
+    if (node.isMesh && !node.userData?.hobunjiWeaponAssemblyPart) return null;
+    const copy = node.clone(false); // Full head/rope geometry is reused as artwork, not re-authored or reparented.
+    copy.layers.set(0);
+    copy.visible = true; // A holstered/dual-wield-hidden original still needs to appear in its Loadout preview.
+    if (node.isMesh) {
+      copy.geometry = node.geometry.clone();
+      copy.material = Array.isArray(node.material) ? node.material.map(material => material.clone()) : node.material.clone();
+      const materials = Array.isArray(copy.material) ? copy.material : [copy.material];
+      for (const material of materials) material.side = THREE.DoubleSide;
+      copy.onBeforeRender = () => {}; // Never invoke a copied gameplay callback that closes over a live rope/holder.
+      copies.set(node, copy);
+      rememberMesh(node, copy);
+    }
+    for (const child of children) copy.add(child);
+    return copy;
+  }
+
+  function previewRopeBillboard(group) {
+    if (!group?.userData?.hobunjiRuinRopeSprite) return;
+    const mesh = group.children.find(child => child.userData?.hobunjiGeneratedRope);
+    if (!mesh) return;
+    const cameraPosition = new THREE.Vector3(); // Preview-only rope faces its own camera, not the gameplay camera.
+    const normal = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const basis = new THREE.Matrix4();
+    const inverse = new THREE.Matrix4();
+    mesh.onBeforeRender = (_renderer, _scene, camera) => {
+      if (!camera?.getWorldPosition) return;
+      camera.getWorldPosition(cameraPosition);
+      cameraPosition.applyMatrix4(inverse.copy(group.matrixWorld).invert());
+      normal.set(cameraPosition.x, 0, cameraPosition.z);
+      if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
+      normal.normalize();
+      right.crossVectors(up, normal).normalize();
+      normal.crossVectors(right, up).normalize();
+      mesh.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, normal));
+      mesh.updateMatrixWorld();
+    };
+  }
+
+  function rebuildFromSource(source, assembly) {
     disposeModel();
     if (!source?.geometry || !source?.material) return;
-    const model = new THREE.Group(); // Owns only this viewport's rotatable copy of the weapon.
-    const plane = new THREE.Mesh(source.geometry.clone(), source.material.clone()); // Retains all game-authored texture/shader appearance.
-    plane.rotation.set(0, 0, 0); // Present the existing planar weapon face-on inside the 3D viewport.
-    plane.layers.set(0); // Do not inherit gameplay's held-weapon overlay-only render layer.
+    const model = new THREE.Group(); // Owns only this viewport's rotatable weapon copy.
+    const content = new THREE.Group(); // Recenter the combined haft + flail without moving the separately animated head.
+    const plane = new THREE.Mesh(source.geometry.clone(), source.material.clone());
+    plane.rotation.set(0, 0, 0); // The original source plane is presented face-on regardless of held combat stance.
+    plane.layers.set(0);
     plane.material.side = THREE.DoubleSide;
     plane.renderOrder = 1;
-    model.add(plane);
+    content.add(plane);
+    model.add(content);
+    const copies = new Map([[source, plane]]); // Maps live metal-layer meshes onto the corresponding preview-only copies.
+    rememberMesh(source, plane);
+    for (const child of source.children || []) {
+      const copy = cloneArtwork(child, copies); // Preserve rigid overlay layers as well as the flail head.
+      if (copy) plane.add(copy);
+    }
+    if (assembly?.ready) {
+      state.sourceParts = [assembly.chain, assembly.headRoot]; // The next 450ms source check detects late asynchronous assembly and replacement.
+      const toPlane = new THREE.Matrix4().copy(source.matrixWorld).invert(); // Snapshots authored connector/head poses relative to the haft face.
+      for (const part of state.sourceParts) {
+        const copy = cloneArtwork(part, copies);
+        if (!copy) continue;
+        copy.matrix.copy(toPlane).multiply(part.matrixWorld);
+        copy.matrixAutoUpdate = false; // Preserve baked flail suspension under the independent preview scene.
+        copy.matrixWorldNeedsUpdate = true;
+        content.add(copy);
+        previewRopeBillboard(copy);
+      }
+    }
+    state.previewTargets = assembly?.ready
+      ? assembly.metalTargets.map(target => ({ plane: copies.get(target.plane), mask: target.mask }))
+        .filter(target => target.plane?.isObject3D && target.mask?.indices?.length)
+      : []; // The same post-occlusion masks as the live head, never the shaft bitmap projected across an empty chain.
     state.scene.add(model);
     state.model = model;
+    state.content = content;
     state.plane = plane;
     state.sourcePlane = source;
     state.sourceMap = source.material.map;
-    state.sourceMaterial = source.material; // Detect an equipment material replacement even when it reuses the old texture.
+    state.sourceMaterial = source.material;
     state.sourceGeometryVersion = geometryVersion(source);
     fitCamera();
-    state.vfx = window.WeaponEnchantmentVFX?.createPreviewEmitter?.(plane, state.key) || null;
+    state.vfx = window.WeaponEnchantmentVFX?.createPreviewEmitter?.(plane, state.key, assembly?.ready ? state.previewTargets : undefined) || null;
     setStatus('Weapon ready', false);
   }
 
@@ -183,14 +278,16 @@
       setStatus('Preparing equipped weapon…');
       return;
     }
-    if (source !== state.sourcePlane || source.material !== state.sourceMaterial || geometryVersion(source) !== state.sourceGeometryVersion) {
-      rebuildFromSource(source);
-    } else if (state.sourceMap !== source.material.map) {
-      // A ranged loaded/unloaded state or live equip rebuild can swap maps without replacing the mesh.
-      state.plane.material.map = source.material.map;
-      state.plane.material.needsUpdate = true;
-      state.sourceMap = source.material.map;
-    }
+    const assembly = window.HobunjiWeaponSpriteAssemblies?.previewParts?.(source) || null;
+    const roots = assembly?.ready ? [assembly.chain, assembly.headRoot] : []; // Late head/rope textures appear without any equipment-slot change.
+    const changedParts = roots.length !== state.sourceParts.length || roots.some((part, index) => state.sourceParts[index] !== part);
+    const changedMeshes = state.sourceMeshes.some(entry =>
+      entry.source.geometry !== entry.geometry || entry.source.material !== entry.material
+      || entry.source.material?.map !== entry.map || geometryVersion(entry.source) !== entry.version);
+    const changedTargets = assembly?.ready && assembly.metalTargets.some(target =>
+      target.mask?.indices?.length && !state.previewTargets.some(preview =>
+        preview.mask === target.mask && state.sourceMeshes.some(entry => entry.source === target.plane && entry.copy === preview.plane)));
+    if (source !== state.sourcePlane || changedParts || changedMeshes || changedTargets) rebuildFromSource(source, assembly);
   }
 
   function tick(now) {
@@ -305,9 +402,10 @@
       key: state.key, visible: isVisible(), status: state.status, error: state.error,
       modelLoaded: !!state.model, sourceMatched: !!equippedPlane(),
       verdigrisTextureShared: !!state.sourceMap && state.sourceMap === state.sourcePlane?.material?.map,
+      flail: { parts: state.sourceParts.length, visibleHeadLayers: state.sourceMeshes.filter(entry => state.sourceParts[1]?.children?.includes?.(entry.source) || entry.source.parent?.name?.includes('_flail_head')).length, metalEmitters: state.previewTargets.length }, // Mobile preview diagnostics without devtools.
       enchantment: state.vfx?.debugSnapshot?.() || null,
       frames: state.frames, rendererActive: !!state.frame, contextLost: state.contextLost, targetFps: 30,
-      latestChange: 'A fixed, independent 3D loadout viewport reuses the equipped weapon texture and the enchantment particle integrator.',
+      latestChange: 'Loadout viewport now includes the cached flail connector and full multilayer head, sharing each actual verdigris map and metal enchantment mask.',
     };
   }
 
