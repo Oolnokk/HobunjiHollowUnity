@@ -9,6 +9,7 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
 load('docs/config/modular-weapons.js');
 load('docs/js/modular-weapons.js');
 load('docs/js/town-mine.js');
+load('docs/js/metal-reinforcement.js'); // Load the same shared pricing policy as the real smith before the foundry.
 load('docs/js/foundry-shop.js');
 load('docs/js/hand-tool-grips.js');
 const api = window.ModularWeapons, mine = window.TownMine; // Public feature APIs under test.
@@ -164,8 +165,8 @@ assert.equal(mine.hasImprovement('foundry'), false);
 assert.equal(mine.getTownValue(), 2);
 mine.restore(saved);
 const gear = { tools: {} }, unlocked = ['dagger']; // Live unlock authority may expand without reinitializing foundry.
-window.FoundryShop.init({ inventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: unlocked, VERDIGRIS_METAL_KEYS: ['nativeCopper'], getGearInventory: () => gear,
-  metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData: () => saves++ });
+window.FoundryShop.init({ inventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: unlocked, VERDIGRIS_METAL_KEYS: ['nativeCopper'], METAL_DEFS: { nativeCopper: { tier: 1, label: 'Native Copper' } }, getGearInventory: () => gear,
+  metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, setToolReinforcement(itemKey, metalKey, grade) { assert.equal(grade, 0); }, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData: () => saves++ });
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
 unlocked.push('warhammer', 'bshuakauitl', 'kylie');
 assert.equal(window.FoundryShop.craft('warhammer', 'kylie', 'nativeCopper').ok, false, 'direct crafting cannot bypass the retired Kylie head');
@@ -225,8 +226,8 @@ const spearInventory = { gold: 100, pineLog: 20, bar_nativeCopper: 10 }, spearGe
 const spearWithEye = plain(api.getConfig()); // Give this thrusting haft an additional sleeve for hammer heads.
 spearWithEye.shafts['fishing-spear'].mounts.push({ type: 'eye', start: { x: 199, y: 834 }, end: { x: 199, y: 754 } });
 api.replace(spearWithEye);
-window.FoundryShop.init({ inventory: spearInventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: ['fishingspear', 'warhammer'], VERDIGRIS_METAL_KEYS: ['nativeCopper'], getGearInventory: () => spearGear,
-  metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData() {} });
+window.FoundryShop.init({ inventory: spearInventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES: ['fishingspear', 'warhammer'], VERDIGRIS_METAL_KEYS: ['nativeCopper'], METAL_DEFS: { nativeCopper: { tier: 1, label: 'Native Copper' } }, getGearInventory: () => spearGear,
+  metalBarItemKey: metal => `bar_${metal}`, clampInventoryStack() {}, saveGearInventory() {}, setToolReinforcement(itemKey, metalKey, grade) { assert.equal(grade, 0); }, buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData() {} });
 assert.equal(window.FoundryShop.craft('fishing-spear', 'warhammer', 'nativeCopper').ok, true);
 assert.equal(spearGear.tools[spearHammer], true); assert.equal(spearInventory.gold, 60);
 console.log('Foundry/modular weapons: transactions, unlocks, save/restore, damage, donor grips/scales and override inheritance passed.');
