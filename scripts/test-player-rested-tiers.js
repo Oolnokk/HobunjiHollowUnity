@@ -57,6 +57,21 @@ const send = (kind, hours, extra = {}) => {
 const entries = () => restProvider?.() || []; // Reads the game buff provider rather than hand-built test badges.
 const buff = name => entries().find(item => item.id === name); // Looks up a named effect without relying on HUD ordering.
 
+assert.equal(rest.previewTimePassageRest('wait', 1)?.label, 'Rested', 'one-hour Wait previews Rested');
+assert.equal(rest.previewTimePassageRest('wait', 16)?.durationHours, 3, 'seated Wait always previews three hours of Rested');
+assert.match(rest.previewTimePassageRest('sleep', 1)?.description || '', /yawns/, 'short Sleep describes Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 8)?.label, 'Rested', 'unowned Sleep never promises bed-exclusive Well Rested');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+assert.equal(rest.previewTimePassageRest('sleep', 7)?.label, 'Rested', 'seven hours in bed still previews Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 8)?.label, 'Well Rested', 'eight hours in bed previews Well Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 16)?.durationHours, 24, 'longer sleep does not extend the Well Rested duration');
+assert.match(rest.previewTimePassageRest('sleep', 8)?.description || '', /\+8% movement speed.*\+30% Stamina recovery/, 'preview explains actual stat bonuses');
+assert.equal(rest.previewTimePassageRest('wait', 16)?.label, 'Rested', 'seated Wait never upgrades to Well Rested');
+assert.equal(window.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'preview must not consume the pending bed token');
+window.__hobunjiOwnedBedSleepPending = null;
+assert.equal(rest.previewTimePassageRest('sleep', 0), null, 'zero-hour sleep grants no preview');
+assert.equal(rest.previewTimePassageRest('dev', 8), null, 'dev time skip grants no rest preview');
+
 assert.equal(rest.isRested(), false, 'new or legacy saves begin without either rest tier');
 assert.equal(rest.isWellRested(), false);
 assert.equal(typeof restProvider, 'function', 'Rested is exposed to the existing EffectBuffBar across Node VM realms');
