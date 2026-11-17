@@ -222,6 +222,36 @@ const index = fs.readFileSync('docs/index.html', 'utf8');
 assert(index.includes('id="wildernessDistanceCullBtn"'), 'mobile wildlife debug pane exposes a distance culling A/B button');
 assert(chunks.includes('culler.setEnabled(culler.snapshot().enabled === false)'), 'debug button toggles the real renderer feature');
 assert(index.includes('wilderness-chunks.js?v=20261117hNonvegDistanceCull2'), 'changed debug wiring has a fresh browser cache token');
+
+// Execute actual wilderness debug wiring with a minimal touch-button DOM; no
+// console or browser developer tools are needed to run the in-game A/B switch.
+const events = {}; // Simulated DOM listeners installed by WildernessChunks.init().
+const attributes = {}; // Tracks the accessible aria-pressed toggle state.
+const cullButton = {
+  dataset: {}, textContent: 'Distance Cull: ON',
+  addEventListener(type, callback) { events[type] = callback; },
+  getAttribute(key) { return attributes[key] ?? null; },
+  setAttribute(key, value) { attributes[key] = value; },
+  click() { events.click?.(); },
+};
+const debugElements = {
+  wildernessDistanceCullBtn: cullButton,
+  wildernessChunkStatus: { textContent: '' },
+};
+vm.runInNewContext(chunks, {
+  window,
+  document: { getElementById(id) { return debugElements[id] || null; } },
+  performance: { now: () => clock.now },
+}, { filename: 'wilderness-chunks.js' });
+window.WildernessChunks.init({ getCurrentArea: () => 'wilderness' });
+assert.equal(cullButton.textContent, 'Distance Cull: ON', 'debug controller initializes as enabled');
+cullButton.click();
+assert.equal(api.snapshot().enabled, false, 'touch click disables the runtime culler');
+assert.equal(cullButton.textContent, 'Distance Cull: OFF', 'label updates on tap');
+assert.equal(attributes['aria-pressed'], 'false', 'accessible control state tracks disabled culling');
+cullButton.click();
+assert.equal(api.snapshot().enabled, true, 'second tap re-enables the runtime culler');
+assert.equal(attributes['aria-pressed'], 'true', 'accessible state follows the live culler');
 const batchIndex = game.indexOf('const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender');
 const distanceIndex = game.indexOf('const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender');
 const renderTryIndex = game.indexOf('        try {\n        // Frame-scoped whole-actor suppression', distanceIndex);
