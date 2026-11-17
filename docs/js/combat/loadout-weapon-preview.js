@@ -13,7 +13,7 @@
   const state = {
     key: null, sourcePlane: null, sourceGeometryVersion: -1, sourceMap: null, sourceMaterial: null,
     renderer: null, scene: null, camera: null, model: null, content: null, plane: null,
-    sourceParts: [], sourceMeshes: [], previewTargets: [], // Preview copies and masks are read-only snapshots of cached equipment.
+    sourceParts: [], sourceOverlays: [], sourceMeshes: [], previewTargets: [], // Preview copies and masks are read-only snapshots of cached equipment.
     vfx: null, frame: 0, lastTime: 0, lastRenderAt: -Infinity, lastSourceCheck: -Infinity, contextLost: false,
     yaw: 0, pitch: 0, dragPointer: null, dragX: 0, dragY: 0,
     status: 'idle', error: null, frames: 0,
@@ -66,6 +66,7 @@
     }
     state.sourceMeshes = [];
     state.sourceParts = [];
+    state.sourceOverlays = [];
     state.previewTargets = [];
     state.model = null;
     state.content = null;
@@ -237,6 +238,7 @@
     model.add(content);
     const copies = new Map([[source, plane]]); // Maps live metal-layer meshes onto the corresponding preview-only copies.
     rememberMesh(source, plane);
+    state.sourceOverlays = (source.children || []).filter(child => child.isMesh && child.userData?.hobunjiWeaponAssemblyPart); // Exact direct-child artwork identity catches both late loading and removal.
     for (const child of source.children || []) {
       const copy = cloneArtwork(child, copies); // Preserve rigid overlay layers as well as the flail head.
       if (copy) plane.add(copy);
@@ -293,9 +295,9 @@
     const changedMeshes = state.sourceMeshes.some(entry =>
       entry.source.geometry !== entry.geometry || entry.source.material !== entry.material
       || entry.source.material?.map !== entry.map || geometryVersion(entry.source) !== entry.version);
-    const changedOverlays = (source.children || []).some(child =>
-      child.isMesh && child.userData?.hobunjiWeaponAssemblyPart
-      && !state.sourceMeshes.some(entry => entry.source === child)); // Static overlays may finish loading after the base weapon, even without a flail.
+    const overlays = (source.children || []).filter(child => child.isMesh && child.userData?.hobunjiWeaponAssemblyPart); // Same direct sprite stack tracked at the last rebuild.
+    const changedOverlays = overlays.length !== state.sourceOverlays.length
+      || overlays.some((child, index) => child !== state.sourceOverlays[index]); // Added, removed and reordered overlays all refresh the independent viewport.
     const changedTargets = assembly?.ready && assembly.metalTargets.some(target =>
       target.mask?.indices?.length && !state.previewTargets.some(preview =>
         preview.mask === target.mask && state.sourceMeshes.some(entry => entry.source === target.plane && entry.copy === preview.plane)));
