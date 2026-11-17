@@ -257,6 +257,7 @@
     mountedWindupOwner = null;
     mountedWindupMultiplier = 0;
     mountedWindupSpentFraction = 0;
+    ridingDebug.coasting = false; // A newly summoned mount must never inherit the previous rider's momentum diagnostic.
     mountedOrbitTarget = null;
     mountedOrbitRadiusPx = 0;
     mountedOrbitScanS = 0;
@@ -1109,7 +1110,6 @@
     // Backward reins brake only when substantially opposed to the current heading.
     // Releasing controls does not stop the mount: it continues along its heading.
     const braking = inputStrength > 0.01 && Math.cos(mountAngle) * ix + Math.sin(mountAngle) * iy < -0.72;
-    ridingDebug.coasting = !braking && mountCurrentSpeedPxS > desiredSpeed + 0.5; // Readable on mobile: passive momentum is active, not a lingering attack-speed grant.
     if (braking && !m._mountHop?.overRock) {
       mountCurrentSpeedPxS = Math.max(0, mountCurrentSpeedPxS - deps.DECEL * dt * 1.3);
       window.GroundObstacleAvoidance?.reset('mounted');
@@ -1159,6 +1159,7 @@
       if (deps.canPlayerOccupy(m.x, nextY)) m.y = nextY; else mountCurrentSpeedPxS *= collisionBleedRate;
     }
 
+    ridingDebug.coasting = !braking && mountCurrentSpeedPxS > desiredSpeed + 0.5; // Report actual speed after braking/collisions, not the previous frame's prediction.
     const movedDx = m.x - stepStartX;
     const movedDy = m.y - stepStartY;
     const movedPx = Math.hypot(movedDx, movedDy);
@@ -1207,7 +1208,7 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, setMountedCombatWindupBoost, clearMountedCombatWindupBoost, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
