@@ -210,8 +210,14 @@ async function spritePng(page, animal) {
       'even a cross-origin loaded sprite must have readable image data for actual enlargement');
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).lastError, null,
       'successful cross-origin pixel read must clear any earlier tainted-canvas error');
+    await page.waitForFunction(() => {
+      const frame = window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame;
+      return (window.BabyAnimalHeadWarp?.maskForKind?.('grehlr', frame)?.opaquePixels || 0) > 0;
+    }); // The editor's unsaved alpha opt-in uses its live frame; runtime still defaults to the painted mode.
     const poseMaskCheck = await page.evaluate(() => {
-      const warp = window.BabyAnimalHeadWarp, mask = warp.maskForKind('grehlr');
+      const warp = window.BabyAnimalHeadWarp;
+      const previewFrame = window.__animalHeadRigBabyPreview.debugSnapshot().frame;
+      const mask = warp.maskForKind('grehlr', previewFrame);
       if (!mask) return { error: warp.debugSnapshot().lastMaskError || 'missing idle head mask' };
       const originalMask = mask;
       const pose = document.createElement('canvas');
@@ -221,7 +227,7 @@ async function spritePng(page, animal) {
       ctx.fillStyle = '#ff006b'; ctx.fillRect(Math.floor(mask.centerX) - 6, Math.floor(mask.centerY) - 2, 5, 5); // Eye overlay.
       ctx.fillStyle = '#03e1cc'; ctx.fillRect(Math.floor(mask.centerX) + 2, Math.floor(mask.centerY) - 2, 5, 5); // Coat pattern.
       const before = ctx.getImageData(0, 0, 64, 64).data;
-      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45);
+      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45, previewFrame, null, false); // Explicit alpha mode even when the saved game defaults to painted Head.
       const after = enlarged.getContext('2d').getImageData(0, 0, 64, 64).data;
       const colors = (bytes, r, g, b) => {
         let count = 0;
@@ -239,7 +245,7 @@ async function spritePng(page, animal) {
       warp.primeIdleMask('test-mask-reload', { width: 12, height: 12, data: sparse }, frame);
       warp.primeIdleMask('test-mask-reload', { width: 12, height: 12,
         data: new Uint8ClampedArray(sparse.length) }, frame); // Empty replacement must invalidate an earlier opaque mask.
-      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr') === originalMask,
+      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr', previewFrame) === originalMask,
         changed, beforeEye: colors(before,255,0,107), afterEye: colors(after,255,0,107),
         beforePattern: colors(before,3,225,204), afterPattern: colors(after,3,225,204),
         sparsePixels: isolatedMask?.opaquePixels, clearInsideBox: isolatedMask?.coverage[3*12+3] < 1,
@@ -311,7 +317,7 @@ async function spritePng(page, animal) {
     await page.evaluate(rest => { applyShoulderRestConfig(rest); draw(); }, shoulderBeforeCopy);
 
     const largeSprite = await page.evaluate(() => {
-      const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr');
+      const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr', window.__animalHeadRigBabyPreview.debugSnapshot().frame);
       const texture = previewImageForAnimal(state.image);
       const layers = previewSplitLayerCanvases();
       return {
