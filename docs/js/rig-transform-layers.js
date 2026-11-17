@@ -386,11 +386,23 @@
       return true;
     }
 
-    function entryStillOwned(entry) {
+    function entryStillOwned(entry, checkAncestors = true) {
       const claim = absoluteClaims.get(entry.node)?.get(entry.property);
       if (claim !== entry || (entry.node.parent || null) !== entry.parent) return false;
       const current = propertyState(entry.node, entry.property);
-      return !!current && equivalent(current, entry.applied, entry.property);
+      if (!current || !equivalent(current, entry.applied, entry.property)) return false;
+      if (!checkAncestors) return true;
+      // A newly moved/reparented parent invalidates this action's child pose
+      // too, even if the child's local quaternion happened not to change.
+      // Avoid restoring an old neck or leg below a body now owned by a new action.
+      for (let parent = entry.node.parent; parent; parent = parent.parent) {
+        const claims = absoluteClaims.get(parent);
+        if (!claims) continue;
+        for (const ancestor of claims.values()) {
+          if (ancestor.session === session && !entryStillOwned(ancestor, false)) return false;
+        }
+      }
+      return true;
     }
 
     function owns() {
@@ -424,7 +436,8 @@
       if (released) return { restored: 0, skipped: 0 };
       released = true;
       let restored = 0, skipped = 0;
-      for (const entry of entries) {
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const entry = entries[i]; // Children release before parents so a displaced ancestor invalidates nested neck/leg restoration.
         const claims = absoluteClaims.get(entry.node);
         if (claims?.get(entry.property) !== entry) { skipped++; continue; }
         const owned = entryStillOwned(entry); // Test before dropping the claim.
