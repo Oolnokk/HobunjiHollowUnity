@@ -109,50 +109,102 @@
     return { points: projected, hits, misses: points.length - hits };
   }
 
-  // Extend each finished ankle-opening spline along its own 3D chord, centred on the calf bone.
-  // The authored points and beltline remain unchanged; the ring's existing weights fade the extra
-  // width toward the knee, so this complements (rather than replaces) species legThickness fitting.
+  // Stretch the finished ankle-opening spans to match the November 14 mean-X/Y foot width.
+  // The real five-point curves are bilinearly sampled from the mesh; their endpoint weights can
+  // differ, so a raw (ratio - 1) multiplier does NOT produce the requested final opening width.
   function stretchLegOpeningSpans(positions, segments, rings, splines, widthRatio = 1) {
-    const factor = Number(widthRatio); // Width multiplier from the same averaged body X/Y used for hand/foot meshes.
-    const stride = Number(segments) + 1; // Existing skinned garment vertex-grid stride.
+    const factor = Number(widthRatio); // The shared extremity-width ratio relative to the portrait's body X.
+    const stride = Number(segments) + 1; // Garment grid width, matching all skinning/debug-spline samples.
     if (!Number.isInteger(stride) || stride < 2 || positions?.length !== stride * stride * 3
         || !Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) <= 1e-8) return false;
-    const sampleAxis = (point, axis) => { // Sample a bilinear point on the same garment grid as the debug spline.
-      if (!Number.isInteger(point?.i) || !(point.fx >= 0 && point.fx <= 1) || !(point.fy >= 0 && point.fy <= 1)) return NaN;
-      const first = point.i * 3 + axis, nextRow = stride * 3;
-      if (first < axis || first + nextRow + 3 >= positions.length) return NaN;
-      const top = positions[first] + (positions[first + 3] - positions[first]) * point.fx;
-      const bottom = positions[first + nextRow] + (positions[first + nextRow + 3] - positions[first + nextRow]) * point.fx;
-      return top + (bottom - top) * point.fy;
+
+    const corners = sample => { // Bilinear interpolation has four neighbours, including the clamped last row/column.
+      if (!Number.isInteger(sample?.i) || sample.i < 0 || !(sample.fx >= 0 && sample.fx <= 1)
+          || !(sample.fy >= 0 && sample.fy <= 1) || (sample.i % stride) >= stride - 1
+          || sample.i + stride + 1 >= stride * stride) return null;
+      return [
+        [sample.i, (1 - sample.fx) * (1 - sample.fy)],
+        [sample.i + 1, sample.fx * (1 - sample.fy)],
+        [sample.i + stride, (1 - sample.fx) * sample.fy],
+        [sample.i + stride + 1, sample.fx * sample.fy],
+      ];
     };
-    const axes = []; // Each valid ring supplies one fixed axis and centre, sampled before any vertex is moved.
+    const sampleVector = weights => { // Read a 3D spline point from the untouched fitted rest grid.
+      const result = [0, 0, 0];
+      for (const [index, weight] of weights) for (let axis = 0; axis < 3; axis++) result[axis] += positions[index * 3 + axis] * weight;
+      return result;
+    };
+    const difference = (a, b) => a.map((v, i) => v - b[i]);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+    const axes = []; // One fixed calf-pole centre, opening chord and deformation field per leg.
     for (const side of ['left', 'right']) {
       const ring = rings?.[side], samples = splines?.[`${side}Ankle`]?.samples;
-      if (!ring?.anchor || ring.influence?.length !== stride * stride || !Array.isArray(samples) || samples.length < 2) continue;
-      const first = samples[0], last = samples[samples.length - 1];
-      const x = sampleAxis(last, 0) - sampleAxis(first, 0);
-      const y = sampleAxis(last, 1) - sampleAxis(first, 1);
-      const z = sampleAxis(last, 2) - sampleAxis(first, 2);
-      const length = Math.hypot(x, y, z); // Keep the opening's authored arc curvature while stretching its chord.
-      if (!(length > 1e-9)) continue; // Also rejects non-finite spline samples.
-      axes.push({
-        x: x / length, y: y / length, z: z / length,
-        cx: sampleAxis(ring.anchor, 0), cy: sampleAxis(ring.anchor, 1), cz: sampleAxis(ring.anchor, 2),
-        influence: ring.influence,
-      }); // Opening span and calf-bone anchor remain independent for the two legs.
+      if (!ring || ring.influence?.length !== stride * stride || !Array.isArray(samples) || samples.length < 2) continue;
+      const start = corners(samples[0]), end = corners(samples[samples.length - 1]), centre = corners(ring.anchor);
+      if (!start || !end || !centre) continue;
+      const center = sampleVector(centre), chord = difference(sampleVector(end), sampleVector(start));
+      const length = Math.hypot(...chord);
+      if (!(length > 1e-9) || !center.every(Number.isFinite)) continue;
+      axes.push({ start, end, center, chord, length, direction: chord.map(v => v / length), influence: ring.influence });
     }
     if (!axes.length) return false;
-    const extra = factor - 1; // Applied once to the rest grid, never compounded across animation frames.
-    for (let i = 0; i < stride * stride; i++) {
-      const j = i * 3, x = positions[j], y = positions[j + 1], z = positions[j + 2];
-      let dx = 0, dy = 0, dz = 0; // Collect both sides against the same original vertex to avoid order-dependent seams.
-      for (const axis of axes) {
-        const weight = axis.influence[i];
-        if (!(weight > 0)) continue;
-        const along = ((x - axis.cx) * axis.x + (y - axis.cy) * axis.y + (z - axis.cz) * axis.z) * extra * weight;
-        dx += axis.x * along; dy += axis.y * along; dz += axis.z * along;
+
+    // Each vertex has its authored calf-ring influence (zero at the belt, full near the hem).
+    // Compute how much a UNIT stretch of each leg changes each other leg's measured spline
+    // chord. Solving those coupled responses keeps both openings exact, even if the fades
+    // overlap near the seam or an authored spline doesn't land precisely on mesh vertices.
+    const chordResponse = axes.map(target => axes.map(source => {
+      const projected = samples => {
+        let amount = 0;
+        for (const [index, weight] of samples) {
+          if (!weight) continue;
+          const i = index * 3;
+          const along = (positions[i] - source.center[0]) * source.direction[0]
+            + (positions[i + 1] - source.center[1]) * source.direction[1]
+            + (positions[i + 2] - source.center[2]) * source.direction[2];
+          amount += along * source.influence[index] * weight;
+        }
+        return amount;
+      };
+      const response = projected(target.end) - projected(target.start);
+      return source.direction.map(v => v * response);
+    }));
+    const gains = axes.map(() => 0); // Applied once to each rest grid, recalculated from original art on every rebind.
+    for (let iteration = 0; iteration < 4; iteration++) {
+      const chords = axes.map((axis, j) => axis.chord.map((base, coord) =>
+        base + gains.reduce((total, gain, k) => total + gain * chordResponse[j][k][coord], 0)));
+      const length = chords.map(chord => Math.hypot(...chord));
+      if (length.some(value => !(value > 1e-9))) break;
+      const residual = length.map((value, j) => axes[j].length * factor - value); // Zero means both real spline spans match the feet.
+      if (residual.every((value, j) => Math.abs(value) <= axes[j].length * 1e-6)) break;
+      const jacobian = axes.map((axis, j) => axes.map((source, k) => dot(chords[j], chordResponse[j][k]) / length[j]));
+      let correction;
+      if (axes.length === 1) {
+        correction = [Math.abs(jacobian[0][0]) > 1e-9 ? residual[0] / jacobian[0][0] : 0];
+      } else {
+        const a = jacobian[0][0], b = jacobian[0][1], c = jacobian[1][0], d = jacobian[1][1];
+        const determinant = a * d - b * c;
+        correction = Math.abs(determinant) > 1e-9
+          ? [(residual[0] * d - b * residual[1]) / determinant,
+            (a * residual[1] - residual[0] * c) / determinant]
+          : [Math.abs(a) > 1e-9 ? residual[0] / a : 0, Math.abs(d) > 1e-9 ? residual[1] / d : 0];
       }
-      positions[j] = x + dx; positions[j + 1] = y + dy; positions[j + 2] = z + dz;
+      for (let k = 0; k < gains.length; k++) {
+        const next = gains[k] + correction[k];
+        if (!Number.isFinite(next)) return false;
+        gains[k] = Math.max(-0.99, Math.min(32, next)); // Degenerate authored rings must not invert or explode their legs.
+      }
+    }
+
+    for (let index = 0; index < stride * stride; index++) {
+      const i = index * 3, point = [positions[i], positions[i + 1], positions[i + 2]];
+      for (let k = 0; k < axes.length; k++) {
+        const axis = axes[k], weight = axis.influence[index] * gains[k];
+        if (!(Math.abs(weight) > 1e-12)) continue;
+        const along = dot(difference(point, axis.center), axis.direction) * weight;
+        for (let c = 0; c < 3; c++) positions[i + c] += axis.direction[c] * along;
+      }
     }
     return true;
   }
