@@ -247,6 +247,11 @@
   // An absolute solver that intentionally takes over a managed axis must use
   // this explicit handoff; no unknown mutation can change a claimed baseline.
   function setAbsoluteBase(node, property, axis, value) {
+    const ownedProperty = property === 'rotation' && node?.quaternion?.isQuaternion ? 'quaternion' : property; // Euler writes and quaternion writes target the same Three.js absolute rotation claim.
+    if (hasAbsolutePoseOwner(node, ownedProperty)) {
+      overlayStats.solverConflicts++;
+      return false; // A competing absolute handoff cannot silently replace a live scripted pose.
+    }
     if (property === 'rotation' && node?.quaternion?.isQuaternion) {
       // An absolute Euler handoff must update the SAME quaternion slot used by
       // additive neck/body rotations. Otherwise the old claimed quaternion
