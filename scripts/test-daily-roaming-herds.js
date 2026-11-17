@@ -16,9 +16,10 @@ class Group {
   add(...children) { for (const child of children) { this.children.push(child); child.parent=this; } }
   remove(...children) { for (const child of children) { const at=this.children.indexOf(child); if (at>=0) this.children.splice(at,1); child.parent=null; } }
 }
-const plane = () => ({ material: { map:null }, clone() { return { ...this }; } }); // Mirrors billboard material sharing used for both species' carried babies.
+const plane = () => ({ material: { map:null }, position: { y: 0 }, clone() { return { ...this, position: { ...this.position } }; } }); // Mimics independent mesh transforms with shared genotype materials.
 const hostiles = new Set(); // Shared live entity roster used to verify spawning and full scene cleanup.
 const removed = []; // Captures cleanup requests made to the game's despawnCreature interface.
+const pendingGroundAnchors = []; // Simulates the asynchronous first-time sprite opacity scan and its completion callbacks.
 const logs = []; // Collects mobile log output for midnight census assertions.
 let area = 'map_northern_cliffs'; // Simulates leaving/returning to the relevant game map.
 let randomValue = 0.99; // Force predictable Moot/Voorg lottery outcomes in each daily slot.
@@ -34,6 +35,7 @@ const layout = { cols:100,rows:100,dens:[],tiles:[],foliagePatches:[
 ] }; // Real foliage anchors separated enough to exercise proximity culling.
 const w = {
   THREE: { Group },
+  CreatureGroundAnchor: { resolveRatio(sprite, ready) { pendingGroundAnchors.push({ sprite, ready }); } }, // Queues callbacks until the mother sprites' feet position is known.
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: { moot: { anchors: { saddle: { position: {x:0.3,y:0.19,z:0.02} } } }, 'voorg-ass': { anchors: { saddle: { position: {x:0,y:0.12,z:0} } } } } }, // Explicit distinct saddles reveal accidental use of the wrong species' rig.
   BanditCamps:{ensureCurrentZoneCamps(){}},
   CreatureGenetics:{makeDefaultGenotype(kind){return {sizeClass:'medium',base:{color:kind==='moot'?'#aaaaaa':'#bbbbbb'}}},creatureSizeScale(kind,sizeClass){return kind==='moot'?(sizeClass==='small'?{x:0.35,y:0.35}:{x:1.5,y:1.5}):(sizeClass==='small'?{x:0.34,y:0.34}:{x:1.1,y:1.1})}},
@@ -52,7 +54,7 @@ const deps = {CREATURE_DB:{nazgraku:{}},EXTERIOR_ZONES:{map_northern_cliffs:zone
   TILE:10,TileType:{RIVER:'river',STREAM:'stream'},player:{x:205,y:205},
   rnd:()=>randomSequence.length ? randomSequence.shift() : randomValue,getCurrentArea:()=>area,_isZoneArea:id=>id==='map_northern_cliffs',
   getCutscenePreviewActive:()=>false,buildZoneScene:()=>true,
-  makeCreatureEntity(kind,x,y,opts){const group=new Group(),frontPlane=plane(),backPlane=plane();group.add(frontPlane,backPlane);return {id:++nextId,creatureKey:kind,health:50,x,y,avatarRef:{group,frontPlane,backPlane},...opts}},
+  makeCreatureEntity(kind,x,y,opts){const group=new Group(),frontPlane=plane(),backPlane=plane();group.add(frontPlane,backPlane);return {id:++nextId,creatureKey:kind,def:{sprites:{idle:kind+'_idle.png'}},health:50,x,y,avatarRef:{group,frontPlane,backPlane},...opts}},
   despawnCreature(creature){removed.push(creature)},
   showToast(){},
 }; // Minimal production wildlife dependencies; no separate substitute herd simulator.
@@ -71,7 +73,20 @@ assert(firstMootMother._carriedBabyVisuals.every(g=>g.parent===firstMootMother.a
 assert(firstMootMother._carriedBabyVisuals.every(g=>g.children[0].material===firstMootMother.avatarRef.frontPlane.material),'babies reuse their own Moot genotype material');
 assert.equal(Math.round(firstMootMother._carriedBabyVisuals[0].position.x*1000),215,'Moot babies use the Moot saddle rather than the Voorg-Ass saddle');
 assert.equal(Math.round(firstMootMother._carriedBabyVisuals[0].scale.x*10000),2333,'Moot children use the Moot small-to-large authored scale ratio');
+const firstGroundCallback = pendingGroundAnchors.find(entry=>entry.sprite==='moot-herd-mother_idle.png'); // First scanned mother, before any visual restoration.
+assert(firstGroundCallback,'real Moot mother registers an idle-sprite ground correction');
+firstMootMother.avatarRef.frontPlane.position.y = -0.21; // Simulates the mother-level opacity callback completing before the baby sync callback.
+firstMootMother.avatarRef.backPlane.position.y = -0.24;
+firstGroundCallback.ready();
+assert(firstMootMother._carriedBabyVisuals.every(b=>b.children[0].position.y===-0.21&&b.children[1].position.y===-0.24),'late ground-anchor correction must shift the baby sprite planes to match their mother');
 assert.equal(w.WildlifeSpawn.restoreHerdMotherVisuals(firstMootMother),4,'visual promotion restores all carried Moot babies');
+const restoredBabies=firstMootMother._carriedBabyVisuals; // Used to verify stale callbacks cannot move a newer set of baby meshes.
+firstMootMother.avatarRef.frontPlane.position.y = -0.4;
+firstGroundCallback.ready();
+assert(restoredBabies.every(b=>b.children[0].position.y===-0.21),'a delayed callback from a retired set must not alter freshly promoted babies');
+const latestGroundCallback=pendingGroundAnchors[pendingGroundAnchors.length-1]; // The new promotion owns the latest callback.
+latestGroundCallback.ready();
+assert(restoredBabies.every(b=>b.children[0].position.y===-0.4),'current baby meshes must track a later idle-sprite correction');
 assert.equal(firstMootMother.avatarRef.group.children.filter(g=>g.userData?.herdCarriedBaby).length,4,'repeated promotion must replace rather than duplicate attachments');
 assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5,'Nazgraku remains independent');
 randomValue=0.01;
