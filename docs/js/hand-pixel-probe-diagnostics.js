@@ -15,9 +15,11 @@
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
     const handPerf = window.ProceduralHandFrameDriver?.getPerfStats?.() || null; // Captured only when a mobile Pixel Probe report is requested.
+    const stance = window.WeaponToolStances?.debugSnapshot?.() || null; // On-demand active-tool pose ownership, not a new per-frame diagnostic cost.
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
     const mist = window.CloudForestAvatarDepthOccluder?.snapshot?.() || null;
     const lines = ['', SECTION];
+    if (stance) lines.push(`Equipped stance: slot=${stance.activeSlot || '-'} item=${stance.itemKey || '-'} owner=${stance.holderPoseOwner || '-'} idleApplied=${stance.stanceApplied ? 1 : 0} config=${stance.stanceConfigSource || '-'}`); // Copyable ownership trace makes walking/action conflicts inspectable on mobile.
     if (handPerf) lines.push(`Hand sync budget: skippedNonSweep=${handPerf.nonSweepSearchesAvoided || 0} visualPlaneSearches=${handPerf.visualPlaneSearches || 0} sharedSocketUses=${handPerf.sharedSocketUses || 0}`); // Lets mobile players compare the fast-path savings without DevTools.
     const authoredGrips = window.HobunjiAuthoredGripOverrides?.debugSnapshot?.(); // Reports the loaded migration and fixed spear grip in mobile-copyable Pixel Probe output.
     lines.push(authoredGrips
