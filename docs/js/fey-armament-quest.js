@@ -46,7 +46,8 @@
     for (const [key, enchantments] of Object.entries(gear.weaponEnchantments || {})) {
       const weaponDef = inventoryDeps?.TOOL_ITEM_DEFS?.[key]; // Only actual owned weapon slots qualify; enchanting a hoe or other tool is not acquiring a Fey weapon.
       if (!gear.tools?.[key] || !weaponDef?.slots?.includes('weapon') || !enchantments) continue;
-      const ids = [...(Array.isArray(enchantments.base) ? enchantments.base : []), ...Object.values(enchantments.flourishes || {})];
+      const normalized = window.EnchantmentSystem?.cleanWeaponState?.(enchantments) || enchantments; // Legacy Fey IDs are migrated before the quest checks the authoritative definition list.
+      const ids = [...(Array.isArray(normalized.base) ? normalized.base : []), ...Object.values(normalized.flourishes || {})];
       if (ids.some(id => definitions[id]?.alignment === 'Fey')) keys.add(key);
     }
     return [...keys];
