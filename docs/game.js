@@ -10622,6 +10622,7 @@
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
+      let _spotResolveDirty = true; // Declared with the latch: travel/enter code rewrites the latch and must force the next spot resolution.
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
       // ── Town zone ──────────────────────────────────────────────────
@@ -11702,7 +11703,7 @@
           rebuildRouteGraphs();
         }
         // Don't fire a spot the player happens to spawn on
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
@@ -11719,6 +11720,17 @@
       // Transition-spot floor rings (buildTransitionMarkers) now live in
       // js/transition-markers.js — call via window.TransitionMarkers.*.
 
+      // Spot resolution (latch compare + pool.find + availability predicates) only needs to re-run when the
+      // player's tile/area changes (PlayerTileEvents + a direct int compare), a latch is rewritten, a key item
+      // is granted/save loaded, a spot is pending (predicates like roof access are live), or after a short TTL
+      // that bounds the delay for state with no event (cutscene gating, transitions added while standing still).
+      // refreshActionBar() still runs every frame: the action arch depends on it (see comment below).
+      let _spotLastArea = null, _spotLastCol = NaN, _spotLastRow = NaN, _spotResolvedAt = -Infinity, _spotReachedBar = false;
+      const SPOT_RESOLVE_TTL_MS = 250;
+      const _markSpotsDirty = () => { _spotResolveDirty = true; };
+      window.PlayerTileEvents?.subscribe?.(_markSpotsDirty);
+      window.addEventListener('hobunji:key-item-granted', _markSpotsDirty);
+      document.addEventListener('hobunjiPlayerReady', _markSpotsDirty);
       function canUseRoofSpot(transition, area) {
         if (transition?.roofAccess !== true) return true; // Ordinary doors, gates and floor transitions retain their existing rules.
         if (area !== 'town' || player._freeJump?.phase !== 'supported'
@@ -11730,8 +11742,15 @@
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        const nowMs = performance.now();
+        if (!_spotResolveDirty && !_pendingSpotTransition && area === _spotLastArea && pc === _spotLastCol && pr === _spotLastRow
+            && nowMs - _spotResolvedAt < SPOT_RESOLVE_TTL_MS && nowMs >= _spotResolvedAt) {
+          if (_spotReachedBar) refreshActionBar(); // Unchanged resolution: only the cached action-bar refresh remains per frame (not while latched, as before).
+          return;
+        }
+        _spotResolveDirty = false; _spotLastArea = area; _spotLastCol = pc; _spotLastRow = pr; _spotResolvedAt = nowMs;
         const key = area + ':' + pc + ',' + pr;
-        if (key === _transitionLatch) { _pendingSpotTransition = null; return; }
+        if (key === _transitionLatch) { _pendingSpotTransition = null; _spotReachedBar = false; return; }
         _transitionLatch = null;
         let pool;
         if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
@@ -11750,6 +11769,7 @@
         // (it used to happen by accident — find()'s undefined never equalled
         // the stored null). refreshActionBar() is _lastBarKey-cached, so its
         // no-change path must stay free of unconditional DOM writes.
+        _spotReachedBar = true;
         refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
@@ -11811,7 +11831,7 @@
         }
         player.vx = 0;  player.vy = 0;
         _snapCameraTarget();
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
         if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
       }
@@ -35342,7 +35362,7 @@
         const approach = [[1,0],[-1,0],[0,1],[0,-1]].map(([dc,dr]) => ({ col: entrance.col + dc, row: entrance.row + dr })).find(point => townGrid[point.row]?.[point.col] && !isSolid(townGrid[point.row][point.col].type)); // Stands outside the door trigger on a real walkable tile.
         if (!approach) throw new Error('Temple door has no walkable approach.');
         enterTown(approach.col, approach.row);
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 
