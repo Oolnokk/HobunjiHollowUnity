@@ -2244,9 +2244,9 @@
           // authored verdigris-removal pattern service (see
           // setToolVerdigrisPattern) — mutually exclusive, sharing one record.
           toolPlating: {},
-          // toolReinforcement[itemKey] = { metalKey } — Sloomi/Kzubug's metal
-          // reinforcement service (see setToolReinforcement).
-          toolReinforcement: {},
+          // Fresh-character crafted copper tools explicitly start at Copper I.
+          // Ungraded entries from existing characters remain legacy strength.
+          toolReinforcement: Object.fromEntries(['hoe_nativeCopper', 'hatchet_nativeCopper', 'fishingmace_nativeCopper', 'fishingspear_nativeCopper', 'pickshovel_nativeCopper'].map(itemKey => [itemKey, { metalKey: 'nativeCopper', grade: 0 }])),
           // Spent on ability-upgrade choices (level N choice costs N motes —
           // see combat-progression.js); earned from combat (creature kills)
           // and other future sources. Character save data, not world data.
