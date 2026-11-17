@@ -13,6 +13,19 @@
     }
 
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
+    function worldQuaternionWithoutReflection(node) {
+      const out = new THREE.Quaternion(); // Shared caller scratch result; the source's actual local quaternions, not decomposed signed scales, determine orientation.
+      if (node?.isObject3D && node.quaternion) {
+        const rigResolver = window.ProceduralLegAnimation?.worldQuaternionWithoutScale; // Reuse the leg solver's canonical scale-free world orientation when present.
+        if (typeof rigResolver === 'function') return rigResolver(node, out);
+        out.identity();
+        const chain = []; // Editor/standalone fallback when the procedural-leg module is not loaded.
+        for (let parent = node; parent?.isObject3D; parent = parent.parent) chain.push(parent);
+        for (let i = chain.length - 1; i >= 0; i--) out.multiply(chain[i].quaternion);
+        return out.normalize();
+      }
+      return node?.getWorldQuaternion?.(out) || out; // Test doubles and older preview rigs have no local quaternion hierarchy.
+    }
     const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
     const SHOULDER_PET_LEAN_AXIS = new THREE.Vector3(1, 0, 0); // Maps the front/back sprite planes' opposite Z rolls into one shared pet-local X lean.
     const SHOULDER_PET_LEAN_QUATERNION = new THREE.Quaternion(); // Reused by the final perch/grip solver to avoid allocating a quaternion each animation frame.
@@ -41,11 +54,11 @@
       let resolvedRotationSource = s_shoulderPetRotationSource;
       switch (s_shoulderPetRotationSource) {
         case 'body':
-          selectedRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion());
+          selectedRotationQuaternion = worldQuaternionWithoutReflection(playerMesh);
           resolvedRotationSource = 'player-body';
           break;
         case 'bodyNeckMidpoint': {
-          const bodyRotationQuaternion = playerMesh.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Body endpoint for the equal world-space midpoint below.
+          const bodyRotationQuaternion = worldQuaternionWithoutReflection(playerMesh).normalize(); // Body endpoint ignores mirrored model scale.
           const neckRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : null; // Neck endpoint; rigid avatars safely fall back to the body frame.
           if (!neckRotationSource) {
             selectedRotationQuaternion = bodyRotationQuaternion;
@@ -53,7 +66,7 @@
             break;
           }
           neckRotationSource.updateWorldMatrix?.(true, false);
-          const neckRotationQuaternion = neckRotationSource.getWorldQuaternion(new THREE.Quaternion()).normalize(); // Live neck world orientation used as the second midpoint endpoint.
+          const neckRotationQuaternion = worldQuaternionWithoutReflection(neckRotationSource).normalize(); // Physical neck orientation is not a matrix reflection.
           selectedRotationQuaternion = bodyRotationQuaternion.clone().slerp(neckRotationQuaternion, SHOULDER_PET_BODY_NECK_BLEND).normalize();
           resolvedRotationSource = 'player-body-neck-midpoint';
           break;
@@ -61,7 +74,7 @@
         case 'head': {
           const headRotationSource = playerNeckJoint?.isObject3D ? playerNeckJoint : playerMesh; // Head/neck selection falls back safely for rigid avatars.
           headRotationSource.updateWorldMatrix?.(true, false);
-          selectedRotationQuaternion = headRotationSource.getWorldQuaternion(new THREE.Quaternion());
+          selectedRotationQuaternion = worldQuaternionWithoutReflection(headRotationSource);
           resolvedRotationSource = headRotationSource === playerNeckJoint ? 'player-head-neck' : 'player-body-fallback-no-neck';
           break;
         }
@@ -72,7 +85,7 @@
         case 'pixel':
         default:
           selectedRotationQuaternion = perchFrame?.quaternion?.clone()
-            || playerMesh.getWorldQuaternion(new THREE.Quaternion());
+            || worldQuaternionWithoutReflection(playerMesh);
           resolvedRotationSource = perchFrame ? 'player-authored-skinned-surface' : 'player-body-fallback-no-skinned-frame';
           break;
       }
@@ -124,9 +137,8 @@
       if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
       const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
       parent?.updateWorldMatrix?.(true, false);
-      const parentWorldQuaternion = parent?.getWorldQuaternion
-        ? parent.getWorldQuaternion(new THREE.Quaternion())
-        : new THREE.Quaternion(); // Removes any non-identity scene-parent rotation before assigning the pet's local quaternion.
+      const parentWorldQuaternion = parent ? worldQuaternionWithoutReflection(parent)
+        : new THREE.Quaternion(); // Parent rotations ignore mirrored matrix decomposition when solving the pet's local attachment.
       const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
       const localPosition = parent?.worldToLocal
         ? parent.worldToLocal(finalTransform.worldPosition.clone())
