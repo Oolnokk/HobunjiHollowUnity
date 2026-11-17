@@ -1,6 +1,6 @@
 name: Windows desktop installer
 
-# Package builds live apart from the existing game test workflow.
+# PRs build test installers. Only main pushes publish update releases.
 on:
   workflow_dispatch:
   pull_request:
@@ -8,13 +8,27 @@ on:
       - 'desktop/**'
       - 'scripts/test-windows-desktop.js'
       - '.github/workflows/windows-desktop.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'desktop/**'
+      - 'scripts/test-windows-desktop.js'
+      - '.github/workflows/windows-desktop.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: windows-desktop-main-${{ github.event_name == 'push' && 'release' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   build-installer:
     runs-on: windows-latest
+    permissions:
+      contents: write # Used by the main-only release publishing step.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,15 +39,36 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Set an increasing version for published main builds
+        if: github.event_name == 'push'
+        working-directory: desktop
+        run: npm version --no-git-tag-version "0.1.${{ github.run_number }}"
       - name: Build Windows installer
         working-directory: desktop
         run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Upload installer
+      - name: Verify the installer and update feed were generated
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          if (-not (Test-Path "desktop/dist/Hobunji-Hollow-Setup-$version.exe")) { throw "Installer missing" }
+          if (-not (Test-Path "desktop/dist/latest.yml")) { throw "Updater metadata missing" }
+      - name: Upload installer and update metadata for manual testing
         uses: actions/upload-artifact@v4
         with:
           name: Hobunji-Hollow-Windows-Installer
-          path: desktop/dist/Hobunji-Hollow-Setup-*.exe
+          path: |
+            desktop/dist/Hobunji-Hollow-Setup-*.exe
+            desktop/dist/Hobunji-Hollow-Setup-*.exe.blockmap
+            desktop/dist/latest.yml
           if-no-files-found: error
           retention-days: 14
+      - name: Publish main as a Windows auto-update release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          gh release create "desktop-v$version" "desktop/dist/Hobunji-Hollow-Setup-$version.exe" "desktop/dist/Hobunji-Hollow-Setup-$version.exe.blockmap" "desktop/dist/latest.yml" --target "${{ github.sha }}" --title "Hobunji Hollow Windows $version" --notes "Automatic Windows build of main at commit ${{ github.sha }}." --latest
