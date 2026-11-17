@@ -94,6 +94,7 @@
     const combat = window.Combat;
     if (!payment || typeof combat?.beginStagedAction !== 'function') return combat?.beginStagedAction?.(opts);
     const activeArea = actor.areaId; // A removed/repositioned NPC cannot land a second swing in a later map.
+    const intendedTarget = opts.feyHypedNpcTarget; // Same committed NPC target; the independent second cone must not hit an actor moved to another area.
     const sequence = { ratio: payment.ratio, used: payment.used, echo: false, echoHits: 0, firstHit: null };
     const originalStrike = opts.onStrike, originalComplete = opts.onComplete, originalCancel = opts.onCancel;
     const npcLive = () => numeric(actor.health, 1) > 0 && (!activeArea || actor.areaId === activeArea)
@@ -124,7 +125,7 @@
         const second = combat.beginStagedAction({
           ...opts, ...duration,
           data: { ...(opts.data || {}), feyHypedNpcEcho: true },
-          onStrike: stage => { if (npcLive()) originalStrike?.(stage); },
+          onStrike: stage => { if (npcLive() && (!intendedTarget || (numeric(intendedTarget.health) > 0 && (!activeArea || !intendedTarget.areaId || intendedTarget.areaId === activeArea)))) originalStrike?.(stage); }, // Unloaded/dead targets cannot be damaged by a stale echo.
           onComplete: stage => {
             const hits = sequence.echoHits;
             clean();
