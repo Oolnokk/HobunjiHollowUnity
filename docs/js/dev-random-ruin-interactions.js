@@ -9,6 +9,7 @@
   const SEMANTIC_RESCAN_MS = 250;
   const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
   const TOUCH_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2'];
+  const TOUCH_PROMPT_LABELS = Object.freeze({action1:'Action 1',action2:'Action 2',action3:'Action 3',itemAction1:'Item Action 1',itemAction2:'Item Action 2',jump:'Jump',dodge:'Dodge',toolSelect:'Tool Select'}); // Each touch prompt names its actual arch control, not a generic hand pictogram.
   const INPUT_CLAIM_OWNER = 'dev-random-ruin'; // Shared input-ownership registry key; explicit Action 1 interactions can suppress combat without hardcoding ruin logic into the weapon system.
   const GridTileAccessors = window.GridTileAccessors;
   const DS = window.DynamicSurfaces;
@@ -577,7 +578,7 @@
   }
 
   function bindingLabel(action, device = currentDevice(), touchIcon = '✋') {
-    if (device === 'touch') return touchIcon;
+    if (device === 'touch') return TOUCH_PROMPT_LABELS[action] || (action === 'interact' ? '' : touchIcon); // Interact has no standalone touch button, and numbered arches must be identified by number.
     const binding = bindingFor(action, device); // Current device's live remapping, not a default/hardcoded prompt.
     if (device === 'controller' && action === 'interact' && binding
         && window.InputBindings?.resolveActionForButton?.('controller', binding) === 'jump') return ''; // Never advertise ruin controller A as Interact while it owns Jump.
