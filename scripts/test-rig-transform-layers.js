@@ -153,6 +153,8 @@ function angleX(q) { return 2 * Math.atan2(q.x, q.w); }
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
+const composerAt = editorScripts.indexOf("'js/player-body-transform-composer.js?v=");
 const drunkAt = editorScripts.indexOf("'js/drunk-locomotion.js?v=");
-assert.ok(ledgerAt >= 0 && drunkAt > ledgerAt, 'Workshop must load the rig ledger before drunken locomotion');
+assert.ok(ledgerAt >= 0 && composerAt > ledgerAt && drunkAt > composerAt,
+  'Workshop must share rig ownership before both the player compositor and drunken gait');
 console.log('Rig transform layers: ownership, interrupts, drift, editor bootstrap and release PASS');
