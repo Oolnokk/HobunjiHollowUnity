@@ -87,13 +87,21 @@
 
   function replayTarget(attack, target, deps, ratio) {
     const first = attack.firstHits.get(target);
-    const base = numeric(first?.damage, numeric(attack.context.damage)); // Pre-mitigation physical payload of this second, independent weapon strike.
     const mods = first?.modifiers || attack.context.modifiers || {};
-    const damage = Math.max(0, base * numeric(mods.damage, 1) * ratio);
-    const knockback = Math.max(0, numeric(attack.context.knockbackPxS) * numeric(mods.knockback, 1) * ratio);
+    const committedDamage = Number(first?.metadata?.feyPrimaryDamage); // Optional actual first-hit raw damage, after mastery, finisher and mount multipliers.
+    const committedKnockback = Number(first?.metadata?.feyPrimaryKnockback); // Optional fully multiplied first-hit knockback.
+    const baseDamage = Number.isFinite(committedDamage)
+      ? Math.max(0, committedDamage)
+      : Math.max(0, numeric(first?.damage, numeric(attack.context.damage)) * numeric(mods.damage, 1));
+    const baseKnockback = Number.isFinite(committedKnockback)
+      ? Math.max(0, committedKnockback)
+      : Math.max(0, numeric(attack.context.knockbackPxS) * numeric(mods.knockback, 1));
+    const damage = baseDamage * ratio;
+    const knockback = baseKnockback * ratio;
     const rawAfflictions = first?.afflictionBonuses || attack.context.afflictionBonuses;
-    const afflictions = window.CombatAttackEvents?.scaleAfflictions?.(rawAfflictions, numeric(mods.affliction, 1) * ratio)
-      || Object.fromEntries(Object.entries(rawAfflictions || {}).map(([id, amount]) => [id, numeric(amount) * ratio]));
+    const afflictionRatio = first ? ratio : numeric(mods.affliction, 1) * ratio; // First-hit maps already contain mastery/enchantment scaling; never apply it twice.
+    const afflictions = window.CombatAttackEvents?.scaleAfflictions?.(rawAfflictions, afflictionRatio)
+      || Object.fromEntries(Object.entries(rawAfflictions || {}).map(([id, amount]) => [id, numeric(amount) * afflictionRatio]));
     deps.damageCreature(target, damage, numeric(attack.actor.x), numeric(attack.actor.y), knockback, {
       abilityId: attack.context.abilityId,
       tag: deps.currentWeaponDamageType?.() || 'sharp',
