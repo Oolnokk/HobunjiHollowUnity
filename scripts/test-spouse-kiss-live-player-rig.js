@@ -159,6 +159,8 @@ for (const cameraX of [-3, 3]) {
   assert(Math.abs(player.rotation.x) < 1e-7 && Math.abs(player.rotation.z) < 1e-7,
     'camera/weapon pitch and roll cannot contaminate the paired root');
   assert(Math.abs(playerModel.position.y-authorDrop) < 1e-7, 'render boundary restores the real bent player torso');
+  assert(Math.abs(playerModel.rotation.y) < 1e-7 && Math.abs(playerModel.rotation.z) < 1e-7,
+    'scoped paired torso pose must remove unowned late tool yaw and roll before the frame ends');
   assert(Math.abs(playerLegs.getStanceDrop()-originalKnee) < 1e-7, 'render boundary restores the intended authored knees');
   assert(Math.abs(playerNeck.rotation.y-camera.x) > .001, 'partner-directed head is independent of camera yaw');
 }
