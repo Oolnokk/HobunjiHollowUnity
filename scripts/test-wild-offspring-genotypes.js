@@ -29,6 +29,7 @@ context.WILDLIFE_CREATURE_MODEL_WIDTHS = context.SCRATCHBONES_CONFIG.game.wildli
 declaration('CREATURE_DB', '// Overrides CREATURE_DB');
 declaration('EXTERIOR_ZONES', 'EXTERIOR_ZONES.map_opening_cloud_forest');
 run('docs/js/voorg-ass-registration.js');
+run('docs/js/moot-registration.js'); // Makes the open-air Moot mother and recoverable baby item part of the wild-family audit.
 run('docs/js/creature-genetics.js');
 run('docs/js/creature-genetics-render.js');
 run('docs/js/wildlife-spawn.js');
@@ -58,14 +59,16 @@ for (const kind of wild) {
   assert(genotype.sizeClass, `${kind}: inherited size class exists`);
   for (const pattern of context.CreatureGenetics.PATTERN_DEFS[kind] || []) assert(genotype[pattern]?.color, `${kind}: ${pattern} carries its allele color`);
   const source = kind === 'voorg-ass' ? context.VoorgAssRegistration.BABY_ITEM_KEY
-    : mothers[kind === 'uumkaoii' ? 'uumkaoii-wild' : kind]?.nestItemKey; // Herd-Mothers are corpse pickups; the others use ground/tree nests.
+    : kind === 'moot' ? context.MootRegistration.BABY_ITEM_KEY
+    : mothers[kind === 'uumkaoii' ? 'uumkaoii-wild' : kind]?.nestItemKey; // Both surface Herd-Mothers are corpse pickups; the others use ground/tree nests.
   assert(source && itemKinds[source] === kind, `${kind}: wild offspring pickup maps to a raisable animal`);
-  const reachable = kind === 'voorg-ass' || kind === 'drenkirra' || Object.values(context.EXTERIOR_ZONES).some(zone =>
+  const inRoamingHerd = ['voorg-ass', 'moot'].includes(kind) && Object.values(context.EXTERIOR_ZONES).some(zone => zone.roamingHerdSpecies?.includes(kind)); // Only a configured exterior herd makes its babies genuinely recoverable in the wild.
+  const reachable = inRoamingHerd || kind === 'drenkirra' || Object.values(context.EXTERIOR_ZONES).some(zone =>
     (zone.denSpecies || [...(zone.packSpecies || []), ...(zone.herbivoreSpecies || [])]).some(species => (context.CreatureGenetics.SPECIES_ALIAS[species] || species) === kind)); // An item registration alone cannot satisfy wild acquisition.
   assert(reachable, `${kind}: at least one wild source actually selects this family`);
   offspring.set(source, { kind, genotype });
 }
-assert.equal(wild.size, 8, 'all eight currently implemented wild animal families are covered');
+assert.equal(wild.size, 9, 'all nine currently implemented wild animal families, including Moot, are covered');
 
 run('docs/js/cavern-generator.js');
 context.CavernGenerator.init({ EXTERIOR_ZONES: context.EXTERIOR_ZONES, DEN_MOTHER_DEFS: mothers });
@@ -147,4 +150,4 @@ for (const [key, { genotype }] of offspring) {
   assert.equal(removed, 1);
   assert.equal(queued, 1, `${key}: successful pickup queues exactly its family genotype`);
 }
-console.log('All eight wild families have reachable offspring, real coat/pattern/size genes, durable lineage, farm/stable deployment, and capacity-safe nest collection.');
+console.log('All nine wild families (including Moot) have reachable offspring, real coat/pattern/size genes, durable lineage, farm/stable deployment, and capacity-safe pickup.');

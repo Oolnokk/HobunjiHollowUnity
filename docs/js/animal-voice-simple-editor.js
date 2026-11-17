@@ -45,6 +45,7 @@
     if (/^skeeri-(?:small|medium|large)$/.test(normalized)) return 'skeeri-small';
     if (normalized === 'tzatzul-hatchling') return 'tzatzul'; // The adult Tzatzul voice is shared with its small hatchlings.
     if (normalized === 'voorg-ass-herd-mother') return 'voorg-ass'; // Herd mothers belong to the Voorg-Ass family.
+    if (normalized === 'moot-herd-mother') return 'moot'; // Moot mothers share their species' voice rather than creating a blank voice category.
     if (typeof voiceKey === 'function') return voiceKey(id);
     const raw = String(id || '').toLowerCase();
     if (raw.includes('dabinggi')) return 'dabinggi-hound';

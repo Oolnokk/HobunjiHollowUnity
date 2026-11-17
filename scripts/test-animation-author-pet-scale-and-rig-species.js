@@ -20,11 +20,13 @@ assert.ok(api, 'preview species registry should initialize');
 const originalGarWolf = { prefix: 'gw', base: { idle: 'canonical wolf' }, patterns: ['canonical'] }; // Checks that author registration never overwrites existing game entries.
 const registry = { 'gar-wolf': originalGarWolf, grehlr: { base: { idle: 'grehlr' }, patterns: [] }, drenkirra: { base: { idle: 'drenkirra' }, patterns: [] } };
 const newCount = api.install(registry);
-assert.equal(newCount, 13, 'new and variant species should all register in the rig editor');
+assert.equal(newCount, 14, 'new and variant species should all register in the rig editor');
 assert.strictEqual(registry['gar-wolf'], originalGarWolf, 'pre-existing renderers remain authoritative');
 assert.equal(api.install(registry), 0, 'registration must be idempotent');
 assert.equal(registry['voorg-ass'].baseRecolorKeyHex, '#99BF99', 'Voorg-ass coat must keep gameplay keyed recolor');
 assert.equal(registry.moot.baseRecolorKeyHex, '#9CBD9E', 'Moot coat must keep gameplay keyed recolor');
+assert.equal(api.baseSpecies('moot-herd-mother'), 'moot', 'Moot Herd-Mother preview must reuse the real Moot genotype and authored sprite');
+assert.equal(api.speciesInfo('moot-herd-mother').modelWidth, 1.7, 'Moot mother preview keeps the Moot body width');
 assert.deepEqual(Array.from(registry.puktuk.patterns), ['belly', 'foxtail'], 'Puktuk keeps both inherited coat overlays');
 assert.equal(api.genotypeDefaults('puktuk').base.toLowerCase(), '#99bf99', 'Puktuk defaults to its authored source coat');
 assert.equal(api.speciesInfo('pingdort').modelWidth, 0.48, 'small bird size must match gameplay registration');
@@ -103,4 +105,4 @@ assert.match(author, /carrier\.add\(actor\.root\)/, 'THREE parent transform comp
 
 const inheritedScale = 0.6 * 0.35; // Example: a 0.6x species shoulder grip multiplies a 0.35x small animal without replacing its genotype scale.
 assert.ok(Math.abs(inheritedScale - 0.21) < 1e-12);
-console.log('PASS: 13 new rig species/variants, native art, default perch selection, validated persisted shoulder multiplier and author JS syntax (' + present.size + ' PNGs).');
+console.log('PASS: 14 new rig species/variants, native art, default perch selection, validated persisted shoulder multiplier and author JS syntax (' + present.size + ' PNGs).');

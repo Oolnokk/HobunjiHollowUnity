@@ -5,6 +5,7 @@
   if (window.MootRegistration) return;
 
   const KIND = 'moot'; // Shared ID used by wild spawns, livestock, and genetic rendering.
+  const HERD_MOTHER_KIND = 'moot-herd-mother'; // Uses Moot art and genes but carries recoverable young in open-air herds.
   const ZONE_ID = 'map_northern_cliffs'; // Only the Northern Cliffs get the natural Moot population.
   const BABY_ITEM_KEY = 'mootBaby'; // The Ranch starting baby and future livestock offspring use this existing save key.
   const SPRITE_ASPECT = 1000 / 1617; // Authored 1617x1000 PNG dimensions, used by the world-space animal card.
@@ -28,7 +29,7 @@
     const diet = livestock.diet || (livestock.diet = {}); // Reuses the existing plant-fodder barn feeding behavior.
     diet[KIND] = 'prey';
     const mothers = game.wildlife?.denMothers; // Moots are surface animals, not den species.
-    if (mothers) delete mothers[KIND];
+    if (mothers) { delete mothers[KIND]; delete mothers[HERD_MOTHER_KIND]; }
     return true;
   }
 
@@ -46,6 +47,17 @@
       spriteAspect: SPRITE_ASPECT,
       lootPool: 'creature_moot',
       sprites: { idle: SPRITES.idle, run: [SPRITES.run1, SPRITES.run2] },
+    };
+    const baseMoot = creatureDb[KIND]; // Inherit the ordinary Moot's movement, rendering, and corpse products.
+    const existingMother = creatureDb[HERD_MOTHER_KIND] || {}; // Preserve any authored variant tuning on repeat registration.
+    creatureDb[HERD_MOTHER_KIND] = {
+      ...baseMoot,
+      ...existingMother,
+      label: 'Herd-Mother',
+      hostile: false,
+      defaultSizeClass: 'large',
+      lootPool: baseMoot.lootPool,
+      sprites: baseMoot.sprites,
     };
     return true;
   }
@@ -83,7 +95,7 @@
       const species = zone[key]; // Avoid accidentally assigning Moots to the zone's cave and den populations.
       if (Array.isArray(species)) for (let i = species.length - 1; i >= 0; i--) if (species[i] === KIND) species.splice(i, 1);
     }
-    if (injectedDeps?.DEN_MOTHER_DEFS) delete injectedDeps.DEN_MOTHER_DEFS[KIND];
+    if (injectedDeps?.DEN_MOTHER_DEFS) { delete injectedDeps.DEN_MOTHER_DEFS[KIND]; delete injectedDeps.DEN_MOTHER_DEFS[HERD_MOTHER_KIND]; }
     return { ready: herds.includes(KIND) && !foragers.includes(KIND) && zone.roamingHerdCount >= 2, herds, foragers, zone };
   }
 
@@ -125,14 +137,15 @@
     const population = ensureNorthernCliffsPopulation(injectedDeps);
     const babyReady = registerBabyItem(injectedDeps?.ITEM_DEFS);
     const lootReady = registerLootItems(injectedDeps);
-    const ready = livestockReady && creatureReady && rendererReady && population.ready && babyReady && lootReady;
-    window.__farmLog?.(`[moot] northernCliffs=${population.ready ? 'ok' : 'missing'} herds=[${population.herds.join(',')}] herdSlots=${population.zone?.roamingHerdCount || 0} foragers=[${population.foragers.join(',')}] creature=${creatureReady ? 'ok' : 'missing'} renderer=${rendererReady ? 'ok' : 'missing'} baby=${babyReady ? 'ok' : 'missing'} loot=${lootReady ? 'ok' : 'missing'}`, ready ? 'wildlife' : 'warn');
+    const motherReady = !!injectedDeps?.CREATURE_DB?.[HERD_MOTHER_KIND]; // Exposes missing live mother registration in mobile startup diagnostics.
+    const ready = livestockReady && creatureReady && motherReady && rendererReady && population.ready && babyReady && lootReady;
+    window.__farmLog?.(`[moot] northernCliffs=${population.ready ? 'ok' : 'missing'} herds=[${population.herds.join(',')}] herdSlots=${population.zone?.roamingHerdCount || 0} foragers=[${population.foragers.join(',')}] creature=${creatureReady ? 'ok' : 'missing'} mother=${motherReady ? 'ok' : 'missing'} renderer=${rendererReady ? 'ok' : 'missing'} baby=${babyReady ? 'ok' : 'missing'} loot=${lootReady ? 'ok' : 'missing'}`, ready ? 'wildlife' : 'warn');
     return ready;
   }
 
   configureLivestock(); // Early config registration survives the main game's initial snapshot of LIVESTOCK_ITEM_KINDS.
   window.MootRegistration = Object.freeze({
-    KIND, ZONE_ID, BABY_ITEM_KEY, SPRITES,
+    KIND, HERD_MOTHER_KIND, ZONE_ID, BABY_ITEM_KEY, SPRITES,
     configureLivestock, ensureCreatureDefs, ensureRendererSpecies,
     ensureNorthernCliffsPopulation, registerBabyItem, registerLootItems, register,
   });

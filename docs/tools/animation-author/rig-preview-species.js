@@ -29,6 +29,7 @@
       base: { idle: 'moot_idle.png', run1: 'moot_run1.png', run2: 'moot_run2.png' },
       patterns: [], eyes: { open: 'moot_eyes.png', blink: 'moot_blink.png' },
     },
+    'moot-herd-mother': { label: 'Moot Herd-Mother', mirrorOf: 'moot', modelWidth: 1.7 }, // Runtime variant shares Moot animation assets and genotype preview.
     tzatzul: {
       label: 'Tzatzul', modelWidth: 2.2, spriteAspect: FLYING_ASPECT, defaultFrame: 'perched',
       prefix: 'tzatzul', base: {
