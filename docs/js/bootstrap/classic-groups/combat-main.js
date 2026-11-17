@@ -27,7 +27,7 @@
     "js/combat/combat-mounted.js?v=20261116mountedCombat1",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",
     "js/combat/combat-blink-dodge.js?v=20261115hc8b1508",
-    "js/combat/combat-charged-breaker.js?v=20261116windupCharge1",
+    "js/combat/combat-charged-breaker.js?v=20261117hypedCancel1",
     "js/combat/combat-flurry.js?v=20261106trinkets20",
     "js/combat/combat-loadout-ui.js?v=20261116windupCharge1",
     "js/combat/combat-enchantments.js?v=20261116decouple2",
