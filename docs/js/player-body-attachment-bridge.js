@@ -198,6 +198,11 @@
   function headRequiresIdleMask(kind) {
     return window.BabyAnimalHeadWarp?.maskModeForKind?.(kind) !== 'legacy-frame'; // Original painted-box method does not require a source alpha readback.
   }
+  function releasePetSpriteUrl(url) {
+    if (typeof url === 'string' && url.startsWith('blob:') && typeof URL !== 'undefined') {
+      try { URL.revokeObjectURL?.(url); } catch (_) {} // Released on replacement/unequip, not kept alive by the browser indefinitely.
+    }
+  }
   function canvasAsSpriteUrl(canvas) {
     if (typeof canvas?.toBlob !== 'function' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function')
       return Promise.resolve(canvas.toDataURL('image/png')); // Node fixtures and older browser compatibility.
@@ -256,7 +261,7 @@
       if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
       const url = await canvasAsSpriteUrl(enlarged);
       if (smallPetHeadFrameCache.get(companion) !== entry) {
-        if (url.startsWith('blob:')) URL.revokeObjectURL?.(url); // Old pending equip cannot leak its encoded image.
+        releasePetSpriteUrl(url); // Old pending equip cannot leak its encoded image.
         return;
       }
       entry.url = url;
@@ -268,6 +273,7 @@
         combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
         companion.currentFrameUrl = url;
       }
+      if (existing?.url && existing.url !== url) releasePetSpriteUrl(existing.url); // A genotype/proportions change replaces the prior encoded portrait.
     }).catch(error => {
       if (smallPetHeadFrameCache.get(companion) !== entry) return;
       entry.pending = false;
@@ -410,12 +416,16 @@
       const rightUrl = await canvasAsSpriteUrl(layers.rightCanvas);
       const layered = typeof companion.avatarRef?.setShoulderSplitOverlayCanvas === 'function';
       const fallbackCanvas = layered ? null : combinedSplitFallbackCanvas(layers); // Don't render/encode an unused second giant PNG.
-      const fallbackUrl = fallbackCanvas ? await canvasAsSpriteUrl(fallbackCanvas) : rightUrl;
+      let fallbackUrl = rightUrl;
+      try { if (fallbackCanvas) fallbackUrl = await canvasAsSpriteUrl(fallbackCanvas); }
+      catch (error) { releasePetSpriteUrl(rightUrl); throw error; }
       if (companion.__hobunjiShoulderSplitKey !== key) {
-        if (rightUrl.startsWith('blob:')) URL.revokeObjectURL?.(rightUrl);
-        if (fallbackUrl !== rightUrl && fallbackUrl.startsWith('blob:')) URL.revokeObjectURL?.(fallbackUrl);
+        releasePetSpriteUrl(rightUrl);
+        if (fallbackUrl !== rightUrl) releasePetSpriteUrl(fallbackUrl);
         return null;
       }
+      const previousRightUrl = companion.__hobunjiShoulderSplitUrl;
+      const previousFallbackUrl = companion.__hobunjiShoulderSplitFallbackUrl;
       companion.__hobunjiShoulderSplitUrl = rightUrl;
       companion.__hobunjiShoulderSplitFallbackUrl = fallbackUrl;
       companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
@@ -426,6 +436,9 @@
       if (stillShouldered && effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
         applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
       }
+      if (previousRightUrl && previousRightUrl !== rightUrl) releasePetSpriteUrl(previousRightUrl);
+      if (previousFallbackUrl && previousFallbackUrl !== previousRightUrl && previousFallbackUrl !== fallbackUrl)
+        releasePetSpriteUrl(previousFallbackUrl);
       return rightUrl;
     }).catch(error => {
       if (companion.__hobunjiShoulderSplitKey !== key) return null; // An old rejected request cannot alter newer split ownership.
@@ -492,6 +505,15 @@
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     companion.__hobunjiShoulderSplitFrame = null;
+    releasePetSpriteUrl(smallPetHeadFrameCache.get(companion)?.url); // Blob URLs are external browser resources, not reclaimed by a WeakMap alone.
+    releasePetSpriteUrl(companion.__hobunjiShoulderSplitUrl);
+    if (companion.__hobunjiShoulderSplitFallbackUrl !== companion.__hobunjiShoulderSplitUrl)
+      releasePetSpriteUrl(companion.__hobunjiShoulderSplitFallbackUrl);
+    companion.__hobunjiShoulderSplitKey = null; // Cancel in-flight split callbacks when unequipped.
+    companion.__hobunjiShoulderSplitUrl = null;
+    companion.__hobunjiShoulderSplitFallbackUrl = null;
+    companion.__hobunjiShoulderSplitLeftCanvas = null;
+    companion.__hobunjiShoulderSplitPromise = null;
     smallPetHeadFrameCache.delete(companion); // Invalidate callbacks when an animal leaves the shoulder.
     smallPetAppearanceKeys.delete(companion);
     smallPetEligibility.delete(companion);
