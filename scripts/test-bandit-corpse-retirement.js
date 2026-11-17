@@ -26,10 +26,15 @@ class Obj {
   remove(child) { const at = this.children.indexOf(child); if (at >= 0) { this.children.splice(at, 1); child.parent = null; } return this; }
 }
 const THREE = { Group: class extends Obj {}, Mesh: class extends Obj { constructor(g, m) { super(); this.geometry = g; this.material = m; } },
-  CircleGeometry: class { constructor() { THREE.created.geometry++; } rotateX() {} }, MeshBasicMaterial: class { constructor() { THREE.created.material++; } }, created: { geometry: 0, material: 0 } };
+  CircleGeometry: class { constructor() { THREE.created.geometry++; } rotateX() {} },
+  PlaneGeometry: class { constructor(width, height) { this.parameters = { width, height }; THREE.created.geometry++; } rotateX() {} dispose() { this.disposed = true; } },
+  CanvasTexture: class { constructor(image) { this.image = image; } dispose() { this.disposed = true; } },
+  MeshBasicMaterial: class { constructor(options = {}) { Object.assign(this, options); THREE.created.material++; } dispose() { this.disposed = true; } },
+  SRGBColorSpace: 'srgb', DoubleSide: 2, NearestFilter: 'nearest', LinearFilter: 'linear',
+  created: { geometry: 0, material: 0 } };
 
 const TILE = 32;
-function makeWorld(config, { farRule = false, productionDefaults = false } = {}) {
+function makeWorld(config, { farRule = false, productionDefaults = false, useCanvas = false } = {}) {
   const legacyPolicy = { keepFull: 6, nearTiles: 5, farTiles: farRule ? 24 : 0, minSettledS: 12, perTick: 3, intervalMs: 1000 }; // Exercises unchanged backwards-compatible overrides in tests 1-7.
   if (!productionDefaults) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { ...legacyPolicy, ...(config?.game?.banditCorpseRetire || {}) } } };
   THREE.created.geometry = 0; THREE.created.material = 0;
@@ -38,12 +43,17 @@ function makeWorld(config, { farRule = false, productionDefaults = false } = {})
   const disposed = [];
   const player = { x: 0, y: 0 };
   const flameEvents = []; // Verifies that fire presenter ownership follows a retired corpse's replacement root.
-  const sandbox = { window: { THREE, SCRATCHBONES_CONFIG: config,
+  const captures = []; // Tracks the composed portrait image copied before the expensive rig is released.
+  const fakeDocument = useCanvas ? { createElement(type) {
+    assert.equal(type, 'canvas');
+    return { width: 0, height: 0, getContext(kind) { assert.equal(kind, '2d'); return { drawImage(source) { captures.push(source); } }; } };
+  } } : null; // Opt-in canvas stub tests the actual single-plane path without a browser.
+  const sandbox = { ...(fakeDocument ? { document: fakeDocument } : {}), window: { THREE, SCRATCHBONES_CONFIG: config,
     BurningAfflictionVfx: { disposeEntity: c => flameEvents.push('dispose:' + c.id), syncEntity: (c, root) => flameEvents.push('sync:' + c.id + ':' + root.name) },
   }, performance: { now: () => 0 } };
   vm.runInNewContext(moduleSource, sandbox);
   const mod = sandbox.window.BanditCorpseRetirement;
-  const ctx = { scene, corpseObjects, disposed, flameEvents, player, area: 'map_a', mod };
+  const ctx = { scene, corpseObjects, disposed, flameEvents, captures, player, area: 'map_a', mod };
   mod.init({
     corpseObjects, getPlayer: () => player, getTile: () => TILE, getCurrentArea: () => ctx.area, getDefaultScene: () => scene,
     disposeCreaturePresentation: c => { disposed.push(c.id); c.scene.remove(c.avatarRef.group); c.avatarRef.dispose(); }, // Same calls as the real one.
@@ -228,6 +238,33 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   const outlines = read('docs/js/outline-render-performance.js');
   assert.match(wildlife, /if \(c\?\.avatarRef\?\.isCorpseMarker\) return false/, 'wildlife streamer cannot rehydrate a marker');
   assert.match(outlines, /root\.userData\?\.corpseNoSecondaryPasses/, 'retired corpse does not join puzzle score actor mask');
+}
+
+
+// 10. Normal humanoid portraits become exactly one image-backed plane,
+// preserving the composed portrait rather than selecting an eye or limb map.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const body = w.corpse('portrait-bandit');
+  const composedPortrait = { width: 400, height: 600, authoredAppearance: 'dyed clothing, face and eyes' };
+  body.avatarRef.frontCanvas = composedPortrait;
+  body.avatarRef.frontPlane = new Obj();
+  body.avatarRef.modelWidth = 1;
+  body.avatarRef.modelHeight = 1.5;
+  assert.equal(w.mod.tick(NOW), 1);
+  assert.equal(w.captures.length, 1, 'portrait artwork copied exactly once');
+  assert.equal(w.captures[0], composedPortrait, 'the canonical composed canvas is used');
+  assert.equal(body.avatarRef.group.children.length, 1, 'retired corpse has only one visible mesh');
+  const plane = body.avatarRef.group.children[0];
+  assert(plane.geometry instanceof THREE.PlaneGeometry, 'the corpse uses a single textured plane');
+  assert(plane.material.map instanceof THREE.CanvasTexture, 'its appearance has one independent texture');
+  assert.equal(plane.material.depthTest, true, 'corpse obeys normal terrain depth');
+  assert.equal(plane.material.depthWrite, true, 'corpse participates in world depth');
+  assert.equal(w.mod.stats.portraitPlanes, 1, 'diagnostics differentiate real portraits from fallback art');
+  assert.equal(w.mod.stats.fallbackMarkers, 0);
+  const ownedTexture = plane.material.map;
+  body.avatarRef.dispose();
+  assert.equal(ownedTexture.disposed, true, 'looting disposes the independent portrait texture');
 }
 
 console.log('bandit corpse retirement: ok');
