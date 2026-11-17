@@ -541,7 +541,6 @@
     installGpuSkin(THREE, handle, gpuSkin);
 
     const depthBiasLimits=new Map(); // Paired close-contact animations may limit the feet-behind-pants cosmetic push.
-    let lastFootAnatomyRevision=legHandle.anatomyRevision?.() ?? null; // Only GLB/foot-rig replacements warrant rescanning 3D bounds.
     let appliedFootDepthBias=0; // Report the current drawing-only foot offset in mobile diagnostics.
     const applyFootDepthBias=()=>{
       let bias=handle.depthBiasBase||0; // Restores normal pants coverage automatically when animation scopes release.
@@ -558,19 +557,7 @@
       applyFootDepthBias();
       return true;
     };
-    handle.refreshFootDepthBias=()=>{
-      const revision=legHandle.anatomyRevision?.();
-      if(revision==null||revision===lastFootAnatomyRevision)return false;
-      lastFootAnatomyRevision=revision;
-      const liveFeet=(footObjects||['left_foot','right_foot'].map(name=>legHandle.group?.getObjectByName?.(name))).filter(Boolean); // Replace stale fallback feet with current imported GLBs.
-      const lift=footFrontLift(THREE,avatarGroup,liveFeet);
-      handle.model.updateMatrixWorld?.(true);
-      const world=handle.model.matrixWorld.elements;
-      handle.depthBiasBase=lift*Math.hypot(world[0],world[1],world[2]); // Same world-space scale as initial calibration.
-      applyFootDepthBias(); // Preserve scoped animation caps across asynchronous foot replacement.
-      return true;
-    };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:lastFootAnatomyRevision,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
@@ -813,7 +800,6 @@
     handle.update = (renderOnly = false) => { // Render-time joint offsets must skin the final visible pose without rebinding the neutral stance.
       const SEGMENTS = handle.segments;
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
-      handle.refreshFootDepthBias(); // Final foot GLBs may arrive after the garment attaches; scan only on anatomy changes.
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
