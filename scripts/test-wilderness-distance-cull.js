@@ -126,6 +126,13 @@ assert.equal(batch.visible, true, 'first render restores batch before prop rende
 assert.equal(taggedInstancedWall.visible, true, 'first render restores instanced structure');
 assert.equal(terrainChunk.visible, true, 'spatial terrain draw-range visibility restored');
 
+clock.now += 800;
+scene.name = 'River'; // A geographical area name must not be mistaken for a water-effects subtree.
+release = render();
+assert.equal(terrainChunk.visible, false, 'geographic scene name does not suppress culling of all terrain');
+release?.();
+scene.name = 'Northern Cliffs';
+
 camera.matrixWorld = matrixAt(160);
 release = render();
 assert.equal(batch.visible, true, 'cutscene camera protects the mesh near its own origin');
@@ -202,6 +209,11 @@ release?.();
 const loader = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8'); // Ordered parser loader must install the module before game.js.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Actual renderWorldPasses must wrap ALL outline/replay passes.
 assert(loader.includes('js/wilderness-distance-cull.js?v='), 'classic rendering bootstrap includes the module');
+const chunks = fs.readFileSync('docs/js/wilderness-chunks.js', 'utf8');
+const index = fs.readFileSync('docs/index.html', 'utf8');
+assert(index.includes('id="wildernessDistanceCullBtn"'), 'mobile wildlife debug pane exposes a distance culling A/B button');
+assert(chunks.includes('culler.setEnabled(culler.snapshot().enabled === false)'), 'debug button toggles the real renderer feature');
+assert(index.includes('wilderness-chunks.js?v=20261117hNonvegDistanceCull2'), 'changed debug wiring has a fresh browser cache token');
 const batchIndex = game.indexOf('const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender');
 const distanceIndex = game.indexOf('const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender');
 const renderTryIndex = game.indexOf('        try {\n        // Frame-scoped whole-actor suppression', distanceIndex);
@@ -211,4 +223,4 @@ const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
 const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
 assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
   'distance cull is restored by renderWorldPasses finally before wall/prop restore');
-console.log('PASS wilderness distance cull: terrain edge-ID hook and draw-range bounds, batches, chunks, instances, exclusions, streaming, hysteresis, camera, restore, A/B and fail-open');
+console.log('PASS wilderness distance cull: terrain hooks/bucket bounds, geographic scene names, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
