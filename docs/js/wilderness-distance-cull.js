@@ -90,8 +90,15 @@
     let record = worldBoxes.get(mesh);
     const version = Number(position.version) || 0;
     const changedGeometry = !record || record.geometry !== geometry || record.version !== version;
-    if (changedGeometry && typeof geometry.computeBoundingBox === 'function') {
-      // Recompute if a procedural buffer changed, never trust a stale bounding box.
+    // TerrainRenderChunks deliberately assigns each draw-range a tight bucket
+    // box. Their position attributes span the entire shared source buffer:
+    // computeBoundingBox() reads ALL vertices and would inflate every bucket
+    // back to whole-zone bounds, making distant terrain impossible to cull.
+    const preserveSpatialBucket = mesh.userData?.terrainRenderChunk === true
+      && !!geometry.boundingBox && !record;
+    if (changedGeometry && !preserveSpatialBucket && typeof geometry.computeBoundingBox === 'function') {
+      // A later buffer version change invalidates even a spatial bucket's
+      // authored bounds; fall back to the full conservative box until rebuilt.
       geometry.computeBoundingBox();
     }
     if (!geometry.boundingBox || geometry.boundingBox.isEmpty?.()) return null;
