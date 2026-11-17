@@ -231,5 +231,32 @@
     "throwCooldownSeconds": 2.35,
     "lootMinPerType": 2,
     "lootMaxPerType": 4
+  },
+  "legacyMineRankMultipliersByRank": {
+    "_comment": "Original four wilderness danger rank curves, retained ONLY for Ghouls in the ten-band mine. The original tierStatBonus of 0.12 per floor band remains; eight new bandit tiers must not alter the deep mine's authored combat.",
+    "grunt": [
+      0.28,
+      0.33,
+      0.4,
+      0.48
+    ],
+    "lieutenant": [
+      0.52,
+      0.58,
+      0.66,
+      0.74
+    ],
+    "captain": [
+      1.28,
+      1.26,
+      1.23,
+      1.2
+    ],
+    "flasker": [
+      0.45,
+      0.52,
+      0.59,
+      0.66
+    ]
   }
 }
