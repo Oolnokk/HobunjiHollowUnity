@@ -96,10 +96,8 @@ async function main() {
     // A rejected kiss must print its real actor/mode/solver state, rather than merely time out.
     await page.waitForFunction(() => {
       const actors = window.MultiAvatarAnimationAuthor?.getActors?.() || [];
-      const preset = document.getElementById('maaPresetSelect')?.value;
       const status = document.getElementById('statusPill')?.textContent || '';
-      return (actors.length === 2 && preset === 'kiss') ||
-        (actors.length > 0 && /Loaded \\d+ NPCs/.test(status));
+      return actors.length > 0 && /Loaded \d+ NPCs/.test(status);
     }, null, { timeout: 45000 });
     const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
     if (sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
