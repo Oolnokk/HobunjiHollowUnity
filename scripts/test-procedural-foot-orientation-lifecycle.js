@@ -106,10 +106,12 @@ let failDuringRollback = false; // Simulates a stale attachment whose undo throw
 let drawCalls = 0; // Ensures a pre-render failure never reaches the GPU.
 const wrappedPlayer = {}; // Mutable fixture: unrelated scenes can be tested as real Object3D scenes without changing normal rollback tests.
 const pantsCalls = []; // Captures visible skinning updates and their rollback in the test renderer.
+const poseHooks = []; // Test-only hook list that can introduce a temporary real knee change between compose and draw.
+let kneeOffset = 0; // Mutable leg-joint deformation observed by the garment during render/undo.
 const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
-  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf', 'pantsCalls', 'readYaw',
-  'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const playerLegHandle = { pants: { update(renderOnly) { pantsCalls.push({ renderOnly, yaw: readYaw() }); } } }; const proto = {};'
+  'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf', 'pantsCalls', 'readYaw', 'readKnee',
+  'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const playerLegHandle = { pants: { update(renderOnly) { pantsCalls.push({ renderOnly, yaw: readYaw(), knee: readKnee() }); } } }; const proto = {};'
     + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; proto.render.getSkipCount = () => unrelatedSceneSkips; return proto.render;'
 )(
   () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
@@ -120,11 +122,11 @@ const renderWrapper = new Function(
     if (failDuringPose) throw new Error('synthetic pose failure');
   },
   () => {}, () => {}, { CharacterActionLocks: { isLocked: () => true } },
-  { now: () => 1000 }, () => 0, [], () => false, pantsCalls, () => temporaryYaw // The offscreen fixture uses a separate scene not containing the live player.
+  { now: () => 1000 }, () => 0, poseHooks, () => false, pantsCalls, () => temporaryYaw, () => kneeOffset // The offscreen fixture uses a separate scene not containing the live player.
 );
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal render completes');
 assert.equal(temporaryYaw, 0, 'normal render restores the temporary orientation');
-assert.deepEqual(pantsCalls.slice(0,2), [{renderOnly:true,yaw:1},{renderOnly:true,yaw:0}], 'garment skins final turn and restores the base');
+assert.deepEqual(pantsCalls.slice(0,2), [{renderOnly:true,yaw:1,knee:0},{renderOnly:true,yaw:0,knee:0}], 'garment skins final turn and restores the base');
 failDuringPose = true;
 assert.throws(() => renderWrapper({}, {}), /synthetic pose failure/);
 assert.equal(temporaryYaw, 0, 'pre-render pose failure rolls back temporary orientation');
@@ -147,6 +149,14 @@ assert.match(renderWrapper.getDebug().rollbackErrors[0], /synthetic undo failure
 failDuringRollback = false;
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal rendering recovers after the interrupted rollback');
 assert.equal(temporaryYaw, 0, 'no stale rotation survives the recovery frame');
+// A cliff/paired presenter can change a thigh/knee AFTER normal body composition.
+// The pants must see that authored bend before draw and the original pose after its undo.
+poseHooks.push(undo => { kneeOffset = 0.35; undo.push(() => { kneeOffset = 0; }); });
+assert.equal(renderWrapper({}, {}), 'drawn', 'render hook can author a late knee pose');
+assert.equal(pantsCalls.at(-2).knee, 0.35, 'pants are skinned to the late-rendered knee pose');
+assert.equal(pantsCalls.at(-1).knee, 0, 'pants restore the previous knee pose in the same render finally');
+assert.equal(kneeOffset, 0, 'the authored knee cannot accumulate into later frames');
+poseHooks.length = 0;
 
 // A secondary editor/preview scene with its own camera must never advance
 // the player's camera deadzone or consume the first subsequent world pose.
