@@ -12,6 +12,10 @@ async function persistBeforeClose(game) {
   }
 
   if (status?.state === 'ready' && status.autoSyncArmed) {
+    const runtime = game.HobunjiRuntimeSave; // Live serializer must be initialized before the folder writer is allowed to mirror cached state.
+    if (hasLiveGame && (runtime?.isReady?.() !== true || typeof runtime.captureSnapshot !== 'function')) {
+      return { ok: false, error: 'The live game serializer is not ready; refusing to overwrite the folder with a stale browser snapshot.' };
+    }
     if (typeof folder?.syncNow !== 'function') {
       return { ok: false, error: 'The connected save folder does not have an available sync operation.' };
     }
@@ -29,8 +33,8 @@ async function persistBeforeClose(game) {
       return { ok: false, error: 'The live game save system is not ready. Retry after it finishes initializing.' };
     }
     const result = await runtime.flushNow({ reason: 'desktop-window-close' });
-    if (result?.ok !== true) {
-      return { ok: false, error: result?.error || 'The live game save could not be committed.' };
+    if (result?.ok !== true || result.captured !== true) {
+      return { ok: false, error: result?.error || 'The live game state was not captured; refusing to close with a stale browser save.' };
     }
     if (status?.folderName) {
       return { ok: false, error: status.state === 'ready'
