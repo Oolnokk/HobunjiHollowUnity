@@ -9,10 +9,10 @@
   const NAME_MAX = 30; // Matches Nursery and Stable's existing rename-field limit.
   const queue = []; // FIFO of new-baby naming requests and finished-incubation celebrations.
   const suggested = new Set(); // Avoids suggesting identical names during one batch.
-  const starts = ['bo', 'bu', 'ba', 'bi', 'mo', 'mu', 'mi', 'ma', 'po', 'pu', 'pi', 'pa', 'no', 'nu', 'ni', 'na', 'ki', 'ko', 'ku', 'ke', 'lo', 'lu', 'li', 'la', 'to', 'tu', 'ti', 'ta', 'fu', 'fi', 'fa', 'pe', 'be', 'chi', 'chu', 'shi', 'wa', 'wi']; // Soft initial syllables used by generateName.
-  const finishes = ['bo', 'bu', 'bi', 'ba', 'mo', 'mu', 'mi', 'ma', 'po', 'pu', 'pi', 'pa', 'no', 'nu', 'ni', 'na', 'ko', 'ku', 'ki', 'ka', 'lo', 'lu', 'li', 'la', 'to', 'tu', 'ti', 'ta', 'chi', 'chu', 'shi', 'fie', 'bee', 'bun', 'bit', 'kin', 'let', 'pop', 'puff']; // Cutesy nickname endings used by generateName.
+  const syllables = ['ba', 'be', 'bi', 'bo', 'bu', 'da', 'de', 'di', 'do', 'du', 'fa', 'fe', 'fi', 'fo', 'fu', 'ga', 'ge', 'gi', 'go', 'gu', 'ka', 'ke', 'ki', 'ko', 'ku', 'la', 'le', 'li', 'lo', 'lu', 'ma', 'me', 'mi', 'mo', 'mu', 'na', 'ne', 'ni', 'no', 'nu', 'pa', 'pe', 'pi', 'po', 'pu', 'sa', 'se', 'si', 'so', 'su', 'ta', 'te', 'ti', 'to', 'tu', 'wa', 'we', 'wi', 'wo', 'chi', 'chu', 'sha', 'shi', 'shu']; // Simple spoken syllables for either position in a baby's name.
+  const finalConsonants = ['n', 'm', 't', 'k', 'b', 'g', 'p']; // Optional single-letter codas; b, g and p broaden the existing clipped-name sound.
   const speciesEmoji = { grehlr: '🐺', 'gar-wolf': '🐺', nelk: '🦎', puktuk: '🐇', nazgraku: '🐐', drenkirra: '🐾', uumkaoii: '🦆', 'voorg-ass': '🐴', voorgass: '🐴', honeyfuzzle: '🐝', moot: '🐂' }; // Hatch visuals use species hints where there is no portrait available.
-  const CHANGE = 'Nursery births/deployments and Stable babies offer cute names; successful incubator maturation shows an evolution-style reveal.'; // Mobile debug snapshot change log.
+  const CHANGE = 'Baby naming uses genotype-aware animal chatheads and plain two-syllable names with optional final consonants.'; // Mobile debug snapshot change log.
   let active = null; // Modal currently borrowing input focus, if any.
   let root = null; // Lazily created overlay so feature loading never touches the opening screen.
   let expiry = null; // The automatic end timer for an incubation reveal.
@@ -20,14 +20,15 @@
   let actionLock = null; // Prevents player movement and attacks while the modal is active.
   let previousFocus = null; // Restores keyboard focus on completing the queue.
   let lastEvent = null; // Most recent arrival/celebration for mobile diagnostics.
+  let lastPortrait = null; // Tracks loading/success/failure for the most recent naming portrait in mobile debug snapshots.
 
   const choose = (items, rng) => items[Math.min(items.length - 1, Math.max(0, Math.floor(rng() * items.length)))]; // Used by name generation with injectable randomness.
 
   function generateName(rng = Math.random) {
-    const first = choose(starts, rng); // Opening syllable chosen with the caller's random source.
-    const second = rng() < 0.24 ? first : choose(finishes, rng); // Reduplication produces Mimi / Bobo style names.
-    const tail = rng() < 0.19 ? choose(['ie', 'o', 'y', 'kins', 'bean'], rng) : ''; // Occasional familiar nickname endings.
-    const name = (first + second + tail).slice(0, NAME_MAX);
+    const first = choose(syllables, rng); // First plain syllable, from the shared pronounceable inventory.
+    const second = rng() < 0.24 ? first : choose(syllables, rng); // Retains Mimi/Bobo-style reduplication.
+    const ending = rng() < 0.28 ? choose(finalConsonants, rng) : ''; // A consonant, never a nickname suffix.
+    const name = (first + second + ending).slice(0, NAME_MAX);
     return name.charAt(0).toUpperCase() + name.slice(1);
   }
 
@@ -48,6 +49,12 @@
       '#'+ROOT_ID+'[hidden]{display:none!important}',
       '#'+ROOT_ID+' .aba-card{position:relative;box-sizing:border-box;width:min(440px,100%);max-height:calc(100dvh - 36px);overflow-y:auto;margin:auto;padding:24px 22px 20px;text-align:center;background:linear-gradient(155deg,#30253e,#161a25);border:2px solid #e7bf88;border-radius:20px;box-shadow:0 22px 80px #000c,0 0 38px #f6cf9e30}',
       '#'+ROOT_ID+' .aba-kicker{color:#ffdfad;letter-spacing:.12em;text-transform:uppercase;font-size:12px;font-weight:800}',
+      '#'+ROOT_ID+' .aba-heading{display:flex;align-items:center;justify-content:center;gap:14px;margin:10px 0 12px}',
+      '#'+ROOT_ID+' .aba-heading h2{margin:0;text-align:left}',
+      '#'+ROOT_ID+' .aba-portrait{flex:0 0 94px;width:94px;height:94px;display:grid;place-items:center;overflow:hidden;border-radius:14px;border:1px solid #b7a3c7;background:radial-gradient(circle at 50% 36%,#57456b,#1a1927)}',
+      '#'+ROOT_ID+' .aba-chathead{display:block;width:100%;height:100%;image-rendering:pixelated}',
+      '#'+ROOT_ID+' .aba-chathead-fallback{font-size:11px;line-height:1.2;padding:8px;color:#f3dfc6}',
+      '#'+ROOT_ID+' .aba-chathead-fallback[hidden]{display:none}',
       '#'+ROOT_ID+' h2{font-size:clamp(22px,5vw,30px);margin:10px 0;line-height:1.15}',
       '#'+ROOT_ID+' p{font-size:14px;line-height:1.5;opacity:.9;margin:8px 0 16px}',
       '#'+ROOT_ID+' label{display:block;text-align:left;margin:14px 0 6px;font-weight:700}',
@@ -124,11 +131,35 @@
     if (previous?.isConnected) previous.focus?.({ preventScroll: true });
   }
 
+  async function drawBabyChathead(item, card) {
+    const canvas = card.querySelector('.aba-chathead'); // The visible canvas is also the shared dialogue renderer's output target.
+    const fallback = card.querySelector('.aba-chathead-fallback'); // An explicit non-emoji fallback if a species portrait cannot load.
+    const chathead = window.AnimalChatheadFrame; // The existing authored crop and genotype-aware compositor, not a second portrait pipeline.
+    canvas.setAttribute('aria-label', 'Baby ' + item.kindLabel + ' portrait');
+    lastPortrait = { id: item.id, kind: item.kind, status: 'loading' };
+    const unavailable = () => {
+      if (active !== item) return; // Never update a newer dialog after an older portrait promise settles.
+      canvas.hidden = true;
+      fallback.hidden = false;
+      lastPortrait = { id: item.id, kind: item.kind, status: 'unavailable' };
+    };
+    if (!item.kind || typeof chathead?.renderCreatureChathead !== 'function') { unavailable(); return; }
+    try {
+      const painted = await chathead.renderCreatureChathead(canvas, item.kind, { genotype: item.genotype });
+      if (active !== item) return;
+      if (!painted) { unavailable(); return; }
+      lastPortrait = { id: item.id, kind: item.kind, status: 'ready' };
+    } catch (error) {
+      unavailable();
+      window.__farmLog?.('[animal-arrival] Chathead failed: ' + String(error), 'warn');
+    }
+  }
+
   function renderName(item) {
     root.setAttribute('aria-label', 'Name your new baby animal');
     const card = document.createElement('form'); // Submitting is the only operation that persists the edited name.
     card.className = 'aba-card';
-    card.innerHTML = '<div class="aba-kicker">🐣 New arrival</div><h2>Name your little one!</h2><p></p><label for="animalBabyNameInput">Baby’s name</label><input id="animalBabyNameInput" name="babyName" type="text" maxlength="30" autocomplete="off" required><div class="aba-error" role="status"></div><div class="aba-actions"><button class="aba-primary" type="submit" data-ctrl-default>Keep this name</button><button type="button" data-ctrl-cancel>Later</button><button type="button" class="aba-reroll">🎲 Another</button></div>';
+    card.innerHTML = '<div class="aba-kicker">New arrival</div><div class="aba-heading"><div class="aba-portrait"><canvas class="aba-chathead" width="128" height="128" role="img"></canvas><span class="aba-chathead-fallback" hidden>Portrait unavailable</span></div><h2>Name your little one!</h2></div><p></p><label for="animalBabyNameInput">Baby’s name</label><input id="animalBabyNameInput" name="babyName" type="text" maxlength="30" autocomplete="off" required><div class="aba-error" role="status"></div><div class="aba-actions"><button class="aba-primary" type="submit" data-ctrl-default>Keep this name</button><button type="button" data-ctrl-cancel>Later</button><button type="button" class="aba-reroll">Another name</button></div>';
     const input = card.querySelector('input'); // Editable default suggestion shown without an extra click.
     const error = card.querySelector('.aba-error'); // Inline validation feedback on mobile.
     card.querySelector('p').textContent = 'A new ' + item.kindLabel + ' joined your ' + (item.scope === 'stable' ? 'Stable' : 'Nursery') + '. Choose a name or use this suggestion.';
@@ -150,6 +181,7 @@
     card.querySelector('[data-ctrl-cancel]').addEventListener('click', finish); // No rename on cancel; original persisted name remains intact.
     card.querySelector('.aba-reroll').addEventListener('click', () => { input.value = nextName(); input.focus(); input.select(); });
     root.appendChild(card);
+    void drawBabyChathead(item, card); // Painting is async; naming and controller focus never depend on network image latency.
     input.focus({ preventScroll: true });
     input.select();
   }
@@ -191,7 +223,7 @@
   function requestName(entry, options = {}) {
     if (!entry?.id || typeof options.commit !== 'function') return false;
     const kindLabel = window.CREATURE_DB?.[entry.kind]?.label || window.CreatureGenetics?.defaultLivestockName?.(entry.kind) || 'animal'; // Uses existing species names where possible.
-    return enqueue({ type: 'name', id: String(entry.id), scope: options.scope || 'nursery', kindLabel, commit: options.commit, refresh: options.refresh });
+    return enqueue({ type: 'name', id: String(entry.id), scope: options.scope || 'nursery', kind: String(entry.kind || '').toLowerCase().replace(/_/g, '-'), kindLabel, genotype: entry.genotype || entry.animalGenotype || entry.creatureGenotype || null, commit: options.commit, refresh: options.refresh });
   }
 
   function celebrateMaturation(entry) {
@@ -202,9 +234,9 @@
   function debugSnapshot() {
     return { mostRecentChange: CHANGE, active: active ? { type: active.type, id: active.id } : null,
       queued: queue.map(item => ({ type: item.type, id: item.id, scope: item.scope })),
-      lastEvent, locked: !!actionLock, rootVisible: !!root && !root.hidden };
+      lastEvent, lastPortrait, locked: !!actionLock, rootVisible: !!root && !root.hidden };
   }
 
   window.AnimalBabyArrival = { requestName, celebrateMaturation, generateName, debugSnapshot };
-  window.__animalBabyArrivalDebug = { snapshot: debugSnapshot, showTestMaturation: () => celebrateMaturation({ id: 'preview', name: 'Bubbi', kind: 'puktuk' }) };
+  window.__animalBabyArrivalDebug = { snapshot: debugSnapshot, showTestNaming: (kind = 'puktuk') => requestName({ id: 'preview-baby', kind }, { commit: () => true }), showTestMaturation: () => celebrateMaturation({ id: 'preview', name: 'Bubbi', kind: 'puktuk' }) };
 })();
