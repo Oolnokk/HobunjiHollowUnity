@@ -14,6 +14,7 @@
   let inventoryUiLoadStarted = false;
   // This guard keeps the capture-phase selection reset from being registered twice.
   let inventorySelectionBridgeInstalled = false;
+  let playerReadyListenerInstalled = false; // Ensures a repeated EquipmentPanel.init() cannot accumulate character-load handlers.
   let archivedToolsCollapsed = true; // Controls the optional long-term tool drawer in Gear.
   let archivedClothingCollapsed = true; // Controls the optional long-term clothing drawer in Gear.
   const CLOTHING_SLOTS = ['hat', 'hood', 'mask', 'pauldron', 'torso', 'overwear', 'pants']; // Used anywhere gear clothing must be normalized or rendered by slot; pauldrons persist independently from torso/overwear.
@@ -91,8 +92,12 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     registerFluteDefinition();
-    // Existing characters receive the same starter instrument after their saved character data is loaded.
-    document?.addEventListener?.('hobunjiPlayerReady', () => { ensureStarterFlute(); reconcileArchivedGear(); });
+    // Existing characters receive the starter instrument only after saved
+    // character data loads. Repeated init must not multiply load reconciliations.
+    if (!playerReadyListenerInstalled && typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('hobunjiPlayerReady', onPlayerReady);
+      playerReadyListenerInstalled = true;
+    }
     window.DevCompanion?.registerCheatPanel?.({
       id: 'tool-mastery', title: 'Tool mastery', order: 31,
       render: () => ({ actions: Object.keys(deps.getGearInventory()?.tools || {})
@@ -108,6 +113,11 @@
     });
     installInventorySelectionBridge();
     loadInventoryUi();
+  }
+
+  function onPlayerReady() {
+    ensureStarterFlute();
+    reconcileArchivedGear();
   }
 
   function registerFluteDefinition() {
