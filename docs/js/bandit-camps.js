@@ -1106,14 +1106,16 @@
     _tentActionFillEl ||= document.getElementById('tentActionFill');
   }
 
+  let _tentActionHudHidden = false; // Tracked here, not read back from the DOM, so the per-frame hide is free once applied.
   function hideTentActionHud() {
     ensureTentActionHud();
     // Called every frame while no tent is in reach; once hidden, rewriting the
     // same attribute/width still queued a DOM mutation and a style recalc per frame.
-    if (_tentActionHudEl && !_tentActionHudEl.classList.contains('visible') && _tentActionHudEl.getAttribute('aria-hidden') === 'true') return;
+    if (_tentActionHudHidden && _tentActionHudEl) return;
     _tentActionHudEl?.classList.remove('visible');
     _tentActionHudEl?.setAttribute('aria-hidden', 'true');
     if (_tentActionFillEl) _tentActionFillEl.style.width = '0%';
+    _tentActionHudHidden = !!_tentActionHudEl;
   }
 
   function showTentActionHud(label, percent) {
@@ -1122,6 +1124,7 @@
     if (_tentActionFillEl) _tentActionFillEl.style.width = Math.min(100, Math.max(0, percent)) + '%';
     _tentActionHudEl?.setAttribute('aria-hidden', 'false');
     _tentActionHudEl?.classList.add('visible');
+    _tentActionHudHidden = false;
   }
 
   const BANDIT_TENT_AIM_MAX_WORLD = 24; // Camera-ray intersection budget for the visible tent surface, matching the shared world-focus range.
