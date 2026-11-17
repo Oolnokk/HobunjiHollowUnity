@@ -682,14 +682,33 @@
 
     // Live bones for this frame: roll-amplified like the rest pose, with depth made relative to rest so that at rest they
     // coincide exactly with the flattened rest bones.
-    const legSignature = aim => {
-      let signature = 0;
+    // Comparing each joint and orientation component avoids cancellations between opposing legs.
+    // A tiny tolerance ignores matrix round-off from a render-only turn of the entire avatar.
+    const POSE_EPSILON = 1e-6; // Used by poseChanged to ignore numerical noise, not visible motion.
+    const poseComponents = new Float64Array(54); // Scratch for this garment's 18 joint coordinates and 36 orientation entries.
+    const lastPoseComponents = new Float64Array(54); // Last skin-uploaded pose, compared against poseComponents.
+    let hasLastPose = false; // First frame must skin even if every live bone is in its rest orientation.
+    const poseChanged = aim => {
+      let index = 0; // Same component order in both buffers, across left/right limbs.
+      let moved = !hasLastPose; // Forces first upload and otherwise accumulates individual component changes.
       for (const side of LEG_SIDES) {
         const leg = aim[side], frames = handle.scratch.frames[side];
-        for (const joint of LEG_JOINTS) signature = signature * 1.0000001 + leg[joint].x * 3.1 + leg[joint].y * 5.3 + leg[joint].z * 7.7;
-        for (const name of BONE_NAMES) for (let k = 0; k < 9; k++) signature = signature * 1.0000001 + frames[name][k] * (k + 1.7);
+        for (const joint of LEG_JOINTS) {
+          for (const axis of ['x', 'y', 'z']) {
+            const value = leg[joint][axis]; // Joint coordinate used by bone transforms and the pose-change test.
+            poseComponents[index] = value;
+            if (!Number.isFinite(value) || Math.abs(value - lastPoseComponents[index]) > POSE_EPSILON) moved = true;
+            index++;
+          }
+        }
+        for (const name of BONE_NAMES) for (let k = 0; k < 9; k++) {
+          const value = frames[name][k]; // Calf/thigh orientation component also affects garment twist.
+          poseComponents[index] = value;
+          if (!Number.isFinite(value) || Math.abs(value - lastPoseComponents[index]) > POSE_EPSILON) moved = true;
+          index++;
+        }
       }
-      return signature;
+      return moved;
     };
     handle.restRecheckIn = REST_RECHECK_FRAMES;
     // The roll amplification exaggerates a leg's sideways splay so face-on pants visibly follow it, but a sunk weapon stance splits the feet
@@ -800,15 +819,15 @@
       let aim = aimAtLiveLegs();
       // Standing still (most NPCs, most of the time) nothing about the legs changes: skip the skin + upload when this frame's
       // bones and orientation frames are identical to the last frame's.
-      let signature = legSignature(aim);
+      let moved = poseChanged(aim); // Detect each limb's translation and twist without canceling opposing steps.
       // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now. Moving
       // the group also moves the live bones (so the signature changes); a still NPC only re-checks every REST_RECHECK_FRAMES.
-      if (!renderOnly && legHandle.getRestStance && handle.lastStance && (signature !== handle.lastSignature || handle.dirty || --handle.restRecheckIn <= 0)) {
+      if (!renderOnly && legHandle.getRestStance && handle.lastStance && (moved || handle.dirty || --handle.restRecheckIn <= 0)) {
         handle.restRecheckIn = REST_RECHECK_FRAMES;
         const stance = restStanceBones(handle);
         let moved = 0, k = 0;
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; moved = Math.max(moved, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); signature = legSignature(aim); } // aim offsets depend on the rest pose just captured.
+        if (moved > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
@@ -819,8 +838,9 @@
         handle.uploadedBaseVersion = -1;
         handle.dirty = true;
       }
-      if (signature === handle.lastSignature && !handle.dirty) return;
-      handle.lastSignature = signature;
+      if (!moved && !handle.dirty) return;
+      lastPoseComponents.set(poseComponents); // Record precisely the pose used for this GPU/CPU skin update.
+      hasLastPose = true;
       handle.dirty = false;
       const transforms = handle.scratch.transforms; // Channel order is Core.WEIGHT_CHANNELS: belt, leftThigh, leftCalf, rightThigh, rightCalf.
       transforms[0] = null; // The waistband is rigid, exactly as authored.
