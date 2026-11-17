@@ -156,6 +156,7 @@ shortenInput.value = '35';
 listeners.get('babyHeadShortening:input')[0]();
 ctx.draw();
 assert.equal(ctx.normalizedRig().babyHeadShortening, 0.35, 'shortening persists as a species-specific override');
+ctx.previewImageForAnimal(image); // The editor's redraw loop reaches the shared runtime warp with the new value.
 assert.equal(lastShortening, 0.35, 'live preview uses the edited brachycephaly');
 const paintedCheckbox = elements.get('babyHeadUsePainted');
 paintedCheckbox.checked = true;
