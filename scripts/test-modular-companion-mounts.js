@@ -208,6 +208,173 @@ directionStorage['hobunji.modularWeapons.v5'] = JSON.stringify(deliberateReversa
 assert.deepEqual(plain(boot(directionStorage).api.getConfig().shafts.hatchet.mounts[1]),
   plain(deliberateReversal.shafts.hatchet.mounts[1]), 'Subsequent authored direction is never repaired again');
 
+// Pair-calibration migration replaces only pristine older visual presets on the two affected hafts.
+const oldPairVisuals = {
+  "fishing-mace": {
+    "dagger": {
+      "scaleX": 0.7,
+      "scaleY": 0.6,
+      "x": 35,
+      "y": -15,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "harlyao-broadsword": {
+      "scaleX": 1.05,
+      "scaleY": 0.5,
+      "x": 35,
+      "y": -40,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "harlyao-longsword": {
+      "scaleX": 1.05,
+      "scaleY": 0.5,
+      "x": 40,
+      "y": -35,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "pick-shovel-pick": {
+      "flipX": true,
+      "flipY": true,
+      "x": 35,
+      "y": -25,
+      "rotation": -90,
+      "layerOrder": "head-over-haft"
+    },
+    "pickshovel-scoop": {
+      "x": 5,
+      "y": 30,
+      "layerOrder": "haft-over-head"
+    },
+    "plains-blade": {
+      "scaleX": 1.1,
+      "scaleY": 0.35,
+      "x": -65,
+      "y": -30,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "war-cleaver": {
+      "x": 5,
+      "y": 30,
+      "layerOrder": "haft-over-head"
+    }
+  },
+  "warhammer": {
+    "dagger-sword": {
+      "x": 12,
+      "y": 5,
+      "layerOrder": "haft-over-head"
+    },
+    "dagger": {
+      "scaleX": 0.9,
+      "scaleY": 0.75,
+      "x": 40,
+      "y": -90,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "fishing-spear": {
+      "scaleY": 1.2,
+      "flipX": true,
+      "x": -40,
+      "y": -90,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "harlyao-broadsword": {
+      "scaleX": 1.35,
+      "scaleY": 0.8,
+      "x": 25,
+      "y": -100,
+      "rotation": -90,
+      "layerOrder": "haft-over-head"
+    },
+    "harlyao-longsword": {
+      "scaleX": 1.65,
+      "x": 5,
+      "layerOrder": "haft-over-head"
+    },
+    "pick-shovel-pick": {
+      "scaleX": 1.05,
+      "scaleY": 1.05,
+      "flipX": true,
+      "flipY": true,
+      "x": 40,
+      "y": -75,
+      "rotation": -90,
+      "layerOrder": "head-over-haft"
+    },
+    "pickshovel-scoop": {
+      "x": 5,
+      "layerOrder": "haft-over-head"
+    },
+    "plains-blade": {
+      "scaleX": 1.2,
+      "scaleY": 0.75,
+      "x": 5,
+      "layerOrder": "haft-over-head"
+    }
+  }
+}; // Reference fits before the user's new neutral-rotation calibration.
+const visualKeys = ['scaleX', 'scaleY', 'flipX', 'flipY', 'x', 'y', 'rotation', 'layerOrder']; // All and only fields governing sprite placement.
+const olderFits = plain(committed); // Simulate an actual v5 user draft saved before these fifteen authored corrections.
+let expectedFitUpdates = 0; // Matches the number of known outdated shipped presets in the migration.
+for (const [shaftKey, pairs] of Object.entries(oldPairVisuals)) {
+  for (const [headKey, legacy] of Object.entries(pairs)) {
+    const pair = olderFits.shafts[shaftKey].overrides[headKey];
+    for (const field of visualKeys) delete pair[field];
+    Object.assign(pair, legacy);
+    expectedFitUpdates++;
+  }
+}
+const fitStorage = {
+  'hobunji.modularWeapons.v5': JSON.stringify(olderFits),
+  'hobunji.modularWeapons.kylieToolWorthy.v1': '1',
+  'hobunji.modularWeapons.pickShovelForgeable.v1': '1',
+  'hobunji.modularWeapons.companionTangDirection.v1': '1',
+}; // Isolate the visual migration from the older mount and toolability migrations.
+const fitted = boot(fitStorage);
+assert.equal(expectedFitUpdates, 15, 'The uploaded calibration changed fifteen rigid head/haft combinations');
+for (const [shaftKey, pairs] of Object.entries(oldPairVisuals)) {
+  for (const headKey of Object.keys(pairs)) {
+    const expected = committed.shafts[shaftKey].overrides[headKey];
+    const actual = fitted.api.getConfig().shafts[shaftKey].overrides[headKey];
+    assert.deepEqual(plain(actual), plain(expected), shaftKey + '/' + headKey + ': legacy visual preset takes the newly authored fit');
+    assert.notEqual(actual.rotation, -90, shaftKey + '/' + headKey + ': obsolete -90 degree rotation is gone');
+  }
+}
+assert.equal(fitted.api.diagnostics('modular:warhammer:dagger:nativeCopper').migratedPairFits, 15,
+  'Mobile-accessible modular diagnostics report the number of migrated pair presets');
+assert.equal(fitStorage['hobunji.modularWeapons.authoredPerpendicularPairFits.v1'], '1',
+  'Visual migration records a one-time completion marker');
+assert(fitStorage['hobunji.modularWeapons.v5'], 'Updated visuals are persisted rather than restored from the stale draft');
+
+// Custom old drafts must never lose unrelated artist offsets, bridges, or layer choices.
+const customizedFits = plain(olderFits); // A future load with one modified -90 pair and one nonrotated customized pair.
+customizedFits.shafts.warhammer.overrides.dagger.x = 123; // Distinguishes it from the pristine legacy preset.
+customizedFits.shafts['fishing-mace'].overrides['war-cleaver'].y = 777; // Existing manual calibration must not be overwritten.
+const customStorage = {
+  'hobunji.modularWeapons.v5': JSON.stringify(customizedFits),
+  'hobunji.modularWeapons.kylieToolWorthy.v1': '1',
+  'hobunji.modularWeapons.pickShovelForgeable.v1': '1',
+  'hobunji.modularWeapons.companionTangDirection.v1': '1',
+}; // Both draft sessions are independent and start with the pre-migration pair presets.
+const customized = boot(customStorage);
+assert.equal(customized.api.settings('warhammer', 'dagger').x, 123, 'Custom X correction must survive');
+assert.equal(customized.api.settings('warhammer', 'dagger').rotation, 0, 'Custom old -90 is removed without resetting custom X');
+assert.equal(customized.api.settings('fishing-mace', 'war-cleaver').y, 777, 'Custom Y correction must survive');
+const afterMigration = plain(customized.api.getConfig()); // Future manual edits must not be changed again after the one-time migration.
+afterMigration.shafts.warhammer.overrides.dagger.rotation = -90;
+customStorage['hobunji.modularWeapons.v5'] = JSON.stringify(afterMigration);
+assert.equal(boot(customStorage).api.settings('warhammer', 'dagger').rotation, -90,
+  'An explicit later author edit remains untouched once old drafts have been upgraded');
+for (const shaft of Object.values(committed.shafts)) for (const pair of Object.values(shaft.overrides)) {
+  assert.notEqual(pair.rotation, -90, 'No shipped pair-specific -90 degree legacy rotation remains');
+}
+
 // Current v5 drafts must remain the exact user edit, even if they intentionally remove a companion.
 const current = plain(upgraded.api.getConfig());
 current.shafts.warhammer.mounts = current.shafts.warhammer.mounts.filter(m => m.type !== 'tang');
