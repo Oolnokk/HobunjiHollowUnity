@@ -30932,6 +30932,11 @@
         damageCreature,
         damagePlayer,
         applyKnockback,
+        describeFeyDodgeCollision: (actor, swept, radiusPx, dirX, dirY) => {
+          const contact = swept?.blockedAt || { x: actor?.x || 0, y: actor?.y || 0 }; // First actual swept obstruction, not a guessed solid tile.
+          const descriptor = knockbackCollisionDescriptorAt(contact.x, contact.y, radiusPx, dirX, dirY); // Reuses every wood, stone, hazard and furniture collision classification.
+          return { descriptor, hooks: knockbackImpactHooks(actor, descriptor, dirX, dirY) }; // Same resource death, stagger and Footing hooks as physical knockback.
+        },
         weaponAbility,
         combatConfig,
         resolveWeaponHit,
