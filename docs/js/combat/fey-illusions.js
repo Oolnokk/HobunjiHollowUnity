@@ -137,18 +137,23 @@
     return true;
   }
 
+  function onDodgeStarted(entity) {
+    const roll = entity && panicRolls.get(entity); // Pending panic is created by the real ResourceSystem stamina payment.
+    if (!roll || !entity.dodging || roll.boosted) return false;
+    entity.dodgeT = Math.max(0, finite(entity.dodgeT)) * roll.multiplier; // Scale the full authored duration BEFORE any movement step, not after the first frame.
+    if (entity._enemyDodge) {
+      entity._enemyDodge.durationS *= roll.multiplier; // AI dodge owns its remaining swept movement clock separately.
+      entity._enemyDodge.remainingS *= roll.multiplier;
+    }
+    roll.boosted = true; // The same charge can never multiply a reused dodge state twice.
+    return true;
+  }
+
   function updatePanicRoll(entity, dt) {
     const roll = panicRolls.get(entity);
     if (!roll) return;
     if (!entity.dodging) { panicRolls.delete(entity); return; }
-    if (!roll.boosted) {
-      entity.dodgeT = Math.max(0, finite(entity.dodgeT)) * roll.multiplier; // The existing swept roll movement and collision remain authoritative.
-      if (entity._enemyDodge) {
-        entity._enemyDodge.durationS *= roll.multiplier; // Enemy dodge AI owns remaining time independently of the player's roll state.
-        entity._enemyDodge.remainingS *= roll.multiplier; // Extend actual swept travel rather than only its cosmetic indicator.
-      }
-      roll.boosted = true; // Never multiply its remaining time twice when Combat.update runs multiple times.
-    }
+    onDodgeStarted(entity); // Safe fallback for older callers that don't report an explicit dodge start.
     const nextX = finite(entity.x), nextY = finite(entity.y), step = Math.hypot(nextX - roll.lastX, nextY - roll.lastY);
     roll.elapsedS += dt;
     roll.traveled += step;
@@ -240,7 +245,7 @@
 
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
-    onStaminaSpent, onDodgeBlocked, update,
+    onStaminaSpent, onDodgeStarted, onDodgeBlocked, update,
     movementRotationRad, cameraYawDeg,
     isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
