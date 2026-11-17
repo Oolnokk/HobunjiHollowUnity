@@ -9,7 +9,8 @@
   const MAX_SCALE = 1.45; // Safety cap for the Nursery slider and public setter.
   const DEFAULT_SHORTENING = 0.08; // Universal inherited 8% front-to-back shortening for babies and eligible Small shoulder pets.
   const MAX_SHORTENING = 0.45; // Prevents an unnaturally flattened or inverted skull.
-  const SHORTENING_STORAGE_KEY = 'hobunji_baby_head_shortening_v1'; // Saved global Nursery shortening, independent of head enlargement.
+  const SHORTENING_STORAGE_KEY = 'hobunji_baby_head_shortening_v2'; // Stores new intentional Nursery choices, including an explicit 20%.
+  const LEGACY_SHORTENING_STORAGE_KEY = 'hobunji_baby_head_shortening_v1'; // One-time fallback when migrating the previous 20% global default.
   const MAX_ABDOMEN_SCALE = 1.8; // Upper safety bound for the optional abdominal-growth region.
   const FALLOFF_RADIUS = 0.85; // In units of the larger head-frame half-extent; adjacent neck/body pixels move less with distance.
   const debug = { applied: 0, skipped: 0, lastKind: null, lastFrame: null, lastError: null }; // Exposed in Nursery Debug for mobile inspection.
@@ -27,8 +28,10 @@
   let shortening = (() => {
     try {
       const saved = window.localStorage?.getItem(SHORTENING_STORAGE_KEY);
-      return saved == null || Number(saved) === 0.20
-        ? DEFAULT_SHORTENING : clampShortening(saved); // Migrate the former 20% global default; keep other chosen amounts.
+      if (saved != null) return clampShortening(saved); // A value explicitly selected in the new version wins, including 20%.
+      const legacy = window.localStorage?.getItem(LEGACY_SHORTENING_STORAGE_KEY);
+      return legacy == null || Number(legacy) === 0.20
+        ? DEFAULT_SHORTENING : clampShortening(legacy); // Migrate the retired default, preserve earlier customized values.
     } catch (_) { return DEFAULT_SHORTENING; }
   })(); // Current shortening used by babies and genetically Small pets when a species has no override.
   function getShortening() { return shortening; }
