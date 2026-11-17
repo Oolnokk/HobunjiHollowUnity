@@ -20,6 +20,7 @@ let activeTool = 'adventuring', heldMode = 'tool', area = 'farm';
 let fireContacts = 0, tentContacts = 0, ruinContacts = 0, throws = 0, persisted = [];
 let covered = false;
 let throwBeginCount = 0, throwCancelCount = 0, throwReleasePose = null; // Track press/release/cancel against the shared held pose.
+let heldTorchVisible = true; // Test the hatchet's hide-at-strike and restore-at-recovery ownership.
 let lastThrowOptions = null; // Confirms that a real release provides its tool-plane sample to the projectile owner.
 const torchVisual = { textureSource: {key:'torch-png'}, sourceTransform: {position:{x:1,y:2,z:3},quaternion:{},planeWidth:.5,planeHeight:1} }; // Test-only held torch visual passed through unchanged.
 const player = { x: 0, y: 0 };
@@ -77,6 +78,7 @@ const deps = {
   getTorchProjectileVisual: () => torchVisual, // Mirrors the game-owned visual snapshot at actual release.
   releaseThrowVisual(opts) { throwReleasePose = opts.poseProgress; },
   cancelThrowVisual() { throwCancelCount++; },
+  setHeldTorchVisible(visible) { heldTorchVisible=visible;return true; }, // Models the same runtime toolMeshMap.adventuring visibility toggle.
 };
 torch.init(deps);
 const forehand = world.AttackPoseTemplates.poseFor('hatchet_swing');
@@ -119,15 +121,28 @@ assert.equal(torch.debug.throwCharging, true);
 assert.equal(torch.beginThrow('test-duplicate'), false, 'duplicate press cannot create an extra charge');
 assert.equal(throws, 0, 'no projectile launches during the hold');
 assert.equal(torch.isLit(), true, 'the flame stays lit while charging');
-assert.equal(torch.releaseThrow('test-release').ok, true, 'release commits exactly one throw');
+assert.equal(torch.releaseThrow('test-release').ok, true, 'input release enters the strike without immediately launching');
 assert.equal(throwBeginCount, 1);
 assert.equal(throwReleasePose, 0.65, 'strike begins at the actual authored held pose amplitude');
 assert.equal(torch.debug.throwCharging, false);
-assert.equal(torch.releaseThrow('duplicate').ok, false, 'duplicate release is ignored');
-assert.equal(throws, 1);
-assert.equal(lastThrowOptions, torchVisual, 'torch release forwards the exact held-plane sprite and world transform');
-assert.equal(torch.debug.throwLaunchOrigin, 'held-plane', 'mobile diagnostics identify release-frame sampling');
+assert.equal(torch.debug.throwPending, true);
+assert.equal(torch.releaseThrow('duplicate').ok, false, 'duplicate input release is ignored');
+assert.equal(throws, 0, 'a torch must never spawn before the authored Strike pose');
+assert.equal(torch.isLit(), true, 'the held torch remains lit through its visible strike');
+torch.updateThrow({active:true,progress:.55,strikeFrac:.57});
+assert.equal(throws, 0, 'sweeping through windup cannot launch early');
+torch.updateThrow({active:true,progress:.57,strikeFrac:.57});
+assert.equal(throws, 1, 'the real Strike boundary launches exactly one projectile');
+assert.equal(lastThrowOptions, torchVisual, 'the strike forwards the exact held-plane sprite and world transform');
+assert.equal(torch.debug.throwLaunchOrigin, 'held-plane', 'mobile diagnostics identify the release-frame transform');
+assert.equal(torch.debug.throwRecovering, true);
+assert.equal(heldTorchVisible, false, 'spent held torch is hidden while the thrown copy exists');
 assert.equal(torch.isLit(), false);
+torch.updateThrow({active:true,progress:.74,strikeFrac:.57});
+assert.equal(throws, 1, 'subsequent strike frames do not duplicate the throw');
+torch.updateThrow({active:true,progress:1,strikeFrac:.57});
+assert.equal(heldTorchVisible,true,'the unlit replacement reappears after returning to neutral');
+assert.equal(torch.isThrowSequenceActive(),false);
 assert.equal(torch.throwLit().ok, false);
 area = 'ruin';
 scene.children.length = 0;
@@ -142,8 +157,17 @@ assert.equal(torch.beginThrow('test-cancel'), true);
 torch.stow();
 assert.equal(throwCancelCount, 1, 'stowing cancels a charged throw');
 assert.equal(torch.releaseThrow('stowed').ok, false);
-assert.equal(throws, 1, 'canceling does not launch a projectile');
+assert.equal(throws, 1, 'canceling a held throw does not launch a projectile');
 assert.equal(torch.isLit(), false);
+torch.light();
+assert.equal(torch.beginThrow('test-cancel-pending'), true);
+assert.equal(torch.releaseThrow('test-pending-release').ok, true);
+assert.equal(torch.debug.throwPending, true);
+torch.stow();
+torch.updateThrow({active:true,progress:.7,strikeFrac:.57});
+assert.equal(throws, 1, 'stowing after input release but before strike cancels the deferred projectile');
+assert.equal(torch.isThrowSequenceActive(), false);
+assert.equal(heldTorchVisible,true);
 assert.equal(torch.register({ id:'lantern',label:'Lantern',onSelect() {} }), true);
 assert.equal(torch.entries().length, 1); // Registered is not synonymous with unlocked.
 assert.equal(torch.unlock('lantern'), true);
@@ -200,6 +224,9 @@ assert.match(rangedCode, /projectileSprite:'assets\/toolsprites\/torch\.png', pr
   'torch uses the thrown hatchet end-over-end spin');
 assert.match(rangedCode, /textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true/,
   'torch shares the thrown-weapon projectile launch with a permanent burning payload');
+assert.match(rangedCode, /heldSpin:true,heldSpinRevolutions:2\.5/, 'torch now shares the thrown hatchet in-hand spin');
+assert.match(game, /AdventuringTools\.updateThrow\(\{/, "torch projectile commits only from the active pose's strike frame");
+assert.match(game, /holdTorchAim/, 'touch keeps its throw aim after input release through the actual strike');
 assert.match(game, /torchThrowActionPresses\.delete\(actionId\)/, 'controller and keyboard release preserve throw input ownership');
 assert.match(game, /_torchThrowPress = act === 'torch_throw'/, 'touch pointer starts a held throw');
 assert.match(game, /AdventuringTools\?\.releaseThrow\?\.\('touch-arch-release'\)/, 'mobile releases commit');
