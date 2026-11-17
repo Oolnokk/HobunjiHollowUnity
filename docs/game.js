@@ -23552,6 +23552,29 @@
       // half-speed movement) now lives in js/perception-mode.js. It only
       // reads these registries; gameLoop calls update() and renderWorldPasses
       // calls renderOverlay().
+      // Sense's ore-rock neighborhood sweep: ~800 tile lookups with string keys per 150ms refresh.
+      // The result only changes when the player crosses a tile/area or the rock index changes, so it is
+      // cached and invalidated by PlayerTileEvents (plus map identity/size and a 1s safety TTL for in-place edits).
+      const _senseOreCache = { map: null, area: null, radius: NaN, size: -1, at: -Infinity, rocks: [] };
+      window.PlayerTileEvents?.subscribe?.(() => { _senseOreCache.at = -Infinity; });
+      function _nearbyOreRocksForSense() {
+        const indexed = _zoneMineableRockMeshes.get(currentArea);
+        if (!indexed?.size) { _senseOreCache.map = null; _senseOreCache.rocks = []; return _senseOreCache.rocks; }
+        const radius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
+        const now = performance.now();
+        const c = _senseOreCache;
+        if (c.map === indexed && c.area === currentArea && c.radius === radius && c.size === indexed.size && now >= c.at && now - c.at < 1000) return c.rocks;
+        const rocks = [];
+        const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE);
+        for (let row = playerRow - radius; row <= playerRow + radius; row++) {
+          for (let col = playerCol - radius; col <= playerCol + radius; col++) {
+            const group = indexed.get(`${col},${row}`);
+            if (group) rocks.push(group);
+          }
+        }
+        c.map = indexed; c.area = currentArea; c.radius = radius; c.size = indexed.size; c.at = now; c.rocks = rocks;
+        return rocks;
+      }
       window.PerceptionMode?.init({
         THREE,
         getActiveScene: window.GridTileAccessors.getActiveScene,
@@ -23565,18 +23588,7 @@
               ...(_zoneTreasureObjects.get(zone)?.values() || []),
             ]
             : currentArea === 'farm' ? [...new Set(worldObjects.values())] : [];
-          const nearbyOreRocks = []; // Scene-attached diggable rock roots for the active Sense Mode neighborhood.
-          const indexedOreRocks = _zoneMineableRockMeshes.get(currentArea); // Reuses the outdoor, mine and cavern tile indices; no world-scene traversal.
-          if (indexedOreRocks?.size) {
-            const senseRadius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
-            const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE); // Tile bounds for the nearby resource sweep.
-            for (let row = playerRow - senseRadius; row <= playerRow + senseRadius; row++) {
-              for (let col = playerCol - senseRadius; col <= playerCol + senseRadius; col++) {
-                const group = indexedOreRocks.get(`${col},${row}`);
-                if (group) nearbyOreRocks.push(group);
-              }
-            }
-          }
+          const nearbyOreRocks = _nearbyOreRocksForSense(); // Per-tile cached sweep of scene-owned mineable rocks (see PlayerTileEvents).
           const crops = [];
           if (currentArea === 'farm') {
             const cropMeshes = window.VegetationCropRendering?.cropMeshes || [];
