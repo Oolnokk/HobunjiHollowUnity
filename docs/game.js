@@ -18982,7 +18982,7 @@
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
-          if (dodgeSwept.blockedX || dodgeSwept.blockedY) {
+          if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
             const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // First rejected swept center is the same obstacle sample used by real knockback.
             const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
             window.FeyIllusions?.onDodgeBlocked?.(player, {
