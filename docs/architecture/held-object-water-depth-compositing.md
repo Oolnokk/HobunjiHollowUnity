@@ -88,12 +88,15 @@ The existing renderer debug snapshot and mobile log expose
 Nearby player and NPC portrait planes can intersect at oblique camera angles.
 The base transparent draw sorts those actors by their root positions in camera
 space and keeps the existing front, back and shoulder draw order within an
-actor. Portrait cards **retain their normal depth writes**: otherwise pants
-(rendered immediately after their owner) could show through the owner's or
-another actor's opaque portrait pixels. Physical depth testing decides
-intersections even when the actor-root painter order differs. Opaque world
-geometry still depth-tests against each portrait; the weapon stencil uses
-the same actor ordering.
+actor. **Pants wearers** retain their portrait's normal depth writes so their
+pants, rendered immediately afterward, cannot show through the owner's
+solid portrait pixels. Farther **pants-free** actors still temporarily defer
+portrait depth writes when their sprites cross a closer actor's view:
+otherwise a physically forward-leaning distant plane can suppress a nearer
+actor's portrait despite the root-based painter order. This is a deliberate
+tradeoff; a pants wearer whose sprite intersects another actor's plane may
+still need a dedicated per-actor depth composite. Opaque world geometry
+continues to depth-test normally; weapon stencils share the actor order.
 
 ## Shoulder pets are part of the owner's portrait occlusion
 
@@ -380,8 +383,10 @@ The Dev Companion's editable draw-order ranks affect color sorts only within a c
 `renderOrder` 28, so they are ranked with the actor that wears them (`extras`) and draw right after that actor's
 portrait. Leaving them out meant they drew after *every* portrait and relied on depth alone, which fails for any
 portrait that does not write depth - far NPCs' pants then show through the player.
-The base pass therefore no longer suppresses portrait depth writes for close actor crossings;
-`PORTRAIT_SORT_DISTANCE` is retained for the optional near-only actor ranking rule.
+The base pass suppresses depth writes only for close, non-nearest actors **without visible pants**;
+a pants wearer's alpha-tested portrait keeps depth. The nearest portrait and actors
+outside `PORTRAIT_SORT_DISTANCE` keep normal depth. The `pants.sortWithActor`
+rule must remain on for the intended default wearer-wise layering.
 Shoulder-pet portrait stacks still have a separate intentional depth-write-free mode. Other worn parts
 that draw after portraits (hats, overlays) need the same treatment if they show the same symptom.
 
