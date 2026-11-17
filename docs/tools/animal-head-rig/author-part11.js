@@ -345,13 +345,18 @@
       return;
     }
     checkpointHistory();
-    applyShoulderRestConfig(deepClone(source)); // Copies every shoulder checkbox, shift, separator, curves, and painted material map.
+    const destination = currentShoulderRest(); // Snapshot the receiving species' divider before applying anything from the source.
+    const copiedPose = deepClone(source); // Clone the actual authored pose, including checkboxes, spline points and shoulder material maps.
+    copiedPose.frameShiftX = destination.frameShiftX; // Divider X is owned by the destination species and must never be copied.
+    copiedPose.separatorRotationDeg = destination.separatorRotationDeg; // Keep the destination's divider angle.
+    copiedPose.separatorAspect = destination.separatorAspect; // Keep the destination's own separator geometry.
+    applyShoulderRestConfig(copiedPose);
     updateShoulderUi(); // Existing importer also clears stale split textures and resets editor-only broad macros.
     lastCopied = { from: id, to: target, splineAllowed: splineAllowedForCurrentSpecies() };
     const limitation = source.useSpline && !lastCopied.splineAllowed
       ? ' Body spline is not enabled for this target species; other settings were copied.' : '';
-    copyShoulderStatus.textContent = 'Copied complete shoulder pose: ' + id + ' → ' + target
-      + '. Undo is available. Save the rig for game preview or export the animal record.' + limitation;
+    copyShoulderStatus.textContent = 'Copied shoulder pose: ' + id + ' → ' + target
+      + '. Destination divider X and angle preserved. Undo is available. Save the rig for game preview or export the animal record.' + limitation;
     setStatus(copyShoulderStatus.textContent, true);
     requestDraw();
   });
