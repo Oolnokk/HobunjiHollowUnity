@@ -105,7 +105,7 @@
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
   <script src="js/action-arc-ui.js?v=20261115torchDoorRecall1"></script>
-  <script src="js/adventuring-tools.js?v=20261117torchStrikeAudit3"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/adventuring-tools.js?v=20261117burnActors1"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -321,8 +321,10 @@
   <script src="js/combat/resource-system.js?v=20261117hypedCreature6"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
-  <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
-  <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
+  <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
+  <script src="js/combat/burning-entity-hazards.js?v=20261117burnActors1"></script>
+  <!-- Burning Health presentation: reuses the authored campfire emitter on living actors and temporarily burning corpses. -->
+  <script src="js/combat/burning-affliction-vfx.js?v=20261117burnActors1"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
   <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
@@ -432,7 +434,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261112corpseDeath1"></script>
+  <script src="js/creature-death.js?v=20261117burnActors1"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <script src="js/bandit-corpse-retirement.js?v=20261107hf66a80f"></script>
