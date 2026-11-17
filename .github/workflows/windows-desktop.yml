@@ -63,6 +63,11 @@ jobs:
           $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
           if (-not (Test-Path "desktop/dist/Hobunji-Hollow-Setup-$version.exe")) { throw "Installer missing" }
           if (-not (Test-Path "desktop/dist/latest.yml")) { throw "Updater metadata missing" }
+          if (-not (Test-Path "desktop/dist/win-unpacked/resources/app-update.yml")) { throw "Packaged app has no update feed configuration" }
+          $feed = Get-Content "desktop/dist/win-unpacked/resources/app-update.yml" -Raw
+          if ($feed -notmatch 'provider:\s*github' -or $feed -notmatch 'HobunjiHollowUnity') { throw "Packaged updater is not pointing to the expected GitHub repository" }
+          $latest = Get-Content "desktop/dist/latest.yml" -Raw
+          if ($latest -notmatch [regex]::Escape($version)) { throw "Update manifest version does not match the installer" }
       - name: Upload installer and update metadata for manual testing
         uses: actions/upload-artifact@v4
         with:
