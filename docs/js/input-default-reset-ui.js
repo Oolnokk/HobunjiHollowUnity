@@ -193,6 +193,7 @@
     const enabled = devModeEnabled(); // Uses the authoritative game checkbox, including its restored preference after boot.
     if (document.body?.dataset.devMode !== String(enabled)) document.body.dataset.devMode = String(enabled);
     if (enabled) return;
+    window.PNGPlaneAvatar?.meshBudget?.setPortraitDensityPercent?.(100); // A hidden developer slider must not silently keep reduced portrait quality.
     for (const id of DIAGNOSTIC_TOGGLES) {
       const control = document.getElementById(id); // Clearing hidden live diagnostics also stops their renderer/profiler overhead.
       if (!control?.checked) continue;
