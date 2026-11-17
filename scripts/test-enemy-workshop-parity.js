@@ -210,7 +210,7 @@ assert.equal(preview.actor._banditSwingDirSign, -1);
     URL,
     document: { baseURI: 'https://game.test/docs/' },
     fetch: async (url) => {
-      let p = String(url).replace('https://game.test/docs/', '');
+      const p = String(url).replace('https://game.test/docs/', '').split(/[?#]/, 1)[0]; // Browser fetch query strings select a cache version, not an on-disk file.
       return {
         ok: true,
         json: async () => JSON.parse(read(p)),

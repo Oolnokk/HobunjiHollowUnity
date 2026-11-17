@@ -13,9 +13,13 @@ const footingBridgeSource = fs.readFileSync('docs/js/footing-damage-recovery-bri
 
 const nativeCopperTierMatch = gameSource.match(/nativeCopper:\s*\{[^}]*tier:\s*(\d+)/); // Extracts the live Native Copper tier instead of duplicating it in the test.
 assert(nativeCopperTierMatch, 'Native Copper tier must remain discoverable in game.js');
-const nativeCopperTier = Number(nativeCopperTierMatch[1]); // Used to calculate the exact live material multiplier.
+const nativeCopperTier = Number(nativeCopperTierMatch[1]); // Still used to verify the original ungraded-save fallback calculation.
+const reinforcementSource = fs.readFileSync('docs/js/metal-reinforcement.js', 'utf8'); // The current grade-I power now comes from the shared smith policy.
+const startingPowerMatch = reinforcementSource.match(/const MIN_REINFORCEMENT_POWER = ([0-9.]+)/); // Pins actual new-character Copper-I power without guessing a material-only tier.
+assert(startingPowerMatch, 'the smith policy must expose its starting power');
 assert.match(gameSource, /return tier \? 0\.85 \+ tier \* 0\.05 : 1/, 'metal damage scaling changed; update this balance calibration intentionally if the material curve changes');
-const nativeCopperMultiplier = 0.85 + nativeCopperTier * 0.05; // Mirrors metalDmgMultiplier after pinning its source expression above.
+const nativeCopperMultiplier = Number(startingPowerMatch[1]); // New players receive an explicit grade-0 reinforcement, overriding old ungraded-save metal scaling.
+assert.equal(0.85 + nativeCopperTier * 0.05, 0.90, 'ungraded saved copper still preserves its legacy strength');
 
 const baseHealthMatch = banditSource.match(/const BANDIT_BASE_MAX_HEALTH = (\d+(?:\.\d+)?)/); // Extracts the combat runtime's unscaled bandit-health baseline.
 assert(baseHealthMatch, 'bandit base health must remain discoverable in combat-bandit.js');
@@ -45,10 +49,10 @@ const footingBridgeMultiplier = Number(footingBridgeMatch[1]); // Multiplies eve
 const sharpFootingPerRawDamage = sharpType.footing * footingLossPerDamage * footingBridgeMultiplier; // Actual Footing removed by one raw Sharp damage before buffs/resistance.
 const bluntFootingPerRawDamage = bluntType.footing * footingLossPerDamage * footingBridgeMultiplier; // Actual Footing removed by one raw Blunt damage before buffs/resistance.
 
-assert.equal(nativeCopperMultiplier, 0.9, 'Native Copper is expected to remain the 0.90x starter material for this calibration');
-assert.equal(tier0GruntHealth, 20, 'tier-0 grunt health changed; rebalance the one-mark breakpoint intentionally');
-assert.equal(tier0LieutenantHealth, 36, 'tier-0 lieutenant health changed; rebalance the three-mark breakpoint intentionally');
-assert.equal(fullBreakerDamage, 13, 'full Native Copper Charged Breaker should establish the 13-damage heavy baseline');
+assert.equal(nativeCopperMultiplier, 0.75, 'new Copper-I starting gear uses the wider 0.75x progression');
+assert.equal(tier0GruntHealth, 17, 'tier-0 grunt HP is balanced for the 0.75x one-mark Breaker');
+assert.equal(tier0LieutenantHealth, 29, 'tier-0 lieutenant HP keeps the three-mark Breaker kill threshold');
+assert.equal(fullBreakerDamage, 11, 'new grade-I Copper full Charged Breaker has an 11-damage heavy baseline');
 assert.deepEqual(sharpType, { health: 1.1, footing: 0.8 }, 'Sharp should keep the intended 10% Health edge and lower Footing pressure');
 assert.deepEqual(bluntType, { health: 1, footing: 1.2 }, 'Blunt should keep baseline Health damage and higher Footing pressure');
 assert(Math.abs(sharpFootingPerRawDamage - 2.56) < 1e-9, 'Sharp should remove 2.56 Footing per raw damage after shared scaling');

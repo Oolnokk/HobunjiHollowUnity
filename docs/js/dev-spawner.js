@@ -260,7 +260,7 @@
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
-      tierGrid.innerHTML = [0, 1, 2, 3].map(t => {
+      tierGrid.innerHTML = Array.from({ length: (window.EnemyTierProgression?.MAX_TIER ?? 7) + 1 }, (_, index) => index).map(t => {
         const active = t === devSpawnBanditTier ? ' fed-active' : '';
         return `<button type="button" class="fed-btn${active}" data-tier="${t}">Tier ${t}</button>`;
       }).join('');
@@ -366,7 +366,7 @@
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
-    const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
+    const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage}, metalPower=${creature.def.weaponMetalPowerMultiplier ?? 'n/a'})`; // In-game copyable tuning proof, no console needed.
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
@@ -701,7 +701,7 @@
     document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('.fed-btn');
       if (!btn) return;
-      devSpawnBanditTier = deps.clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
+      devSpawnBanditTier = deps.clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, window.EnemyTierProgression?.MAX_TIER ?? 7);
       renderDevSpawnPanel();
     });
     document.getElementById('devSpawnBtnAction')?.addEventListener('click', spawnSelectedDevArenaCreature);
