@@ -118,8 +118,9 @@
     if (!Number.isInteger(stride) || stride < 2 || positions?.length !== stride * stride * 3
         || !Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) <= 1e-8) return false;
     const sampleAxis = (point, axis) => { // Sample a bilinear point on the same garment grid as the debug spline.
+      if (!Number.isInteger(point?.i) || !(point.fx >= 0 && point.fx <= 1) || !(point.fy >= 0 && point.fy <= 1)) return NaN;
       const first = point.i * 3 + axis, nextRow = stride * 3;
-      if (!Number.isInteger(point?.i) || first < axis || first + nextRow + 3 >= positions.length) return NaN;
+      if (first < axis || first + nextRow + 3 >= positions.length) return NaN;
       const top = positions[first] + (positions[first + 3] - positions[first]) * point.fx;
       const bottom = positions[first + nextRow] + (positions[first + nextRow + 3] - positions[first + nextRow]) * point.fx;
       return top + (bottom - top) * point.fy;
@@ -133,7 +134,7 @@
       const y = sampleAxis(last, 1) - sampleAxis(first, 1);
       const z = sampleAxis(last, 2) - sampleAxis(first, 2);
       const length = Math.hypot(x, y, z); // Keep the opening's authored arc curvature while stretching its chord.
-      if (!(length > 1e-9)) continue;
+      if (!(length > 1e-9)) continue; // Also rejects non-finite spline samples.
       axes.push({
         x: x / length, y: y / length, z: z / length,
         cx: sampleAxis(ring.anchor, 0), cy: sampleAxis(ring.anchor, 1), cz: sampleAxis(ring.anchor, 2),
