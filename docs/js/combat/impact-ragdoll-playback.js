@@ -184,18 +184,27 @@
     walker._cinematicProneBlend = undefined;
   }
 
+  function belongsToCreatureAvatar(node, root) {
+    if (!root?.isObject3D) return true; // Isolated preview rigs may not expose their outer avatar group.
+    for (let cursor = node; cursor; cursor = cursor.parent) if (cursor === root) return true;
+    return false;
+  }
+
   function ensureCreatureImpactPivot(entity) {
     const avatarRef = entity?.avatarRef;
     const front = avatarRef?.frontPlane;
     const back = avatarRef?.backPlane;
     if (!front?.isObject3D || !back?.isObject3D) return null;
-    if (avatarRef.impactPivot?.isObject3D
-      && avatarRef.impactPivot.parent
-      && front.parent === avatarRef.impactPivot && back.parent === avatarRef.impactPivot) {
-      return avatarRef.impactPivot; // The same captured visual generation still owns both planes.
+    const oldPivot = avatarRef.impactPivot; // The previous creature card can still be rendered if a rebuild leaves its pivot attached.
+    if (oldPivot?.isObject3D && oldPivot.parent
+      && front.parent === oldPivot && back.parent === oldPivot
+      && belongsToCreatureAvatar(oldPivot, avatarRef.group)) {
+      return oldPivot; // All of the planes, pivot and current avatar root belong to this exact rig generation.
     }
-    avatarRef.impactPivot = null; // Sprite rebuilds must never reuse a pivot attached to the previous pair of planes.
-    if (!front.parent || front.parent !== back.parent) return null;
+    oldPivot?.parent?.remove?.(oldPivot); // Retire stale rendered cards rather than leaving a duplicate ghost of the old impact pose.
+    avatarRef.impactPivot = null;
+    if (!front.parent || front.parent !== back.parent
+      || !belongsToCreatureAvatar(front, avatarRef.group)) return null;
 
     const parent = front.parent;
     const pivot = new THREE.Group(); // Isolates impact pitch/roll from the creature group's persistent facing yaw.
@@ -300,13 +309,13 @@
   }
 
   function triggerCreature(entity, bank, direction, opts = {}) {
+    if (entity?._deathRecordedThrow) return 0; // Never change corpse geometry just because a live attack tried to start.
     const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
     const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
+    if (!clip?.frames?.length) return 0;
+    stopCreature(entity); // Release the previous rig claim before deciding whether a replacement pivot is safe.
     const pivot = ensureCreatureImpactPivot(entity);
-    if (!clip?.frames?.length || !pivot) return 0;
-
-    stopCreature(entity);
-    if (entity._deathRecordedThrow) return 0; // Corpse presentation cannot be displaced by a living impact.
+    if (!pivot) return 0;
     const poseSession = createCreaturePoseSession(pivot, 'impact-creature-reaction');
     if (poseSession === false) return 0;
     const requestedDurationS = Number(opts.durationSeconds);
