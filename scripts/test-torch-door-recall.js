@@ -156,20 +156,29 @@ assert.equal(opens, 1);
 
 const floatingPopup = sourceBetween(ruin, '  function syncWorldPopup(rows) {', '  function refreshRows('); // The actual world popup must advertise Interact when Torch Swing owns Action 1.
 let heldTorchForPopup = true, lastPopup = null; // Toggles the door glyph without changing its saved/owned action.
+const popupDesktopBindings = { desktop: { interact: 'KeyE', action1: 'KeyQ' } }; // Real shared resolver's live input table for the isolated native-door scenario.
 const floatingContext = vm.createContext({
   window: {
     AdventuringTools: { isHoldingTorch: () => heldTorchForPopup },
     WorldPopupText: { syncInteractionPrompts(value) { lastPopup = value; } },
+    InputBindings: {
+      getCurrentBindings: () => popupDesktopBindings,
+      buttonLabel: code => code === 'KeyE' ? 'E' : code === 'KeyQ' ? 'Q' : code,
+    },
   },
+  document: { getElementById: id => id === 'dialogueChoiceSelectionStyle' ? {} : null },
   actionButtonsFromRows: rows => rows.map(row => ({ action: row.action, inputAction: 'action1', worldInteraction: true })),
   PROXIMITY_DOOR_KINDS: new Set(['transitdoor', 'v50nativetransitdoor']),
   promptAnchor: { parent: true }, lastAnchor: null, ruinRoot: () => null,
-  currentDevice: () => 'keyboard', bindingLabel: id => id, inputColor: id => id,
+  currentDevice: () => 'keyboard',
   inRuin: () => true, activeScene: () => ({}),
-}); // Reuses the same mapped popup helper as the live V50 provider.
+}); // Run the actual extracted ActionPromptUI alongside the native ruin popup, not a hand-written glyph stub.
+vm.runInContext(source('docs/js/action-prompt-ui.js'), floatingContext);
+floatingContext.window.ActionPromptUI.init({ getLastInputDevice: () => 'desktop', inputBindings: popupDesktopBindings });
 const syncDoorPopup = vm.runInContext(floatingPopup + '\nsyncWorldPopup', floatingContext);
 syncDoorPopup(nativeRows);
 assert.equal(lastPopup.promptInputs[0].actionId, 'interact', 'torch-held ruin door advertises Interact, not its now-suppressed Action 1');
+assert.equal(lastPopup.promptInputs[0].label, 'E', 'native door popup resolves the live keyboard Interact glyph through ActionPromptUI');
 assert.equal(lastPopup.promptInputs[1].actionId, 'action1', 'unrelated world-control binding is unchanged');
 assert.equal(lastPopup.promptInputs[2].actionId, 'interact');
 heldTorchForPopup = false;
