@@ -114,4 +114,18 @@ assert.strictEqual(attempts, 2, 'expired failed chunks are automatically retried
 assert.ok(retryZone.loaded.has('0,0'));
 assert.ok(listenerErrors.length >= 1, 'the intentionally failed chunk and listeners reported their errors');
 
+// A transient invalid player position must not poison chunk center coordinates,
+// accidentally queue NaN chunks, or unload the still-needed resident scene.
+const centerBeforeInvalid = retryZone.snapshot().center; // Preserves the last legitimate wilderness residency center.
+const loadedBeforeInvalid = retryZone.loaded.size; // Ensures invalid input does not discard otherwise usable static geometry.
+player.x = NaN;
+ctx.WildernessChunks.update(0.2);
+assert.strictEqual(ctx.PlayerTileEvents.current(), null, 'invalid position resets the transition baseline');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(retryZone.snapshot().center)),
+  JSON.parse(JSON.stringify(centerBeforeInvalid)), 'invalid position leaves the chunk center intact');
+assert.strictEqual(retryZone.loaded.size, loadedBeforeInvalid, 'a transient invalid position retains resident chunks');
+player.x = 2.5 * TILE;
+ctx.WildernessChunks.update(0.2);
+assert.strictEqual(tracked.at(-1).reason, 'initial', 'valid coordinates reseed tile events after invalid data');
+
 console.log('Player tile event and stationary chunk integration tests passed.');
