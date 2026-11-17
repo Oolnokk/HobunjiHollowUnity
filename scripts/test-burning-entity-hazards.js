@@ -129,7 +129,7 @@ const death = read('docs/js/creature-death.js');
 const visual = read('docs/js/combat/burning-affliction-vfx.js');
 const index = read('docs/index.html');
 const probe = read('docs/js/pixel-probe.js');
-assert.match(game,/BurningEntityHazards\?\.resolveSweptImpact\?\.\(entity, desiredX, desiredY, radiusPx, TILE/,'shared forced-movement sweep calls live fire hazard resolver');
+assert.match(game,/fireHazards\?\.resolveSweptImpact\?\.\(entity, desiredX, desiredY, radiusPx, TILE/,'shared forced-movement sweep calls live fire hazard resolver');
 assert.match(game,/BurningEntityHazards\?\.tickCorpses\?\.\(dt, corpseObjects/,'corpse flame ticks use existing corpse owner');
 assert.match(tools,/BurningEntityHazards\?\.findTorchSource\?\.\(contact/,'torch uses existing physical strike contact callback');
 assert.match(death,/BurningEntityHazards\?\.beginCorpse\?\.\(c\)/,'creature death registers a real corpse flame');
