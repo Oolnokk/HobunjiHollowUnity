@@ -87,7 +87,20 @@ const player={x:64,y:160}; // Player and walkers share the same occupancy regist
 const playerRoot={position:new V(2,0,5),children:[]};
 W.PlayerBodyTransformComposer={setChannel(){},clearChannel(){}};
 W.BedLiePose.init({THREE:W.THREE,player:()=>player,playerRoot:()=>playerRoot,tileSize:()=>32,area:()=>'bedroom',sleep:()=>({ok:true})});
+let playerPairedPoseLocked = true; // Exclusive paired kiss/dance pose owner used to verify bed animation handoff.
+W.CharacterActionLocks = { isLocked: (id, channel) => playerPairedPoseLocked && id === 'player' && channel === 'pose' };
+assert.equal(W.BedLiePose.begin({key:'doubleBed',mesh:bedRoot,id:'bed'}).ok,false,
+  'cannot begin bed approach while another animation owns the player root');
+assert.equal(W.BedLiePose.debug().active,false,'rejected bed approach must not reserve a mattress');
+playerPairedPoseLocked = false;
 assert.equal(W.BedLiePose.begin({key:'doubleBed',mesh:bedRoot,id:'bed'}).ok,true);
+playerPairedPoseLocked = true;
+const bedStartX = player.x, bedStartY = player.y; // Paused bed approach must not teleport the player during an exclusive kiss.
+W.BedLiePose.update(.1);
+assert.equal(player.x,bedStartX,'bed approach does not overwrite paired player x');
+assert.equal(player.y,bedStartY,'bed approach does not overwrite paired player y');
+assert.equal(W.BedLiePose.debug().elapsed,0,'bed approach does not advance during paired pose ownership');
+playerPairedPoseLocked = false;
 assert.equal(W.BedLiePose.debug().last.slot,0,'player takes the side the other sleeper left open');
 assert.equal(registry.lieTransform('bedroom',scheduledTarget,thirdOwner).occupied,true,'the player reserves the side during the lie-down animation');
 W.BedLiePose.cancel();
@@ -123,6 +136,21 @@ assert.equal(wallMaterial.depthWrite,true,'subdivision wall depth is never modif
 const hip=new V(0,npc.legs.standingPosteriorY,0).multiply(rig.scale).applyQuaternion(rig.quaternion); // Actual world-space hip after rig scale and bed rotation.
 assert(Math.abs(rig.position.y+hip.y-.255)<.001,'scaled NPC hip rests on the half-height authored mattress');
 assert.notEqual(skin.material[0],material);
+// The sleeping scheduler still ticks during a kiss. Its ordinary lie/wake
+// blend must not overwrite the exclusive paired-pose owner's torso.
+let pairedPoseLock = true; // Toggled below to exercise ownership handback without resetting the sleeper.
+W.CharacterActionLocks = { isLocked(id, channel) {
+  return pairedPoseLock && id === 'npc:npc-test' && channel === 'pose';
+} }; // Same shared participant ID as the spouse-kiss acquisition.
+const pairedBedPose = {
+  px: rig.position.x, py: rig.position.y, pz: rig.position.z,
+  q: { ...rig.quaternion.euler },
+}; // Captures all transform fields that BedLiePose.syncNpc would otherwise overwrite.
+for (let i = 0; i < 4; i++) W.BedLiePose.syncNpc(npc, { pose: 'stand', area: 'bedroom' }, .1, null);
+assert.deepEqual(
+  { px: rig.position.x, py: rig.position.y, pz: rig.position.z, q: { ...rig.quaternion.euler } },
+  pairedBedPose, 'NPC lie/wake composer leaves the paired kiss torso unchanged while pose-locked');
+pairedPoseLock = false;
 for(let i=0;i<20;i++)W.BedLiePose.syncNpc(npc,{pose:'stand',area:'bedroom'},.1,null);
 assert(!npc._bedLieActive&&skin.material[0]===material&&skin.renderOrder===2);
 assert.equal(mattressMesh.material.depthWrite,false,'the mattress remains depth-transparent while the partner sleeps');

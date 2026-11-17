@@ -20,6 +20,16 @@
 
   function updateWalker(walker, oldX, oldZ, options = {}) {
     if (!walker?.neckJoint || walker.animalDef || !walker.root?.position) return false;
+    const participantId = window.NpcCharacterState?.participantId?.(walker.rec?.id)
+      || 'npc:' + String(walker.rec?.id || 'unknown'); // Shared NPC character ID used by paired-kiss/dance scoped head locks.
+    if (window.CharacterActionLocks?.isLocked?.(participantId, 'head')
+        || window.CharacterActionLocks?.isLocked?.(participantId, 'pose')) {
+      // Preserve _npcMotionLookActive while the scoped head owner is present:
+      // after its release the ordinary idle/movement path must still know to
+      // retire the old walk gaze, otherwise a sideways neck can remain stuck.
+      window.PerpRotation?.clearHeadtrackHint?.(walker.perpState);
+      return false; // Never touch the neck quaternion, even for stale walking gaze, LOD transitions, or a lingering bed flag.
+    }
     if (walker._bedLieActive) { // Sleeping wins over walking gaze and any leftover look-at state.
       walker.neckJoint.rotation.set(0, 0, 0);
       walker._npcMotionLookActive = false;

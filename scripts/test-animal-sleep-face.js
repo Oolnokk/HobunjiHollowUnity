@@ -191,10 +191,13 @@ assert.equal(externalGroup.position.y, 1, 'cinematic projection restores the aut
 const nextTurn = () => new Promise(resolve => setImmediate(resolve)); // Lets nested composeFrame promises finish before inspecting the next rendered frame.
 
 (async () => {
-  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'barn' }, false);
+  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'wild' }, false);
+  assert.equal(composeCalls.at(-1).frame, 'idle', 'an unrelated wild animal retains its own requested pose');
+  assert.equal(composeCalls.at(-1).blinkShut, false, 'sleeping barn animals do not close another animal\'s eyes');
+  await windowStub.AnimalSleepPresentation.composeStaticFrame(barnGroup, 'drenkirra', { sig: 'barn' }, true);
   const firstStatic = composeCalls.at(-1);
-  assert.equal(firstStatic.frame, 'run2', 'static sleeper still freezes on run2');
-  assert.equal(firstStatic.blinkShut, true, 'static sleeper forces the closed-eye/blink overlay even when caller asks for awake eyes');
+  assert.equal(firstStatic.frame, 'run2', 'explicit static sleeper freezes on run2');
+  assert.equal(firstStatic.blinkShut, true, 'explicit static sleeper gets the closed-eye/blink overlay');
   assert.equal(barnGroup.userData.animalSleepBlinkOverlay, 'assets/creaturesprites/drenkirra_blink.png', 'static sleeper records the configured blink overlay');
 
   const prepareEntry = schedulerEntries.get('animal-sleep-presentation-pre-render');

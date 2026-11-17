@@ -552,7 +552,8 @@
       _nestContentDebug.lastBabyBuildStage = record.buildStage;
       let canvas = null;
       try {
-        canvas = await renderer.composeFrame(kind, 'idle', nest.genotype, false);
+        canvas = await (window.AnimalSleepPresentation?.composeStaticFrame?.(record.root, kind, nest.genotype, true)
+          || renderer.composeFrame(kind, 'idle', nest.genotype, false));
       } catch (composeError) {
         _nestContentDebug.lastError = String(composeError?.message || composeError);
         window.__farmLog?.(`[nest-content] baby genotype compose failed for ${kind}; using raw idle art: ${_nestContentDebug.lastError}`, 'warn');

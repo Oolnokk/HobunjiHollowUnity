@@ -468,12 +468,16 @@
       image.src = url;
     });
     rawBabyFrameCache.set(url, pending);
+    pending.then(canvas => { // A transient raw-PNG failure must not strand every future nursery retry.
+      if (!canvas && rawBabyFrameCache.get(url) === pending) rawBabyFrameCache.delete(url);
+    });
     return pending;
   }
 
   async function prepareAgentFrames(agent, entry, token) {
     const renderer = window.CreatureGeneticsRender;
-    if (!renderer) return;
+    if (!renderer || agent._framePreparing) return;
+    agent._framePreparing = true; // Per-agent ownership: a retry cannot overlap an earlier full genotype-frame build.
     try {
       const names = ['idle', 'run1', 'run2'];
       const species = renderer.SPECIES?.[entry.kind]; // Registered species retain complete recolor, pattern and eye layers.
@@ -483,10 +487,13 @@
       const canvases = await Promise.all(names.map(async name => {
         let composed = null;
         if (species && typeof renderer.composeFrame === 'function') {
-          try { composed = await renderer.composeFrame(entry.kind, name, entry.genotype, false); }
-          catch (error) { window.__farmLog?.('[nursery] genotype baby sprite unavailable: ' + String(error?.message || error), 'warn'); }
+          composed = await renderer.composeFrame(entry.kind, name, entry.genotype, false);
+          if (!composed) throw new Error(`Incomplete nursery genotype for ${entry.kind}/${name}`); // Never permanently replace registered eye/pattern artwork with a raw PNG.
+          return composed;
         }
-        return composed || rawBabyFrameCanvas(species?.base?.[name] || rawPaths[name]);
+        const raw = await rawBabyFrameCanvas(species?.base?.[name] || rawPaths[name]);
+        if (!raw) throw new Error(`Nursery source sprite unavailable for ${entry.kind}/${name}`);
+        return raw;
       }));
       if (token !== swarmGeneration || !swarmAgents.includes(agent)) return;
       if (canvases[0]) await window.BabyAnimalHeadWarp?.ensureIdleMask?.(entry.kind, canvases[0]); // Seed once from the true idle composition, not a later run pose.
@@ -499,8 +506,12 @@
       }
       agent.frameName = agent.frames.run1 ? 'run1' : 'idle';
       applyTexturePair(agent, agent.frames[agent.frameName] || agent.frames.idle);
+      agent._frameRetryAt = 0; // All three fully composed frames are ready; normal animation resumes.
     } catch (error) {
-      console.warn('[Nursery] baby frame compose failed:', entry.kind, error);
+      agent._frameRetryAt = performance.now() + 2000; // Keep the animal present on source art while its full genotype retries.
+      window.__farmLog?.('[nursery] baby frame composition retry for ' + entry.kind + ': ' + String(error?.message || error), 'warn');
+    } finally {
+      agent._framePreparing = false;
     }
   }
 
@@ -569,6 +580,7 @@
       id: entry.id,
       kind: entry.kind,
       genotype: entry.genotype,
+      appearanceEntry: entry, // Nursery retry reuses the same genotype/visual identity instead of rolling a new one.
       avatarRef,
       modelHeight,
       wx: 0.65 + Math.random() * Math.max(0.2, bounds.cols - 1.3),
@@ -659,6 +671,10 @@
       buildSwarm();
     }
     for (const agent of swarmAgents) {
+      if (agent._frameRetryAt && performance.now() >= agent._frameRetryAt && !agent._framePreparing) {
+        agent._frameRetryAt = 0;
+        prepareAgentFrames(agent, agent.appearanceEntry, swarmGeneration); // Retest the full artwork after a temporary image/paint failure.
+      }
       agent.turnTimer -= dt;
       const dx = agent.targetX - agent.wx;
       const dz = agent.targetZ - agent.wz;

@@ -403,7 +403,7 @@
   // out of order; the previous frame stays on screen until the next is ready.
   function _tickFarmAnimalFrame(animal, dt, forceIdle) {
     _updateFarmAnimalLocomotion(animal, dt, forceIdle);
-    if (animal._frameComposePending) return;
+    if (animal._frameComposePending || (animal._frameRetryAt && performance.now() < animal._frameRetryAt)) return; // Avoid a failed asset retry becoming a per-frame load/log storm.
     const sprites = _farmAnimalSprites(animal.animalKey);
     const walking = !!animal._locoWalking && !!sprites?.run?.length;
     const runIdx = walking ? (animal._locoRunFrame || 0) % sprites.run.length : 0;
@@ -415,7 +415,16 @@
       animal._frameComposePending = true;
       _applyGenotypeCompositeTexture(animal.avatarRef, animal.animalKey, frameKey, animal.genotype, blinkShut).then(applied => {
         animal._frameComposePending = false;
-        if (applied) { animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut; }
+        if (applied) {
+          animal._frameAppliedKey = frameKey; animal._blinkAppliedShut = blinkShut;
+          animal._frameRetryAt = 0; // Successful complete art resumes normal animated frame changes immediately.
+        } else {
+          animal._frameRetryAt = performance.now() + 2000; // Missing art or a failed compose can recover after a short cooldown.
+        }
+      }, error => {
+        animal._frameComposePending = false;
+        animal._frameRetryAt = performance.now() + 2000;
+        window.__farmLog?.('[genotype-render] livestock frame application retry: ' + (error?.message || error), 'warn');
       });
       return;
     }
