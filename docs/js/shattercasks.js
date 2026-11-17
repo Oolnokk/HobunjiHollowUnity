@@ -1894,13 +1894,25 @@
   // per-frame sync cleared ~120ms later: the visible prompt flicker.
   function promptButtons() {
     if(held||!promptClaim)return null;
-    if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
+    const device=window.ActionPromptUI?.getLastInputDevice?.()||'desktop'; // The displayed Shattercask pickup binding follows the active keyboard, controller, or touch input.
+    const controllerBindings=window.InputBindings?.getCurrentBindings?.()?.controller||null; // Live controller settings, used only when the controller owns the prompt.
+    const jumpOwnsInteract=device==='controller'&&!!controllerBindings?.interact
+      &&window.InputBindings?.resolveActionForButton?.('controller',controllerBindings.interact)==='jump'; // Ruin controller A jumps instead of interacting.
+    const toolSelectPickup=device==='touch'||jumpOwnsInteract; // Touch and ruin-controller pickup are handled by the tool selector, never the stolen Jump button.
+    if(!toolSelectPickup&&window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
     if(promptClaim.startsWith('crate:')){
       const p=playerPosition(),crate=p&&window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
-      return crate?.id===promptClaim.slice(6)?crate.promptButtons||null:null;
+      return !toolSelectPickup&&crate?.id===promptClaim.slice(6)?crate.promptButtons||null:null; // Crate piles do not support Tool Select, so never suggest that nonexistent shortcut.
     }
     const vase=promptClaim.startsWith('vase:')?records.get(area())?.vases.get(promptClaim.slice(5)):null;
-    return vase&&!vase.exploded&&!vase.carried?vase.promptButtons||null:null;
+    if(!vase||vase.exploded||vase.carried)return null;
+    if(!toolSelectPickup)return vase.promptButtons||null;
+    if(jumpOwnsInteract&&!controllerBindings?.toolSelect)return null; // A custom unbound Tool Select must not be advertised as usable.
+    if(facedShattercask()!==vase)return null; // The tool selector only picks up the faced target, not any nearby vase.
+    if(!vase.toolSelectPromptButtons)vase.toolSelectPromptButtons=Object.freeze([Object.freeze({
+      ...vase.promptButtons[0],inputAction:'toolSelect',touchInputLabel:'Tool Select',
+    })]); // Cached real pickup hint for touch and for controllers whose Interact is reserved by Jump.
+    return vase.toolSelectPromptButtons;
   }
   function baseHeight(col,row) {
     const d=deps(),t=tileSize();
