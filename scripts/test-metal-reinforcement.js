@@ -100,7 +100,7 @@ near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime),
 assert.match(shop, /MetalReinforcement\?\.next\(current/, 'smith looks up one next stage');
 assert.doesNotMatch(shop, /mc-reinforce-select/, 'arbitrary metal-tier selection is removed');
 assert.match(shop, /setToolReinforcement\(itemKey, metalKey, 0\)/, 'ordinary new tools begin at grade I');
-assert.match(foundry, /setToolReinforcement\(key, metal, 0\)/, 'modular new tools begin at grade I');
+assert.match(foundry, /setToolReinforcement\?\.\(key, metal, 0\)/, 'modular new tools begin at grade I');
 assert.match(game, /toolReinforcement: Object\.fromEntries\(/, 'new game characters start at actual grade I (0.75×)');
 assert.match(onboarding, /toolReinforcement: Object\.fromEntries\(/, 'new onboarding characters start at actual grade I (0.75×)');
 assert.match(shop, /forgeBarCost\(CRAFT_BAR_COST, metalKey/, 'the ordinary smith uses scaled forging costs');
