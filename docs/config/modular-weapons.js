@@ -3592,11 +3592,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 173,
+            "x": 213,
             "y": 810
           },
           "end": {
-            "x": 213,
+            "x": 173,
             "y": 810
           }
         },
@@ -9575,11 +9575,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 186,
+            "x": 226,
             "y": 956
           },
           "end": {
-            "x": 226,
+            "x": 186,
             "y": 956
           }
         },
@@ -9702,11 +9702,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 205,
+            "x": 245,
             "y": 562
           },
           "end": {
-            "x": 245,
+            "x": 205,
             "y": 562
           }
         }
@@ -9802,11 +9802,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 186,
+            "x": 226,
             "y": 964
           },
           "end": {
-            "x": 226,
+            "x": 186,
             "y": 964
           }
         },
@@ -9930,11 +9930,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 167,
+            "x": 207,
             "y": 1130
           },
           "end": {
-            "x": 207,
+            "x": 167,
             "y": 1130
           }
         }
@@ -11738,11 +11738,11 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 187,
+            "x": 227,
             "y": 279
           },
           "end": {
-            "x": 227,
+            "x": 187,
             "y": 279
           }
         },
