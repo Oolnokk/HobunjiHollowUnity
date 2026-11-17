@@ -57,6 +57,21 @@ const send = (kind, hours, extra = {}) => {
 const entries = () => restProvider?.() || []; // Reads the game buff provider rather than hand-built test badges.
 const buff = name => entries().find(item => item.id === name); // Looks up a named effect without relying on HUD ordering.
 
+assert.equal(rest.previewTimePassageRest('wait', 1)?.label, 'Rested', 'one-hour Wait previews Rested');
+assert.equal(rest.previewTimePassageRest('wait', 16)?.durationHours, 3, 'seated Wait always previews three hours of Rested');
+assert.match(rest.previewTimePassageRest('sleep', 1)?.description || '', /yawns/, 'short Sleep describes Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 8)?.label, 'Rested', 'unowned Sleep never promises bed-exclusive Well Rested');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+assert.equal(rest.previewTimePassageRest('sleep', 7)?.label, 'Rested', 'seven hours in bed still previews Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 8)?.label, 'Well Rested', 'eight hours in bed previews Well Rested');
+assert.equal(rest.previewTimePassageRest('sleep', 16)?.durationHours, 24, 'longer sleep does not extend the Well Rested duration');
+assert.match(rest.previewTimePassageRest('sleep', 8)?.previewDescription || '', /\+8% movement speed.*\+30% stamina recovery/, 'compact preview explains actual stat bonuses');
+assert.equal(rest.previewTimePassageRest('wait', 16)?.label, 'Rested', 'seated Wait never upgrades to Well Rested');
+assert.equal(window.__hobunjiOwnedBedSleepPending?.source, 'player-bed', 'preview must not consume the pending bed token');
+window.__hobunjiOwnedBedSleepPending = null;
+assert.equal(rest.previewTimePassageRest('sleep', 0), null, 'zero-hour sleep grants no preview');
+assert.equal(rest.previewTimePassageRest('dev', 8), null, 'dev time skip grants no rest preview');
+
 assert.equal(rest.isRested(), false, 'new or legacy saves begin without either rest tier');
 assert.equal(rest.isWellRested(), false);
 assert.equal(typeof restProvider, 'function', 'Rested is exposed to the existing EffectBuffBar across Node VM realms');
@@ -146,4 +161,34 @@ window.__hobunjiPlayerProfile.characterId = 'farmer-a';
 assert.equal(rest.isWellRested(), true, 'Well Rested restores from the original character save');
 assert.equal(rest.isRested(), true, 'Rested restores from the original character save');
 
-console.log('Rested/Well Rested: any Sleep, seated Wait, 8h bed threshold, HUD, save, legacy and native player slowdown OK');
+const calendarSource = read('docs/js/calendar-system.js'); // Verifies the real calendar selector uses the new compact buff preview in the requested position.
+const hoursMarkupIndex = calendarSource.indexOf('id="timePassageHours"'); // Checks visual order of hours, benefits and slider in the actual modal markup.
+const benefitMarkupIndex = calendarSource.indexOf('id="timePassageBenefit"'); // Checks the shared modal contains one benefits group.
+const sliderMarkupIndex = calendarSource.indexOf('id="timePassageSlider"'); // Ensures the benefit group precedes the selector.
+assert(hoursMarkupIndex > 0 && hoursMarkupIndex < benefitMarkupIndex && benefitMarkupIndex < sliderMarkupIndex, 'benefit appears directly after hours and before the slider');
+assert.match(calendarSource, /transitioning \.time-passage-benefit\{display:none\}/, 'rest benefit disappears during the darkened passage countdown');
+function selectorFunction(name) {
+  const start = calendarSource.indexOf(`  function ${name}(`); // Extracts the actual shipped selector code for a VM behavior test.
+  const end = calendarSource.indexOf('\n  function ', start + 1); // The following function closes the current top-level calendar helper.
+  assert(start >= 0 && end > start, `calendar selector helper ${name} is present`);
+  return calendarSource.slice(start, end);
+}
+const display = { hours: { textContent: '' }, benefitName: { textContent: '' }, benefitDescription: { textContent: '' }, slider: { value: '' }, confirm: { textContent: '' } }; // Minimal DOM-like nodes updated by the calendar helper without opening a real game window.
+const selectorContext = { window, _selectedPassageHours: 1, _timePassageKind: 'wait', _timePassageUi: display, MAX_PASSAGE_HOURS: 16, refreshTimePassagePreview() {} }; // The selector's real update path is exercised against the genuine rest authority.
+vm.runInNewContext(`${selectorFunction('updateTimePassageBenefitPreview')}\n${selectorFunction('setSelectedPassageHours')}\nglobalThis.chooseHours = setSelectedPassageHours;`, selectorContext);
+selectorContext.chooseHours(16);
+assert.match(display.benefitName.textContent, /^Rested · Lasts 3 in-game hours$/, 'Wait stays Rested even at maximum hours');
+assert.equal(display.benefitDescription.textContent, rest.previewTimePassageRest('wait', 16).previewDescription, 'selector uses the authoritative compact description');
+window.__hobunjiOwnedBedSleepPending = { source: 'player-bed' };
+selectorContext._timePassageKind = 'sleep';
+selectorContext.chooseHours(7);
+assert.match(display.benefitName.textContent, /^Rested/, 'seven bed-sleep hours still select Rested');
+selectorContext.chooseHours(8);
+assert.match(display.benefitName.textContent, /^Well Rested · Lasts 24 in-game hours$/, 'eight bed-sleep hours update the visible tier and duration');
+assert.match(display.benefitDescription.textContent, /\+8% movement speed/, 'the on-screen description includes the real movement bonus');
+selectorContext._timePassageKind = 'wait';
+selectorContext.chooseHours(8);
+assert.match(display.benefitName.textContent, /^Rested/, 'switching back to a seat removes the full-rest preview');
+window.__hobunjiOwnedBedSleepPending = null;
+
+console.log('Rested/Well Rested: time passage UI order, compact descriptions, hour selection, seated Wait, 8h bed threshold, HUD, save and movement OK');
