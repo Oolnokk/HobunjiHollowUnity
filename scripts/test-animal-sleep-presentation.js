@@ -376,6 +376,35 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
   windowStub.AnimalSleepPresentation.unregisterExternalSleeper(externalEntity);
   assert.equal(externalGroup.children[0].material.map, externalIdleMap, 'unregister restores the live actor before releasing its state');
   assert.equal(windowStub.AnimalSleepPresentation.getDebug().externalSleepers, 0);
+
+  // A failed sleep-only eye/pattern compose must retry after cooldown, not stay cached as a permanent null pair.
+  let simulatedNow = 1000; // Advances only this test's sleep-cache retry clock, without waiting in real time.
+  context.performance.now = () => simulatedNow;
+  const retryGroup = makeGroup('incubator_sleep_retry-case', 0.75, 0.75); // Same registered static lifecycle as barn/nest/incubator babies.
+  windowStub.AnimalSleepPresentation.registerStaticSleeper(retryGroup, 'drenkirra');
+  retryGroup.userData.animalSleepGenotype = { sig: 'sleep-retry-case' };
+  const originalCompose = windowStub.CreatureGeneticsRender.composeFrame;
+  let retryComposes = 0; // Counts only this failure fixture's requests.
+  windowStub.CreatureGeneticsRender.composeFrame = function (...args) {
+    if (args[2]?.sig === 'sleep-retry-case' && ++retryComposes === 1) return Promise.reject(new Error('temporary sleep eye error'));
+    return originalCompose.apply(this, args);
+  };
+  const failedBefore = windowStub.AnimalSleepPresentation.getDebug().failedSleepComposites;
+  externalFrame();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(retryComposes, 1, 'first static sleep composition can fail without caching an incomplete frame');
+  assert.equal(windowStub.AnimalSleepPresentation.getDebug().failedSleepComposites, failedBefore + 1,
+    'mobile sleep diagnostics record a missing sleeping eye/pattern layer');
+  externalFrame();
+  assert.equal(retryComposes, 1, 'unavailable sleeper art does not queue another full composite each render frame');
+  simulatedNow += 2100;
+  externalFrame();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(retryComposes, 2, 'sleeping art retries after cooldown and recovers');
+  externalFrame();
+  assert.equal(retryComposes, 2, 'recovered sleeping texture is reused without extra compositions');
+  assert.equal(windowStub.AnimalSleepPresentation.getDebug().lastSleepComposeError, null, 'successful retry clears the warning');
+
   console.log('animal sleep presentation regression tests passed');
 })().catch(error => {
   console.error(error);
