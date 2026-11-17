@@ -109,6 +109,53 @@
     return { points: projected, hits, misses: points.length - hits };
   }
 
+  // Extend each finished ankle-opening spline along its own 3D chord, centred on the calf bone.
+  // The authored points and beltline remain unchanged; the ring's existing weights fade the extra
+  // width toward the knee, so this complements (rather than replaces) species legThickness fitting.
+  function stretchLegOpeningSpans(positions, segments, rings, splines, widthRatio = 1) {
+    const factor = Number(widthRatio); // Width multiplier from the same averaged body X/Y used for hand/foot meshes.
+    const stride = Number(segments) + 1; // Existing skinned garment vertex-grid stride.
+    if (!Number.isInteger(stride) || stride < 2 || positions?.length !== stride * stride * 3
+        || !Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) <= 1e-8) return false;
+    const sampleAxis = (point, axis) => { // Sample a bilinear point on the same garment grid as the debug spline.
+      const first = point.i * 3 + axis, nextRow = stride * 3;
+      if (!Number.isInteger(point?.i) || first < axis || first + nextRow + 3 >= positions.length) return NaN;
+      const top = positions[first] + (positions[first + 3] - positions[first]) * point.fx;
+      const bottom = positions[first + nextRow] + (positions[first + nextRow + 3] - positions[first + nextRow]) * point.fx;
+      return top + (bottom - top) * point.fy;
+    };
+    const axes = []; // Each valid ring supplies one fixed axis and centre, sampled before any vertex is moved.
+    for (const side of ['left', 'right']) {
+      const ring = rings?.[side], samples = splines?.[`${side}Ankle`]?.samples;
+      if (!ring?.anchor || ring.influence?.length !== stride * stride || !Array.isArray(samples) || samples.length < 2) continue;
+      const first = samples[0], last = samples[samples.length - 1];
+      const x = sampleAxis(last, 0) - sampleAxis(first, 0);
+      const y = sampleAxis(last, 1) - sampleAxis(first, 1);
+      const z = sampleAxis(last, 2) - sampleAxis(first, 2);
+      const length = Math.hypot(x, y, z); // Keep the opening's authored arc curvature while stretching its chord.
+      if (!(length > 1e-9)) continue;
+      axes.push({
+        x: x / length, y: y / length, z: z / length,
+        cx: sampleAxis(ring.anchor, 0), cy: sampleAxis(ring.anchor, 1), cz: sampleAxis(ring.anchor, 2),
+        influence: ring.influence,
+      }); // Opening span and calf-bone anchor remain independent for the two legs.
+    }
+    if (!axes.length) return false;
+    const extra = factor - 1; // Applied once to the rest grid, never compounded across animation frames.
+    for (let i = 0; i < stride * stride; i++) {
+      const j = i * 3, x = positions[j], y = positions[j + 1], z = positions[j + 2];
+      let dx = 0, dy = 0, dz = 0; // Collect both sides against the same original vertex to avoid order-dependent seams.
+      for (const axis of axes) {
+        const weight = axis.influence[i];
+        if (!(weight > 0)) continue;
+        const along = ((x - axis.cx) * axis.x + (y - axis.cy) * axis.y + (z - axis.cz) * axis.z) * extra * weight;
+        dx += axis.x * along; dy += axis.y * along; dz += axis.z * along;
+      }
+      positions[j] = x + dx; positions[j + 1] = y + dy; positions[j + 2] = z + dz;
+    }
+    return true;
+  }
+
   function buildLegOpeningFitControls(garment, thickness = 1) {
     const pantsBelt = normalizeSpline(garment?.pantsBeltSpline);
     const leftSource = normalizeSpline(garment?.legOpenings?.left);
@@ -948,6 +995,7 @@
     transformSpline,
     shrinkwrapSplineToAlpha,
     buildLegOpeningFitControls,
+    stretchLegOpeningSpans,
     inverseDistanceDisplacement,
     warpRgbaNearest,
     solveBeltSimilarity,
