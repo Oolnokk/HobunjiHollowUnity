@@ -15,7 +15,7 @@
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
     lastBird: null, lastPose: null, captiveRestores: 0, captiveRestoreMisses: 0,
     lastCaptiveRestore: null, captiveHandoffs: 0, staleCarryCorrections: 0,
-    tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
+    tintRestores: 0, refreshedPlanes: 0, staleCarryScaleCorrections: 0 }; // Distinguish late scale replays from the existing orientation-only correction counter. // Plain serializable diagnostics for mobile.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   const isSkeeriActor = actor => actor?.isRuinSkeeri === true || (kind(actor) === 'skeeri' && actor?.isCompanion === true); // Shared native wing rig for authored ruin enemies and trained Skeeri.
@@ -107,7 +107,7 @@
     const staleTalonScale = !scaleOwned && sameScale(pose.group.scale, pose.lastDecomposedScale); // A precisely recognized late replay of the bird's intermediate matrix scale is not a new native scale owner.
     if (orientationOwned && staleTalonScale && pose.scale) {
       pose.group.scale.copy(pose.scale); // Correct ONLY the known talon intermediate scale before shared owner validation.
-      debug.staleCarryCorrections++;
+      debug.staleCarryScaleCorrections++;
     }
     let owned = orientationOwned && (scaleOwned || staleTalonScale);
     if (pose.poseSession) {
