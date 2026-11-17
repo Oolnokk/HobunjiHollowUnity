@@ -6,6 +6,7 @@
   const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
   const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
+  const CORRECTED_COMPANION_TANG_SHAFTS = new Set(['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']); // Only the six shipped automatically generated sideways tangs require reversed arrow direction.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
   const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
@@ -355,7 +356,7 @@
   function addCompanionsToPreviousDraft(raw) {
     const upgraded = JSON.parse(JSON.stringify(raw)); // Migrate once; do not overwrite current v5 user edits.
     if (upgraded.schema !== SCHEMA) return upgraded; // v1 drafts are converted separately.
-    for (const shaft of Object.values(upgraded.shafts || {})) {
+    for (const [shaftKey, shaft] of Object.entries(upgraded.shafts || {})) {
       if (!Array.isArray(shaft.mounts)) continue;
       const originalEyes = shaft.mounts.filter(mount => mount?.type === 'eye');
       for (const eye of originalEyes) {
@@ -367,9 +368,10 @@
           Math.hypot((mount.start.x + mount.end.x) / 2 - center.x, (mount.start.y + mount.end.y) / 2 - center.y) < 2);
         if (alreadyPaired) continue; // An author may already have placed a companion by hand.
         const offsetX = -dy / 4, offsetY = dx / 4; // Tang length is half eye length; perpendicular and centered.
+        const reverse = CORRECTED_COMPANION_TANG_SHAFTS.has(shaftKey); // Legacy handmade families retain their original companion handedness.
         const companion = { type: 'tang',
-          start: { x: center.x + offsetX, y: center.y + offsetY },
-          end: { x: center.x - offsetX, y: center.y - offsetY } }; // Directed arrow points opposite the sleeve-first legacy generator.
+          start: { x: center.x + (reverse ? offsetX : -offsetX), y: center.y + (reverse ? offsetY : -offsetY) },
+          end: { x: center.x + (reverse ? -offsetX : offsetX), y: center.y + (reverse ? -offsetY : offsetY) } }; // Only known-bad generated tangs reverse; all endpoints remain centered and perpendicular.
         if ([companion.start, companion.end].every(p => p.x >= 0 && p.x <= 450 && p.y >= 0 && p.y <= 1204))
           shaft.mounts.push(companion); // Preserve adjusted eye location and orientation from prior saved drafts.
       }
@@ -381,10 +383,9 @@
   }
   function repairLegacyCompanionTangDirections(draft) {
     if (draft?.schema !== SCHEMA) return false;
-    const sourceKeys = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']; // Only six known automatically generated companions, never hand-adjusted Kylie/twin-ended mounts.
     const samePoint = (a, b) => a && b && Math.abs(a.x - b.x) < 1e-7 && Math.abs(a.y - b.y) < 1e-7; // Exact old-arrow fingerprint, allowing JSON float round-trip.
     let changed = false; // Signals whether the browser draft needs saving after the repair.
-    for (const key of sourceKeys) {
+    for (const key of CORRECTED_COMPANION_TANG_SHAFTS) {
       const shaft = draft.shafts?.[key], shipped = global.MODULAR_WEAPON_CONFIG.shafts[key];
       if (!Array.isArray(shaft?.mounts) || !shipped) continue;
       const eye = shipped.mounts.find(m => m.type === 'eye');
