@@ -110,6 +110,7 @@
 
   function begin(furniture) {
     if (active) return { ok: false, message: 'Already getting into bed.' };
+    if (window.CharacterActionLocks?.isLocked?.('player', 'pose')) return { ok: false, message: 'Cannot lie down during another full-body animation.' }; // Paired choreography owns the player root and must not be displaced by a bed approach.
     if (!deps?.player?.() || !deps.playerRoot?.() || !deps?.sleep || !window.PlayerBodyTransformComposer?.setChannel)
       return { ok: false, message: 'The bed animation is not ready.' };
     if (!furniture?.mesh?.parent || !/^(basicBed|doubleBed|bedroll)$/.test(furniture.key))
@@ -137,6 +138,7 @@
 
   function update(dt) {
     if (!active) return;
+    if (window.CharacterActionLocks?.isLocked?.('player', 'pose')) return; // A paired action may start during a bed approach; freeze this presentation instead of overwriting its authored root/tile position.
     if (deps.area() !== active.area || !active.furniture.mesh.parent || !deps.playerRoot()) {
       diagnostics.cancelled++;
       clear('area-changed', false); // An area transition already assigned a new spawn; never teleport back to the old room.
