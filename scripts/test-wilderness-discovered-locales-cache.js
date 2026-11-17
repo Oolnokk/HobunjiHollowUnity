@@ -12,6 +12,7 @@ let savedMeta = JSON.stringify({ worlds: [
   { id: 'world-b', discoveredLocales: { locale_b: { name: 'Camp B', category: 'story_poi' } } },
 ] }); // Simulates the canonical save blob, including writes from other modules.
 let currentWorld = 'world-a'; // Mutated to verify the cache never leaks discoveries across worlds.
+let currentYear = 7; // Advanced in place to check same-tile fog updates after Tothal Shifts.
 let parseCalls = 0; // Counts full metadata parses in the running map module.
 let failMetaWrites = false; // Forces a failed persistence attempt to test copy-on-write behavior.
 const player = { x: 0, y: 0 }; // Moved into discovery range of the two test landmarks.
@@ -53,7 +54,7 @@ const layout = { cols: 50, rows: 50, tiles: [], localeInstances: [
 context.WildernessMap.init({
   _zoneLayouts: new Map([[zoneId, layout]]),
   tothalWorldId: () => currentWorld,
-  currentTothalYear: () => 7,
+  currentTothalYear: () => currentYear,
   _isZoneArea: area => area === zoneId,
   getCurrentArea: () => zoneId,
   showToast: () => {},
@@ -96,6 +97,24 @@ assert(!visibleIds().includes('locale_a'), 'switching worlds must not leak secre
 const worldBParseCount = parseCalls; // Read cache should stabilize again after the world change.
 for (let i = 0; i < 60; i++) visibleIds();
 assert.equal(parseCalls, worldBParseCount, 'second world should also use the read cache');
+
+// World A already revealed this same tile. World B must not reuse that fog
+// memory or the same-tile early return, and must write its own fog record.
+context.WildernessMap.updateFogAroundPlayer();
+assert(JSON.parse(savedMeta).worlds[1].discoveredLocales['locale_a:tothal:7'],
+  'world B must discover a secret at a tile already visited in world A');
+const worldBFogKey = 'hobunji_zone_fog_v1_world-b_zone'; // Distinct persistent fog key proving no cross-world cache reuse.
+assert(extraStorage.has(worldBFogKey), 'world B must persist its own initially hidden fog tiles');
+assert.equal(JSON.parse(extraStorage.get(worldBFogKey)).year, 7,
+  'world B must persist fog using its own active Tothal year');
+
+currentYear = 8;
+context.WildernessMap.updateFogAroundPlayer();
+assert(JSON.parse(savedMeta).worlds[1].discoveredLocales['locale_a:tothal:8'],
+  'a new Tothal year at the same coordinates must discover regenerated secrets');
+assert.equal(JSON.parse(extraStorage.get(worldBFogKey)).year, 8,
+  'new-year fog must replace previous-year fog even without player movement');
+currentYear = 7;
 
 // A failed write must not alter the cached read-only object; discovery writers
 // now copy it before they make tentative changes to persistence.
