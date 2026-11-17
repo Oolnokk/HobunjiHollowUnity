@@ -28229,6 +28229,8 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
+        const archLayout = window.ActionPromptUI.createActionArchLayout(btns, heldMode, sitInteraction); // Shared physical placement also drives floating prompt inputs.
+        const { nonClimbBtns } = archLayout; // Kept for activeAction selection even when the DOM arch needs no rebuild.
         // Every action supplied by an aimed world object is a world
         // interaction even if its id predates the obj_* naming convention.
         const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
@@ -28264,16 +28266,7 @@
           || nearbyNpcWalker?.root
           || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
-        const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
-        const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'jump' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
-          const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
-          return {
-            actionId,
-            label: window.ActionPromptUI.actionPromptGlyph(actionId, touchLabel),
-            color: window.ActionPromptUI.actionPromptColor(actionId),
-          };
-        });
+        const promptInputs = window.ActionPromptUI.resolveWorldPromptInputs(promptButtons, archLayout); // Exact five-slot layout and live remaps now live outside this monolith.
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: promptButtons,
           root: interactionRoot,
@@ -28311,7 +28304,6 @@
         // (e.g. no tool equipped), which is exactly the case a player
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
-        const nonClimbBtns = btns.filter(b => b !== climbBtn && b.nativeInput !== true); // Native-input prompts (for example Dodge-to-jump-off a rope) stay in the floating list without stealing one of the five action-arch buttons.
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
@@ -28341,11 +28333,7 @@
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
-        const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
-          || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
-          || b.action.startsWith('place_') || b.action.startsWith('spawn_');
-        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
-        const itemBtns = nonClimbBtns.filter(isItemButton);
+        // All five physical buttons and the popup hints now read from one shared arch layout.
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -28688,21 +28676,11 @@
           }
         }
 
-        if (heldMode === 'item' && !sitInteraction) {
-          // Item mode: all actions spread across all 5 arch positions
-          // (climb_branch excluded — see nonClimbBtns above)
-          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
-          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
-          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
-          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
-          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
-        } else {
-          applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
-          applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
-          applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
-          applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
-          applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
-        }
+        applyAbt('btnAction1',    archLayout.slots[0], btns.indexOf(archLayout.slots[0]));
+        applyAbt('btnAction2',    archLayout.slots[1], btns.indexOf(archLayout.slots[1]));
+        applyAbt('btnAction3',    archLayout.slots[2], btns.indexOf(archLayout.slots[2]));
+        applyAbt('btnItemAction1', archLayout.slots[3], btns.indexOf(archLayout.slots[3]));
+        applyAbt('btnItemAction2', archLayout.slots[4], btns.indexOf(archLayout.slots[4]));
 
         if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }

@@ -721,7 +721,7 @@
       const slot = buttons.indexOf(button);
       const promptInput = promptInputs[slot] || null; // Supplies the binding label, semantic action, and matching color for this exact list row.
       const keyHint = options.showInputHints !== false && slot >= 0 // Used as the colored leading segment, including rebound keys/buttons.
-        ? String(promptInput?.label || promptKeys[slot] || `Action ${slot + 1}`)
+        ? String(promptInput ? (promptInput.label || '') : (promptKeys[slot] || `Action ${slot + 1}`)) // A structured but unusable binding must stay blank, not resurrect the obsolete positional E/Q/F3 hint.
         : '';
       const prompt = {
         ...button,

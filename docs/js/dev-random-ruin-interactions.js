@@ -7,7 +7,7 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const LADDER_RANGE = 1.7;
   const SEMANTIC_RESCAN_MS = 250;
-  const SLOT_ACTIONS = ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2'];
+  const SLOT_ACTIONS = window.ActionPromptUI?.archActions || ['action1', 'action2', 'action3', 'itemAction1', 'itemAction2']; // Reuse canonical five-slot order; fallback supports isolated dev probes.
   const TOUCH_BUTTON_IDS = ['btnAction1', 'btnAction2', 'btnAction3', 'btnItemAction1', 'btnItemAction2'];
   const INPUT_CLAIM_OWNER = 'dev-random-ruin'; // Shared input-ownership registry key; explicit Action 1 interactions can suppress combat without hardcoding ruin logic into the weapon system.
   const GridTileAccessors = window.GridTileAccessors;
@@ -570,22 +570,6 @@
     return 'desktop';
   }
 
-  function bindingFor(action, device = currentDevice()) {
-    if (device === 'touch') return '';
-    const bindings = window.InputBindings?.getCurrentBindings?.();
-    return bindings?.[device]?.[action] || '';
-  }
-
-  function bindingLabel(action, device = currentDevice(), touchIcon = '✋') {
-    if (device === 'touch') return touchIcon;
-    const binding = bindingFor(action, device);
-    return window.InputBindings?.buttonLabel?.(binding, device) || binding || '';
-  }
-
-  function inputColor(action) {
-    return window.ActionArchSlotColors?.inputColors?.[action] || '#B8C5C0';
-  }
-
   function syncInputClaims(rows) {
     const registry=window.WorldActionInputClaims;
     if(!registry)return;
@@ -632,18 +616,17 @@
   function syncWorldPopup(rows) {
     const popup=window.WorldPopupText;
     if(!popup?.syncInteractionPrompts)return;
-    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Match prompt glyphs to the separate Interact binding while torch swings keep Action 1.
-    const buttons=actionButtonsFromRows(rows).map((button, index) => (
-      torchHeld && PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)
-        ? { ...button, inputAction: 'interact' } : button
-    ));
+    const torchHeld = window.AdventuringTools?.isHoldingTorch?.() === true; // Match the door hint to its real input without stealing Torch Swing/Throw.
+    const device=currentDevice(); // Used by the torch-door's physical arch-slot fallback when the Interact button is Jump or absent.
+    let torchDoorIndex=0; // Mirrors adventuringToolActionButtons' appended door order after Torch Swing and Throw.
+    const torchDoorSlots=['action3','itemAction1','itemAction2']; // Appended door rows occupy these arch slots, in order, on touch and controller.
+    const buttons=actionButtonsFromRows(rows).map((button, index) => {
+      if (!torchHeld || !PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)) return button;
+      const archAction=torchDoorSlots[torchDoorIndex++]||''; // No fourth actionable door slot exists in the current five-button arch.
+      return { ...button, inputAction: device === 'controller' || device === 'touch' ? archAction : 'interact' }; // Keyboard keeps E, while touch/controller use the visible third arch slot.
+    });
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
-    const device=currentDevice();
-    const promptInputs=buttons.map(button=>({
-      actionId:button.inputAction||'',
-      label:button.inputAction?bindingLabel(button.inputAction,device,button.icon):'',
-      color:button.inputAction?inputColor(button.inputAction):'#B8C5C0',
-    }));
+    const promptInputs=window.ActionPromptUI.resolveWorldPromptInputs(buttons,null,device); // Shared remap, Jump priority, and arch-color hints for native rows.
     popup.syncInteractionPrompts({
       buttons,
       root,
@@ -757,7 +740,7 @@
         customPromptBridgeInstalled:false,
         providerCount:[window.DevRandomRuin, window.DevRandomRuinMotionRuntime, window.DevRandomRuinPrototypeHooks, window.DevRandomRuinSimplePuzzles].filter(provider => typeof provider?.getInteractionControls === 'function').length,
         ladderCount:ladders.length,
-        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:bindingLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
+        rows:lastRows.map(row => ({ label:row.label, kind:row.kind, action:row.action, inputAction:row.inputAction, inputActionId:row.inputAction, nativeInput:row.nativeInput===true, input:window.ActionPromptUI.worldPromptLabel(row.inputAction, currentDevice(), row.touchIcon), distance:Number.isFinite(row.distance) ? +row.distance.toFixed(3) : null, owner:row.owner?.name||row.owner?.id||null })),
         ownerName:lastAnchor?.name || null,
         ownerKind:semanticKind(lastAnchor),
         worldPopupVisible:lastRows.length>0,
