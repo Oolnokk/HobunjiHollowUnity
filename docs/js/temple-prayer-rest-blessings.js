@@ -12,8 +12,10 @@
   const SLEEP_HOUR_EPSILON = 1e-6; // Absorbs raw calendar-fraction rounding at exact 8h, not genuine short sleep.
   const RESTED_DESCRIPTION = 'Prevents hourly fatigue yawns. Does not grant the additional Well Rested stat bonuses.'; // The Rested preview and HUD use one explanation.
   const WELL_RESTED_DESCRIPTION = '+8% movement speed; +30% Stamina recovery; food and potion strength gains 1 extra stack per 3 stacks (rounded down); prevents hourly fatigue yawns.'; // The Well Rested preview and HUD use one explanation.
-  const RESTED_BENEFIT = Object.freeze({ label: 'Rested', durationHours: RESTED_DURATION_HOURS, description: RESTED_DESCRIPTION }); // Shared Rested preview metadata, independent of saved buff state.
-  const WELL_RESTED_BENEFIT = Object.freeze({ label: 'Well Rested', durationHours: WELL_RESTED_DURATION_HOURS, description: WELL_RESTED_DESCRIPTION }); // Shared bed-exclusive preview metadata.
+  const RESTED_PREVIEW_DESCRIPTION = 'Prevents hourly fatigue yawns.'; // Short UI wording; the HUD retains its complete tooltip.
+  const WELL_RESTED_PREVIEW_DESCRIPTION = 'Prevents fatigue yawns; +8% movement speed; +30% stamina recovery; +1/3 food and potion buff strength (whole stacks round down).'; // All effects fit below the hour count without displacing the slider.
+  const RESTED_BENEFIT = Object.freeze({ label: 'Rested', durationHours: RESTED_DURATION_HOURS, description: RESTED_DESCRIPTION, previewDescription: RESTED_PREVIEW_DESCRIPTION }); // Both the UI and HUD read one source of rest-tier values.
+  const WELL_RESTED_BENEFIT = Object.freeze({ label: 'Well Rested', durationHours: WELL_RESTED_DURATION_HOURS, description: WELL_RESTED_DESCRIPTION, previewDescription: WELL_RESTED_PREVIEW_DESCRIPTION }); // Bed-exclusive buff details stay with their gameplay owner.
   const ACTION_ID = 'temple_pray'; // Used by Action 3 while the player is seated in a temple pew on Anan.
   const ACTION_BUTTON_ID = 'btnAction3'; // Leaves Action 1 Stand and Action 2 Wait untouched while seated.
   const OWNED_BED_SLEEP_PENDING_KEY = '__hobunjiOwnedBedSleepPending'; // One-shot token armed only by the player's real bed Sleep interaction.
