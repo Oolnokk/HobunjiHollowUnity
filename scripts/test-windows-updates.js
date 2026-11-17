@@ -34,6 +34,8 @@ assert.match(preload, /contextBridge.exposeInMainWorld/);
 assert.match(main, /prepareUpdateRestart/);
 assert.match(main, /CLOSE_SAVE_SCRIPT/);
 assert.match(main, /cancelPreparedRestart/);
+assert.match(main, /outcome\.mode !== 'paused'/, 'Dev Companion save freeze must not authorize an update restart');
+assert.match(main, /Saving is deliberately paused/, 'Save pause needs an explicit warning');
 assert.match(main, /Check for Updates/);
 assert.match(workflow, /branches:\s*\n\s*- main/);
 assert.match(workflow, /docs\/\*\*/);
