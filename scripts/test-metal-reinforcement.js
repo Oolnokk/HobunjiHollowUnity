@@ -21,7 +21,7 @@ const keys = ['nativeCopper', 'lowTinBronze', 'tinBronze', 'highTinBronze', 'ars
 const metalDefs = Object.fromEntries(keys.map((key, index) => [key, { tier: index + 1, label: key }])); // Same tier data as game.js; names are unimportant for numeric tests.
 const near = (actual, expected, label) => assert(Math.abs(actual - expected) < 1e-9, `${label}: ${actual} != ${expected}`);
 let status = reinforcement.status('nativeCopper', { metalKey: 'nativeCopper', grade: 0 }, metalDefs, keys);
-near(status.multiplier, 0.90, 'starter metal power');
+near(status.multiplier, 0.75, 'starter metal power');
 let barTotal = 0; // Tracks exact material sink for a full copper-to-leaded upgrade.
 let goldTotal = 0; // Ensures every individual reinforcement has a smithing fee.
 let steps = 0; // Validates the number of mandatory intermediate purchases.
@@ -39,13 +39,15 @@ while (true) {
   status = reinforcement.status('nativeCopper', { metalKey: next.metalKey, grade: next.grade }, metalDefs, keys);
 }
 assert.equal(steps, 23, 'six metals with four grades each require 23 upgrades from copper I');
-assert.equal(barTotal, 102, 'full reinforcement chain spends 102 metal bars');
+assert.equal(barTotal, 50, 'full reinforcement chain spends 50 metal bars');
+assert.equal(reinforcement.MIN_REINFORCEMENT_POWER, 0.75);
+assert.equal(reinforcement.MAX_REINFORCEMENT_POWER, 1.50);
 assert.equal(reinforcement.forgeBarCost(3, 'nativeCopper', metalDefs), 3, 'starter copper forging retains its existing cost');
 assert.equal(reinforcement.forgeBarCost(3, 'leadedBronze', metalDefs), 18, 'advanced metal forging also consumes additional bars');
 assert.equal(reinforcement.forgeBarCost(3, 'invalid', metalDefs), Infinity, 'invalid metals may not forge');
 assert(goldTotal > 0, 'labor is charged for all purchases');
 assert.equal(purchasedGrades.length, new Set(purchasedGrades).size, 'no grade repeated');
-near(status.multiplier, 1.15, 'original peak combat/tool power');
+near(status.multiplier, 1.50, 'new peak combat/tool power');
 assert.equal(reinforcement.next(status, metalDefs, keys), null, 'maximum reinforcement cannot be exceeded');
 
 for (let i = 0; i < keys.length; i++) {
@@ -57,7 +59,7 @@ for (let i = 0; i < keys.length; i++) {
 const oldForging = reinforcement.status('leadedBronze', null, metalDefs, keys);
 near(oldForging.multiplier, 1.15, 'existing top-metal gear without grades is not nerfed');
 const newForging = reinforcement.status('leadedBronze', { metalKey: 'leadedBronze', grade: 0 }, metalDefs, keys);
-assert(newForging.multiplier < 1.15, 'newly forged high-tier tools must still consume high-tier reinforcement bars');
+assert(newForging.multiplier < 1.50, 'newly forged high-tier tools must still consume high-tier reinforcement bars');
 assert(reinforcement.next(newForging, metalDefs, keys), 'new top-metal gear has upgrades remaining');
 assert.equal(reinforcement.status('nativeCopper', { metalKey: 'invalid', grade: 100 }, metalDefs, keys).rank, 0, 'corrupt saves cannot inflate power');
 assert.equal(reinforcement.status('tinBronze', { metalKey: 'nativeCopper', grade: 2 }, metalDefs, keys).rank, 8, 'bad saves cannot downgrade forged metal');
@@ -86,14 +88,14 @@ const runtime = {
 };
 const methods = ['toolReinforcementMetal', 'toolReinforcementProgress', 'setToolReinforcement', 'toolEffectiveMetalKey', 'toolMetalMultiplier', 'metalDmgMultiplier'];
 vm.runInNewContext(methods.map(productionFunction).join('\n'), runtime);
-near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime), 0.90, 'game combat bridge starts at copper power');
+near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime), 0.90, 'old ungraded copper gear still loads at its legacy strength');
 assert.equal(vm.runInNewContext("setToolReinforcement('hatchet_nativeCopper', 'nativeCopper', 1)", runtime), true);
 assert.equal(saved, 1);
 near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime), reinforcement.multiplierAtRank(1, metalDefs, keys), 'game damage bridge uses new grade');
 assert.equal(vm.runInNewContext("setToolReinforcement('hatchet_nativeCopper', 'nativeCopper', 99)", runtime), false, 'invalid grades rejected');
 assert.equal(saved, 1, 'failed upgrade does not save');
 assert.equal(vm.runInNewContext("setToolReinforcement('hatchet_nativeCopper', 'leadedBronze', 3)", runtime), true);
-near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime), 1.15, 'final grade reaches old maximum');
+near(vm.runInNewContext("toolMetalMultiplier('hatchet_nativeCopper')", runtime), 1.50, 'final grade reaches new maximum');
 assert.match(shop, /MetalReinforcement\?\.next\(current/, 'smith looks up one next stage');
 assert.doesNotMatch(shop, /mc-reinforce-select/, 'arbitrary metal-tier selection is removed');
 assert.match(shop, /setToolReinforcement\(itemKey, metalKey, 0\)/, 'ordinary new tools begin at grade I');
@@ -104,4 +106,4 @@ const inventoryUI = read('docs/js/inventory-ui.js'); // Equipment detail cards e
 assert.match(inventoryUI, /toolReinforcementProgress\?\.\(itemKey\)/, 'Pack shows the actual graded reinforcement');
 assert(html.indexOf('js/metal-reinforcement.js') < html.indexOf('js/metal-craft-shop.js'), 'progression module loads before shop');
 assert.match(game, /toolReinforcementProgress,\s*setToolReinforcement/, 'game injects grade progress into smith');
-console.log(`Metal reinforcement passed: ${steps} upgrades, ${barTotal} bars, old .90×–1.15× endpoints and save compatibility.`);
+console.log(`Metal reinforcement passed: ${steps} upgrades, ${barTotal} bars, new .75×–1.50× endpoints, legacy save compatibility.`);
