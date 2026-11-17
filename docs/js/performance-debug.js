@@ -56,6 +56,7 @@
     longTaskMs: 0,
     longTaskMaxMs: 0,
     longTaskObserver: null,
+    longFrameObserver: null, // Opt-in Long Animation Frames observer attributes forced style/layout cost to browser-reported scripts.
     lastHeapBytes: 0,
     heapDeltaMbPerSec: 0,
     domNodeCount: 0,
@@ -212,6 +213,83 @@
     perfState.longTaskObserver = null;
   }
 
+  const LONG_FRAME_SOURCE_LIMIT = 24; // Bounds retained script attribution records during long performance sessions.
+  let longFrameSupported = null; // Null until an opt-in observation attempt; false means unsupported by this browser.
+  let longFrameStats = null; // Reset when profiling begins; read by the mobile overlay and copied performance snapshots.
+
+  function makeLongFrameStats() {
+    return {
+      frames: 0, totalMs: 0, maxMs: 0, forcedStyleMs: 0,
+      menuOpen: { frames: 0, totalMs: 0, forcedStyleMs: 0 },
+      menuClosed: { frames: 0, totalMs: 0, forcedStyleMs: 0 },
+      sources: new Map(),
+    };
+  }
+
+  function longFrameSnapshot() {
+    const stats = longFrameStats;
+    return {
+      supported: longFrameSupported,
+      recording: !!perfState.longFrameObserver && profilerEnabled,
+      frames: stats?.frames || 0,
+      totalMs: Number((stats?.totalMs || 0).toFixed(2)),
+      maxMs: Number((stats?.maxMs || 0).toFixed(2)),
+      // This only counts synchronous style/layout forced within attributed scripts,
+      // NOT the browser's entire Recalculate Style time shown in DevTools.
+      forcedStyleMs: Number((stats?.forcedStyleMs || 0).toFixed(2)),
+      menuOpen: { ...(stats?.menuOpen || { frames: 0, totalMs: 0, forcedStyleMs: 0 }) },
+      menuClosed: { ...(stats?.menuClosed || { frames: 0, totalMs: 0, forcedStyleMs: 0 }) },
+      scripts: [...(stats?.sources || [])].sort((a, b) => b[1].forcedStyleMs - a[1].forcedStyleMs)
+        .slice(0, 8).map(([source, value]) => ({ source, ...value })),
+    };
+  }
+
+  function ensureLongFrameObserver() {
+    if (!profilerEnabled || perfState.longFrameObserver || !root.PerformanceObserver) return;
+    longFrameStats = makeLongFrameStats();
+    try {
+      const observer = new root.PerformanceObserver(list => {
+        for (const entry of list.getEntries()) {
+          if (!profilerEnabled || !Number.isFinite(entry.duration)) continue;
+          const stats = longFrameStats;
+          if (!stats) continue;
+          const duration = Math.max(0, entry.duration);
+          const open = document.getElementById('menuPanel')?.classList?.contains('open') === true;
+          const bucket = open ? stats.menuOpen : stats.menuClosed;
+          stats.frames++;
+          stats.totalMs += duration;
+          stats.maxMs = Math.max(stats.maxMs, duration);
+          bucket.frames++;
+          bucket.totalMs += duration;
+          for (const script of entry.scripts || []) {
+            const forced = Math.max(0, Number(script?.forcedStyleAndLayoutDuration) || 0);
+            if (!forced) continue;
+            stats.forcedStyleMs += forced;
+            bucket.forcedStyleMs += forced;
+            const sourceURL = String(script.sourceURL || 'unattributed').split('?')[0];
+            let source = sourceURL.includes('/docs/') ? sourceURL.slice(sourceURL.lastIndexOf('/docs/') + 6) : sourceURL.split('/').pop();
+            source = (source || 'unattributed').slice(0, 100);
+            if (!stats.sources.has(source) && stats.sources.size >= LONG_FRAME_SOURCE_LIMIT) source = 'other sources';
+            const value = stats.sources.get(source) || { forcedStyleMs: 0, calls: 0 };
+            value.forcedStyleMs += forced;
+            value.calls++;
+            stats.sources.set(source, value);
+          }
+        }
+      });
+      observer.observe({ type: 'long-animation-frame', buffered: false });
+      perfState.longFrameObserver = observer;
+      longFrameSupported = true;
+    } catch (_) {
+      longFrameSupported = false; // Old/non-Chromium browser: profiling works without the optional Long Animation Frames API.
+    }
+  }
+
+  function stopLongFrameObserver() {
+    try { perfState.longFrameObserver?.disconnect?.(); } catch (_) {}
+    perfState.longFrameObserver = null;
+  }
+
   // js/outline-render-performance.js already wraps the renderer one layer
   // closer to the true native render than held-object-render-order.js does
   // (it loads earlier, via house-pieces.js's script chain, so everything
@@ -359,6 +437,12 @@
       // the browser bundles into these tasks (e.g. style/layout work done
       // just before a rAF callback runs) isn't captured by any JS timer.
       `Long tasks: ${perfState.longTasks}  Σ${perfState.longTaskMs.toFixed(1)}ms  max ${perfState.longTaskMaxMs.toFixed(1)}ms   profiler scan ${perfState.scanMs.toFixed(2)} ms`,
+      (() => {
+        const sample = longFrameSnapshot(); // LoAF measures long frames and attributed forced layouts, not the total browser style recalculation.
+        if (!sample.supported) return 'Long frames / forced layout: browser API unavailable';
+        const forcedTop = sample.scripts.slice(0, 3).map(script => `${script.source} ${script.forcedStyleMs.toFixed(1)}ms ×${script.calls}`).join('; ');
+        return `Long frames (≥50ms): ${sample.frames}, total ${sample.totalMs.toFixed(0)}ms, max ${sample.maxMs.toFixed(0)}ms; forced style/layout ${sample.forcedStyleMs.toFixed(1)}ms (open ${sample.menuOpen.frames} frames / closed ${sample.menuClosed.frames})${forcedTop ? '\\n  Forced layout sources: ' + forcedTop : ''}`;
+      })(),
       // Chrome-only. A large sustained value here (tens of MB/sec) points at
       // GC pauses as a real candidate for time that isn't inside gameLoop
       // and wasn't caught by the rAF/MutationObserver instrumentation --
@@ -494,9 +578,11 @@
     if (profilerEnabled) {
       installRendererProfiler();
       ensureLongTaskObserver();
+      ensureLongFrameObserver(); // Browser-provided attribution for >50ms frames, opt-in alongside existing profiling.
       ensureProfilerOverlay();
     } else {
       stopLongTaskObserver();
+      stopLongFrameObserver();
       const overlay = document.getElementById('perfProfilerOverlay');
       if (overlay) overlay.style.display = 'none';
     }
@@ -1054,6 +1140,10 @@
       'Renderer CPU time, draw calls, triangles, resource counts, long tasks, and a once-per-second visible-geometry breakdown. Profiling has overhead, so this is off by default.');
     perf.input.addEventListener('change', () => setProfilerEnabled(perf.input.checked));
     box.appendChild(perf.row);
+    const frameHint = document.createElement('div'); // Mobile instructions for the new forced-layout attribution in the existing copyable report.
+    frameHint.textContent = 'Profiler now records browser long frames and the scripts that force synchronous style/layout. For a post-combat test, close the menu, stand still, then use Copy current. It does not measure all Recalculate Style time.';
+    frameHint.style.cssText = 'font-size:10px;line-height:1.35;opacity:.7;margin:2px 0 8px';
+    box.appendChild(frameHint);
 
     const npcCull = makeCheckboxRow('settingNpcViewCull', 'Cull completely off-camera NPC visuals', root.NpcViewFrustumCull?.enabled !== false,
       'Camera-frustum culling for complete NPC visual rigs, including the normally uncullable skinned portrait, hands, feet and pants. Schedules, movement and social AI remain active. Default on; switch off to A/B the visual cost without changing NPC behavior.');
@@ -1311,6 +1401,7 @@
         actorOcclusion: root.ActorRenderOcclusion?.snapshot?.() || null, // Mobile-copyable actor GPU query and frustum statistics.
         scanMs: perfState.scanMs,
         scheduler: schedulerProfileSnapshot(),
+        longFrames: longFrameSnapshot(), // Copyable on mobile even when DevTools cannot show a call tree.
         subsystems: Object.fromEntries([...perfState.subsystem.entries()].map(([key,value]) => [key,{...value}]))
       };
     }
