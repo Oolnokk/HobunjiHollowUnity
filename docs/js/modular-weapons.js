@@ -5,6 +5,7 @@
   const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
   const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
+  const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
   const OLD_DRAFT_KEY = 'hobunji.modularWeapons.v4'; // Preserve existing v2 authoring lines while upgrading shipped mounts.
   const LEGACY_DRAFT_KEY = 'hobunji.modularWeapons.v3'; // Original v1 socket/draft backup.
   const NEUTRAL = Object.freeze({ scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0, animation: 'sweep', layerOrder: 'haft-over-head' }); // Default sprite stacking draws heads before the haft.
@@ -367,8 +368,8 @@
         if (alreadyPaired) continue; // An author may already have placed a companion by hand.
         const offsetX = -dy / 4, offsetY = dx / 4; // Tang length is half eye length; perpendicular and centered.
         const companion = { type: 'tang',
-          start: { x: center.x - offsetX, y: center.y - offsetY },
-          end: { x: center.x + offsetX, y: center.y + offsetY } };
+          start: { x: center.x + offsetX, y: center.y + offsetY },
+          end: { x: center.x - offsetX, y: center.y - offsetY } }; // Directed arrow points opposite the sleeve-first legacy generator.
         if ([companion.start, companion.end].every(p => p.x >= 0 && p.x <= 450 && p.y >= 0 && p.y <= 1204))
           shaft.mounts.push(companion); // Preserve adjusted eye location and orientation from prior saved drafts.
       }
@@ -378,6 +379,29 @@
     }
     return upgraded;
   }
+  function repairLegacyCompanionTangDirections(draft) {
+    if (draft?.schema !== SCHEMA) return false;
+    const sourceKeys = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']; // Only six known automatically generated companions, never hand-adjusted Kylie/twin-ended mounts.
+    const samePoint = (a, b) => a && b && Math.abs(a.x - b.x) < 1e-7 && Math.abs(a.y - b.y) < 1e-7; // Exact old-arrow fingerprint, allowing JSON float round-trip.
+    let changed = false; // Signals whether the browser draft needs saving after the repair.
+    for (const key of sourceKeys) {
+      const shaft = draft.shafts?.[key], shipped = global.MODULAR_WEAPON_CONFIG.shafts[key];
+      if (!Array.isArray(shaft?.mounts) || !shipped) continue;
+      const eye = shipped.mounts.find(m => m.type === 'eye');
+      const referenceTang = shipped.mounts.find(m => m.type === 'tang' &&
+        Math.hypot((m.start.x + m.end.x - eye.start.x - eye.end.x) / 2,
+          (m.start.y + m.end.y - eye.start.y - eye.end.y) / 2) < 1e-7);
+      if (!referenceTang) continue;
+      if (!shaft.mounts.some(m => m.type === 'eye' && samePoint(m.start, eye.start) && samePoint(m.end, eye.end))) continue;
+      const backwards = shaft.mounts.find(m => m.type === 'tang' &&
+        samePoint(m.start, referenceTang.end) && samePoint(m.end, referenceTang.start));
+      if (!backwards) continue; // Retain manually repositioned/rotated lines even if perpendicular.
+      [backwards.start, backwards.end] = [backwards.end, backwards.start];
+      changed = true;
+    }
+    return changed;
+  }
+
   function convertLegacy(raw, reference) {
     const converted = JSON.parse(JSON.stringify(reference)); // Never trust a legacy import's sprite paths or catalog records.
     for (const [key, head] of Object.entries(converted.heads)) {
@@ -938,14 +962,17 @@
     const oldest = storage?.getItem(LEGACY_DRAFT_KEY); // Existing draft preference stays v5 > v4 > v3.
     const needsKylieUpgrade = storage?.getItem(KYLIE_TOOL_MIGRATION_KEY) !== '1'; // One-time migration preserves future explicit checkbox edits.
     const needsPickShaftUpgrade = storage?.getItem(PICK_SHAFT_MIGRATION_KEY) !== '1'; // Previously stored catalog drafts still allow the newly forgeable Pick-Shovel shaft.
+    const needsTangDirectionUpgrade = storage?.getItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY) !== '1'; // Existing v5 drafts may contain the old reversed automatic arrows.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
       if (needsPickShaftUpgrade && draft.shafts?.['pick-shovel']) draft.shafts['pick-shovel'].editorOnly = false; // Enables old user-authored drafts without altering their mounts or pair art.
-      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade);
+      const repairedTangDirection = needsTangDirectionUpgrade && repairLegacyCompanionTangDirections(draft); // Only repair unchanged backwards companion arrows.
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || repairedTangDirection);
     }
     if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
     if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
+    if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
     duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
