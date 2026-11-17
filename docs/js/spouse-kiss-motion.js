@@ -597,7 +597,7 @@
       window.WorldActionInputClaims?.clearClaims?.(SOURCE);
     }
     lastResult = { reason, npcId: old.walker?.rec?.id || null, touched: old.touched, height: old.height, elapsedS: old.elapsed,
-      poseRelease }; // Skipped restores identify a newer owner in the game's existing diagnostic view.
+      renderPoseCount: old.renderPoseCount, poseRelease }; // Keep render-boundary evidence available on mobile after cancellation. // Skipped restores identify a newer owner in the game's existing diagnostic view.
     return true;
   }
 
@@ -786,6 +786,13 @@
         session.lastHandContact = applyInitiatorShoulderHands(session.playerHands, session.npcHands,
           session.elapsed, session.height.taller === 'second', session.shoulderScratch);
         session.playerLegs?.pants?.update?.();
+        // The render hook is a second intentional pose writer: mutual gaze and skinned-mouth
+        // reprojection can move captured neck quaternions/positions after the simulation stamp.
+        // Publish that finished authored pose or the next tick mistakes our own render for a takeover.
+        if (session.poseSession && !session.poseSession.stamp()) {
+          clearMotion('pose-owner-replaced-during-render'); // A replaced rig/registered claim still cannot be adopted.
+          return;
+        }
         session.renderPoseCount++; // Report actual render-boundary ownership in Pixel Probe instead of guessing from an animation timer.
       });
     }
