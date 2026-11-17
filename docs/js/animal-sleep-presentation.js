@@ -222,17 +222,17 @@
     entry = { key, descriptor, blinkOverlay: blinkOverlayFor(kind), pair: null, promise: null, retryAt: 0 }; // Failure state expires after a short cooldown.
     if (eyesClosed) closedEyeComposites++;
     entry.promise = (async () => {
-      let canvas = null;
+      let pair = null;
       try {
         // Closed sleepers use the species' *_blink.png overlay. External named
         // sleepers can deliberately request the same run2/head-down sleep body
         // with awake eyes while an authored conversation is active.
-        canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, eyesClosed);
+        let canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, eyesClosed);
+        if (canvas) canvas = window.CreatureTextureCache?.fitGeneratedCanvas?.(canvas) || canvas; // Same display-size bound as awake genotype frames.
+        pair = canvas ? pairFromCanvas(canvas) : null;
       } catch (error) {
-        lastSleepComposeError = String(error?.message || error); // Records missing eyes/patterns for mobile diagnostics.
+        lastSleepComposeError = String(error?.message || error); // Includes canvas resize/GPU preparation, not only asset composition.
       }
-      if (canvas) canvas = window.CreatureTextureCache?.fitGeneratedCanvas?.(canvas) || canvas; // Same display-size bound as awake genotype frames.
-      const pair = canvas ? pairFromCanvas(canvas) : null;
       entry.pair = pair;
       if (!pair) {
         failedSleepComposites++;
