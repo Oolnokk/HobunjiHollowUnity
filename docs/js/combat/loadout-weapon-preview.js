@@ -266,7 +266,7 @@
     state.sourceMaterial = source.material;
     state.sourceGeometryVersion = geometryVersion(source);
     fitCamera();
-    state.vfx = window.WeaponEnchantmentVFX?.createPreviewEmitter?.(plane, state.key, assembly?.ready ? state.previewTargets : undefined) || null;
+    state.vfx = window.WeaponEnchantmentVFX?.createPreviewEmitter?.(plane, state.key, assembly ? state.previewTargets : undefined) || null; // A flail waiting for head art emits nothing on the naked haft.
     setStatus('Weapon ready', false);
   }
 
@@ -288,10 +288,13 @@
     const changedMeshes = state.sourceMeshes.some(entry =>
       entry.source.geometry !== entry.geometry || entry.source.material !== entry.material
       || entry.source.material?.map !== entry.map || geometryVersion(entry.source) !== entry.version);
+    const changedOverlays = (source.children || []).some(child =>
+      child.isMesh && child.userData?.hobunjiWeaponAssemblyPart
+      && !state.sourceMeshes.some(entry => entry.source === child)); // Static overlays may finish loading after the base weapon, even without a flail.
     const changedTargets = assembly?.ready && assembly.metalTargets.some(target =>
       target.mask?.indices?.length && !state.previewTargets.some(preview =>
         preview.mask === target.mask && state.sourceMeshes.some(entry => entry.source === target.plane && entry.copy === preview.plane)));
-    if (source !== state.sourcePlane || changedParts || changedMeshes || changedTargets) rebuildFromSource(source, assembly);
+    if (source !== state.sourcePlane || changedParts || changedMeshes || changedOverlays || changedTargets) rebuildFromSource(source, assembly);
   }
 
   function tick(now) {
