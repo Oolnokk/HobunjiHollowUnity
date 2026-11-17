@@ -30887,6 +30887,7 @@
         METAL_DEFS,
         MASTERY_XP_THRESHOLDS,
         toolEffectiveMetalKey,
+        toolReinforcementProgress, // Pack gear-card metal grade is the same value the smith and combat read.
         toolMetalMultiplier,
         toolVerdigrisFraction,
         getGearInventory: () => gearInventory,
