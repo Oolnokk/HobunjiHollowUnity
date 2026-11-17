@@ -43,6 +43,16 @@ assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are nor
   assert(Math.abs(left.x - .25) <= 1e-9 && Math.abs(right.x - .75) <= 1e-9, 'waist matches the 50% torso width exactly');
   assert(result.character.portraitBeltSpline.every((p, i) => p.y === authored.portraitBeltSpline[i].y), 'fitting the torso width never moves the belt vertically');
   assert(JSON.stringify(authored.portraitBeltSpline) === original, 'runtime silhouette fit does not mutate the authored Nuhongan rig');
+  const garment = rigs.garments.pants_basic; // The shipped leg bones define where upper-torso width must stop affecting trousers.
+  const point = { x: .34, y: .91 }; // Left authored waist edge in portrait space before the alpha correction.
+  const waist = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .28 }, garment, result); // Exact connected-alpha edge at the garment waist.
+  const midLeg = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .39 }, garment, result); // Transitional region between belt and knees.
+  const knee = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .48 }, garment, result); // Knee is no longer influenced by torso width.
+  const cuff = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .62 }, garment, result); // The previous foot-width/leg-opening correction remains independent.
+  assert(Math.abs(waist.x - .25) < 1e-9 && waist.y === point.y, 'only waist width changes to match visible torso, not waist height');
+  assert(midLeg.x > .25 && midLeg.x < .34 && midLeg.y === point.y, 'torso width eases smoothly into thigh width');
+  assert(knee.x === point.x && cuff.x === point.x && knee.y === point.y && cuff.y === point.y,
+    'knees, cuffs, and all vertical positions retain their independently authored fit');
   assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => ({ getImageData: () => ({ data: new Uint8Array(800) }) }) }) === null,
     'transparent or disconnected source art correctly retains authored belt width');
   assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => ({ getImageData: () => { throw new Error('tainted'); } }) }) === null,
