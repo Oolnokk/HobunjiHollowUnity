@@ -441,7 +441,7 @@ console.log('Pants rig bone skinning: PASS');
     const i = (row * stride + col) * 3; // Rest vertex addressed by the shared renderer's row-major grid.
     rest[i] = col / segments; rest[i + 1] = row / segments; rest[i + 2] = 0;
   }
-  const sample = (row, col) => ({ i: row * stride + col, fx: 0, fy: 0 }); // Renderer-compatible bilinear spline sample.
+  const sample = (row, col) => ({ i: row * stride + Math.min(col, segments - 1), fx: col === segments ? 1 : 0, fy: 0 }); // Clamp the final-column sample like the actual garment renderer.
   const leftWeight = new Float32Array(stride * stride); // Left opening owns its half and fades out toward the belt.
   const rightWeight = new Float32Array(stride * stride); // Right opening owns its half independently.
   for (let row = 0; row < stride; row++) for (let col = 0; col < stride; col++) {
