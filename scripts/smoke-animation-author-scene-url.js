@@ -74,9 +74,13 @@ async function main() {
       };
       window.MultiAvatarAnimationAuthor.__testReleaseDeferredPreview = async () => {
         if (!deferredPreviewEntered || !releaseDeferredPreview || !pendingSingleSwitch) throw Error('No delayed single-avatar preview to release');
+        showOverlay('Newer editor operation', 'A stale request must never hide this overlay.', true); // Proves canceled work cannot dismiss a newer mobile loading notice.
         releaseDeferredPreview();
         await pendingSingleSwitch; // Exposes late creation AND any stale UI update after the default preview's promise resolves.
-        return deferredPreviewFinished;
+        const newerOverlayPreserved = !$('stageOverlay').classList.contains('hidden') &&
+          $('overlayTitle').textContent.includes('Newer editor operation'); // Only the simulated newer operation may dismiss itself.
+        hideOverlay();
+        return deferredPreviewFinished && newerOverlayPreserved;
       };
       window.MultiAvatarAnimationAuthor.__testSceneBuild = () => {
         const summarize = actors => (actors || []).map(actor => ({

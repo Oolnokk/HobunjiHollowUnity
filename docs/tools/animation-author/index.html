@@ -4978,6 +4978,17 @@ async function addNpcAnimationActor(npcId, options = {}) {
   const requestedRevision = animationAuthor.modeRevision; // Rejects builds from a workspace that has switched away and back.
   const superseded = () => !options.preserveMultiScene &&
     (animationAuthor.mode !== requestedMode || animationAuthor.modeRevision !== requestedRevision); // URL-scene loading explicitly opts into multi-mode restoration.
+  const discardObsoletePreview = (stage, model = null) => {
+    if (model) {
+      model.userData?.neckRig?.skeleton?.dispose?.();
+      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
+    }
+    if ($('overlayTitle')?.textContent?.trim() === `Adding ${npc.name || npc.id}`) {
+      hideOverlay(); // Dismiss only this obsolete operation's overlay, never a newer editor load.
+    }
+    log(`Discarded outdated ${npc.name || npc.id} preview: editor mode changed during ${stage}.`, 'warn');
+    return null;
+  }; // Releases partial GPU models and stale mobile loading UI without modifying the new workspace.
   await initAnimationWorkspaceScene();
   if (superseded()) return null; // No preview should land in a different scene merely because initialization took time.
   if (options.preserveMultiScene && animationAuthor.mode !== 'multi') {
@@ -4988,10 +4999,7 @@ async function addNpcAnimationActor(npcId, options = {}) {
   showOverlay(`Adding ${npc.name || npc.id}`, 'Building a repository-backed two-sided skinned portrait plane.', true);
   try {
     const avatar = await buildAvatarRender(npc);
-    if (superseded()) {
-      log(`Discarded outdated ${npc.name || npc.id} preview: editor mode changed during portrait loading.`, 'warn');
-      return null; // Avoid allocating a skinned model for a scene that no longer owns the request.
-    }
+    if (superseded()) return discardObsoletePreview('portrait loading'); // Never allocate a skinned model for a superseded scene.
     const previewBaseWidth = animationAuthorAvatarBaseWidthV1536(); // Prevents rig coordinates from being authored against the builder's wider 1.0 default while gameplay uses 0.9.
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(state.three.THREE, avatar.front, {
       backCanvas: avatar.back,
@@ -5009,12 +5017,7 @@ async function addNpcAnimationActor(npcId, options = {}) {
       model.userData.neckRig = null;
       log(`Skinned neck rig could not be built for ${npc.name || npc.id}; using the original rigid plane: ${rigError.stack || rigError.message}`, 'warn');
     }
-    if (superseded()) {
-      model.userData?.neckRig?.skeleton?.dispose?.();
-      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
-      log(`Discarded outdated ${npc.name || npc.id} preview: editor mode changed during neck rigging.`, 'warn');
-      return null; // The model was created, so release its GPU resources before abandoning it.
-    }
+    if (superseded()) return discardObsoletePreview('neck rigging', model); // Release skinned GPU resources from an abandoned NPC.
     if (options.preserveMultiScene && animationAuthor.mode !== 'multi') {
       await setAnimationAuthorMode('multi'); // Portrait construction awaits texture loading; restore the intended workspace before attaching.
     }
