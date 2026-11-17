@@ -47,11 +47,19 @@ assert.equal(meshBudget.resolve('npc').animalSegments, 30, 'portrait density lea
 
 const skeleton = { id: 'live-rig' }; // Shared with mesh to prove no replacement/rebind happens.
 const pose = { x: 4, y: 7, z: 0 }; // Existing in-game transform must survive retessellation unchanged.
-const THREE = { id: 'renderer' };
+class FakeWireframeMaterial {
+  constructor(options) { Object.assign(this, options); this.disposed = false; }
+  dispose() { this.disposed = true; }
+}
+const THREE = { id: 'renderer', DoubleSide: 2, MeshBasicMaterial: FakeWireframeMaterial }; // Simulates Three r128's skinnable diagnostic materials without a WebGL context.
 const neckLocal = { x: 0, y: 1, z: 0 };
 const headBoundsPx = { left: 2, right: 8, top: 3, bottom: 9 };
-const player = { geometry: geometry(28, 36), skeleton, position: pose };
-const enemy = { geometry: geometry(34, 44, true), skeleton: { id: 'enemy' } };
+const originalFront = { map: 'player-front-png' }; // A real original material must survive debug wireframe toggles exactly.
+const originalBack = { map: 'player-back-png' };
+const playerMaterials = [originalFront, originalBack]; // Two faces of the skinned portrait need two material groups.
+const enemyMaterial = { map: 'enemy-front-png' }; // Hostiles use one front-only material.
+const player = { isSkinnedMesh: true, geometry: geometry(28, 36), skeleton, position: pose, material: playerMaterials };
+const enemy = { isSkinnedMesh: true, geometry: geometry(34, 44, true), skeleton: { id: 'enemy' }, material: enemyMaterial };
 const previousPlayerGeometry = player.geometry;
 const previousEnemyGeometry = enemy.geometry;
 registerSkinnedPortrait(player, THREE, 2, 3, neckLocal, { pixelWidth: 120, pixelHeight: 160, headBoundsPx }, 'full');
@@ -86,7 +94,7 @@ assert.equal(meshBudget.portraitDensityDebug().triangles, 4032 + 2992, 'diagnost
 assert.equal(events.filter(event => event === 'hobunji:portrait-density-changed').length, 3);
 
 // Doorstep visitors have independently posed skeletons but borrow their source NPC geometry.
-const visitor = { isSkinnedMesh: true, geometry: player.geometry, skeleton: { id: 'visitor-pose' } };
+const visitor = { isSkinnedMesh: true, geometry: player.geometry, skeleton: { id: 'visitor-pose' }, material: playerMaterials };
 const oldShared = player.geometry;
 assert.equal(meshBudget.trackSkinnedClone(player, visitor), true, 'a visitor using the real source geometry is registered');
 assert.equal(meshBudget.trackSkinnedClone(player, visitor), true, 're-registering a visitor cannot create duplicate weak references');
@@ -110,9 +118,61 @@ assert.equal(meshBudget.portraitDensityDebug().player.segmentsY, 26);
 assert.equal(meshBudget.setPlayerMode('full'), true);
 assert.equal(meshBudget.portraitDensityDebug().player.segmentsX, 28);
 
+// Source geometry, custom editor geometry, and visitor copies all share one reversible wireframe authority.
+assert.equal(meshBudget.setPortraitWireframeEnabled(true), true);
+assert.equal(meshBudget.wireframeEnabled(), true);
+assert.notStrictEqual(player.material, playerMaterials, 'debug material replaces the texture without mutating source material');
+assert.equal(player.material.length, 2, 'two-sided portraits retain material groups');
+assert.equal(player.material[0].wireframe, true);
+assert.equal(player.material[0].skinning, true, 'Three r128 enables bone skinning on wireframe');
+assert.equal(player.material[0].map, undefined, 'transparent PNG pixels do not hide mesh cells');
+assert.equal(enemy.material.wireframe, true, 'hostile front-only material is also wireframe');
+const debugMaterial = player.material[0]; // The toggler owns and later frees its replacement GPU shader material.
+const wireVisitor = { isSkinnedMesh: true, geometry: player.geometry, skeleton: { id: 'visitor' }, material: player.material };
+assert.equal(meshBudget.trackSkinnedClone(player, wireVisitor), true, 'cloning while wireframe is on registers a new material owner');
+assert.notStrictEqual(wireVisitor.material, player.material, 'cloned visitor gets its own disposable wireframe material');
+assert.equal(meshBudget.setPortraitWireframeEnabled(false), true);
+assert.strictEqual(player.material, playerMaterials, 'source two-sided PNG materials are restored byte-for-byte');
+assert.strictEqual(enemy.material, enemyMaterial, 'hostile original PNG material is restored');
+assert.strictEqual(wireVisitor.material, playerMaterials, 'visitor source PNG materials are restored after cloning during wireframe');
+assert.equal(debugMaterial.disposed, true, 'temporary wireframe materials are released');
+assert.equal(meshBudget.setPortraitWireframeEnabled(false), false, 'repeated off is a no-op');
+assert.equal(meshBudget.unregisterSkinnedPortrait(wireVisitor), true);
+
+// The Animation Author uses a distinct two-bone skin builder, registered as an external geometry factory.
+const editorCalls = []; // Records exact subdivisions and original authored pose during live editor updates.
+const authorCallbacks = []; // Verifies the tool can re-bake lazy hat skins and hide them while wireframe is enabled.
+const authorMaterial = [{ map: 'front' }, { map: 'back' }];
+const author = { isSkinnedMesh: true, geometry: geometry(28, 36), skeleton: { id: 'author-rig' }, position: { x: 9 }, material: authorMaterial };
+assert.equal(meshBudget.registerExternalSkinnedPortrait(author, {
+  THREE, width: 2, height: 3, neckLocal, mode: 'full',
+  buildGeometry(grid) {
+    editorCalls.push(grid);
+    return geometry(grid.segmentsX, grid.segmentsY);
+  },
+  afterGeometryChange(nextGeometry) { authorCallbacks.push(nextGeometry.userData.segmentsX); },
+  onWireframeChanged(enabled) { authorCallbacks.push(enabled); },
+}), true);
+assert.equal(meshBudget.setPortraitDensityPercent(50), true);
+assert.equal(author.geometry.userData.segmentsX, 14, 'the author uses its custom builder at the shared 50% resolution');
+assert.equal(editorCalls.length, 1);
+assert.equal(authorCallbacks.includes(14), true, 'the author receives a hook to update lazy hat skins');
+assert.equal(author.skeleton.id, 'author-rig', 'custom author pose skeleton survives geometry replacement');
+assert.equal(author.position.x, 9);
+assert.equal(meshBudget.setPortraitWireframeEnabled(true), true);
+assert.equal(author.material[0].wireframe, true);
+assert.equal(authorCallbacks.includes(true), true, 'the editor can hide its textured hat overlays');
+assert.equal(meshBudget.unregisterSkinnedPortrait(author), true);
+assert.strictEqual(author.material, authorMaterial, 'unregistering during wireframe restores editor portrait materials');
+assert.equal(meshBudget.setPortraitWireframeEnabled(false), true);
+assert.equal(meshBudget.setPortraitDensityPercent(100), true);
+
 assert(uiSource.includes("densitySlider.type = 'range'"), 'dev UI has a real range input');
 assert(uiSource.includes("densityRow.setAttribute('data-dev-only', '')"), 'slider is hidden outside developer mode');
 assert(uiSource.includes('portraitBudget.setPortraitDensityPercent(Number(densitySlider.value))'), 'the UI uses the production budget authority');
 assert(devSource.includes('meshBudget?.setPortraitDensityPercent?.(100)'), 'leaving developer mode restores normal portrait detail');
+assert(devSource.includes('meshBudget?.setPortraitWireframeEnabled?.(false)'), 'developer mode teardown restores textured portraits');
+assert(uiSource.includes("settingPortraitMeshWireframe"), 'the in-game wireframe checkbox is visible in developer diagnostics');
+assert(uiSource.includes('portraitBudget.setPortraitWireframeEnabled(wireframe.input.checked)'), 'wireframe UI calls the shared real material manager');
 
-console.log('OK: dev portrait density changes player/enemy skin grids live without pose or skeleton rebuild, while pants/animal budgets stay untouched.');
+console.log('OK: portrait density + wireframe + independent editor and cloned actor material lifecycle validated.');
