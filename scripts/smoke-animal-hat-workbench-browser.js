@@ -218,7 +218,25 @@ async function spritePng(page, animal) {
     await page.waitForFunction(() => /Showing original/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     await page.locator('#babyHeadCompare').click();
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
-    await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    await page.waitForFunction(() => /Showing 145% size, 20% shorter head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    await page.locator('#babyHeadUsePainted').check(); // Exercise the older painted-Head selector in a real mobile Chromium render.
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'legacy-frame');
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
+      'earlier painted Head rectangle', 'checked selection uses the original painted Head region');
+    await page.locator('#babyHeadUsePainted').uncheck();
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha');
+    await page.locator('#babyHeadShortening').evaluate(input => {
+      input.value = '35';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.35);
+    assert.match(await page.locator('#babyHeadPreviewState').textContent(), /35% shorter head/,
+      'live preview communicates brachycephaly, not just the enlargement percentage');
+    await page.locator('#babyHeadShortening').evaluate(input => {
+      input.value = '20';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.20);
     // Grehlr's REAL 3000×2250 sprite previously exceeded the 4MP idle-mask ceiling.
     // The failed warp then allocated a full canvas for every preview triangle until the mobile tab crashed.
     await page.locator('#loadBestiary').click();
