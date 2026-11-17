@@ -3509,20 +3509,25 @@
           ? (x, y) => knockbackAirborneCanOccupyAt(x, y, radiusPx, air)
           : ordinaryCanOccupy;
         let swept = sweptMove(entity.x, entity.y, desiredX, desiredY, occupancy, true);
-        if (!air && (swept.blockedX || swept.blockedY) && tryStartKnockbackLedgeTransit(entity, swept, radiusPx, velocityX, velocityY)) {
-          const startedAir = entity._knockbackLedgeAir; // Re-sweeps this same frame from the pre-edge point with only lower terrain ignored.
-          swept = sweptMove(
-            entity.x, entity.y, desiredX, desiredY,
-            (x, y) => knockbackAirborneCanOccupyAt(x, y, radiusPx, startedAir),
-            true,
-          );
-          swept.knockbackLedgeStarted = true;
+        const fireHazards = window.BurningEntityHazards; // Fire contacts must preempt a future ledge transition if a burning body lies before that edge.
+        const hazardWorld = { area: currentArea, player, hostileObjects, companionObjects, animalObjects, corpseObjects }; // Shared by the ground and airborne sweep probes.
+        if (!air && (swept.blockedX || swept.blockedY)) {
+          const beforeLedge = fireHazards?.resolveSweptImpact?.(entity, desiredX, desiredY, radiusPx, TILE, hazardWorld, swept);
+          if (beforeLedge?.knockbackDescriptorOverride?.fireHazard === true) return beforeLedge; // Never start a ledge fall after an earlier fire impact.
+          if (tryStartKnockbackLedgeTransit(entity, swept, radiusPx, velocityX, velocityY)) {
+            const startedAir = entity._knockbackLedgeAir; // Re-sweeps this same frame from the pre-edge point with only lower terrain ignored.
+            swept = sweptMove(
+              entity.x, entity.y, desiredX, desiredY,
+              (x, y) => knockbackAirborneCanOccupyAt(x, y, radiusPx, startedAir),
+              true,
+            );
+            swept.knockbackLedgeStarted = true;
+          }
+          else return swept; // Ground blockers already ruled out any earlier burning contact; don't scan the roster twice.
         }
         // Ordinary walking remains non-solid to other actors. Only a forced shove into
         // an actively burning actor or corpse acquires the shared Fire Hazard impact profile.
-        return window.BurningEntityHazards?.resolveSweptImpact?.(entity, desiredX, desiredY, radiusPx, TILE, {
-          area: currentArea, player, hostileObjects, companionObjects, animalObjects, corpseObjects,
-        }, swept) || swept;
+        return fireHazards?.resolveSweptImpact?.(entity, desiredX, desiredY, radiusPx, TILE, hazardWorld, swept) || swept;
       }
 
       function beginKnockbackLedgeFall(entity) {
@@ -7030,7 +7035,8 @@
       }
       function tickCorpses(dt) {
         window.CreatureDeath.updateCorpses(dt);
-        window.BurningEntityHazards?.tickCorpses?.(dt, corpseObjects); // Only active corpse flames tick; all other old bodies remain dormant.
+        window.BurningEntityHazards?.tickCorpses?.(dt, corpseObjects,
+          corpse => isWaterSurfaceAt(corpse.x, corpse.y, corpse.areaGrid || window.GridTileAccessors.getActiveGrid())); // Burning bodies extinguish in water; the existing corpse registry remains authoritative.
         updateCorpseVisualLod();
         window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
       }
