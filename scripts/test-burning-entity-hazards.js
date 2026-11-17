@@ -56,6 +56,9 @@ assert.equal(fire.resolveSweptImpact(mover,100,0,10,100,scene(mover,[otherArea])
 const otherFloor = burning(60,0,{halfHeight:.3,avatarRef:{group:group(1.6)}});
 assert.equal(fire.resolveSweptImpact(mover,100,0,10,100,scene(mover,[otherFloor]),calmSweep),calmSweep,
   'burning actors on another floor cannot block a shove');
+const heightUnknown = burning(60,0);
+assert.equal(fire.resolveSweptImpact(mover,100,0,10,100,scene(mover,[heightUnknown]),calmSweep),calmSweep,
+  'actors without physical floor information cannot create phantom fire impacts across levels');
 const wallFirst = {x:10,y:0,blockedX:true,blockedY:false,blockedAt:{x:20,y:0}};
 assert.equal(fire.resolveSweptImpact(mover,100,0,10,100,scene(mover,[enemy]),wallFirst),wallFirst,
   'a static wall struck first retains priority over fire farther behind');
@@ -86,6 +89,14 @@ fire.beginCorpse(deleted);
 fire.tickCorpses(.1,new Set());
 assert.equal(fire.isBurning(deleted),false,'despawned corpse loses flame immediately');
 assert(removedVfx.includes(deleted),'removed corpse disposes fire presentation');
+const revived = actor(60,0,{state:'corpse',deathCause:'fire',afflictions:{burningHealth:4}});
+fire.beginCorpse(revived);
+revived.state = 'idle';
+const disposalsBeforeRevive = removedVfx.length;
+fire.tickCorpses(.1,new Set([revived]));
+assert.equal(fire.corpseFlameAmount(revived),0,'revival cleans up corpse-only bookkeeping');
+assert.equal(fire.isBurning(revived),true,'a revived actor can retain an active real Burning affliction');
+assert.equal(removedVfx.length,disposalsBeforeRevive,'revival does not destroy a separate living Burning VFX');
 assert.equal(fire.beginCorpse(actor(60,0,{state:'corpse',deathCause:'blunt'})),false,
   'ordinary unburned corpses never become fire hazards');
 const drowned = actor(60,0,{state:'corpse',deathCause:'fire'});
@@ -130,7 +141,10 @@ const visual = read('docs/js/combat/burning-affliction-vfx.js');
 const index = read('docs/index.html');
 const probe = read('docs/js/pixel-probe.js');
 assert.match(game,/fireHazards\?\.resolveSweptImpact\?\.\(entity, desiredX, desiredY, radiusPx, TILE/,'shared forced-movement sweep calls live fire hazard resolver');
-assert.match(game,/BurningEntityHazards\?\.tickCorpses\?\.\(dt, corpseObjects/,'corpse flame ticks use existing corpse owner');
+assert.match(game,/BurningEntityHazards\?\.tickCorpses\?\.\(dt, corpseObjects, isCorpseFlameSubmerged\)/,
+  'corpse flame ticks share one stable per-frame callback for area-correct water detection');
+assert.match(game,/corpse\.areaId === currentArea \? window\.GridTileAccessors\.getActiveGrid\(\) : null/,
+  'off-area corpses never use the current area grid to determine water extinguishing');
 assert.match(tools,/BurningEntityHazards\?\.findTorchSource\?\.\(contact/,'torch uses existing physical strike contact callback');
 assert.match(death,/BurningEntityHazards\?\.beginCorpse\?\.\(c\)/,'creature death registers a real corpse flame');
 assert.match(visual,/BurningEntityHazards\?\.corpseFlameAmount\?\.\(entity\)/,'presentation uses real finite corpse flame lifetime');
