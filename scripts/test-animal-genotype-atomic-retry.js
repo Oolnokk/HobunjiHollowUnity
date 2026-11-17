@@ -93,6 +93,12 @@ function assertComplete(canvas) {
   assert.ok(masks.shadeCalls > 0, 'recovery applies inherited coat recoloring');
   assert.ok(masks.messages.some(v => v.includes('base masks unavailable')), 'a mobile-readable warning explains the mask retry');
 
+  const prewarm = makeHarness({ failMasksOnce: true });
+  await prewarm.compositor.prewarm(['gar-wolf']); // A transient mask fetch cannot abort optional gameplay preloading.
+  assert.equal(prewarm.maskAttempts, 1, 'prewarm attempted the same shared masks once');
+  assertComplete(await prewarm.compositor.composeFrame('gar-wolf', 'idle', sampleGenes));
+  assert.equal(prewarm.maskAttempts, 2, 'first real composite retries masks after a failed prewarm');
+
   const painted = makeHarness();
   const paintedGenes = {
     ...sampleGenes,
