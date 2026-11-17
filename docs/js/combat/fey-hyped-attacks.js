@@ -120,6 +120,7 @@
         sequence.echo = true; // Original onStrike still owns independent real-time NPC meleeHit and conditional bonuses.
         sequence.echoHits = 0;
         actor.telegraphState = 'windup';
+        opts.onFeyHypedNpcEchoStart?.(sequence.ratio); // The original NPC lunge owner may add a new, scaled and swept movement impulse for the second physical strike.
         const second = combat.beginStagedAction({
           ...opts, ...duration,
           data: { ...(opts.data || {}), feyHypedNpcEcho: true },
