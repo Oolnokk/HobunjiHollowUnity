@@ -204,9 +204,12 @@
     }
 
     mesh.onAfterRender = function feetOutlineParityAfter(...args) {
-      previousAfter?.apply(this, args);
+      // Undo the parity pose FIRST, then let the older foot-depth hook undo its own
+      // camera-relative push. The inverse order leaves the push reinstalled on
+      // matrixWorld between the base, shell, water and material-ID render passes.
       const restoreMatrix = state.restoreStack.pop();
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
+      previousAfter?.apply(this, args);
       const offsetRestore = state.offsetRestoreStack.pop();
       if (offsetRestore) {
         offsetRestore.material.polygonOffset = offsetRestore.enabled;
