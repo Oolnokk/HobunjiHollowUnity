@@ -18,7 +18,7 @@ class PlaneGeometry {
   constructor(width, height, nx = 1, ny = 1) {
     this.parameters = { width, height, widthSegments: nx, heightSegments: ny };
     this.userData = {};
-    this.index = { count: x * y * 6 }; // Three.js animal PlaneGeometry is indexed; diagnostics count triangles, not vertices.
+    this.index = { count: nx * ny * 6 }; // Three.js animal PlaneGeometry is indexed; diagnostics count triangles, not vertices.
     const uv = [], position = [];
     for (let r=0;r<=ny;r++) for (let c=0;c<=nx;c++) {
       const u=c/nx, v=1-r/ny;
