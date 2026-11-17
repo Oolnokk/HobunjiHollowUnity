@@ -242,9 +242,15 @@
       return png.makeMaterial(THREE, png.makeCanvasTexture(THREE, images[key], name), name, { side: THREE.DoubleSide, ...overrides });
     }
 
+    function perchGrid() {
+      const density = Number(window.PNGPlaneAvatar?.meshBudget?.portraitDensityPercent?.() ?? 40); // Shared production/developer density; flying silhouettes use the same per-axis percentage.
+      const percent = Number.isFinite(density) ? Math.max(20, Math.min(100, density)) : 40;
+      return { x: Math.max(4, Math.round(32 * percent / 100)), y: Math.max(4, Math.round(20 * percent / 100)) };
+    }
     function body(key) {
       const image = images[key]; // Keep the original sprite aspect ratio.
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(image.width / image.height, 1, key === 'perched' ? 32 : 1, key === 'perched' ? 20 : 1), material(key));
+      const grid = key === 'perched' ? perchGrid() : { x: 1, y: 1 }; // Flying side cards are already only two triangles.
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(image.width / image.height, 1, grid.x, grid.y), material(key));
       pitch.add(mesh);
       return mesh;
     }
@@ -322,7 +328,9 @@
       }
       return changed;
     }
+    let currentPerchSpline = rig.perchSpline; // Last applied seven-point pose, retained for geometry retessellation on the dev slider.
     function setPerchSpline(authored) {
+      currentPerchSpline = authored;
       const geometry = perched.geometry; // Deform the existing mesh without reloading any PNGs.
       const { position, uv } = geometry.attributes;
       const width = geometry.parameters.width;
@@ -339,6 +347,20 @@
       geometry.computeBoundingSphere();
     }
     if (rig.perchSpline) setPerchSpline(rig.perchSpline);
+    function refreshPerchedDensity() {
+      const grid = perchGrid(); // The deformed perched plane is shared by eyes, markings and glow layers.
+      const oldGeometry = perched.geometry;
+      if (oldGeometry.parameters?.widthSegments === grid.x && oldGeometry.parameters?.heightSegments === grid.y) return false;
+      const replacement = new THREE.PlaneGeometry(images.perched.width / images.perched.height, 1, grid.x, grid.y);
+      for (const mesh of [perched, eyePerched, rearEyePerched, glowPerched, patternPerched, detailPerched]) {
+        if (mesh) mesh.geometry = replacement; // No texture/material/pose replacement; every layer follows exactly the same vertices.
+      }
+      setPerchSpline(currentPerchSpline);
+      oldGeometry.dispose();
+      return true;
+    }
+    const onPortraitDensityChanged = () => refreshPerchedDensity(); // Live A/B testing also updates already-spawned flying-animal perches.
+    window.addEventListener?.('hobunji:portrait-density-changed', onPortraitDensityChanged);
 
     const image = images.wings; // Top-down art, head toward the image's top edge.
     const span = image.width / image.height * rig.wingScale; // Width along local Z.
@@ -413,6 +435,7 @@
     }
 
     function dispose() {
+      window.removeEventListener?.('hobunji:portrait-density-changed', onPortraitDensityChanged); // Unregister per-creature slider listener on despawn.
       root.parent?.remove(root);
       for (const mesh of [flying, perched, wings]) {
         mesh.geometry.dispose();
@@ -434,7 +457,7 @@
       wings.skeleton.dispose();
     }
 
-    return { root, update, dispose, pitch, yaw, setPerchSpline, setPalette, perched,
+    return { root, update, dispose, pitch, yaw, setPerchSpline, refreshPerchedDensity, setPalette, perched,
       bodyMaterials: { flying: flying.material, perched: perched.material, wings: wings.material } }; // Live genotype recolors can replace the exact existing pose maps without disturbing the shared gripping mesh.
   }
 
