@@ -85,10 +85,10 @@ assert(providers.shoulderPets, 'the real gameplay compositor provider must regis
   assert.match(rendered.at(-1).url, /^data:image\/png;base64,/, 'the pet frame setter receives a newly composed pixel texture');
   const after = Buffer.from(rendered.at(-1).url.split(',')[1], 'base64');
   assert(after.some((pixel, i) => pixel !== original[i]), 'raw source has actual enlarged head pixels, not merely a new data URL');
-  assert.equal(windowStub.BabyAnimalHeadWarp.maskForKind('bulky').opaquePixels > 0, true,
-    'the fallback generates a mask from the true idle sprite, not a moving pose');
-  assert.equal(windowStub.BabyAnimalHeadWarp.maskForKind('bulky').sourceLabel, 'provided-idle-fallback',
-    'unregistered pet species report that their own raw idle art supplied the cached mask');
+  assert.equal(windowStub.BabyAnimalHeadWarp.maskModeForKind('bulky'), 'legacy-frame',
+    'the original painted-frame approach is the default for unsupported raw-pet species too');
+  assert.equal(windowStub.BabyAnimalHeadWarp.maskForKind('bulky'), null,
+    'default painted selection does not allocate an idle-alpha mask when enlarging a raw shoulder-pet sprite');
   assert(imageRequests.every(req => req.mode === 'anonymous'), 'all image sources request CORS-readable pixels');
 
   const naturalSmall = animal('tiny');
