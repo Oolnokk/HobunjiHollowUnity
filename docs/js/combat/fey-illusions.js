@@ -217,8 +217,14 @@
     const deps = window.Combat?.deps;
     const tilePx = Math.max(1, finite(deps?.TILE, 64));
     if (step > 0.01) {
-      for (const ally of deps?.companionObjects || []) {
+      const playerSide = entity === player() || (entity.isCompanion && !entity.banditCompanion); // Choose the correct faction's pool, not every creature called a companion.
+      const candidates = playerSide ? (deps?.companionObjects || [])
+        : [...(deps?.hostileObjects || []), ...(deps?.companionObjects || [])]; // Enemy campmates and their owned pets can also be struck by friendly panic.
+      for (const ally of candidates) {
         if (!ally || ally === entity || ally.health <= 0 || roll.hitAllies.has(ally)) continue;
+        const sameSide = window.Combat?.attach?.isRescueAlly?.(entity, ally)
+          ?? (playerSide && ally.isCompanion !== false && !ally.banditCompanion); // Use the existing swarm-rescue faction policy when available.
+        if (!sameSide) continue; // Panicked foes must never strike the player's pets as though they were their own allies.
         if (pointSegmentDistance(finite(ally.x), finite(ally.y), roll.lastX, roll.lastY, nextX, nextY) > tilePx * 0.48) continue;
         roll.hitAllies.add(ally);
         rs()?.spendFooting?.(ally, roll.spent, 'panicked roll collision'); // Real instability follows physical contact, not illusory direct damage.
