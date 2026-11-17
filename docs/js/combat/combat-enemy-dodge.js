@@ -180,6 +180,7 @@
     deps.tickCreatureFootsteps?.(entity, stepPx);
     const progress = state.durationS > 0 ? 1 - state.remainingS / state.durationS : 1; // Full-body roll progress for the readable dodge animation.
     if (entity.avatarRef?.group?.rotation) entity.avatarRef.group.rotation.z = progress * Math.PI * 2 * state.spinSign;
+    if (stepPx < 0.01 && state.remainingS > 0) window.FeyIllusions?.onDodgeBlocked?.(entity); // Reuses knockback-collision Footing effects when a panicked enemy collides with real terrain.
     if (state.remainingS <= 0 || stepPx < 0.01) finishDodge(entity);
     return { handled: true, moving: !!entity._enemyDodge, aimAngle: Math.atan2(targetPlayer.y - entity.y, targetPlayer.x - entity.x) };
   }
