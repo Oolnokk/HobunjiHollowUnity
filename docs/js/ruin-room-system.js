@@ -314,6 +314,7 @@
           root.DevRandomRuinLichThemes?.lightSources?.()||[],
           root.RuinLayerPlayable?.roomLights?.()||[],
           root.RuinMultifloorV50Style?.lightSources?.()||[],
+          root.DevRandomRuinSanctum?.lightSources?.()||[], // Lit sanctum braziers and its temporary reveal source lift only their room's ambient darkness.
         ])for(const source of sources){
           if(source?.active===false||!Number.isFinite(source?.x)||!Number.isFinite(source?.z)
             ||!Number.isFinite(source?.y)||!inside(active,source.x,source.z))continue;
