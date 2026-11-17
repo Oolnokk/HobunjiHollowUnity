@@ -366,7 +366,7 @@
     if (deps.getCurrentArea() !== DEV_ARENA_ZONE_ID) { window.BanditCombat?.discardEntity?.(creature); return; } // Portrait build is async too; drop it if the player left meanwhile.
     deps.hostileObjects.add(creature);
     _arenaSpawnedCreatures.add(creature);
-    const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage})`;
+    const msg = `[dev-arena] spawned bandit ${rank} tier ${tier} #${creature.id} (species=${creature.rosterRecord?.appearance?.speciesId}, mastery=${creature.banditMastery}, maxHealth=${creature.maxHealth}, attackDamage=${creature.def.attackDamage}, metalPower=${creature.def.weaponMetalPowerMultiplier ?? 'n/a'})`; // In-game copyable tuning proof, no console needed.
     window.__farmLog?.(msg, 'wildlife');
     console.log(msg);
     renderDevSpawnPanel();
