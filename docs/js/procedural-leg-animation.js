@@ -1056,6 +1056,21 @@
     function applyFootRollOnly(mesh, roll) {
       mesh.quaternion.setFromAxisAngle(footAxisX, roll); // Never inherit a stale yaw/half-turn from a previous climbing, paired or recorded pose.
     }
+    function publishSolvedLegPose(side = null) {
+      const compositor = window.ActorRigCompositor; // One shared registry receives real IK baselines before named additive effects.
+      if (!compositor?.setSolvedBase) return;
+      const sides = side ? [side] : ['left', 'right']; // Recorded clips publish a leg at a time; normal gait publishes both.
+      if (!side) compositor.setSolvedBase(root, 'position', root.position); // Absolute stance hip-drop baseline.
+      for (const name of sides) {
+        const chain = legChains[name], foot = state[name]; // Existing rig joints, no secondary animation skeleton.
+        if (!chain || !foot) continue;
+        for (const joint of [chain.hip, chain.thigh, chain.calf, foot]) {
+          compositor.setSolvedBase(joint, 'position', joint.position);
+          compositor.setSolvedBase(joint, 'quaternion', joint.quaternion);
+        }
+      }
+    }
+
     function applyLegChain(side) {
       const mesh = state[side];
       const chain = legChains[side];
@@ -1445,6 +1460,8 @@
         hip: chain.hip.position, foot: target, bendDegX, bendDegZ, foldMaxLength: legLength,
       });
       const blend = Math.max(0, Math.min(1, state.hoverStrength)); // Smoothly mixes into the solved hover pose after mode changes.
+      window.ActorRigCompositor?.restoreSolvedBase?.(chain.thigh, 'quaternion');
+      window.ActorRigCompositor?.restoreSolvedBase?.(chain.calf, 'quaternion'); // Blend from the prior CLEAN IK pose, not an accumulated additive effect.
       chain.thigh.quaternion.slerp(solved.thighQuaternion, blend);
       chain.calf.position.y = damp(chain.calf.position.y, -solved.thighLength, 12, dt);
       chain.calf.quaternion.slerp(solved.calfLocalQuaternion, blend);
@@ -1500,6 +1517,7 @@
       }
       state.runLean=0;
       state.motionMode='paired-dance';
+      publishSolvedLegPose(); // Spouse/festival/external contacts are absolute authored targets.
       return true;
     }
 
@@ -1557,6 +1575,7 @@
         };
         applySeatedPose('left', seatFrame, dt);
         applySeatedPose('right', seatFrame, dt);
+        publishSolvedLegPose(); // Seat mode returns early but still owns an absolute leg baseline.
         return;
       }
       lastSeatedPoseDebug = null;
@@ -1582,6 +1601,7 @@
         const neutralPose = { travel: 0, lift: 0, planted: true };
         applyPose('left', state.leftContactY, state.idleLeftX, neutralPose, 11, dt);
         applyPose('right', state.rightContactY, state.idleRightX, neutralPose, 11, dt);
+        publishSolvedLegPose(); // Suppressed/knockdown gait must not inherit a previous additive foot twist.
         return;
       }
       if (state.hoverEnabled || motion?.airborne) {
@@ -1594,6 +1614,7 @@
         state.hoverPhase = (state.hoverPhase + Math.max(0, dt) * Math.PI * 0.72) % (Math.PI * 2); // ~2.8 second full dangling cycle.
         applyHoverPose('left', dt);
         applyHoverPose('right', dt);
+        publishSolvedLegPose(); // Hover/airborne IK publishes the completed current pose.
         return;
       }
       if (motion?.lunging) {
@@ -1603,6 +1624,7 @@
         state.gaitCadenceHz = 0;
         state.wasGaiting = false;
         applyLungeFootwork(dt);
+        publishSolvedLegPose(); // Lunging solver is the source of absolute foot travel.
         return;
       }
       state.hoverStrength = damp(state.hoverStrength, 0, 10, dt); // Normal locomotion regains ownership smoothly after hover ends.
@@ -1659,6 +1681,7 @@
       const response = isGaiting ? (lurch ? 9 + cadenceHz * 2 : 18 + cadenceHz * 3) : 11; // Extra inertia gives each step a late, jolting recovery.
       applyPose('left', state.leftContactY, state.idleLeftX, leftPose, response, dt);
       applyPose('right', state.rightContactY, state.idleRightX, rightPose, response, dt);
+      publishSolvedLegPose(); // Walking and idle end with the same canonical IK pose publication.
     }
 
     function dispose() {
@@ -1759,6 +1782,7 @@
       mesh.position.set(0, -lowerLength, 0);
       applyFootRollOnly(mesh, Number(record.roll) || 0);
       applyBoneGuideTransforms(chain, upperLength, lowerLength);
+      publishSolvedLegPose(side); // Recorded ragdoll samples share the authoritative solved baseline.
     }
 
     return {
