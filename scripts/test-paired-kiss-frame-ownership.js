@@ -52,10 +52,12 @@ function actor(y, yaw) {
 const playerMesh = actor(.36, 0);
 const npcRoot = actor(.22, 0);
 let poseLocked = true; // Simulates the same CharacterActionLocks token claimed by SpouseKissMotion.start.
+let movementOnlyLock = false; // After a kiss, an ordinary NPC movement-only hold still uses ground following.
 const locks = {
   isLocked(id, channel) {
-    return poseLocked && (id === 'player' || id === 'npc:spouse')
-      && ['movement', 'tools', 'pose', 'facing', 'head'].includes(channel);
+    return (id === 'player' || id === 'npc:spouse') && (
+      poseLocked && ['movement', 'tools', 'pose', 'facing', 'head'].includes(channel)
+      || movementOnlyLock && channel === 'movement');
   },
 };
 const window = {
@@ -111,6 +113,7 @@ assert.equal(playerLegs.group.rotation.y, .25, 'normal facing cannot overwrite p
 // After the kiss releases its lock, ordinary game and NPC movement must take
 // over on the very next tick, rather than leaving the player frozen.
 poseLocked = false;
+movementOnlyLock = true; // Only the exclusive pose ends; verify an independent movement-only lock follows the ground.
 tick();
 assert(!pose.owns(), 'the unprotected ordinary simulation would have invalidated that kiss pose');
 assert(normalLegTicks > 0 && mountedCalls > 0, 'ordinary gait and positioning resume after kiss handback');
