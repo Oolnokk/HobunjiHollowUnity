@@ -52,7 +52,15 @@
     if (mesh.frustumCulled === false || !mesh.geometry?.attributes?.position) return false;
     if (mesh.userData?.hobunjiZonePropBatchHolder) return false;
     const originalBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
-    if (typeof mesh.onBeforeRender === 'function' && mesh.onBeforeRender !== originalBeforeRender) return false;
+    // _markTerrainEdgeId installs a render hook on world floors; the
+    // TerrainRenderChunks splitter copies it to every spatial bucket.
+    // Its only purpose is setting the edge-ID color when that bucket DRAWs,
+    // so omitting a distant draw needs no hook. Other custom hooks remain
+    // excluded because they may change geometry/matrices or game state.
+    const knownTerrainEdgeHook = mesh.userData?.terrainRenderChunk === true
+      && mesh.userData?.hobunjiTerrainEdgeIdColor != null;
+    if (typeof mesh.onBeforeRender === 'function' && mesh.onBeforeRender !== originalBeforeRender
+      && !knownTerrainEdgeHook) return false;
     return true;
   }
 
