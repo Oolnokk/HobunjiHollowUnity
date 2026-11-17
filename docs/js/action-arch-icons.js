@@ -5,6 +5,7 @@
   'use strict';
   if (window.ActionArchIcons?.installed) return;
 
+  const DEDICATED_ICON_SELECTOR = '.combat-coin, .action-arch-fix-icon, .action-arch-numbered-raster, .action-arch-combo-layered'; // Must match isDedicatedHost() in action-arch-icons-fixes.js.
   const ICON_BASE = new URL('assets/hud/action_icons/', document.baseURI).href; // Base path used for all dedicated HUD PNGs.
   const ICON_FILES = Object.freeze([
     'ammo_select.png',
@@ -459,7 +460,10 @@
       const host = button.querySelector('.abt-icon');
       // Same loop as aria-label above: clearing an already-empty inline property
       // still re-serializes the style attribute and queues a mutation record.
-      if (host && host.style.visibility) host.style.visibility = '';
+      // Hosts carrying a dedicated icon are owned by action-arch-icons-fixes.js,
+      // whose refresh() pins them to 'visible'. Clearing them here made the two
+      // observers undo each other on every frame (one style recalc per frame).
+      if (host && host.style.visibility && !host.querySelector(DEDICATED_ICON_SELECTOR)) host.style.visibility = '';
     });
   }
 
