@@ -95,6 +95,14 @@
       const context = canvas.getContext('2d');
       if (!context) return null;
       context.drawImage(best.image, 0, 0, canvas.width, canvas.height);
+      // The fall's fire-scorch effect darkens rig materials instead of the
+      // authored portrait canvas. Bake the same settled tint before disposal.
+      if (c.deathCause === 'fire' && typeof context.fillRect === 'function') {
+        context.globalCompositeOperation = 'source-atop';
+        context.fillStyle = 'rgba(0, 0, 0, 0.94)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.globalCompositeOperation = 'source-over';
+      }
       texture = new THREE.CanvasTexture(canvas);
       if (best.map?.colorSpace !== undefined) texture.colorSpace = best.map.colorSpace;
       else if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
