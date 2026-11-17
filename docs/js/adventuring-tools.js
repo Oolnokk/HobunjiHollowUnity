@@ -6,10 +6,11 @@
   let deps = null, lit = false, lastEvent = 'ready'; // Hand-held torch state is session-only, unlike future tool unlocks.
   let torchThrowHold = null; // The input owner that pairs exactly one held press with its release or cancellation.
   let torchThrowPending = null; // Released throws wait for the real Strike pose before spawning a projectile.
-  let torchThrowRecovering = false; // Keeps the spent held sprite hidden until the authored return-to-neutral finishes.
+  let torchThrowRecovering = false; // Keeps the authored Strike/Return sequence alive even if the held mesh was temporarily unavailable.
+  let torchThrowHeldHidden = false; // Only restore the previously hidden in-hand copy when its visibility toggle succeeded.
   let lastThrowOrigin='none'; // Pixel Probe/mobile debug identifies whether a launch sampled the held torch plane.
   function init(injected) {
-    deps = injected; lit = false; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
+    deps = injected; lit = false; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; torchThrowHeldHidden = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
     for (const key of (deps.getUnlocked?.() || [])) if (tools.has(key)) unlocked.add(key);
   }
   function register(def) { if (!def?.id || !def.label || typeof def.onSelect !== 'function') return false; tools.set(def.id,def); return true; }
@@ -166,7 +167,8 @@
   function restoreThrownTorch() {
     if (!torchThrowRecovering) return;
     torchThrowRecovering = false;
-    deps?.setHeldTorchVisible?.(true); // As with the hatchet, replace the hidden in-hand copy only after the return pose.
+    if (torchThrowHeldHidden) deps?.setHeldTorchVisible?.(true); // Restore only after a successful hide, like a ranged hatchet.
+    torchThrowHeldHidden = false;
     window.ProceduralHandGripRuntime?.clear?.();
   }
   function cancelThrow(reason = 'cancel') {
@@ -212,9 +214,9 @@
       const result=throwLit(deps?.getTorchProjectileVisual?.() || null);
       if (!result.ok) { cancelThrow('projectile-unavailable');return; }
       torchThrowPending=null;
-      torchThrowRecovering = deps?.setHeldTorchVisible?.(false) === true; // Hides the original held torch while its projectile owns the visible copy.
+      torchThrowHeldHidden = deps?.setHeldTorchVisible?.(false) === true; // Hide the held sprite at projectile launch, not at input release.
+      torchThrowRecovering = true; // Even if no mesh loaded, the pose and mobile aim must persist through recovery.
       lastEvent = 'torch thrown from strike at ' + Math.round(poseProgress*100) + '%';
-      if (!torchThrowRecovering) window.ProceduralHandGripRuntime?.clear?.();
     }
     if (poseProgress >= 1 - 1e-6) restoreThrownTorch(); // An animation completed on this frame; never leave the replacement invisible.
   }
@@ -234,7 +236,7 @@
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
       return {
-        lit, held, throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
+        lit, held, throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
