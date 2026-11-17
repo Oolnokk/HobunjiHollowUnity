@@ -170,6 +170,10 @@ assert(api.start(cancelWalker,cancelA.root));cancelB.root.parent=null;api.update
  assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'no residual absolute owner after normal cancel');
 }
 
+window.BedLiePose={isActive:()=>true}; // Paired dance cannot take the same root while a mattress approach/lie pose is active.
+assert.equal(api.start(cancelWalker,cancelA.root),false);
+assert.equal(api.diagnostics().lastStartFailure.code,'player-lying-down');
+delete window.BedLiePose;
 window.SocialActionWheel={isDancing:()=>true};
 assert.equal(api.start(cancelWalker,cancelA.root),false);assert.equal(api.diagnostics().lastStartFailure.code,'solo-dance-active');
 window.SocialActionWheel={isDancing:()=>false};activeShot={camera:{id:'busy'}};
