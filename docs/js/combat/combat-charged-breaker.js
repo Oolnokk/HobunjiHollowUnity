@@ -393,6 +393,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: impactDamage, feyPrimaryKnockback: knockbackPxS }, // The mounted/unmounted committed damage informs Hyped's second strike.
               afflictionBonuses: attackAfflictions,
               chargePercentage: poseCharge,
               fullCharge: isFullChargePose(poseCharge),
