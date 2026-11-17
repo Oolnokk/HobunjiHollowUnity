@@ -25,6 +25,21 @@ for (const key of generatedCompanionShafts) {
     key + ': new arrow end must be opposite the old 90-degree generator');
   assert(dx * (tang.end.y - tang.start.y) - dy * (tang.end.x - tang.start.x) < 0,
     key + ': tang direction must have the corrected handedness');
+  const head = committed.heads.dagger; // One real rigid blade exercises the production fitting matrix on every corrected shaft.
+  const neutral = { scaleX: 1, scaleY: 1, flipX: false, flipY: false, x: 0, y: 0, rotation: 0 }; // Keep authored pair offsets out of the directed-arrow invariant.
+  const rig = api.attachmentRig(shaft, head, neutral); // World-fit must agree with the editor and gameplay compositor.
+  const mount = rig.children.find(child => child.type === 'tang' &&
+    Math.hypot((child.localMount.start.x + child.localMount.end.x) / 2 - center.x,
+      (child.localMount.start.y + child.localMount.end.y) / 2 - center.y) < 1e-7);
+  assert(mount, key + ': production rig must contain the corrected tang');
+  const affine = mount.children[0].worldMatrix;
+  const place = p => ({ x: affine.a * p.x + affine.c * p.y + affine.e,
+    y: affine.b * p.x + affine.d * p.y + affine.f }); // Evaluate the actual source-to-world renderer transform.
+  const fitStart = place(head.mount.start), fitEnd = place(head.mount.end);
+  assert(Math.hypot(fitStart.x - mount.worldMount.start.x, fitStart.y - mount.worldMount.start.y) < 1e-6,
+    key + ': the head tang base must attach to the corrected haft arrow start');
+  assert(Math.hypot(fitEnd.x - mount.worldMount.end.x, fitEnd.y - mount.worldMount.end.y) < 1e-6,
+    key + ': the head tang tip must follow the corrected haft arrow end');
 }
 const eyeLocations = [
   ['bshuakauitl', 0], ['bshuakauitl', 1], ['hachutuTorchStaff', 0], ['hachutuTorchStaff', 1],
