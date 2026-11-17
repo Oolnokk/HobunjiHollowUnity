@@ -49,6 +49,12 @@
     }
     return prey?.avatarRef?.group === group; // NPC and creature visual promotion must not restore detached old portraits.
   }
+  function sameScale(current, expected) {
+    if (!expected) return true;
+    return !!current && ['x', 'y', 'z'].every(axis =>
+      Number.isFinite(current[axis]) && Math.abs(current[axis] - expected[axis]) <= 1e-7);
+  }
+
   function sameOrientation(current, expected) {
     if (!current || !expected) return false;
     if (typeof current.dot === 'function') {
@@ -61,8 +67,18 @@
     if (!prey || !group?.quaternion?.clone) return false;
     if (captivePoses.get(prey)?.group === group) return true;
     releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
+    const poseSession = window.ActorRigCompositor?.createAbsoluteSession?.('tzatzul-captive') || null; // One scoped rotation/size owner, never a world-position owner.
+    if (poseSession) {
+      const fields = group.scale?.clone ? ['quaternion', 'scale'] : ['quaternion']; // Bare preview rigs can still supply only orientation.
+      if (!poseSession.capture(group, fields)) {
+        poseSession.release(); // A locked NPC/dance body must not be stolen by an approaching bird.
+        debug.captiveHandoffs++;
+        debug.lastCaptiveRestore = 'capture rejected: another absolute pose owns the rig';
+        return false;
+      }
+    }
     captivePoses.set(prey, { group, quaternion: group.quaternion.clone(),
-      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null }); // Track the latest pose actually written by talons, not just the original.
+      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null, poseSession }); // Capture height/rotation, but keep the release-world position.
     return true;
   }
   function restoreCaptive(prey) {
@@ -73,15 +89,25 @@
     }
     captivePoses.delete(prey); // Never reuse a previous capture's rotation on the next abduction.
     if (!stillOwnsCaptiveGroup(prey, pose.group) || !pose.group?.quaternion?.copy) {
+      pose.poseSession?.release(); // Even a detached/replaced rig must release its original scoped claims.
       debug.captiveRestoreMisses++;
       debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': visual root replaced';
       return false;
     }
-    const owned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
+    const orientationOwned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
+    const scaleOwned = sameScale(pose.group.scale, pose.scale); // A new scale owner must also defeat stale talon reset.
+    let owned = orientationOwned && scaleOwned;
+    if (pose.poseSession) {
+      pose.poseSession.release(); // Restores only this talon owner's quaternion/scale; an externally displaced rig keeps its newer pose.
+      owned = !!pose.lastAlignedQuaternion && pose.poseSession.wasRestored(pose.group, 'quaternion')
+        && (!pose.scale || pose.poseSession.wasRestored(pose.group, 'scale'));
+    }
     if (owned) {
-      pose.group.quaternion.copy(pose.quaternion); // Hand off the exact pre-capture pose only while the talons still own it.
-      if (pose.scale) pose.group.scale?.copy?.(pose.scale);
-      releasedPoseChecks.set(prey, { ...pose, remaining: 2 }); // Correct only a verified late reapplication of the old talon quaternion.
+      if (!pose.poseSession) {
+        pose.group.quaternion.copy(pose.quaternion); // Compatibility for isolated tools without the shared compositor.
+        if (pose.scale) pose.group.scale?.copy?.(pose.scale);
+      }
+      releasedPoseChecks.set(prey, { ...pose, poseSession: null, remaining: 2 }); // Guard only a verified late replay, not the new native pose.
     } else {
       releasedPoseChecks.delete(prey);
       debug.captiveHandoffs++;
@@ -224,6 +250,13 @@
       if (prey.tzatzulCapturedBy || !stillOwnsCaptiveGroup(prey, reset.group) || !(prey.health > 0)) {
         releasedPoseChecks.delete(prey); continue;
       }
+      const newOwner = window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'quaternion')
+        || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'scale'); // A resumed fall/locomotion action takes precedence over stale talon replay.
+      if (newOwner || !sameScale(reset.group.scale, reset.scale)) {
+        releasedPoseChecks.delete(prey);
+        debug.captiveHandoffs++;
+        continue;
+      }
       const current = reset.group.quaternion;
       if (sameOrientation(current, reset.lastAlignedQuaternion)) {
         current.copy(reset.quaternion); // An exact late talon pose is stale, not an independent combat/locomotion writer.
@@ -318,7 +351,12 @@
     group.parent.updateWorldMatrix(true, false);
     payload.inverse.copy(group.parent.matrixWorld).invert();
     payload.matrix.multiplyMatrices(payload.inverse, payload.object.matrixWorld);
-    rememberCaptive(prey, group); // A visual streamed in after capture must still save the upright baseline before tilting.
+    if (!rememberCaptive(prey, group)) return false; // Do not override an action that already owns the captive's rig.
+    const captiveBefore = captivePoses.get(prey); // The same live talon owner is refreshed at each flight-pose update.
+    if (captiveBefore?.poseSession && !captiveBefore.poseSession.owns()) {
+      debug.captiveHandoffs++;
+      return false; // A newer combat/fall animator displaced the talon orientation mid-flight.
+    }
     payload.matrix.decompose(group.position, group.quaternion, group.scale);
     const captivePose = captivePoses.get(prey); // Used by restoreCaptive to identify the exact orientation this talon pass last wrote.
     if (captivePose?.group === group) {
@@ -326,6 +364,7 @@
       else captivePose.lastAlignedQuaternion = group.quaternion.clone(); // Allocate once per capture, not per animated flight frame.
     }
     group.scale.copy(payload.scale);
+    captivePose?.poseSession?.stamp(); // Stamp the exact flight-frame quaternion and size without claiming the new world position.
     group.updateWorldMatrix(false, true);
     return true;
   }
