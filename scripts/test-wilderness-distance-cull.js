@@ -63,7 +63,7 @@ function mesh(name, x, userData = {}, options = {}) {
   };
 }
 const scene = Object.assign(group('Northern Cliffs'), { isScene: true }); // Render-active wilderness zone.
-const chunk = attach(scene, group('WildernessChunk_12_12', { wildernessChunk: true }));
+const chunk = attach(scene, group('WildernessChunk_cloud_forest_12_12', { wildernessChunk: true }));
 const nearRock = attach(chunk, mesh('rock', 12));
 const farRock = attach(chunk, mesh('rock', 164));
 const farTree = attach(chunk, mesh('tree_branches', 169));
@@ -82,7 +82,7 @@ invisibleGroup.visible = false;
 const batch = attach(scene, mesh('zone_prop_render_batch', 160, { hobunjiZonePropBatch: true, hobunjiZonePropKind: 'furniture' }));
 const plantBatch = attach(scene, mesh('zone_prop_render_batch', 165, { hobunjiZonePropBatch: true, hobunjiZonePropKind: 'reagent' }));
 const standalone = attach(scene, mesh('distant_mesa_rock', 182));
-const terrainSource = attach(scene, mesh('zone_floor', 0, { terrainRenderChunkSource: true },
+const terrainSource = attach(scene, mesh('river_floor', 0, { terrainRenderChunkSource: true },
   { frustumCulled: false })); // TerrainRenderChunks keeps the source as parent of draw-range children.
 const terrainChunk = attach(terrainSource, mesh('zone_floor__spatial_chunk_10_0', 0,
   { terrainRenderChunk: true, hobunjiTerrainEdgeIdColor: { r: 1 } },
@@ -94,6 +94,8 @@ terrainChunk.geometry.computeBoundingBox = function () {
   this.computed = (this.computed || 0) + 1;
   this.boundingBox = new Box3({ x: 0, y: -1, z: -1 }, { x: 220, y: 1, z: 1 });
 }; // Actual THREE computes every vertex in the shared buffer, ignoring the chunk's drawRange.
+const protectedChunk = attach(scene, group('WildernessChunk_rain_99', { wildernessChunk: true, hobunjiNeverDistanceCull: true }));
+const protectedRock = attach(protectedChunk, mesh('rock', 190)); // Explicit exclusions must still win over geographic names.
 const actor = attach(scene, mesh('npc_walker_01', 190));
 const untagged = attach(scene, mesh('ordinary_debug_mesh', 195));
 const camera = { isCamera: true, matrixWorld: matrixAt(0), updateMatrixWorld() {} };
@@ -115,7 +117,7 @@ for (const [object, message] of [
   [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
   [farWater, 'water surface'], [nearEdge, 'large bounds intersect near space'],
   [invisibleChild, 'hidden ancestor'], [plantBatch, 'reagent vegetation batch'],
-  [actor, 'actor'], [untagged, 'untagged unrelated mesh'],
+  [actor, 'actor'], [protectedRock, 'explicitly no-cull chunk'], [untagged, 'untagged unrelated mesh'],
 ]) assert.equal(object.visible, true, message + ' must not be altered');
 assert.equal(api.snapshot().hidden, 5, 'only five actually drawable distant meshes are suppressed');
 assert.equal(api.snapshot().hiddenInstanced, 1, 'tagged instanced meshes are measured separately');
@@ -223,4 +225,4 @@ const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
 const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
 assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
   'distance cull is restored by renderWorldPasses finally before wall/prop restore');
-console.log('PASS wilderness distance cull: terrain hooks/bucket bounds, geographic scene names, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
+console.log('PASS wilderness distance cull: terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');
