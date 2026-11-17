@@ -105,7 +105,8 @@
     let found = null; // The already-existing contact probe handles physical melee reach, height and line-of-sight cover.
     visitSources(world, world.player, entity => {
       const root = entity.avatarRef?.group;
-      if (!root || root.visible === false || !contact(root)) return false;
+      const hitbox = window.RangedWeapons?.actorHitbox?.(entity)?.box || null; // Reuse the combat portrait box, excluding fire-particle cloud extents.
+      if (!root || root.visible === false || !contact(root, hitbox)) return false;
       found = entity;
       lastContact = { kind: 'torch-lit', label: labelFor(entity), corpse: isCorpse(entity) };
       return true;
