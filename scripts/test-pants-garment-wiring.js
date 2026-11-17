@@ -47,6 +47,8 @@ assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are nor
     'transparent or disconnected source art correctly retains authored belt width');
   assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => ({ getImageData: () => { throw new Error('tainted'); } }) }) === null,
     'unreadable portrait pixels safely fall back to the authored fit');
+  assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => { throw new Error('context unavailable'); } }) === null,
+    'unavailable portrait canvas context also falls back without breaking attachment');
 }
 
 
