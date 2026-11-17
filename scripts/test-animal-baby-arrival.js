@@ -78,11 +78,12 @@ const context = vm.createContext({ window, document, setTimeout: run, clearTimeo
 vm.runInContext(source, context, { filename: 'animal-baby-arrival.js' });
 const feature = window.AnimalBabyArrival;
 assert(feature, 'the arrival module exports its public UI API');
-for (let i = 0; i < 300; i++) {
+const twoSyllableName = /^(?:[BDFGKLMNPSTW][aeiou]|Ch[ui]|Sh[aiu])(?:[bdfgklmnpstw][aeiou]|ch[ui]|sh[aiu])[nmtkbgp]?$/; // Verifies actual two-syllable phonology instead of rejecting coincidental letter sequences such as shi+le+t = Shilet.
+for (let i = 0; i < 1500; i++) {
   const name = feature.generateName();
-  assert.match(name, /^[A-Z][a-z]{2,6}$/, 'generated pet names contain two plain syllables and at most one final consonant');
-  assert.doesNotMatch(name, /(kins|bean|puff|fie|bee|let)$/i, 'ornamental nickname endings have been removed');
+  assert.match(name, twoSyllableName, 'names comprise two simple syllables and at most one permitted coda, never an added nickname suffix');
 }
+assert.match('Shilet', twoSyllableName, 'natural shi+le+t combinations are not mistaken for the removed let suffix');
 for (const [ending, index] of [['b', 4], ['g', 5], ['p', 6]]) {
   const rolls = [0, 0.9, 0, 0, (index + 0.2) / 7]; // Selects two simple ba syllables, then the targeted single-letter coda.
   let roll = 0; // Advances through the deterministic random draw sequence for each required final consonant.
