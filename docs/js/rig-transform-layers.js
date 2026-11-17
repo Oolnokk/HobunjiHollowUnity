@@ -436,11 +436,18 @@
       if (released) return { restored: 0, skipped: 0 };
       released = true;
       let restored = 0, skipped = 0;
+      const displacedNodes = new WeakSet(); // Any replaced claimed field transfers the ENTIRE node pose to the newer writer.
+      for (const entry of entries) {
+        if (!entryStillOwned(entry, false)) displacedNodes.add(entry.node);
+      } // Snapshot before modifying claims so release order cannot revive sibling or descendant fields.
       for (let i = entries.length - 1; i >= 0; i--) {
-        const entry = entries[i]; // Children release before parents so a displaced ancestor invalidates nested neck/leg restoration.
+        const entry = entries[i]; // Children release before parents so replaced roots also protect nested neck and leg poses.
         const claims = absoluteClaims.get(entry.node);
         if (claims?.get(entry.property) !== entry) { skipped++; continue; }
-        const owned = entryStillOwned(entry); // Test before dropping the claim.
+        let owned = !displacedNodes.has(entry.node) && entryStillOwned(entry, false);
+        for (let parent = entry.node.parent; owned && parent; parent = parent.parent) {
+          if (displacedNodes.has(parent)) owned = false;
+        } // An external position-only takeover cannot trigger an unrelated old quaternion reset.
         claims.delete(entry.property);
         activeAbsoluteClaims--;
         if (!claims.size) absoluteClaims.delete(entry.node);
