@@ -254,6 +254,7 @@
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const windupS = WINDUP_S * timeScale * (mounted ? MOUNTED_QUICK_WINDUP_SCALE : 1); // Mounted windup lasts ~0.39s at normal attack speed, enough time for gradual physical acceleration.
       const strikeS = STRIKE_S * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, windupS + strikeS); // Align 1°-per-Stamina perceived turn to this jab's actual doubled-speed timeline.
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const { rangePx, halfConeRad, baseLungePx } = getReachProfile(deps, id, effects, shapeStats, baseAbil, { weaponKey, includeEnchantments: false }); // The real strike's prepare listener handles enchantment modifiers exactly once.
       const attackContext = window.CombatAttackEvents?.prepare?.({
