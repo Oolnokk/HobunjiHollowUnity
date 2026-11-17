@@ -25,9 +25,11 @@
   }
 
   let shortening = (() => {
-    try { const saved = window.localStorage?.getItem(SHORTENING_STORAGE_KEY); return saved == null || Number(saved) === 0.20
-      ? DEFAULT_SHORTENING : clampShortening(saved); // Migrate the former 20% global default; keep other chosen amounts.
-    catch (_) { return DEFAULT_SHORTENING; }
+    try {
+      const saved = window.localStorage?.getItem(SHORTENING_STORAGE_KEY);
+      return saved == null || Number(saved) === 0.20
+        ? DEFAULT_SHORTENING : clampShortening(saved); // Migrate the former 20% global default; keep other chosen amounts.
+    } catch (_) { return DEFAULT_SHORTENING; }
   })(); // Current shortening used by babies and genetically Small pets when a species has no override.
   function getShortening() { return shortening; }
   function setShortening(value) {
