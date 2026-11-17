@@ -24,9 +24,9 @@
     document.head.appendChild(script);
   }
 
-  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 7) {
-    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction')) {
-      lateLoad('js/grehlr-head-rig-correction.js?v=20260917uploads1', 'grehlr-head-rig-correction');
+  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 8) {
+    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20261117GrehlrCorr8', 'grehlr-head-rig-correction')) {
+      lateLoad('js/grehlr-head-rig-correction.js?v=20261117GrehlrCorr8', 'grehlr-head-rig-correction');
     }
   }
   if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-17-gar-wolf-grehlr-rigs1') {
