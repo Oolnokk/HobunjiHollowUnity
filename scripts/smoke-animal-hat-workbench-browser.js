@@ -162,6 +162,12 @@ async function spritePng(page, animal) {
       name: 'grehlr-baby-fixture.png', mimeType: 'image/png', buffer: await spritePng(page, true),
     });
     await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame?.width > 0);
+    assert.equal(await page.locator('#babyHeadUsePainted').isChecked(), true,
+      'old painted Head selection is checked by default for every species');
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).maskMode,
+      'legacy-frame', 'runtime and editor agree on the painted Head default');
+    await page.locator('#babyHeadUsePainted').uncheck(); // Exercise optional idle-alpha selection in the mask-specific tests.
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha');
     await page.locator('#babyHeadScale').evaluate(input => {
       input.value = '145'; // Highest setting makes invisible overrides easy to diagnose.
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -171,6 +177,42 @@ async function spritePng(page, animal) {
     assert.equal(headDebug.scale, 1.45);
     assert(headDebug.comparisonPixelChanges > 0, 'original and enlarged source pixels must actually differ');
     assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/);
+
+    // Two real pointer drags select independent source-space growth regions without painting the rig.
+    await page.locator('#babyHeadDrawCustom').click();
+    await page.locator('#paintCanvas').scrollIntoViewIfNeeded();
+    let artBox = await page.locator('#paintCanvas').boundingBox();
+    assert(artBox?.width > 30 && artBox?.height > 30, 'the touch-draw editor canvas is visible');
+    await page.mouse.move(artBox.x + artBox.width * .23, artBox.y + artBox.height * .23);
+    await page.mouse.down();
+    await page.mouse.move(artBox.x + artBox.width * .49, artBox.y + artBox.height * .47, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(() => window.__animalRigGrowthRegions?.debugSnapshot()?.customEnabled === true
+      && window.__animalRigGrowthRegions.debugSnapshot().customFrame?.width > .15
+      && window.__animalHeadRigBabyPreview?.debugSnapshot()?.frameSource === 'custom drawn head box');
+    assert.match((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
+      /custom drawn head box/, 'a drawn head rectangle takes over the live source frame');
+
+    await page.locator('#babyHeadDrawAbdomen').click();
+    await page.locator('#paintCanvas').scrollIntoViewIfNeeded();
+    artBox = await page.locator('#paintCanvas').boundingBox();
+    await page.mouse.move(artBox.x + artBox.width * .48, artBox.y + artBox.height * .53);
+    await page.mouse.down();
+    await page.mouse.move(artBox.x + artBox.width * .78, artBox.y + artBox.height * .82, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(() => window.__animalRigGrowthRegions?.debugSnapshot()?.abdomenEnabled === true
+      && window.__animalRigGrowthRegions.debugSnapshot().abdomenFrame?.width > .15);
+    await page.locator('#babyAbdomenScale').evaluate(input => {
+      input.value = '150';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalRigGrowthRegions.debugSnapshot().abdomenScale === 1.5);
+    assert((await page.evaluate(() => previewImageForAnimal(state.image))) !== null,
+      'both head and abdominal growth use the established finished-texture preview');
+    await page.locator('#babyHeadClearAbdomen').click();
+    await page.locator('#babyHeadClearCustom').click();
+    await page.waitForFunction(() => !window.__animalRigGrowthRegions.debugSnapshot().customEnabled
+      && !window.__animalRigGrowthRegions.debugSnapshot().abdomenEnabled);
 
     // A second localhost port is genuinely cross-origin. Image.onload alone cannot prove the pixels are readable.
     externalSpritePng = await spritePng(page, true);
@@ -190,8 +232,14 @@ async function spritePng(page, animal) {
       'even a cross-origin loaded sprite must have readable image data for actual enlargement');
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).lastError, null,
       'successful cross-origin pixel read must clear any earlier tainted-canvas error');
+    await page.waitForFunction(() => {
+      const frame = window.__animalHeadRigBabyPreview?.debugSnapshot()?.frame;
+      return (window.BabyAnimalHeadWarp?.maskForKind?.('grehlr', frame)?.opaquePixels || 0) > 0;
+    }); // The editor's unsaved alpha opt-in uses its live frame; runtime still defaults to the painted mode.
     const poseMaskCheck = await page.evaluate(() => {
-      const warp = window.BabyAnimalHeadWarp, mask = warp.maskForKind('grehlr');
+      const warp = window.BabyAnimalHeadWarp;
+      const previewFrame = window.__animalHeadRigBabyPreview.debugSnapshot().frame;
+      const mask = warp.maskForKind('grehlr', previewFrame);
       if (!mask) return { error: warp.debugSnapshot().lastMaskError || 'missing idle head mask' };
       const originalMask = mask;
       const pose = document.createElement('canvas');
@@ -201,7 +249,7 @@ async function spritePng(page, animal) {
       ctx.fillStyle = '#ff006b'; ctx.fillRect(Math.floor(mask.centerX) - 6, Math.floor(mask.centerY) - 2, 5, 5); // Eye overlay.
       ctx.fillStyle = '#03e1cc'; ctx.fillRect(Math.floor(mask.centerX) + 2, Math.floor(mask.centerY) - 2, 5, 5); // Coat pattern.
       const before = ctx.getImageData(0, 0, 64, 64).data;
-      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45);
+      const enlarged = warp.applyToCanvas(pose, 'grehlr', 1.45, previewFrame, null, false); // Explicit alpha mode even when the saved game defaults to painted Head.
       const after = enlarged.getContext('2d').getImageData(0, 0, 64, 64).data;
       const colors = (bytes, r, g, b) => {
         let count = 0;
@@ -219,7 +267,7 @@ async function spritePng(page, animal) {
       warp.primeIdleMask('test-mask-reload', { width: 12, height: 12, data: sparse }, frame);
       warp.primeIdleMask('test-mask-reload', { width: 12, height: 12,
         data: new Uint8ClampedArray(sparse.length) }, frame); // Empty replacement must invalidate an earlier opaque mask.
-      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr') === originalMask,
+      return { opaquePixels: mask.opaquePixels, maskKept: warp.maskForKind('grehlr', previewFrame) === originalMask,
         changed, beforeEye: colors(before,255,0,107), afterEye: colors(after,255,0,107),
         beforePattern: colors(before,3,225,204), afterPattern: colors(after,3,225,204),
         sparsePixels: isolatedMask?.opaquePixels, clearInsideBox: isolatedMask?.coverage[3*12+3] < 1,
@@ -240,7 +288,27 @@ async function spritePng(page, animal) {
     await page.waitForFunction(() => /Showing original/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     await page.locator('#babyHeadCompare').click();
     assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).comparingOriginal, false);
-    await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    await page.waitForFunction(() => /Showing 145% size, 8% shorter head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    await page.locator('#babyHeadUsePainted').check(); // Exercise the older painted-Head selector in a real mobile Chromium render.
+    await page.waitForFunction(() => { const debug = window.__animalHeadRigBabyPreview?.debugSnapshot?.();
+      return debug?.maskMode === 'legacy-frame' && debug?.frameSource === 'earlier painted Head rectangle'; });
+    assert.equal((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
+      'earlier painted Head rectangle', 'checked selection uses the original painted Head region');
+    await page.locator('#babyHeadUsePainted').uncheck();
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha');
+    await page.locator('#babyHeadShortening').evaluate(input => {
+      input.value = '35';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.35
+      && /35% shorter head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
+    assert.match(await page.locator('#babyHeadPreviewState').textContent(), /35% shorter head/,
+      'live preview communicates brachycephaly, not just the enlargement percentage');
+    await page.locator('#babyHeadShortening').evaluate(input => {
+      input.value = '8';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.shortening === 0.08);
     // Grehlr's REAL 3000×2250 sprite previously exceeded the 4MP idle-mask ceiling.
     // The failed warp then allocated a full canvas for every preview triangle until the mobile tab crashed.
     const largeGrehlrPng = makeLargeSpritePng(3000, 2250);
@@ -252,11 +320,32 @@ async function spritePng(page, animal) {
       [...select.options].find(option => option.textContent.trim() === 'Grehlr')?.value);
     assert(grehlrOption, 'Grehlr must appear in the real bestiary');
     await page.locator('#animalSelect').selectOption(grehlrOption);
-    await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000
-      && window.__animalHeadRigBabyPreview?.debugSnapshot()?.idleMaskPixels > 0,
+    await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000,
+      null, { timeout: 60000 });
+    await page.locator('#babyHeadUsePainted').uncheck(); // Species reload resets to painted by default; opt into alpha for this specific large-mask stress test.
+    await page.waitForFunction(() => window.__animalHeadRigBabyPreview?.debugSnapshot()?.maskMode === 'idle-alpha'
+      && window.__animalHeadRigBabyPreview.debugSnapshot().idleMaskPixels > 0,
     null, { timeout: 60000 });
+    const shoulderBeforeCopy = await page.evaluate(() => currentShoulderRest());
+    await page.locator('#shoulderCopySource').selectOption('moot');
+    await page.locator('#shoulderCopyFromSpecies').click();
+    const importedShoulder = await page.evaluate(() => ({
+      source: window.HobunjiAuthoredAnimalHeadRigs.get('moot').shoulderRest,
+      target: currentShoulderRest(),
+    }));
+    for (const field of ['useRun1', 'splitFrame', 'splitRightUsesIdle', 'followFrameShiftX']) {
+      assert.equal(importedShoulder.target[field], importedShoulder.source[field],
+        'copying a shoulder pose imports the authored ' + field + ' setting');
+    }
+    for (const field of ['frameShiftX', 'separatorRotationDeg']) {
+      assert.equal(importedShoulder.target[field], shoulderBeforeCopy[field],
+        'copying a shoulder pose preserves the destination frame divider ' + field);
+    }
+    assert.match(await page.locator('#shoulderCopyStatus').textContent(), /Destination divider X and angle preserved/);
+    await page.evaluate(rest => { applyShoulderRestConfig(rest); draw(); }, shoulderBeforeCopy);
+
     const largeSprite = await page.evaluate(() => {
-      const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr');
+      const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr', window.__animalHeadRigBabyPreview.debugSnapshot().frame);
       const texture = previewImageForAnimal(state.image);
       const layers = previewSplitLayerCanvases();
       return {

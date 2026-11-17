@@ -851,6 +851,19 @@
         rerollSwarm(); // Refreshes visible Nursery babies immediately; distant incubator/nest textures refresh on re-entry.
       });
       section.appendChild(tuning);
+
+      const shortenTuning = document.createElement('label'); // Touch-friendly global muzzle shortening, independent of the enlargement slider.
+      shortenTuning.style.cssText = tuning.style.cssText;
+      const initialShortening = headWarp.getShortening?.() ?? 0.08; // Inherited 8% shortening also applies to eligible Small shoulder pets.
+      shortenTuning.innerHTML = `Baby head shortening <input type="range" aria-label="Baby head shortening" min="0" max="${headWarp.MAX_SHORTENING || 0.45}" step="0.01" value="${initialShortening}" style="flex:1;min-width:100px;"><output>${Math.round(initialShortening * 100)}%</output>`;
+      const shortenSlider = shortenTuning.querySelector('input');
+      const shortenValue = shortenTuning.querySelector('output');
+      shortenSlider?.addEventListener('input', () => { shortenValue.textContent = Math.round(Number(shortenSlider.value) * 100) + '%'; });
+      shortenSlider?.addEventListener('change', () => {
+        headWarp.setShortening?.(shortenSlider.value); // Recompute only on release; do not reprocess huge sprite art on every thumb movement.
+        rerollSwarm();
+      });
+      section.appendChild(shortenTuning);
     }
 
     const selected = babyList.find(entry => entry.id === selectedBabyId);
