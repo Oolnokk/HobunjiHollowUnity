@@ -104,6 +104,11 @@ assert.equal(meshBudget.unregisterSkinnedPortrait(visitor), false, 'unregisterin
 assert.equal(meshBudget.portraitDensityDebug().tracked, 2);
 assert.equal(meshBudget.setPortraitDensityPercent(100), true);
 assert.equal(meshBudget.portraitDensityDebug().lastRebuilt, 2, 'only remaining living rig owners update');
+assert.equal(meshBudget.setPlayerMode('npc'), true, 'the existing player mesh cap remains independently adjustable');
+assert.equal(meshBudget.portraitDensityDebug().player.segmentsX, 20, 'developer readout reflects the actual player NPC cap');
+assert.equal(meshBudget.portraitDensityDebug().player.segmentsY, 26);
+assert.equal(meshBudget.setPlayerMode('full'), true);
+assert.equal(meshBudget.portraitDensityDebug().player.segmentsX, 28);
 
 assert(uiSource.includes("densitySlider.type = 'range'"), 'dev UI has a real range input');
 assert(uiSource.includes("densityRow.setAttribute('data-dev-only', '')"), 'slider is hidden outside developer mode');
