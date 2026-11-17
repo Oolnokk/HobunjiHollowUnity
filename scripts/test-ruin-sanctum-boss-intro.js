@@ -58,10 +58,17 @@ composer.buildRooms({deps},context,()=>.5,[],{sanctum:true});
 const state=win.DevRandomRuinSanctum.getState();
 Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12}},bossType:'kanthic',
   coffins:[{index:0,open:false,lidT:0,rise:{x:20,z:10}}],arenaFires:[]});
+const arenaLight={x:12,y:1.4,z:12,active:false}; // Source follows ignition, cancellation and reset.
+state.arenaFires=[{lit:false,anchor:{visible:false},lightSource:arenaLight}];
+state.sanctumLights=[arenaLight];
 async function run(){
   win.DevRandomRuinSanctum.enter();
   await advance(1750);
   assert(state.intro,'reveal must run before the fight');
+  assert.equal(arenaLight.active,true,'entering ignites the arena light');
+  assert.equal(win.DevRandomRuinSanctum.lightSources().length,2,'reveal adds a boss light alongside the arena brazier');
+  assert.equal(state.introLight?.active,true,'the lich has a dedicated reveal light');
+  assert.equal(state.introLight.x,state.boss.x/64,'temporary light follows the actual boss position');
   assert.equal(enemies.size,0,'boss cannot simulate during the reveal');
   assert.equal(state.boss.x/64,18.5,'one-and-a-half tiles behind arena center');
   assert.equal(state.coffins[0].open,false,'coffins must remain closed during reveal');
@@ -74,9 +81,12 @@ async function run(){
   assert.equal(title.textContent,'IMLAO THE SIGHTLESS');
   assert.match(title.style.cssText,/top:75%/);
   assert.match(title.style.cssText,/KhymeryyanRomanLetters\+Numbers/);
-  assert.match(title.style.cssText,/-webkit-text-stroke:2\.5px #000/);
+  assert.match(title.style.cssText,/-webkit-text-stroke:\.5px #000/);
+  assert.match(title.style.cssText,/font-weight:400/,'authored glyphs must not be synthetically emboldened beneath the outline');
   await advance(2750);
   assert.equal(state.intro,null);
+  assert.equal(state.introLight,null,'reveal-only lighting stops with its shot');
+  assert.equal(win.DevRandomRuinSanctum.lightSources().length,1,'only permanent arena lighting survives the reveal');
   assert(enemies.has(state.boss),'hostile simulation begins after reveal');
   assert.equal(state.coffins[0].open,true);
   assert.equal(skeletons,1,'the first coffin guard spawns only when combat starts');
@@ -84,6 +94,7 @@ async function run(){
   assert.equal(active,null);
   composer.onPlayerDeath();
   assert.equal(state.boss,null);
+  assert.equal(arenaLight.active,false,'death resets arena lighting rather than leaking light to an empty room');
   assert.equal(state.coffins[0].open,false);
   assert.equal(state.coffins[0].skeleton,null);
   assert.equal(skeletonDisposals,1,'the existing coffin skeleton avatar must be retired');
@@ -127,6 +138,8 @@ async function run(){
   assert(dyingTitle&&!dyingTitle.removed,'new title appears before death during a cinematic');
   composer.onPlayerDeath();
   assert.equal(dyingTitle.removed,true,'death in the reveal removes the banner');
+  assert.equal(state.introLight,null,'death clears the temporary boss light');
+  assert.equal(win.DevRandomRuinSanctum.lightSources().length,1,'death retains no temporary light source');
   assert.equal(state.intro,null,'death during the reveal cancels camera ownership');
   assert.equal(active,null);
   assert.equal(locks,releases,'death during reveal releases player controls');
@@ -156,6 +169,10 @@ async function run(){
   assert.equal(playerTeleports,teleportsBeforeExitDeath,'a delayed exit may not move the player after their checkpoint respawn');
   assert.equal(state.leavingSanctum,false);
   assert.equal(state.intro,null);
-  console.log('PASS: reveal, outline, timed combat, canonical cleanup, death/exit, fade cancellation, stale spawns, persistent victory');
+  const fogSource=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8'); // Both darkness paths must draw sanctum sources.
+  assert.equal(fogSource.split('DevRandomRuinSanctum?.lightSources?.()').length-1,2,'fog and enclosed lighting both use the sanctum mask');
+  const roomSource=fs.readFileSync('docs/js/ruin-room-system.js','utf8'); // Occupied-room illumination uses the same authoritative source.
+  assert.ok(roomSource.includes('DevRandomRuinSanctum?.lightSources?.()'),'room ambient uses the sanctum light source');
+  console.log('PASS: readable reveal, authored lights, intro lighting, timed combat, canonical cleanup, death/exit, fade cancellation, stale spawns, persistent victory');
 }
 run().catch(err=>{console.error(err);process.exitCode=1;});
