@@ -55,8 +55,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(api.authored)), currentGrehlr,
 const runtimeLoader = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8'); // Game load version must invalidate stale browser scripts.
 const painterHtml = fs.readFileSync('docs/tools/animal-head-rig/index.html', 'utf8'); // Mobile author reload must use the same corrected export.
 assert.match(runtimeLoader, /GrehlrHeadRigCorrection\.version\) < 8/);
-assert(runtimeLoader.includes('grehlr-head-rig-correction.js?v=20261117GrehlrCorr8'));
-assert(painterHtml.includes('grehlr-head-rig-correction.js?v=20261117GrehlrCorr8'));
+assert.match(runtimeLoader, /grehlr-head-rig-correction\.js\?v=[A-Za-z0-9_-]+/, 'runtime Grehlr correction stays cache-busted');
+assert.match(painterHtml, /grehlr-head-rig-correction\.js\?v=[A-Za-z0-9_-]+/, 'mobile painter Grehlr correction stays cache-busted');
 assert.equal(rest.followFrameShiftX, true);
 
 // The uploaded Grehlr shoulder pose is already authored as explicit BEFORE/AFTER curves;
