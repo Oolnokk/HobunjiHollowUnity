@@ -11,7 +11,7 @@
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
     "js/farm-tile-render-batches.js?v=20261114farmBatch1",
     "js/zone-prop-render-batches.js?v=20261116zoneProps1",
-    "js/wilderness-distance-cull.js?v=20261117nonvegCull5", // Loaded before game.js; scope begins after static prop batching.
+    "js/wilderness-distance-cull.js?v=20261117nonvegCull6", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261116treeFade1",
     "js/shoulder-pet-attachment-runtime.js?v=20261117turnStability2" // Shared pin solver, before game.js starts.
 ]; // Versioned game modules owned by this group.
