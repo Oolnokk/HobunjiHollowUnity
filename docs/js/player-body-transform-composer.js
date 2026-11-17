@@ -28,6 +28,7 @@
   let playerPosteriorY = 0;
   let playerNeckJointCache = null; // Cached current player neck bone; invalidated when the rig/avatar is replaced so rebuilds retarget automatically.
   let renderSequence = 0; // Incremented for Pixel Probe correlation across real render calls.
+  let unrelatedSceneSkips = 0; // Counts editor/preview render passes whose scenes do not contain the live player rig.
   let lastRenderDebug = null; // Read by getDebug() so mobile reports can inspect temporary render state after restoration.
   const headAimTarget = new THREE.Vector3(); // Copied from gameplay's shared interaction/fishing target before render.
   const headAimOrigin = new THREE.Vector3(); // Reused for the neck's position after all body lean has been composed.
@@ -446,7 +447,7 @@
     return () => externalRootProviders.delete(String(name));
   }
 
-  let renderFacingState = {}; // Final body deadzone includes weapon/channel yaw after ordinary gameplay facing.
+  let renderFacingState = {}; // Final-facing deadzone uses the composed body yaw, with stable logical heading as its fallback side hint.
   const renderFacingForward = new THREE.Vector3(); // Reused by final quaternion-to-yaw conversion.
   const renderFacingUp = new THREE.Vector3(0, 1, 0); // World yaw axis for body and owned held visuals.
   const renderFacingTranslation = new THREE.Vector3(); // Zero translation shared by the final yaw correction.
@@ -472,10 +473,39 @@
     const perps = api.cameraRelativePerpsAtWorldPosition(playerMesh.position, camera.position);
     if (!perps) return;
     renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
-    const rawYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Actual composed portrait direction, after every stance/animation channel.
+    const composedYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Used only to diagnose the composed stance/body orientation.
+    // The actual composed yaw MUST be clamped: adding the default -40° Light
+    // Weapon stance after a 40° deadzone clamp can leave the PNG exactly
+    // edge-on. The logical gameplay facing is only a directional fallback for
+    // choosing a stable edge when the stance passes through the deadzone.
+    // Mirror the GAMEPLAY deadzone's real direction hints. game.js authors
+    // player.perpState using movement/headtrack priority before this render;
+    // feeding a second private clamp invented movement state can select the
+    // opposite edge on a fast turn. Never mutate the gameplay's own state:
+    // secondary depth renders must not change next frame's facing decisions.
+    const gameplayFacing = !renderDebug.authoredAbsoluteYaw
+      ? window.Combat?.deps?.player?.perpState : null; // The live player's prior simulation-frame deadzone authority.
+    renderFacingState.movementYaw = Number.isFinite(gameplayFacing?.movementYaw)
+      ? gameplayFacing.movementYaw : null;
+    renderFacingState.headtrackYaw = Number.isFinite(gameplayFacing?.headtrackYaw)
+      ? gameplayFacing.headtrackYaw : null;
+    renderFacingState.headtrackAtMs = renderFacingState.headtrackYaw !== null
+      ? gameplayFacing.headtrackAtMs : null;
+    renderFacingState.lastMovementYaw = Number.isFinite(gameplayFacing?.lastMovementYaw)
+      ? gameplayFacing.lastMovementYaw
+      : Number.isFinite(renderDebug.baseFacingYaw) && !renderDebug.authoredAbsoluteYaw
+        ? renderDebug.baseFacingYaw : null; // Standalone editors retain a stable non-velocity fallback.
+    const rawYaw = composedYaw;
     const solved = api.perpClamp(renderFacingState, rawYaw, perps);
-    const correction = wrapSignedAngle(solved.effectiveTarget - rawYaw);
-    renderDebug.bodyDeadzone = { rawYaw, renderedYaw: solved.effectiveTarget, correction, latestChange: 'Final body clamp follows stance yaw; seated feet retain chair facing.' };
+    const correction = wrapSignedAngle(solved.effectiveTarget - composedYaw);
+    renderDebug.bodyDeadzone = {
+      rawYaw, baseYaw: renderDebug.baseFacingYaw, composedYaw,
+      renderedYaw: solved.effectiveTarget, correction,
+      logicalHeadingFallback: renderFacingState.lastMovementYaw,
+      gameplayFacingHints: !!gameplayFacing,
+      correctiveSource: renderFacingState.pixelProbeDebug?.correctiveSource || 'nearest-edge',
+      latestChange: 'Final composed yaw stays out of the camera deadzone; actual gameplay movement hints select the side.',
+    };
     if (Math.abs(correction) < 1e-8) return;
     renderFacingRotation.setFromAxisAngle(renderFacingUp, correction);
     const pivot = playerMesh.localToWorld(renderFacingPivot.set(0, playerPosteriorY, 0)); // Same posterior pivot used by all composer-owned attachments.
@@ -576,6 +606,15 @@
     const proto = THREE.WebGLRenderer.prototype;
     const originalRender = proto.render;
     proto.render = function composedPlayerBodyRender(scene, camera) {
+      // WebGLRenderer is shared by the main world and standalone preview
+      // scenes. An unrelated scene's camera must never advance the player's
+      // private deadzone history, run post-head hooks, or consume the next
+      // live-world transform dump. The real world scene still uses the full
+      // composition path, including secondary renders of that same scene.
+      if (playerMesh?.isObject3D && scene?.isScene && !isDescendantOf(playerMesh, scene)) {
+        unrelatedSceneSkips++;
+        return originalRender.call(this, scene, camera);
+      }
       const undo = [];
       const renderDebug = {
         sequence: ++renderSequence,
@@ -586,11 +625,17 @@
         baseWorldEulerDeg: null,
         composedWorldEulerDeg: null,
         neckYaw: null,
+        baseFacingYaw: null, // Gameplay root yaw sampled before any render-only attack/idle-stance contributions.
+        authoredAbsoluteYaw: false, // Crawl/bed author a complete heading and still need the final composed-yaw clamp.
       }; // Persisted below before temporary transforms are restored.
       renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
       renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       try {
+      if (playerMesh?.isObject3D) {
+        renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
+        renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
+      }
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
       if (playerMesh && !poseLocked) {
         const bodyDelta = resolveDelta('player');
@@ -600,6 +645,7 @@
           playerMesh.updateWorldMatrix?.(true, false);
           const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
           renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
+          renderDebug.authoredAbsoluteYaw = Number.isFinite(bodyDelta.absoluteYaw); // A complete authored crawl/bed yaw intentionally replaces the gameplay heading.
           applyAbsoluteYaw(bodyDelta, baseWorldQuaternion);
           const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
           const legsTranslation = playerLegRoot ? resolveAbsoluteLegsTranslation() : null;
@@ -725,6 +771,7 @@
       const neckJoint = currentPlayerNeckJoint(); // Used below so the mobile/debug report can show the currently clamped local neck yaw without console access.
       return {
         playerAttached: !!playerMesh,
+        unrelatedSceneSkips, // Existing mobile compositor debug can identify secondary render contamination avoided.
         posteriorY: playerPosteriorY,
         headMaxYawDeg: PLAYER_HEAD_MAX_YAW_DEG,
         currentNeckYawDeg: neckJoint ? THREE.MathUtils.radToDeg(neckJoint.rotation.y) : null,
