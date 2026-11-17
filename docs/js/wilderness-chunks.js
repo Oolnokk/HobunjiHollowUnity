@@ -562,10 +562,12 @@
     const active = deps.isZoneArea?.(area) ? zones.get(area) : null;
     const player = deps.player;
     globalThis.PlayerTileEvents?.update(area, player?.x, player?.y, deps.TILE); // One authoritative tile observation per game frame, including interiors/area transitions.
+    const validPlayerPosition = !!player && Number.isFinite(player.x) && Number.isFinite(player.y)
+      && Number.isFinite(deps.TILE) && deps.TILE > 0; // Protects static residency against transient invalid coordinates during transitions.
     for (const controller of zones.values()) {
       if (controller === active && player) {
         const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
-        if (region) controller.inactiveSeconds = 0; // A cinematic pin never enqueues or stages neighboring chunks.
+        if (region || !validPlayerPosition) controller.inactiveSeconds = 0; // Preserve resident chunks during cinematic pins or invalid-position frames.
         else controller.updateActive(player.x / deps.TILE, player.y / deps.TILE, dt);
       } else {
         controller.updateInactive(dt);
