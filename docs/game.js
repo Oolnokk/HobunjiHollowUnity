@@ -14409,22 +14409,22 @@
           loadSource = 'locale-cavern';
           if (caveLoadingLabel) caveLoadingLabel.style.display = 'none';
         } else if (mapId.startsWith('map_i_den_')) {
-          // A den's cavern is generated in-memory, never fetched/persisted
-          // (see synthesizeCavernMapData) — but that generation is one
-          // unbroken synchronous SDF carve (~25-40s), during which the
-          // browser can't repaint at all, so the black scene-transition
-          // fade (see startSceneTransition/updateSceneTransition, which
-          // already holds it until _buildingScenes resolves) would
-          // otherwise sit there with no indication anything is happening.
-          // Two rAFs guarantee this label actually paints before the
-          // blocking call starts — a single rAF can still land in the
-          // same paint as this DOM write, showing nothing at all.
+          // Carve ordinary den floors on a pure-data Web Worker. The SDF maze
+          // used to monopolize the game/render thread for ~25-40 seconds.
+          // The existing scene transition stays active while the background
+          // job finishes; only the lightweight gameplay/den state joins here.
           const denLoadingLabel = document.getElementById('denLoadingLabel');
           if (denLoadingLabel) denLoadingLabel.style.display = 'flex';
-          await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-          mapData = window.CavernGenerator.synthesizeCavernMapData(mapId);
-          loadSource = 'cavern';
-          if (denLoadingLabel) denLoadingLabel.style.display = 'none';
+          try {
+            await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res))); // Let the label paint before generation.
+            const floorData = window.CavernGenerator.generateCavernFloorAsync
+              ? await window.CavernGenerator.generateCavernFloorAsync(mapId, { fast: true })
+              : window.CavernGenerator.generateCavernFloor(mapId, { fast: true }); // Old-module compatibility fallback.
+            mapData = window.CavernGenerator.synthesizeCavernMapData(mapId, { floorData });
+            loadSource = 'cavern';
+          } finally {
+            if (denLoadingLabel) denLoadingLabel.style.display = 'none'; // Never strand the loading overlay on worker failure.
+          }
         } else if (mapId.startsWith('map_i_barn_')) {
           // A barn's interior is generated in-memory from its own exterior
           // record (see synthesizeBarnInteriorMapData) — never fetched/
