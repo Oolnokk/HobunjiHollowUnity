@@ -529,6 +529,29 @@
     return true;
   }
 
+  function restoreSolvedBase(node, property) {
+    // Only read the canonical IK base on a node with active named offsets.
+    // Hover/blended solvers must not interpolate FROM the previous frame's
+    // already-composed yawn/drunk/other additive quaternion.
+    const slots = node && slotsFor(node, false);
+    if (!slots || absoluteClaims.get(node)?.has(property)) return false;
+    if (property === 'quaternion') {
+      const slot = slots.get('quaternion');
+      if (!slot?.owners.size) return false;
+      node.quaternion.copy(slot.base);
+      return true;
+    }
+    if (property !== 'position' && property !== 'scale') return false;
+    let changed = false;
+    for (const axis of ['x', 'y', 'z']) {
+      const slot = slots.get(property + '.' + axis);
+      if (!slot?.owners.size) continue;
+      node[property][axis] = slot.base;
+      changed = true;
+    }
+    return changed;
+  }
+
   function applyPoseOverlay(node, owner, apply) {
     if (!node?.position?.clone || !node?.quaternion?.clone
       || !node.position.copy || !node.quaternion.copy
@@ -636,7 +659,7 @@
 
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
-    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, setSolvedBase, applyPoseOverlay, releasePoseOverlay,
+    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, setSolvedBase, restoreSolvedBase, applyPoseOverlay, releasePoseOverlay,
     getDebug() {
       return { ...stats, ...absoluteStats, ...overlayStats, activeAbsoluteClaims,
         absoluteOwners: Array.from(absoluteOwnerCounts, ([owner, claims]) => ({ owner, claims })), // Only enumerated on explicit mobile diagnostics.
