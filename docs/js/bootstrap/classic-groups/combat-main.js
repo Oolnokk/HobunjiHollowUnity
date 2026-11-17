@@ -20,7 +20,7 @@
     "js/companion-combat-response.js?v=20261110decf5f6ae3",
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
-    "js/combat/combat-input.js?v=20261117hypedInput1",
+    "js/combat/combat-input.js?v=20261117hypedInput2",
     "js/combat/attack-pose-templates.js?v=20261115h01bf772",
     "js/combat/combat-combo.js?v=20261117hypedCombo3",
     "js/combat/combat-quickattacks.js?v=20261117hypedQuick3",
@@ -32,7 +32,7 @@
     "js/combat/combat-loadout-ui.js?v=20261116windupCharge1",
     "js/combat/combat-enchantments.js?v=20261116decouple2",
     "js/combat/fey-illusions.js?v=20261117feySensory4",
-    "js/combat/fey-hyped-attacks.js?v=20261117hypedStage3",
+    "js/combat/fey-hyped-attacks.js?v=20261117hypedStage4",
     "js/combat/weapon-enchantment-vfx.js?v=20261116feyFireflies2",
     "js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"
 ]; // Versioned modules evaluated before gameplay boot.
