@@ -280,6 +280,10 @@ class Position3 {
   near(angleX(leg.quaternion), .4);
   assert(layers.restoreSolvedBase(leg, 'quaternion'));
   near(angleX(leg.quaternion), .3); // Hover interpolation begins from the clean base, not the prior additive twist.
+  assert(layers.restoreSolvedBase(leg, 'quaternion'), 'preparing the same IK joint twice is harmless');
+  assert(layers.restoreSolvedBase(leg, 'position'), 'a second leg preparation still sees its registered Y layer');
+  assert(layers.restoreSolvedBase(leg, 'position'), 'position is also idempotent before a solver interpolates');
+  assert.equal(layers.getDebug().activeLayers >= 2, true, 'repeat preparation must not discard a valid additive owner');
   leg.quaternion.copy(aroundX(.2));
   layers.setSolvedBase(leg, 'quaternion', leg.quaternion);
   near(angleX(leg.quaternion), .3);
