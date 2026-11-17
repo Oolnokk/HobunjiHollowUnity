@@ -192,7 +192,7 @@
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
   <script src="js/character-action-locks.js?v=20261116skeeriChatheadLoader2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/rig-transform-layers.js?v=20261117hRigLayers1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/rig-transform-layers.js?v=20261117hRigLayers2"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -204,7 +204,7 @@
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
-  <script src="js/actor-body-sink.js?v=20261117hRigSink1"></script> <!-- Body sink for enemies and NPCs through named compositor layers and procedural knee folding. -->
+  <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs through named compositor layers and procedural knee folding. -->
   <script src="js/procedural-leg-animation.js?v=20261114footYaw1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
@@ -2904,7 +2904,7 @@
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261109fullrig7"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261117hRigKiss1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261116tapHoldAudit2"></script>
