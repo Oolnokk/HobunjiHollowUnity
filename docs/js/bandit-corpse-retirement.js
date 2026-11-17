@@ -73,7 +73,7 @@
         const image = map?.image;
         const w = Number(image?.naturalWidth || image?.videoWidth || image?.width);
         const h = Number(image?.naturalHeight || image?.videoHeight || image?.height);
-        if (w > 0 && h > 0 && (!best || w * h > best.pixels)) best = { image, w, h, material, map, pixels: w * h };
+        if (w > 0 && h > 0 && (!best || w * h > best.pixels)) best = { image, w, h, material, map, mesh: node, pixels: w * h };
       }
     };
     if (root.traverse) root.traverse(consider);
@@ -92,8 +92,11 @@
       if (best.map.colorSpace !== undefined) texture.colorSpace = best.map.colorSpace;
       texture.magFilter = THREE.NearestFilter || texture.magFilter;
       texture.minFilter = THREE.LinearFilter || texture.minFilter;
-      const aspect = canvas.width / canvas.height;
-      const length = Math.min(4, Math.max(width * 0.85, width / Math.max(0.3, aspect)));
+      // Preserve the authored plane proportions rather than treating the
+      // source PNG's transparent padding/aspect as physical body dimensions.
+      const authoredWidth = Number(best.mesh.geometry?.parameters?.width) || Number(rig.modelWidth) || width; // Original sprite width for static scaling.
+      const authoredHeight = Number(best.mesh.geometry?.parameters?.height) || Number(rig.modelHeight) || Number(c.visualModelHeight) || authoredWidth; // Original portrait height for the corpse proxy.
+      const length = Math.max(width * 0.5, Math.min(4, width * authoredHeight / Math.max(0.1, authoredWidth)));
       geometry = new THREE.PlaneGeometry(width, length);
       geometry.rotateX(-Math.PI / 2);
       material = new THREE.MeshBasicMaterial({
