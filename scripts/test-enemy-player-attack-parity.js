@@ -59,6 +59,7 @@ const banditScope = {
   banditAttackBaseline: () => ({ damage: 10, rangePx: 40, knockbackPxS: 300 }),
   banditQuickAttackConditions: () => ({}),
   beginBanditLunge() {}, finishBanditAction() {}, spawnBanditTrailArc() {}, damageBanditCombatTarget() {},
+  beginBanditMeleeStage(_actor, opts) { return Combat.beginStagedAction(opts); }, // Pose parity intentionally exercises the unchanged no-Hyped NPC path, while Fey regression covers accelerated double swings.
   banditRetreatDurationS: () => 0, BANDIT_COMBO_CHAIN_GAP_S: 0, BANDIT_HOLD1_COOLDOWN_S: 0,
 };
 vm.createContext(banditScope);
