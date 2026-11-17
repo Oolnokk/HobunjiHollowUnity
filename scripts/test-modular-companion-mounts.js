@@ -156,6 +156,16 @@ assert(Math.abs((tang.end.x - tang.start.x) * 60 + (tang.end.y - tang.start.y) *
 assert(Math.abs(Math.hypot(tang.end.x - tang.start.x, tang.end.y - tang.start.y) - 50) < 1e-8);
 assert((eye.end.x-eye.start.x)*(tang.end.y-tang.start.y) - (eye.end.y-eye.start.y)*(tang.end.x-tang.start.x) < 0,
   'Older v4 drafts generate correctly directed tangs on an adjusted sleeve.');
+for (const key of ['bshuakauitl', 'hachutuTorchStaff', 'kylie']) {
+  const shaft = upgraded.api.getConfig().shafts[key], oldEye = shaft.mounts.find(m => m.type === 'eye'); // Hand-authored families are not part of the six reversed-shaft migration.
+  const center = { x: (oldEye.start.x + oldEye.end.x) / 2, y: (oldEye.start.y + oldEye.end.y) / 2 }; // Locate a newly generated legacy companion independently of hand-authored tangs.
+  const companion = shaft.mounts.find(m => m.type === 'tang' &&
+    Math.hypot((m.start.x + m.end.x) / 2 - center.x, (m.start.y + m.end.y) / 2 - center.y) < 1e-7);
+  assert(companion, key + ': legacy v4 draft must still acquire a centered companion');
+  const ex = oldEye.end.x - oldEye.start.x, ey = oldEye.end.y - oldEye.start.y;
+  assert(ex * (companion.end.y - companion.start.y) - ey * (companion.end.x - companion.start.x) > 0,
+    key + ': legacy manually authored families retain the original generated orientation');
+}
 assert.equal(warhammer.overrides.dagger.x, 83);
 assert.equal(upgraded.api.settings('warhammer', 'warhammer').layerOrder, 'head-over-haft');
 assert.equal(upgraded.api.settings('dagger', 'dagger').layerOrder, 'haft-over-head');
