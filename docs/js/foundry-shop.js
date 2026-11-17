@@ -12,6 +12,7 @@
   function craft(shaft, head, metal) {
     const available = choices(); // Unlocks are checked again rather than trusting select elements.
     const cost = global.ModularWeapons.getConfig().craftCost; // Central foundry labor/material tuning.
+    const forgeBars = global.MetalReinforcement.forgeBarCost(cost.bars, metal, deps.METAL_DEFS); // Same higher-metal surcharge as the standard smith.
     const key = global.ModularWeapons.itemKey(shaft, head, metal); // Ordinary gear key, carrying the full recipe.
     const barKey = deps.metalBarItemKey(metal); // Existing metal-tier material.
     if (!global.TownMine?.hasImprovement('foundry') || !available.shafts.includes(shaft) || !available.heads.includes(head)
@@ -19,9 +20,9 @@
     if (global.ModularWeapons.isDisallowed(shaft, head)) return { ok: false, message: 'That head is disallowed on this shaft.' };
     const gear = deps.getGearInventory(); // Gear ownership persists through the ordinary equipment save.
     if (gear?.tools?.[key]) return { ok: false, message: 'You already own this combination in that metal.' };
-    if (count('gold') < cost.gold || count(barKey) < cost.bars || woodCount() < cost.wood) return { ok: false, message: 'Not enough bronze, metal bars, or wood.' };
+    if (count('gold') < cost.gold || count(barKey) < forgeBars || woodCount() < cost.wood) return { ok: false, message: 'Not enough bronze, metal bars, or wood.' };
     deps.inventory.gold -= cost.gold;
-    deps.inventory[barKey] -= cost.bars;
+    deps.inventory[barKey] -= forgeBars;
     let remaining = cost.wood; // Spend pooled logs deterministically without producing negative/missing stacks.
     for (const wood of woodKeys) {
       const take = Math.min(remaining, count(wood)); // Amount taken from this wood species.
@@ -88,13 +89,14 @@
     const item = global.ModularWeapons.itemKey(selection.shaft, selection.head, selection.metal); // Preview and purchase refer to the same saved key.
     const definition = deps.TOOL_ITEM_DEFS[item]; // Registered combined head/haft abilities, including canonical equipment slots and mastery policies.
     const cost = config.craftCost; // Authored new-weapon cost.
+    const forgeBars = global.MetalReinforcement.forgeBarCost(cost.bars, selection.metal, deps.METAL_DEFS); // Matches the forge's purchase-time higher-metal surcharge.
     const owned = !!deps.getGearInventory()?.tools?.[item]; // One owned weapon per part/material combination, matching normal smithing.
     const shortages = []; // Human-readable missing-resource status below the Forge action, rather than an invisible disabled button.
     if (count('gold') < cost.gold) shortages.push(`${cost.gold - count('gold')} bronze`);
-    if (count(deps.metalBarItemKey(selection.metal)) < cost.bars) shortages.push(`${cost.bars - count(deps.metalBarItemKey(selection.metal))} ${deps.METAL_DEFS[selection.metal].label} bars`);
+    if (count(deps.metalBarItemKey(selection.metal)) < forgeBars) shortages.push(`${forgeBars - count(deps.metalBarItemKey(selection.metal))} ${deps.METAL_DEFS[selection.metal].label} bars`);
     if (woodCount() < cost.wood) shortages.push(`${cost.wood - woodCount()} wood`);
     section.appendChild(element('p', definition.label, 'foundry-weapon-name')); // The actual forged name is authored grammatically, never as "head / shaft".
-    section.appendChild(element('p', `${cost.gold} bronze · ${cost.bars} metal bars · ${cost.wood} wood`, 'foundry-craft-cost')); // Price remains visible even if a disabled action is skipped by controller navigation.
+    section.appendChild(element('p', `${cost.gold} bronze · ${forgeBars} metal bars · ${cost.wood} wood`, 'foundry-craft-cost')); // Price remains visible even if a disabled action is skipped by controller navigation.
     const button = element('button', owned ? 'Already forged' : 'Forge custom weapon', 'shop-buy-btn foundry-forge-button'); // The main action stays immediately beside the selected recipe, above the tall preview and details.
     button.type = 'button'; button.disabled = owned || shortages.length > 0;
     button.onclick = () => { const result = craft(selection.shaft, selection.head, selection.metal); deps.showToast(result.message, result.ok); deps.rerender(); };
