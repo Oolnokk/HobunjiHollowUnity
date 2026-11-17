@@ -5,7 +5,29 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const zlib = require('node:zlib');
 const { chromium } = require('playwright');
+
+// The shipped Grehlr art is now 1024px, but this smoke test guards the *oversized-sprite* path (a 3000x2250 idle sprite
+// once exceeded the 4MP head-mask ceiling and crashed mobile tabs). Serve a synthetic full-size sprite for that step
+// so the coverage survives the asset downscale: opaque body in the middle, transparent margin around it.
+function makeLargeSpritePng(width, height) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc32 = buffer => { let c = 0xffffffff; for (const byte of buffer) c = crcTable[(c ^ byte) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0); out.write(type, 4, 'ascii'); data.copy(out, 8);
+    out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 6; // 8-bit RGBA
+  const stride = width * 4 + 1, raw = Buffer.alloc(stride * height);
+  for (let y = Math.floor(height * 0.1); y < Math.floor(height * 0.9); y++) {
+    const row = y * stride + 1;
+    for (let x = Math.floor(width * 0.1); x < Math.floor(width * 0.9); x++) { const i = row + x * 4; raw[i] = 90; raw[i + 1] = 90; raw[i + 2] = 96; raw[i + 3] = 255; }
+  }
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(raw, { level: 1 })), chunk('IEND', Buffer.alloc(0))]);
+}
 const root = path.resolve(__dirname, '..'); // Serve actual committed modules/assets from one origin.
 const mime = { '.js': 'text/javascript', '.html': 'text/html', '.json': 'application/json', '.png': 'image/png' };
 let externalSpritePng = null; // Real PNG bytes served from a different origin to reproduce tainted-canvas failures.
@@ -221,6 +243,9 @@ async function spritePng(page, animal) {
     await page.waitForFunction(() => /Showing 145% baby head/.test(document.getElementById('babyHeadPreviewState')?.textContent || ''));
     // Grehlr's REAL 3000×2250 sprite previously exceeded the 4MP idle-mask ceiling.
     // The failed warp then allocated a full canvas for every preview triangle until the mobile tab crashed.
+    const largeGrehlrPng = makeLargeSpritePng(3000, 2250);
+    const isPlainGrehlrIdle = url => { const parsed = new URL(url); return /\/grehlr_idle\.png$/.test(parsed.pathname) && !parsed.search; }; // The race-condition step below requests ?race-rigger-test=1 and keeps the real file.
+    await page.route(isPlainGrehlrIdle, route => route.fulfill({ status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: largeGrehlrPng }));
     await page.locator('#loadBestiary').click();
     await page.waitForFunction(() => [...document.querySelectorAll('#animalSelect option')].some(option => option.textContent.trim() === 'Grehlr'));
     const grehlrOption = await page.locator('#animalSelect').evaluate(select =>
@@ -245,7 +270,7 @@ async function spritePng(page, animal) {
         splitEnabled: document.getElementById('shoulderRestSplitFrame').checked,
       };
     });
-    assert.deepEqual(largeSprite.original, [3000, 2250], 'the original large sprite remains unmodified');
+    assert.deepEqual(largeSprite.original, [3000, 2250], 'the oversized sprite reaches the editor at full size');
     assert(largeSprite.maskOpaque > 0 && largeSprite.maskPixels <= 1024 * 1024,
       'Grehlr receives an actual opaque-idle head mask with bounded memory');
     assert(largeSprite.previewPixels <= 1_250_000 && largeSprite.splitPixels <= 1_250_000,
@@ -254,6 +279,7 @@ async function spritePng(page, animal) {
       'Grehlr retains its authored shoulder spline and split settings');
     assert.equal(largeSprite.error, null, 'head resizing succeeds with the authentic Grehlr sprite');
 
+    await page.unroute(isPlainGrehlrIdle); // Everything after this point uses the shipped Grehlr art.
     const grehlrPivot = await page.evaluate(() => ({
       loaded: state.pivot?.x / state.image?.naturalWidth,
       committed: window.HobunjiGrehlrHeadRigCorrection?.authored?.pivot?.x,

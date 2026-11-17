@@ -76,7 +76,7 @@
       overlay.renderOrder = Number(source.renderOrder || 0) + INTRA_PET_RENDER_EPSILON;
     }
     const requestedVisible = overlay.parent?.userData?.hobunjiShoulderRest?.splitOverlayVisible === true; // Shoulder presentation owns whether this helper layer exists at all; parity may only gate that request by the paired source face's visibility.
-    overlay.visible = requestedVisible && source.visible !== false;
+    overlay.visible = requestedVisible && source.visible !== false && window.PNGPlaneAvatar?.meshBudget?.wireframeEnabled?.() !== true; // A late layer sync must not undo the shared wireframe controller's temporary split-frame hide.
     overlay.frustumCulled = source.frustumCulled;
     if (source.layers && overlay.layers && Number.isFinite(source.layers.mask)) {
       const ownerStencilMask = 1 << 24; // The main held compositor owns private front-portrait stencil participation.

@@ -193,7 +193,8 @@
     const enabled = devModeEnabled(); // Uses the authoritative game checkbox, including its restored preference after boot.
     if (document.body?.dataset.devMode !== String(enabled)) document.body.dataset.devMode = String(enabled);
     if (enabled) return;
-    window.PNGPlaneAvatar?.meshBudget?.setPortraitDensityPercent?.(100); // A hidden developer slider must not silently keep reduced portrait quality.
+    const portraitBudget = window.PNGPlaneAvatar?.meshBudget; // Shared production default ensures hiding Dev Mode does not restore the old 100% experimental topology.
+    portraitBudget?.setPortraitDensityPercent?.(portraitBudget.defaultPortraitDensityPercent); // Discard the developer override but preserve the 40%-per-axis game baseline.
     window.PNGPlaneAvatar?.meshBudget?.setPortraitWireframeEnabled?.(false); // Restore painted portraits if Dev Mode is disabled.
     for (const id of DIAGNOSTIC_TOGGLES) {
       const control = document.getElementById(id); // Clearing hidden live diagnostics also stops their renderer/profiler overhead.

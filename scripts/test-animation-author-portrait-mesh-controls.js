@@ -15,6 +15,8 @@ for (const [i, script] of scripts.entries()) {
 
 assert.match(author, /id="maaPortraitMeshDensity"[^>]*type="range"|type="range" id="maaPortraitMeshDensity"/, 'touch-friendly portrait density slider exists');
 assert.match(author, /id="maaPortraitMeshWireframe"/, 'the Animation Author exposes an actual wireframe checkbox');
+assert.match(author, /id="maaPortraitMeshDensity"[^>]*value="40"/, 'author preview markup starts at production density before runtime boot');
+assert.match(author, /id="maaPortraitMeshDensityValue">40%/, 'author density readout starts at the production baseline');
 assert.match(author, /AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\/png-plane-avatar\.js\?v=/,
   'the editor pins its own portrait runtime instead of loading an incompatible older repo revision');
 assert.match(author, /relativePath === 'js\/png-plane-avatar\.js' \? AUTHOR_PORTRAIT_RUNTIME_SCRIPT/,

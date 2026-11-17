@@ -13,6 +13,9 @@
   let lastEvent = null; // Mobile-readable diagnostic surfaced through Pixel Probe.
 
   function resourceAmount(entity) {
+    if (entity?.state === 'dying' || entity?.state === 'corpse') {
+      return window.BurningEntityHazards?.corpseFlameAmount?.(entity) || 0; // Dead actors use finite corpse flames, never their now-frozen affliction stack.
+    }
     return Math.max(0, Number(window.ResourceSystem?.getAffliction?.(entity, 'burningHealth')) || 0)
       + Math.max(0, Number(window.ResourceSystem?.getAffliction?.(entity, 'kindlingHealth')) || 0);
   }

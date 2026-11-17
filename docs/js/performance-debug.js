@@ -1174,7 +1174,7 @@
     npcHidden.input.addEventListener('change', () => root.NpcViewFrustumCull?.setDiagnosticHideAll?.(npcHidden.input.checked));
     box.appendChild(npcHidden.row);
 
-    // Developer-only live A/B control: change skin-grid subdivisions, not the separate pants/animal budgets.
+    // Developer-only live A/B control: player, NPC, painted animal head skins and flying-perch meshes share the per-axis percentage; pants stay independent.
     const portraitBudget = root.PNGPlaneAvatar?.meshBudget;
     if (portraitBudget?.setPortraitDensityPercent) {
       const densityRow = document.createElement('div');
@@ -1191,17 +1191,17 @@
       densitySlider.step = '5';
       densitySlider.value = String(portraitBudget.portraitDensityPercent());
       densitySlider.style.cssText = 'display:block;width:100%;margin:7px 0;touch-action:pan-x';
-      densitySlider.setAttribute('aria-label', 'Portrait mesh subdivisions, percent per axis');
+      densitySlider.setAttribute('aria-label', 'Player NPC and animal deformation mesh subdivisions, percent per axis');
       const densityStatus = document.createElement('div');
       densityStatus.style.cssText = 'font-size:10px;line-height:1.4;opacity:.75';
       const densityHelp = document.createElement('div');
-      densityHelp.textContent = 'Retessellates existing player, town NPC and enemy skinned portraits without resetting bones or changing textures. Pants and animal meshes are unchanged. Drag to compare; resets to 100% when Dev Mode is turned off.';
+      densityHelp.textContent = `Retessellates existing player, NPC and enemy portraits, painted animal head rigs, and flying-animal perches without replacing poses or textures. Plain animal cards already use two triangles; pants remain independent. Resets to ${portraitBudget.defaultPortraitDensityPercent}% on leaving Dev Mode.`;
       densityHelp.style.cssText = 'font-size:10px;line-height:1.4;opacity:.7;margin-top:4px';
       let pendingDensityUpdate = 0; // Debounces potentially expensive live GPU geometry swaps during touch dragging.
       function updateDensityLabel() {
         const snapshot = portraitBudget.portraitDensityDebug();
-        densityLabel.textContent = `Portrait mesh density: ${densitySlider.value}% per axis`;
-        densityStatus.textContent = `Player ${snapshot.player.segmentsX}×${snapshot.player.segmentsY} (${snapshot.player.segmentsX * snapshot.player.segmentsY * 4} triangles) · NPC ${snapshot.npc.segmentsX}×${snapshot.npc.segmentsY} (${snapshot.npc.segmentsX * snapshot.npc.segmentsY * 4} triangles) · ${snapshot.tracked} live skins tracked`;
+        densityLabel.textContent = `Portrait + animal density: ${densitySlider.value}% per axis`;
+        densityStatus.textContent = `Player ${snapshot.player.segmentsX}×${snapshot.player.segmentsY} (${snapshot.player.segmentsX * snapshot.player.segmentsY * 4} triangles) · NPC ${snapshot.npc.segmentsX}×${snapshot.npc.segmentsY} (${snapshot.npc.segmentsX * snapshot.npc.segmentsY * 4} triangles) · ${snapshot.animalFaces} animal head faces · ${snapshot.tracked} live skins tracked`;
       }
       function applyDensity() {
         if (pendingDensityUpdate) { clearTimeout(pendingDensityUpdate); pendingDensityUpdate = 0; }
@@ -1209,7 +1209,7 @@
         updateDensityLabel();
       }
       densitySlider.addEventListener('input', () => {
-        densityLabel.textContent = `Portrait mesh density: ${densitySlider.value}% per axis (applying…)`;
+        densityLabel.textContent = `Portrait + animal density: ${densitySlider.value}% per axis (applying…)`;
         if (pendingDensityUpdate) clearTimeout(pendingDensityUpdate);
         pendingDensityUpdate = setTimeout(applyDensity, 100);
       });
@@ -1222,7 +1222,7 @@
       densityRow.append(densityLabel, densitySlider, densityStatus, densityHelp);
       box.appendChild(densityRow);
       const wireframe = makeCheckboxRow('settingPortraitMeshWireframe', 'Show skinned portrait wireframe', portraitBudget.wireframeEnabled(),
-        'Developer-only full-plane cyan wireframe replaces painted portrait textures temporarily, so even transparent PNG regions reveal the triangle grid. Covers player, town NPCs and enemies; turning off restores their original materials without changing poses.');
+        'Developer-only full-plane cyan wireframe replaces textured player, NPC, enemy and painted animal-head skins; split pet layers are hidden temporarily. Flying-animal rigid cards keep their normal materials. Turn off to restore all original materials.');
       wireframe.input.addEventListener('change', () => portraitBudget.setPortraitWireframeEnabled(wireframe.input.checked));
       root.addEventListener('hobunji:portrait-wireframe-changed', () => {
         wireframe.input.checked = portraitBudget.wireframeEnabled();

@@ -66,13 +66,14 @@
   function meleeFireContact(combat, player, hitOptions, scene) {
     const box = new deps.THREE.Box3(); // Shared by furniture, ruin and tent contact checks for a single strike.
     const contact = new deps.THREE.Vector3(); // Returned to the fire receiver synchronously for its feedback.
-    return root => {
+    return (root, actorBox = null) => {
       if (!root || !scene) return null;
       let parent = root;
       while (parent && parent !== scene && parent.visible !== false) parent = parent.parent;
       if (parent !== scene) return null;
       root.updateWorldMatrix?.(true, true);
-      box.setFromObject(root);
+      if (actorBox) box.copy(actorBox); // Actor hitboxes exclude decorative fire particles and use the same portrait geometry as melee attacks.
+      else box.setFromObject(root);
       if (box.isEmpty()) return null;
       const acceptPoint = (origin, point) => {
         // Sight-mode cover is available even outside combat. Hitting the fixture's own surface counts.
@@ -114,8 +115,15 @@
     if (!lit) {
       if (ruinPuzzles?.touchesIgnitionSource?.(contact)) source = 'ruin brazier';
       else {
-        const furniture = findFireSource(scene, contact);
-        if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
+        const burning = window.BurningEntityHazards?.findTorchSource?.(contact, {
+          area, player, hostileObjects: api.hostileObjects, companionObjects: api.companionObjects,
+          corpseObjects: window.CreatureDeath?.getCorpseObjects?.(),
+        }); // Shares the real 3D/contact-cover test with furniture; allies and corpses are not attack targets.
+        if (burning) source = 'burning ' + (burning.name || burning.def?.label || burning.creatureKey || 'character');
+        else {
+          const furniture = findFireSource(scene, contact);
+          if (furniture) source = furniture.userData.authoredFurnitureKey || furniture.name || 'furniture';
+        }
       }
       if (source && light()) window.RuinInteractionAudio?.igniteTorch?.();
     }
