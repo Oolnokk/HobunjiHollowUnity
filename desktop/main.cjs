@@ -156,15 +156,19 @@ async function prepareUpdateRestart() {
     while (!win.isDestroyed()) {
       const outcome = await saveGameBeforeExit(win);
       if (win.isDestroyed()) return false;
-      if (outcome?.ok) {
-        closeAllowed = true; // Let electron-updater close windows after the save succeeds.
+      if (outcome?.ok && outcome.mode !== 'paused') {
+        closeAllowed = true; // Let electron-updater close windows only after a real save succeeds.
         return true;
       }
       const { response } = await dialog.showMessageBox(win, {
         type: 'warning', title: 'Hobunji Hollow — Save before update',
-        message: 'The final save did not complete. Do you still want to install the update?',
-        detail: String(outcome?.error || 'Unknown save failure') +
-          '\nInstalling now could leave your Google Drive save folder behind.',
+        message: outcome?.mode === 'paused'
+          ? 'Saving is deliberately paused. Installing now may discard gameplay changes.'
+          : 'The final save did not complete. Do you still want to install the update?',
+        detail: outcome?.mode === 'paused'
+          ? 'Unpause saving and retry, or explicitly restart without saving.'
+          : String(outcome?.error || 'Unknown save failure') +
+            '\nInstalling now could leave your Google Drive save folder behind.',
         buttons: ['Retry Save', 'Restart Without Saving', 'Cancel Update'],
         defaultId: 0, cancelId: 2,
       });
