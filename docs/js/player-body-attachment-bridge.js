@@ -412,9 +412,19 @@
     companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? frameUrl : null;
     companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? frameUrl : null;
     companion.__hobunjiShoulderSplitFrame = null;
-    if (companion.currentFrameUrl === frameUrl) return true;
+    const geneticRenderer = window.CreatureGeneticsRender; // Determines whether this shoulder frame needs a composed CanvasTexture, not merely a loaded plain PNG.
+    const expectsGenotype = !!(companion.genotype && geneticRenderer?.SPECIES?.[selected.genotypeKind]); // Only species with a registered compositor need a ready check.
+    const signature = expectsGenotype ? geneticRenderer.genotypeSignature?.(selected.genotypeKind, companion.genotype) : null; // Color Pools/pattern mutations invalidate the same-URL shoulder frame.
+    const currentMap = companion.avatarRef?.frontPlane?.material?.map; // The actual display texture, not the requested source sprite URL.
+    const composedReady = !expectsGenotype || (currentMap?.isCanvasTexture === true && companion._shoulderPresentedSignature === signature);
+    if (companion.currentFrameUrl === frameUrl && composedReady) return true;
+    if (expectsGenotype && Date.now() < (companion._shoulderGenotypeRetryAt || 0)) return true; // Retry cold genotypes at a bounded cadence, not every render frame.
     const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
-    if (applied !== false) companion.currentFrameUrl = frameUrl; // An in-flight genotype pose must remain retryable after setCreatureFrame declines the swap.
+    const actualMap = companion.avatarRef?.frontPlane?.material?.map; // Refresh after the authoritative game texture swap.
+    const fullAppearance = !expectsGenotype || actualMap?.isCanvasTexture === true;
+    companion._shoulderGenotypeRetryAt = expectsGenotype && !fullAppearance ? Date.now() + 150 : 0; // Plain fallbacks are temporary even when setCreatureFrame returned success.
+    if (applied !== false) companion.currentFrameUrl = frameUrl; // A deferred genotype frame must never be marked complete.
+    if (fullAppearance) companion._shoulderPresentedSignature = signature;
     return applied !== false;
   }
 
