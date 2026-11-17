@@ -51,8 +51,10 @@ assert(abdomenOnly.bytes, 'abdomen-only growth works even without any head-mask 
 assert(at(abdomenOnly.bytes, 32, 25) < at(pixels, 32, 25), 'abdomen pixels are enlarged around their own center');
 assert.equal(at(abdomenOnly.bytes, 6, 12), at(pixels, 6, 12), 'independent abdomen growth does not move the head');
 assert.equal(at(abdomenOnly.bytes, 0, 0), at(pixels, 0, 0), 'distant body art stays unchanged');
+assert.equal(warp.maskModeForKind('grehlr'), 'legacy-frame',
+  'a custom head-growth box inherits the original painted rectangular warp');
 assert.equal(warp.primeIdleMask('grehlr', { width, height, data: pixels }, custom)?.opaquePixels > 0, true,
-  'an explicitly drawn head box still uses the established idle-alpha mask by default');
+  'the optional alpha-mask method can still be primed for a custom box');
 const both = warp.applyToCanvas(canvas, 'grehlr');
 assert(both.bytes && both.bytes.some((value, index) => value !== pixels[index]),
   'head and abdomen deform the same fully composited texture without modifying the input');
@@ -94,7 +96,8 @@ for (const id of ['animalId', 'babyHeadUseCustomFrame', 'babyHeadDrawCustom', 'b
   'babyHeadDrawAbdomen', 'babyHeadClearAbdomen', 'babyAbdomenFrameStatus', 'shoulderCopySource',
   'shoulderCopyFromSpecies', 'shoulderCopyStatus']) control(id);
 let captured = 0, released = 0, checkpoints = 0, previews = 0;
-let currentShoulder = { useSpline: false, splitFrame: false };
+let currentShoulder = { useSpline: false, splitFrame: false, frameShiftX: .68, separatorRotationDeg: 19,
+  separatorAspect: 2.5 }; // Distinct destination divider proves both values survive copying.
 let hasBaseHeadRig = true; // Toggling this simulates a species with no painted neck rig or shoulder pose.
 const targetHeadPaint = { retained: 'specific grehlr head pattern' };
 const state = { image: { width: 100, height: 100 }, baseRecord: {}, selectRecords: [] };
@@ -116,6 +119,7 @@ const context = {
   numberOr: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
   readPreviewRigs: () => ({}), requestDraw: () => previews++,
   applyShoulderRestConfig: raw => { currentShoulder = JSON.parse(JSON.stringify(raw)); },
+  currentShoulderRest: () => ({ ...currentShoulder }),
   updateShoulderUi: () => {}, checkpointHistory: () => checkpoints++,
   setStatus: () => {}, sourceSize: () => ({ width: 100, height: 100 }),
   pointerToSource: event => event.point, deepClone: value => JSON.parse(JSON.stringify(value)),
@@ -138,9 +142,13 @@ assert(!source.options.some(option => option.value === 'grehlr'), 'source dropdo
 source.value = 'moot';
 source.handlers.get('change')();
 control('shoulderCopyFromSpecies').handlers.get('click')();
-assert.deepEqual(currentShoulder, sourceShoulder, 'copy imports all shoulder booleans, spline points, maps and separator angle');
+const expectedCopiedShoulder = { ...sourceShoulder, frameShiftX: .68, separatorRotationDeg: 19, separatorAspect: 2.5 };
+assert.deepEqual(currentShoulder, expectedCopiedShoulder,
+  'copy imports all shoulder pose data while keeping the destination divider X, angle and aspect');
+assert.equal(currentShoulder.splitRightUsesIdle, false, 'the source split-source checkbox is copied normally');
+assert.equal(currentShoulder.followFrameShiftX, false, 'the source follow-divider checkbox is copied normally');
 assert.strictEqual(context.normalizedRig().headPaint, targetHeadPaint, 'copy does not replace destination head paint');
-assert.match(control('shoulderCopyStatus').textContent, /Copied complete shoulder pose/);
+assert.match(control('shoulderCopyStatus').textContent, /Destination divider X and angle preserved/);
 assert.equal(checkpoints, 1, 'copying is a single undoable edit');
 
 function fire(type, x, y) {
