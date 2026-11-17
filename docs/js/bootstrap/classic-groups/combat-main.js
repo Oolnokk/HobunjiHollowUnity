@@ -33,8 +33,8 @@
     "js/combat/combat-enchantments.js?v=20261116decouple2",
     "js/combat/fey-illusions.js?v=20261117feySensory4",
     "js/combat/fey-hyped-attacks.js?v=20261117hypedCreature6",
-    "js/combat/weapon-enchantment-vfx.js?v=20261116feyFireflies2",
-    "js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"
+    "js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1",
+    "js/combat/loadout-weapon-preview.js?v=20261117flailViewport1"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // Parser-time writing preserves blocking evaluation and dependencies of the former inline registrations.
