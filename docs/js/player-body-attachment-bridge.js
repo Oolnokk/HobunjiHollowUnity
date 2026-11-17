@@ -40,8 +40,8 @@
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20260917spline10', 'animal-shoulder-spline');
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20261117overlayreuse1', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20261117overlayreuse1', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
