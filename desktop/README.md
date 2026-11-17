@@ -20,6 +20,40 @@ The **Windows desktop installer** GitHub Actions workflow also builds an
 installer for this PR; download it from that workflow run's artifacts.
 No merge is needed to build or test the PR version.
 
+## Automatically updating the installed Windows game
+
+An installer is a snapshot of the bundled `docs/` game, **not a live GitHub checkout**.
+An existing installation does not see `main` changes immediately. When the
+Windows installer workflow is present on `main`, a push that changes `docs/`,
+`desktop/`, or its build/test files produces a new versioned Windows installer
+and a public GitHub Release containing `latest.yml`, the installer and its
+blockmap. **Only a successful release becomes eligible for automatic updates.**
+PR workflow artifacts and unpublished commits are not update sources.
+
+Installed Windows builds check for releases shortly after launch and about every
+four hours while the app remains open. A newer release opens a dedicated update
+screen and downloads in the background. Choose **Install & Restart** after the
+download finishes, or **Later** to keep playing. You can reopen this screen at
+**View → Check for Updates**. The updater never installs silently when you quit.
+In a development run (`npm start`) the screen explains that update checks
+require an installed build.
+
+Before restarting, the application uses **the same final-save operation** as the
+normal Quit action. It waits for a connected/armed local save folder to sync or
+for the browser fallback to finish, then restarts; a failed or unarmed folder
+offers Retry Save, Restart Without Saving, and Cancel Update. Cancelling keeps
+the current installed version and the downloaded update. Windows user data,
+the game's persistent Chromium profile and connected save directory are not
+replaced by an application update.
+
+The initial PR artifact has version `0.1.0`. Published `main` installers
+use incrementing `0.1.<workflow run number>` versions so older installations
+can distinguish a new release. GitHub must allow Actions to create Releases
+(`contents: write` permission); without a published, non-draft release there
+is nothing for clients to download. Don't publish unrelated GitHub Releases
+as the repository's "latest" release unless they contain compatible Windows
+update artifacts. Release tagging is `desktop-v<version>`.
+
 ## Using your existing Google Drive save directory
 
 1. Use Google Drive for Desktop to ensure your game save folder is locally
@@ -47,9 +81,9 @@ machine; Google Drive is not a transactional database and may create conflicts.
 
 ## Known limits
 
-- This first installer is **not code signed**. Windows SmartScreen may warn.
+- This first installer and its auto-updates are **not code signed**. Windows SmartScreen may warn; production distribution should be code signed.
 - The main game's Three.js dependencies are bundled for offline play, but some
   opt-in editor features and Netlify cloud sign-in still require internet.
-- A Windows smoke test is required to verify the native folder picker and
-  remembered permissions after restart. Unit tests alone cannot check Windows
-  filesystem permissions.
+- Windows smoke tests are required to verify the native folder picker, remembered
+  permissions and full updater download/install/restart cycle. Unit tests alone
+  cannot exercise Windows filesystem permissions or unsigned installer prompts.

@@ -9,7 +9,8 @@
     "dist:win": "electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
-    "three": "0.128.0"
+    "three": "0.128.0",
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
     "electron": "44.11.3",
@@ -23,6 +24,10 @@
       "main.cjs",
       "game-protocol.cjs",
       "close-save.cjs",
+      "update-controller.cjs",
+      "update-preload.cjs",
+      "update.html",
+      "update-ui.js",
       "package.json"
     ],
     "extraResources": [
@@ -45,6 +50,14 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Oolnokk",
+        "repo": "HobunjiHollowUnity",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": "nsis",
       "artifactName": "Hobunji-Hollow-Setup-${version}.${ext}"

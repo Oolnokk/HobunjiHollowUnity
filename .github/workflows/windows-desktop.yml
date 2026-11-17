@@ -1,20 +1,36 @@
 name: Windows desktop installer
 
-# Package builds live apart from the existing game test workflow.
+# PRs build test installers. Only main pushes publish update releases.
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - 'desktop/**'
       - 'scripts/test-windows-desktop.js'
+      - 'scripts/test-windows-updates.js'
+      - '.github/workflows/windows-desktop.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'desktop/**'
+      - 'scripts/test-windows-desktop.js'
+      - 'scripts/test-windows-updates.js'
       - '.github/workflows/windows-desktop.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: windows-desktop-main-${{ github.event_name == 'push' && 'release' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   build-installer:
     runs-on: windows-latest
+    permissions:
+      contents: read # PR and main packaging never need a release-writing token.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,18 +38,65 @@ jobs:
           node-version: '24'
       - name: Verify desktop protocol and packaging
         run: node scripts/test-windows-desktop.js
+      - name: Verify updater state machine and UI packaging
+        run: node scripts/test-windows-updates.js
+      - name: Check Electron scripts parse cleanly
+        shell: pwsh
+        run: |
+          node --check desktop/main.cjs
+          node --check desktop/update-controller.cjs
+          node --check desktop/update-preload.cjs
+          node --check desktop/update-ui.js
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Set an increasing version for published main builds
+        if: github.event_name == 'push'
+        working-directory: desktop
+        run: npm version --no-git-tag-version "0.1.${{ github.run_number }}"
       - name: Build Windows installer
         working-directory: desktop
         run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Upload installer
+      - name: Verify the installer and update feed were generated
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          if (-not (Test-Path "desktop/dist/Hobunji-Hollow-Setup-$version.exe")) { throw "Installer missing" }
+          if (-not (Test-Path "desktop/dist/latest.yml")) { throw "Updater metadata missing" }
+          if (-not (Test-Path "desktop/dist/win-unpacked/resources/app-update.yml")) { throw "Packaged app has no update feed configuration" }
+          $feed = Get-Content "desktop/dist/win-unpacked/resources/app-update.yml" -Raw
+          if ($feed -notmatch 'provider:\s*github' -or $feed -notmatch 'HobunjiHollowUnity') { throw "Packaged updater is not pointing to the expected GitHub repository" }
+          $latest = Get-Content "desktop/dist/latest.yml" -Raw
+          if ($latest -notmatch [regex]::Escape($version)) { throw "Update manifest version does not match the installer" }
+      - name: Upload installer and update metadata for manual testing
         uses: actions/upload-artifact@v4
         with:
           name: Hobunji-Hollow-Windows-Installer
-          path: desktop/dist/Hobunji-Hollow-Setup-*.exe
+          path: |
+            desktop/dist/Hobunji-Hollow-Setup-*.exe
+            desktop/dist/Hobunji-Hollow-Setup-*.exe.blockmap
+            desktop/dist/latest.yml
           if-no-files-found: error
           retention-days: 14
+  publish-release:
+    if: github.event_name == 'push'
+    needs: build-installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Only this main-only job can create a GitHub release.
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Hobunji-Hollow-Windows-Installer
+          path: release
+      - name: Publish main as a Windows auto-update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version="0.1.${{ github.run_number }}"
+          gh release create "desktop-v${version}" "release/Hobunji-Hollow-Setup-${version}.exe" "release/Hobunji-Hollow-Setup-${version}.exe.blockmap" "release/latest.yml" \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "Hobunji Hollow Windows ${version}" --notes "Automatic Windows build of main at commit ${{ github.sha }}." --latest
