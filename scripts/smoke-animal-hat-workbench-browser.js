@@ -150,6 +150,41 @@ async function spritePng(page, animal) {
     assert(headDebug.comparisonPixelChanges > 0, 'original and enlarged source pixels must actually differ');
     assert.match(await page.locator('#babyHeadPixelDelta').textContent(), /head-region pixels actually changed/);
 
+    // Two real pointer drags select independent source-space growth regions without painting the rig.
+    await page.locator('#babyHeadDrawCustom').click();
+    await page.locator('#paintCanvas').scrollIntoViewIfNeeded();
+    let artBox = await page.locator('#paintCanvas').boundingBox();
+    assert(artBox?.width > 30 && artBox?.height > 30, 'the touch-draw editor canvas is visible');
+    await page.mouse.move(artBox.x + artBox.width * .23, artBox.y + artBox.height * .23);
+    await page.mouse.down();
+    await page.mouse.move(artBox.x + artBox.width * .49, artBox.y + artBox.height * .47, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(() => window.__animalRigGrowthRegions?.debugSnapshot()?.customEnabled === true
+      && window.__animalRigGrowthRegions.debugSnapshot().customFrame?.width > .15);
+    assert.match((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
+      /custom drawn head box/, 'a drawn head rectangle takes over the live source frame');
+
+    await page.locator('#babyHeadDrawAbdomen').click();
+    await page.locator('#paintCanvas').scrollIntoViewIfNeeded();
+    artBox = await page.locator('#paintCanvas').boundingBox();
+    await page.mouse.move(artBox.x + artBox.width * .48, artBox.y + artBox.height * .53);
+    await page.mouse.down();
+    await page.mouse.move(artBox.x + artBox.width * .78, artBox.y + artBox.height * .82, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(() => window.__animalRigGrowthRegions?.debugSnapshot()?.abdomenEnabled === true
+      && window.__animalRigGrowthRegions.debugSnapshot().abdomenFrame?.width > .15);
+    await page.locator('#babyAbdomenScale').evaluate(input => {
+      input.value = '150';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.__animalRigGrowthRegions.debugSnapshot().abdomenScale === 1.5);
+    assert((await page.evaluate(() => previewImageForAnimal(state.image))) !== null,
+      'both head and abdominal growth use the established finished-texture preview');
+    await page.locator('#babyHeadClearAbdomen').click();
+    await page.locator('#babyHeadClearCustom').click();
+    await page.waitForFunction(() => !window.__animalRigGrowthRegions.debugSnapshot().customEnabled
+      && !window.__animalRigGrowthRegions.debugSnapshot().abdomenEnabled);
+
     // A second localhost port is genuinely cross-origin. Image.onload alone cannot prove the pixels are readable.
     externalSpritePng = await spritePng(page, true);
     const externalSpriteUrl = 'http://127.0.0.1:' + corsSpriteServer.address().port + '/animal-fixture.png';
@@ -250,6 +285,20 @@ async function spritePng(page, animal) {
     await page.waitForFunction(() => state.baseRecord?.id === 'grehlr' && state.image?.naturalWidth === 3000
       && window.__animalHeadRigBabyPreview?.debugSnapshot()?.idleMaskPixels > 0,
     null, { timeout: 60000 });
+    const shoulderBeforeCopy = await page.evaluate(() => currentShoulderRest());
+    await page.locator('#shoulderCopySource').selectOption('moot');
+    await page.locator('#shoulderCopyFromSpecies').click();
+    const importedShoulder = await page.evaluate(() => ({
+      source: window.HobunjiAuthoredAnimalHeadRigs.get('moot').shoulderRest,
+      target: currentShoulderRest(),
+    }));
+    for (const field of ['useRun1', 'splitFrame', 'splitRightUsesIdle', 'followFrameShiftX', 'frameShiftX', 'separatorRotationDeg']) {
+      assert.equal(importedShoulder.target[field], importedShoulder.source[field],
+        'copying a shoulder pose imports the authored ' + field + ' setting');
+    }
+    assert.match(await page.locator('#shoulderCopyStatus').textContent(), /Copied complete shoulder pose/);
+    await page.evaluate(rest => { applyShoulderRestConfig(rest); draw(); }, shoulderBeforeCopy);
+
     const largeSprite = await page.evaluate(() => {
       const headMask = window.BabyAnimalHeadWarp.maskForKind('grehlr');
       const texture = previewImageForAnimal(state.image);
