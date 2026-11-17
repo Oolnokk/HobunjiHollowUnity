@@ -17,7 +17,7 @@ function clampPercent(value) {
 }
 
 // Keep update state in the main process; the sandboxed screen receives only plain data.
-function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater, getGameWindow, prepareRestart, logger = console }) {
+function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater, getGameWindow, prepareRestart, logger = console, cancelPreparedRestart = () => {} }) {
   let updateWindow = null; // Sole update screen, not a second game instance.
   let checkActive = false; // Deduplicates launch, timer and menu update checks.
   let installActive = false; // Disallows multiple updater restart requests.
@@ -89,15 +89,19 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
   async function install() {
     if (installActive || state.phase !== 'downloaded') return;
     installActive = true;
+    let restartPrepared = false; // Restore close interception if installation fails.
     publish({ phase: 'saving', message: 'Saving the game before restarting…', error: null });
     try {
       if (!await prepareRestart()) {
         publish({ phase: 'downloaded', message: 'Update ready. Restart when you are ready.' });
         return;
       }
+      restartPrepared = true;
       publish({ phase: 'installing', message: 'Installing the update and restarting Hobunji Hollow…' });
-      autoUpdater.quitAndInstall(false, true);
+      const startedInstall = autoUpdater.quitAndInstall(false, true);
+      if (startedInstall === false) throw new Error('The update installer declined to start.');
     } catch (error) {
+      if (restartPrepared) cancelPreparedRestart();
       logger.error('[Hobunji desktop] Could not install update', error);
       publish({ phase: 'error', message: 'The update could not start.', error: String(error.message || error) });
     } finally {
@@ -143,6 +147,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
       message: 'This installation is up to date with the latest published Windows build.', error: null,
     }));
     autoUpdater.on('error', error => {
+      if (state.phase === 'installing') cancelPreparedRestart();
       logger.error('[Hobunji desktop] Update error', error);
       publish({ phase: 'error', message: 'Could not finish the update.', error: String(error?.message || error) });
     });
