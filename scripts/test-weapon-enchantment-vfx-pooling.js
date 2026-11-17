@@ -154,9 +154,9 @@ assert.ok(facing.group.position.z < 0, 'mirrored emitter sits in front of the ba
 
 // Each head sprite of a modular flail owns its own post-occlusion metal mask.
 // Test the actual preview emitter, not only the Loadout viewport's VFX stub.
-const previewHaft = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.5, height: 1.2 } } }); // No head pixels belong to the bare shaft.
-const previewHeadA = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.4, height: 0.4 } } }); // First metal head layer.
-const previewHeadB = Object.assign(new THREE.Group(), { geometry: { parameters: { width: 0.3, height: 0.4 } } }); // Second metal head layer.
+const previewHaft = Object.assign(new THREE.Group(), { isObject3D: true, geometry: { parameters: { width: 0.5, height: 1.2 } } }); // No head pixels belong to the bare shaft.
+const previewHeadA = Object.assign(new THREE.Group(), { isObject3D: true, geometry: { parameters: { width: 0.4, height: 0.4 } } }); // First metal head layer.
+const previewHeadB = Object.assign(new THREE.Group(), { isObject3D: true, geometry: { parameters: { width: 0.3, height: 0.4 } } }); // Second metal head layer.
 const headMasks = [
   { plane: previewHeadA, mask: { width: 2, height: 2, indices: [0, 1], matchedMetalPixels: 2 } },
   { plane: previewHeadB, mask: { width: 2, height: 2, indices: [2], matchedMetalPixels: 1 } },
