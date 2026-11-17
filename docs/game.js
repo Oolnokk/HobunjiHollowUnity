@@ -28261,9 +28261,20 @@
           || nearbyNpcWalker?.root
           || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
+        const promptDevice = window.ActionPromptUI.getLastInputDevice(); // Used to replace an unreachable controller/touch Interact hint with the real displayed arch slot.
+        const controllerBindings = promptDevice === 'controller' ? window.InputBindings?.getCurrentBindings?.()?.controller : null; // Current remaps, never hardcoded controller A/RT.
+        const interactBinding = controllerBindings?.interact; // Shown only when this button actually dispatches Interact rather than the ruin's Jump override.
+        const controllerInteractUnavailable = promptDevice === 'controller' && (!interactBinding
+          || (window.InputBindings?.resolveActionForButton?.('controller', interactBinding) || 'interact') !== 'interact'); // Controller A is Jump in ruins, so world actions need another available physical input.
         const promptInputs = promptButtons.map(button => { // Each world row advertises its live physical slot, or an explicitly owned input, never a guessed list index.
           const physicalSlot = promptArchSlots.indexOf(button); // Climb/native-only prompts do not occupy the regular action arch.
-          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'jump' : (physicalSlot >= 0 ? promptSlotActions[physicalSlot] : null)); // A prompt-only pickup must explicitly declare its real binding.
+          const archAction = physicalSlot >= 0 ? promptSlotActions[physicalSlot] : null; // The actual touch/keyboard/controller action of this displayed slot.
+          const requiresArchFallback = button.inputAction === 'interact' && physicalSlot >= 0
+            && (promptDevice === 'touch' || controllerInteractUnavailable); // No touch Interact key, and controller A now jumps in ruins.
+          const archBound = promptDevice !== 'controller' || (!!controllerBindings?.[archAction]
+            && (window.InputBindings?.resolveActionForButton?.('controller', controllerBindings[archAction]) || archAction) === archAction); // Do not replace A with another unbound/stolen controller key.
+          const actionId = requiresArchFallback ? (archBound ? archAction : '') : button.inputAction
+            || (button.action === 'climb_branch' ? 'jump' : archAction); // Explicit context actions always win unless the device cannot trigger them.
           const touchLabel = button.touchInputLabel || (actionId === 'jump' ? 'Jump' : actionId === 'dodge' ? 'Dodge' : actionId === 'toolSelect' ? 'Tool Select'
             : physicalSlot >= 0 ? `Action ${physicalSlot + 1}` : actionId === 'interact' ? 'Interact' : ''); // Touch shows its actual control rather than an unrelated list position.
           return {
