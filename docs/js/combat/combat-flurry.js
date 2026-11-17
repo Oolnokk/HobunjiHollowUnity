@@ -163,6 +163,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: damage, feyPrimaryKnockback: knockbackPxS }, // Flurry's count-scaled first hit is the basis of a Hyped copy.
               afflictionBonuses: attackAfflictions,
               isFlurry: true,
               flurryHitIndex: strikeIndex,
