@@ -43,7 +43,7 @@ assert.equal(canvases[0].width, width);
 assert.equal(canvases[1].width, 128);
 assert.deepEqual(canvases[1].drawCalls[0].slice(1), [1, 6, 3, 3, 0, 0, 128, 128],
   'ordinary tools crop the bottommost square at the same opaque bounds as before');
-assert.deepEqual(tool.getIconDebug().lastFrame, { left: 1, right: 3, top: 2, bottom: 8, side: 3 },
+assert.deepEqual(JSON.parse(JSON.stringify(tool.getIconDebug().lastFrame)), { left: 1, right: 3, top: 2, bottom: 8, side: 3 },
   'mobile diagnostics report the correct opaque bounds');
 assert.equal(tool.getIconDebug().lastTrimMs, 1);
 
