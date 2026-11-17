@@ -320,12 +320,10 @@
     unloadOutside(centerCx, centerCz) {
       // Map iteration is safe to delete the current entry from mid-loop (per
       // spec, only entries not yet visited could be affected, and unload()
-      // only ever removes the key currently being visited), so this no
-      // longer needs to spread either Map into a throwaway array first —
-      // this runs every frame the zone is active, not just on chunk-boundary
-      // crossings. That holds only while the onChunkUnloaded callback unload()
-      // invokes does not itself add to or remove from this.loaded; a consumer
-      // that ever needs to must take a snapshot here instead.
+      // only ever removes the key currently being visited), so this needs no
+      // spread or copy. Called only when the player's chunk center changes;
+      // streaming builds still advance on every active frame. Callers must
+      // not mutate this.loaded from onChunkUnloaded beyond the current key.
       for (const [key, record] of this.loaded) {
         if (chebyshev(record.cx, record.cz, centerCx, centerCz) > UNLOAD_RADIUS) this.unload(key);
       }
@@ -348,15 +346,26 @@
     setCenter(col, row) {
       const centerCx = clamp(tileToChunk(col), 0, this.maxCx);
       const centerCz = clamp(tileToChunk(row), 0, this.maxCz);
-      const changed = centerCx !== this.centerCx || centerCz !== this.centerCz;
+      const changed = centerCx !== this.centerCx || centerCz !== this.centerCz; // Stationary players need no static neighborhood traversal.
+      if (!changed) {
+        if (this.failedUntil.size) {
+          let retry = false; // Requeue allocations once their existing five-second failure backoff expires.
+          const now = performance.now(); // Only read the clock while there are failed chunks to revisit.
+          for (const [key, until] of this.failedUntil) {
+            if (until > now) continue;
+            this.failedUntil.delete(key);
+            retry = true;
+          }
+          if (retry) this.enqueueNeighborhood(centerCx, centerCz);
+        }
+        return;
+      }
       this.centerCx = centerCx;
       this.centerCz = centerCz;
       this.enqueueNeighborhood(centerCx, centerCz);
       this.unloadOutside(centerCx, centerCz);
-      if (changed) {
-        for (const record of this.loaded.values()) {
-          updateDebugCage(record, record.cx === centerCx && record.cz === centerCz);
-        }
+      for (const record of this.loaded.values()) {
+        updateDebugCage(record, record.cx === centerCx && record.cz === centerCz);
       }
     }
 
@@ -552,6 +561,7 @@
     const area = deps.getCurrentArea?.();
     const active = deps.isZoneArea?.(area) ? zones.get(area) : null;
     const player = deps.player;
+    window.PlayerTileEvents?.update(area, player?.x, player?.y, deps.TILE); // One authoritative tile observation per game frame, including interiors/area transitions.
     for (const controller of zones.values()) {
       if (controller === active && player) {
         const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
