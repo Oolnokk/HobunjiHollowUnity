@@ -13,7 +13,7 @@
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
   const absoluteClaims = new WeakMap(); // Node -> named absolute position/quaternion/scale owner; action sessions hold their own references.
   const overlayClaims = new WeakMap(); // Per-node hand overlay records share the absolute claim registry instead of maintaining private dance baselines.
-  const overlayStats = { overlayWrites: 0, overlayBaseRefreshes: 0, overlayBaseReuses: 0, overlayReleases: 0, overlayConflicts: 0 }; // Inspect render-pass ownership without DevTools.
+  const overlayStats = { overlayWrites: 0, overlayBaseRefreshes: 0, overlayBaseReuses: 0, overlayReleases: 0, overlayConflicts: 0, solverPublications: 0, solverConflicts: 0 }; // Inspect render-pass ownership without DevTools.
 
   let activeAbsoluteClaims = 0; // Mobile ownership count used to spot an interrupted actor pose that never released.
   const absoluteOwnerCounts = new Map(); // Action name -> active property-claim count, reported by mobile rig diagnostics.
@@ -491,6 +491,44 @@
   // baseline between renders, and the next same-frame outline/depth pass must
   // NOT add the overlay a second time. The registry stores the last clean
   // driver output and the last composed output for each owned socket.
+  // Authoritative procedural hand/leg IK supplies a fresh absolute baseline,
+  // without clearing named effects. Only nodes with a registered additive
+  // contribution require recomposition: the no-slot path is a cheap WeakMap
+  // lookup, not another per-bone hierarchy rebuild in crowded towns.
+  function setSolvedBase(node, property, solved) {
+    const isRotation = property === 'quaternion';
+    const isVector = property === 'position' || property === 'scale';
+    const validValue = isRotation ? quaternionValid(solved)
+      : isVector && ['x', 'y', 'z'].every(axis => Number.isFinite(solved?.[axis]));
+    if (!node || !validValue) { stats.invalidInputs++; return false; }
+    const claim = absoluteClaims.get(node)?.get(property);
+    if (claim && !claim.overlay) {
+      // The solver may already have written directly before invoking this
+      // publishing hook. Reinstate the still-owned action pose instead of
+      // letting that incidental write poison its next ownership comparison.
+      if (claim.applied && node[property]?.copy) node[property].copy(claim.applied);
+      overlayStats.solverConflicts++;
+      return false;
+    }
+    const slots = slotsFor(node, false);
+    if (isRotation) {
+      const slot = slots?.get('quaternion');
+      if (slot) {
+        slot.base.copy(solved);
+        write(node, slot); // Recompose all named quaternion effects over the newly solved IK orientation.
+      }
+    } else {
+      for (const axis of ['x', 'y', 'z']) {
+        const slot = slots?.get(property + '.' + axis);
+        if (!slot) continue;
+        slot.base = solved[axis];
+        write(node, slot);
+      }
+    }
+    overlayStats.solverPublications++;
+    return true;
+  }
+
   function applyPoseOverlay(node, owner, apply) {
     if (!node?.position?.clone || !node?.quaternion?.clone
       || !node.position.copy || !node.quaternion.copy
@@ -598,7 +636,7 @@
 
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
-    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, applyPoseOverlay, releasePoseOverlay,
+    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, setSolvedBase, applyPoseOverlay, releasePoseOverlay,
     getDebug() {
       return { ...stats, ...absoluteStats, ...overlayStats, activeAbsoluteClaims,
         absoluteOwners: Array.from(absoluteOwnerCounts, ([owner, claims]) => ({ owner, claims })), // Only enumerated on explicit mobile diagnostics.
