@@ -359,6 +359,17 @@ now += 1000 / 60;
 win.Mounts.updateMountedMovement(1 / 60);
 assert(win.Mounts.ridingDebug.speedPxS > 340 * 0.85, 'after boost stops, strike-frame inertia remains instead of being discarded');
 assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'strike cannot continue to accelerate the mount');
+const speedAtRelease = win.Mounts.ridingDebug.speedPxS; // Compare the real carrier across the first half-second after the attack's speed grant ends.
+for (let i = 0; i < 30; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+const speedAfterCoast = win.Mounts.ridingDebug.speedPxS; // Passive momentum should decay smoothly rather than shedding ~225 px/s immediately.
+assert(speedAfterCoast < speedAtRelease, 'released combat acceleration cannot keep increasing the carrier speed');
+assert(speedAtRelease - speedAfterCoast < 140, 'mounted windup release coasts gently for half a second instead of sharply decelerating');
+assert.equal(win.Mounts.ridingDebug.coasting, true, 'mobile diagnostics distinguish unpowered coasting from active windup boost');
+input.x = -1; input.y = 0; // Opposite reins deliberately override coasting with the existing strong brake.
+for (let i = 0; i < 12; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(win.Mounts.ridingDebug.speedPxS < speedAfterCoast - 150, 'deliberate reverse-rein braking is still substantially stronger than passive drag');
+assert.equal(win.Mounts.ridingDebug.coasting, false, 'actively braking must not be reported as coasting');
+input.x = 1; input.y = 0;
 
 // Mobile auto-target must change the mount's path into a circle, not alter
 // projectile aiming or override explicit manual reins.
