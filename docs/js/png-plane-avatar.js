@@ -544,8 +544,8 @@
   // The posterior (hip) anchor in the skinned plane's frame, where the spine chain starts (js/character-spine.js); null when unknown (the spine module then estimates).
   const spinePosteriorLocalY = (speciesId, gender, modelHeight, placementRatio, handAttachY) => window.HobunjiCharacterSpine?.posteriorLocalY?.({ speciesId, gender, modelHeight, placementRatio, handAttachY }) ?? null;
 
-  // Mesh budgets: the most vertices a character/animal mesh may use. 'full' is the original detail (player default);
-  // 'npc' is the cap for town NPCs, enemies, livestock and animals, which are drawn again in every scene pass.
+  // Mesh budgets: baseline vertex limits for character and animal meshes. 'full' is the higher-detail player mode;
+  // 'npc' caps town NPCs, enemies, livestock and animals. Skinned humanoid portraits additionally use the density scale below.
   // Pants grid size is read from here by js/pants-garment-renderer.js so there is one place to tune detail.
   const MESH_BUDGETS = Object.freeze({
     full: Object.freeze({ planeSegmentsX: 28, planeSegmentsY: 36, hostileMaskX: 48, hostileMaskY: 60, animalSegments: 72, pantsSegments: 64 }),
@@ -556,7 +556,8 @@
   try { playerBudgetMode = window.localStorage?.getItem(PLAYER_BUDGET_KEY) === 'npc' ? 'npc' : 'full'; } catch (_) { /* storage can be blocked; default full */ }
   // Dev-only portrait resolution experiment. This is independent of the pants and animal mesh budgets.
   const PORTRAIT_DENSITY_MIN = 20; // Slider minimum; per-axis segments are never allowed below the skinning minimum.
-  let portraitDensityPercent = 100; // Session-only developer override used by every newly built skinned humanoid portrait.
+  const PORTRAIT_DENSITY_DEFAULT = 40; // Production per-axis subdivision scale for player, NPC and enemy skinned portraits; dev slider may override it.
+  let portraitDensityPercent = PORTRAIT_DENSITY_DEFAULT; // Current session density used by every newly built skinned humanoid portrait.
   const portraitMeshRefs = new Set(); // Weak references to live skinned portrait meshes for developer retessellation.
   const portraitMeshBuilds = new WeakMap(); // Per-mesh build recipe plus weak-ref token; only mesh owners can retain recipes.
   const portraitMeshFinalizer = typeof FinalizationRegistry === 'function'
@@ -727,6 +728,7 @@
     forPlayer: () => playerBudgetMode, // Mode name handed to avatar/pants builders for the player rig.
     playerMode: () => playerBudgetMode,
     portraitGrid,
+    defaultPortraitDensityPercent: PORTRAIT_DENSITY_DEFAULT,
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
