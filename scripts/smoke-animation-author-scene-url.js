@@ -32,6 +32,7 @@ async function main() {
         return applyKissPresetV1546();
       };
       // Force the formerly intermittent background-mode interruption after Pahu loads.
+      const exerciseUrlModeRace = new URLSearchParams(location.search).get('scene') === 'pahu-leaf-kiss'; // Other URL-order cases must remain independent of this deliberate interruption.
       const addNpcBeforeModeSwitch = addNpcAnimationActor;
       const buildAvatarBeforeModeSwitch = buildAvatarRender;
       let modeSwitchInjected = false; // Records the switch after Pahu is added but before the URL loader resumes.
@@ -46,9 +47,9 @@ async function main() {
         return avatar;
       };
       addNpcAnimationActor = async function(id, options = {}) {
-        if (id === 'leaf' && options.preserveMultiScene) armLeafBuildInterrupt = true;
+        if (exerciseUrlModeRace && id === 'leaf' && options.preserveMultiScene) armLeafBuildInterrupt = true;
         const actor = await addNpcBeforeModeSwitch(id, options);
-        if (!modeSwitchInjected && id === 'pahu' && options.preserveMultiScene) {
+        if (exerciseUrlModeRace && !modeSwitchInjected && id === 'pahu' && options.preserveMultiScene) {
           modeSwitchInjected = true;
           await setAnimationAuthorMode('single');
         }
