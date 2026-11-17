@@ -7,8 +7,7 @@
   let deps = null;
   let holderHookInstalled = false;
   let combatHooksInstalled = false;
-  let lastRelativeHolderQuaternion = null;
-  let holderMotionBusyUntil = 0;
+  let lastHolderPoseOwner = 'waiting'; // Current holder render owner, exposed to the mobile stance debugger.
   let combatHoldActive = false;
   let combatVisualState = null;
   let lastDebugSignature = '';
@@ -225,6 +224,7 @@
   function targetPoseFor(activeSlot, itemKey, def, { dualWield = null } = {}) {
     const shape = shapeFor(itemKey, def);
     if (activeSlot !== 'weapon') {
+      if (activeSlot === 'ranged') return null; // game.js/RangedWeapons own the loaded, unloaded, and aim-tracking ranged Neutral, even for dual-role melee shapes.
       if (activeSlot === 'adventuring' && itemKey === 'torch') return idleStances.torchHold; // Dedicated idle state only for a held torch.
       if (def?.modular && MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]) return idleStances[MODULAR_TOOL_IDLE_BY_SLOT[activeSlot]]; // An axe-head spear haft rests as an axe when equipped for woodcutting, for example.
       if (shape === 'hoe' || shape === 'hatchet' || shape === 'fishingmace') return idleStances.topHeavyTool; // Head-weighted tools share one carried stance.
@@ -262,53 +262,6 @@
     const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), deg(pose.pitch));
     const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), deg(pose.roll));
     return qYaw.multiply(qPitch).multiply(qRoll);
-  }
-
-  // Compute world orientation from the quaternion hierarchy instead of matrix
-  // decomposition. The player rig contains mirrored sprite scales, so the
-  // quaternion chain is the safer basis for comparing attachment rotations.
-  function hierarchyWorldQuaternion(node) {
-    if (!node?.quaternion) return null;
-    const chain = [];
-    for (let current = node; current; current = current.parent) chain.push(current);
-    const worldQ = new THREE.Quaternion();
-    worldQ.identity();
-    for (let i = chain.length - 1; i >= 0; i -= 1) {
-      if (chain[i]?.quaternion) worldQ.multiply(chain[i].quaternion);
-    }
-    return worldQ.normalize();
-  }
-
-  // toolHolder is registered with PlayerBodyTransformComposer as an external
-  // root, so facing/composer rotations affect it together with playerMesh.
-  // Comparing holder orientation relative to the body cancels those shared
-  // rotations while preserving genuine tool-holder animation.
-  function relativeHolderQuaternion() {
-    const holder = deps?.toolHolder;
-    const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
-    if (!holder?.quaternion || !playerMesh?.quaternion) return null;
-
-    const holderWorldQ = hierarchyWorldQuaternion(holder);
-    const bodyWorldQ = hierarchyWorldQuaternion(playerMesh);
-    if (!holderWorldQ || !bodyWorldQ) return null;
-    return bodyWorldQ.invert().multiply(holderWorldQ).normalize();
-  }
-
-  function holderIsMoving(now) {
-    const relativeQ = relativeHolderQuaternion();
-    if (!relativeQ) {
-      lastRelativeHolderQuaternion = null;
-      return false;
-    }
-    if (!lastRelativeHolderQuaternion) {
-      lastRelativeHolderQuaternion = relativeQ.clone();
-      return false;
-    }
-    const dot = Math.min(1, Math.abs(lastRelativeHolderQuaternion.dot(relativeQ)));
-    const angularStep = 2 * Math.acos(dot);
-    lastRelativeHolderQuaternion.copy(relativeQ);
-    if (angularStep > 0.004) holderMotionBusyUntil = Math.max(holderMotionBusyUntil, now + 650);
-    return now < holderMotionBusyUntil;
   }
 
   function prepareCombatOptions(rawOpts = {}) {
@@ -384,7 +337,6 @@
       clearQueued: false,
     };
     combatHoldActive = !!held;
-    holderMotionBusyUntil = 0;
   }
 
   function advanceCombatVisual(now) {
@@ -492,7 +444,6 @@
       combatDeps.cancelWeaponSwingHold = function weaponToolStanceAwareCancel(...args) {
         combatVisualState = null;
         combatHoldActive = false;
-        holderMotionBusyUntil = 0;
         return originalCancel.apply(this, args);
       };
     }
@@ -542,17 +493,9 @@
       const now = performance.now();
       const { activeSlot, itemKey, def, mesh } = activeState();
       const visual = combatVisualState?.slot === activeSlot ? advanceCombatVisual(now) : null;
-      const attackInProgress = !!visual && (activeSlot === 'weapon' || holder.userData?.authoredToolActionActive === true);
-      // Weapon attacks are explicitly tracked by the combat wrappers, so never let
-      // their real holder rotation poison the tool-motion idle suppression timer.
-      const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // The game has already posed a held tool/fishing attack against the selected Neutral.
-      const torchIdle = activeSlot === 'adventuring' && itemKey === 'torch'; // Starter torch keeps its authored upright stance through ordinary walking/turning.
-      const holderMoving = activeSlot === 'weapon' ? false
-        : (torchIdle ? authoredToolActionActive : (authoredToolActionActive || holderIsMoving(now))); // Only actual authored torch actions interrupt its hold; other tools retain motion suppression.
-      if (torchIdle) {
-        lastRelativeHolderQuaternion = null; // Clear old angular samples before switching back to another tool.
-        holderMotionBusyUntil = 0; // Locomotion must never leave a 650ms fallback timer on the torch.
-      }
+      const authoredToolActionActive = activeSlot !== 'weapon' && holder.userData?.authoredToolActionActive === true; // game.js owns the full non-weapon swing lifetime, including legacy motions.
+      const attackInProgress = !!visual && (activeSlot === 'weapon' || authoredToolActionActive);
+      const torchIdle = activeSlot === 'adventuring' && itemKey === 'torch'; // Only an actual torch action overrides its authored upright hold.
       const idleDualState = !attackInProgress ? window.HobunjiHandToolGrips?.currentDualWieldAnimationState?.() : null;
       const idleDualWield = !!idleDualState && idleDualState.source === 'dual-wield-idle' && idleDualState.influence > 0.0001;
       const targetPose = targetPoseFor(activeSlot, itemKey, def, { dualWield: idleDualWield });
@@ -563,7 +506,7 @@
       let savedPlaneRotationZ = null;
       const toolPlane = mesh?.userData?.toolPlane || null;
 
-      if (mesh && targetPose && !holderMoving && !attackInProgress) {
+      if (mesh && targetPose && !authoredToolActionActive && !attackInProgress) {
         savedPosition = this.position.clone();
         savedQuaternion = this.quaternion.clone();
         try {
@@ -598,7 +541,8 @@
       if (stanceApplied && targetPose?.worldUpright) worldUprightApplied = window.ToolWorldUpright?.apply?.(this, toolPlane, THREE, torchIdle ? -1 : 1) === true; // Torch's flame is authored at PNG -Y; correct that end only, without editing grip data.
       const stateLabel = attackInProgress
         ? `attack-neutral=${visual?.progress?.toFixed?.(2) ?? '0'}`
-        : stanceApplied ? 'idle-holder' : holderMoving ? 'tool-motion' : 'default';
+        : stanceApplied ? 'idle-holder' : authoredToolActionActive ? 'authored-tool-action' : 'default';
+      lastHolderPoseOwner = stateLabel;
       logState(activeSlot, itemKey, def, stateLabel);
 
       let result;
@@ -659,7 +603,6 @@
 
   function debugSnapshot() {
     const state = activeState();
-    const playerMesh = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
     const visual = combatVisualState?.slot === state.activeSlot ? combatVisualState : null;
     return {
       activeSlot: state.activeSlot,
@@ -672,8 +615,9 @@
       stanceApplied,
       worldUprightApplied, // Existing mobile debug inspector can distinguish corrected torch art from an absent sprite plane.
       hook: holderHookInstalled ? 'toolHolder.updateMatrixWorld' : 'missing',
-      holderMotionBasis: playerMesh ? 'player-body-relative' : 'composer-body-missing',
-      holderMotionBusyMs: Math.max(0, Math.round(holderMotionBusyUntil - performance.now())),
+      holderMotionBasis: 'explicit-authored-tool-action', // Movement rotation is never treated as tool work.
+      holderMotionBusyMs: 0, // Retain the legacy mobile debug field without a misleading motion cooldown.
+      holderPoseOwner: lastHolderPoseOwner, // Shows the render owner in Pixel Probe diagnostics.
       combatHoldActive,
       combatNeutralInjected: !!visual,
       combatAnim: visual?.anim || null,
