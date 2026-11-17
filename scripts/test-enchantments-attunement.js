@@ -743,6 +743,27 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert(secondary&&secondary.damage>0,'an independently aimed second swing can hit when the first swing missed');
   hypedStages.at(-1).onComplete?.();
 
+  // Actual ability consumers query the committed Hyped credit before calculating
+  // windup/strike durations. Once the first is already 2x, the echo must be the
+  // SAME duration, not another 2x on top (which would be 4x normal).
+  RS.addEnhancedResource(player,'hypedStamina',4);
+  RS.spendStamina(player,4,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  assert.equal(context.FeyHypedAttacks.speedMultiplierForNextAction(player,'swingCombo'),2,'a funded first attack has twice the ordinary speed');
+  const accelerated=CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:15,rangePx:40,halfConeRad:1,knockbackPxS:50});
+  assert.equal(accelerated.metadata.feyHypedUsed,4);
+  context.Combat.deps.triggerWeaponSwingVisual(.15,{anim:'sweep'});
+  const acceleratedStage=context.Combat.beginStagedAction({windupS:.1,strikeS:.05,recoverS:0});
+  acceleratedStage.onComplete(acceleratedStage);
+  const equallyFastEcho=hypedStages.at(-1);
+  assert(Math.abs(equallyFastEcho.totalS-.15)<1e-6,'second staged swing is also 2x normal speed, not an accidental 4x');
+  assert(Math.abs(hypedVisuals.at(-1).duration-.15)<1e-6,'second authored visual retains the accelerated first duration');
+  equallyFastEcho.onStrike();
+  equallyFastEcho.onComplete?.();
+  for(const file of ['combat-combo.js','combat-quickattacks.js','combat-flurry.js','combat-charged-breaker.js']) {
+    const source=fs.readFileSync('docs/js/combat/'+file,'utf8'); // Tests each actual ability's stage-tempo integration, not only a mocked combat facade.
+    assert(source.includes('hypedAttackTempo') && source.includes('speedMultiplierForNextAction'),file+' must accelerate its initial paid swing');
+  }
+
   RS.addEnhancedResource(player,'hypedStamina',2);
   RS.spendStamina(player,2,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
   CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:10,rangePx:40,halfConeRad:1});
