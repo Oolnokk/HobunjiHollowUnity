@@ -207,7 +207,17 @@ function createWindow() {
   void win.loadURL(GAME_URL);
 }
 
-app.whenReady().then(() => {
+// Never run two separate desktop processes against the same local save profile.
+const singleInstance = app.requestSingleInstanceLock(); // A second launch focuses the existing window instead of starting another writer.
+if (!singleInstance) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+  app.whenReady().then(() => {
   app.setAppUserModelId('com.oolnokk.hobunjihollow');
   registerAssets();
   configurePermissions();
@@ -217,5 +227,6 @@ app.whenReady().then(() => {
 }).catch(error => {
   dialog.showErrorBox('Hobunji Hollow startup failed', String(error.stack || error));
   app.quit();
-});
+  });
+}
 app.on('window-all-closed', () => app.quit());
