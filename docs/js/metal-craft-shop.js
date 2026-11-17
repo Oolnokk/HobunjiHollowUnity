@@ -118,10 +118,11 @@
   function craftMetalTool(shapeKey, metalKey) {
     window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
     if (!deps.UNLOCKED_TOOL_SHAPES.includes(shapeKey) || !deps.VERDIGRIS_METAL_KEYS.includes(metalKey)) { deps.showToast('Discover this weapon shape and choose a smithing metal first.', false); return; }
+    const forgeBars = window.MetalReinforcement.forgeBarCost(CRAFT_BAR_COST, metalKey, deps.METAL_DEFS); // Higher-tier new tools cost more bars instead of bypassing the metal sink.
     const barKey = deps.metalBarItemKey(metalKey);
-    if ((deps.inventory[barKey] || 0) < CRAFT_BAR_COST) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
+    if ((deps.inventory[barKey] || 0) < forgeBars) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
     if ((deps.inventory.gold || 0) < CRAFT_LABOR_GOLD) { deps.showToast("Not enough gold for the smith's labor.", false); return; }
-    deps.inventory[barKey] -= CRAFT_BAR_COST;
+    deps.inventory[barKey] -= forgeBars;
     deps.clampInventoryStack(barKey);
     deps.inventory.gold -= CRAFT_LABOR_GOLD;
     const itemKey = deps.craftedToolItemKey(shapeKey, metalKey);
@@ -272,7 +273,7 @@
 
     const craftHdr = document.createElement('div');
     craftHdr.className = 'shop-section-label';
-    craftHdr.textContent = `🔨 Craft a New Tool  (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)`;
+    craftHdr.textContent = `🔨 Craft a New Tool  (from ${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g; advanced metals cost more bars)`;
     list.appendChild(craftHdr);
 
     const shapeTabs = document.createElement('div');
@@ -289,6 +290,7 @@
 
     deps.VERDIGRIS_METAL_KEYS.forEach(metalKey => {
       const metal = deps.METAL_DEFS[metalKey];
+      const forgeBars = window.MetalReinforcement.forgeBarCost(CRAFT_BAR_COST, metalKey, deps.METAL_DEFS); // Visible smithing bar cost matches purchase validation.
       const owned = deps.inventory[deps.metalBarItemKey(metalKey)] || 0;
       const itemKey = deps.craftedToolItemKey(metalCraftActiveShape, metalKey);
       const alreadyOwned = !!gearInventory?.tools?.[itemKey];
@@ -299,7 +301,7 @@
         <div class="sh-info">
           <div class="sh-name">${deps.esc(metal.label)} ${deps.esc(deps.TOOL_SHAPE_DEFS[metalCraftActiveShape].label)} (tier ${metal.tier})</div>
           <div class="sh-desc">Bars owned: ${owned}${alreadyOwned ? ' — already smithed' : ''}</div>
-          <div class="sh-price">${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g</div>
+          <div class="sh-price">${forgeBars} bars + ${CRAFT_LABOR_GOLD}g</div>
         </div>
         <button class="shop-buy-btn" data-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
       `;
