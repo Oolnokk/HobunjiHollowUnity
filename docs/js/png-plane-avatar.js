@@ -547,9 +547,11 @@
   // Mesh budgets: baseline vertex limits for character and animal meshes. 'full' is the higher-detail player mode;
   // 'npc' caps town NPCs, enemies, livestock and animals. Skinned humanoid portraits additionally use the density scale below.
   // Pants grid size is read from here by js/pants-garment-renderer.js so there is one place to tune detail.
+  // Each dimension is about sqrt(0.2) of its previous value, retaining ~20% of the pants triangles
+  // (29² / 64² ≈ 20.5% for full; 14² / 32² ≈ 19.1% for NPC) without changing portrait density.
   const MESH_BUDGETS = Object.freeze({
-    full: Object.freeze({ planeSegmentsX: 28, planeSegmentsY: 36, hostileMaskX: 48, hostileMaskY: 60, animalSegments: 72, pantsSegments: 64 }),
-    npc: Object.freeze({ planeSegmentsX: 20, planeSegmentsY: 26, hostileMaskX: 34, hostileMaskY: 44, animalSegments: 30, pantsSegments: 32 }),
+    full: Object.freeze({ planeSegmentsX: 28, planeSegmentsY: 36, hostileMaskX: 48, hostileMaskY: 60, animalSegments: 72, pantsSegments: 29 }),
+    npc: Object.freeze({ planeSegmentsX: 20, planeSegmentsY: 26, hostileMaskX: 34, hostileMaskY: 44, animalSegments: 30, pantsSegments: 14 }),
   });
   const PLAYER_BUDGET_KEY = 'hobunji_player_mesh_budget_v1'; // 'npc' | 'full'; per-device display preference, never part of a save.
   let playerBudgetMode = 'full';
