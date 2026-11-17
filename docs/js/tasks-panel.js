@@ -10,9 +10,9 @@
   // and before game.js initializes either system. Capture the same injected
   // bounty deps and extend the public board API with two persistent offer slots
   // without changing the captain-name forge or the camp-pinning contract.
-  const BOUNTY_REWARD_GOLD_BY_TIER = [80, 160, 280, 450];
-  const EASY_BOUNTY_TIERS = Object.freeze([0, 1]);
-  const HARD_BOUNTY_TIERS = Object.freeze([2, 3]);
+  const BOUNTY_REWARD_GOLD_BY_TIER = [80, 110, 150, 195, 250, 310, 380, 450]; // Eight smooth danger rewards, same starting and finishing offers.
+  const EASY_BOUNTY_TIERS = Object.freeze([0, 1, 2, 3]);
+  const HARD_BOUNTY_TIERS = Object.freeze([4, 5, 6, 7]);
   let bountyDeps = null;
   let bountyGangConfigPromise = null;
   let bountyOfferRefreshPromise = null;
@@ -20,7 +20,7 @@
 
   function _bountySlotForTier(tier) {
     const n = Math.max(0, Math.floor(Number(tier) || 0));
-    return n <= 1 ? 'easy' : 'hard';
+    return n <= 3 ? 'easy' : 'hard';
   }
 
   function _postedBounties() {
@@ -62,7 +62,7 @@
 
   function _makeBountyForSlot(slot, tiers, cfg) {
     if (!bountyDeps) return null;
-    const alreadyPosted = _postedBounties().some(posting => _bountySlotForTier(posting.tier) === slot);
+    const alreadyPosted = _postedBounties().some(posting => (posting.offerSlot || _bountySlotForTier(posting.tier)) === slot);
     if (alreadyPosted) return null;
 
     // Prefer a real, currently spawned captain whose actual camp tier belongs
@@ -155,7 +155,7 @@
     };
     board.getCurrentPostings = function() {
       return _postedBounties().sort((a, b) => {
-        const slotDiff = (_bountySlotForTier(a.tier) === 'easy' ? 0 : 1) - (_bountySlotForTier(b.tier) === 'easy' ? 0 : 1);
+        const slotDiff = ((a.offerSlot || _bountySlotForTier(a.tier)) === 'easy' ? 0 : 1) - ((b.offerSlot || _bountySlotForTier(b.tier)) === 'easy' ? 0 : 1);
         if (slotDiff) return slotDiff;
         return (a.tier - b.tier) || ((b.postedDay || 0) - (a.postedDay || 0));
       });
@@ -183,12 +183,10 @@
     return { object: 'them', possessive: 'their' };
   }
 
-  // Bandit difficulty tiers are stored zero-based (0..3 today), while the
-  // player-facing danger marks are one-based: X, XX, XXX, XXXX. Keeping this
-  // in one helper ensures wanted posters, accepted bounties and camp-entry
-  // title cards all speak the exact same visual language.
+  // Eight zero-based difficulty tiers display as one to eight X danger marks.
+  // A shared helper keeps wanted posters, bounties and live camp banners consistent.
   function banditDifficulty(tier) {
-    const numericTier = Math.max(0, Math.floor(Number(tier) || 0));
+    const numericTier = window.EnemyTierProgression?.clampTier(tier) ?? Math.max(0, Math.min(7, Math.floor(Number(tier) || 0)));
     const label = window.BountyBoard?.RANK_LABELS?.[numericTier] || `Tier ${numericTier + 1}`;
     return { label, marks: 'X'.repeat(numericTier + 1) };
   }
