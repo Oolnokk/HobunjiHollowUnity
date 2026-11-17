@@ -140,4 +140,15 @@ assert.equal(lockState.acquired, 2, 'incubation uses a fresh input lock');
 assert.equal(lockState.released, 2, 'automatic dismissal also releases the input lock');
 assert.equal(feature.debugSnapshot().queued.length, 0, 'no stale work remains in the modal queue');
 assert.equal(controllerClaims, 4, 'each queued screen claims controller focus independently');
+
+window.AnimalChatheadFrame = null; // Simulates a missing/failed portrait dependency without changing the naming workflow.
+assert.equal(feature.requestName({ id: 'missing_portrait', kind: 'puktuk' }, { commit() { return true; } }), true);
+flush(0);
+const portraitFallbackForm = root.children[0]; // The naming modal remains usable when the portrait renderer is absent.
+assert.equal(portraitFallbackForm.querySelector('.aba-chathead').hidden, true, 'unavailable portrait canvas is hidden rather than showing a blank box');
+assert.equal(portraitFallbackForm.querySelector('.aba-chathead-fallback').hidden, false, 'non-emoji fallback explains the unavailable portrait');
+assert.equal(feature.debugSnapshot().lastPortrait.status, 'unavailable', 'mobile debug reports the portrait fallback state');
+portraitFallbackForm.querySelector('[data-ctrl-cancel]').listeners.click();
+assert(root.hidden, 'missing portraits never prevent dismissing the modal');
+assert.equal(lockState.released, 3, 'portrait failure still releases the input lock');
 console.log('Animal baby arrival/naming/animation tests passed.');
