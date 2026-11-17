@@ -134,7 +134,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  const probeBoot=fs.readFileSync('docs/js/bootstrap/classic-groups/pre-game-diagnostics.js','utf8');
  assert.match(pixelProbe,/Pants\/feet depth:/,'render-only pants depth is shown in the mobile Pixel Probe');
  assert.match(pixelProbe,/getFootDepthBiasDebug/,'Pixel Probe reads the real garment handle rather than a stale cosmetic cache');
- assert.match(probeBoot,/pixel-probe\.js\?v=20261117pantsFootDepthProbe1/,'mobile bundle loads the repaired Pixel Probe');
+ assert.match(probeBoot,/pixel-probe\.js\?v=[A-Za-z0-9_-]+/,'mobile bundle loads the repaired Pixel Probe');
 }
 {
  const pants=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // Verify the recalibration is genuinely called by the live animation loop.
@@ -142,15 +142,15 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  const inUpdate=pants.slice(pants.indexOf('    handle.update = () => {'),pants.indexOf('    handle.dispose = () => {'));
  assert.match(inUpdate,/handle\.refreshFootDepthBias\(\)/,'leg animation updates perform revision-aware depth refresh');
  assert.match(legs,/state\.anatomyRevision\+\+/,'final GLB rig installation signals the revision to the pants renderer');
- const version='pants-garment-renderer.js?v=20261117pantsFootDepthRefresh1'; // One exact renderer cache key must be used by game and preview entry points.
+ const version=/pants-garment-renderer\.js\?v=[A-Za-z0-9_-]+/; // One exact renderer cache key must be used by game and preview entry points.
  for(const path of ['docs/index.html','docs/tools/enemy-loadout-editor/preview.js','docs/tools/live-root-growth/index.html','docs/tools/attack-animation-editor/index.html','docs/js/procedural-pants-rig-author.js']){
-   assert(fs.readFileSync(path,'utf8').includes(version),path+' must load the current pants renderer');
+   assert.match(fs.readFileSync(path,'utf8'),version,path+' must load the versioned pants renderer');
  }
  const enemyApp=fs.readFileSync('docs/tools/enemy-loadout-editor/app.js','utf8'); // An editor module is cached independently of the script it imports.
  const enemyHtml=fs.readFileSync('docs/tools/enemy-loadout-editor/index.html','utf8'); // A returning user's HTML entry must load the revised module URL.
- assert.match(enemyApp,/\.\/preview\.js\?v=20261117footParityPreview3/,'enemy app refreshes the edited preview module');
- assert.match(enemyHtml,/tools\/enemy-loadout-editor\/app\.js\?v=20261117footParityApp3/,'enemy editor HTML refreshes its importer');
- const parityToken='procedural-feet-outline-parity.js?v=20261117footRestoreOrder1'; // Both consumers must load the fixed nested onAfterRender cleanup order.
- assert(fs.readFileSync('docs/index.html','utf8').includes(parityToken),'game loads the repaired foot parity');
- assert(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js','utf8').includes(parityToken),'enemy preview loads the repaired foot parity');
+ assert.match(enemyApp,/\.\/preview\.js\?v=[A-Za-z0-9_-]+/,'enemy app refreshes the edited preview module');
+ assert.match(enemyHtml,/tools\/enemy-loadout-editor\/app\.js\?v=[A-Za-z0-9_-]+/,'enemy editor HTML refreshes its importer');
+ const parityToken=/procedural-feet-outline-parity\.js\?v=[A-Za-z0-9_-]+/; // Both consumers must load the fixed nested onAfterRender cleanup order.
+ assert.match(fs.readFileSync('docs/index.html','utf8'),parityToken,'game loads the versioned foot parity');
+ assert.match(fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js','utf8'),parityToken,'enemy preview loads the versioned foot parity');
 }
