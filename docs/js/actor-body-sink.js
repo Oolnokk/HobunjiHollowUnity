@@ -19,7 +19,13 @@
     const factor = typeof entry.factor === 'function' ? entry.factor() : entry.factor;
     const next = units * (Number(factor) || 1);
     const prev = obj.userData[APPLIED] || 0;
-    if (next === prev) return;
+    const compositor = global.ActorRigCompositor || global.RigTransformLayers; // Named body-sink owner shared with all procedural rig effects.
+    if (compositor?.setAxis) {
+      compositor.setAxis(obj, 'actor-body-sink', 'position', 'y', -next);
+      obj.userData[APPLIED] = next;
+      return; // The compositor recomposes from the clean root Y rather than subtracting a remembered offset.
+    }
+    if (next === prev) return; // Compatibility for standalone previews without the shared compositor.
     obj.position.y -= next - prev;
     obj.userData[APPLIED] = next;
   }
