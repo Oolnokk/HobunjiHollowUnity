@@ -221,7 +221,9 @@ playerNeck.rotation.set(.9, 1.2, .4);
 lastRenderHook([], {}, {position:{x:100,y:100,z:100}});
 assert(Math.abs(player.rotation.y - shortPlayerYaw) < 1e-7, 'short-player yaw ignores camera/weapon transforms');
 assert(reverse.hands?.applied, 'short-player hand pose survives the final rendering pass');
+const previousHookReleases = hookReleased; // Earlier takeover tests legitimately release their own scoped renderer hooks.
 kiss.stop('reverse-ended');
-assert(!poseLockActive && lastRenderHook === null && hookReleased === 2, 'reverse-height exit releases the entire scoped pose owner');
+assert(!poseLockActive && lastRenderHook === null && hookReleased === previousHookReleases + 1,
+  'reverse-height exit releases exactly one renderer owner regardless of preceding interrupted sessions');
 assert.equal(playerHands.provider, null, 'short-player hands regain tool/idle ownership');
 console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, knees, hands, pants, camera-independent facing/head, late render and restoration.');
