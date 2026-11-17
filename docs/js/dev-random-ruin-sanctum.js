@@ -196,6 +196,7 @@
     if (!fire || fire.lit) return;
     fire.lit = true;
     fire.anchor.visible = true;
+    if (fire.lightSource) fire.lightSource.active = true; // The same flame now lifts the darkness overlay, not just its 3D particles.
   }
 
   function updateFire(fire, now, dt) {
@@ -725,22 +726,19 @@
     const authored = authoredPiece('ruinStandingBrazier');
     if (authored) {
       holder.add(authored);
-      const fire = createBlueFire(holder, 1.5);
-      fire.anchor.position.y = 1.23;
-      root.add(holder);
-      fire.holder = holder;
-      return fire;
+    } else {
+      const shaft = stone(kit, kit.sharedCylinderGeometry ? kit.sharedCylinderGeometry(.12, .18, 1.1, 10) : new THREE.CylinderGeometry(.12, .18, 1.1, 10));
+      shaft.position.y = .55;
+      const bowl = stoneBowl(kit);
+      bowl.scale.setScalar(1.5);
+      bowl.position.y = 1.08;
+      holder.add(shaft, bowl);
     }
-    const shaft = stone(kit, kit.sharedCylinderGeometry ? kit.sharedCylinderGeometry(.12, .18, 1.1, 10) : new THREE.CylinderGeometry(.12, .18, 1.1, 10));
-    shaft.position.y = .55;
-    const bowl = stoneBowl(kit);
-    bowl.scale.setScalar(1.5);
-    bowl.position.y = 1.08;
-    holder.add(shaft, bowl);
-    const fire = createBlueFire(holder, 1.5);
+    const fire = createBlueFire(holder, 1.5); // Shared authored/fallback flame drives the actual blue particle visual.
     fire.anchor.position.y = 1.23;
     root.add(holder);
     fire.holder = holder;
+    fire.lightSource = {x,y:y0+1.4,z,floorY:y0,floorTolerance:3,radius:9.5,strength:.97,color:[175,220,255],active:false}; // Static 2D light mask follows this brazier's lit state.
     return fire;
   }
 
@@ -859,6 +857,7 @@
       s.vaultChests.push(chest);
     }
     s.vaultFires = [standingBrazier(kit, root, vault.minX + 1, vault.minZ + .9, y0), standingBrazier(kit, root, vault.minX + 1, vault.maxZ - .9, y0)];
+    s.sanctumLights = [...s.arenaFires,...s.vaultFires].map(fire=>fire.lightSource); // Reused by the shared darkness compositor without per-frame scene scans.
     const ladder = buildLadder(kit, root, vault.maxX - .18, zc + (VAULT_D / 2 - 1.1), y0);
     s.ladderControl = {
       kind:'sanctumLadder', object:ladder, promptRoot:ladder, range:1.6, priority:22, claimAction1:true, touchIcon:'🪜',
@@ -1045,6 +1044,12 @@
     clearTimeout(intro.titleTimer);
     clearTimeout(intro.endTimer);
     intro.title?.remove?.();
+    if (owner.introLight) {
+      owner.introLight.active = false;
+      const index = owner.sanctumLights?.indexOf(owner.introLight) ?? -1; // Remove only this encounter's temporary boss lighting source.
+      if (index >= 0) owner.sanctumLights.splice(index,1);
+      owner.introLight = null;
+    }
     if (window.CinematicCameraRuntime?.activeRecord?.()?.reason === 'ruin-sanctum-boss-intro') window.CinematicCameraRuntime.deactivate();
     if (intro.lock) window.CharacterActionLocks?.release?.(intro.lock);
     if (beginCombat && s === owner && owner.inSanctum && owner.boss === intro.boss && Number(intro.boss.health) > 0) {
@@ -1074,6 +1079,9 @@
     const lock = window.CharacterActionLocks?.acquire?.({owner:'ruin-sanctum-intro',reason:'named lich introduction',participants:['player'],channels:['movement','actions','tools'],timeoutMs:INTRO_MS+1200});
     const intro = {boss,lock,title:null,titleTimer:null,endTimer:null}; // This owner token also makes all delayed callbacks cancelable on death/exit/reroll.
     owner.intro = intro;
+    const revealLight = {x,y:floor+Math.max(1,height*.75),z,floorY:floor,floorTolerance:3,radius:8.5,strength:1,color:[245,228,207],active:true}; // Center the one-time illumination on the lich's torso so the Kanthic blackness cannot swallow the reveal.
+    owner.introLight = revealLight;
+    (owner.sanctumLights ||= []).push(revealLight);
     owner.lastEncounterEvent = 'reveal';
     intro.titleTimer = setTimeout(() => {
       if (s !== owner || owner.intro !== intro || !owner.inSanctum) return;
@@ -1081,7 +1089,7 @@
       title.id='ruin-sanctum-boss-title';
       title.textContent=String(label || boss.name || 'Lich').toUpperCase();
       title.setAttribute('role','status');
-      title.style.cssText = "position:fixed;left:50%;top:75%;transform:translate(-50%,-50%);width:94vw;max-width:1200px;box-sizing:border-box;z-index:9990;pointer-events:none;text-align:center;white-space:normal;overflow-wrap:break-word;color:#fff6d8;font-family:'KhymeryyanRomanLetters+Numbers','KhymeryyanRoman',serif;font-size:clamp(28px,6vmin,74px);font-weight:700;line-height:1.08;letter-spacing:.065em;-webkit-text-stroke:2.5px #000;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 5px 12px #000;";
+      title.style.cssText = "position:fixed;left:50%;top:75%;transform:translate(-50%,-50%);width:94vw;max-width:1200px;box-sizing:border-box;z-index:9990;pointer-events:none;text-align:center;white-space:normal;overflow-wrap:break-word;color:#fff6d8;font-family:'KhymeryyanRomanLetters+Numbers','KhymeryyanRoman',serif;font-size:clamp(28px,6vmin,74px);font-weight:400;line-height:1.08;letter-spacing:.065em;-webkit-text-stroke:.5px #000;text-shadow:0 1px 2px #000,0 2px 5px rgba(0,0,0,.85);";
       document.body.appendChild(title);
       intro.title = title;
     },INTRO_TITLE_DELAY_MS);
@@ -1124,8 +1132,8 @@
       owner.rearDoor.progress=owner.bossDefeated?1:0;
       updateRearDoor(0);
     }
-    for (const fire of owner.arenaFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; }
-    if (!owner.bossDefeated) for (const fire of owner.vaultFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; }
+    for (const fire of owner.arenaFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; if(fire.lightSource)fire.lightSource.active=false; }
+    if (!owner.bossDefeated) for (const fire of owner.vaultFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; if(fire.lightSource)fire.lightSource.active=false; }
     owner.lastEncounterEvent = 'reset:'+reason;
   }
 
@@ -1327,7 +1335,7 @@
       s = {
         context, rng, built:false, rejects:[], braziers:[], litOrder:[], occluders:[], door:null, bgs:null,
         layout:reservedLayout(context), // floorProjection reserved these tiles; recover the plan from the live grid size.
-        boss:null,bossPending:false,intro:null,encounterRevision:0,lastEncounterEvent:'unvisited', // Separate attempts never reuse delayed actor spawns or cinematic ownership.
+        boss:null,bossPending:false,intro:null,introLight:null,sanctumLights:[],encounterRevision:0,lastEncounterEvent:'unvisited', // Cache the arena/vault masks and one temporary reveal mask. // Separate attempts never reuse delayed actor spawns or cinematic ownership.
         bossDefeated:window.DevRandomRuin?.getSeed?.()!=null
           &&window.RuinSites?.isActiveRuinBossDefeated?.(window.DevRandomRuin.getSeed())===true,
         inSanctum:false, enteringSanctum:false, leavingSanctum:false, // Both fade directions are cancelable if the player dies or the ruin tears down.
@@ -1377,7 +1385,7 @@
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
-        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
+        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, introLightActive:!!s.introLight?.active, sanctumLightsLit:(s.sanctumLights||[]).filter(light=>light.active).length, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },
@@ -1417,6 +1425,7 @@
     leave:() => leaveSanctum(),
     resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
+    lightSources:() => s?.sanctumLights || [], // Zero-allocation read path for both darkness compositors and mobile diagnostics.
     getState:() => s,
   });
 })();
