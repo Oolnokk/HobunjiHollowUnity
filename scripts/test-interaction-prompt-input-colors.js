@@ -45,7 +45,7 @@ const win={InputBindings:{
   resolveActionForButton:(dev,code)=>dev==='controller'?(code==='Button0'?'jump':Object.entries(live.controller).find(([,v])=>v===code)?.[0]||null):null,
 },ActionArchSlotColors:{inputColors:{interact:'#aaa',jump:'#bbb',toolSelect:'#ccc',action1:'#ddd'}}}; // Same controller A Jump priority as the game.
 const promptSource=read('docs/js/action-prompt-ui.js'); // Actual binding-label implementation.
-new Function('window','document',promptSource)(win,{getElementById:()=>null});
+new Function('window','document',promptSource)(win,{getElementById:id=>id==='dialogueChoiceSelectionStyle'?{}:null}); // Ignore unrelated DOM CSS initialization.
 win.ActionPromptUI.init({getLastInputDevice:()=>device,inputBindings:live});
 assert.equal(win.ActionPromptUI.actionPromptGlyph('interact'),'','Jump-owned A is not shown for Interact');
 assert.equal(win.ActionPromptUI.actionPromptGlyph('toolSelect'),'RB','Tool Select uses its rebound controller button');
