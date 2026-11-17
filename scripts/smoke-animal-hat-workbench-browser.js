@@ -160,7 +160,8 @@ async function spritePng(page, animal) {
     await page.mouse.move(artBox.x + artBox.width * .49, artBox.y + artBox.height * .47, { steps: 6 });
     await page.mouse.up();
     await page.waitForFunction(() => window.__animalRigGrowthRegions?.debugSnapshot()?.customEnabled === true
-      && window.__animalRigGrowthRegions.debugSnapshot().customFrame?.width > .15);
+      && window.__animalRigGrowthRegions.debugSnapshot().customFrame?.width > .15
+      && window.__animalHeadRigBabyPreview?.debugSnapshot()?.frameSource === 'custom drawn head box');
     assert.match((await page.evaluate(() => window.__animalHeadRigBabyPreview.debugSnapshot())).frameSource,
       /custom drawn head box/, 'a drawn head rectangle takes over the live source frame');
 
