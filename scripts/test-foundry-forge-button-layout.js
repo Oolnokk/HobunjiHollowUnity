@@ -17,6 +17,7 @@ function childrenOf(parent) { // Flatten only this fixture's DOM, to verify the 
 const document = { createElement: element }; // The shipped Foundry code only needs these ordinary DOM interfaces.
 const window = {}; // Browser-module globals; no fake copy of the render() implementation.
 const context = vm.createContext({ window, document, console }); // Browser module is evaluated unchanged in this VM.
+vm.runInContext(fs.readFileSync('docs/js/metal-reinforcement.js', 'utf8'), context, { filename: 'docs/js/metal-reinforcement.js' }); // Real game loads the shared metal policy before its Foundry.
 vm.runInContext(fs.readFileSync('docs/js/foundry-shop.js', 'utf8'), context, { filename: 'docs/js/foundry-shop.js' });
 const key = 'modular:shaft:head:copper'; // Registered in the same form as the production item key.
 const definition = { label: 'Copper Custom Weapon', dmgType: 'blunt', animStyle: 'sweep', slots: ['weapon'], weaponAssembly: { flail: true } }; // Forces both verbose optional paragraphs.
@@ -41,8 +42,9 @@ function setup(inventory, gear = { tools: {} }) {
   const toasts = []; // Gives a console-free assertion that crafting succeeded.
   window.FoundryShop.init({
     inventory, getGearInventory: () => gear, TOOL_ITEM_DEFS: { [key]: definition }, UNLOCKED_TOOL_SHAPES: ['shaft', 'head'],
-    VERDIGRIS_METAL_KEYS: ['copper'], METAL_DEFS: { copper: { label: 'Copper', hex: '#b87333' } },
+    VERDIGRIS_METAL_KEYS: ['copper'], METAL_DEFS: { copper: { tier: 1, label: 'Copper', hex: '#b87333' } },
     metalBarItemKey: metal => 'bar_' + metal, clampInventoryStack() {}, saveGearInventory() {},
+    setToolReinforcement(itemKey, metalKey, grade) { assert.equal(itemKey, key); assert.equal(metalKey, 'copper'); assert.equal(grade, 0); }, // New foundry items begin at material grade I.
     buildInventoryGrid() {}, buildEquipmentSlots() {}, saveMemberWorldData() {}, showToast: (...parts) => toasts.push(parts),
     rerender: () => { rerenders++; },
   });

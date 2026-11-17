@@ -101,8 +101,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
     else deps.debugLog?.(`Bandit name forge self-test FAILED: ${result.errors.join(' | ')}`, 'warn');
   }
 
-  const BOUNTY_RANK_LABELS = ['Petty', 'Notorious', 'Ruthless', 'Infamous'];
-  const BOUNTY_REWARD_GOLD_BY_TIER = [200, 400, 700, 1100]; // Roughly 1/4 to 1.5 beginner fishing days (see config/economy-progression.js) so clearing a camp competes with a day of farming or fishing.
+  const BOUNTY_RANK_LABELS = ['Petty', 'Brazen', 'Notorious', 'Ruthless', 'Hardened', 'Deadly', 'Infamous', 'Dreaded']; // Eight distinct camp dangers.
+  const BOUNTY_REWARD_GOLD_BY_TIER = [200, 280, 360, 440, 560, 700, 900, 1100]; // Roughly 1/4 to 1.5 beginner fishing days (see config/economy-progression.js) so clearing a camp competes with a day of farming or fishing.
 
   // Uses the same bandit-gang-config speciesWeights as the actual roster.
   // This helper lives here only because bounty creation happens before any
@@ -370,8 +370,8 @@ window.BanditNameForge={sourceVersion:'khymeryyan-all-culture-name-forge-v7',gen
   // spoken aloud in dialogue, then hands back the bits that ask text needs.
   // `experienced` biases toward the tougher tier band, matching his own
   // "less/more dangerous gangs" line.
-  const EASY_BOUNTY_TIERS = Object.freeze([0, 1]);
-  const HARD_BOUNTY_TIERS = Object.freeze([2, 3]);
+  const EASY_BOUNTY_TIERS = Object.freeze([0, 1, 2, 3]);
+  const HARD_BOUNTY_TIERS = Object.freeze([4, 5, 6, 7]);
   async function reserveForRequest(experienced) {
     // If the board already has a takeable posting, Spearhead should offer
     // that exact bounty instead of trying to invent a second target. The
