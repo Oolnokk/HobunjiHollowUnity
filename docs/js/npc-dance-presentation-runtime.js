@@ -28,7 +28,8 @@
     smile: new Map(), // npcId -> async expression refresh state
     handApplications: 0,
     handBaseRefreshes: 0, // Counts fresh ordinary-hand baselines captured after the normal hand driver updates a socket.
-    handBaseReuses: 0, // Counts secondary/repeated draws that reuse the last ordinary baseline instead of stacking dance deltas.
+    handBaseReuses: 0, // Isolated previews; the compositor reports the authoritative game render-pass counters.
+    handOverlayConflicts: 0, // Tracks a rejected hand claim when a scripted paired action has priority.
     smileApplications: 0,
     smileRestores: 0,
     smileErrors: 0,
@@ -96,7 +97,15 @@
   }
 
   function socketsFor(entry) {
-    if (entry.left?.parent && entry.right?.parent) return { left: entry.left, right: entry.right };
+    const rigGroup = entry.walker?.avatarGroup?.userData?.proceduralHandRig?.group; // Current hand generation, not a stale detached avatar.
+    const belongs = socket => {
+      if (!socket?.parent) return false;
+      if (!rigGroup) return true;
+      for (let node = socket; node; node = node.parent) if (node === rigGroup) return true;
+      return false;
+    };
+    if (belongs(entry.left) && belongs(entry.right)) return { left: entry.left, right: entry.right };
+    if (entry.left || entry.right) releaseHandPose(entry); // Dispose old hand claims before a rebuilt rig takes over.
     let left = null;
     let right = null;
     entry.walker?.root?.traverse?.(node => {
@@ -144,9 +153,25 @@
     else poseState.appliedQuat.copy(socket.quaternion);
   }
 
+  function overlayOwner(entry, side) {
+    return 'npc-dance-hand:' + String(entry.walker?.rec?.id || 'unknown') + ':' + side; // Stable per-socket compositor ownership identifier.
+  }
+
   function releaseHandPose(entry) {
     // Release only the values this late render hook still owns. New hand-grip
     // and forearm writers may have replaced either value independently.
+    if (entry.useCompositor && global.ActorRigCompositor?.releasePoseOverlay) {
+      for (const side of ['left', 'right']) {
+        const socket = entry[side];
+        if (socket && global.ActorRigCompositor.releasePoseOverlay(socket, overlayOwner(entry, side))) {
+          socket.updateMatrix?.();
+          socket.updateMatrixWorld?.(true);
+        }
+        entry.handPoseState[side] = null; // Compositor—not the old private snapshots—is authoritative in the game.
+      }
+      entry.useCompositor = false;
+      return;
+    }
     for (const side of ['left', 'right']) {
       const socket = entry[side], pose = entry.handPoseState?.[side];
       if (!socket || !pose) continue;
@@ -171,6 +196,9 @@
   }
   function lateHandPose(entry, target) {
     if (!arrivedForSocialPose(entry.walker, target)) { cancelHandPose(entry); return; }
+    const participant = global.NpcCharacterState?.participantId?.(entry.walker?.rec?.id)
+      || 'npc:' + String(entry.walker?.rec?.id || ''); // Paired kisses and other exclusive pose owners outrank the presentation hand dance.
+    if (global.CharacterActionLocks?.isLocked?.(participant, 'pose')) { cancelHandPose(entry); return; }
 
     const presentation = target.socialDance || target.socialAncestorCeremony;
     const ceremony = !!target.socialAncestorCeremony; // Mourners do not dance or smile.
@@ -198,7 +226,7 @@
 
     for (const side of ['left', 'right']) {
       const socket = side === 'left' ? left : right;
-      const poseState = baselineForSide(entry, side, socket);
+      const paint = poseState => {
       socket.position.copy(poseState.basePos);
       socket.quaternion.copy(poseState.baseQuat);
 
@@ -228,7 +256,17 @@
       }
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
-      rememberAppliedPose(socket, poseState);
+      }; // Same choreography for the shared game compositor and isolated preview fallback.
+      if (global.ActorRigCompositor?.applyPoseOverlay) {
+        const applied = global.ActorRigCompositor.applyPoseOverlay(socket, overlayOwner(entry, side),
+          (node, basePos, baseQuat) => paint({ basePos, baseQuat })); // Central idempotent baseline and paired-action conflict protection.
+        if (applied) entry.useCompositor = true;
+        else state.handOverlayConflicts++; // Do not seize a hand already held by a newer paired pose.
+      } else {
+        const poseState = baselineForSide(entry, side, socket);
+        paint(poseState);
+        rememberAppliedPose(socket, poseState); // Editor preview without compositor preserves the original behavior.
+      }
     }
 
     // Deliberately do NOT restore the sockets after renderer.render(). The player
@@ -476,6 +514,7 @@
           hasHandSentinel: !!entry?.sentinel?.parent,
           handSentinelRenderOrder: entry?.sentinel?.renderOrder ?? null,
           handPoseOwnership: 'persist-until-ordinary-hand-sync',
+          compositorOwner: entry?.useCompositor ? 'npc-dance-hand' : 'legacy-preview',
           handSession: entry?.session || null,
           dancing: !!entry?.walker?.currentScheduleTarget?.socialDance,
           smileDesired: smile?.desired ?? false,
@@ -487,6 +526,7 @@
       return {
         depsCaptured: !!state.plannerDeps,
         handPoseOwnership: 'persist-until-ordinary-hand-sync',
+        handOverlayConflicts: state.handOverlayConflicts,
         handSentinels: state.sentinels.size,
         handApplications: state.handApplications,
         handBaseRefreshes: state.handBaseRefreshes,
