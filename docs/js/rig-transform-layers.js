@@ -170,6 +170,17 @@
       stats.invalidInputs++;
       return false;
     }
+    // On a real Three.js rig, Euler and quaternion write to the SAME rotation.
+    // Route both through one quaternion store to prevent yawn X rotations and
+    // drunken quaternion sway from independently capturing each other as base.
+    if (property === 'rotation' && node.quaternion?.isQuaternion
+      && typeof node.quaternion.clone === 'function' && typeof node.quaternion.set === 'function') {
+      const h = offset / 2; // Local axis-angle half-angle for a quaternion contribution.
+      const s = Math.sin(h); // Rotation component about the chosen local axis.
+      const delta = node.quaternion.clone(); // Reused only as the immutable value cloned by setQuaternion.
+      delta.set(axis === 'x' ? s : 0, axis === 'y' ? s : 0, axis === 'z' ? s : 0, Math.cos(h));
+      return setQuaternion(node, owner, delta, options);
+    }
     let slot = slotFor(node, property, axis, false);
     if (!slot && offset === 0) return true;
     if (!slot) slot = slotFor(node, property, axis, true);
@@ -208,6 +219,10 @@
   // An absolute solver that intentionally takes over a managed axis must use
   // this explicit handoff; no unknown mutation can change a claimed baseline.
   function setAbsoluteBase(node, property, axis, value) {
+    if (property !== 'quaternion' && !valid(node, property, axis)) {
+      stats.invalidInputs++;
+      return false;
+    }
     const slot = property === 'quaternion' ? quaternionSlot(node, true)
       : slotFor(node, property, axis, true);
     if (!slot || !(slot.quaternion ? quaternionValid(value) : Number.isFinite(value))) {
@@ -264,6 +279,7 @@
   function expireStale(timeMs = nowMs()) {
     let removed = 0;
     for (const slot of Array.from(leased)) {
+      let slotRemoved = 0; // Only recomposes this node if one of its own owners expired.
       reconcile(slot.node, slot);
       for (const [owner, layer] of slot.owners) {
         if (layer.expiresAtMs == null || layer.expiresAtMs > timeMs) continue;
@@ -272,9 +288,10 @@
         stats.clears++;
         stats.leasesExpired++;
         removed++;
+        slotRemoved++;
       }
       trackLease(slot);
-      if (removed) write(slot.node, slot);
+      if (slotRemoved) write(slot.node, slot);
     }
     return removed;
   }
