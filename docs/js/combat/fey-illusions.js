@@ -312,6 +312,7 @@
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
     onStaminaSpent, prepareHypedAttack, replayHypedHit, onDodgeBlocked, update,
     movementRotationRad, cameraYawDeg,
+    isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
       || (entity === player() && Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
