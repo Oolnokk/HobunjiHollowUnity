@@ -236,9 +236,12 @@
       };
       if (typeof shared.shadeFillConfig === 'function') shadeReference.config = shared.shadeFillConfig();
     }
+    const flags = predicate?.mask || null; // Typed-array form of the same selection: skips a closure call per pixel in the fill loops.
     shared(px, targetRgb, {
       applyPredicate: predicate || null,
       samplePredicate: predicate || null,
+      applyMask: flags,
+      sampleMask: flags,
       shadeReference,
       debugLabel,
     });
@@ -289,18 +292,60 @@
       const tolerance = Number.isFinite(sourceKey.hueTolerance) ? sourceKey.hueTolerance : 20;
       const minSaturation = Math.max(0.04, keyHsv.s * (Number.isFinite(sourceKey.minSaturationRatio) ? sourceKey.minSaturationRatio : 0.45));
       const minValue = Number.isFinite(sourceKey.minValue) ? Math.max(0, Math.min(1, sourceKey.minValue)) : 0; // Species-specific outline protection for dark pixels whose noisy hue resembles the coat.
+      const keyH = keyHsv.h, hueDistance = colorFill.hueDistance;
       for (let i = 0; i < px.length; i += 4) {
         if (!px[i + 3]) continue;
-        const hsv = colorFill.rgbToHsv(px[i], px[i + 1], px[i + 2]);
-        matches[i >> 2] = hsv.v >= minValue && hsv.s >= minSaturation && colorFill.hueDistance(hsv.h, keyHsv.h) <= tolerance ? 1 : 0;
+        // Inlined rgbToHsv (identical arithmetic, no per-pixel object) — this loop runs over every pixel of a 1M+ pixel sprite.
+        const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+        if (max < minValue || (max === 0 ? 0 : delta / max) < minSaturation) continue; // v and s gates first: they reject most pixels before any hue math.
+        let h = 0;
+        if (delta !== 0) {
+          if (max === r) h = ((g - b) / delta) % 6;
+          else if (max === g) h = (b - r) / delta + 2;
+          else h = (r - g) / delta + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+        if (hueDistance(h, keyH) <= tolerance) matches[i >> 2] = 1;
       }
     }
-    return i => matches[i >> 2] === 1;
+    const predicate = i => matches[i >> 2] === 1;
+    predicate.mask = matches; // Lets recolorPixels hand the flags to ColorFill without per-pixel closure calls.
+    return predicate;
   }
 
   // Shared keyed shade-fill for animal coats and matching attached PNG surfaces.
   function recolorKeyedPixels(px, targetRgb, sourceKey, sourceReferenceHex = null, debugLabel = null) {
     recolorPixels(px, targetRgb, sourceKeyPredicate(px, sourceKey), sourceReferenceHex, debugLabel);
+  }
+
+  // Sprite PNGs and the mask JSON are cached independently, so a returning player can briefly hold
+  // a sprite and mask authored at different resolutions (oversized sprites were downscaled). When the
+  // aspect ratio matches, nearest-neighbour resample the mask instead of dropping the recolor.
+  const _fittedMasks = new WeakMap(); // mask -> Map("WxH" -> resampled mask)
+  function fitMaskToImage(mask, width, height) {
+    if (!mask || !(width > 0) || !(height > 0)) return mask;
+    if (mask.width === width && mask.height === height) return mask;
+    if (Math.abs(mask.width / mask.height - width / height) > 0.01) return mask; // Different art, not a different resolution.
+    let bySize = _fittedMasks.get(mask);
+    if (!bySize) _fittedMasks.set(mask, bySize = new Map());
+    const key = width + 'x' + height;
+    if (bySize.has(key)) return bySize.get(key);
+    const data = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+      const sy = Math.min(mask.height - 1, Math.floor((y + 0.5) * mask.height / height)) * mask.width;
+      for (let x = 0; x < width; x++) data[y * width + x] = mask.data[sy + Math.min(mask.width - 1, Math.floor((x + 0.5) * mask.width / width))];
+    }
+    const fitted = { width, height, data };
+    bySize.set(key, fitted);
+    return fitted;
+  }
+
+  function maskPredicate(mask) {
+    const predicate = i => mask.data[i / 4];
+    predicate.mask = mask.data; // Uint8Array of 0/1 flags; same selection, no closure call per pixel.
+    return predicate;
   }
 
   async function recoloredBase(url, color, mask, allowUnmasked = false, sourceReferenceHex = null, kind = '', sourceKey = null) {
@@ -309,6 +354,7 @@
     const promise = (async () => {
       const img = await loadImage(url);
       await window.PixelWorkYield?.maybeYield(); // Lets a frame present between queued recolor passes (see pixel-work-yield.js).
+      mask = fitMaskToImage(mask, img.naturalWidth, img.naturalHeight);
       const maskMatches = !!mask && mask.width === img.naturalWidth && mask.height === img.naturalHeight; // Used to choose authored-region recolor versus an explicitly allowed full-sprite recolor.
       if (!maskMatches && !allowUnmasked && !sourceKey) return img;
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
@@ -319,7 +365,7 @@
       else recolorPixels(
         px,
         hexToRgb(color),
-        maskMatches ? (i) => mask.data[i / 4] : null,
+        maskMatches ? maskPredicate(mask) : null,
         sourceReferenceHex,
         debugLabel,
       );
@@ -423,7 +469,9 @@
     if (!imageOrCanvas || !mask) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 0;
     const height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 0;
-    if (!width || !height || mask.width !== width || mask.height !== height) return imageOrCanvas;
+    if (!width || !height) return imageOrCanvas;
+    mask = fitMaskToImage(mask, width, height); // Cached sprite and mask may have been authored at different resolutions.
+    if (mask.width !== width || mask.height !== height) return imageOrCanvas;
     const canvas = makeCanvas(width, height);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
@@ -726,7 +774,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
