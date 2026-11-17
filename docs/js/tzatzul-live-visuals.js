@@ -65,7 +65,12 @@
   }
   function rememberCaptive(prey, group = currentCaptiveGroup(prey)) {
     if (!prey || !group?.quaternion?.clone) return false;
-    if (captivePoses.get(prey)?.group === group) return true;
+    const previous = captivePoses.get(prey); // A rebuilt avatar may change its aligned root while the same bird is still carrying it.
+    if (previous?.group === group) return true;
+    if (previous) {
+      previous.poseSession?.release(); // Clear the outgoing rig's claims before tracking the replacement root.
+      captivePoses.delete(prey);
+    }
     releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
     const poseSession = window.ActorRigCompositor?.createAbsoluteSession?.('tzatzul-captive') || null; // One scoped rotation/size owner, never a world-position owner.
     if (poseSession) {
