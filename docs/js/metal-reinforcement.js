@@ -4,18 +4,18 @@
 
   const GRADES_PER_METAL = 4; // Used to expand the six-metal ladder into 24 power steps.
   const GRADE_LABELS = Object.freeze(['I', 'II', 'III', 'IV']); // Displayed by the smith for each reinforcing metal.
-  const INTRA_METAL_BAR_COSTS = Object.freeze([0, 3, 4, 5]); // Bars spent on grades II-IV of one metal.
-  const TRANSITION_BAR_COST = 6; // Bars spent to enter grade I of the next metal.
+  const INTRA_METAL_BAR_COSTS = Object.freeze([0, 1, 2, 2]); // Bars spent on grades II-IV of one metal.
+  const TRANSITION_BAR_COST = 4; // Bars spent to enter grade I of the next metal.
   const FORGE_SURCHARGE_PER_TIER = 3; // Extra bars required to forge directly in a more advanced metal.
+  const MIN_REINFORCEMENT_POWER = 0.75; // Grade I copper is the intended starting weapon and work efficacy.
+  const MAX_REINFORCEMENT_POWER = 1.50; // Grade IV leaded bronze is the intentionally higher endgame ceiling.
   const LEGACY_EPSILON = 1e-9; // Avoids floating-point rounding falsely granting an extra legacy step.
 
   function multiplierAtRank(rank, metalDefs, metalKeys) {
     const maxRank = metalKeys.length * GRADES_PER_METAL - 1; // Final grade is the original strongest metal's strength.
-    const firstTier = Number(metalDefs[metalKeys[0]]?.tier);
-    const lastTier = Number(metalDefs[metalKeys[metalKeys.length - 1]]?.tier);
-    if (!Number.isFinite(firstTier) || !Number.isFinite(lastTier) || maxRank < 1) return 1;
-    const minPower = 0.85 + firstTier * 0.05; // Exactly the preexisting weakest metal multiplier.
-    const maxPower = 0.85 + lastTier * 0.05; // Exactly the preexisting strongest metal multiplier.
+    if (maxRank < 1 || !metalDefs?.[metalKeys[0]] || !metalDefs?.[metalKeys[metalKeys.length - 1]]) return 1;
+    const minPower = MIN_REINFORCEMENT_POWER; // Shared start for smithing, tools, and enemy-grade tuning.
+    const maxPower = MAX_REINFORCEMENT_POWER; // Shared finish for every structural metal.
     return minPower + (maxPower - minPower) * Math.max(0, Math.min(maxRank, rank)) / maxRank;
   }
 
@@ -77,5 +77,5 @@
     return { metalKey, grade, rank, bars, gold, multiplier: multiplierAtRank(rank, metalDefs, metalKeys), label: metalDefs[metalKey].label + ' ' + GRADE_LABELS[grade] };
   }
 
-  global.MetalReinforcement = Object.freeze({ GRADES_PER_METAL, multiplierAtRank, forgeBarCost, status, next });
+  global.MetalReinforcement = Object.freeze({ GRADES_PER_METAL, MIN_REINFORCEMENT_POWER, MAX_REINFORCEMENT_POWER, multiplierAtRank, forgeBarCost, status, next });
 })(window);
