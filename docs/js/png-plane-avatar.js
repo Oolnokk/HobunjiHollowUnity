@@ -554,7 +554,7 @@
   const PLAYER_BUDGET_KEY = 'hobunji_player_mesh_budget_v1'; // 'npc' | 'full'; per-device display preference, never part of a save.
   let playerBudgetMode = 'full';
   try { playerBudgetMode = window.localStorage?.getItem(PLAYER_BUDGET_KEY) === 'npc' ? 'npc' : 'full'; } catch (_) { /* storage can be blocked; default full */ }
-  // Dev-only portrait resolution experiment. This is independent of the pants and animal mesh budgets.
+  // Shared portrait/animal deformation density: production starts at 40%, with an optional developer A/B override. Pants meshes are independent.
   const PORTRAIT_DENSITY_MIN = 20; // Slider minimum; per-axis segments are never allowed below the skinning minimum.
   const PORTRAIT_DENSITY_DEFAULT = 40; // Production per-axis subdivision scale for player, NPC and enemy skinned portraits; dev slider may override it.
   let portraitDensityPercent = PORTRAIT_DENSITY_DEFAULT; // Current session density used by every newly built skinned humanoid portrait.
