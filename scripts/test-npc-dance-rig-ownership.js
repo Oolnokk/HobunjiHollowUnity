@@ -50,6 +50,7 @@ const window={
   NpcCharacterState:{participantId:id=>'npc:'+id},
   CharacterActionLocks:{isLocked(_id,channel){return locked&&channel==='pose';}},
   SocialRhythmClock:{dancerBeatAt(){return .25;}},
+  RuntimeFrameScheduler:{frameId(){return 17;}}, // Identifies the same frame across visible, outline and depth renders.
   setInterval(callback){tick=callback;},
   setTimeout(){}, // Tick is advanced explicitly after injecting the walker list.
 };
@@ -78,8 +79,16 @@ for(let repeat=0;repeat<12;repeat++) {
   assert(Math.abs(left.position.y-baseline)<1e-9,'secondary renderer passes must not stack hand height');
   assert(Math.abs(Math.abs(left.quaternion.dot(baselineQuat))-1)<1e-9,'secondary renderer passes must not stack hand rotation');
 }
+const forearmCorrection = new Q(Math.sin(.12/2),0,0,Math.cos(.12/2)); // A late free-forearm pass refines the previously authored dance wrist.
+left.quaternion.multiply(forearmCorrection);
+const aligned = left.quaternion.clone(); // This must remain visible in the secondary material-ID/outline pass.
+assert(compositor.stampPoseOverlay(left,'quaternion'), 'the forearm pass stamps its final wrist into the SAME hand owner');
+sentinel.onBeforeRender(null,{overrideMaterial:{}}); // Same-frame diagnostic/outline renderer must not redraw pre-forearm dance.
+assert(Math.abs(Math.abs(left.quaternion.dot(aligned))-1)<1e-9,'the outline pass preserves final aligned wrist rotation');
+assert(compositor.getDebug().overlayPostWrites>0,'compositor diagnostic counts post-dance wrist corrections');
 walker.currentScheduleTarget=null;sentinel.onBeforeRender();
 assert.equal(compositor.getDebug().activeAbsoluteClaims,0,'leaving the ceremony releases both hand overlays');
+assert(Math.abs(Math.abs(left.quaternion.dot(new Q()))-1)<1e-9,'forearm-adjusted dance cancellation restores neutral wrist orientation');
 assert(Math.abs(left.position.y-1)<1e-9,'clean author baseline is restored on cancellation');
 walker.currentScheduleTarget={socialAncestorCeremony:{stimulusId:'ancestor',armStyle:'overhead-punch'}};
 left.position.y=1.4;right.position.y=1.4; // Ordinary hand solver publishes a fresh neutral standing pose.
