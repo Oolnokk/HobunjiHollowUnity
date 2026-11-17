@@ -35,6 +35,14 @@
     });
   }
 
+  function speedMultiplierForNextAction(actor, abilityId) {
+    const credit = actor && credits.get(actor); // Enhanced payment is committed before each authored ability computes its stage timings.
+    if (!credit || credit.expiresAt < now() || !(credit.used > 0)) return 1;
+    if (credit.abilityId && credit.abilityId !== abilityId) return 1;
+    credit.primaryAccelerated = true; // The first and second attack now share the same 2x temporal scaling.
+    return 2;
+  }
+
   function clearCredit(actor, abilityId = null) {
     const credit = actor && credits.get(actor);
     if (!credit || (abilityId && credit.abilityId && abilityId !== credit.abilityId)) return false;
@@ -53,7 +61,8 @@
       if (now() - previous.createdAt > MAX_CREDIT_AGE_MS) attacks.delete(id); // A canceled pre-stage attack cannot leave strong target refs behind forever.
     }
     const attack = {
-      id: ++serial, actor, context, used: credit.used, createdAt: now(), firstHits: new Map(),
+      id: ++serial, actor, context, used: credit.used, primaryAccelerated: credit.primaryAccelerated === true,
+      createdAt: now(), firstHits: new Map(),
       presentation: null, bound: false, cancelled: false, area: window.Combat?.deps?.getCurrentArea?.() || actor.areaId,
     };
     context.metadata ||= {};
@@ -112,7 +121,7 @@
     }
     const context = attack.context;
     const ratio = Math.max(0, attack.used * 0.02); // The authored uncapped 2% of the first effect per Hyped Stamina point.
-    const duration = Math.max(MIN_SECOND_S, numeric(firstAction?.totalS, 0.22) / 2);
+    const duration = Math.max(MIN_SECOND_S, numeric(firstAction?.totalS, 0.22) / (attack.primaryAccelerated ? 1 : 2)); // Both swings run at 2x normal speed; legacy untimed owners get a double-speed echo fallback.
     const lead = Math.min(duration, Math.max(0, numeric(firstAction?.windupS) / 2));
     const last = attack.presentation;
     const visual = last?.options || {
@@ -221,7 +230,7 @@
   window.CombatAttackEvents?.on?.('hit', onHit);
   installCombatBridge();
   window.FeyHypedAttacks = Object.freeze({
-    onStaminaSpent, prepare, onHit, clearCredit, installCombatBridge,
+    onStaminaSpent, prepare, onHit, clearCredit, speedMultiplierForNextAction, installCombatBridge,
     debugSnapshot: () => ({
       bridgeInstalled, replayCount, lastEcho, activeHypedAttacks: attacks.size,
       playerPending: !!pendingByActor.get(window.Combat?.deps?.player),
