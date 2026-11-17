@@ -32,6 +32,8 @@ No merge is needed to build or test the PR version.
 4. Once a save has been explicitly loaded or saved and autosync is armed, the
    existing folder autosync remains active during play. Closing the window
    additionally attempts a final save and offers Retry/Cancel on failure.
+   If a folder is connected but autosync was never armed, closing warns that
+   only the browser fallback was saved so you do not mistake it for a Drive sync.
 5. Open **View → Save Folder Status** to inspect folder name, autosync status,
    recent operation, and error without Developer Tools.
 
