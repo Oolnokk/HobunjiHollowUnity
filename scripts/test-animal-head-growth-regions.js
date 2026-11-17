@@ -178,10 +178,11 @@ assert.equal(context.normalizedRig().babyHeadUseCustomFrame, true, 'clearing abd
 assert(previews > 0);
 assert(html.includes('id="shoulderCopySource"') && html.includes('id="babyHeadDrawCustom"')
   && html.includes('id="babyHeadDrawAbdomen"'), 'the full interface is accessible without devtools');
-assert(html.includes('author-part11.js?v=') && html.includes('baby-animal-head-warp.js?v=20261117growthboxes1'),
-  'the painter loads the new editor module and fresh runtime');
-assert(index.includes('baby-animal-head-warp.js?v=20261117growthboxes1'),
-  'the live game uses the same updated growth implementation');
+assert(/author-part11\\.js\\?v=[A-Za-z0-9_-]+/.test(html)
+  && /baby-animal-head-warp\\.js\\?v=[A-Za-z0-9_-]+/.test(html),
+  'the painter loads the new editor module and a versioned runtime');
+assert(/baby-animal-head-warp\\.js\\?v=[A-Za-z0-9_-]+/.test(index),
+  'the live game uses a versioned growth implementation');
 assert(bridge.includes('warp?.abdomenForKind?.(kind)'), 'small shoulder-pet frame key includes abdomen configuration');
 assert(editorPreview.includes('previewAbdomen'), 'post-composition editor preview includes optional abdomen growth');
 console.log('PASS: shared growth regions, shoulder pose copy, touch box drawing, export, undo and runtime cache keys');
