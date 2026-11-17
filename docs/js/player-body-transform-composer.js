@@ -18,7 +18,7 @@
   const legApi = window.ProceduralLegAnimation;
   if (!THREE || !legApi?.attach || window.PlayerBodyTransformComposer) return;
 
-  const channels = new Map();
+  const channels = window.ActorRigCompositor?.channelStore?.('player-body') || new Map(); // Shares the canonical actor-pose ownership registry with all named rig layers.
   const externalRootProviders = new Map();
   const PLAYER_HEAD_MAX_YAW_DEG = 65; // Shared body-relative neck limit used by ordinary aim, animation-composed body yaw, and seated camera look.
   const PLAYER_HEAD_MAX_YAW_RAD = THREE.MathUtils.degToRad(PLAYER_HEAD_MAX_YAW_DEG); // Used by applyPlayerNeckYawLimit for range checks and the final hard clamp.
@@ -552,6 +552,7 @@
     playerNeckJointCache = null;
     setHeadAimTarget(null);
     clearAllChannels();
+    window.ActorRigCompositor?.clearAll?.(parent); // A disposed avatar root cannot retain an old generation's local deformation.
   }
 
   // Observe the existing rig constructor rather than requiring game.js to know
@@ -587,6 +588,7 @@
         neckYaw: null,
       }; // Persisted below before temporary transforms are restored.
       renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
+      renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       try {
       const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
