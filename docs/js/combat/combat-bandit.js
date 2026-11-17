@@ -1030,7 +1030,7 @@
   }
 
   function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
-    const tierRankMultipliers = cfg?.statMultiplierByRankAndTier?.[rank];
+    const tierRankMultipliers = (cfg?._preserveMineEnemyTiers ? cfg?.legacyMineRankMultipliersByRank?.[rank] : null) || cfg?.statMultiplierByRankAndTier?.[rank]; // Mine Ghouls use the original four rank curves instead of the expanded bandit ones.
     // Tier-indexed rank curves keep low-star camps weak while preserving
     // meaningful supporting ranks in higher-star camps.
     const weaken = Number(
@@ -1067,7 +1067,7 @@
       rangedWeaponKey,
       banditFlaskLoadout,
       banditFlaskerTuning: flaskerTuning,
-      banditFlaskPotencyTier: isFlasker ? Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7)) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
+      banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
