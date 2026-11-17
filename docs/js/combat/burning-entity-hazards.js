@@ -44,7 +44,7 @@
     return true;
   }
 
-  function tickCorpses(dt, corpseRegistry) {
+  function tickCorpses(dt, corpseRegistry, isInWater = null) {
     const step = Math.max(0, Number(dt) || 0); // Uses game simulation time, not wall clock or cosmetic particle time.
     if (!(step > 0) && activeCorpses.size === 0) return;
     for (const entity of activeCorpses) {
@@ -55,12 +55,14 @@
         window.BurningAfflictionVfx?.disposeEntity?.(entity);
         continue;
       }
-      flame.remaining = Math.max(0, flame.remaining - step);
+      // Corpse fire obeys the same water extinguishing rule as living Burning Health.
+      const submerged = typeof isInWater === 'function' && isInWater(entity) === true;
+      flame.remaining = submerged ? 0 : Math.max(0, flame.remaining - step);
       if (flame.remaining > 0) continue;
       activeCorpses.delete(entity);
       corpseFlames.delete(entity);
       window.BurningAfflictionVfx?.disposeEntity?.(entity);
-      lastContact = { kind: 'corpse-extinguished', label: labelFor(entity) };
+      lastContact = { kind: submerged ? 'corpse-water-extinguished' : 'corpse-extinguished', label: labelFor(entity) };
     }
   }
 
@@ -94,7 +96,8 @@
       return callback(entity) === true;
     };
     if (consider(world.player)) return true;
-    for (const registry of [world.hostileObjects, world.companionObjects, world.animalObjects, world.corpseObjects]) {
+    // Only bodies registered as actively flaming are candidates; the settled corpse archive can be enormous.
+    for (const registry of [world.hostileObjects, world.companionObjects, world.animalObjects, activeCorpses]) {
       if (!registry) continue;
       for (const entity of registry) if (consider(entity)) return true;
     }
