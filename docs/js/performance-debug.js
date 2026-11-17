@@ -1218,6 +1218,7 @@
         densitySlider.value = String(portraitBudget.portraitDensityPercent());
         updateDensityLabel();
       }); // Also reflects the automatic reset when developer mode is disabled.
+      root.addEventListener('hobunji:player-mesh-budget-changed', updateDensityLabel); // Player may opt into NPC mesh density without changing the developer slider.
       densityRow.append(densityLabel, densitySlider, densityStatus, densityHelp);
       box.appendChild(densityRow);
       updateDensityLabel();
