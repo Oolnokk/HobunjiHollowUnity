@@ -4130,7 +4130,7 @@ function animationUiTemplate() {
             </div>
             <label class="maaToggleLine" style="margin-top:7px"><input type="checkbox" id="maaPortraitMeshWireframe">Show portrait wireframe</label>
             <div class="maaSmall maaMuted" id="maaPortraitMeshStatus" role="status" aria-live="polite">Load the repository to adjust portrait geometry.</div>
-            <div class="maaSmall maaMuted" style="margin-top:5px">Wireframe temporarily replaces the portrait texture with a bright full-plane grid. Density changes keep poses and keys intact. Creature painted-head rigs and pants use their own meshes.</div>
+            <div class="maaSmall maaMuted" style="margin-top:5px">Wireframe temporarily replaces the portrait texture with a bright full-plane grid. Density changes keep poses and keys intact. Creature painted-head rigs share the density scale but retain their own painted skin weights; pants use independent meshes.</div>
           </section>
           <section class="maaSection" id="maaProjectSection">
             <div class="maaSectionTitle"><b id="maaProjectSectionTitle">Multi-avatar animation</b><span class="maaSmall maaMuted">Active tab only</span></div>
