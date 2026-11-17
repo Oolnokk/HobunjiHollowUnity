@@ -855,6 +855,13 @@
         else for(const remove of registered)remove();
       }
     };
+    const animateCompleted=rec.animate; // Existing ice/gate completion motion continues unchanged.
+    rec.animate=dt=>{
+      if(rec.disposed)return;
+      animateCompleted?.(dt);
+      if(rec.solved)for(const emitter of flameVisuals)
+        emitter.update?.(Math.max(0,Math.min(.05,Number(dt)||0)),true); // Permanent bowls/sconces stay animated after the puzzle no longer ticks.
+    };
     rec.dispose=()=>{
       if(rec.disposed)return;
       rec.disposed=true;
