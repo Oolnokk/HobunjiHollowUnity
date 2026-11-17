@@ -7,7 +7,7 @@
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
     { globalKey: 'LivestockNurseryObserverScope', src: 'js/livestock-nursery-observer-scope.js?v=20260916scope1' },
     { globalKey: 'LivestockNurseryOutdoorGrowth', src: 'js/livestock-nursery-outdoor-growth.js?v=20260916outdoor1' },
-    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261011h801c233' },
+    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261117boundSleeper1' },
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
@@ -22,7 +22,7 @@
     { globalKey: 'StableTrainingCompendiumPatch', src: 'js/stable-training-compendium-patch.js?v=20261026h2ddbb14' },
     { globalKey: 'JubmirDabinggiHounds', src: 'js/jubmir-dabinggi-hounds.js?v=20261006h1a27ed3' },
     { globalKey: 'BARN_INCUBATOR_CONFIG', src: 'config/barn-incubator-config.js?v=20261012h24b6e66' },
-    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261116idleMaskCoverage3' },
+    { globalKey: 'BarnIncubator', src: 'js/barn-incubator.js?v=20261117animalRetry2' },
     { globalKey: 'FarmMenuLayout', src: 'js/farm-menu-layout.js?v=20261111h527088c' },
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20261026hea788ca' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261115skeeriEgg2' },

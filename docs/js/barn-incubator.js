@@ -985,7 +985,8 @@
     try {
       let composed = null;
       if (species?.base?.idle && typeof renderer.composeFrame === 'function') {
-        try { composed = await renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false); }
+        try { composed = await (window.AnimalSleepPresentation?.composeStaticFrame?.(avatarRef.group, slot.baby.kind, slot.baby.genotype, true)
+          || renderer.composeFrame(slot.baby.kind, 'idle', slot.baby.genotype, false)); }
         catch (_) {} // A failed genotype composite can still use the original native idle sprite.
       }
       if (!composed) {

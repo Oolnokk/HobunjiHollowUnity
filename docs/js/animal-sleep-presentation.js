@@ -6,7 +6,7 @@
   const LEGACY_SLEEP_SCALE_Y = 0.5; // Normalizes older barn/wilderness callers that still author their pre-render pose at 50%.
   const DEFAULT_SLEEP_HEAD_DOWN_DEG = 30; // Fallback downward pitch when an animal head rig does not publish its authored max angle.
   const STATIC_SLEEP_PREFIXES = ['barn_sleep_', 'nest_sleep_', 'incubator_sleep_']; // Names emitted by the three existing static sleeper builders.
-  const STATIC_COMPOSE_MAX_AGE_MS = 2500; // Prevents an abandoned sleeper build from claiming an unrelated later compose of the same species.
+  const SLEEP_COMPOSE_RETRY_MS = 2000; // Back off before retrying an unavailable closed-eye artwork frame.
 
   let farmDeps = null; // Captured from FarmAnimals.init for live outdoor livestock.
   let combatDeps = null; // Captured from Combat.init for live wilderness animals.
@@ -34,10 +34,11 @@
   let lastContext = null; // Mobile-visible label for the most recently corrected sleeper.
 
   const staticSleepers = new Map(); // group -> { avatarRef, kind }; retains the head controller for barn/nest/incubator sleepers.
-  const pendingStaticComposes = new Map(); // kind -> [{group, createdAt}], pairing a new static sleeper with its first genotype compose.
   const liveFrameStates = new WeakMap(); // Live entity -> original plane maps and sleep-only body-facing state so waking restores ordinary behavior.
   const externalSleepers = new Map(); // Named-animal NPCs and other non-livestock actors opt into the same sleep presentation through callbacks instead of duplicating pose/eye logic.
-  const frameCache = new Map(); // kind|frame|genotype -> permanently closed-eye texture pair for sleeping presentation.
+  const frameCache = new Map(); // kind|frame|genotype -> successful pairs or retryable failed entries for sleeping presentation.
+  let failedSleepComposites = 0; // Mobile-visible counter for async closed-eye texture composition failures.
+  let lastSleepComposeError = null; // Last sleep-layer failure shown in getDebug() instead of requiring a desktop console.
   const temporaryTransforms = []; // Render-only scale/position changes restored by the post-game scheduler phase after all gameplay render passes.
   const groundingScaleCoefficients = new WeakMap(); // group -> parent-local Y correction per unit of group.scale.y; measured once from exact Box3 bounds, then reused.
 
@@ -93,22 +94,7 @@
       avatarRef: avatarRef || group.userData.animalSleepAvatarRef || null,
       kind: kind || group.userData.animalSleepKind || null,
     });
-    if (kind) {
-      const queue = pendingStaticComposes.get(kind) || [];
-      queue.push({ group, createdAt: nowMs() });
-      pendingStaticComposes.set(kind, queue);
-    }
     return group;
-  }
-
-  function takePendingStaticCompose(kind) {
-    const queue = pendingStaticComposes.get(kind);
-    if (!queue?.length) return null;
-    const cutoff = nowMs() - STATIC_COMPOSE_MAX_AGE_MS;
-    while (queue.length && (queue[0].createdAt < cutoff || !queue[0].group)) queue.shift();
-    const entry = queue.shift() || null;
-    if (!queue.length) pendingStaticComposes.delete(kind);
-    return entry;
   }
 
   function patchPngAnimalBuilder() {
@@ -127,30 +113,20 @@
     return true;
   }
 
-  function patchGenotypeComposer() {
+  // Static baby/barn builds explicitly provide their avatar; never steal a
+  // same-species wild/companion composition merely because a sleeper was created first.
+  function composeStaticFrame(group, kind, genotype, eyesClosed = true) {
     const renderer = window.CreatureGeneticsRender;
-    if (!renderer || renderer.__animalSleepPresentationComposerPatched || typeof renderer.composeFrame !== 'function') return false;
-    const original = renderer.composeFrame;
-    renderer.composeFrame = function sleepAwareComposeFrame(kind, frame, genotype, blinkShut = false) {
-      if (frame === 'idle') {
-        const pending = takePendingStaticCompose(kind);
-        if (pending) {
-          const descriptor = frameDescriptor(kind, window.CREATURE_DB?.[kind], true);
-          pending.group.userData ||= {};
-          pending.group.userData.animalSleepKind = kind;
-          pending.group.userData.animalSleepGenotype = genotype || null;
-          pending.group.userData.animalSleepFrame = descriptor.frame;
-          pending.group.userData.animalSleepBlinkOverlay = blinkOverlayFor(kind);
-          if (descriptor.usesRun2) run2Redirects++;
-          // Sleeping eyes never participate in the normal blink cycle: the sleep
-          // composite is always authored with the species' blink/closed-eye overlay.
-          return original.call(this, kind, descriptor.frame, genotype, true);
-        }
-      }
-      return original.apply(this, arguments);
-    };
-    renderer.__animalSleepPresentationComposerPatched = true;
-    return true;
+    if (typeof renderer?.composeFrame !== 'function') return Promise.resolve(null);
+    const descriptor = frameDescriptor(kind, window.CREATURE_DB?.[kind], true);
+    if (group && isStaticSleepName(group.name)) {
+      registerStaticSleeper(group, kind, group.userData?.animalSleepAvatarRef || null);
+      group.userData.animalSleepGenotype = genotype || null;
+      group.userData.animalSleepFrame = descriptor.frame;
+      group.userData.animalSleepBlinkOverlay = blinkOverlayFor(kind);
+    }
+    if (descriptor.usesRun2) run2Redirects++;
+    return renderer.composeFrame(kind, descriptor.frame, genotype, eyesClosed);
   }
 
   function patchFarmAnimals() {
@@ -239,8 +215,11 @@
     if (!renderer?.composeFrame) return null;
     const key = frameCacheKey(kind, descriptor.frame, genotype, eyesClosed);
     let entry = frameCache.get(key);
-    if (entry) return entry;
-    entry = { key, descriptor, blinkOverlay: blinkOverlayFor(kind), pair: null, promise: null };
+    if (entry) {
+      if (!entry.retryAt || nowMs() < entry.retryAt) return entry; // Never retry an unavailable texture every render frame.
+      frameCache.delete(key);
+    }
+    entry = { key, descriptor, blinkOverlay: blinkOverlayFor(kind), pair: null, promise: null, retryAt: 0 }; // Failure state expires after a short cooldown.
     if (eyesClosed) closedEyeComposites++;
     entry.promise = (async () => {
       let canvas = null;
@@ -249,10 +228,20 @@
         // sleepers can deliberately request the same run2/head-down sleep body
         // with awake eyes while an authored conversation is active.
         canvas = await renderer.composeFrame(kind, descriptor.frame, genotype || null, eyesClosed);
-      } catch (_) {}
+      } catch (error) {
+        lastSleepComposeError = String(error?.message || error); // Records missing eyes/patterns for mobile diagnostics.
+      }
       if (canvas) canvas = window.CreatureTextureCache?.fitGeneratedCanvas?.(canvas) || canvas; // Same display-size bound as awake genotype frames.
       const pair = canvas ? pairFromCanvas(canvas) : null;
       entry.pair = pair;
+      if (!pair) {
+        failedSleepComposites++;
+        entry.retryAt = nowMs() + SLEEP_COMPOSE_RETRY_MS;
+        lastSleepComposeError ||= `Sleep texture unavailable for ${kind}/${descriptor.frame}`;
+        window.__farmLog?.(`[animal-sleep] ${kind}/${descriptor.frame} failed; retrying after cooldown: ${lastSleepComposeError}`, 'warn');
+      } else {
+        lastSleepComposeError = null;
+      }
       return pair;
     })();
     frameCache.set(key, entry);
@@ -690,7 +679,6 @@
 
   function install() {
     patchPngAnimalBuilder();
-    patchGenotypeComposer();
     patchFarmAnimals();
     patchCombat();
     installSchedulerOwnership();
@@ -708,7 +696,8 @@
       staticSleepers: [...staticSleepers.keys()].filter(group => !!group?.parent).length,
       externalSleepers: externalSleepers.size,
       cachedSleepFrames: frameCache.size,
-      pendingStaticComposes: [...pendingStaticComposes.values()].reduce((sum, queue) => sum + queue.length, 0),
+      failedSleepComposites,
+      lastSleepComposeError,
       run2Redirects,
       closedEyeComposites,
       headDownApplications,
@@ -741,6 +730,7 @@
     forceHeadDown,
     projectExternalSleeperWorldPoint,
     registerStaticSleeper,
+    composeStaticFrame,
     registerExternalSleeper,
     unregisterExternalSleeper,
     beginExternalRenderScope,
@@ -751,7 +741,6 @@
   window.__animalSleepPresentationDebug = debugSnapshot;
 
   chainFutureGlobal('PNGPlaneAvatar', patchPngAnimalBuilder);
-  chainFutureGlobal('CreatureGeneticsRender', patchGenotypeComposer);
   chainFutureGlobal('FarmAnimals', patchFarmAnimals);
   chainFutureGlobal('Combat', patchCombat);
   chainFutureGlobal('RuntimeFrameScheduler', installSchedulerOwnership);

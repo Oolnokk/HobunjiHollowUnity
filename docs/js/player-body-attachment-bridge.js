@@ -192,7 +192,8 @@
         companion.__hobunjiShoulderSplitFrame = null;
         return true;
       }
-      return !!existing.pending; // Prevent recompiling on every render tick or repeatedly retrying a missing sprite.
+      if (existing.pending) return true; // One in-flight composition per selected appearance.
+      if (Date.now() < (existing.retryAt || 0)) return true; // Failed assets retry after cooldown, not on every render tick.
     }
     const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
     smallPetHeadFrameCache.set(companion, entry);
@@ -206,8 +207,12 @@
       if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
       let composed = null;
       try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false); }
-      catch (error) { smallPetHeadDebug.lastError = 'Genotype pose unavailable, using raw sprite: ' + String(error?.message || error); }
+      catch (error) {
+        if (renderer?.SPECIES?.[kind]) throw error; // A supported species must retry its own eyes/coat, never cache a plain fallback.
+        smallPetHeadDebug.lastError = 'Unsupported genotype, using raw sprite: ' + String(error?.message || error);
+      }
       if (composed) return composed; // Final compositor includes eyes, recolors and coat patterns whenever supported.
+      if (renderer?.SPECIES?.[kind]) throw new Error(`Incomplete ${kind}/${frameName} pet genotype frame`);
       const rawUrl = (frameName === 'run1' ? shoulderRun1Frame(companion, combatDeps) : shoulderIdleFrame(companion, combatDeps)).url;
       return loadFrameImage(rawUrl); // Unsupported species still get head growth on their uncomposited source PNG.
     }).then(composed => {
@@ -228,6 +233,7 @@
     }).catch(error => {
       if (smallPetHeadFrameCache.get(companion) !== entry) return;
       entry.pending = false;
+      entry.retryAt = Date.now() + 2000; // A temporarily failed head frame must not poison the companion's visual key forever.
       smallPetHeadDebug.failed++;
       smallPetHeadDebug.lastError = String(error?.message || error); // Visible through PlayerBodyAttachmentBridge.getDebug() on mobile.
     });
@@ -245,9 +251,13 @@
       try {
         idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false);
         rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
-      } catch (_) {
+      } catch (error) {
+        if (renderer?.SPECIES?.[kind]) throw error; // Preserve painted split layers; retry temporary compositor failures.
         idleSource = null;
         rightSource = null;
+      }
+      if ((!idleSource || !rightSource) && renderer?.SPECIES?.[kind]) {
+        throw new Error(`Incomplete shoulder split genotype for ${kind}`);
       }
     }
 
@@ -341,7 +351,10 @@
     if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) {
       return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl);
     }
-    if (companion.__hobunjiShoulderSplitPromise && companion.__hobunjiShoulderSplitKey === key) return true;
+    if (companion.__hobunjiShoulderSplitKey === key) {
+      if (companion.__hobunjiShoulderSplitPromise) return true;
+      if (Date.now() < (companion.__hobunjiShoulderSplitRetryAt || 0)) return true; // Avoid per-frame retries when source art temporarily fails.
+    }
 
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     companion.__hobunjiShoulderSplitKey = key;
@@ -361,8 +374,12 @@
         applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
       }
       return rightUrl;
-    }).catch(() => {
+    }).catch(error => {
+      if (companion.__hobunjiShoulderSplitKey !== key) return null; // An old rejected request cannot alter newer split ownership.
       companion.__hobunjiShoulderSplitPromise = null;
+      companion.__hobunjiShoulderSplitRetryAt = Date.now() + 2000; // Retry without permanently accepting a plain split frame.
+      smallPetHeadDebug.failed++;
+      smallPetHeadDebug.lastError = String(error?.message || error);
       return null;
     });
     return true;
@@ -396,17 +413,17 @@
     companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? frameUrl : null;
     companion.__hobunjiShoulderSplitFrame = null;
     if (companion.currentFrameUrl === frameUrl) return true;
-    combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
-    companion.currentFrameUrl = frameUrl;
-    return true;
+    const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
+    if (applied !== false) companion.currentFrameUrl = frameUrl; // An in-flight genotype pose must remain retryable after setCreatureFrame declines the swap.
+    return applied !== false;
   }
 
   function restoreAfterShoulderPet(companion, combatDeps) {
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     const idle = shoulderIdleFrame(companion, combatDeps);
     if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
-      combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype);
-      companion.currentFrameUrl = idle.url;
+      const applied = combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype);
+      if (applied !== false) companion.currentFrameUrl = idle.url; // Never mark a failed post-shoulder restore as complete.
     }
     companion.__hobunjiShoulderFrame = null;
     companion.__hobunjiShoulderIdleFrame = null;

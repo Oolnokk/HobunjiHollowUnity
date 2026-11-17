@@ -205,9 +205,13 @@ vm.runInContext(source, context, { filename: 'animal-sleep-presentation.js' });
     name: 'nest_sleep_baby-1', creatureId: 'drenkirra',
   });
 
-  // The immediately-following static sleeping compose is redirected to run2.
-  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'nest' }, false);
-  assert.equal(composeCalls.at(-1).frame, 'run2', 'static sleeping genotype compose freezes on run2');
+  // A concurrent same-species compose belongs to the living animal, not to a pending sleeping baby.
+  await windowStub.CreatureGeneticsRender.composeFrame('drenkirra', 'idle', { sig: 'unrelated-wild' }, false);
+  assert.equal(composeCalls.at(-1).frame, 'idle', 'unrelated wild eyes/body cannot be hijacked by an uncomposed sleeper');
+  assert.equal(composeCalls.at(-1).blinkShut, false, 'unrelated wildlife retains the requested open-eye state');
+  await windowStub.AnimalSleepPresentation.composeStaticFrame(nestGroup, 'drenkirra', { sig: 'nest' }, true);
+  assert.equal(composeCalls.at(-1).frame, 'run2', 'explicit static sleeper composition freezes on run2');
+  assert.equal(composeCalls.at(-1).blinkShut, true, 'only explicitly tagged sleeper composition closes the eyes');
 
   const outdoorAnimal = {
     livestockId: 'outdoor-1',

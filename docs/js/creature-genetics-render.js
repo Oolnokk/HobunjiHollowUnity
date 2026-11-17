@@ -210,6 +210,9 @@
       img.src = resolvedUrl;
     });
     _imageCache.set(resolvedUrl, p);
+    p.then(null, () => { // A temporary image/CDN failure must not poison every later animal frame.
+      if (_imageCache.get(resolvedUrl) === p) _imageCache.delete(resolvedUrl);
+    });
     return p;
   }
 
@@ -354,18 +357,27 @@
     return { width: encoded.width, height: encoded.height, data };
   }
 
-  let _maskPromise = null;
+  let _maskPromise = null; // Successful mask JSON is shared; failed requests must be retried instead of caching an empty recolor map.
   function loadBaseMasks() {
     if (_maskPromise) return _maskPromise;
-    _maskPromise = fetch(docsUrl('config/creature-base-masks.json')).then(r => r.json()).then(raw => {
+    const pending = fetch(docsUrl('config/creature-base-masks.json')).then(r => {
+      if (r?.ok === false) throw new Error('Creature base masks HTTP ' + r.status);
+      return r.json();
+    }).then(raw => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid creature base-mask data');
       const out = {};
-      for (const [kind, frames] of Object.entries(raw || {})) {
+      for (const [kind, frames] of Object.entries(raw)) {
         out[kind] = {};
         for (const [frame, encoded] of Object.entries(frames)) out[kind][frame] = decodeMaskRle(encoded);
       }
       return out;
-    }).catch(() => ({}));
-    return _maskPromise;
+    });
+    _maskPromise = pending;
+    pending.then(null, error => {
+      if (_maskPromise === pending) _maskPromise = null;
+      window.__farmLog?.('[genotype-render] base masks unavailable; next composition will retry: ' + (error?.message || error), 'warn');
+    });
+    return pending;
   }
 
   function usesDrenkirraBodyStripesColorSwap(kind, genotype) {
@@ -506,6 +518,7 @@
   // into keyed skin-only recoloring while retaining its painted iris.
   let composeTail = Promise.resolve(); // One native-resolution compositor at a time bounds overlapping pixel arrays and temporary canvases.
   let composePending = 0, composeActive = 0; // Mobile checkpoint diagnostics distinguish queued requests from actual allocation work.
+  let composeFailures = 0, lastComposeFailure = null; // Visible in the existing mobile cache snapshot when art fails to compose.
   async function composeFrame(kind, frame, genotype, blinkShut = false) {
     const previous = composeTail; // Serial shared farm/wild/companion composition, without changing any frame's pixels.
     let unlock; // Always releases the queue after errors as well as successful renders.
@@ -516,7 +529,11 @@
       if (composePending > 1 && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Yield between queued native pixel jobs so gameplay can present a frame.
       composeActive++;
       try { return await composeFrameNow(kind, frame, genotype, blinkShut); }
-      finally { composeActive--; }
+      catch (error) {
+        composeFailures++;
+        lastComposeFailure = { kind, frame, message: String(error?.message || error), at: Date.now() }; // Mobile reports identify incomplete animal art without requiring devtools.
+        throw error; // A failed frame is never a cacheable plain/eyeless/patternless composite.
+      } finally { composeActive--; }
     } finally { composePending--; unlock(); }
   }
 
@@ -553,6 +570,7 @@
     const bw = baseSource.naturalWidth || baseSource.width, bh = baseSource.naturalHeight || baseSource.height;
     const c = makeCanvas(bw, bh), ctx = c.getContext('2d');
     const drawnPatterns = []; // Shared diagnostics include anatomical underlays as well as ordinary optional overlays.
+    const incompleteLayers = []; // Required artwork/paint failures make this frame retryable rather than silently caching missing details.
     for (const patternId of spec.underlayPatterns || []) {
       const layer = genotype?.[patternId]; // Expressed tail genes use their second tint; otherwise this permanent anatomical region uses the primary coat.
       const expressed = layer?.enabled !== false && Number(layer?.copies) > 0 && !!layer?.color;
@@ -563,20 +581,25 @@
         const painted = await applyColorPoolPaint(underlay, genotype, patternId, null,
           `animal:${kind}:${frame}:${patternId}:${underlayColor || 'native'}`).catch(error => {
           window.__farmLog?.(`[genotype-render] underlay paint for "${patternId}" failed: ${error.message}`, 'warn');
+          incompleteLayers.push('paint:' + patternId);
           return null;
         });
+        if (colorPoolPaintFor(genotype, patternId) && !painted) incompleteLayers.push('paint:' + patternId);
         ctx.drawImage(painted || underlay, 0, 0, c.width, c.height);
         drawnPatterns.push(patternId + (expressed ? '' : '(default)'));
       } catch (error) {
         window.__farmLog?.(`[genotype-render] underlay "${patternId}" failed to load (${url}): ${error.message}`, 'warn');
+        incompleteLayers.push('underlay:' + patternId);
       }
     }
     ctx.drawImage(baseSource, 0, 0);
     try {
       const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : mask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
+      if (colorPoolPaintFor(genotype, 'base') && !paintedBase) incompleteLayers.push('paint:base');
       if (paintedBase) ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
     } catch (error) {
-      window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — skipped: ${error.message}`, 'warn');
+      window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — retryable: ${error.message}`, 'warn');
+      incompleteLayers.push('paint:base');
     }
     for (const patternId of spec.patterns) {
       if (spec.underlayPatterns?.includes(patternId)) continue; // The always-visible tail is already beneath the base, never drawn twice.
@@ -596,14 +619,18 @@
         const recolored = await recoloredPattern(url, renderColor);
         let renderedLayer = recolored;
         try {
-          renderedLayer = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`) || recolored;
+          const painted = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
+          if (colorPoolPaintFor(genotype, patternId) && !painted) incompleteLayers.push('paint:' + patternId);
+          renderedLayer = painted || recolored;
         } catch (paintError) {
-          window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — genetic layer kept: ${paintError.message}`, 'warn');
+          window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — retryable: ${paintError.message}`, 'warn');
+          incompleteLayers.push('paint:' + patternId);
         }
         ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
         drawnPatterns.push(patternId);
       } catch (e) {
-        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — skipped: ${e.message}`, 'warn');
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — retryable: ${e.message}`, 'warn');
+        incompleteLayers.push('pattern:' + patternId);
       }
     }
     for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
@@ -615,6 +642,7 @@
         drawnPatterns.push(defaultPattern.id + '(default)'); // Debug only; it is not added to genotype traits or breeding.
       } catch (error) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
+        incompleteLayers.push('default:' + defaultPattern.id);
       }
     }
     const eyeSkinColor = eyeSkinTintColor(kind, genotype, baseColor); // Nelk spectacles color overrides its base coat only when the pattern is expressed.
@@ -629,8 +657,12 @@
           : await loadImage(eyeUrl);
         ctx.drawImage(eyeImg, 0, 0, c.width, c.height);
       } catch (e) {
-        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): eye overlay failed to load (${eyeUrl}) — skipped: ${e.message}`, 'warn');
+        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): eye overlay failed to load (${eyeUrl}) — retryable: ${e.message}`, 'warn');
+        incompleteLayers.push('eyes');
       }
+    }
+    if (incompleteLayers.length) {
+      throw new Error(`Incomplete ${kind}/${frame} genotype artwork (${[...new Set(incompleteLayers)].join(', ')}); retry rather than cache missing colors, patterns or eyes`);
     }
     const tEnd = performance.now();
     // Broken down so a slow compose (the "ran around plain for ages" symptom)
@@ -688,7 +720,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
