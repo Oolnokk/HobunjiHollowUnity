@@ -174,7 +174,7 @@
         || { afflictions: {}, stats: {} };
     }
 
-    function commitStaminaCostToPose(poseCharge, effects, reason) {
+    function commitStaminaCostToPose(poseCharge, effects, reason, durationS = 0.22) {
       const shape = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Reuses the active weapon's authored efficiency at every payment.
       const efficiency = Math.max(0.05, Number(shape.efficiency) || 1); // Keeps invalid/zero profile data from dividing the charge cost by zero.
       const progressionMultiplier = 1 + (Number(effects?.stats?.staminaCostMul) || 0); // Charged Breaker mastery modifier, before global ResourceSystem taxes/discounts.
@@ -186,7 +186,7 @@
       if (!(delta > 1e-6)) return null;
       const payment = window.ResourceSystem?.spendStamina?.(
         window.Combat.deps.player, delta, reason,
-        { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
+        { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker', durationS }, // The paid hold slice rotates perceived direction over its actual frame duration.
       ) || null;
       paidChargeBaseline = target;
       paidChargeCost += payment
@@ -333,6 +333,7 @@
       );
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const strikeS = STRIKE_S * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, strikeS); // Final paid pose slice follows the actual partial-Windup→Strike timeline.
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
       if (!mounted) {
@@ -446,7 +447,7 @@
       setGlow(poseCharge);
 
       const effects = currentEffects(); // Single mastery snapshot funds this hold step and determines its mounted speed ceiling.
-      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)'); // Unchanged pose spends nothing.
+      const payment = commitStaminaCostToPose(poseCharge, effects, 'Charged Breaker (charging)', Math.max(0.001, dt)); // Per-frame paid charge slices rotate the camera as gradually as Stamina is expended. // Unchanged pose spends nothing.
       if (startedMounted) {
         const efficiency = Math.max(0.05, Number(shapeStats.efficiency) || 1); // Mirror the payment's authored cost denominator.
         const fullCost = chargeCostForPose(1, 1 + (Number(effects.stats.staminaCostMul) || 0)) / efficiency
