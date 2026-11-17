@@ -159,10 +159,17 @@ The live Three.js spouse-kiss test now exercises a new root and head owner.
 Browser-level render-boundary and full-suite CI are still required before
 claiming production stability.
 
-**Still not unified:** Tzatzul talon capture/release, post-render NPC hand
-pose writers, ragdoll pivot reparenting, generic procedural hand/leg IK,
-species creature roots and all independent absolute writers. These systems
-must migrate only after accounting for their existing semantic handoffs:
-for example, releasing a flying captive must not restore their pre-capture
-*world position*, because the creature belongs where it was released.
-Global timed whole-skeleton resets remain inappropriate.
+Tzatzul talon carry has also been migrated in `tzatzul-live-visuals.js`:
+each captive's quaternion and scale are claimed through the shared absolute
+session, stamped after each talon alignment and conditionally restored on
+release. World position is never claimed or rolled back (the captive stays
+where the bird dropped them); a replacement avatar releases the outgoing
+generation's claims; a new native fall/impact writer or a second scoped
+owner blocks late talon replay. `scripts/test-tzatzul-captive-pose-ownership.js`
+covers successor fall rotation, position preservation, rejected competing
+owner, avatar replacement, duplicate release and claim cleanup.
+
+**Still not unified:** post-render NPC dance hand poses, ragdoll pivot
+reparenting, generic procedural hand/leg IK, species creature roots and
+other independent absolute writers. These require semantic handoffs and
+interruption testing, not global timed whole-skeleton resets.
