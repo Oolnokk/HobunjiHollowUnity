@@ -472,6 +472,12 @@
     } else body.rotation.y = yaw; // Non-Three test rigs preserve the original Euler fallback.
     const torso = session.playerModel;
     if (torso !== body) {
+      // This paired pose owns the entire torso orientation. A late tool or
+      // camera writer may change yaw/roll after the simulation tick: restoring
+      // X alone can poison the quaternion and defeat scoped cleanup.
+      if (session.originalPlayerModelQuaternion && torso.quaternion?.copy) {
+        torso.quaternion.copy(session.originalPlayerModelQuaternion);
+      }
       torso.position.y = session.originalPlayerModelY - drop;
       torso.rotation.x = session.originalPlayerModelPitch + bow;
     }
@@ -718,6 +724,7 @@
       originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
       originalPlayerQuaternion: player.quaternion?.clone?.() || null, // Restore exact rooted facing after authored yaw, not an Euler approximation.
       originalPlayerModelY: playerModel.position.y, originalPlayerModelPitch: playerModel.rotation.x, // Preserve the skinned torso's neutral transform.
+      originalPlayerModelQuaternion: playerModel.quaternion?.clone?.() || null, // Reassert all torso axes after late render/tool interference.
       originalPlayerHands: playerHands.group ? { y: playerHands.group.position.y, pitch: playerHands.group.rotation.x } : null, // GLB hands may live outside the portrait pivot.
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
