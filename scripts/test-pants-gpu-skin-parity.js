@@ -280,6 +280,47 @@ for (const meshBudget of ['player', 'npc']) {
   }
 }
 
+// Real Three.js integration: Nuhongan's visible-torso waist expansion changes the belt,
+// but not the independently fitted cuffs, for both native mesh budgets.
+for (const budget of ['npc', 'player']) {
+  const authoredActor = makeAvatar(); // Control: exact same source portrait/legs, with explicit original authored belt.
+  const torsoActor = makeAvatar(); // Runtime actor: the original authored belt plus a wider actual torso alpha silhouette.
+  const character = rigs.characters['nuhongan::male']; // Current authored Nuhongan waist and anatomy.
+  const portraitPixels = { width: 200, height: 200, getContext: () => ({ getImageData: (_x, row, width) => {
+    const data = new Uint8Array(width * 4); // Simulates the real transparent portrait background with connected opaque torso.
+    if (row <= 183) for (let x = 50; x < 150; x++) data[x * 4 + 3] = 255;
+    return { data };
+  } }) };
+  torsoActor.model.userData.sourceCanvas = portraitPixels; // Same property set by PNGPlaneAvatar.buildSinglePlaneAvatarModel.
+  const original = Renderer.attach(THREE, { avatarGroup: authoredActor.model, legHandle: { group: authoredActor.legs }, speciesId: 'nuhongan', gender: 'male',
+    characterRecord: character, garmentRecord: rigs.garments.pants_basic, meshBudget: budget }); // Explicit authored preview must not auto-resize.
+  const fitted = Renderer.attach(THREE, { avatarGroup: torsoActor.model, legHandle: { group: torsoActor.legs }, speciesId: 'nuhongan', gender: 'male',
+    garmentRecord: rigs.garments.pants_basic, meshBudget: budget }); // Real game path: resolves character and portrait pixels itself.
+  assert(original && fitted && fitted.torsoAlphaFit?.source === 'connected-torso-alpha', `Nuhongan torso width is measured in ${budget} gameplay mesh`);
+  const sample = (pants, control, axis) => {
+    const n = pants.segments + 1, grid = pants.basePositions, i = control.i * 3 + axis, stride = n * 3;
+    const top = grid[i] * (1 - control.fx) + grid[i + 3] * control.fx;
+    const bottom = grid[i + stride] * (1 - control.fx) + grid[i + stride + 3] * control.fx;
+    return top * (1 - control.fy) + bottom * control.fy;
+  }; // Bilinear sample from the actual generated/rest-bound pants geometry.
+  const span = (pants, spec) => {
+    const a = pants.splineSpec[spec].samples;
+    return Math.hypot(...[0, 1, 2].map(axis => sample(pants, a[0], axis) - sample(pants, a[a.length - 1], axis)));
+  };
+  const fittedBelt = span(fitted, 'belt'), authoredBelt = span(original, 'belt'); // Both measured from actual rest vertices, not fitter output.
+  assert(fittedBelt > authoredBelt * 1.45 && Math.abs(fittedBelt - .5) < .025,
+    `${budget}: connected visible torso widens the actual waistband, ${fittedBelt} vs ${authoredBelt}`);
+  for (const side of ['left', 'right']) assert(Math.abs(span(fitted, `${side}Ankle`) - span(original, `${side}Ankle`)) < 1e-5,
+    `${budget}: width change at torso leaves ${side} ankle spline identical`);
+  const kneeY = (rigs.garments.pants_basic.legBones.left.knee.y + rigs.garments.pants_basic.legBones.right.knee.y) / 2; // Same authored taper cutoff as the renderer.
+  for (let row = Math.ceil((kneeY + 0.02) * fitted.segments); row <= fitted.segments; row++) for (let col = 0; col <= fitted.segments; col++) {
+    const i = (row * (fitted.segments + 1) + col) * 3;
+    for (let axis = 0; axis < 3; axis++) assert(Math.abs(fitted.basePositions[i + axis] - original.basePositions[i + axis]) < 1e-5,
+      `${budget}: calf/hem rest vertex at row ${row}, col ${col}, axis ${axis} remains unchanged`);
+  }
+  original.dispose(); fitted.dispose(); // Frees both test actors without leaking GPU meshes.
+}
+
 // A hunch is sampled from REST positions, not animated feet. Resizing the cuff with an
 // unchanged spine profile must still rebuild those sampled shifts; otherwise the PNG
 // upper-body portrait and the pants separate after a late species-scale update.

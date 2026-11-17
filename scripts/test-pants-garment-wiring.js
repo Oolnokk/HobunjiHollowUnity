@@ -28,6 +28,41 @@ assert.strictEqual(win.HobunjiPantsRig.decodeWeightGridRle(rigs.garments.pants_b
 assert(Renderer.hasRigFor('kenkari', 'male') && Renderer.hasRigFor('some-new-species', 'female'), 'every species resolves to a rig through __default');
 assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are normalized');
 
+// The visible torso (not the stale belt spline) controls the in-game waistband width.
+{
+  const authored = Renderer.resolveCharacter('nuhongan', 'male'); // Shipped Nuhongan belt remains unchanged in the registry.
+  const original = JSON.stringify(authored.portraitBeltSpline); // Guards against accidental mutation of shared authoring data.
+  const canvas = { width: 200, height: 200, getContext: () => ({ getImageData: (_x, y, width) => { // Mock the real 1-row alpha scan without browser canvas.
+    const pixels = new Uint8Array(width * 4); // Body is an opaque central 100-pixel torso, much wider than its old 64-pixel authored belt.
+    if (y <= 183) for (let x = 50; x < 150; x++) pixels[x * 4 + 3] = 255;
+    return { data: pixels };
+  } }) };
+  const result = Renderer.fitBeltToVisibleTorso(authored, canvas); // Production renderer path, not a separate test algorithm.
+  assert(result && result.source === 'connected-torso-alpha', 'actual torso silhouette is sampled');
+  const left = result.character.portraitBeltSpline[0], right = result.character.portraitBeltSpline[4]; // Five-point waist should expand to the visible alpha edges.
+  assert(Math.abs(left.x - .25) <= 1e-9 && Math.abs(right.x - .75) <= 1e-9, 'waist matches the 50% torso width exactly');
+  assert(result.character.portraitBeltSpline.every((p, i) => p.y === authored.portraitBeltSpline[i].y), 'fitting the torso width never moves the belt vertically');
+  assert(JSON.stringify(authored.portraitBeltSpline) === original, 'runtime silhouette fit does not mutate the authored Nuhongan rig');
+  const garment = rigs.garments.pants_basic; // The shipped leg bones define where upper-torso width must stop affecting trousers.
+  const point = { x: .34, y: .91 }; // Left authored waist edge in portrait space before the alpha correction.
+  const waist = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .28 }, garment, result); // Exact connected-alpha edge at the garment waist.
+  const midLeg = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .39 }, garment, result); // Transitional region between belt and knees.
+  const kneeY = (garment.legBones.left.knee.y + garment.legBones.right.knee.y) / 2; // Current authored knee row, never a legacy fixed image coordinate.
+  const knee = Renderer.taperTorsoBeltPoint(point, { x: .34, y: kneeY + 0.005 }, garment, result); // Immediately below the real knee: zero waist influence.
+  const cuff = Renderer.taperTorsoBeltPoint(point, { x: .34, y: garment.legBones.left.ankle.y }, garment, result); // Existing foot opening is independent of waist.
+  assert(Math.abs(waist.x - .25) < 1e-9 && waist.y === point.y, 'only waist width changes to match visible torso, not waist height');
+  assert(midLeg.x > .25 && midLeg.x < .34 && midLeg.y === point.y, 'torso width eases smoothly into thigh width');
+  assert(knee.x === point.x && cuff.x === point.x && knee.y === point.y && cuff.y === point.y,
+    'knees, cuffs, and all vertical positions retain their independently authored fit');
+  assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => ({ getImageData: () => ({ data: new Uint8Array(800) }) }) }) === null,
+    'transparent or disconnected source art correctly retains authored belt width');
+  assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => ({ getImageData: () => { throw new Error('tainted'); } }) }) === null,
+    'unreadable portrait pixels safely fall back to the authored fit');
+  assert(Renderer.fitBeltToVisibleTorso(authored, { width: 200, height: 200, getContext: () => { throw new Error('context unavailable'); } }) === null,
+    'unavailable portrait canvas context also falls back without breaking attachment');
+}
+
+
 // Every humanoid NPC gets the free pants with a deterministic dye; animals and opt-outs do not.
 const npc = { id: 'tester', equippedCosmetics: ['tankan_tunic'] };
 assert.strictEqual(Renderer.ensureNpcPants(npc), true);
