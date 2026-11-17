@@ -315,6 +315,9 @@ class Position3 {
   assert(expired >= 1, 'suspended additive lease expires during the scripted pose');
   near(node.position.y, 3);
   assert(absolute.owns(), 'lease expiry cannot invalidate an unrelated absolute owner');
+  assert.equal(layers.setAbsoluteBase(node, 'position', 'y', 99), false,
+    'a competing explicit absolute baseline writer may not seize a scripted pose');
+  near(node.position.y, 3);
   absolute.release();
   near(node.position.y, 1); // Expired offset stays expired: the clean pre-action baseline returns.
   assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
