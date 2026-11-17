@@ -190,6 +190,8 @@
     const frame = warp?.frameForKind?.(kind);
     const key = [kind, frameName, signature, warp?.scaleForKind?.(kind) || 1,
       warp?.shorteningForKind?.(kind) ?? 0, warp?.maskModeForKind?.(kind) || 'idle-alpha',
+      (() => { const body = warp?.abdomenForKind?.(kind); return body?.enabled
+        ? ['abdomen', body.scale, body.frame?.x, body.frame?.y, body.frame?.width, body.frame?.height].join(',') : 'no-abdomen'; })(),
       frame ? [frame.x, frame.y, frame.width, frame.height].join(',') : 'no-frame'].join('|');
     smallPetAppearanceKeys.set(companion, { kind, genotype: companion?.genotype, frameName, key,
       refreshAt: now + SMALL_PET_SIGNATURE_REFRESH_MS }); // In-place mutations and rig preview edits are rechecked within 250ms.
