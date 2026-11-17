@@ -6,6 +6,7 @@
   const GRADE_LABELS = Object.freeze(['I', 'II', 'III', 'IV']); // Displayed by the smith for each reinforcing metal.
   const INTRA_METAL_BAR_COSTS = Object.freeze([0, 3, 4, 5]); // Bars spent on grades II-IV of one metal.
   const TRANSITION_BAR_COST = 6; // Bars spent to enter grade I of the next metal.
+  const FORGE_SURCHARGE_PER_TIER = 3; // Extra bars required to forge directly in a more advanced metal.
   const LEGACY_EPSILON = 1e-9; // Avoids floating-point rounding falsely granting an extra legacy step.
 
   function multiplierAtRank(rank, metalDefs, metalKeys) {
@@ -16,6 +17,12 @@
     const minPower = 0.85 + firstTier * 0.05; // Exactly the preexisting weakest metal multiplier.
     const maxPower = 0.85 + lastTier * 0.05; // Exactly the preexisting strongest metal multiplier.
     return minPower + (maxPower - minPower) * Math.max(0, Math.min(maxRank, rank)) / maxRank;
+  }
+
+  function forgeBarCost(baseBars, metalKey, metalDefs) {
+    const metalTier = Number(metalDefs?.[metalKey]?.tier); // Existing numbered metal hierarchy controls the high-metal forging surcharge.
+    if (!Number.isInteger(metalTier) || metalTier < 1) return Infinity;
+    return Math.max(0, Math.ceil(Number(baseBars) || 0)) + (metalTier - 1) * FORGE_SURCHARGE_PER_TIER;
   }
 
   function status(baseMetalKey, saved, metalDefs, metalKeys) {
@@ -70,5 +77,5 @@
     return { metalKey, grade, rank, bars, gold, multiplier: multiplierAtRank(rank, metalDefs, metalKeys), label: metalDefs[metalKey].label + ' ' + GRADE_LABELS[grade] };
   }
 
-  global.MetalReinforcement = Object.freeze({ GRADES_PER_METAL, multiplierAtRank, status, next });
+  global.MetalReinforcement = Object.freeze({ GRADES_PER_METAL, multiplierAtRank, forgeBarCost, status, next });
 })(window);
