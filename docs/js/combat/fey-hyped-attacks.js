@@ -14,13 +14,15 @@
   let serial = 0; // Unique per-attack marker carried through CombatAttackEvents.hit metadata.
   let replayCount = 0; // Count of actual second strike target hits for mobile Pixel Probe.
   let npcReplayCount = 0; // Count of real NPC second attacks that connect with an independently tested target.
+  let creatureReplayCount = 0; // Counts accepted secondary impacts from named wild and companion creature specials.
+  let lastCreatureEcho = null; // Most recent creature-special replay, cancellation or invalidated target for mobile diagnostics.
   let lastNpcEcho = null; // On-phone diagnostics for NPC double-strike hit, miss, cancellation and stamina spend.
   let lastEcho = null; // Last real second-strike result, including cancelled/missed outcomes.
   let bridgeInstalled = false; // True once Combat.beginStagedAction uses the one-time optional feature adapter.
 
   const numeric = (x, d = 0) => Number.isFinite(Number(x)) ? Number(x) : d;
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const isOffensive = tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack|combatNpcMelee)$/.test(String(tx?.actionKind || ''))
+  const isOffensive = tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack|combatNpcMelee|combatCreatureSpecial)$/.test(String(tx?.actionKind || ''))
     || (!tx?.actionKind && /attack|swing|strike|breaker|flurry|jab|stab|heavy/i.test(String(tx?.reason || '')));
   const actorAlive = actor => actor && numeric(actor.health, 1) > 0;
 
@@ -58,6 +60,41 @@
     if (!actor || actor === window.Combat?.deps?.player || !paid || paid.abilityId !== 'npcMelee' || paid.expiresAt < now()) return null;
     credits.delete(actor); // This one payment funds both stages of exactly one NPC melee action.
     return Object.freeze({ used: paid.used, ratio: paid.used * 0.02, tempo: 2 });
+  }
+
+  function claimCreatureSpecial(actor) {
+    const paid = actor && credits.get(actor); // Each wild/companion attack claims only its own recently paid special, never the player's staged weapon attack.
+    if (!actor || actor === window.Combat?.deps?.player || !paid || paid.abilityId !== 'creatureSpecial' || paid.expiresAt < now()) return null;
+    credits.delete(actor); // The original plus one replay share this single ResourceSystem payment.
+    return Object.freeze({ used: paid.used, ratio: paid.used * 0.02, tempo: 2 });
+  }
+
+  function creatureEffectRatio(actor) {
+    const echo = actor?._animalAttack?.hyped; // The original attack deals its full authored effect; only a committed second stage is reduced.
+    return echo?.phase === 1 ? Math.max(0, numeric(echo.ratio)) : 1;
+  }
+
+  function creatureDamagePayload(actor, damage, knockback, opts = {}) {
+    const ratio = creatureEffectRatio(actor);
+    if (ratio === 1) return null; // Normal attack/first stage: no maps or extra objects allocated in the hot path.
+    const source = opts || {};
+    const scaleMap = map => map && Object.fromEntries(Object.entries(map).map(([key, value]) => [key, Math.max(0, numeric(value)) * ratio]));
+    return {
+      damage: Math.max(0, numeric(damage)) * ratio,
+      knockback: Math.max(0, numeric(knockback)) * ratio,
+      opts: {
+        ...source,
+        afflictionBonuses: scaleMap(source.afflictionBonuses),
+        fixedAfflictionBuildup: scaleMap(source.fixedAfflictionBuildup),
+        feyHypedReplay: true, // The second physical creature special never creates another credit or replays a third time.
+      },
+    };
+  }
+
+  function noteCreatureEcho(actor, status, specialId, hype, hits = 0) {
+    lastCreatureEcho = { actor: actor?.name || actor?.creatureKey || actor?.id || 'creature',
+      status, specialId, used: hype?.used || 0, ratio: hype?.ratio || 0, hits };
+    if (status === 'finished') creatureReplayCount += hits;
   }
 
   function npcDamagePayload(actor, target, damage, knockback, opts = {}) {
@@ -346,10 +383,12 @@
   window.CombatAttackEvents?.on?.('hit', onHit);
   installCombatBridge();
   window.FeyHypedAttacks = Object.freeze({
-    onStaminaSpent, prepare, onHit, clearCredit, claimNpcMelee, npcDamagePayload, beginNpcMelee, speedMultiplierForNextAction, installCombatBridge,
+    onStaminaSpent, prepare, onHit, clearCredit, claimNpcMelee, npcDamagePayload, beginNpcMelee,
+    claimCreatureSpecial, creatureEffectRatio, creatureDamagePayload, noteCreatureEcho,
+    speedMultiplierForNextAction, installCombatBridge,
     isReplaying: actor => !!actor && replayingActors.has(actor), // Central CombatInput gate prevents other player attacks interrupting the paid two-strike sequence.
     debugSnapshot: () => ({
-      bridgeInstalled, replayCount, lastEcho, npcReplayCount, lastNpcEcho, activeHypedAttacks: attacks.size,
+      bridgeInstalled, replayCount, lastEcho, npcReplayCount, lastNpcEcho, creatureReplayCount, lastCreatureEcho, activeHypedAttacks: attacks.size,
       playerPending: !!pendingByActor.get(window.Combat?.deps?.player),
     }),
   });
