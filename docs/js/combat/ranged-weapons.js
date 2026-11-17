@@ -136,6 +136,7 @@
       label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
       projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.5, // Spin the full torch end-over-end exactly like a thrown hatchet.
       projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
+      heldSpin:true,heldSpinRevolutions:2.5,gripMode:'palm-parallel', // Reuse the hatchet's in-hand spin/flourish and throwing grip; flight spin is independent.
       projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
       projectileDropStartTiles:3,projectileGravityWorldS2:10,
       projectileEmbedOnTerrain:false,toolEndFlip:false,
@@ -1137,10 +1138,12 @@
     const dir=aim.direction;
     const angle=Math.atan2(dir.z,dir.x);
     const pitch=Math.atan2(dir.y,Math.hypot(dir.x,dir.z));
-    return spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
+    const projectile=spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
       angle,'player',deps.player,null,pitch,{
         textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true,
       }); // Same swept collision, launch pose, spin and ballistic arc as the thrown hatchet, with an always-lit fire payload.
+    if (projectile) playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike, not input release.
+    return projectile;
   }
 
   function spawnVolley(itemKey, x, y, angle, team, owner, ammoPayload = null, pitch = 0, shotOptions = null) {
