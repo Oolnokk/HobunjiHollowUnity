@@ -1,0 +1,58 @@
+{
+  "name": "hobunji-hollow-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Installable Windows edition of Hobunji Hollow",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "three": "0.128.0"
+  },
+  "devDependencies": {
+    "electron": "44.11.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.oolnokk.hobunjihollow",
+    "productName": "Hobunji Hollow",
+    "asar": true,
+    "files": [
+      "main.cjs",
+      "game-protocol.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../docs",
+        "to": "game",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/three/build/three.min.js",
+        "to": "vendor/three.min.js"
+      },
+      {
+        "from": "node_modules/three/examples/js/controls/TransformControls.js",
+        "to": "vendor/TransformControls.js"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "Hobunji-Hollow-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
