@@ -88,15 +88,49 @@ assert.equal(fire.isBurning(deleted),false,'despawned corpse loses flame immedia
 assert(removedVfx.includes(deleted),'removed corpse disposes fire presentation');
 assert.equal(fire.beginCorpse(actor(60,0,{state:'corpse',deathCause:'blunt'})),false,
   'ordinary unburned corpses never become fire hazards');
+const drowned = actor(60,0,{state:'corpse',deathCause:'fire'});
+fire.beginCorpse(drowned);
+fire.tickCorpses(.01,new Set([drowned]),entity => entity === drowned);
+assert.equal(fire.isBurning(drowned),false,'burning corpses extinguish as soon as they enter water');
+assert.equal(fire.debugSnapshot().lastContact.kind,'corpse-water-extinguished','water extinguish is visible in mobile diagnostics');
+assert(removedVfx.includes(drowned),'water removes corpse fire particles');
+const inactiveCorpseArchive = { [Symbol.iterator]: () => { throw new Error('Do not iterate dormant corpse archive during knockback'); } };
+assert.equal(fire.resolveSweptImpact(mover,100,0,10,100,scene(mover,[],[],inactiveCorpseArchive),calmSweep),calmSweep,
+  'fire collision scans only active burning corpses, not every old lootable body');
 
 const game = read('docs/game.js');
+const sweepStart = game.indexOf('      function sweepKnockbackMotion('); // The production game sweep is executed in a minimal test runtime.
+const sweepEnd = game.indexOf('      function beginKnockbackLedgeFall(', sweepStart);
+assert(sweepStart >= 0 && sweepEnd > sweepStart,'find actual game-owned ledge/knockback integration');
+const gameSweep = game.slice(sweepStart,sweepEnd);
+let cliffStarts = 0; // Catches an incorrect cliff transition triggered after a nearer flame.
+const cliffMover = actor(0,0,{physicalFeetY:0});
+const fireBeforeCliff = burning(60,0,{halfHeight:.3,avatarRef:{group:group(.3)}});
+const mockTerrain = {x:120,y:0,blockedX:true,blockedY:false,blockedAt:{x:130,y:0}};
+const cliffHarness = {
+  window:{BurningEntityHazards:fire},TILE:100,currentArea:'farm',
+  player:cliffMover,hostileObjects:new Set([fireBeforeCliff]),companionObjects:new Set(),animalObjects:new Set(),corpseObjects:new Set(),
+  sweptMove:() => mockTerrain,
+  tryStartKnockbackLedgeTransit: creature => { cliffStarts++; creature._knockbackLedgeAir={originSurfaceY:0}; return true; },
+  knockbackAirborneCanOccupyAt:() => true,
+};
+const actualSweep = vm.runInNewContext(gameSweep + '\nsweepKnockbackMotion;',cliffHarness);
+const stoppedBeforeCliff = actualSweep(cliffMover,200,0,10,600,0,()=>true);
+assert.equal(stoppedBeforeCliff.knockbackDescriptorOverride.fireHazard,true,'real game sweep detects fire first');
+assert.equal(cliffStarts,0,'fire stops knockback before the ledge state machine can start');
+assert.equal(cliffMover._knockbackLedgeAir,undefined,'nearby fire contact does not strand the victim in aerial ledge state');
+cliffHarness.hostileObjects.clear();
+const passedToCliff = actualSweep(cliffMover,200,0,10,600,0,()=>true);
+assert.equal(cliffStarts,1,'ordinary cliff transit is unchanged when no fire precedes it');
+assert.equal(passedToCliff.knockbackLedgeStarted,true,'cliff crossing retains its expected swept-movement marker');
+
 const tools = read('docs/js/adventuring-tools.js');
 const death = read('docs/js/creature-death.js');
 const visual = read('docs/js/combat/burning-affliction-vfx.js');
 const index = read('docs/index.html');
 const probe = read('docs/js/pixel-probe.js');
 assert.match(game,/BurningEntityHazards\?\.resolveSweptImpact\?\.\(entity, desiredX, desiredY, radiusPx, TILE/,'shared forced-movement sweep calls live fire hazard resolver');
-assert.match(game,/BurningEntityHazards\?\.tickCorpses\?\.\(dt, corpseObjects\)/,'corpse flame ticks use existing corpse owner');
+assert.match(game,/BurningEntityHazards\?\.tickCorpses\?\.\(dt, corpseObjects/,'corpse flame ticks use existing corpse owner');
 assert.match(tools,/BurningEntityHazards\?\.findTorchSource\?\.\(contact/,'torch uses existing physical strike contact callback');
 assert.match(death,/BurningEntityHazards\?\.beginCorpse\?\.\(c\)/,'creature death registers a real corpse flame');
 assert.match(visual,/BurningEntityHazards\?\.corpseFlameAmount\?\.\(entity\)/,'presentation uses real finite corpse flame lifetime');
