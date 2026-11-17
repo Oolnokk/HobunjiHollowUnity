@@ -1050,7 +1050,7 @@
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Copyable mobile proof for player perception, panic impacts and Hyped follow-ups.
-    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
+    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.hype?.lastNpcEcho || feyIllusionDebug.hype?.lastCreatureEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
       lines.push('Fey illusions: ' + JSON.stringify(feyIllusionDebug));
     }
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
