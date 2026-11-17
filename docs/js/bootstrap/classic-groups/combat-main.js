@@ -10,9 +10,9 @@
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28",
     "js/combat/combat-enemy-telegraph.js?v=20261009he463e76",
-    "js/combat/combat-animal-attacks.js?v=20261110attackFxInst1",
-    "js/combat/combat-voorg-ass-rear-kick.js?v=20261110attackFxInst1",
-    "js/combat/combat-attach.js?v=20261101h47c5427",
+    "js/combat/combat-animal-attacks.js?v=20261117hypedCreature6",
+    "js/combat/combat-voorg-ass-rear-kick.js?v=20261117hypedCreature6",
+    "js/combat/combat-attach.js?v=20261117hypedCreature6",
     "js/combat/combat-loadout.js?v=20261117toolStanceWalk1",
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
@@ -32,7 +32,7 @@
     "js/combat/combat-loadout-ui.js?v=20261116windupCharge1",
     "js/combat/combat-enchantments.js?v=20261116decouple2",
     "js/combat/fey-illusions.js?v=20261117feySensory4",
-    "js/combat/fey-hyped-attacks.js?v=20261117hypedNpc5",
+    "js/combat/fey-hyped-attacks.js?v=20261117hypedCreature6",
     "js/combat/weapon-enchantment-vfx.js?v=20261116feyFireflies2",
     "js/combat/loadout-weapon-preview.js?v=20261029maskSlots2"
 ]; // Versioned modules evaluated before gameplay boot.
