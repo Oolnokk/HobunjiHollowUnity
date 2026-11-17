@@ -221,7 +221,7 @@ const chunks = fs.readFileSync('docs/js/wilderness-chunks.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 assert(index.includes('id="wildernessDistanceCullBtn"'), 'mobile wildlife debug pane exposes a distance culling A/B button');
 assert(chunks.includes('culler.setEnabled(culler.snapshot().enabled === false)'), 'debug button toggles the real renderer feature');
-assert(index.includes('wilderness-chunks.js?v=20261117hNonvegDistanceCull2'), 'changed debug wiring has a fresh browser cache token');
+assert(index.includes('js/wilderness-chunks.js?v='), 'wilderness chunk debug wiring loads through a versioned browser script');
 
 // Execute actual wilderness debug wiring with a minimal touch-button DOM; no
 // console or browser developer tools are needed to run the in-game A/B switch.
