@@ -194,9 +194,10 @@ class XYZ {
   root.position.x = 1.8; // New animation took over root, without rewriting the nested neck's local values.
   assert.equal(first.owns(), false, 'out-of-band root movement invalidates the old scoped action');
   const rollback = first.release();
-  assert.equal(rollback.skipped, 3, 'root position and both nested neck properties are preserved for the new owner');
-  assert.equal(rollback.restored, 1, 'untouched root orientation still releases normally');
+  assert.equal(rollback.skipped, 4, 'a displaced root preserves its orientation and both descendant neck properties');
+  assert.equal(rollback.restored, 0, 'an externally displaced node must not receive a stale quaternion reset');
   near(root.position.x, 1.8);
+  assert.equal(first.wasRestored(root, 'quaternion'), false, 'root quaternion is handed over with its external position');
   near(angleX(neck.quaternion), .3);
   assert.equal(first.wasRestored(neck, 'quaternion'), false, 'parent takeover blocks descendant restoration');
   assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
