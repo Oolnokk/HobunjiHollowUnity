@@ -181,12 +181,15 @@
     if (node.isMesh && !node.userData?.hobunjiWeaponAssemblyPart) return null;
     const copy = node.clone(false); // Full head/rope geometry is reused as artwork, not re-authored or reparented.
     copy.layers.set(0);
-    copy.visible = true; // A holstered/dual-wield-hidden original still needs to appear in its Loadout preview.
+    copy.visible = node.visible !== false; // Authored child visibility stays intact; only the hidden dual-wield source roots are explicitly restored.
     if (node.isMesh) {
       copy.geometry = node.geometry.clone();
       copy.material = Array.isArray(node.material) ? node.material.map(material => material.clone()) : node.material.clone();
       const materials = Array.isArray(copy.material) ? copy.material : [copy.material];
-      for (const material of materials) material.side = THREE.DoubleSide;
+      for (const material of materials) {
+        material.side = THREE.DoubleSide;
+        material.visible = true; // Gameplay's dual-wield compositor may hide the original static layer's material; never inherit that concealment.
+      }
       copy.onBeforeRender = () => {}; // Never invoke a copied gameplay callback that closes over a live rope/holder.
       copies.set(node, copy);
       rememberMesh(node, copy);
@@ -228,6 +231,7 @@
     plane.rotation.set(0, 0, 0); // The original source plane is presented face-on regardless of held combat stance.
     plane.layers.set(0);
     plane.material.side = THREE.DoubleSide;
+    plane.material.visible = true; // Dual-wield may hide the source haft material while drawing its two gameplay replicas.
     plane.renderOrder = 1;
     content.add(plane);
     model.add(content);
@@ -244,6 +248,7 @@
       for (const part of state.sourceParts) {
         const copy = cloneArtwork(part, copies);
         if (!copy) continue;
+        copy.visible = true; // Restore the hidden original chain/head when the source is currently dual-wielded.
         const authoredPose = neutral?.[part === assembly.chain ? 'chain' : 'headRoot'];
         if (authoredPose) copy.matrix.copy(authoredPose);
         else copy.matrix.copy(toPlane || new THREE.Matrix4().copy(source.matrixWorld).invert()).multiply(part.matrixWorld);
