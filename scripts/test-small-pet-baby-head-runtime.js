@@ -60,7 +60,7 @@ const windowStub = {
   HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-16-moot-painted-baby-pets1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => false },
   AnimalShoulderSpline: { version: 10 },
-  HobunjiShoulderSplitLayerParity: { version: 3 },
+  HobunjiShoulderSplitLayerParity: { version: 4 },
   PlayerBodyTransformComposer: { registerExternalRootProvider(name, provider) { providers[name] = provider; } },
   CreatureGenetics: { creatureSizeClass(kind, genotype) { return kind === 'tiny' ? 'small' : genotype?.sizeClass || 'medium'; } },
   CreatureGeneticsRender: { SPECIES: {}, composeFrame: async () => null, genotypeSignature: () => 'none' },

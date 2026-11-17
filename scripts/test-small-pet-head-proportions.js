@@ -89,7 +89,7 @@ const win = {
     version: 10,
     separatorPolygon: () => [{ x: 0, y: 0 }, { x: 48, y: 0 }, { x: 48, y: 32 }, { x: 0, y: 32 }],
   },
-  HobunjiShoulderSplitLayerParity: { version: 3 },
+  HobunjiShoulderSplitLayerParity: { version: 4 },
   PlayerBodyTransformComposer: {
     registerExternalRootProvider(name, fn) { hooks[name] = fn; },
   },

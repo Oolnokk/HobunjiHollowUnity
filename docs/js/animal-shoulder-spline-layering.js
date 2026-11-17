@@ -69,8 +69,27 @@
     }
   }
 
+  function syncOverlayTransform(source, overlay) {
+    let changed = false; // Ensures the split copy's matrices update only when its source face actually moves or turns.
+    for (const part of ['position', 'quaternion', 'scale']) {
+      const sourcePart = source?.[part]; // Live source-plane transform, including the shoulder-only reversed facing.
+      const overlayPart = overlay?.[part]; // Matching cloned transform; split geometry remains independently authored.
+      if (!sourcePart || typeof overlayPart?.copy !== 'function'
+          || (typeof overlayPart.equals === 'function' && overlayPart.equals(sourcePart))) continue;
+      overlayPart.copy(sourcePart);
+      changed = true;
+    }
+    if (changed) {
+      overlay.matrixAutoUpdate = true;
+      overlay.updateMatrix?.();
+      overlay.matrixWorldNeedsUpdate = true;
+      overlay.updateMatrixWorld?.(true); // onBeforeRender can run after scene traversal; avoid a stale orientation for one frame.
+    }
+  }
+
   function syncOverlay(source, overlay) {
     if (!source || !overlay) return false;
+    syncOverlayTransform(source, overlay); // The split art must turn with the face plane, not keep its construction-time normal.
     installRenderOrderFollower(source, overlay);
     if (!overlay.userData?.hobunjiShoulderRenderOrderFollower) {
       overlay.renderOrder = Number(source.renderOrder || 0) + INTRA_PET_RENDER_EPSILON;
@@ -132,6 +151,6 @@
     return true;
   }
 
-  window.HobunjiShoulderSplitLayerParity = { version: 3, syncAvatar, syncOverlay, install };
+  window.HobunjiShoulderSplitLayerParity = { version: 4, syncAvatar, syncOverlay, install };
   install();
 })();
