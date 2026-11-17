@@ -881,8 +881,8 @@
        terrain/vegetation chunks while the Tothal generator remains owner of
        each zone's deterministic complete tile blueprint. -->
   <script src="js/mobile-render-budget.js?v=20261009ha68a47f"></script>
-  <script src="js/player-tile-events.js?v=20261117tileSignals1"></script> <!-- Lightweight tile/area change signal, sampled by wilderness streaming. -->
-  <script src="js/wilderness-chunks.js?v=20261117tileSignals2"></script>
+  <script src="js/player-tile-events.js?v=20261117tileSignals3"></script> <!-- Shared tile transitions for stationary-world caches. -->
+  <script src="js/wilderness-chunks.js?v=20261117tileSignals3"></script>
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
@@ -894,7 +894,7 @@
   <script src="js/crop-growth.js?v=20261107cultivar2"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261117staticLandmarkCache2"></script>
+  <script src="js/perception-mode.js?v=20261117staticLandmarkCache3"></script>
   <script src="js/world-portrait-life.js?v=20261116nearbyExpressions1"></script>
 </head>
 <body>
@@ -2455,8 +2455,9 @@
         <div style="display:flex;flex-direction:column;position:absolute;inset:0">
           <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px 4px;flex-shrink:0;flex-wrap:wrap;gap:6px">
             <span style="font-size:12px;color:#9ca3af">Wild pack genotypes — every den seen this session</span>
-            <div style="display:flex;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button id="wildernessChunkDebugBtn" style="font-size:11px;padding:3px 10px;background:rgba(70,229,139,.14);border:1px solid rgba(70,229,139,.4);border-radius:6px;color:#8df2b5;cursor:pointer">Show Chunk Grid</button>
+              <button id="wildernessDistanceCullBtn" type="button" aria-pressed="true" style="font-size:11px;padding:3px 10px;background:rgba(70,229,139,.14);border:1px solid rgba(70,229,139,.4);border-radius:6px;color:#8df2b5;cursor:pointer">Distance Cull: ON</button>
               <button id="wildernessChunkAuditBtn" style="font-size:11px;padding:3px 10px;background:rgba(249,226,138,.14);border:1px solid rgba(249,226,138,.4);border-radius:6px;color:#f9e28a;cursor:pointer">Audit Loaded Chunks</button>
               <button id="wildlifeShiftBtn" style="font-size:11px;padding:3px 10px;background:rgba(106,167,255,.15);border:1px solid rgba(106,167,255,.35);border-radius:6px;color:#6aa7ff;cursor:pointer">Force Tothal Shift</button>
               <button id="wildlifeRefreshBtn" style="font-size:11px;padding:3px 10px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#d1d5db;cursor:pointer">Refresh</button>

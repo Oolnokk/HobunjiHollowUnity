@@ -52,7 +52,15 @@
     if (mesh.frustumCulled === false || !mesh.geometry?.attributes?.position) return false;
     if (mesh.userData?.hobunjiZonePropBatchHolder) return false;
     const originalBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
-    if (typeof mesh.onBeforeRender === 'function' && mesh.onBeforeRender !== originalBeforeRender) return false;
+    // _markTerrainEdgeId installs a render hook on world floors; the
+    // TerrainRenderChunks splitter copies it to every spatial bucket.
+    // Its only purpose is setting the edge-ID color when that bucket DRAWs,
+    // so omitting a distant draw needs no hook. Other custom hooks remain
+    // excluded because they may change geometry/matrices or game state.
+    const knownTerrainEdgeHook = mesh.userData?.terrainRenderChunk === true
+      && mesh.userData?.hobunjiTerrainEdgeIdColor != null;
+    if (typeof mesh.onBeforeRender === 'function' && mesh.onBeforeRender !== originalBeforeRender
+      && !knownTerrainEdgeHook) return false;
     return true;
   }
 
@@ -69,7 +77,14 @@
         || data.hobunjiInstanceBounds === true
         || data.hobunjiWildernessDistanceCull === true
         || (!isChunk && WORLD_NAME.test(String(node.name || '')));
-      const skip = excluded || prohibited(node);
+      // Scene/chunk/source names often contain map IDs such as "Cloud Forest"
+      // or "River". They are structural wilderness owners, not effect/plant
+      // subtrees; only explicit no-cull flags may prune their descendants.
+      const isStructuralOwner = node === scene || data.wildernessChunk === true
+        || data.terrainRenderChunkSource === true;
+      const skip = excluded || data.hobunjiNeverDistanceCull === true
+        || data.hobunjiDistanceCullNever === true
+        || (!isStructuralOwner && prohibited(node));
       if (skip) continue; // Prune complete tree/actor/weather subtrees instead of walking their many meshes on every scan.
       if (meshEligible(node, isChunk, taggedWorld)) {
         candidates.push({ mesh: node, kind: isBatch ? 'batch' : isChunk ? 'chunk' : 'scenery' });
@@ -90,8 +105,15 @@
     let record = worldBoxes.get(mesh);
     const version = Number(position.version) || 0;
     const changedGeometry = !record || record.geometry !== geometry || record.version !== version;
-    if (changedGeometry && typeof geometry.computeBoundingBox === 'function') {
-      // Recompute if a procedural buffer changed, never trust a stale bounding box.
+    // TerrainRenderChunks deliberately assigns each draw-range a tight bucket
+    // box. Their position attributes span the entire shared source buffer:
+    // computeBoundingBox() reads ALL vertices and would inflate every bucket
+    // back to whole-zone bounds, making distant terrain impossible to cull.
+    const preserveSpatialBucket = mesh.userData?.terrainRenderChunk === true
+      && !!geometry.boundingBox && !record;
+    if (changedGeometry && !preserveSpatialBucket && typeof geometry.computeBoundingBox === 'function') {
+      // A later buffer version change invalidates even a spatial bucket's
+      // authored bounds; fall back to the full conservative box until rebuilt.
       geometry.computeBoundingBox();
     }
     if (!geometry.boundingBox || geometry.boundingBox.isEmpty?.()) return null;

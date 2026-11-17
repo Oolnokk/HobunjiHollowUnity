@@ -320,10 +320,12 @@
     unloadOutside(centerCx, centerCz) {
       // Map iteration is safe to delete the current entry from mid-loop (per
       // spec, only entries not yet visited could be affected, and unload()
-      // only ever removes the key currently being visited), so this needs no
-      // spread or copy. Called only when the player's chunk center changes;
-      // streaming builds still advance on every active frame. Callers must
-      // not mutate this.loaded from onChunkUnloaded beyond the current key.
+      // only ever removes the key currently being visited), so this no
+      // longer needs to spread either Map into a throwaway array first —
+      // this runs every frame the zone is active, not just on chunk-boundary
+      // crossings. That holds only while the onChunkUnloaded callback unload()
+      // invokes does not itself add to or remove from this.loaded; a consumer
+      // that ever needs to must take a snapshot here instead.
       for (const [key, record] of this.loaded) {
         if (chebyshev(record.cx, record.cz, centerCx, centerCz) > UNLOAD_RADIUS) this.unload(key);
       }
@@ -735,6 +737,15 @@
     if (!force && now - lastDebugRefreshAt < DEBUG_REFRESH_MS) return;
     lastDebugRefreshAt = now;
     const text = debugLines();
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Mobile A/B control beside the existing wilderness grid button.
+    const cullState = window.WildernessDistanceCull?.snapshot?.(); // Reuse the same authoritative state as the diagnostic line.
+    if (cullButton && cullState) {
+      const title = 'Distance Cull: ' + (cullState.enabled ? 'ON' : 'OFF');
+      if (cullButton.textContent !== title) cullButton.textContent = title;
+      if (cullButton.getAttribute('aria-pressed') !== String(cullState.enabled)) {
+        cullButton.setAttribute('aria-pressed', String(cullState.enabled));
+      }
+    }
     // Compare first: an unchanged textContent write still replaces the text node
     // and wakes every body-wide MutationObserver on this periodic refresh.
     const status = document.getElementById('wildernessChunkStatus');
@@ -766,6 +777,17 @@
     if (button && !button.dataset.wildernessChunksBound) {
       button.dataset.wildernessChunksBound = 'true';
       button.addEventListener('click', () => toggleDebug());
+    }
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Touch-friendly way to compare wilderness draw performance without DevTools.
+    if (cullButton && !cullButton.dataset.wildernessCullBound) {
+      cullButton.dataset.wildernessCullBound = 'true';
+      cullButton.addEventListener('click', () => {
+        const culler = window.WildernessDistanceCull;
+        if (!culler?.setEnabled || !culler.snapshot) return;
+        const enabled = culler.setEnabled(culler.snapshot().enabled === false);
+        window.__farmLog?.('Non-vegetation distance culling ' + (enabled ? 'enabled' : 'disabled'), 'info', 'performance');
+        refreshDebugText(true);
+      });
     }
     const auditButton = document.getElementById('wildernessChunkAuditBtn'); // Used to expose the residency scan on mobile without DevTools.
     if (auditButton && !auditButton.dataset.wildernessChunkAuditBound) {
