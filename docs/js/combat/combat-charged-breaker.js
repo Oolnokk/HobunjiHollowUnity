@@ -259,11 +259,13 @@
       debugState.poseCharge = poseCharge;
 
       if (window.Combat.isStaggered(deps.player)) {
+        window.FeyHypedAttacks?.clearCredit?.(deps.player, 'chargedBreaker'); // A canceled charge cannot lend already-spent Hyped Stamina to the next unrelated weapon action.
         clearGlow();
         deps.cancelWeaponSwingHold();
         return;
       }
       if (poseCharge < MIN_READY_POSE) {
+        window.FeyHypedAttacks?.clearCredit?.(deps.player, 'chargedBreaker'); // An early release has no attack to double.
         clearGlow();
         deps.cancelWeaponSwingHold();
         const posePct = Math.floor(poseCharge * 100); // Floor so a just-short release never reads as meeting the requirement.
@@ -476,6 +478,7 @@
       setHoldStaminaRegenBlocked(false); // Cancellation releases only this action's blocker.
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, null);
       clearGlow();
+      window.FeyHypedAttacks?.clearCredit?.(window.Combat.deps?.player, 'chargedBreaker'); // Stagger, dismount and input cancellation abandon the paid attack.
       window.Combat.deps.cancelWeaponSwingHold();
     }
 
