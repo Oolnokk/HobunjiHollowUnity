@@ -129,7 +129,8 @@
 
   function _applySleepingComposite(avatarRef, rec) {
     if (!avatarRef || !rec?.genotype || !window.CreatureGeneticsRender?.composeFrame || typeof THREE === 'undefined') return;
-    window.CreatureGeneticsRender.composeFrame(rec.kind, 'idle', rec.genotype, true).then(canvas => {
+    (window.AnimalSleepPresentation?.composeStaticFrame?.(avatarRef.group, rec.kind, rec.genotype, true)
+      || window.CreatureGeneticsRender.composeFrame(rec.kind, 'idle', rec.genotype, true)).then(canvas => {
       if (!canvas || !avatarRef.group?.parent) return;
       const frontTex = new THREE.CanvasTexture(canvas);
       frontTex.colorSpace = THREE.SRGBColorSpace;
@@ -396,8 +397,8 @@
 (() => {
   'use strict';
   if (window.LivestockNursery) return;
-  const nurserySrc = 'js/livestock-nursery.js?v=20261116idleMaskCoverage4';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261116mountAudit2';
+  const nurserySrc = 'js/livestock-nursery.js?v=20261117animalRetry2';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261117animalRetry2';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);
