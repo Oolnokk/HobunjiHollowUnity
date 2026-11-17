@@ -27,6 +27,7 @@ const CLOSE_SAVE_SCRIPT = [
   '(async () => {',
   '  const save = window.LocalSaveFolder;',
   '  const before = save?.getStatus?.();',
+  '  if (window.HobunjiAutosavePause?.isPaused?.()) return { ok: true, mode: "paused" };',
   '  if (before?.state === "ready" && before.autoSyncArmed && !window.HobunjiAutosavePause?.isPaused?.()) {',
   '    const result = await save.syncNow({ reason: "desktop-window-close" });',
   '    const action = String(result?.lastAction || "");',
