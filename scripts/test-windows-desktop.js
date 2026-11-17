@@ -15,7 +15,7 @@ assert.equal(isGameUrl('https://example.com/index.html'), false);
 assert.equal(isGameUrl('hobunji://wrong/index.html'), false);
 assert.equal(mapped(GAME_URL).file, path.join(repo, 'docs', 'index.html'));
 assert.equal(mapped('hobunji://game/').file, path.join(repo, 'docs', 'index.html'));
-assert.equal(mapped('hobunji://game/js/GLTFLoader.js?v=1').file, path.join(repo, 'docs', 'js', 'GLTFLoader.js'));
+assert.equal(mapped('hobunji://game/js/GLTFLoader.js?cache=sample-token').file, path.join(repo, 'docs', 'js', 'GLTFLoader.js'));
 assert.equal(mapped('hobunji://game/__desktop_vendor__/three.min.js').kind, 'vendor');
 assert.equal(mapped('hobunji://game/__desktop_vendor__/TransformControls.js').kind, 'vendor');
 
