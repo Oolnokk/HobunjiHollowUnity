@@ -539,6 +539,7 @@
       const slot = slots.get('quaternion');
       if (!slot?.owners.size) return false;
       if (!matches(node, slot)) {
+        if (rotationMatches(node.quaternion, slot.base)) return true; // A second pre-solve call sees the already clean baseline, not a takeover.
         reconcile(node, slot); // A competing absolute writer displaced this pose; do not quietly reclaim it as ours.
         return false;
       }
@@ -551,6 +552,10 @@
       const slot = slots.get(property + '.' + axis);
       if (!slot?.owners.size) continue;
       if (!matches(node, slot)) {
+        if (Math.abs(node[property][axis] - slot.base) <= EPSILON) {
+          changed = true; // Repeated preparation remains idempotent while the layer is still registered.
+          continue;
+        }
         reconcile(node, slot); // Unknown IK writes cannot be laundered into the clean solved baseline.
         continue;
       }
