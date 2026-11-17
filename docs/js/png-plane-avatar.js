@@ -687,7 +687,8 @@
       if (!portraitMeshBuilds.has(mesh) || !mesh.geometry) continue;
       tracked++;
       if (portraitMeshBuilds.get(mesh)?.animal) animalFaces++;
-      triangles += (mesh.geometry.getAttribute?.('position')?.count || 0) / 3;
+      const geometry = mesh.geometry; // Indexed animal PlaneGeometry stores its triangle topology in the index buffer, unlike non-indexed humanoid skins.
+      triangles += (geometry.getIndex?.()?.count ?? geometry.index?.count ?? geometry.getAttribute?.('position')?.count ?? 0) / 3;
     }
     return { percent: portraitDensityPercent, player: portraitGrid(playerBudgetMode), npc: portraitGrid('npc'),
       hostileMask: portraitGrid('npc', true), tracked, animalFaces, triangles, lastRebuilt: lastPortraitRebuilds,
