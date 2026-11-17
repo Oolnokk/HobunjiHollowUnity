@@ -11,6 +11,21 @@ function boot(storage = {}) {
   return { api: window.ModularWeapons, committed: window.MODULAR_WEAPON_CONFIG, storage };
 }
 const { api, committed } = boot();
+const generatedCompanionShafts = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']; // Six shipped 90-degree tangs whose old start/end were reversed.
+for (const key of generatedCompanionShafts) {
+  const shaft = committed.shafts[key], eye = shaft.mounts.find(m => m.type === 'eye');
+  const center = { x: (eye.start.x + eye.end.x) / 2, y: (eye.start.y + eye.end.y) / 2 }; // Companion tang shares the sleeve center.
+  const dx = eye.end.x - eye.start.x, dy = eye.end.y - eye.start.y;
+  const tang = shaft.mounts.find(m => m.type === 'tang' &&
+    Math.hypot((m.start.x + m.end.x) / 2 - center.x, (m.start.y + m.end.y) / 2 - center.y) < 1e-7);
+  assert(tang, key + ': missing companion tang');
+  assert(Math.hypot(tang.start.x - center.x + dy / 4, tang.start.y - center.y - dx / 4) < 1e-7,
+    key + ': new arrow start must be on the other side of the sleeve midpoint');
+  assert(Math.hypot(tang.end.x - center.x - dy / 4, tang.end.y - center.y + dx / 4) < 1e-7,
+    key + ': new arrow end must be opposite the old 90-degree generator');
+  assert(dx * (tang.end.y - tang.start.y) - dy * (tang.end.x - tang.start.x) < 0,
+    key + ': tang direction must have the corrected handedness');
+}
 const eyeLocations = [
   ['bshuakauitl', 0], ['bshuakauitl', 1], ['hachutuTorchStaff', 0], ['hachutuTorchStaff', 1],
   ['fishing-mace', 0], ['warhammer', 0], ['bgungku', 0],
@@ -124,11 +139,49 @@ assert.equal((tang.start.x + tang.end.x) / 2, 140);
 assert.equal((tang.start.y + tang.end.y) / 2, 140);
 assert(Math.abs((tang.end.x - tang.start.x) * 60 + (tang.end.y - tang.start.y) * 80) < 1e-8);
 assert(Math.abs(Math.hypot(tang.end.x - tang.start.x, tang.end.y - tang.start.y) - 50) < 1e-8);
+assert((eye.end.x-eye.start.x)*(tang.end.y-tang.start.y) - (eye.end.y-eye.start.y)*(tang.end.x-tang.start.x) < 0,
+  'Older v4 drafts generate correctly directed tangs on an adjusted sleeve.');
 assert.equal(warhammer.overrides.dagger.x, 83);
 assert.equal(upgraded.api.settings('warhammer', 'warhammer').layerOrder, 'head-over-haft');
 assert.equal(upgraded.api.settings('dagger', 'dagger').layerOrder, 'haft-over-head');
 assert.deepEqual(plain(upgraded.api.getConfig().heads['pick-shovel-pick'].mount),
   plain(committed.heads['pick-shovel-pick'].mount), 'Previous manual pick-line rotation is reverted');
+
+// A first load repairs only the six exact previously generated backwards arrows in v5 drafts.
+const legacyCurrent = plain(committed); // Simulates the original saved 90-degree companions, before the direction correction.
+for (const key of generatedCompanionShafts) {
+  const tang = legacyCurrent.shafts[key].mounts.find(m => m.type === 'tang' &&
+    Math.abs(m.end.y - m.start.y) < 1e-7);
+  assert(tang, key + ': expected horizontal companion');
+  [tang.start, tang.end] = [tang.end, tang.start];
+}
+legacyCurrent.shafts.hoe.mounts[1].start.x += 3; // A manually repositioned tang must not match the old generator's fingerprint.
+legacyCurrent.shafts.warhammer.overrides.dagger.x = 83; // A pair correction must survive the migration unchanged.
+const directionStorage = {
+  'hobunji.modularWeapons.v5': JSON.stringify(legacyCurrent),
+  'hobunji.modularWeapons.kylieToolWorthy.v1': '1',
+  'hobunji.modularWeapons.pickShovelForgeable.v1': '1',
+};
+const corrected = boot(directionStorage);
+for (const key of generatedCompanionShafts.filter(key => key !== 'hoe')) {
+  assert.deepEqual(plain(corrected.api.getConfig().shafts[key].mounts), plain(committed.shafts[key].mounts),
+    key + ': exact old companion arrow is repaired without replacing other mounts');
+}
+assert.deepEqual(plain(corrected.api.getConfig().shafts.hoe.mounts[1]), plain(legacyCurrent.shafts.hoe.mounts[1]),
+  'An independently adjusted companion direction remains unchanged');
+assert.deepEqual(plain(corrected.api.getConfig().shafts.kylie.mounts), plain(committed.shafts.kylie.mounts),
+  'Independently authored Kylie lines are unaffected');
+assert.deepEqual(plain(corrected.api.getConfig().shafts.bshuakauitl.mounts), plain(committed.shafts.bshuakauitl.mounts),
+  'Independently authored twin-ended lines are unaffected');
+assert.equal(corrected.api.settings('warhammer', 'dagger').x, 83, 'Pair corrections survive the mount migration');
+assert.equal(directionStorage['hobunji.modularWeapons.companionTangDirection.v1'], '1',
+  'Correction marker persists to avoid undoing a later intentional author edit');
+const deliberateReversal = plain(corrected.api.getConfig()); // After migration the user may intentionally reverse a tang again.
+[deliberateReversal.shafts.hatchet.mounts[1].start, deliberateReversal.shafts.hatchet.mounts[1].end] =
+  [deliberateReversal.shafts.hatchet.mounts[1].end, deliberateReversal.shafts.hatchet.mounts[1].start];
+directionStorage['hobunji.modularWeapons.v5'] = JSON.stringify(deliberateReversal);
+assert.deepEqual(plain(boot(directionStorage).api.getConfig().shafts.hatchet.mounts[1]),
+  plain(deliberateReversal.shafts.hatchet.mounts[1]), 'Subsequent authored direction is never repaired again');
 
 // Current v5 drafts must remain the exact user edit, even if they intentionally remove a companion.
 const current = plain(upgraded.api.getConfig());
