@@ -1,6 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, Menu, net, protocol, session, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
+const { createDesktopUpdates } = require('./update-controller.cjs'); // Dedicated update-screen state and events.
 const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -20,6 +22,7 @@ const VENDOR_ROOT = app.isPackaged
   : path.join(__dirname, 'node_modules', 'three'); // Locally bundled r128 files.
 const ALLOWED_PERMISSIONS = new Set(['fileSystem', 'persistent-storage', 'fullscreen', 'clipboard-sanitized-write']); // Only trusted game pages receive these.
 let mainWindow = null; // Single game window.
+let desktopUpdates = null; // Main-process update screen controller, populated after app readiness.
 let closeAllowed = false; // Avoid recursive interception after a successful save.
 let closeInProgress = false; // Serialize repeated close requests.
 
@@ -131,21 +134,58 @@ function installMenu() {
         if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
       } },
       { label: 'Save Folder Status', click: showSaveStatus },
+      { label: 'Check for Updates', click: () => desktopUpdates?.open() },
       { label: 'Developer Tools', accelerator: 'Ctrl+Shift+I', click: () => mainWindow?.webContents.toggleDevTools() },
     ] },
   ]));
+}
+
+async function saveGameBeforeExit(win) {
+  try {
+    return await win.webContents.executeJavaScript(CLOSE_SAVE_SCRIPT, true);
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+}
+
+async function prepareUpdateRestart() {
+  const win = mainWindow; // The game window whose live save must finish before updating.
+  if (!win || win.isDestroyed() || closeInProgress) return false;
+  closeInProgress = true;
+  try {
+    while (!win.isDestroyed()) {
+      const outcome = await saveGameBeforeExit(win);
+      if (win.isDestroyed()) return false;
+      if (outcome?.ok) {
+        closeAllowed = true; // Let electron-updater close windows after the save succeeds.
+        return true;
+      }
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning', title: 'Hobunji Hollow — Save before update',
+        message: 'The final save did not complete. Do you still want to install the update?',
+        detail: String(outcome?.error || 'Unknown save failure') +
+          '\nInstalling now could leave your Google Drive save folder behind.',
+        buttons: ['Retry Save', 'Restart Without Saving', 'Cancel Update'],
+        defaultId: 0, cancelId: 2,
+      });
+      if (response === 0) continue;
+      if (response === 1) {
+        closeAllowed = true; // Explicit user override only, never automatic.
+        return true;
+      }
+      return false;
+    }
+  } finally {
+    closeInProgress = false;
+  }
+  return false;
 }
 
 async function saveAndClose(win) {
   if (closeInProgress || win.isDestroyed()) return;
   closeInProgress = true;
   try {
-    let outcome; // Result of the canonical folder/browser save executed in the renderer.
-    try {
-      outcome = await win.webContents.executeJavaScript(CLOSE_SAVE_SCRIPT, true);
-    } catch (error) {
-      outcome = { ok: false, error: String(error?.message || error) };
-    }
+    const outcome = await saveGameBeforeExit(win);
     if (win.isDestroyed()) return;
     if (outcome?.ok) {
       closeAllowed = true;
@@ -212,8 +252,15 @@ if (!singleInstance) {
   registerAssets();
   configurePermissions();
   app.on('web-contents-created', (_event, contents) => attachNavigationGuards(contents));
+  desktopUpdates = createDesktopUpdates({
+    app, BrowserWindow, ipcMain, shell, autoUpdater,
+    getGameWindow: () => mainWindow,
+    prepareRestart: prepareUpdateRestart,
+    cancelPreparedRestart: () => { closeAllowed = false; },
+  });
   installMenu();
   createWindow();
+  desktopUpdates.start();
 }).catch(error => {
   dialog.showErrorBox('Hobunji Hollow startup failed', String(error.stack || error));
   app.quit();
