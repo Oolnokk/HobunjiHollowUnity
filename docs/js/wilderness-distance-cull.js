@@ -16,13 +16,14 @@
   const EXCLUDED_BATCH_KINDS = new Set(['berry', 'reagent']); // Those batches belong to the existing vegetation system.
   const records = new WeakMap(); // Per-scene candidate lists, never retained across a disposed scene's lifetime.
   const worldBoxes = new WeakMap(); // Last known local geometry and world-matrix bounds for static candidate meshes.
+  let instanceSphere = null; // Reused target for the existing authoritative InstancedMeshBounds registry.
   let hiddenHistory = new WeakMap(); // Per-mesh hysteresis, independent of logical Object3D.visible.
   let enabled = true; // Mobile A/B setting through setEnabled; defaults on in outdoor wilderness.
   let distanceTiles = DEFAULT_DISTANCE_TILES; // Editable threshold via setDistanceTiles for device-specific comparisons.
   let activeRestore = null; // Recovery if the previous render scope was interrupted.
   const stats = {
     frames: 0, scans: 0, candidates: 0, tested: 0, hidden: 0,
-    hiddenChunk: 0, hiddenBatch: 0, hiddenScenery: 0,
+    hiddenChunk: 0, hiddenBatch: 0, hiddenScenery: 0, hiddenInstanced: 0,
     skippedUnknownBounds: 0, scanMs: 0, enabled: true, distanceTiles,
   }; // Counts render-suppressed meshes, NOT verified GPU draw-call savings.
 
@@ -43,8 +44,11 @@
   }
 
   function meshEligible(mesh, ownedByChunk, taggedWorld) {
-    if (!ownedByChunk && !taggedWorld) return false;
-    if (!mesh.isMesh || mesh.isSkinnedMesh || mesh.isInstancedMesh) return false;
+    if (!ownedByChunk && !taggedWorld && mesh.userData?.hobunjiInstanceBounds !== true) return false;
+    if (!mesh.isMesh || mesh.isSkinnedMesh) return false;
+    // An InstancedMesh's base geometry box is NOT the bounds of its instances.
+    if (mesh.isInstancedMesh) return mesh.userData?.hobunjiInstanceBounds === true
+      && !!window.InstancedMeshBounds?.worldSphere && !!window.THREE?.Sphere;
     if (mesh.frustumCulled === false || !mesh.geometry?.attributes?.position) return false;
     if (mesh.userData?.hobunjiZonePropBatchHolder) return false;
     const originalBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
@@ -62,6 +66,7 @@
       const isChunk = chunk || data.wildernessChunk === true;
       const isBatch = data.hobunjiZonePropBatch === true && !EXCLUDED_BATCH_KINDS.has(data.hobunjiZonePropKind);
       const taggedWorld = isBatch || data.terrainRenderChunk === true
+        || data.hobunjiInstanceBounds === true
         || data.hobunjiWildernessDistanceCull === true
         || (!isChunk && WORLD_NAME.test(String(node.name || '')));
       const skip = excluded || prohibited(node);
@@ -107,6 +112,16 @@
     return record.box;
   }
 
+  function instancedBoundsFor(mesh) {
+    if (!instanceSphere) instanceSphere = new window.THREE.Sphere();
+    return window.InstancedMeshBounds?.worldSphere?.(mesh, instanceSphere) || null;
+  }
+
+  function nearestInstancedXZ(sphere, x, z) {
+    // Sphere union is conservative for every instance, including rotated bricks.
+    return Math.max(0, Math.hypot(sphere.center.x - x, sphere.center.z - z) - sphere.radius);
+  }
+
   function actuallyVisibleInScene(mesh, scene) {
     // Another render system may have hidden a parent; such meshes cost no draw calls.
     for (let node = mesh; node; node = node.parent) {
@@ -129,7 +144,7 @@
 
   function suspendForRender(scene, camera, playerPosition, { isZone = false } = {}) {
     restore(); // A renderer exception cannot leave visual objects hidden for gameplay.
-    stats.hidden = stats.hiddenChunk = stats.hiddenBatch = stats.hiddenScenery = 0;
+    stats.hidden = stats.hiddenChunk = stats.hiddenBatch = stats.hiddenScenery = stats.hiddenInstanced = 0;
     stats.tested = stats.skippedUnknownBounds = 0;
     stats.candidates = 0;
     if (!enabled || !isZone || !scene?.isScene || !camera?.isCamera
@@ -154,18 +169,21 @@
     try {
       for (const { mesh, kind } of candidates) {
         if (!actuallyVisibleInScene(mesh, scene)) continue;
-        const box = boundsFor(mesh);
-        if (!box) { stats.skippedUnknownBounds++; continue; }
+        const isInstance = mesh.isInstancedMesh === true;
+        const bounds = isInstance ? instancedBoundsFor(mesh) : boundsFor(mesh);
+        if (!bounds) { stats.skippedUnknownBounds++; continue; }
         stats.tested++;
         const limit = distanceTiles - (hiddenHistory.get(mesh) ? HYSTERESIS_TILES : 0);
-        const farFromPlayer = nearestXZ(box, playerPosition.x, playerPosition.z) > limit;
-        const farFromCamera = nearestXZ(box, cameraX, cameraZ) > limit;
+        const distance = isInstance ? nearestInstancedXZ : nearestXZ;
+        const farFromPlayer = distance(bounds, playerPosition.x, playerPosition.z) > limit;
+        const farFromCamera = distance(bounds, cameraX, cameraZ) > limit;
         const hide = farFromPlayer && farFromCamera;
         hiddenHistory.set(mesh, hide);
         if (!hide) continue;
         mesh.visible = false;
         changed.push(mesh);
         stats.hidden++;
+        if (isInstance) stats.hiddenInstanced++;
         if (kind === 'batch') stats.hiddenBatch++;
         else if (kind === 'chunk') stats.hiddenChunk++;
         else stats.hiddenScenery++;
