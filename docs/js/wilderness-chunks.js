@@ -561,7 +561,7 @@
     const area = deps.getCurrentArea?.();
     const active = deps.isZoneArea?.(area) ? zones.get(area) : null;
     const player = deps.player;
-    window.PlayerTileEvents?.update(area, player?.x, player?.y, deps.TILE); // One authoritative tile observation per game frame, including interiors/area transitions.
+    globalThis.PlayerTileEvents?.update(area, player?.x, player?.y, deps.TILE); // One authoritative tile observation per game frame, including interiors/area transitions.
     for (const controller of zones.values()) {
       if (controller === active && player) {
         const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
