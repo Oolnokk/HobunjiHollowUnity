@@ -122,3 +122,47 @@ This is a **first implementation tranche**, not certification that every runtime
 - Run the repository-wide transform-writer AST census and headless scene interruption matrix (including rebuild, seat, dance, grapple, knockdown and secondary render passes). No complete runtime coverage or successful gameplay soak has yet been demonstrated.
 
 Tests: `scripts/test-rig-transform-layers.js` executes independent node-layer composition, unknown-write rejection, explicit baseline handoff, quaternion/Euler overlap, lease expiry and body-sink cleanup. `scripts/test-drunk-locomotion-footing-source.js` now executes the real named NPC body quaternion path and verifies disposal. Run them and the fast suite in a full checkout before merging.
+
+## Scoped authored-pose ownership (17 November 2026, follow-up)
+
+The shared `ActorRigCompositor.createAbsoluteSession(owner)` now covers **authored
+absolute joint/actor poses**, not just additive local offsets. A session
+captures the pre-action pose of each named root/joint once, then stamps the
+values its own solver authored. On cancellation it restores only properties
+that are still stamped with that exact action's last output **and** still
+belong to the same rig generation/parent. New root movement invalidates
+descendant restoration, even if a neck's unchanged local quaternion looks
+identical. Sessions also refuse simultaneous claims by competing actions.
+A diagnostic snapshot reports live claims, conflicts, takeovers and skipped
+restores; action diagnostics report the last release's restored/skipped counts.
+
+Migrated:
+- `festival-wheel-dance-runtime.js`: both actors' root positions/quaternions,
+  leg-group orientations and neck quaternions use one scoped session. A new
+  owner triggers exit before another dance frame writes. Secondary idle legs/
+  hands are not reset on a displaced actor. Partial reach failures and solver
+  exceptions release claimed transforms before locks and camera hand back.
+- `spouse-kiss-motion.js`: player and spouse roots, player torso, external
+  hand roots, NPC bow pivot and both neck positions/quaternions are captured
+  through the same compositor. A late root/neck writer is preserved on exit;
+  interrupted solver frames are stamped before rollback. NPC sink now has a
+  dedicated `spouse-kiss-npc-sink` layer so its cleanup cannot remove another
+  actor's root-Y sink. The authored leg/contact solver remains authoritative
+  and its knee/foot-target teardown is guarded when another rig takes over.
+- `actor-body-sink.js`: an optional per-actor `ownerId` controls the named
+  Y-layer; old callers retain the default `actor-body-sink` owner.
+
+Coverage: the executable layer test now includes ancestor takeovers, competing
+absolute sessions and overlapping body-sink owners. The existing paired-dance
+test runs with the real compositor and includes root/neck interruption cases.
+The live Three.js spouse-kiss test now exercises a new root and head owner.
+Browser-level render-boundary and full-suite CI are still required before
+claiming production stability.
+
+**Still not unified:** Tzatzul talon capture/release, post-render NPC hand
+pose writers, ragdoll pivot reparenting, generic procedural hand/leg IK,
+species creature roots and all independent absolute writers. These systems
+must migrate only after accounting for their existing semantic handoffs:
+for example, releasing a flying captive must not restore their pre-capture
+*world position*, because the creature belongs where it was released.
+Global timed whole-skeleton resets remain inappropriate.
