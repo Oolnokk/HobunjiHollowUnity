@@ -13,7 +13,9 @@ const style = read('docs/style.css'); // Used to verify the touch dodge button s
 assert(slotColors.includes("dodge: '#A78BFA'"), 'dodge has a distinct electric-violet input color');
 assert(slotColors.includes('inputColors: INPUT_COLORS'), 'semantic prompt colors are exposed by the action arch');
 assert(style.includes('var(--dodge-input-color, #A78BFA)'), 'the touch dodge arch uses the shared dodge color');
-assert(game.includes("button.action === 'climb_branch' ? 'jump'"), 'climb prompts identify the actual jump input');
+assert(game.includes('window.ActionPromptUI.resolveWorldPromptInputs(promptButtons, archLayout)'), 'game routes prompts through the extracted input resolver');
+assert(game.includes('window.ActionPromptUI.createActionArchLayout(btns, heldMode, sitInteraction)'), 'game uses the extracted physical arch layout');
+assert(game.includes("applyAbt('btnItemAction2', archLayout.slots[4]"), 'rendered item arch slots come from that same layout');
 assert(game.includes('promptInputs,'), 'world prompt synchronization receives structured input hints');
 assert(popup.includes('makeInteractionPlane'), 'interaction rows use segmented canvas rendering');
 assert(popup.includes('INTERACTION_VERB_COLOR'), 'interaction verbs have a dedicated uncoded emphasis color');
@@ -48,19 +50,22 @@ const promptSource=read('docs/js/action-prompt-ui.js'); // Actual binding-label 
 new Function('window','document',promptSource)(win,{getElementById:id=>id==='dialogueChoiceSelectionStyle'?{}:null}); // Ignore unrelated DOM CSS initialization.
 win.ActionPromptUI.init({getLastInputDevice:()=>device,inputBindings:live});
 assert.equal(win.ActionPromptUI.actionPromptGlyph('interact'),'','Jump-owned A is not shown for Interact');
+assert.equal(win.ActionPromptUI.requiresInteractFallback('controller'),true,'Jump-owned Interact requires a physical arch fallback');
+assert.equal(win.ActionPromptUI.controllerActionAvailable('toolSelect',true),true,'strict Tool Select availability resolves to actual owner');
 assert.equal(win.ActionPromptUI.actionPromptGlyph('toolSelect'),'RB','Tool Select uses its rebound controller button');
+assert.equal(win.ActionPromptUI.resolveWorldPromptInputs([{action:'climb_branch'}],null,'touch')[0].label,'Jump','popup-only climb keeps its Jump hint on touch');
 device='desktop';assert.equal(win.ActionPromptUI.actionPromptGlyph('interact'),'E','desktop keeps E');
-const mapInputs=new Function('btns','heldMode','sitInteraction','promptButtons','window',
-  between(game,'        const nonClimbBtns = btns.filter(','        // Every action supplied by an aimed world object')
-  +between(game,'        const promptDevice = window.ActionPromptUI.getLastInputDevice();',
-    '        window.WorldPopupText?.syncInteractionPrompts?.(')+'return promptInputs;'); // Real game.js slot assignment and hint resolution.
-const ids=(buttons,mode='tool')=>mapInputs(buttons,mode,false,buttons,win).map(x=>x.actionId); // Captures semantic input IDs in physical order.
+const ids=(buttons,mode='tool')=>win.ActionPromptUI.resolveWorldPromptInputs(
+  buttons,win.ActionPromptUI.createActionArchLayout(buttons,mode,false),device).map(x=>x.actionId); // Actual shared production layout and input resolver.
 const climb={action:'climb_branch'},first={action:'obj_first'},item={action:'consume_held_item'}; // Prompts that occupy different physical slots.
 const rubble={action:'shattercask_collect',inputAction:'interact'}; // Interact is Jump on pad inside the ruin.
 const torchSwing={action:'torch_swing'},torchThrow={action:'torch_throw'},door={action:'dev_ruin_world_0',inputAction:'interact'}; // Torch reserves first two arch slots.
 device='controller';
 assert.deepEqual(ids([climb,first]),['jump','action1'],'popup-only Jump does not shift Action 1');
 assert.deepEqual(ids([first,item]),['action1','itemAction1'],'item and tool slots stay separate');
+assert.equal(win.ActionPromptUI.resolveWorldPromptInputs([first,item],win.ActionPromptUI.createActionArchLayout([first,item],'tool',false),'touch')[1].label,'Item Action 1','touch item hint names the actual item arch button');
+assert.deepEqual(win.ActionPromptUI.createActionArchLayout([first,item],'item',false).slots.slice(0,2),[first,item],'item mode fills consecutive physical slots');
+assert.deepEqual(win.ActionPromptUI.createActionArchLayout([climb,first],'tool',false).slots.slice(0,2),[first,undefined],'climb-only actions never occupy the physical arch');
 assert.deepEqual(ids([rubble]),['action1'],'rubble now shows RT rather than Jump A');
 assert.deepEqual(ids([torchSwing,torchThrow,door]),['action1','action2','action3'],'torch door shows controller X');
 live.controller.action3=null;
@@ -95,18 +100,16 @@ faced=true;assert.equal(pickup()[0].inputAction,'toolSelect','touch offers its r
 device='desktop';assert.equal(pickup()[0].inputAction,'interact','keyboard pickup remains E');
 
 const ruin=read('docs/js/dev-random-ruin-interactions.js'); // Separate V50 popup bridge.
-const ruinTouchLabels=new Function('window','bindingFor',
-  between(ruin,'  const TOUCH_PROMPT_LABELS = Object.freeze(','  const INPUT_CLAIM_OWNER')
-  +between(ruin,'  function bindingLabel(action,','  function inputColor(')+'return bindingLabel;')(
-  win, action=>action==='interact'?'Button0':'Button2'); // Real direct-ruin label helper, not a copied mapping.
-assert.equal(ruinTouchLabels('action3','touch'),'Action 3','direct ruin touch input must name its physical third button');
-assert.equal(ruinTouchLabels('interact','touch'),'','no standalone touch Interact button should be suggested');
-assert.equal(ruinTouchLabels('interact','controller'),'','ruin controller A cannot be an Interact hint');
+assert(!ruin.includes('function bindingLabel(') && !ruin.includes('TOUCH_PROMPT_LABELS'), 'native ruin no longer duplicates binding labels or touch input vocabulary');
+assert.equal(win.ActionPromptUI.worldPromptLabel('action3','touch'),'Action 3','native touch input names its physical third button');
+assert.equal(win.ActionPromptUI.worldPromptLabel('itemAction1','touch'),'Item Action 1','item half of touch arch is named accurately');
+assert.equal(win.ActionPromptUI.worldPromptLabel('interact','touch'),'','no standalone touch Interact button is advertised');
+assert.equal(win.ActionPromptUI.worldPromptLabel('interact','controller'),'','ruin controller A cannot be Interact while Jump owns it');
 let result=null; // Captures real bridge output without rendering a scene.
 const deps={window:{...win,AdventuringTools:{isHoldingTorch:()=>torch},WorldPopupText:{syncInteractionPrompts:o=>{result=o;}}},
   actionButtonsFromRows:rows=>rows.map(r=>({action:r.action,inputAction:r.inputAction||'action1',worldInteraction:true})),
   PROXIMITY_DOOR_KINDS:new Set(['transitdoor']),promptAnchor:{parent:true},lastAnchor:null,
-  ruinRoot:()=>null,currentDevice:()=>device,bindingLabel:id=>id,inputColor:()=> '#aaa',inRuin:()=>true,activeScene:()=>null}; // Minimal scene-independent test inputs.
+  ruinRoot:()=>null,currentDevice:()=>device,inRuin:()=>true,activeScene:()=>null}; // Minimal scene-independent test inputs.
 const syncRuin=new Function(...Object.keys(deps),
   between(ruin,'  function syncWorldPopup(rows) {','  function refreshRows(')+'return syncWorldPopup;')(...Object.values(deps));
 const row={kind:'transitdoor',action:'dev_ruin_world_0'},other={kind:'mechanism',action:'dev_ruin_world_1'}; // Door and unrelated action controls.
