@@ -658,7 +658,7 @@
       }
     }
 
-    const npcSink = { legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] };
+    const npcSink = { ownerId: SOURCE + '-npc-sink', legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] }; // Action-scoped sink cannot overwrite watchman/combat sink owners.
     const npcTiltPivot = walker._npcRunLeanPivot || (walker.avatarGroup?.parent?.name === 'npc_run_lean_visual'
       ? walker.avatarGroup.parent : walker.avatarGroup); // The existing portrait lean pivot keeps the legs out of the torso bow.
     if (height.taller === 'second' && height.tallerBowDeg > 1 && !npcTiltPivot?.rotation) {
@@ -672,10 +672,27 @@
           channels: ['movement', 'tools', 'actions', 'pose', 'facing', 'head'] },
       ],
     });
+    const poseSession = window.ActorRigCompositor?.createAbsoluteSession?.(SOURCE) || null; // One shared absolute-pose owner across both actors and their authored joints.
+    if (poseSession) {
+      const targets = [
+        [player, ['position', 'quaternion']], [playerModel, ['position', 'quaternion']],
+        [walker.root, ['position', 'quaternion']], [playerNeck, ['position', 'quaternion']],
+        [npcNeck, ['position', 'quaternion']], [npcTiltPivot, ['quaternion']],
+      ]; // Captures only transform nodes directly written by this animation, never the world movement or impact solver.
+      if (playerHands.group && !isWithinRig(playerHands.group, playerModel)) {
+        targets.push([playerHands.group, ['position', 'quaternion']]); // External player GLB hands follow their own authored pose.
+      }
+      if (!targets.every(([node, fields]) => node && poseSession.capture(node, fields))) {
+        poseSession.release();
+        lock?.release?.();
+        lastError = 'spouse-pose-already-owned'; // No authored pose writes occurred before a complete claim.
+        return false;
+      }
+    }
     const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
-      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer,
+      walker, player, playerModel, playerLegs, npcLegs, npcRigRoot, npcSink, composer, poseSession,
       playerParent: player.parent, // A rebuild or scene switch invalidates this exact paired character.
       originalPlayerPosition: { x: player.position.x, y: player.position.y, z: player.position.z }, // Festival-style root staging restores this on exit.
       originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
