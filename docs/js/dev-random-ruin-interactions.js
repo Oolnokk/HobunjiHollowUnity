@@ -641,7 +641,7 @@
     const buttons=actionButtonsFromRows(rows).map((button, index) => {
       if (!torchHeld || !PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)) return button;
       const archAction=torchDoorSlots[torchDoorIndex++]||''; // No fourth actionable door slot exists in the current five-button arch.
-      return { ...button, inputAction: device === 'desktop' ? 'interact' : archAction };
+      return { ...button, inputAction: device === 'controller' || device === 'touch' ? archAction : 'interact' }; // Keyboard keeps E, while touch/controller use the visible third arch slot.
     });
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
     const promptInputs=buttons.map(button=>({
