@@ -37,6 +37,7 @@ let disposalCount = 0; // Preview emitter cleanup after geometry/material/equip 
 let gpuDisposals = 0; // Counts viewport-only material/geometry cleanup.
 let flailAssembly = null; // Simulates the async live flail head and exact head/shaft metal masks.
 let lastPreviewTargets = null; // Verifies head emitters bind to the cloned meshes, not gameplay meshes.
+let lastPreviewPlane = null; // Inspects preview-only visibility while dual wield hides source materials.
 let draws = 0; // Verifies frame throttling and lifecycle suspension.
 let nextFrameId = 1; // Stable RAF IDs used for cancellation tests.
 const frames = new Map(); // Synthetic requestAnimationFrame queue advanced by each test tick.
@@ -133,6 +134,7 @@ const browser = {
     HobunjiWeaponSpriteAssemblies: { previewParts: plane => plane === actualPlane ? flailAssembly : null },
     WeaponEnchantmentVFX: {
       createPreviewEmitter(_plane, key, targets) {
+        lastPreviewPlane = _plane;
         lastPreviewTargets = targets;
         creationCount++;
         return {
@@ -231,7 +233,15 @@ flailAssembly = { ready: true, chain, headRoot: head,
   metalTargets: [
   { plane: headLayerA, mask: maskA }, { plane: headLayerB, mask: maskB },
 ] };
+actualPlane.material.visible = false; // Gameplay's dual-wield compositor hides the source haft, not its Loadout copy.
+head.visible = false; chain.visible = false; // The two live flail replicas replace these original flexible roots.
+headLayerA.material.visible = false; // A source layer can also be hidden by gameplay's compositor.
 tick(4000);
+assert.equal(lastPreviewPlane.material.visible, true, 'a hidden dual-wield haft is restored only in the preview');
+assert.equal(lastPreviewTargets[0].plane.material.visible, true, 'hidden metal head layer displays in the preview');
+assert.equal(lastPreviewTargets[0].plane.parent.visible, true, 'hidden original head root is shown only in its preview clone');
+assert.equal(actualPlane.material.visible, false, 'preview never unmasks live gameplay source material');
+assert.equal(head.visible, false, 'preview never unhides the actual gameplay flail head');
 assert.equal(api.debugSnapshot().flail.parts, 2, 'async rope and head are copied without another equip action');
 assert.equal(api.debugSnapshot().flail.metalEmitters, 2, 'both head metal layers receive distinct emitters');
 assert.equal(lastPreviewTargets.length, 2, 'the VFX renderer is given both head masks');
@@ -258,9 +268,12 @@ tick(5500);
 const beforeOverlay = creationCount; // Late source-art loading must be visible without changing equipment slots.
 const overlay = new Mesh(new Geometry(), new Material({ id: 'late-weapon-overlay' }));
 overlay.userData.hobunjiWeaponAssemblyPart = true;
+overlay.material.visible = false; // Dual-wield can hide static overlay source materials too.
 actualPlane.add(overlay);
 tick(6000);
 assert.equal(creationCount, beforeOverlay + 1, 'late static weapon artwork triggers one viewport rebuild');
+assert.equal(lastPreviewPlane.children[0].material.visible, true, 'hidden static overlay material is restored in the preview clone');
+assert.equal(overlay.material.visible, false, 'static overlay source material stays hidden in gameplay');
 tick(6500);
 assert.equal(creationCount, beforeOverlay + 1, 'loaded static overlays do not cause repeated rebuilds');
 api.sync('none', 'No weapon equipped');
