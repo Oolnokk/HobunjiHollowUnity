@@ -238,12 +238,15 @@
     }
     if (assembly?.ready) {
       state.sourceParts = [assembly.chain, assembly.headRoot]; // The next 450ms source check detects late asynchronous assembly and replacement.
-      const toPlane = new THREE.Matrix4().copy(source.matrixWorld).invert(); // Snapshots authored connector/head poses relative to the haft face.
+      const neutral = assembly.neutralMatrices; // An unheld flail has no valid baked pendulum pose; use the same authored contact points at rest.
+      const toPlane = neutral ? null : new THREE.Matrix4().copy(source.matrixWorld).invert();
       for (const part of state.sourceParts) {
         const copy = cloneArtwork(part, copies);
         if (!copy) continue;
-        copy.matrix.copy(toPlane).multiply(part.matrixWorld);
-        copy.matrixAutoUpdate = false; // Preserve baked flail suspension under the independent preview scene.
+        const authoredPose = neutral?.[part === assembly.chain ? 'chain' : 'headRoot'];
+        if (authoredPose) copy.matrix.copy(authoredPose);
+        else copy.matrix.copy(toPlane || new THREE.Matrix4().copy(source.matrixWorld).invert()).multiply(part.matrixWorld);
+        copy.matrixAutoUpdate = false; // Preserve the hanging artwork under the independent preview scene.
         copy.matrixWorldNeedsUpdate = true;
         content.add(copy);
         previewRopeBillboard(copy);
