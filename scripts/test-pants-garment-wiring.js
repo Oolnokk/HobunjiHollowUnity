@@ -139,7 +139,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
 {
  const pants=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // Verify the recalibration is genuinely called by the live animation loop.
  const legs=fs.readFileSync('docs/js/procedural-leg-animation.js','utf8'); // The async GLB replacement is responsible for signaling a changed foot shape.
- const inUpdate=pants.slice(pants.indexOf('    handle.update = () => {'),pants.indexOf('    handle.dispose = () => {'));
+ const inUpdate=pants.slice(pants.indexOf('    handle.update = (renderOnly = false) => {'),pants.indexOf('    handle.dispose = () => {'));
  assert.match(inUpdate,/handle\.refreshFootDepthBias\(\)/,'leg animation updates perform revision-aware depth refresh');
  assert.match(legs,/state\.anatomyRevision\+\+/,'final GLB rig installation signals the revision to the pants renderer');
  const version=/pants-garment-renderer\.js\?v=[A-Za-z0-9_-]+/; // One exact renderer cache key must be used by game and preview entry points.
