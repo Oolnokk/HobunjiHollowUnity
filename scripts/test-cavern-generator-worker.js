@@ -91,7 +91,36 @@ async function verifyAsyncBridge() {
   assert.equal(requests, 1, 'cached den does not incur another worker carve');
   assert.equal(asyncWindow.CavernGenerator.workerDebug().completed, 1);
 }
-verifyAsyncBridge().then(
-  () => console.log('cavern worker parity, deduplication and cache lifecycle passed'),
+async function verifyFailureFallback() {
+  let requests = 0; // A worker-level error must not strand the scene in its loading state.
+  const warnings = []; // Captures the in-game mobile warning without requiring a console.
+  class FailingWorker {
+    constructor() { this.onmessage = null; }
+    postMessage(data) {
+      requests++;
+      queueMicrotask(() => this.onmessage({ data: { id: data.id, error: 'forced den worker failure' } }));
+    }
+    terminate() {}
+  }
+  const fallbackWindow = {
+    HobunjiCaveShapeConfig: shape,
+    CavernSculptor: sculptFixture([]),
+    __farmLog: (...args) => warnings.push(args),
+  };
+  vm.runInNewContext(generatorSource, {
+    window: fallbackWindow,
+    Worker: FailingWorker,
+    performance: { now: () => 20 },
+    WildernessMapGenerator: { makeRng },
+  });
+  const floor = await fallbackWindow.CavernGenerator.generateCavernFloorAsync(seed, { fast: true });
+  assert.equal(JSON.stringify(floor), JSON.stringify(synchronous), 'worker failure falls back to identical synchronous floor data');
+  assert.equal(requests, 1, 'failed worker request was actually attempted');
+  assert.equal(fallbackWindow.CavernGenerator.workerDebug().failures, 1, 'worker failure is available in mobile diagnostics');
+  assert(warnings.some(entry => String(entry[0]).includes('forced den worker failure')), 'worker failure is recorded in the in-game log');
+}
+
+verifyAsyncBridge().then(verifyFailureFallback).then(
+  () => console.log('cavern worker parity, failure fallback, deduplication and cache lifecycle passed'),
   error => { console.error(error); process.exitCode = 1; }
 );
