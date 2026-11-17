@@ -398,11 +398,15 @@
   }
 
   function debugSnapshot() {
+    const isHeadLayer = node => { // Counts nested head-art groups too, including transformed modular flails.
+      for (let parent = node; parent; parent = parent.parent) if (parent === state.sourceParts[1]) return true;
+      return false;
+    };
     return {
       key: state.key, visible: isVisible(), status: state.status, error: state.error,
       modelLoaded: !!state.model, sourceMatched: !!equippedPlane(),
       verdigrisTextureShared: !!state.sourceMap && state.sourceMap === state.sourcePlane?.material?.map,
-      flail: { parts: state.sourceParts.length, visibleHeadLayers: state.sourceMeshes.filter(entry => state.sourceParts[1]?.children?.includes?.(entry.source) || entry.source.parent?.name?.includes('_flail_head')).length, metalEmitters: state.previewTargets.length }, // Mobile preview diagnostics without devtools.
+      flail: { parts: state.sourceParts.length, visibleHeadLayers: state.sourceMeshes.filter(entry => isHeadLayer(entry.source)).length, metalEmitters: state.previewTargets.length }, // Mobile preview diagnostics without devtools.
       enchantment: state.vfx?.debugSnapshot?.() || null,
       frames: state.frames, rendererActive: !!state.frame, contextLost: state.contextLost, targetFps: 30,
       latestChange: 'Loadout viewport now includes the cached flail connector and full multilayer head, sharing each actual verdigris map and metal enchantment mask.',
