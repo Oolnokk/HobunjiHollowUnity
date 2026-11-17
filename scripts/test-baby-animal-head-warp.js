@@ -112,6 +112,12 @@ assert.equal(at(warped, width - 1, height - 1, 3), at(pixels, width - 1, height 
 assert.equal(at(warped, 20, 20), at(pixels, 20, 20), 'authored head center is stationary');
 assert(at(warped, 26, 20) < at(pixels, 26, 20), 'head expands: right-side destination samples nearer to the center');
 assert.equal(at(warped, 40, 20), at(pixels, 40, 20), 'distant torso/limbs are exactly unchanged');
+const shortenedOnly = warp.warpPixels(pixels, width, height, head, 1, mask, 0.2); // Brachycephaly independent from head enlargement.
+assert(at(shortenedOnly, 26, 20) > at(pixels, 26, 20), 'head shortening samples farther outward source pixels at the same visible destination X');
+assert.equal(at(shortenedOnly, 20, 26, 1), at(pixels, 20, 26, 1), 'horizontal shortening never modifies vertical sprite coordinates');
+assert.equal(at(shortenedOnly, 40, 20), at(pixels, 40, 20), 'shortening leaves distant body/limb pixels unchanged');
+assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1, mask, 0)),
+  Array.from(pixels), '100% enlargement with 0% shortening exactly preserves source art');
 assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1, mask)), Array.from(pixels), 'scale 1 is fully reversible');
 assert.equal(warp.warpPixels(null, width, height, head), null, 'invalid input is rejected safely');
 assert.deepEqual(Array.from(warp.warpPixels(pixels, width, height, head, 1.32)), Array.from(pixels),
