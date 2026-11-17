@@ -181,23 +181,23 @@
     "simpleHydraDelaySeconds": 5
   },
   "statMultiplierByRankAndTier": {
-    "_comment": "Eight smoothly interpolated rank curves. Tier-0 weak grunts keep their existing low HP; veteran grunts/lieutenants close part of the boss gap, while captains remain the strongest rank. Raw stat growth is intentionally gentler than improved weapon grades.",
+    "_comment": "The first bandit tiers stay weaker so a Copper-I (0.75x) player preserves Death Mark / charged-attack kill breakpoints. Health rises gradually through eight tiers. Captains remain clearly tougher while advanced enemies rely more on metal/abilities than hit-point inflation.",
     "grunt": [
-      0.28,
+      0.24,
+      0.27,
       0.31,
-      0.33,
-      0.37,
-      0.4,
-      0.44,
-      0.48,
-      0.52
+      0.35,
+      0.39,
+      0.43,
+      0.47,
+      0.51
     ],
     "lieutenant": [
-      0.52,
-      0.55,
-      0.58,
-      0.62,
-      0.66,
+      0.42,
+      0.47,
+      0.53,
+      0.59,
+      0.65,
       0.7,
       0.74,
       0.78
