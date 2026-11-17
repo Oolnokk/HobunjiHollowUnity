@@ -155,28 +155,35 @@ assert.equal(renderWrapper({}, {}), 'drawn', 'normal rendering recovers after th
 assert.equal(temporaryYaw, 0, 'no stale rotation survives the recovery frame');
 
 
-// Execute the actual facing clamp against identical gameplay headings but
-// different cosmetic idle-stance yaws. None may choose a different side of the
-// camera's dead zone or leave the pet/feet with mismatched corrections.
+// Execute the actual render-facing clamp AND the real PerpRotation deadzone
+// code. A body test that only verifies equal correction calls can miss a final
+// edge-on portrait when an idle weapon's -40° yaw is added after clamping.
+const vm = require('node:vm'); // Runs the shipped deadzone with real hysteresis and movement-priority state.
+const perpSource = fs.readFileSync('docs/js/perp-rotation.js', 'utf8');
+const deg = angle => angle * Math.PI / 180; // Used by authored idle Light Weapon yaw and camera-facing fixtures.
+const signed = angle => Math.atan2(Math.sin(angle), Math.cos(angle)); // Same shortest-arc angular error convention as gameplay.
+const perpWindow = { SCRATCHBONES_CONFIG: { game: { movement: { perpRotDeadzoneDeg: 40 } } } }; // Default player portrait safety radius.
+vm.runInNewContext(perpSource, {
+  window: perpWindow, THREE: { MathUtils: { degToRad: deg } }, performance: { now: () => 1000 },
+}, { filename: 'perp-rotation.js' });
+perpWindow.PerpRotation.init({ angleDiff: signed });
+const turnApi = perpWindow.PerpRotation; // Production clamp, not a synthetic edge-selector.
+const turnState = {}; // Persistent private player deadzone state across successive render passes.
 const facingSource = between(composerSource,
   '  function applyRenderedFacingDeadzone(camera, undo, renderDebug) {',
   '\n  const absoluteLegsParentQuaternion =');
-let composedYaw = 0; // The visible player root after additive weapon-stanced yaw, used by the test's quaternion fixture.
-const turnDelta = { angle: 0, setFromAxisAngle(_axis, radians) { this.angle = radians; return this; } }; // Captures the final world-yaw correction handed to all body/attachment owners.
+let composedYaw = 0; // Root yaw after weapon stance and before the final camera correction.
+const turnDelta = { angle: 0, setFromAxisAngle(_axis, radians) { this.angle = radians; return this; } }; // Captures the one world-yaw correction for all owned visuals.
 const turnForward = {
   x: 0, z: 1,
   set(x, _y, z) { this.x = x; this.z = z; return this; },
   applyQuaternion(q) { this.x = Math.sin(q.yaw); this.z = Math.cos(q.yaw); return this; },
-}; // Samples the production compositor's scale-independent world-facing vector.
-const turnPivot = { set() { return this; } }; // The test's fixed posterior pivot does not need a world-matrix implementation.
-const turnPlayer = { visible: true, position: { x: 0, z: 0 }, localToWorld: p => p }; // Simulated player render root.
-const turnPet = { name: 'shoulder-pet' }; // Scene-sibling shoulder attachment receives the same world correction.
-const turnLegs = { name: 'player-legs' }; // Counter-rotation retains the procedural feet's authored heading.
-const turnApplied = []; // Records player/shoulder/leg correction parity per render.
-const turnApi = {
-  cameraRelativePerpsAtWorldPosition: () => [Math.PI / 2, -Math.PI / 2],
-  perpClamp(_state, raw) { return { effectiveTarget: raw < 0 ? -0.8 : 0.8 }; },
-}; // A deliberately sharp deadzone side switch exposes any accidental stance-driven clamp.
+}; // Samples the actual scale-independent heading computation using a minimal world-quaternion fixture.
+const turnPivot = { set() { return this; } }; // Fixed posterior pivot in the independent render fixture.
+const turnPlayer = { visible: true, position: { x: 0, z: 0 }, localToWorld: p => p }; // Player root drawn with the active weapon.
+const turnPet = { name: 'shoulder-pet' }; // Scene-sibling shoulder attachment.
+const turnLegs = { name: 'player-legs' }; // Procedural leg counter-rotation, tested mathematically above.
+const turnApplied = []; // Records correction distribution across the player and its owned attachments.
 const applyTurnClamp = new Function(
   'window', 'playerMesh', 'renderFacingForward', 'hierarchyWorldQuaternion',
   'renderFacingState', 'wrapSignedAngle', 'renderFacingRotation', 'renderFacingUp',
@@ -186,33 +193,55 @@ const applyTurnClamp = new Function(
   facingSource + '\nreturn applyRenderedFacingDeadzone;'
 )(
   { PerpRotation: turnApi }, turnPlayer, turnForward, () => ({ yaw: composedYaw }),
-  {}, a => Math.atan2(Math.sin(a), Math.cos(a)), turnDelta, AXIS_Y,
+  turnState, signed, turnDelta, AXIS_Y,
   turnPivot, 0, () => [{ root: turnPlayer }, { root: turnPet }],
   root => { turnApplied.push({ root: root.name || 'player', angle: turnDelta.angle }); },
-  {}, turnLegs, () => { turnApplied.push({ root: 'legs', angle: turnDelta.angle }); },
+  {}, turnLegs, () => { turnApplied.push({ root: 'legs-inverse', angle: turnDelta.angle }); },
   () => null
 );
+const camera = { position: { x: 0, z: 10 } }; // World camera normal; edge-on player planes lie at +/-90°.
+const perps = turnApi.cameraRelativePerpsAtWorldPosition(turnPlayer.position, camera.position);
+function assertPortraitIsNotEdgeOn(yaw, label) {
+  const gap = Math.min(...perps.map(perp => Math.abs(signed(yaw - perp)))); // Nearest unsafe edge-on axis.
+  assert(gap + 1e-9 >= turnApi.PERP_DEAD_RAD,
+    label + ': final composed yaw is within the 40° forbidden deadzone');
+}
 for (const stanceYaw of [-1.1, -0.2, 0, 0.2, 1.1]) {
   composedYaw = 0.1 + stanceYaw;
   turnApplied.length = 0;
   const debug = { baseFacingYaw: 0.1, authoredAbsoluteYaw: false };
-  applyTurnClamp({ position: { x: 0, z: 10 } }, [], debug);
-  assert(Math.abs(debug.bodyDeadzone.rawYaw - 0.1) < 1e-9,
-    'cosmetic weapon body yaw cannot change the deadzone heading');
-  assert(Math.abs(debug.bodyDeadzone.composedYaw - composedYaw) < 1e-9,
-    'mobile debug reports the actual composed heading separately from the gameplay heading');
-  assert(Math.abs(debug.bodyDeadzone.correction - 0.7) < 1e-9,
-    'the same gameplay heading always selects the same deadzone edge, even if stance yaw crosses center');
-  assert.deepEqual(turnApplied.map(entry => entry.root), ['player', 'shoulder-pet', 'legs'],
-    'the player, pinned shoulder pet and procedural legs receive the same correction pass');
-  assert(turnApplied.every(entry => Math.abs(entry.angle - 0.7) < 1e-9),
-    'body, attachment and leg compensation share one correction quaternion');
+  applyTurnClamp(camera, [], debug);
+  assert(Math.abs(debug.bodyDeadzone.rawYaw - composedYaw) < 1e-9,
+    'the composed weapon/body yaw, not the pre-stance facing, is actually clamped');
+  assert.equal(turnState.lastMovementYaw, 0.1,
+    'logical gameplay facing supplies a consistent low-priority deadzone side hint');
+  assertPortraitIsNotEdgeOn(debug.bodyDeadzone.composedYaw + debug.bodyDeadzone.correction,
+    'weapon stance yaw ' + stanceYaw);
+  assert(Math.abs(signed(debug.bodyDeadzone.renderedYaw - (composedYaw + debug.bodyDeadzone.correction))) < 1e-9,
+    'correction exactly resolves to the rendered yaw, not a stale baseline');
+  if (Math.abs(debug.bodyDeadzone.correction) > 1e-8) {
+    assert.deepEqual(turnApplied.map(entry => entry.root), ['player', 'shoulder-pet', 'legs-inverse'],
+      'the same correction is distributed to body and pet, and its inverse to the procedural legs');
+    assert(turnApplied.every(entry => Math.abs(entry.angle - debug.bodyDeadzone.correction) < 1e-9),
+      'the leg compensation uses the same correction quaternion which the production helper then inverts');
+  }
 }
+// A 40-degree idle Light Weapon yaw exactly cancels the old base-only clamp
+// at one camera perpendicular. This is the regression found on review.
+composedYaw = deg(90);
+const lightStance = { baseFacingYaw: deg(130), authoredAbsoluteYaw: false };
+applyTurnClamp(camera, [], lightStance);
+assertPortraitIsNotEdgeOn(lightStance.bodyDeadzone.renderedYaw,
+  'default -40° light-weapon yaw at the camera perpendicular');
+assert(Math.abs(signed(lightStance.bodyDeadzone.rawYaw - deg(90))) < 1e-9,
+  'the same dangerous raw edge-on case is actually exercised');
 composedYaw = -0.8;
 const authoredTurn = { baseFacingYaw: 0.1, authoredAbsoluteYaw: true };
-applyTurnClamp({ position: { x: 0, z: 10 } }, [], authoredTurn);
+applyTurnClamp(camera, [], authoredTurn);
 assert(Math.abs(authoredTurn.bodyDeadzone.rawYaw + 0.8) < 1e-9,
-  'authored absolute crawl/bed heading still selects its own facing edge');
+  'authored absolute crawl/bed heading remains the clamp input');
+assert.equal(turnState.lastMovementYaw, null,
+  'authored absolute crawl/bed pose never inherits the prior gameplay-facing side hint');
 
 // Check the shoulder-pet solver's actual rotation resolver, not a copied
 // implementation, under a negative-scale portrait parent.
