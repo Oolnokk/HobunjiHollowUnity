@@ -183,6 +183,8 @@ assert(mount.x > 9.5 * T, 'three-rock patch does not permanently obstruct forwar
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, 1, 'rock cluster is crossed with one airborne leap');
 
 
+assert.match(read('docs/js/pixel-probe.js'), /coasting=\$\{!!mountedRide\.coasting\}/, 'mobile Pixel Probe renders real coasting state without requiring a console');
+
 // A manual jump on clear ground must retain normal forward speed and airborne steering.
 // The rock-crossing hop above stays a scripted traversal, but ordinary air time
 // must not replace the riding controller with the old 0.8-tile horizontal lerp.
