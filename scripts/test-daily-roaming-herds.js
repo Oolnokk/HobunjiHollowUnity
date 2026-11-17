@@ -30,7 +30,7 @@ const w = {
     ensureRendererSpecies(){},
     ensureNorthernCliffsHerds(){return {ready:true,zone,roaming:zone.roamingHerdSpecies}},
   },
-  MootRegistration:{register(d){d.CREATURE_DB.moot={};return true}},
+  MootRegistration:{register(d){d.CREATURE_DB.moot={};d.CREATURE_DB['moot-herd-mother']={};return true}},
   __farmLog(message){logs.push(message)},
 }; // Other species have independent registration tests; this fixture targets live herd lifecycle.
 const deps = {CREATURE_DB:{nazgraku:{}},EXTERIOR_ZONES:{map_northern_cliffs:zone},
@@ -49,7 +49,9 @@ const tick = () => w.WildlifeSpawn.updateHostileSpawning(3); // Real two-second 
 const herds = () => w.WildlifeSpawn.roamingHerdCensus('map_northern_cliffs').herds; // The mobile dev-panel census.
 tick();
 assert.deepEqual(Array.from(herds(), herd => herd.species),['moot','moot']);
-assert(herds().every(h=>h.adults===12&&!h.mothers),'Moots must be proper herds, not 3-5-member foragers');
+assert(herds().every(h=>h.adults===12&&h.mothers===1&&h.carriedBabies===4),'Moot herds have 8-12 adults and one mother carrying 2-4 babies');
+assert.equal([...hostiles].filter(c=>c.creatureKey==='moot-herd-mother').length,2,'one Moot Herd-Mother is a living member of each herd');
+assert([...hostiles].filter(c=>c.isHerdMother).every(c=>c.carriedBabyItemKey==='mootBaby'),'wild Moot mothers carry recoverable Moot babies');
 assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5,'Nazgraku remains independent');
 randomValue=0.01;
 w.WildlifeSpawn.advanceCaveMidnight(10);
@@ -73,8 +75,9 @@ assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5);
 randomValue=0.99;deps.player.x=-9999;deps.player.y=-9999;
 w.WildlifeSpawn.advanceCaveMidnight(11);tick();
 assert.deepEqual(Array.from(herds(), herd => herd.species),['moot','moot'],'all-Moot days remain possible');
-randomSequence=[0.01,0.01,0.01,0.01,0.99,0.99]; // First Voorg-Ass slot needs four rolls; the Moot slot needs two.
+randomSequence=[0.01,0.01,0.01,0.01,0.99,0.99,0.99,0.99]; // Both Voorg-Ass and Moot roll species, herd size, mother index and baby count.
 w.WildlifeSpawn.advanceCaveMidnight(12);tick();
 assert.deepEqual(Array.from(herds(), herd => herd.species),['voorg-ass','moot'],'different species can occupy different slots on the same day');
+assert(herds().every(h=>h.mothers===1&&h.carriedBabies>=2&&h.carriedBabies<=4),'mixed-species roaming herds each retain their own Herd-Mother and babies');
 assert(logs.some(line=>line.includes('deferredNearby=1')),'mobile debug log explains pending rotation');
 console.log('PASS rotating herd slots, real midnight distance gates, map-exit deferral, Nazgraku isolation');
