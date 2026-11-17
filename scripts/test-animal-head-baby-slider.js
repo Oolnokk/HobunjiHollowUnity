@@ -207,7 +207,7 @@ listeners.get('babyHeadScale:input')[0]();
 ctx.draw();
 assert.equal(ctx.normalizedRig().babyHeadScale, 1.4);
 assert.equal(ctx.normalizedRig().babyHeadFrame.coordinateSpace, 'sprite-normalized-top-left', 'custom animals export painted head frame for runtime');
-assert.match(elements.get('babyHeadPreviewState').textContent, /painted Head influence/);
+assert.match(elements.get('babyHeadPreviewState').textContent, /earlier painted Head rectangle/, 'default mode labels the original painted region accurately');
 assert.notEqual(ctx.previewImageForAnimal(image), image, 'a custom animal with painted head weights is previewable');
 state.weights = null;
 ctx.draw();
