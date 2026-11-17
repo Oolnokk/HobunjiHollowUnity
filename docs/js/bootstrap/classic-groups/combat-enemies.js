@@ -7,7 +7,7 @@
     "js/combat/melee-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/enemy-loadout-rules.js?v=20261101playerhead3",
     "js/combat/npc-duel-staging.js?v=20261114npcDuel1",
-    "js/combat/combat-bandit.js?v=20261116eightDangerTier1",
+    "js/combat/combat-bandit.js?v=20261116staminaBudget2",
     "js/combat/ghoul-special-variants.js?v=20261031ghoulvar1",
     "js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1",
     "js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b",
