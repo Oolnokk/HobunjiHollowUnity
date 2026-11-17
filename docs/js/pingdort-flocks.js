@@ -376,11 +376,16 @@
     if(!p)return false;
     const now=performance.now();if(now-(burden.lastPingdortImpactMs||0)<700)return false;
     burden.lastPingdortImpactMs=now;
+    const pendingHypedRatio = burden.pendingFeyHypedImpactRatio; // The second attack retains an explicit one-use echo marker independent of its eventual impact strength.
+    const isHypedReplay = pendingHypedRatio != null && Number.isFinite(Number(pendingHypedRatio)); // A 50-point (100%-strength) echo is still a replay, never an ordinary attack.
+    const feyScale = isHypedReplay ? Math.max(0, Number(pendingHypedRatio)) : 1; // Preserve the exact authored ratio, including a valid 0, without affecting ordinary boulders.
+    delete burden.pendingFeyHypedImpactRatio; // A boulder picked up and thrown again later is an ordinary burden, not a permanently enchanted projectile.
     const combat=window.Combat?.deps,t=Number(combat?.TILE)||64;
     for(const enemy of combat?.hostileObjects||[]){
       if(enemy.health<=0||enemy.areaId!==burden.mapId)continue;
       if(Math.hypot(enemy.x/t-p.x,enemy.y/t-p.z)>1.35)continue;
-      combat.damageCreature?.(enemy,18,p.x*t,p.z*t,150,{tag:'blunt',source:'pingdort-boulder'});
+      combat.damageCreature?.(enemy,18*feyScale,p.x*t,p.z*t,150*feyScale,{tag:'blunt',source:'pingdort-boulder',
+        feyHypedReplay:isHypedReplay}); // Genuine burden collision scales both Health and knockback once, not the whole world damage owner.
     }
     return false; // The landed boulder remains a physical, pickable and throwable burden.
   }
@@ -500,6 +505,8 @@
       }
       if(advance(actor,state,step)){
         if(state.boulder){
+          const echoScale = Number(state.feyHypedEchoRatio); // The second authored bombing run may land after the special itself finishes.
+          if(Number.isFinite(echoScale) && echoScale>=0) state.boulder.pendingFeyHypedImpactRatio=echoScale;
           if(window.Shattercasks?.releaseBurdenDownward?.(state.boulder,'pingdort-bomber'))debug.bouldersDropped++;
           else window.Shattercasks?.discardBurden?.(state.boulder);
           state.boulder=null;

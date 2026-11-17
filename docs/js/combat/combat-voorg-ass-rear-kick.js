@@ -162,7 +162,7 @@
     });
     state.angleToward = state.lungeAngle; // Remains locked through charge, turn, and strike.
     creature.scaleY = 1;
-    if (creature.isCompanion) {
+    if (creature.isCompanion && !context?.feyHypedEcho) {
       const duration = Math.max(1000, Number(creature.def?.rearKickCooldownS || 9) * 1000);
       creature._voorgRearKickCooldownUntil = performance.now() + (Number.isFinite(duration) ? duration : DEFAULT_COOLDOWN_MS);
     }
@@ -265,6 +265,7 @@
   }
 
   function finish(creature) {
+    if (creature?._animalAttack?.hyped?.phase === 0) return; // Wild Voorg-Ass must complete both Hyped rear kicks before entering the fleeing AI state.
     if (!creature.isCompanion && isVoorgAss(creature)) {
       creature._voorgRearKickSpent = true; // Prevents repeated defensive kicks while this wild animal escapes.
       creature._voorgRearKickThreat = null;

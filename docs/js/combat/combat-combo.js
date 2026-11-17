@@ -197,10 +197,12 @@
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
       window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (activeStats.staminaCostMul || 0)) / shapeStats.efficiency), step.name, { actionKind: 'combatCombo', abilityId: id, heavy: !!step.heavy }); // Weapon-only Stamina trade-offs preserve the latest active stage multipliers.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)); // Bloodrush changes weapon tempo, not lunge distance.
+      const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, id) || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo); // Bloodrush changes weapon tempo, not lunge distance.
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, windupS + strikeS + returnS); // Stamina-spend disorientation eases across this exact authored combo, including its recovery.
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const normalRangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range; // Normal third-hit geometry, also used for enemies that missed either setup attack.
@@ -325,6 +327,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: actualDamage, feyPrimaryKnockback: actualKnockback }, // Sends the fully mastered pre-mitigation strike magnitude to a possible second Hyped swing.
               afflictionBonuses: hitAfflictions,
               comboStep: comboStep + 1,
               comboFinisher: isFinisher,

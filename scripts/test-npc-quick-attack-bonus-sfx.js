@@ -49,6 +49,7 @@ const ctx = {
   window: win, deps, performance: clock, Math,
   banditAttackBaseline: () => ({ damage: 10, rangePx: 100, knockbackPxS: 300 }),
   beginBanditLunge() {}, spawnBanditTrailArc() {}, finishBanditAction() {},
+  beginBanditMeleeStage(_actor, opts) { return win.Combat.beginStagedAction(opts); }, // Slice runs with no Hyped payment; preserve the production NPC stage's normal passthrough.
   banditRetreatDurationS: () => 0,
 };
 vm.createContext(ctx);

@@ -1151,6 +1151,31 @@
     return { damage: def.attackDamage, rangePx: def.attackRangePx, knockbackPxS: deps.HOSTILE_BITE_KNOCKBACK_PX_S };
   }
 
+  function beginBanditMeleeStage(c, options, target) {
+    window.FeyIllusions?.setActionDuration?.(c, (Number(options.windupS) || 0) + (Number(options.strikeS) || 0) + (Number(options.recoverS) || 0)); // A Demented NPC's perception rotates over its actual two-strike lifetime, not the default 220ms fallback.
+    const hype = window.FeyHypedAttacks; // Shared enhanced-Stamina executor owns the two NPC stages, not a duplicate AI or render pose.
+    const payment = hype?.claimNpcMelee?.(c); // Only actually spent, eligible Hyped Stamina is committed to this particular NPC melee attack.
+    if (!payment) return window.Combat.beginStagedAction(options);
+    c._banditSwingHoldS = Math.max(0, Number(c._banditSwingHoldS) || 0) / payment.tempo; // Existing SharedAttackPose holder follows its own doubled-speed attack clock.
+    c._banditSwingReturnS = Math.max(0, Number(c._banditSwingReturnS) || 0) / payment.tempo;
+    const firstLunge = c._banditLunging && (Number(c._banditLungeDistancePx) || 0) > 0
+      ? { distancePx: c._banditLungeDistancePx, hitTest: c._banditLungeHitTest } : null; // Captured once because the live lunge's hit-stop clears its cone metadata.
+    if (c._banditLunging) {
+      c._banditLungeDur /= payment.tempo; // The same swept lunge travels its authored distance within the accelerated first windup.
+      c._banditLungeT /= payment.tempo;
+    }
+    const firstLungeDuration = Number(c._banditLungeDur) || 0; // Used only if the second authored strike also has a legal original lunge.
+    return hype.beginNpcMelee(c, {
+      ...options,
+      feyHypedNpcTarget: target, // Protects the second strike from a vanished or map-transitioned enemy.
+      onFeyHypedNpcEchoStart: ratio => {
+        if (!firstLunge || !(ratio > 0) || !target || !(Number(target.health) > 0)) return;
+        if (c._banditLunging) cancelBanditLunge(c); // Finish the original movement budget before launching an independent second burst.
+        beginBanditLunge(c, firstLunge.distancePx * ratio, firstLungeDuration, firstLunge.hitTest, firstLunge.hitTest ? target : null);
+      }, // NPC echo movement has the same original obstacle sweeps but 2%-per-point scaled travel, as player Hyped echoes do.
+    }, payment);
+  }
+
   function resolvedBanditCombatTarget(c, fallbackTarget) {
     const target = c?._chunkCombatTarget; // Set only by the tribe camps' active-player-chunk ecology pass.
     if (!target) return fallbackTarget;
@@ -1169,6 +1194,8 @@
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
+    const echo = window.FeyHypedAttacks?.npcDamagePayload?.(c, target, amount, knockbackPxS, opts); // Real hit owner, including NPC→player and offscreen NPC→NPC, scales one independently tested second contact.
+    if (echo) { amount = echo.damage; knockbackPxS = echo.knockback; opts = echo.opts; }
     const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
@@ -1473,7 +1500,7 @@
     // landing its 3rd/final step, never after landing steps 1-2, which
     // should chain straight into the next step instead.
     let comboStepHit = false;
-    c._banditAction = window.Combat.beginStagedAction({
+    c._banditAction = beginBanditMeleeStage(c, {
       windupS: step.windupS / shapeStats.speed, strikeS: step.strikeS / shapeStats.speed, recoverS: 0,
       // isBandit -- see cancelAllStaged's own comment: without this tag
       // deps.damagePlayer's stagger-on-hit call cancels EVERY staged action
@@ -1494,13 +1521,13 @@
           ? window.NpcDuelStaging.strikeLands(c, targetPlayer, rangePx, halfConeRad)
           : window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: c.facing, pitch: c._banditAimPitch || 0 });
         if (landed && staged) {
+          if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
           damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         } else if (landed) {
+          if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          c._banditComboLandCount = (c._banditComboLandCount || 0) + 1;
           // def.attackTag (the bandit's actual rolled weapon material,
           // see weaponDamageTypeForTool/weapon.dmgType) determines both
           // the affliction dealt and the impact sound -- matches the
@@ -1525,7 +1552,7 @@
         }
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     return true;
   }
 
@@ -1552,7 +1579,7 @@
     c._banditSwingHoldS = (qa.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's quick attack swing visual gets.
     beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
-    c._banditAction = window.Combat.beginStagedAction({
+    c._banditAction = beginBanditMeleeStage(c, {
       windupS: qa.WINDUP_S / shapeStats.speed, strikeS: qa.STRIKE_S / shapeStats.speed, recoverS: 0,
       data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: loadout.tap2 }, // Shared vocal owner gives NPC quick attacks the same release grunt as the player.
       onStrike: () => {
@@ -1583,7 +1610,7 @@
         c._banditComboIndex = 0;
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     return true;
   }
 
@@ -1629,7 +1656,7 @@
       targetPlayer,
     );
     let techHit = false;
-    c._banditAction = window.Combat.beginStagedAction({
+    c._banditAction = beginBanditMeleeStage(c, {
       windupS,
       strikeS: cb.STRIKE_S / shapeStats.speed,
       recoverS: 0,
@@ -1657,7 +1684,7 @@
         c._banditHold1CdT = BANDIT_HOLD1_COOLDOWN_S / shapeStats.speed;
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     if (c._banditSwingWindupCurve) c._banditSwingWindupCurve.action = c._banditAction; // The curve belongs to this one windup only.
     return true;
   }
@@ -2200,8 +2227,9 @@
         comboReachPx: actor => banditComboReachPx(actor, actor.def, actor.def.banditAbilityLoadout),
         fireStagedSwing: (actor, foe, stepDt) => {
           // Same stamina cost and same-frame lunge catch-up as the full path's swing.
-          window.ResourceSystem?.spendStamina(actor, actor.def.attackStaminaCost, 'bandit attack');
+          window.ResourceSystem?.spendStamina(actor, actor.def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // NPC staged duels share the same Hyped transaction as visible melee.
           const fired = fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true });
+          if (!fired) window.FeyHypedAttacks?.clearCredit?.(actor, 'npcMelee'); // No stale Hyped charge after a rejected staged duel.
           if (fired) updateBanditLunge(actor, stepDt, foe);
           return fired;
         },
@@ -2379,7 +2407,7 @@
       return { aimAngle: c.facing, moving: false };
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
-    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack');
+    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
     if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < BANDIT_HOLD1_CHANCE) {
@@ -2391,6 +2419,7 @@
       if (conditionFavorable && deps.rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
     }
     if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
+    if (!fired) window.FeyHypedAttacks?.clearCredit?.(c, 'npcMelee'); // No authored attack started: its enhanced points cannot leak into an unrelated future action.
     // The staged action just created above (inside whichever fire*
     // call ran) gets its own first tick later THIS SAME FRAME --
     // window.Combat.update(dt) runs after updateHostiles in the main

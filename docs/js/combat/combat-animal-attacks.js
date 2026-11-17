@@ -73,92 +73,164 @@
     c._furiousSpecial = null;
   }
 
+  // An already-funded special reuses its authored def.start/def.update. No
+  // duplicate creature AI, animation player, or stamina payment is introduced.
+  function beginSpecialPhase(c, def, ctx, deps, echoRatio = null) {
+    const state = echoRatio == null ? {} : { feyHypedEchoRatio: echoRatio }; // Shared cone-lunge owner scales only the second physical movement effect.
+    const target = ctx?.target; // Original target stays committed; each special's own live collision checks can still miss it.
+    const reach = Number(c.def?.attackRangePx) || 0;
+    const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
+      ? Math.hypot(target.x - c.x, target.y - c.y) : 0;
+    let approach = null; // Optional native companion opening lunge, never a second extra approach for a special that owns one.
+    if (c.isCompanion && !def.ownsApproach && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) {
+      approach = echoRatio == null ? {} : { feyHypedEchoRatio: echoRatio };
+      beginConeLunge(c, approach, ctx, deps, {
+        targets: [target], rangePx: reach, halfConeRad: Math.PI / 3,
+        maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
+        speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
+      });
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' charging for ' + def.label, 'wildlife');
+    } else def.start(c, state, ctx, deps);
+    return { state, approach };
+  }
+
+  function targetPresent(c, target) {
+    return !target || ((Number(target.health) > 0 || !Number.isFinite(Number(target.health)))
+      && (!c.areaId || !target.areaId || c.areaId === target.areaId)); // A vanished/moved foe cannot be hit by a new second special.
+  }
+
+  // In the first pass, all dependencies are unchanged. A replay receives one
+  // actor-local view of the real damage owner; other creatures attacking in
+  // the same frame are entirely unaffected by the currently Hyped animal.
+  function specialDeps(c, aa, deps) {
+    const hype = aa.hyped;
+    if (!hype || hype.phase !== 1) return deps;
+    if (hype.deps) return hype.deps;
+    const view = Object.create(deps); // Preserve Combat.deps lookups, live LOS, map height and target services without cloning the whole context.
+    const effects = window.FeyHypedAttacks;
+    if (typeof deps.damagePlayer === 'function') view.damagePlayer = (amount, x, y, knockback, opts = {}) => {
+      const player = deps.player; // Actual player damage authority retains its own dodge, i-frame and injury rules.
+      if (player && (!targetPresent(c, player) || Number(player.health) <= 0)) return false;
+      const payload = effects?.creatureDamagePayload?.(c, amount, knockback, opts);
+      if (!payload) return deps.damagePlayer(amount, x, y, knockback, opts);
+      const applied = deps.damagePlayer(payload.damage, x, y, payload.knockback, payload.opts);
+      if (applied !== false) hype.hits++; // Count independently resolved secondary contacts, not precomputed victim copies.
+      return applied;
+    };
+    if (typeof deps.damageCreature === 'function') view.damageCreature = (target, amount, x, y, knockback, opts = {}) => {
+      if (!targetPresent(c, target) || Number(target?.health) <= 0) return false;
+      const payload = effects?.creatureDamagePayload?.(c, amount, knockback, opts);
+      if (!payload) return deps.damageCreature(target, amount, x, y, knockback, opts);
+      const applied = deps.damageCreature(target, payload.damage, x, y, payload.knockback, payload.opts);
+      if (applied !== false) hype.hits++;
+      return applied;
+    };
+    hype.deps = view; // One wrapper per paid creature special, allocated only for the second stage.
+    return view;
+  }
+
+  function replaySpecial(c, aa, deps) {
+    const hype = aa.hyped;
+    if (!hype || hype.phase !== 0 || (Number.isFinite(Number(c.health)) && Number(c.health) <= 0) || !targetPresent(c, aa.ctx?.target)
+      || (hype.area && c.areaId !== hype.area)) return false;
+    c.scaleY = 1; c._banditLungeHopCurrent = 0; // The first leap/burrow cannot leave a vertical offset behind before the new authored stage starts.
+    hype.phase = 1;
+    hype.hits = 0;
+    const ctx = { ...aa.ctx, feyHypedEcho: true }; // Attack-specific target, training and pose data are unchanged.
+    const phase = beginSpecialPhase(c, aa.def, ctx, deps, hype.ratio);
+    aa.state = phase.state;
+    aa.approach = phase.approach;
+    aa.ctx = ctx;
+    c._lastHypedCreatureAttack = { id: aa.id, used: hype.used, ratio: hype.ratio, stage: 'echo' }; // Mobile-readable status without holding a target reference.
+    return true;
+  }
+
   // ctx: { target } — the creature/player object this attack was aimed at
   // when triggered (player for a hostile, nearest hostile for a companion).
   function start(c, id, ctx) {
     const def = ATTACKS[id];
-    if (!def || !c || c._animalAttack || (Number.isFinite(c.health) && c.health <= 0)) return false; // A second request must never overwrite an already committed attack or reanimate a defeated companion.
+    if (!def || !c || c._animalAttack || (Number.isFinite(c.health) && c.health <= 0)) return false;
     const deps = window.Combat.deps;
-    // game.js pays each species' generic attackStaminaCost immediately before
-    // calling start(). Named attacks can top that payment up here without
-    // making the generic bite/Guard Charge share their larger specialty cost.
     const additionalStaminaCost = Math.max(0, Number(def.additionalStaminaCost?.(c, ctx, deps)) || 0);
     if (additionalStaminaCost > 0 && !ctx?.furiousSpecial) {
-      const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1); // Taxed increases the real cost of the special top-up.
+      const taxed = Number(window.ResourceSystem?.timedDebuffModifier?.(c, 'staminaCost') ?? 1);
       const required = additionalStaminaCost * (Number.isFinite(taxed) && taxed >= 0 ? taxed : 1);
-      if (c.isCompanion && !c.banditCompanion && Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) return false; // Only player pets use the bite fallback; wild animals keep their authored exhaustion behavior.
-      window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id); // Furious interrupts already paid for the whole special.
+      if (c.isCompanion && !c.banditCompanion && Number.isFinite(c.stamina) && c.stamina + 0.0001 < required) {
+        window.FeyHypedAttacks?.clearCredit?.(c, 'creatureSpecial'); // A rejected top-up cannot give a later unpaid special a stale echo.
+        return false;
+      }
+      window.ResourceSystem?.spendStamina(c, additionalStaminaCost, def.label || id, {
+        actionKind: 'combatCreatureSpecial', abilityId: 'creatureSpecial',
+      }); // Pounce's actual top-up may also spend Hyped; the entire paid amount funds one double attack.
     }
-    const state = {};
-    const target = ctx?.target; // Original companion decision remains locked during the opening charge.
-    const reach = Number(c.def?.attackRangePx) || 0; // Ordinary attack reach controls where the opening charge stops.
-    const distance = target && Number.isFinite(target.x) && Number.isFinite(target.y)
-      ? Math.hypot(target.x - c.x, target.y - c.y) : 0; // Only eligible targets outside melee reach need the burst.
-    let approach = null;
-    if (c.isCompanion && !def.ownsApproach && reach > 0 && distance > reach && distance <= companionEngagementRangePx(c, deps.TILE)) { // A named move with its own charge, leap, burrow or attachment approach must not lunge twice.
-      approach = {}; // Separate shared-lunge state never leaks into a signature attack's own state machine.
-      beginConeLunge(c, approach, ctx, deps, {
-        targets: [target], rangePx: reach, halfConeRad: Math.PI / 3, // Only the committed forward attack cone stops the charge; targets behind it must not trigger phantom contact.
-        maxDistancePx: deps.TILE * COMPANION_LUNGE_MAX_TILES,
-        speedPxS: deps.TILE * COMPANION_LUNGE_MAX_TILES / COMPANION_LUNGE_DURATION_S,
-      });
-      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' charging for ' + id, 'wildlife');
-    } else {
-      def.start(c, state, ctx, deps);
+    const phase = beginSpecialPhase(c, def, ctx, deps);
+    const hype = ctx?.furiousSpecial ? null : window.FeyHypedAttacks?.claimCreatureSpecial?.(c);
+    c._animalAttack = { id, def, state: phase.state, approach: phase.approach, ctx,
+      hyped: hype ? { ...hype, phase: 0, hits: 0, area: c.areaId, deps: null } : null };
+    if (hype) {
+      c._lastHypedCreatureAttack = { id, used: hype.used, ratio: hype.ratio, stage: 'first' };
+      window.__farmLog?.('[fey-hyped-creature] ' + (c.id || c.creatureKey || 'creature') + ' ' + id + ' two attacks at x2, second effect x' + hype.ratio.toFixed(2), 'combat');
     }
-    c._animalAttack = { id, def, state, approach, ctx };
-    deps?.requestThreatGrowl?.(c, `attack:${id}`);
+    deps?.requestThreatGrowl?.(c, 'attack:' + id);
     return true;
   }
 
   function update(c, dt) {
-    const aa = c._animalAttack;
+    const aa = c?._animalAttack;
     if (!aa) return false;
-    dt *= c._furiousSpecial ? 2 : 1; // All stages, including opening lunges and recovery, run at double speed during the funded special.
+    if ((Number.isFinite(Number(c.health)) && Number(c.health) <= 0) || (aa.hyped?.area && c.areaId !== aa.hyped.area)) { cancel(c); return false; } // Health-less editor/test actors remain active; only explicit death or map departure cancels.
+    // Hyped and Furious each mean 2x speed; these are exclusive commitments,
+    // never a 4x compound tempo or a free third attack.
+    const speed = (aa.hyped || c._furiousSpecial) ? 2 : 1;
+    const elapsed = Math.max(0, Number(dt) || 0) * speed;
+    const deps = window.Combat.deps;
     if (aa.approach) {
-      const reason = advanceConeLunge(c, aa.approach, dt, window.Combat.deps); // Uses the same collision substeps as every other animal attack lunge.
+      const reason = advanceConeLunge(c, aa.approach, elapsed, deps);
       if (!reason) return true;
-      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' stopped: ' + reason + ' after ' + (aa.approach.lungeTraveledPx / Math.max(1, window.Combat.deps.TILE)).toFixed(2) + ' tiles', 'wildlife');
+      window.__farmLog?.('[companion-lunge] ' + (c.id || c.creatureKey || 'animal') + ' stopped: ' + reason + ' after ' + (aa.approach.lungeTraveledPx / Math.max(1, deps.TILE)).toFixed(2) + ' tiles', 'wildlife');
       aa.approach = null;
-      aa.def.start(c, aa.state, aa.ctx, window.Combat.deps); // One committed original attack, without paying its Stamina/cooldown twice.
+      aa.def.start(c, aa.state, aa.ctx, deps);
       return true;
     }
-    const busy = aa.def.update(c, aa.state, dt, window.Combat.deps);
-    if (!busy) endAttackPresentation(c);
-    return busy;
+    const busy = aa.def.update(c, aa.state, elapsed, specialDeps(c, aa, deps));
+    if (busy) return true;
+    if (aa.hyped?.phase === 0 && replaySpecial(c, aa, deps)) return true;
+    endAttackPresentation(c);
+    return false;
   }
 
-  // Every way an attack ends (finished, hit landed, cancelled) puts the body back
-  // on the ground at full height. A leap that lands its hit mid-arc otherwise
-  // left the creature drawn (and colliding) in mid-air until its next leap.
-  function endAttackPresentation(c) {
-    finishFuriousSpecial(c); // Complete and cancel both restore the pre-interrupt cooldown clocks.
+  function endAttackPresentation(c, status = 'finished') {
+    const aa = c?._animalAttack;
+    if (aa?.hyped) {
+      const hype = aa.hyped;
+      window.FeyHypedAttacks?.noteCreatureEcho?.(c, status, aa.id, hype, hype.hits);
+      c._lastHypedCreatureAttack = { id: aa.id, used: hype.used, ratio: hype.ratio, stage: status, hits: hype.hits };
+      hype.deps = null; // Release the actor-local damage wrappers when the attack's final state completes.
+    }
+    finishFuriousSpecial(c);
     c._animalAttack = null;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0;
   }
 
-  function isBusy(c) { return !!c._animalAttack; }
+  function isBusy(c) { return !!c?._animalAttack; }
 
-  // Quick Attack condition checks use this instead of guessing at private
-  // named-attack stage strings. Each attack can declare exactly which part
-  // is its committed/strike window; Pounce's is the whole leap.
   function isStriking(c) {
     const aa = c?._animalAttack;
     return !aa?.approach && !!(aa?.def?.isStriking?.(aa.state, c));
   }
 
   function isWindingUp(c) {
-    const aa = c?._animalAttack; // Named attacks declare preparation windows without leaking private stage names to Quick Attacks.
+    const aa = c?._animalAttack;
     return !aa?.approach && !!(aa?.def?.isWindingUp?.(aa.state, c));
   }
 
   function cancel(c) {
-    const aa = c._animalAttack;
+    const aa = c?._animalAttack;
     if (!aa) return;
-    if (aa.approach) { c.vx = 0; c.vy = 0; } // Cancel an unstarted signature attack without calling its stage-specific cleanup.
-    else if (aa.def.cancel) aa.def.cancel(c, aa.state, window.Combat.deps);
-    endAttackPresentation(c);
+    if (aa.approach) { c.vx = 0; c.vy = 0; }
+    else aa.def.cancel?.(c, aa.state, window.Combat.deps);
+    endAttackPresentation(c, 'cancelled');
   }
 
   // A selected named attack owns this forward charge until its own cone sees a
@@ -170,8 +242,9 @@
     state.lungeTargets = options.targets || (target ? [target] : []); // Eligible actors sampled against the moving cone.
     state.lungeRangePx = Math.max(0, Number(options.rangePx) || 0); // Cone reach used only for stopping the charge.
     state.lungeHalfConeRad = Math.max(0, Number(options.halfConeRad) || 0); // Cone width shared with the eventual special.
-    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0); // Finite movement budget after commitment.
-    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1); // Movement rate independent of the normal chase AI.
+    const echoRatio = Number.isFinite(state.feyHypedEchoRatio) ? Math.max(0, state.feyHypedEchoRatio) : 1; // The second creature special's physical burst has 2%-per-point reach; its hit cone remains authoritative.
+    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0) * echoRatio; // Finite movement budget after commitment.
+    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1) * echoRatio; // A reduced second lunge cannot travel its full original budget on a slow frame.
     state.lungeCollideRadiusPx = Math.max(0, Number(options.collideRadiusPx) || (deps.TILE || 32) * 0.32);
     state.lungeTraveledPx = 0; // Integrates the actual traversed distance, not target distance.
     state.lungeDetect = options.detect || null; // Optional 3D-specific collision test supplied by the named attack.
@@ -285,6 +358,7 @@
   window.Combat.animalAttacks = {
     register, start, update, isBusy, isStriking, isWindingUp, cancel,
     mostExpensiveCompanionSpecial, startFuriousSpecial,
+    hypedDebug: c => ({ active: !!c?._animalAttack?.hyped, last: c?._lastHypedCreatureAttack || null }), // Pixel Probe and mobile creature diagnostics without a new widget.
     furiousDebug: c => ({ active: !!c?._furiousSpecial, threshold: mostExpensiveCompanionSpecial(c, { target: c })?.cost ?? null, last: c?._lastFuriousSpecial || null }),
     beginConeLunge, advanceConeLunge, leapConeDetect, advanceLeap,
     companionEngagementRangePx, createParticleBatch,

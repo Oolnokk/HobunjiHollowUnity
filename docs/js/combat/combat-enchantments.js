@@ -99,27 +99,36 @@
       icon: '〰', scalable: Object.freeze({ selfFootingCost: true }),
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
     }),
-    feyPhantomWound: Object.freeze({
-      id: 'feyPhantomWound', displayName: 'Phantom Wound', type: 'Base', alignment: 'Fey',
-      icon: '✧', description: 'Illusory gashes fill the target with pain and imagined injury. Phantom Wounds afflict Health rings and disorient without dealing damage.',
+    feyDementedStamina: Object.freeze({
+      id: 'feyDementedStamina', displayName: 'Demented Stamina', type: 'Base', alignment: 'Fey',
+      icon: '🌀', description: 'Each hit fills Demented Stamina. While afflicted, every Stamina point spent cumulatively twists perceived movement direction one degree, eased across the action.',
     }),
-    feyFalseBleeding: Object.freeze({
-      id: 'feyFalseBleeding', displayName: 'False Bleeding', type: 'Base', alignment: 'Fey',
-      icon: '◈', description: 'Makes the target see blood and feel it leaving their body; applies False Bleeding and Sapped, but never actual blood loss.',
+    feyPanickedStamina: Object.freeze({
+      id: 'feyPanickedStamina', displayName: 'Panicked Stamina', type: 'Base', alignment: 'Fey',
+      icon: '⚡', description: 'Each hit fills Panicked Stamina. The next dodge burns the entire reserve IN ADDITION to its normal cost, gaining 10% travel per point; allies and walls can be struck.',
     }),
-    feyNeedlePain: Object.freeze({
-      id: 'feyNeedlePain', displayName: 'Needle Pain', type: 'Base', alignment: 'Fey',
-      icon: '❧', description: 'Causes convincing phantom stabs and trembling without causing Footing loss or real wounds.',
+    feyTurnabout: Object.freeze({
+      id: 'feyTurnabout', displayName: 'False Bearing', type: 'Base', alignment: 'Fey',
+      icon: '↻', description: 'Every successful hit has a seeded 10% chance to rotate the target 180°.',
     }),
-    feyMazeStep: Object.freeze({
-      id: 'feyMazeStep', displayName: 'Maze-Step', type: 'Flourish', alignment: 'Fey',
-      icon: '✦', flurryBehavior: 'proc', description: 'A qualifying strike makes the world seem tilted; applies Disoriented, reducing movement and dodge reach.',
+    feyHypedPulse: Object.freeze({
+      id: 'feyHypedPulse', displayName: 'Hyped Pulse', type: 'Flourish', alignment: 'Fey',
+      icon: '✦', flurryBehavior: 'proc', description: 'A qualifying hit grants Hyped Stamina to the wielder. Spending it on attacks produces a fast second impact worth 2% per Hyped point.',
     }),
-    feyEchoDread: Object.freeze({
-      id: 'feyEchoDread', displayName: 'Echo Dread', type: 'Flourish', alignment: 'Fey',
-      icon: '☾', flurryBehavior: 'proc', description: 'A qualifying strike evokes a terrifying unreal injury, making the target Startled and Enfeebled.',
+    feyDreadPulse: Object.freeze({
+      id: 'feyDreadPulse', displayName: 'Panic Surge', type: 'Flourish', alignment: 'Fey',
+      icon: '☾', flurryBehavior: 'proc', description: 'A qualifying strike adds a stronger burst of Panicked Stamina, making the target’s next dodge dangerous.',
     }),
   });
+
+  const LEGACY_FEY_IDS = Object.freeze({
+    feyPhantomWound: 'feyDementedStamina',
+    feyFalseBleeding: 'feyPanickedStamina',
+    feyNeedlePain: 'feyTurnabout',
+    feyMazeStep: 'feyHypedPulse',
+    feyEchoDread: 'feyDreadPulse',
+  }); // Migrates previously obtained Fey weapons and learned enchantments without deleting their unlock progress.
+  const migratedId = id => LEGACY_FEY_IDS[id] || id;
 
   // Persisted as gearInventory.weaponEnchantments = {weaponKey:{base:[id...],flourishes:{slotId:id}}}
   // (character-scoped, saved by game.js's saveGearInventory like toolPlating).
@@ -148,11 +157,11 @@
 
   function cleanWeaponState(raw) {
     const base = Array.isArray(raw?.base)
-      ? [...new Set(raw.base.filter(id => DEFINITIONS[id]?.type === 'Base'))].slice(0, BASE_LIMIT)
+      ? [...new Set(raw.base.map(migratedId).filter(id => DEFINITIONS[id]?.type === 'Base'))].slice(0, BASE_LIMIT)
       : [];
     const flourishes = {};
     for (const slotId of window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']) {
-      const id = raw?.flourishes?.[slotId];
+      const id = migratedId(raw?.flourishes?.[slotId]);
       if (DEFINITIONS[id]?.type === 'Flourish') flourishes[slotId] = id;
     }
     return { base, flourishes };
@@ -208,6 +217,12 @@
     const u = target.enchantmentUnlocks;
     if (!u.base || typeof u.base !== 'object') u.base = {};
     if (!u.flourish || typeof u.flourish !== 'object') u.flourish = {};
+    for (const [legacy, modern] of Object.entries(LEGACY_FEY_IDS)) {
+      if (u.base[legacy]) u.base[modern] = true; // Keeps existing Garanki unlocks for old Base enchantments.
+      for (const slot of window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']) {
+        if (u.flourish[`${legacy}@${slot}`]) u.flourish[`${modern}@${slot}`] = true; // Keeps each previously learned Flourish slot.
+      }
+    }
     return u;
   }
 
@@ -414,7 +429,7 @@
     window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker });
   }
   const FLOURISH_HANDLERS = { sicced: applySicced, fury: applyFury, moralized: applyMoralized, resolve: applyResolve,
-    feyMazeStep: applyFeyFlourish, feyEchoDread: applyFeyFlourish };
+    feyHypedPulse: applyFeyFlourish, feyDreadPulse: applyFeyFlourish };
 
   function applyFlourish(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
@@ -501,7 +516,7 @@
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
-    for (const id of ['feyPhantomWound', 'feyFalseBleeding', 'feyNeedlePain']) {
+    for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
       if (hasBase(id, key)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker });
     }
     applyFlourish(event);

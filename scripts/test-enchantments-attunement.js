@@ -85,7 +85,8 @@ load('docs/js/perk-system.js');
 load('docs/js/combat/companion-offense.js');
 load('docs/js/combat/combat-attack-events.js');
 load('docs/js/combat/combat-enchantments.js');
-load('docs/js/combat/fey-illusions.js'); // Test real neutral Fey effects against ResourceSystem, not a mocked status API.
+load('docs/js/combat/fey-illusions.js'); // Tests the real sensory effects through ResourceSystem.
+load('docs/js/combat/fey-hyped-attacks.js'); // Tests the staged second attack rather than a cosmetic delayed impact.
 context.__hobunjiPlayerProfile = { abilityProgression: { plain: { chargedBreaker: { 1: 0 } }, magic: { chargedBreaker: { 1: 0 } } } }; // CombatProgression loads its saved choices from the profile at startup.
 load('docs/js/combat/combat-progression.js');
 delete context.__hobunjiPlayerProfile;
@@ -589,78 +590,394 @@ assert.equal(trinkets.onAction('grant', { value: 'invalid' }).ok, false);
 assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
 
 
-// ── Fey origin: neutral Immundanity, actual on-hit afflictions,
-// four bound weapon shapes, real time-limited debuffs, and no magical injury. ──
+// ── Fey illusions: real exertion responses, resource reservations,
+// enhanced second strikes, seeded turns, save migration and neutral origin. ──
 {
   reset();weapon='fey-testing-blade';
-  const fey= context.FeyIllusions;
-  assert(fey&&fey.EFFECTS.feyPhantomWound&&fey.EFFECTS.feyMazeStep);
-  assert.equal(fey.debugSnapshot().registered,false,'Fey combat script loads before the actual EffectBuffBar owner');
-  let feyBuffProvider=null; // Tests the late-loaded shared HUD registration seam using the production FeyIllusions module.
-  context.EffectBuffBar={registerProvider(id,callback){
-    assert.equal(id,'fey-illusions');
-    feyBuffProvider=callback;return true;
-  },refresh(){}};
-  assert.equal(fey.ensureBuffProvider(),true,'lazy registration succeeds once EffectBuffBar is loaded');
-  assert.equal(fey.ensureBuffProvider(),true,'repeated registration is idempotent');
-  assert.equal(typeof feyBuffProvider,'function','Fey symptoms participate in the existing buff icon owner');
-  assert.equal(fey.debugSnapshot().registered,true);
-  const allFeyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
-  same([...allFeyIds].sort(),['feyPhantomWound','feyFalseBleeding','feyNeedlePain','feyMazeStep','feyEchoDread'].sort());
+  const fey=context.FeyIllusions;
+  assert(fey?.EFFECTS.feyDementedStamina&&fey?.EFFECTS.feyHypedPulse);
+  assert.equal(fey.debugSnapshot().registered,false,'Fey defers HUD registration until shared owner is ready');
+  let feyBuffProvider=null;
+  context.EffectBuffBar={registerProvider(id,callback){assert.equal(id,'fey-illusions');feyBuffProvider=callback;return true;},refresh(){}};
+  assert.equal(fey.ensureBuffProvider(),true);
+  assert.equal(fey.ensureBuffProvider(),true,'HUD registration stays idempotent');
+  assert.equal(typeof feyBuffProvider,'function');
+  const feyIds=Object.keys(ES.DEFINITIONS).filter(id=>ES.DEFINITIONS[id].alignment==='Fey');
+  same(feyIds.sort(),['feyDementedStamina','feyPanickedStamina','feyTurnabout','feyHypedPulse','feyDreadPulse'].sort());
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
-  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
-  for(const id of ['feyPhantomWound','feyFalseBleeding'])assert.equal(ES.addBase('fey-testing-blade',id),true);
-  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyMazeStep'),true);
-  assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0,'only Fey enchantments are neutral');
-  assert.equal(ES.getEnchantmentPowerMultiplier('fey-testing-blade'),1);
-  const feyOpposed=ES.cleanWeaponState({base:['feyPhantomWound','burning'],flourishes:{tap1:'feyMazeStep'}});
-  gear.weaponEnchantments['fey-mixed']=feyOpposed;
-  assert.equal(ES.getWeaponImmundanity('fey-mixed'),1,'Fey adds no imbalance, while Hronal still does');
-  assert.equal(fey.potency('fey-mixed'),1,'positive Immundanity must not boost the Fey effect');
-  const victim=makeEntity({name:'Illusion-only test target',health:75,footing:64,stamina:83});
-  const before={health:victim.health,footing:victim.footing,stamina:victim.stamina,
-    maxHealth:RS.getEffectiveMax(victim,'health'),maxFooting:RS.getEffectiveMax(victim,'footing')};
-  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyFalseBleeding',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyNeedlePain',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyMazeStep',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert.equal(fey.apply('feyEchoDread',victim,{weaponKey:'fey-testing-blade'}),true);
-  assert(RS.getAffliction(victim,'phantomWoundsHealth')>0);
-  assert(RS.getAffliction(victim,'phantomBloodHealth')>0);
-  assert(RS.getAffliction(victim,'phantomPainFooting')>0);
-  for(const [stat,value] of Object.entries(before)) {
-    const current=stat==='maxHealth'?RS.getEffectiveMax(victim,'health'):stat==='maxFooting'?RS.getEffectiveMax(victim,'footing'):victim[stat];
-    assert.equal(current,value,'Fey has no physical resource change: '+stat);
-  }
-  for(const debuff of ['disoriented','sapped','trembling','startled','enfeebled'])
-    assert(RS.hasTimedDebuff(victim,debuff),'Fey applies real timed behavioral debuff: '+debuff);
-  assert(RS.timedDebuffModifier(victim,'moveSpeed')<1,'Fey disorientation actually modifies movement');
-  assert(RS.timedDebuffModifier(victim,'outgoingDamage')<1,'Fey fear actually reduces offensive confidence');
-  assert(RS.timedDebuffModifier(victim,'attackSpeed')<1,'Fey pain actually causes hesitation');
-  const originalES=context.EnchantmentSystem; // Swap only the power accessor in this test realm to exercise a true externally-imposed 0% enchantment-effects gate.
-  context.EnchantmentSystem={...originalES,getEnchantmentPowerMultiplier:()=>0};
-  assert.equal(fey.apply('feyPhantomWound',victim,{weaponKey:'fey-testing-blade'}),false,'0% effect gate suppresses even Fey magic');
-  context.EnchantmentSystem=originalES;
+  for(const id of ['feyDementedStamina','feyPanickedStamina'])assert.equal(ES.addBase('fey-testing-blade',id),true);
+  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyDreadPulse'),true);
   assert.equal(ES.getWeaponImmundanity('fey-testing-blade'),0);
+  const migrated=ES.cleanWeaponState({base:['feyPhantomWound','burning'],flourishes:{tap1:'feyMazeStep'}});
+  same(migrated.base,['feyDementedStamina','burning'],'old Fey Base remaps on load');
+  assert.equal(migrated.flourishes.tap1,'feyHypedPulse','old Fey Flourish remaps on load');
+  gear.weaponEnchantments['fey-mixed']=migrated;
+  assert.equal(ES.getWeaponImmundanity('fey-mixed'),1,'ordinary Hronal still counts');
+  assert.equal(fey.potency('fey-mixed'),1,'Fey ignores positive Immundanity');
 
-  // Cross the actual CombatAttackEvents -> EnchantmentSystem.onHit() path:
-  // direct Fey strikes still use the ordinary collision pipeline, but the
-  // magical add-ons never write Health or Footing.
-  assert.equal(ES.setFlourish('fey-testing-blade','tap1','feyEchoDread'),true);
+  const victim=makeEntity({name:'Illusion-only target',health:75,footing:64,stamina:83,angle:0,facing:0});
+  assert.equal(fey.apply('feyDementedStamina',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(fey.apply('feyPanickedStamina',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert.equal(RS.getAffliction(victim,'dementedStamina'),9);
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9);
+  assert.equal(victim.health,75,'an illusory sensation is not actual injury');
+  assert.equal(victim.footing,64,'an illusory sensation does not instantly damage footing');
+  randomQueue=[0.99]; // Chooses positive signed drift once per actual payment.
+  RS.spendStamina(victim,10,'ordinary exertion',{durationS:.22});
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9,'other stamina goes first');
+  fey.update(.11,victim);
+  assert(victim.angle>0 && victim.angle<10*Math.PI/180,'direction interpolates across action');
+  fey.update(.11,victim);
+  assert(Math.abs(victim.angle-10*Math.PI/180)<.00001,'10 stamina causes exactly 10° of rotation');
+  RS.spendStamina(victim,4,'ordinary exertion');
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),9,'ordinary exertion does not immediately spend panic reserve');
+  victim.dodging=true;victim.dodgeT=.2;
+  const payment=RS.spendStamina(victim,3,'roll dodge',{actionKind:'combatDodge'});
+  assert.equal(payment.panicSpent,9,'dodge burns full panic reserve as a surcharge');
+  assert.equal(RS.getAffliction(victim,'panickedStamina'),0,'no double spending of panic');
+  fey.update(.016,victim);
+  assert(victim.dodgeT>.35,'panic adds 10% roll duration per panic point');
+  victim.isCompanion=true;victim.master=player; // Models a real player-side actor rather than assuming an unaffiliated enemy can friendly-fire the player's pets.
+  const ally=makeEntity({name:'Roll-path companion',x:32,y:0,footing:100,isCompanion:true,master:player}); // Existing companion roster resolves panic collisions by swept path.
+  companionObjects.push(ally);
+  victim.x=64;fey.update(.016,victim);
+  assert(ally.footing<100,'panic roll damages an intersected ally’s Footing');
+  assert(knockbacks.some(k=>k.target===ally&&k.meta?.source==='fey-panicked-roll'),'panic roll uses the shared ally knockback seam');
+  companionObjects.pop();
+  const wallImpacts=[];
+  context.KnockbackCollisionImpact={resolveStrength:(actor,desc,strength)=>{wallImpacts.push({actor,desc,strength});}};
+  assert.equal(fey.onDodgeBlocked(victim),true,'blocked panic rolls resolve through knockback collision owner');
+  assert.equal(fey.onDodgeBlocked(victim),false,'one blocked dodge gets only one wall impact');
+  assert.equal(wallImpacts.length,1);
+  assert.equal(wallImpacts[0].strength,.9,'wall impact strength is proportional to Panicked Stamina');
+  victim.dodging=false;fey.update(.016,victim);
+  randomQueue=[0];
+  assert.equal(fey.apply('feyTurnabout',victim,{weaponKey:'fey-testing-blade'}),true);
+  assert(Math.abs(Math.abs(victim.facing-victim.angle))<.000001,'turn proc changes both facing sources');
+  randomQueue=[.99];
+  assert.equal(fey.apply('feyTurnabout',victim,{weaponKey:'fey-testing-blade'}),false,'90% proc miss does nothing');
+  const originalES=context.EnchantmentSystem;
+  context.EnchantmentSystem={...originalES,getEnchantmentPowerMultiplier:()=>0};
+  assert.equal(fey.apply('feyDementedStamina',victim,{weaponKey:'fey-testing-blade'}),false,'explicit 0% gate suppresses Fey');
+  context.EnchantmentSystem=originalES;
+
+  // Verify actual hit event uses the two on-hit afflictions and the new Panic Surge.
   const feyImpactTarget=makeEntity({name:'Fey combat-event target',health:77,footing:55});
   const feyImpact=CAE.prepare({attacker:player,abilityId:'swingCombo',comboStep:3,comboFinisher:true});
   CAE.hit(feyImpact,{target:feyImpactTarget,actualDamage:0});
-  assert(RS.getAffliction(feyImpactTarget,'phantomWoundsHealth')>0,
-    'actual melee hit events apply Fey Base illusions');
-  assert(RS.getAffliction(feyImpactTarget,'phantomBloodHealth')>0,
-    'actual melee hit events also apply the second Fey Base illusion');
-  assert(RS.hasTimedDebuff(feyImpactTarget,'startled'),
-    'qualifying combo-finisher melee hit triggers the Fey Echo Dread Flourish');
-  assert.equal(feyImpactTarget.health,77,'magical Fey on-hit events cannot deal real damage');
-  assert.equal(feyImpactTarget.footing,55,'magical Fey on-hit events cannot affect real Footing');
+  assert(RS.getAffliction(feyImpactTarget,'dementedStamina')>0,'Base applies Demented on real hits');
+  assert(RS.getAffliction(feyImpactTarget,'panickedStamina')>9,'Flourish adds panic beyond Base');
+  assert.equal(feyImpactTarget.health,77,'Fey magical component cannot directly injure');
+  assert.equal(feyImpactTarget.footing,55,'Fey magical component cannot directly remove footing');
+
+  // Hyped pays through central stamina owner, then arms one scaled echo impact.
+  assert.equal(fey.apply('feyHypedPulse',player,{weaponKey:'fey-testing-blade',attacker:player}),true);
+  const hypedPayment=RS.spendStamina(player,8,'combo attack',{actionKind:'combatCombo'});
+  assert(hypedPayment.consumed.some(x=>x.id==='hypedStamina'&&x.rawConsumed===8));
+  const echo=CAE.prepare({attacker:player,abilityId:'swingCombo',damage:25,rangePx:40,halfConeRad:1,knockbackPxS:100});
+  assert.equal(echo.metadata.feyHypedUsed,8);
+  const echoTarget=makeEntity({name:'Echo target',health:90,x:10});
+  hostileObjects.push(echoTarget); // The staged second strike must find this target through the real hostile roster, not invent a hit off-roster.
+  let secondary=null;
+  const hypedStages=[]; // Actual first/second actions inspected without requiring a browser frame loop.
+  const hypedVisuals=[]; // Captures both full authored pose durations for verifying the 2x speed rule.
+  context.Combat.beginStagedAction=opts=>{
+    const stage={...opts,totalS:(opts.windupS||0)+(opts.strikeS||0)+(opts.recoverS||0),cancelled:false};
+    hypedStages.push(stage);
+    return stage;
+  };
+  context.Combat.init=deps=>{context.Combat.deps=deps;};
+  assert.equal(context.FeyHypedAttacks.installCombatBridge(),true);
+  context.Combat.deps.triggerWeaponSwingVisual=(duration,options)=>hypedVisuals.push({duration,options});
+  context.Combat.init(context.Combat.deps);
+  context.Combat.meleeHit=(_actor,target)=>target===echoTarget; // The actual collider accepts only this single intersecting creature, not every hostile in the arena.
+  context.Combat.deps.damageCreature=(target,damage,x,y,knockback,opts)=>{secondary={target,damage,knockback,opts};};
+  context.Combat.deps.triggerWeaponSwingVisual(.30,{anim:'sweep',holdS:.1}); // Initial authored presentation belongs to the original strike.
+  const firstStage=context.Combat.beginStagedAction({windupS:.2,strikeS:.1,recoverS:0});
+  CAE.hit(echo,{target:echoTarget,actualDamage:0});
+  firstStage.onComplete(firstStage);
+  assert.equal(context.FeyHypedAttacks.isReplaying(player),true,'the first completed strike locks incoming weapon inputs until its Hyped follow-up finishes');
+  assert.equal(hypedStages.length,2,'first attack schedules exactly one independent second staged attack');
+  assert.equal(hypedVisuals.length,2,'Hyped attack replays the actual authored animation');
+  assert(Math.abs(hypedVisuals[1].duration-.15)<1e-6,'second authored animation runs at exactly double speed');
+  hypedStages[1].onStrike(); // A second independently tested hit, not a copy of first on-hit damage.
+  assert(secondary,'Hyped paid attack strikes independently a second time');
+  assert.equal(secondary.damage,4,'8 Hyped stamina produces a 16%-power second strike');
+  assert.equal(secondary.knockback,16,'secondary knockback scales with the same factor');
+  hypedStages[1].onComplete?.();
+  assert.equal(context.FeyHypedAttacks.isReplaying(player),false,'the completed second strike releases its input lock');
+  assert.equal(context.FeyHypedAttacks.debugSnapshot().replayCount,1,'second impact is recorded once');
+  assert.equal(CAE.prepare({attacker:player,abilityId:'swingCombo'}).metadata.feyHypedUsed,undefined,'echo credit spent once');
+
+  const hypeReserved=RS.getAffliction(player,'hypedStamina');
+  RS.spendStamina(player,2,'walking',{actionKind:'walking'});
+  RS.spendStamina(player,2,'thrown spear',{actionKind:'offensiveHeldCharge',abilityId:'thrownWeapon'});
+  assert.equal(RS.getAffliction(player,'hypedStamina'),hypeReserved,'Hyped stamina is not consumed by walking or the separate projectile/ammo pipeline');
+
+  // The real player's hallucination rotates the camera and movement basis,
+  // not their persistent facing angle or customized camera setting.
+  RS.addAffliction(player,'dementedStamina',8);
+  const playerAngleBefore=player.angle;
+  randomQueue=[.99]; // Consistent random sign for one action in this harness.
+  RS.spendStamina(player,4,'normal movement',{durationS:.2});
+  fey.update(.1,player);
+  const yaw=fey.movementRotationRad(player);
+  assert(Math.abs(Math.abs(yaw)-2*Math.PI/180)<.0001,'half action rotates the gameplay movement basis by half its 4° total');
+  assert(Math.abs(fey.cameraYawDeg(player)+yaw*180/Math.PI)<.0001,'camera and movement use one additive yaw with correct camera azimuth sign');
+  assert.equal(player.angle,playerAngleBefore,'Demented illusion cannot overwrite the player body facing/camera settings');
+  fey.update(.1,player);
+  assert(Math.abs(Math.abs(fey.movementRotationRad(player))-4*Math.PI/180)<.0001,'full movement-camera interpolation ends at precisely 4°');
+  const yawBeforeTimedSpend=fey.movementRotationRad(player);
+  randomQueue=[.99]; // Deterministically choose one direction for this second, independently timed exertion.
+  RS.spendStamina(player,2,'timed movement',{durationS:.22});
+  assert.equal(fey.setActionDuration(player,.4),true,'actual authored action time replaces the 220ms fallback');
+  fey.update(.2,player);
+  assert(Math.abs(Math.abs(fey.movementRotationRad(player)-yawBeforeTimedSpend)-Math.PI/180)<.0001,
+    'halfway through a 400ms action, 2 spent stamina produce exactly 1° of the 2° turn');
+  fey.update(.2,player);
+  const gameFeyHooks=fs.readFileSync('docs/game.js','utf8'); // Uses real closure-owned gameplay seam, not a duplicate mock camera.
+  assert(gameFeyHooks.includes('window.FeyIllusions?.cameraYawDeg?.(player)'), 'real gameplay camera azimuth consumes Fey yaw');
+  assert(gameFeyHooks.includes('window.FeyIllusions?.movementRotationRad?.(player)'), 'non-shoulder movement consumes the same yaw');
+  assert(gameFeyHooks.includes('window.FeyIllusions?.isPanickedRolling?.(player)'), 'ordinary dodge hot path skips Fey-only collision work');
+
+  // A Hyped first swing that misses still makes its paid second swing, with its
+  // own present-time hit test rather than requiring a first-hit target ledger.
+  RS.addEnhancedResource(player,'hypedStamina',3);
+  RS.spendStamina(player,3,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  const whiff=CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:10,rangePx:40,halfConeRad:1,knockbackPxS:50});
+  context.Combat.deps.triggerWeaponSwingVisual(.2,{anim:'thrust'});
+  const whiffStage=context.Combat.beginStagedAction({windupS:.1,strikeS:.1,recoverS:0});
+  secondary=null;
+  whiffStage.onComplete(whiffStage); // No CAE.hit from first swing, by construction.
+  hypedStages.at(-1).onStrike(); // Target is now in range and can be struck by the second attack.
+  assert(secondary&&secondary.damage>0,'an independently aimed second swing can hit when the first swing missed');
+  hypedStages.at(-1).onComplete?.();
+
+  // Actual ability consumers query the committed Hyped credit before calculating
+  // windup/strike durations. Once the first is already 2x, the echo must be the
+  // SAME duration, not another 2x on top (which would be 4x normal).
+  RS.addEnhancedResource(player,'hypedStamina',4);
+  RS.spendStamina(player,4,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  assert.equal(context.FeyHypedAttacks.speedMultiplierForNextAction(player,'swingCombo'),2,'a funded first attack has twice the ordinary speed');
+  const accelerated=CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:15,rangePx:40,halfConeRad:1,knockbackPxS:50});
+  assert.equal(accelerated.metadata.feyHypedUsed,4);
+  context.Combat.deps.triggerWeaponSwingVisual(.15,{anim:'sweep'});
+  const acceleratedStage=context.Combat.beginStagedAction({windupS:.1,strikeS:.05,recoverS:0});
+  CAE.hit(accelerated,{target:echoTarget,actualDamage:0,metadata:{feyPrimaryDamage:40,feyPrimaryKnockback:200}}); // Deliberately differs from context's weaker base 15/50.
+  acceleratedStage.onComplete(acceleratedStage);
+  const equallyFastEcho=hypedStages.at(-1);
+  assert(Math.abs(equallyFastEcho.totalS-.15)<1e-6,'second staged swing is also 2x normal speed, not an accidental 4x');
+  assert(Math.abs(hypedVisuals.at(-1).duration-.15)<1e-6,'second authored visual retains the accelerated first duration');
+  secondary=null;
+  equallyFastEcho.onStrike();
+  assert(Math.abs(secondary?.damage-3.2)<1e-6,'4 Hyped points copy 8% of the mastered first hit (40), not the weaker 15 base damage');
+  assert(Math.abs(secondary?.knockback-16)<1e-6,'Hyped also copies 8% of the fully mastered first 200 knockback');
+  equallyFastEcho.onComplete?.();
+  for(const file of ['combat-combo.js','combat-quickattacks.js','combat-flurry.js','combat-charged-breaker.js']) {
+    const source=fs.readFileSync('docs/js/combat/'+file,'utf8'); // Tests each actual ability's stage-tempo integration, not only a mocked combat facade.
+    assert(source.includes('hypedAttackTempo') && source.includes('speedMultiplierForNextAction'),file+' must accelerate its initial paid swing');
+    assert(source.includes('setActionDuration') || source.includes('durationS },'),file+' must ease Demented rotation over the real action length');
+  }
+
+  RS.addEnhancedResource(player,'hypedStamina',2);
+  RS.spendStamina(player,2,'combo',{actionKind:'combatCombo',abilityId:'swingCombo'});
+  CAE.prepare({attacker:player,abilityId:'swingCombo',weaponKey:weapon,damage:10,rangePx:40,halfConeRad:1});
+  const countBeforeCancel=hypedStages.length;
+  const interrupted=context.Combat.beginStagedAction({windupS:.3,strikeS:.1,recoverS:0});
+  interrupted.onCancel(interrupted);
+  assert.equal(hypedStages.length,countBeforeCancel+1,'cancelled primary cannot create an extra Hyped attack');
+  assert.equal(context.FeyHypedAttacks.debugSnapshot().activeHypedAttacks,0,'cancelled actions release their strong target references');
+  // NPC Hyped: eligible resource payments must fund exactly two real staged
+  // attacks from that NPC, never the player's unrelated staged-action bridge.
+  const npc=makeEntity({name:'Hyped NPC',isBandit:true,health:100,stamina:100,areaId:'arena'});
+  const npcTarget=makeEntity({name:'NPC opponent',health:100,x:18,areaId:'arena'});
+  const nHype=context.FeyHypedAttacks;
+  RS.addEnhancedResource(npc,'hypedStamina',8);
+  const npcBefore=RS.getAffliction(npc,'hypedStamina');
+  RS.spendStamina(npc,4,'patrol',{actionKind:'walking'});
+  assert.equal(RS.getAffliction(npc,'hypedStamina'),npcBefore,'NPC walking leaves Hyped enhanced resource untouched');
+  RS.spendStamina(npc,8,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const npcPayment=nHype.claimNpcMelee(npc);
+  assert.equal(npcPayment?.used,8,'NPC melee gets a separately paid Hyped transaction');
+  assert.equal(npcPayment?.tempo,2,'NPC attack runs at precisely twice normal speed');
+  assert.equal(nHype.claimNpcMelee(npc),null,'one NPC payment cannot be claimed twice');
+  assert.equal(nHype.claimNpcMelee(player),null,'player pending credits cannot be stolen by NPC attack stages');
+  const npcResults=[]; // First and second actual committed payloads share the NPC's normal damage authority.
+  let npcCanHit=true, npcComplete=0, npcStrikeCount=0, npcEchoStarts=0, npcEchoMovementRatio=0; // Confirms the original NPC movement owner stages one scaled second lunge.
+  const npcStagesBefore=hypedStages.length;
+  const npcOptions={
+    windupS:.2,strikeS:.1,recoverS:0,
+    data:{isBandit:true,attacker:npc,voiceAbilityId:'opportunistJab'},
+    feyHypedNpcTarget:npcTarget, // NPC stage must reject a target that changed map before the second contact.
+    onFeyHypedNpcEchoStart(ratio){npcEchoStarts++;npcEchoMovementRatio=ratio;}, // Actual bandit owner uses the same callback to launch its second independently swept lunge.
+    onStrike(){
+      npcStrikeCount++;
+      if (!npcCanHit) return; // An original miss cannot skip the paid, independently checked second attack.
+      const second=nHype.npcDamagePayload(npc,npcTarget,40,200,{tag:'sharp',afflictionBonuses:{bleedingHealth:2},footingDamageMultiplier:1.4});
+      npcResults.push(second || {damage:40,knockback:200,opts:{tag:'sharp',afflictionBonuses:{bleedingHealth:2}}});
+    },
+    onComplete(){npcComplete++;},
+    onCancel(){npcComplete=-1;},
+  };
+  const npcFirst=nHype.beginNpcMelee(npc,npcOptions,npcPayment);
+  npc._banditAction=npcFirst;
+  assert(Math.abs(npcFirst.windupS-.1)<.00001&&Math.abs(npcFirst.strikeS-.05)<.00001,
+    'NPC original attack windup and strike are both accelerated, not just its animation');
+  npcFirst.onStrike(npcFirst);
+  npcFirst.onComplete(npcFirst);
+  assert.equal(npcComplete,0,'NPC combo cooldown/retreat cannot run between paired attacks');
+  assert.equal(npcEchoStarts,1,'the second NPC strike starts one fresh lunge before its actual staged attack');
+  assert(Math.abs(npcEchoMovementRatio-.16)<.000001,'the second NPC lunge scales distance by 2% per committed Hyped point');
+  assert.equal(hypedStages.length,npcStagesBefore+2,'NPC attack creates exactly two authoritatively staged actions');
+  const npcSecond=npc._banditAction;
+  assert(Math.abs(npcSecond.windupS-.1)<.00001&&Math.abs(npcSecond.strikeS-.05)<.00001,'NPC second attack also runs at 2x');
+  npcSecond.onStrike(npcSecond);
+  npcSecond.onComplete(npcSecond);
+  assert.equal(npcStrikeCount,2,'same authored NPC attack executes two independent actual strikes');
+  assert.equal(npcComplete,1,'NPC authored completion runs once, after both strikes');
+  assert.equal(npcResults[0].damage,40);
+  assert(Math.abs(npcResults[1].damage-6.4)<.00001,'8 Hyped points copy 16% of actual first NPC damage');
+  assert(Math.abs(npcResults[1].knockback-32)<.00001,'NPC secondary knockback respects the same ratio');
+  assert(Math.abs(npcResults[1].opts.afflictionBonuses.bleedingHealth-.32)<.00001,'NPC second status magnitude copies committed original');
+  assert.equal(npcResults[1].opts.footingDamageMultiplier,1.4,'Footing effect does not get incorrectly multiplied by the ratio twice');
+  assert.equal(npc._feyHypedNpcSequence,undefined,'completed NPC attacks release all target snapshots and stage state');
+
+  // A missed first NPC swing can still hit on the second actual hit test.
+  RS.addEnhancedResource(npc,'hypedStamina',5);
+  RS.spendStamina(npc,5,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const npcNext=nHype.claimNpcMelee(npc);
+  npcResults.length=0;npcStrikeCount=0;npcComplete=0;npcCanHit=false;
+  const whiffNpc=nHype.beginNpcMelee(npc,npcOptions,npcNext);
+  npc._banditAction=whiffNpc;
+  whiffNpc.onStrike(whiffNpc);
+  npcCanHit=true;
+  whiffNpc.onComplete(whiffNpc);
+  const catchNpc=npc._banditAction;
+  catchNpc.onStrike(catchNpc);
+  catchNpc.onComplete(catchNpc);
+  assert.equal(npcResults.length,1,'second NPC strike can catch a target that dodged the original');
+  assert(Math.abs(npcResults[0].damage-4)<.00001,'a fresh second NPC hit is 10% power with 5 Hyped points');
+
+  // A target changed to another map after a valid first strike is never
+  // damaged by the still-scheduled independent second collision check.
+  RS.addEnhancedResource(npc,'hypedStamina',2);
+  RS.spendStamina(npc,2,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  npcResults.length=0;npcStrikeCount=0;npcComplete=0;npcCanHit=true;
+  const leftAreaNpc=nHype.beginNpcMelee(npc,npcOptions,nHype.claimNpcMelee(npc));
+  npc._banditAction=leftAreaNpc;
+  leftAreaNpc.onStrike(leftAreaNpc);
+  leftAreaNpc.onComplete(leftAreaNpc);
+  npcTarget.areaId='different-area';
+  npc._banditAction.onStrike();
+  npc._banditAction.onComplete();
+  assert.equal(npcStrikeCount,1,'the second NPC strike cannot run on a target removed to another area');
+  assert.equal(npcResults.length,1,'cross-area Hyped does not create ghost hits');
+  npcTarget.areaId='arena'; // Restore shared fixture for subsequent cancel and ordinary combat tests.
+
+  // NPC staggers/death cancel the pending echo without leaking stale status.
+  RS.addEnhancedResource(npc,'hypedStamina',3);
+  RS.spendStamina(npc,3,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const interruptedNpc=nHype.beginNpcMelee(npc,npcOptions,nHype.claimNpcMelee(npc));
+  const beforeNpcCancel=hypedStages.length;
+  interruptedNpc.onCancel(interruptedNpc);
+  assert.equal(hypedStages.length,beforeNpcCancel,'cancelled NPC action schedules no extra strike');
+  assert.equal(npcEchoStarts,3,'a cancelled NPC attack never starts another lunge'); // Three completed NPC pairs (including map-change whiff) each requested one echo-lunge.
+  assert.equal(npc._feyHypedNpcSequence,undefined,'NPC cancellation cleans paid state');
+  assert.equal(nHype.npcDamagePayload(npc,npcTarget,5,10),null,'ordinary later hits get no stale Hyped multiplier');
+  assert.equal(nHype.debugSnapshot().npcReplayCount>=2,true,'mobile diagnostics count independently tested NPC second contacts');
+
+  // Validate actual gameplay and offscreen-duel call sites instead of a mock-only executor.
+  const banditHypeSource=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8');
+  const stagedDuelHypeSource=fs.readFileSync('docs/js/combat/npc-duel-staging.js','utf8');
+  const resourceHypeSource=fs.readFileSync('docs/js/combat/resource-system.js','utf8');
+  assert.equal((banditHypeSource.match(/c\._banditAction = beginBanditMeleeStage\(c, \{/g)||[]).length,3,
+    'real NPC combo, quick and heavy stages use the shared Hyped executor');
+  assert(banditHypeSource.includes('npcDamagePayload?.(c, target, amount, knockbackPxS, opts)'),
+    'real NPC damage-to-player and damage-to-NPC owner applies the scaled second payload');
+  assert(banditHypeSource.includes('firstLunge.distancePx * ratio') && banditHypeSource.includes('beginBanditLunge(c, firstLunge.distancePx * ratio'),
+    'the second NPC lunge is swept by the original NPC movement owner and scaled by the committed Hyped ratio');
+  assert(stagedDuelHypeSource.includes('claimNpcMelee?.(c)'),
+    'fully offscreen NPC battles cannot silently discard paid Hyped');
+  assert(resourceHypeSource.includes('combatNpcMelee'),'NPC Hyped must remain action-eligible in enhanced-resource definitions');
+
+  // Execute the actual shipped BanditCombat combo with paid Hyped; this
+  // catches wiring errors between the shared staged executor, NPC strike
+  // handler, lunge owner, actor-specific damage and combo-chain bookkeeping.
+  {
+    const npcCode=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8');
+    const npcSlice=(start,end)=>{
+      const a=npcCode.indexOf(start),b=npcCode.indexOf(end,a);
+      assert(a>=0&&b>a,'BanditCombat NPC seam found: '+start);
+      return npcCode.slice(a,b);
+    };
+    const npcBanditSource=npcSlice('  function beginBanditMeleeStage(','  function resolvedBanditCombatTarget(')
+      +npcSlice('  function damageBanditCombatTarget(','  // Mirrors combat-quickattacks.js')
+      +npcSlice('  function fireBanditComboStep(','  function fireBanditQuickAttack(');
+    const liveStages=hypedStages; // Existing Combat.beginStagedAction test bridge records the real NPC stage options too.
+    const liveLunges=[],liveNpcHits=[]; // Compare original and second real damage/lunge dispatch without reimplementing the bandit attack.
+    const savedComboData=context.Combat.comboData,savedComboPose=context.Combat.comboStepPose;
+    const savedAimSolution=context.Combat.meleeAimSolution,savedMeleeHit=context.Combat.meleeHit,savedAudio=context.AudioSystem;
+    const npcDef={attackDamage:20,attackRangePx:45,attackCooldownS:1,attackTag:'blunt',
+      attackStaminaCost:8,weaponShapeStats:{speed:1,power:1,range:1,efficiency:1}};
+    const npcCombatant=makeEntity({name:'Stage integration NPC',isBandit:true,areaId:'arena',x:0,y:0,
+      _banditComboIndex:0,def:npcDef});
+    const npcOpponent=makeEntity({name:'Stage integration target',areaId:'arena',x:30,y:0});
+    const stageNpcDeps={TILE:64,HOSTILE_BITE_KNOCKBACK_PX_S:200,
+      damagePlayer:(damage,x,y,knockback)=>{liveNpcHits.push({damage,knockback});return damage;},
+      damageCreature:()=>{throw Error('NPC attacking player must use the real player damage path');}};
+    const npcCombatScope={
+      window:context,performance:context.performance,Math,deps:stageNpcDeps,
+      beginBanditLunge(c,durationPx,durationS,hitTest,target){
+        c._banditLunging=true;c._banditLungeDistancePx=durationPx;c._banditLungeDur=durationS;
+        c._banditLungeT=durationS;c._banditLungeHitTest=hitTest;
+        liveLunges.push({distance:durationPx,duration:durationS});
+      },
+      cancelBanditLunge(c){c._banditLunging=false;},
+      finishBanditAction(c){c._banditAction=null;},
+      banditAttackBaseline:def=>({damage:def.attackDamage,rangePx:def.attackRangePx,knockbackPxS:200}),
+      spawnBanditTrailArc(){},banditRetreatDurationS:()=>.2,
+      BANDIT_COMBO_CHAIN_GAP_S:.1,BANDIT_LUNGE_HALT_MARGIN:.68,
+    };
+    try {
+      context.Combat.comboData={swingCombo:[
+        {name:'First swing',damageMul:2,rangeMul:2,halfConeDeg:55,knockbackMul:1,windupS:.2,strikeS:.1,lungeMul:1,anim:'thrust',dirSign:1},
+        {name:'Second swing',damageMul:1,rangeMul:1,halfConeDeg:45,knockbackMul:1,windupS:.2,strikeS:.1,lungeMul:1,anim:'thrust',dirSign:1},
+      ]};
+      context.Combat.comboStepPose=()=>({});
+      context.Combat.meleeAimSolution=()=>({pitch:0});
+      context.Combat.meleeHit=()=>true;
+      context.AudioSystem={playWeaponHitSfx(){}};
+      vm.createContext(npcCombatScope);
+      vm.runInContext(npcBanditSource,npcCombatScope,{filename:'combat-bandit.js#hyped-npc-integration'});
+      RS.addEnhancedResource(npcCombatant,'hypedStamina',8);
+      RS.spendStamina(npcCombatant,8,'bandit attack',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+      const firstIndex=liveStages.length;
+      assert.equal(npcCombatScope.fireBanditComboStep(npcCombatant,npcDef,{tap1:'swingCombo'},npcOpponent),true);
+      const firstStage=liveStages[firstIndex];
+      assert(firstStage&&Math.abs(firstStage.totalS-.15)<.00001,'real NPC combo first stage is sped up 2x');
+      firstStage.onStrike(firstStage);firstStage.onComplete(firstStage);
+      const secondStage=liveStages[firstIndex+1];
+      assert(secondStage&&Math.abs(secondStage.totalS-.15)<.00001,'real NPC combo echo stage is sped up 2x');
+      secondStage.onStrike(secondStage);secondStage.onComplete(secondStage);
+      assert.equal(liveNpcHits.length,2,'real NPC melee damage authority dispatches exactly two independently tested strikes');
+      assert.equal(liveNpcHits[0].damage,40);
+      assert(Math.abs(liveNpcHits[1].damage-6.4)<.00001,'real NPC second hit preserves the first hit’s true damage and scales 2% per Hyped point');
+      assert(Math.abs(liveNpcHits[1].knockback/liveNpcHits[0].knockback-.16)<.00001);
+      assert.equal(liveLunges.length,2,'the second real NPC combo stage launches its own swept lunge');
+      assert(Math.abs(liveLunges[1].distance/liveLunges[0].distance-.16)<.00001);
+      assert.equal(npcCombatant._banditComboLandCount,1,'two Hyped hits count as one combo step for NPC chain timing');
+      assert.equal(npcCombatant._banditAction,null,'completed NPC echo clears the combat owner');
+    } finally {
+      context.Combat.comboData=savedComboData;context.Combat.comboStepPose=savedComboPose;
+      context.Combat.meleeAimSolution=savedAimSolution;context.Combat.meleeHit=savedMeleeHit;
+      context.AudioSystem=savedAudio;
+    }
+  }
+
+  hostileObjects.pop(); // Restore the original combat roster before unrelated relic/quest assertions.
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
-  ES.setFlourish('fey-testing-blade','hold2','feyEchoDread');
+  ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
   assert(feyDefensiveScope.includes("def.alignment === 'Fey') return false"),'defensive Fey handlers explicitly fail closed');
 
@@ -685,4 +1002,4 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(HR.decodeBoundKey('feyBound_longsword_abcd_BfeyPhantomWound_F'),null,'Fey key cannot impersonate Harlyao sword');
   assert.equal(HR.decodeBoundKey('feyBound_dagger_abcd_Bburning_F'),null,'Fey key cannot smuggle another origin');
 }
-console.log('Fey Immundanity, nonlethal afflictions, timed debuffs, bound relic codec and origin separation passed');
+console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrations and bound relics passed');

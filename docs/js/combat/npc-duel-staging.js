@@ -136,13 +136,20 @@
   // rhythm as a swing, plain damage roll, no pose/lunge/trail/audio.
   function resolveAbstractExchange(c, target, api) {
     const def = c.def;
-    window.ResourceSystem?.spendStamina?.(c, def.attackStaminaCost, 'bandit attack');
+    window.ResourceSystem?.spendStamina?.(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Hidden NPC duels pay the same action-eligible Hyped Stamina as visible swings.
+    const hyped = window.FeyHypedAttacks?.claimNpcMelee?.(c); // One paid attack may produce two independent abstract strikes while both rigs are offscreen.
     c.attackCooldownT = def.attackCooldownS || 1;
     c._banditComboIndex = 0;
     stats.abstractExchanges++;
-    if (rnd() >= ABSTRACT_HIT_CHANCE || target.dodging) { stats.stagedMisses++; return; }
-    stats.stagedHits++;
-    api.damage(c, target, Math.max(1, Math.round(def.attackDamage || 1)), 0);
+    const damage = Math.max(1, Math.round(def.attackDamage || 1)); // Existing NPC attack rank and metal multipliers remain authoritative.
+    for (let strike = 0; strike < (hyped ? 2 : 1); strike++) {
+      if (!(Number(target.health) > 0) || rnd() >= ABSTRACT_HIT_CHANCE || target.dodging) {
+        stats.stagedMisses++;
+        continue; // An independently rolled second strike can land even when the first misses.
+      }
+      stats.stagedHits++;
+      api.damage(c, target, damage * (strike === 0 ? 1 : hyped.ratio), 0); // Hidden combats have no animated hit cone, but retain the 2%-per-point secondary power.
+    }
   }
 
   // Called by combat-bandit.js once per frame for an ordinary melee fighter

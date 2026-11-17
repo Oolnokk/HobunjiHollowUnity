@@ -250,9 +250,11 @@
       // windup/strike down.
       const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label, { actionKind: 'combatQuickAttack', abilityId: id }) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
+      const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, id) || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const windupS = WINDUP_S * timeScale * (mounted ? MOUNTED_QUICK_WINDUP_SCALE : 1); // Mounted windup lasts ~0.39s at normal attack speed, enough time for gradual physical acceleration.
       const strikeS = STRIKE_S * timeScale;
+      window.FeyIllusions?.setActionDuration?.(deps.player, windupS + strikeS); // Align 1°-per-Stamina perceived turn to this jab's actual doubled-speed timeline.
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
       const { rangePx, halfConeRad, baseLungePx } = getReachProfile(deps, id, effects, shapeStats, baseAbil, { weaponKey, includeEnchantments: false }); // The real strike's prepare listener handles enchantment modifiers exactly once.
       const attackContext = window.CombatAttackEvents?.prepare?.({
@@ -372,6 +374,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: impactDamage, feyPrimaryKnockback: knockbackPxS }, // A conditionally empowered quick strike carries its actual first-hit magnitude for Hyped.
               afflictionBonuses: hitAfflictions,
               quickConditionalBonus: hitTech.conditionMatched, // Raw authored condition state remains observable even while its bonus is cooling down.
               quickBonusEffectProc: conditionBonusUsed, // Cross-cutting effects such as Flourishes follow the same cooldown gate as the Quick Attack bonus package.
