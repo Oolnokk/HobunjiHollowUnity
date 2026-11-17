@@ -713,6 +713,13 @@
         ' last=' + zone.lastBuildMs + 'ms avg=' + zone.averageBuildMs + 'ms'
       );
     }
+    const tiles = window.PlayerTileEvents?.snapshot?.(); // Mobile chunk panel also shows the shared tile/area signal without DevTools.
+    if (tiles) lines.push('tile events: ' + tiles.transitions + ' listeners=' + tiles.subscribers
+      + ' errors=' + tiles.subscriberErrors + ' current=' + (tiles.current
+        ? tiles.current.area + ':' + tiles.current.col + ',' + tiles.current.row : '-'));
+    const sense = window.PerceptionMode?.isActive?.() ? window.PerceptionMode.debugSnapshot() : null; // Display stationary cache savings only while Sense is in use.
+    if (sense?.landmarkCache) lines.push('sense landmarks: scans=' + sense.landmarkCache.rebuilds
+      + ' reuses=' + sense.landmarkCache.reuses + ' candidates=' + sense.landmarkCache.candidates);
     return lines.join('\n');
   }
 
