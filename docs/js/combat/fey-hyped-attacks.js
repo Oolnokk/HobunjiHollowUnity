@@ -49,8 +49,11 @@
     if (credit.abilityId && context.abilityId && credit.abilityId !== context.abilityId) return;
     if (!(context?.rangePx > 0) || !(context?.halfConeRad > 0)) return; // Only melee weapon actions use this staged melee executor.
     credits.delete(actor); // One paid action gets one follow-up, never a stack of free future attacks.
+    for (const [id, previous] of attacks) {
+      if (now() - previous.createdAt > MAX_CREDIT_AGE_MS) attacks.delete(id); // A canceled pre-stage attack cannot leave strong target refs behind forever.
+    }
     const attack = {
-      id: ++serial, actor, context, used: credit.used, firstHits: new Map(),
+      id: ++serial, actor, context, used: credit.used, createdAt: now(), firstHits: new Map(),
       presentation: null, bound: false, cancelled: false, area: window.Combat?.deps?.getCurrentArea?.() || actor.areaId,
     };
     context.metadata ||= {};
@@ -87,7 +90,7 @@
       tag: deps.currentWeaponDamageType?.() || 'sharp',
       heavy: !!attack.context.fullCharge || !!attack.context.comboFinisher,
       afflictionBonuses: afflictions,
-      footingDamageMultiplier: numeric(mods.footingDamage, 1) * ratio,
+      footingDamageMultiplier: numeric(mods.footingDamage, 1), // Damage is already ratio-scaled: multiplying Footing again would incorrectly yield ratio squared.
       feyHypedReplay: true, // Never creates another Hyped credit, mastery payout or recursive attack.
     });
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
@@ -168,6 +171,12 @@
     const wrappedStaged = function hypedAwareStagedAction(opts = {}) {
       const actor = combat.deps?.player;
       const attack = actor && pendingByActor.get(actor);
+      if (attack && now() - attack.createdAt > 1200) { // Never attach a stale Hyped cost to an unrelated staged attack.
+        pendingByActor.delete(actor);
+        attacks.delete(attack.id);
+        lastEcho = { id: attack.id, skipped: 'prepared stage expired' };
+        return nativeStaged.call(this, opts);
+      }
       if (!attack || opts?.data?.isBandit || opts?.data?.feyHypedReplay) return nativeStaged.call(this, opts);
       pendingByActor.delete(actor); // Binds exactly the first matching stage after CombatAttackEvents.prepare.
       attack.bound = true;
