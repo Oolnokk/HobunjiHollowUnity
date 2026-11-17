@@ -1983,29 +1983,36 @@
         saveGearInventory();
       }
 
-      // gearInventory.toolReinforcement[itemKey] = { metalKey } — a higher-
-      // tier verdigris metal's power grafted onto this literal tool by
-      // Sloomi/Kzubug's reinforcement service. The tool keeps its own base
-      // metal's identity — label, sprite recolor hue, verdigris color, and
-      // mastery XP all stay keyed to itemKey exactly as before — only its
-      // effective combat/tool stats borrow the reinforcing metal's tier.
+      // Material identity stays fixed while each tool's reinforcement grade advances.
+      // Older { metalKey } saves retain their pre-update power exactly; new entries
+      // store { metalKey, grade } and gain power in 23 smaller steps.
       function toolReinforcementMetal(itemKey) {
         return gearInventory?.toolReinforcement?.[itemKey]?.metalKey || null;
       }
-      function setToolReinforcement(itemKey, metalKey) {
-        if (!gearInventory) return;
+      function toolReinforcementProgress(itemKey) {
+        return window.MetalReinforcement?.status(
+          TOOL_ITEM_DEFS[itemKey]?.metalKey,
+          gearInventory?.toolReinforcement?.[itemKey],
+          METAL_DEFS, VERDIGRIS_METAL_KEYS
+        ) || null;
+      }
+      function setToolReinforcement(itemKey, metalKey, grade) {
+        if (!gearInventory || !TOOL_ITEM_DEFS[itemKey]?.metalKey || !VERDIGRIS_METAL_KEYS.includes(metalKey)) return false;
+        if (grade !== undefined && (!Number.isInteger(grade) || grade < 0 || grade >= window.MetalReinforcement.GRADES_PER_METAL)) return false;
+        if (METAL_DEFS[metalKey].tier < METAL_DEFS[TOOL_ITEM_DEFS[itemKey].metalKey].tier) return false;
         if (!gearInventory.toolReinforcement) gearInventory.toolReinforcement = {};
-        gearInventory.toolReinforcement[itemKey] = { metalKey };
+        gearInventory.toolReinforcement[itemKey] = grade === undefined ? { metalKey } : { metalKey, grade };
         saveGearInventory();
+        return true;
       }
 
-      // The metal this tool actually fights/works with — its own base metal
-      // unless reinforced with something higher-tier (see above).
+      // Only the numeric combat/tool efficacy changes. Art and mastery remain
+      // based on the literal forged tool and its existing item key.
       function toolEffectiveMetalKey(itemKey) {
         return toolReinforcementMetal(itemKey) || TOOL_ITEM_DEFS[itemKey]?.metalKey || null;
       }
       function toolMetalMultiplier(itemKey) {
-        return metalDmgMultiplier(toolEffectiveMetalKey(itemKey));
+        return toolReinforcementProgress(itemKey)?.multiplier ?? metalDmgMultiplier(toolEffectiveMetalKey(itemKey));
       }
 
       // ── Motes of Prowess ────────────────────────────────────────────
@@ -32852,6 +32859,7 @@
         toolVerdigrisPatternEligible,
         setToolVerdigrisPattern,
         toolReinforcementMetal,
+        toolReinforcementProgress,
         setToolReinforcement,
         toolEffectiveMetalKey,
         toolVerdigrisFraction,
