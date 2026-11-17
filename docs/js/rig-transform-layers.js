@@ -164,8 +164,13 @@
     leased.delete(slot);
   }
 
+  function hasAbsolutePoseOwner(node, property) {
+    return absoluteClaims.get(node)?.has(property) === true; // Scoped choreography/hand presentation always outranks optional additive effects.
+  }
+
   function commitLayer(node, slot, owner, value, options) {
-    reconcile(node, slot);
+    const held = hasAbsolutePoseOwner(node, slot.property); // Refresh a suspended layer without touching a currently authored joint.
+    if (!held) reconcile(node, slot);
     const hadOwner = slot.owners.has(owner);
     const isIdentity = slot.quaternion
       ? rotationMatches(value, { x: 0, y: 0, z: 0, w: 1 })
@@ -183,7 +188,7 @@
       if (!hadOwner) stats.activeLayers++;
     }
     trackLease(slot);
-    write(node, slot);
+    if (!held) write(node, slot); // Recompose suspended effects only when the absolute session releases its property.
     return true;
   }
 
@@ -284,12 +289,13 @@
     let changed = false;
     for (const slot of slots.values()) {
       if (!slot.owners.has(owner)) continue;
-      reconcile(node, slot);
+      const held = hasAbsolutePoseOwner(node, slot.property); // A disappearing effect must not cancel a scripted pose.
+      if (!held) reconcile(node, slot);
       if (slot.owners.delete(owner)) {
         stats.activeLayers--;
         stats.clears++;
         trackLease(slot);
-        write(node, slot);
+        if (!held) write(node, slot);
         changed = true;
       }
     }
@@ -301,13 +307,14 @@
     if (!slots) return false;
     let changed = false;
     for (const slot of slots.values()) {
-      reconcile(node, slot);
+      const held = hasAbsolutePoseOwner(node, slot.property); // Teardown leaves active absolute solvers untouched.
+      if (!held) reconcile(node, slot);
       if (slot.owners.size) {
         stats.clears += slot.owners.size;
         stats.activeLayers -= slot.owners.size;
         slot.owners.clear();
         leased.delete(slot);
-        write(node, slot);
+        if (!held) write(node, slot);
         changed = true;
       }
     }
@@ -319,7 +326,8 @@
     let removed = 0;
     for (const slot of leased) {
       let slotRemoved = 0; // Only recomposes this node if one of its own owners expired.
-      reconcile(slot.node, slot);
+      const held = hasAbsolutePoseOwner(slot.node, slot.property); // Lease expiry never resets a captured kiss/dance/impact pose.
+      if (!held) reconcile(slot.node, slot);
       for (const [owner, layer] of slot.owners) {
         if (layer.expiresAtMs == null || layer.expiresAtMs > timeMs) continue;
         slot.owners.delete(owner);
@@ -330,11 +338,52 @@
         slotRemoved++;
       }
       trackLease(slot);
-      if (slotRemoved) write(slot.node, slot);
+      if (slotRemoved && !held) write(slot.node, slot);
     }
     return removed;
   }
 
+
+  function propertySlots(node, property) {
+    const all = slotsFor(node, false); // Existing per-node slot ledger; action transitions do not allocate new owners.
+    if (!all) return [];
+    if (property === 'quaternion') return [all.get('quaternion')].filter(Boolean);
+    if (property !== 'position' && property !== 'scale') return [];
+    return ['x', 'y', 'z'].map(axis => all.get(property + '.' + axis)).filter(Boolean);
+  }
+
+  function cleanClaimBaseline(node, property) {
+    const clean = node[property].clone(); // An absolute action must capture CLEAN IK, not the preceding drunk/yawn additive result.
+    for (const slot of propertySlots(node, property)) {
+      if (!slot.owners.size) { reconcile(node, slot); continue; }
+      if (!matches(node, slot)) reconcile(node, slot); // Reject an out-of-band prior pose before taking over.
+      if (!slot.owners.size) continue;
+      if (slot.quaternion) clean.copy(slot.base);
+      else clean[slot.axis] = slot.base;
+    }
+    return clean;
+  }
+
+  function settleAbsoluteProperty(node, property, restored) {
+    for (const slot of propertySlots(node, property)) {
+      if (restored) {
+        // The owning session restored a clean baseline. Apply only STILL-ACTIVE
+        // effects; expired/cleared effects must never reappear after a kiss.
+        slot.base = slot.quaternion ? node.quaternion.clone() : node[property][slot.axis];
+        write(node, slot);
+      } else {
+        // A newer action, rig generation, or physics writer took over: discard
+        // the old suspended effects without writing anything over its pose.
+        stats.activeLayers -= slot.owners.size;
+        stats.clears += slot.owners.size;
+        slot.owners.clear();
+        leased.delete(slot);
+        const current = captureValue(node, slot); // Native takeover now supplies the undisputed clean baseline.
+        slot.base = current;
+        slot.applied = slot.quaternion ? current.clone() : current;
+      }
+    }
+  }
 
   // Scoped, ABSOLUTE authored pose ownership for paired actions, captures, and
   // choreography. Unlike additive layers these actors move to complete world
@@ -385,7 +434,7 @@
         const current = node[property];
         const entry = {
           session, node, property, parent: node.parent || null,
-          base: current.clone(), applied: current.clone(),
+          base: cleanClaimBaseline(node, property), applied: current.clone(),
         }; // The authored baseline and most recent action output stay separate.
         entries.push(entry);
         claims.set(property, entry);
@@ -464,11 +513,13 @@
         if (!claims.size) absoluteClaims.delete(entry.node);
         if (owned) {
           entry.node[entry.property].copy(entry.base);
+          settleAbsoluteProperty(entry.node, entry.property, true); // Reapply live named effects after authored pose handback.
           let properties = restoredByNode.get(entry.node);
           if (!properties) { properties = new Set(); restoredByNode.set(entry.node, properties); }
           properties.add(entry.property);
           restored++;
         } else {
+          settleAbsoluteProperty(entry.node, entry.property, false); // Old additive effects cannot be replayed onto a newer owner.
           skipped++; // A newly authored pose or rebuilt parent must keep its current transform.
         }
       }
