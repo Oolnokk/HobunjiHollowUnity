@@ -80,7 +80,7 @@
   async function load() {
     const [gang, porakaneki, omgurku, game, attackValues, index, npcDb] =
       await Promise.all([
-        read('config/bandits/bandit-gang-config.json'),
+        read('config/bandits/bandit-gang-config.json?v=20261116tier8power075'),
         read('config/porakaneki-camp.json'),
         read('config/omgurku-camp.json'),
         fetch('game.js').then((r) => {
