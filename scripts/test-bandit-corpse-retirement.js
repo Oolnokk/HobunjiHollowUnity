@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-// Settled bandit corpses keep a full humanoid rig for the whole session (they
-// cannot stream to data like wildlife corpses do), so a fight leaves a cost that
-// never goes away. js/bandit-corpse-retirement.js swaps the rig of old, un-looted
-// bodies for one flat marker. This runs the real module against fake corpses,
+// Settled humanoid and wildlife corpses keep expensive rigs unless retired.
+// This tests the new immediate, depth-correct static presentation policy, and
+// legacy configuration overrides used by older games. The module replaces
+// a rig with a marker while preserving the original corpse data and loot.
 // and runs the real disposeCreaturePresentation out of game.js on a retired body
 // to prove looting/despawning one still works.
 
@@ -29,17 +29,21 @@ const THREE = { Group: class extends Obj {}, Mesh: class extends Obj { construct
   CircleGeometry: class { constructor() { THREE.created.geometry++; } rotateX() {} }, MeshBasicMaterial: class { constructor() { THREE.created.material++; } }, created: { geometry: 0, material: 0 } };
 
 const TILE = 32;
-function makeWorld(config, { farRule = false } = {}) {
-  if (!farRule) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { farTiles: 0, ...(config?.game?.banditCorpseRetire || {}) } } }; // Count/near rules are tested with the distance rule off; it has its own test below.
+function makeWorld(config, { farRule = false, productionDefaults = false } = {}) {
+  const legacyPolicy = { keepFull: 6, nearTiles: 5, farTiles: farRule ? 24 : 0, minSettledS: 12, perTick: 3, intervalMs: 1000 }; // Exercises unchanged backwards-compatible overrides in tests 1-7.
+  if (!productionDefaults) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { ...legacyPolicy, ...(config?.game?.banditCorpseRetire || {}) } } };
   THREE.created.geometry = 0; THREE.created.material = 0;
   const scene = new Obj(); scene.name = 'zone';
   const corpseObjects = new Set();
   const disposed = [];
   const player = { x: 0, y: 0 };
-  const sandbox = { window: { THREE, SCRATCHBONES_CONFIG: config }, performance: { now: () => 0 } };
+  const flameEvents = []; // Verifies that fire presenter ownership follows a retired corpse's replacement root.
+  const sandbox = { window: { THREE, SCRATCHBONES_CONFIG: config,
+    BurningAfflictionVfx: { disposeEntity: c => flameEvents.push('dispose:' + c.id), syncEntity: (c, root) => flameEvents.push('sync:' + c.id + ':' + root.name) },
+  }, performance: { now: () => 0 } };
   vm.runInNewContext(moduleSource, sandbox);
   const mod = sandbox.window.BanditCorpseRetirement;
-  const ctx = { scene, corpseObjects, disposed, player, area: 'map_a', mod };
+  const ctx = { scene, corpseObjects, disposed, flameEvents, player, area: 'map_a', mod };
   mod.init({
     corpseObjects, getPlayer: () => player, getTile: () => TILE, getCurrentArea: () => ctx.area, getDefaultScene: () => scene,
     disposeCreaturePresentation: c => { disposed.push(c.id); c.scene.remove(c.avatarRef.group); c.avatarRef.dispose(); }, // Same calls as the real one.
@@ -85,7 +89,7 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   const w = makeWorld({ game: { banditCorpseRetire: { keepFull: 0 } } });
   const keep = [
     w.corpse('revivable', { keepCorpseAfterLoot: true }), w.corpse('timed', { lootHoldSeconds: 3 }), w.corpse('looted', { corpseLooted: true }),
-    w.corpse('wildlife', { isBandit: false }), w.corpse('dying', { state: 'dying' }), w.corpse('alive', { health: 5 }),
+    w.corpse('companion', { isBandit: false, isCompanion: true }), w.corpse('dying', { state: 'dying' }), w.corpse('alive', { health: 5 }),
     w.corpse('elsewhere', { areaId: 'map_b' }), w.corpse('norig', { avatarRef: null }),
   ];
   const plain = w.corpse('plain');
@@ -176,6 +180,52 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   const off = makeWorld({ game: { banditCorpseRetire: { farTiles: 0 } } }, { farRule: true });
   off.corpse('off', { x: 90 * TILE, y: 0, _corpseSettledAt: 0 });
   assert.equal(off.mod.tick(NOW), 0, 'farTiles: 0 disables the distance rule');
+}
+
+
+// 8. Production defaults: wildlife and bandits retire together, even right next
+// to the player, in bounded batches immediately after the death animation.
+{
+  const w = makeWorld(undefined, { productionDefaults: true });
+  assert.equal(w.mod.config().keepFull, 0);
+  assert.equal(w.mod.config().nearTiles, 0);
+  assert.equal(w.mod.config().minSettledS, 0);
+  assert.ok(w.mod.config().intervalMs <= 100);
+  w.player.x = 100 * TILE; w.player.y = 100 * TILE;
+  const bandit = w.corpse('bandit');
+  const animal = w.corpse('animal', { isBandit: false, streamVisuals: true });
+  const additional = [w.corpse('a2', { isBandit: false }), w.corpse('b2'), w.corpse('b3')];
+  const protectedBodies = [
+    w.corpse('companion', { isBandit: false, isCompanion: true }),
+    w.corpse('revivable', { keepCorpseAfterLoot: true }),
+    w.corpse('timed-search', { lootHoldSeconds: 3 }),
+    w.corpse('amphibious', { isBandit: false, isAmphibiousFishCorpse: true }),
+    w.corpse('still-falling', { state: 'dying' }),
+  ];
+  assert.equal(w.mod.tick(NOW), 4, 'only four heavy rigs may be disposed in one batch');
+  assert.equal(w.mod.tick(NOW + 20), 0, 'same batch is not repeated on every frame');
+  assert.equal(w.mod.tick(NOW + 100), 1, 'remaining ordinary corpse is retired in the next batch');
+  assert.equal(bandit.avatarRef.isCorpseMarker, true);
+  assert.equal(animal.avatarRef.isCorpseMarker, true, 'wildlife uses the same settled policy');
+  assert.equal(animal.avatarRef.group.name, 'wildlife_corpse_marker');
+  assert.equal(animal.avatarRef.group.userData.corpseNoSecondaryPasses, true);
+  assert.equal(animal.avatarRef.group.children[0].userData.noOutline, true);
+  assert.equal(animal._corpseVisualRetired, true);
+  assert.equal(w.mod.stats.wildlifeRetired, 2);
+  assert.ok(w.flameEvents.includes('dispose:animal'), 'old flame presenter removed with rig');
+  assert.ok(w.flameEvents.includes('sync:animal:wildlife_corpse_marker'), 'corpse flame reattached to static root');
+  for (const body of protectedBodies) assert.equal(body.avatarRef.isCorpseMarker, undefined, body.id + ' remains intact');
+  for (const body of [bandit, animal, ...additional]) assert.equal(body.rigDisposed.n, 1, body.id + ' owns one rig teardown');
+  assert.equal(w.corpseObjects.size, 10, 'retirement retains all loot-bearing entity records');
+}
+
+// 9. Retired wildlife is never streamed back into an animated actor.
+// Likewise the exterior-score depth replay skips flat corpse art.
+{
+  const wildlife = read('docs/js/wildlife-visual-lod.js');
+  const outlines = read('docs/js/outline-render-performance.js');
+  assert.match(wildlife, /if \(c\?\.avatarRef\?\.isCorpseMarker\) return false/, 'wildlife streamer cannot rehydrate a marker');
+  assert.match(outlines, /root\.userData\?\.corpseNoSecondaryPasses/, 'retired corpse does not join puzzle score actor mask');
 }
 
 console.log('bandit corpse retirement: ok');
