@@ -109,4 +109,40 @@ handle.update();
 assert.strictEqual(handle.gpuSkinActive, true);
 for (let i = 0; i < cpu.length; i++) assert.strictEqual(position.array[i], handle.basePositions[i], 'returning to the GPU path restores the rest grid');
 
+// Camera-only yaw rotates the model, legs and garment together. Their relative bone pose
+// is unchanged, so the CPU fallback must not reskin thousands of vertices or upload again.
+Renderer.setGpuSkinning(false);
+handle.update();
+const beforeCameraOnlyTurn = position.version; // BufferAttribute upload generation for camera-only yaw tests.
+const neutralRestVersion = handle.baseVersion; // Render-only poses must never reset the garment's original binding.
+model.rotation.y = Math.PI;
+model.updateMatrixWorld(true);
+handle.update(true);
+assert.strictEqual(position.version, beforeCameraOnlyTurn,
+  'a 180-degree whole-avatar render turn does not trigger a false bone-pose upload');
+model.rotation.y = 0;
+model.updateMatrixWorld(true);
+handle.update(true);
+assert.strictEqual(position.version, beforeCameraOnlyTurn,
+  'returning to the original model orientation also leaves skinning untouched');
+
+// Opposing legs can cancel in a weighted scalar pose hash. Every bone must
+// still contribute independently so simultaneous left/right motion updates the garment.
+nodes.left.thigh.position.x -= 0.075;
+nodes.right.thigh.position.x += 0.075;
+model.updateMatrixWorld(true);
+handle.update(true);
+assert(position.version > beforeCameraOnlyTurn,
+  'opposing thigh offsets are recognized as a real local-pose change');
+const shifted = Float32Array.from(position.array); // CPU-skinned positions after both thighs move.
+assert(shifted.some((v, i) => Math.abs(v - cpu[i]) > 0.01),
+  'the pants themselves deform when opposing thighs move');
+assert.strictEqual(handle.baseVersion, neutralRestVersion,
+  'render-only thigh offsets never rebind the neutral pants stance');
+handle.update(true);
+const beforeStillFrame = position.version; // Stable pose should skip the next redundant reskin.
+handle.update(true);
+assert.strictEqual(position.version, beforeStillFrame,
+  'unchanged asymmetric leg pose does not upload on every render-only pass');
+
 console.log(`ok pants GPU skin parity (${cpu.length / 3} vertices, max error ${worst.toExponential(2)})`);
