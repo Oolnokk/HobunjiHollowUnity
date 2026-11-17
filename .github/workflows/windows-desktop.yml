@@ -36,6 +36,15 @@ jobs:
           node-version: '24'
       - name: Verify desktop protocol and packaging
         run: node scripts/test-windows-desktop.js
+      - name: Verify updater state machine and UI packaging
+        run: node scripts/test-windows-updates.js
+      - name: Check Electron scripts parse cleanly
+        shell: pwsh
+        run: |
+          node --check desktop/main.cjs
+          node --check desktop/update-controller.cjs
+          node --check desktop/update-preload.cjs
+          node --check desktop/update-ui.js
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
