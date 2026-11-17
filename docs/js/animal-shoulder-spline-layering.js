@@ -151,6 +151,6 @@
     return true;
   }
 
-  window.HobunjiShoulderSplitLayerParity = { version: 3, syncAvatar, syncOverlay, install };
+  window.HobunjiShoulderSplitLayerParity = { version: 4, syncAvatar, syncOverlay, install };
   install();
 })();

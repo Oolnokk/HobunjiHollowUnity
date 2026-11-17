@@ -261,6 +261,15 @@ closeness(outwardAxis.clone().add(inwardAxis), new TestVector3(),
   'cancel-authored-offset does not suppress the observation 180-degree sprite turn');
 assert.equal(canceledOutward.shoulderFacingTurnDeg, 0);
 assert.equal(canceledInward.shoulderFacingTurnDeg, 180);
+const faceNormal = (rootQuaternion, localYaw) => new TestVector3(0, 0, 1).applyQuaternion(
+  rootQuaternion.clone().multiply(new TestQuaternion().setFromAxisAngle(new TestVector3(0, 1, 0), localYaw))
+); // Independently resolves FrontSide plane visibility from the actual grip-solved root quaternion.
+for (const [inward, transform] of [[false, canceledOutward], [true, canceledInward]]) {
+  const frontNormal = faceNormal(transform.worldQuaternion, -Math.PI / 2); // Inward should expose the front face toward the +X viewer.
+  const backNormal = faceNormal(transform.worldQuaternion, Math.PI / 2); // Outward should expose the rear face toward the same viewer.
+  assert.equal(frontNormal.x > 0, inward, 'the pet front geometry is camera-facing exactly when the restored x-ray foreground selects it');
+  assert.equal(backNormal.x > 0, !inward, 'the pet back geometry is camera-facing exactly when the restored x-ray foreground selects it');
+}
 for (const transform of [canceledOutward, canceledInward]) {
   const gripAt = new TestVector3(canceledGrip.x, canceledGrip.y, canceledGrip.z)
     .applyQuaternion(transform.worldQuaternion).add(transform.worldPosition); // Final pin is checked independently for both turns.

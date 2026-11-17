@@ -46,7 +46,7 @@ assert.equal(global.AnimalShoulderRest, api, 'legacy diagnostic alias points at 
 delete global.HobunjiShoulderSplitLayerParity;
 require(parityPath);
 const parityApi = global.HobunjiShoulderSplitLayerParity; // Used below to reproduce the non-shoulder overlay leak caught by Pixel Probe.
-assert.equal(parityApi?.version, 3, 'split-layer parity v3 installs for the runtime regression');
+assert.equal(parityApi?.version, 4, 'split-layer parity v4 installs for the runtime regression');
 const parityGroup = { children: [], userData: { hobunjiShoulderRest: { splitOverlayVisible: false } } }; // Parent shoulder state owns whether the split overlay is allowed to exist visibly.
 const paritySourceMesh = { isSkinnedMesh: true, visible: true, renderOrder: 2, frustumCulled: false, layers: { mask: 1 }, material: { depthWrite: true, depthTest: true }, userData: { hobunjiPlaneFace: 'back' } }; // Represents the correctly textured ordinary animal face.
 const parityOverlayMesh = { visible: false, renderOrder: 2, frustumCulled: false, layers: { mask: 1 }, material: { depthWrite: true, depthTest: true }, userData: { hobunjiShoulderSplitOverlay: true, hobunjiPlaneFace: 'back' }, parent: parityGroup }; // Represents the raw cloned split-frame helper that must stay hidden off-shoulder.
@@ -346,8 +346,8 @@ assert.match(paritySource, /overlay\.visible = requestedVisible && source\.visib
   'a split overlay follows front\/back face visibility only after shoulder presentation explicitly enables it');
 assert.doesNotMatch(paritySource, /overlay\.visible = source\.visible;/,
   'ordinary farm, wild, barn-sleep, and other non-shoulder avatars cannot inherit source visibility into a shoulder-only split overlay');
-assert.match(paritySource, /HobunjiShoulderSplitLayerParity = \{ version: 3/,
-  'fixed shoulder split visibility ships as parity runtime v3');
+assert.match(paritySource, /HobunjiShoulderSplitLayerParity = \{ version: 4/,
+  'split-plane orientation sync and visibility ship as parity runtime v4');
 
 for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) {
   assert(/animal-shoulder-spline\.js\?v=[A-Za-z0-9_.-]+/.test(bootstrapSource));
@@ -355,6 +355,8 @@ for (const bootstrapSource of [legacyBootstrapSource, legacyV5BootstrapSource]) 
 }
 assert.match(bridgeSource, /AnimalShoulderSpline\.version\) < 10/,
   'game attachment bridge explicitly requires the v10 shoulder runtime');
+assert.match(bridgeSource, /HobunjiShoulderSplitLayerParity\.version\) < 4/,
+  'attachment bridge rejects cached parity v3 that cannot follow the reversed shoulder plane');
 assert.match(bridgeSource, /separatorPolygon/,
   'game split compositor uses the same diagonal separator polygon as the rigger');
 assert.match(bridgeSource, /separatorRotationDeg/,
