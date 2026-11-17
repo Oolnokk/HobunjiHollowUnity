@@ -25717,6 +25717,7 @@
 
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
+        const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Exclusive paired choreography owns the live root position/yaw and authored knees until its lock releases.
         window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
@@ -25857,19 +25858,21 @@
         // smooth. Direct-flight attacks blend toward exact world-Y authority;
         // at maximum Charged Breaker this is ~98% direct, so the body/hitbox
         // actually follows the same nearly straight 3D line as the lunge.
-        const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
-        const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
-        playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
-        playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
-        const smoothedY = playerMesh.position.y + (targetY - playerMesh.position.y) * _playerMeshSmoothY;
-        const directY = player.lunging ? window.FormatUtils.clamp(player.lungeDirectFlightStrength || 0, 0, 1) : (Number.isFinite(player.lungeFlightWorldY) ? 1 : 0);
-        playerMesh.position.y = smoothedY + (targetY - smoothedY) * directY;
+        if (!pairedPoseLocked) {
+          const _playerMeshSmoothXZ = 1 - Math.exp(-17.3 * dt);
+          const _playerMeshSmoothY  = 1 - Math.exp(-11.9 * dt);
+          playerMesh.position.x += (wx - playerMesh.position.x) * _playerMeshSmoothXZ;
+          playerMesh.position.z += (wz - playerMesh.position.z) * _playerMeshSmoothXZ;
+          const smoothedY = playerMesh.position.y + (targetY - playerMesh.position.y) * _playerMeshSmoothY;
+          const directY = player.lunging ? window.FormatUtils.clamp(player.lungeDirectFlightStrength || 0, 0, 1) : (Number.isFinite(player.lungeFlightWorldY) ? 1 : 0);
+          playerMesh.position.y = smoothedY + (targetY - smoothedY) * directY;
+        }
         // updateMountRide has already written the carrier's final smoothed
         // mesh transform this frame. In steady riding, use that exact render
         // position so rider and mount cannot trail each other through two
         // independent lerps. Mounting/dismounting states intentionally keep
         // the transition positioning above.
-        window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift);
+        if (!pairedPoseLocked) window.Mounts?.pinMountedRiderMesh(playerMesh, mountSeatLift); // Ignore ordinary saddle pin while an exclusive body pose is active.
         const shadowSurfaceY = player._freeJump && !supportedJump
           ? (window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(wx, wz, activeSurfaceYAtWorld(wx, wz), currentArea,
               Number.isFinite(player.physicalFeetY) ? player.physicalFeetY : Infinity) ?? activeSurfaceYAtWorld(wx, wz))
@@ -25879,7 +25882,9 @@
         // Skipped during the fish-catch view: beginFishCatchView pins playerFacing to face
         // the camera, and this recompute runs every frame regardless of fishing state, so
         // without the guard it fought that and spun the character back around immediately.
-        if (window.Fishing?.state?.phase === 'caught') {
+        if (pairedPoseLocked) {
+          // Paired action owns root yaw and the procedural foot frame. Leave playerFacing as the game's logical movement heading.
+        } else if (window.Fishing?.state?.phase === 'caught') {
           playerMesh.rotation.y = playerFacing;
           if (playerLegs?.group) playerLegs.group.rotation.y = 0;
         } else if (window.Fishing?.state?.active && window.Fishing.state.anchorWorld) {
@@ -25951,7 +25956,7 @@
         // movement starts.
         const speed = Math.hypot(player.vx, player.vy);
         const gaitSpeed = samplePlayerGaitSpeed(currentArea, player.x, player.y, dt, speed / TILE); // Use real displacement for visual stepping without changing gameplay velocity.
-        if (speed > 5) {
+        if (speed > 5 && !pairedPoseLocked) {
           const bobEffort = window.FormatUtils.clamp(speed / (MOVE_SPEED * devGlobalSpeedMul), 0, 1);
           playerMesh.position.y += Math.sin(performance.now() / 120) * (MOVE_BOB_WALK_AMP + (MOVE_BOB_RUN_AMP - MOVE_BOB_WALK_AMP) * bobEffort);
         }
@@ -25987,7 +25992,8 @@
         // straight-hang pose into the same leg-chain objects every frame
         // (see that module's own update()), which would fight the recorded
         // ragdoll pose instead of stepping aside for it.
-        if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
+        if (pairedPoseLocked) { /* Kiss/dance solves its own actual legs at the pre-render checkpoint. */ }
+        else if (window.ImpactRagdollPlayback?.isActive()) window.ImpactRagdollPlayback.update(dt);
         else if (window.PlayerCrawl?.isActive?.() && playerLegs) window.PlayerCrawl.applyLegs(playerLegs); // Downed crawl poses the legs itself (js/player-crawl.js).
         else playerLegs?.update(dt, gaitSpeed, legsSuppressed, seatedPose, {
           combat: isPlayerInCombat() || player.lunging,
