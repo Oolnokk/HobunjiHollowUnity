@@ -10622,6 +10622,7 @@
       const dialogueZoomPointers = new Map();
       let dialoguePinchDistance = null;
       let nearbyNpcWalker    = null;
+      let _spotResolveDirty = true; // Declared with the latch: travel/enter code rewrites the latch and must force the next spot resolution.
       let _transitionLatch     = null; // 'area:c,r' — player must leave this tile before spots re-arm
       let _pendingSpotTransition = null; // spot the player is currently standing on; awaits input to fire
       // ── Town zone ──────────────────────────────────────────────────
@@ -11702,7 +11703,7 @@
           rebuildRouteGraphs();
         }
         // Don't fire a spot the player happens to spawn on
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         window.TransitionMarkers.buildTransitionMarkers();
         spawnScheduledNpcs().catch(e => console.warn('spawnScheduledNpcs failed:', e));
       }
@@ -11719,6 +11720,17 @@
       // Transition-spot floor rings (buildTransitionMarkers) now live in
       // js/transition-markers.js — call via window.TransitionMarkers.*.
 
+      // Spot resolution (latch compare + pool.find + availability predicates) only needs to re-run when the
+      // player's tile/area changes (PlayerTileEvents + a direct int compare), a latch is rewritten, a key item
+      // is granted/save loaded, a spot is pending (predicates like roof access are live), or after a short TTL
+      // that bounds the delay for state with no event (cutscene gating, transitions added while standing still).
+      // refreshActionBar() still runs every frame: the action arch depends on it (see comment below).
+      let _spotLastArea = null, _spotLastCol = NaN, _spotLastRow = NaN, _spotResolvedAt = -Infinity, _spotReachedBar = false;
+      const SPOT_RESOLVE_TTL_MS = 250;
+      const _markSpotsDirty = () => { _spotResolveDirty = true; };
+      window.PlayerTileEvents?.subscribe?.(_markSpotsDirty);
+      window.addEventListener('hobunji:key-item-granted', _markSpotsDirty);
+      document.addEventListener('hobunjiPlayerReady', _markSpotsDirty);
       function canUseRoofSpot(transition, area) {
         if (transition?.roofAccess !== true) return true; // Ordinary doors, gates and floor transitions retain their existing rules.
         if (area !== 'town' || player._freeJump?.phase !== 'supported'
@@ -11730,8 +11742,15 @@
       function checkTransitionSpots() {
         const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
+        const nowMs = performance.now();
+        if (!_spotResolveDirty && !_pendingSpotTransition && area === _spotLastArea && pc === _spotLastCol && pr === _spotLastRow
+            && nowMs - _spotResolvedAt < SPOT_RESOLVE_TTL_MS && nowMs >= _spotResolvedAt) {
+          if (_spotReachedBar) refreshActionBar(); // Unchanged resolution: only the cached action-bar refresh remains per frame (not while latched, as before).
+          return;
+        }
+        _spotResolveDirty = false; _spotLastArea = area; _spotLastCol = pc; _spotLastRow = pr; _spotResolvedAt = nowMs;
         const key = area + ':' + pc + ',' + pr;
-        if (key === _transitionLatch) { _pendingSpotTransition = null; return; }
+        if (key === _transitionLatch) { _pendingSpotTransition = null; _spotReachedBar = false; return; }
         _transitionLatch = null;
         let pool;
         if (_isBuildingArea(area)) pool = _buildingScenes.get(area)?.transitions || [];
@@ -11750,6 +11769,7 @@
         // (it used to happen by accident — find()'s undefined never equalled
         // the stored null). refreshActionBar() is _lastBarKey-cached, so its
         // no-change path must stay free of unconditional DOM writes.
+        _spotReachedBar = true;
         refreshActionBar();
         // Farm interior exit fires automatically (legacy behaviour)
         if (t && area === 'interior') startSceneTransition(() => performTravel(t));
@@ -11811,7 +11831,7 @@
         }
         player.vx = 0;  player.vy = 0;
         _snapCameraTarget();
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         if (t.target !== 'building' && t.target !== 'exit_building') logMapSwap('travel', currentArea, { target: t.target || 'farm' });
         if (currentArea === 'farm') queueMicrotask(() => window.OpeningStoryCutscene?.onFarmEntered?.());
       }
@@ -23552,6 +23572,29 @@
       // half-speed movement) now lives in js/perception-mode.js. It only
       // reads these registries; gameLoop calls update() and renderWorldPasses
       // calls renderOverlay().
+      // Sense's ore-rock neighborhood sweep: ~800 tile lookups with string keys per 150ms refresh.
+      // The result only changes when the player crosses a tile/area or the rock index changes, so it is
+      // cached and invalidated by PlayerTileEvents (plus map identity/size and a 1s safety TTL for in-place edits).
+      const _senseOreCache = { map: null, area: null, radius: NaN, size: -1, at: -Infinity, rocks: [] };
+      window.PlayerTileEvents?.subscribe?.(() => { _senseOreCache.at = -Infinity; });
+      function _nearbyOreRocksForSense() {
+        const indexed = _zoneMineableRockMeshes.get(currentArea);
+        if (!indexed?.size) { _senseOreCache.map = null; _senseOreCache.rocks = []; return _senseOreCache.rocks; }
+        const radius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
+        const now = performance.now();
+        const c = _senseOreCache;
+        if (c.map === indexed && c.area === currentArea && c.radius === radius && c.size === indexed.size && now >= c.at && now - c.at < 1000) return c.rocks;
+        const rocks = [];
+        const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE);
+        for (let row = playerRow - radius; row <= playerRow + radius; row++) {
+          for (let col = playerCol - radius; col <= playerCol + radius; col++) {
+            const group = indexed.get(`${col},${row}`);
+            if (group) rocks.push(group);
+          }
+        }
+        c.map = indexed; c.area = currentArea; c.radius = radius; c.size = indexed.size; c.at = now; c.rocks = rocks;
+        return rocks;
+      }
       window.PerceptionMode?.init({
         THREE,
         getActiveScene: window.GridTileAccessors.getActiveScene,
@@ -23565,18 +23608,7 @@
               ...(_zoneTreasureObjects.get(zone)?.values() || []),
             ]
             : currentArea === 'farm' ? [...new Set(worldObjects.values())] : [];
-          const nearbyOreRocks = []; // Scene-attached diggable rock roots for the active Sense Mode neighborhood.
-          const indexedOreRocks = _zoneMineableRockMeshes.get(currentArea); // Reuses the outdoor, mine and cavern tile indices; no world-scene traversal.
-          if (indexedOreRocks?.size) {
-            const senseRadius = window.PerceptionMode?.RANGE_TILES || 14; // Mirrors Perception Mode's configured range.
-            const playerCol = Math.floor(player.x / TILE), playerRow = Math.floor(player.y / TILE); // Tile bounds for the nearby resource sweep.
-            for (let row = playerRow - senseRadius; row <= playerRow + senseRadius; row++) {
-              for (let col = playerCol - senseRadius; col <= playerCol + senseRadius; col++) {
-                const group = indexedOreRocks.get(`${col},${row}`);
-                if (group) nearbyOreRocks.push(group);
-              }
-            }
-          }
+          const nearbyOreRocks = _nearbyOreRocksForSense(); // Per-tile cached sweep of scene-owned mineable rocks (see PlayerTileEvents).
           const crops = [];
           if (currentArea === 'farm') {
             const cropMeshes = window.VegetationCropRendering?.cropMeshes || [];
@@ -35330,7 +35362,7 @@
         const approach = [[1,0],[-1,0],[0,1],[0,-1]].map(([dc,dr]) => ({ col: entrance.col + dc, row: entrance.row + dr })).find(point => townGrid[point.row]?.[point.col] && !isSolid(townGrid[point.row][point.col].type)); // Stands outside the door trigger on a real walkable tile.
         if (!approach) throw new Error('Temple door has no walkable approach.');
         enterTown(approach.col, approach.row);
-        _transitionLatch = travelAreaKey();
+        _transitionLatch = travelAreaKey(); _spotResolveDirty = true;
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 

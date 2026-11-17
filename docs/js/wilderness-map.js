@@ -11,7 +11,13 @@
   // in through deps, along with WMAP_ZONE_LABELS, which the Tasks panel
   // and BountyBoard also read.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  let _unsubscribeFogTile = null;
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    _unsubscribeFogTile?.();
+    _unsubscribeFogTile = window.PlayerTileEvents?.subscribe?.(() => { _fogDirty = true; }) || null; // Tile/area change is the only time fog reveal and locale discovery can gain anything.
+    _fogDirty = true;
+  }
 
   // ── Fixed locale landmarks (docs/tools/locale-editor/, docs/config/locales/) ──
   // Leaf & Pahu's House ("Little Swamp House" in TOTHAL_PRESERVED_TRANSITIONS,
@@ -203,7 +209,14 @@
   }
 
   let _lastFogRevealTile = null;
+  let _fogDirty = true; // Set by PlayerTileEvents; world/year changes are caught by the idle re-check below.
+  let _fogCheckedAt = -Infinity;
+  const FOG_IDLE_RECHECK_MS = 1000; // Covers a Tothal Shift / world switch while standing still, and a missing event source.
   function updateZoneFogAroundPlayer() {
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (!_fogDirty && nowMs - _fogCheckedAt < FOG_IDLE_RECHECK_MS && window.PlayerTileEvents) return; // Standing still: no lookups, no string work.
+    _fogDirty = false;
+    _fogCheckedAt = nowMs;
     const currentArea = deps.getCurrentArea();
     if (currentArea === 'map_i_den_banubu') discoverEnteredLocale('locale_banubu_shrine'); // The existing fog tick also handles interior entry without introducing a polling system.
     if (!deps._isZoneArea(currentArea)) return;

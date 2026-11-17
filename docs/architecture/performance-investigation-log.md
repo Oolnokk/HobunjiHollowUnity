@@ -1279,3 +1279,10 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - **Fixed in review:** `grehlr`'s saddle `sourcePixel` in `config/attachment-rig-profiles.js` was still in the pre-downscale 3000×2250 space; rescaled to the 1024×768 sprite. Metadata only (the saddle `position` is model-space and the rule is `authoredFixed`).
 - **Lead, not fixed:** `WildernessMap._loadDiscoveredLocales` still reads `localStorage['hobunjiSaveMeta']` on every compass tick (the parse is cached, the read is not).
 - **Needs eyes:** the 40% default shrinks the flying-animal perched plane from 32×20 to 13×8 segments, which is deformed by the 7-point shoulder spline; check it for faceting on a device.
+
+## 17 Nov 2026: more consumers of PlayerTileEvents
+
+- `WildernessMap.updateFogAroundPlayer` now skips all work (fog lookup, world/year lookups, discovery) unless a tile/area event arrived or 1 s passed (the idle recheck covers Tothal Shifts / world switches while standing still, and falls back to the old per-tick path if `PlayerTileEvents` is missing).
+- Sense's ore-rock neighborhood sweep (~840 string-keyed map lookups per 150 ms refresh) is cached per tile in `game.js` (`_nearbyOreRocksForSense`), invalidated by the tile event, index identity/size changes and a 1 s TTL.
+- **Not yet measured**, same caveat as the other perf merges. Remaining per-frame tile users: `checkTransitionSpots` (string key per frame; needs extra re-check triggers for key items/roof access), interior exit check (tiny).
+- `checkTransitionSpots` (game.js) now skips its latch compare + `pool.find` on idle frames. It re-resolves on tile/area change (int compare + `PlayerTileEvents`), latch rewrites (`_spotResolveDirty`), `hobunji:key-item-granted` / `hobunjiPlayerReady`, every frame while a spot is pending (roof-access/key predicates stay live), and after a 250 ms TTL (cutscene gating, transitions added while standing still). `refreshActionBar()` keeps its exact old cadence (every frame, but not while latched). Worst case: a newly-available spot's arch appears up to 250 ms late when nothing was pending. Not yet measured.
