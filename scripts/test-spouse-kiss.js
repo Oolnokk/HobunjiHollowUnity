@@ -449,23 +449,31 @@ assert.equal(npcRoot.position.y,0,'cancel fully restores NPC floor elevation');
 assert.equal(playerLegs.limit,.55);assert.equal(partnerLegs.limit,.55);
 
 const npcStateSrc = read('docs/js/npc-character-state.js');
-assert.match(npcStateSrc, /!window\.SpouseKissMotion\?\.isPartner\?\.\(walker\)/,
-  'NPC movement lock must not suppress the kiss leg solver');
+assert.match(npcStateSrc, /kissNeedsKnees = window\.SpouseKissMotion\?\.isPartner\?\.\(walker\) === true/,
+  'NPC movement lock must refresh kiss knees while preserving other paired-pose leg ownership');
+let npcPoseLocked = true; // Simulates a scoped kiss/festival action, then a movement-only hold after the pose releases.
 const npcStateWindow = {
-  CharacterActionLocks: { isLocked: () => true },
+  CharacterActionLocks: { isLocked(_id, channel) {
+    return channel === 'movement' || (channel === 'pose' && npcPoseLocked);
+  } },
   SpouseKissMotion: { isPartner: () => true },
 };
 vm.runInNewContext(npcStateSrc, { window: npcStateWindow, console });
-let npcSuppressed = null;
+let npcSuppressed = null, npcLegUpdates = 0; // Counts real locked-walker IK writes instead of inferring work from its suppression flag.
 const heldWalker = {
   rec: { id: 'spouse' }, root: { position: { x: 1, y: 0, z: 2 } },
-  legs: { update(dt, speed, suppressed) { npcSuppressed = suppressed; } },
+  legs: { update(dt, speed, suppressed) { npcSuppressed = suppressed; npcLegUpdates++; } },
 };
 assert.equal(npcStateWindow.NpcCharacterState.update(heldWalker, .016, {}), true);
 assert.equal(npcSuppressed, false, 'kiss freezes NPC movement but not knee folding');
+assert.equal(npcLegUpdates, 1, 'kiss refreshes real leg IK once before authored kneeling');
 npcStateWindow.SpouseKissMotion.isPartner = () => false;
 npcStateWindow.NpcCharacterState.update(heldWalker, .016, {});
-assert.equal(npcSuppressed, true, 'unrelated NPC locks still suppress the leg pose');
+assert.equal(npcLegUpdates, 1, 'an unrelated exclusive NPC pose prevents ordinary leg re-solving entirely');
+npcPoseLocked = false;
+npcStateWindow.NpcCharacterState.update(heldWalker, .016, {});
+assert.equal(npcSuppressed, true, 'a regular movement-only NPC lock still updates neutral suppressed legs');
+assert.equal(npcLegUpdates, 2, 'ordinary knee solving resumes once the exclusive pose releases');
 const legsSrc = read('docs/js/procedural-leg-animation.js');
 assert.match(legsSrc, /setStanceDropLimitFraction:/, 'real legs expose reversible deep-kneel allowance');
 assert.match(legsSrc, /allowDeepFold/, 'shared procedural-leg IK supports posterior straddling without leg overextension');
