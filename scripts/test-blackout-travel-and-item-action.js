@@ -11,6 +11,7 @@ function source(relativePath) {
 }
 
 const game = source('docs/game.js');
+const actionPromptUi = source('docs/js/action-prompt-ui.js'); // Item-button classification moved out of game.js.
 const alcohol = source('docs/js/alcohol-gameplay-bridge.js');
 const inventoryMetadata = source('docs/js/inventory-action-metadata-bridge.js');
 const controls = source('docs/config/scratchbones-config.js');
@@ -42,7 +43,7 @@ assert.match(game, /isCookedFood[\s\S]{0,300}?action: 'consume_food_item'/,
   'generated cooked meals expose a numbered Eat action');
 assert.match(game, /activeAction === 'consume_food_item'[\s\S]{0,300}?CookingSystem\.eat\(/,
   'generated cooked meals consume through CookingSystem from normal action dispatch');
-const itemButtonClassifier = game.match(/const isItemButton = b =>([\s\S]*?);/)?.[0]; // Executes the shipped action packing policy.
+const itemButtonClassifier = actionPromptUi.match(/const isItemButton = b =>([\s\S]*?);/)?.[0]; // Executes the shipped action packing policy.
 assert(itemButtonClassifier);
 const classifyItem = vm.runInNewContext(`(() => { ${itemButtonClassifier} return isItemButton; })()`); // Uses the actual predicate to cover contextual harvest versus held item actions.
 for (const action of ['consume_held_item', 'consume_food_item', 'plant_turnip', 'place_chair', 'spawn_chicken']) {
