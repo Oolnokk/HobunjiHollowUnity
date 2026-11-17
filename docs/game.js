@@ -32536,6 +32536,24 @@
         beginThrowVisual: (durationS, options) => toolSwingT > 0 || pendingAction?.tool === 'adventuring'
           ? false : triggerPoseDrivenToolVisual('adventuring', durationS, options), // Reuse the shared held Windup→Strike timeline.
         getThrowPoseProgress: getWeaponSwingWindupPoseProgress,
+        getTorchProjectileVisual: () => {
+          if (heldMode !== 'tool' || activeTool !== 'adventuring' || equipmentSlots.adventuring !== 'torch') return null;
+          const mesh = toolMeshMap.adventuring; // Same equipped assembly that owns the torch's actual hand stance.
+          const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane || null; // Live PNG plane, not a guessed world origin.
+          if (!plane) return null;
+          plane.updateWorldMatrix(true, false);
+          const geometry = plane.geometry?.parameters || {}; // Reused by the projectile builder to preserve the actual torch silhouette.
+          return {
+            textureSource: plane.material?.map || toolTextures.torch || null,
+            sourceTransform: {
+              position: plane.getWorldPosition(new THREE.Vector3()),
+              quaternion: plane.getWorldQuaternion(new THREE.Quaternion()),
+              scale: plane.getWorldScale(new THREE.Vector3()),
+              planeWidth: Number(geometry.width) || TOOL_MODEL_WIDTH,
+              planeHeight: Number(geometry.height) || TOOL_MODEL_WIDTH,
+            },
+          };
+        },
         releaseThrowVisual: releaseWeaponSwingHold,
         cancelThrowVisual: cancelWeaponSwingHold,
         refreshActionBar,
