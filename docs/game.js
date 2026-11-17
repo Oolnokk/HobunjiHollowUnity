@@ -28216,16 +28216,8 @@
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
         const btns = computeActionButtons();
-        const nonClimbBtns = btns.filter(b => b.action !== 'climb_branch' && b.nativeInput !== true); // Only these rows are mounted in the five physical action-arch slots.
-        const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
-          || b.action === 'consume_held_item' || b.action === 'consume_food_item' || b.action === 'play_instrument' || b.action.startsWith('alchemy_flask_') || b.action.startsWith('plant_')
-          || b.action.startsWith('place_') || b.action.startsWith('spawn_'); // Shared by prompt glyph selection and the arch below, so the displayed input cannot drift from the real button.
-        const toolBtns = nonClimbBtns.filter(b => !isItemButton(b));
-        const itemBtns = nonClimbBtns.filter(isItemButton);
-        const promptArchSlots = heldMode === 'item' && !sitInteraction
-          ? [nonClimbBtns[0],nonClimbBtns[1],nonClimbBtns[2],nonClimbBtns[3],nonClimbBtns[4]]
-          : [toolBtns[0],toolBtns[1],toolBtns[2],itemBtns[0],itemBtns[1]]; // Mirrors the actual applyAbt layout instead of guessing from the unfiltered action index.
-        const promptSlotActions = ['action1','action2','action3','itemAction1','itemAction2']; // Exact semantic inputs of the five native arch positions.
+        const archLayout = window.ActionPromptUI.createActionArchLayout(btns, heldMode, sitInteraction); // Shared physical placement also drives floating prompt inputs.
+        const { nonClimbBtns } = archLayout; // Kept for activeAction selection even when the DOM arch needs no rebuild.
         // Every action supplied by an aimed world object is a world
         // interaction even if its id predates the obj_* naming convention.
         const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
@@ -28261,28 +28253,7 @@
           || nearbyNpcWalker?.root
           || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
-        const promptDevice = window.ActionPromptUI.getLastInputDevice(); // Used to replace an unreachable controller/touch Interact hint with the real displayed arch slot.
-        const controllerBindings = promptDevice === 'controller' ? window.InputBindings?.getCurrentBindings?.()?.controller : null; // Current remaps, never hardcoded controller A/RT.
-        const interactBinding = controllerBindings?.interact; // Shown only when this button actually dispatches Interact rather than the ruin's Jump override.
-        const controllerInteractUnavailable = promptDevice === 'controller' && (!interactBinding
-          || (window.InputBindings?.resolveActionForButton?.('controller', interactBinding) || 'interact') !== 'interact'); // Controller A is Jump in ruins, so world actions need another available physical input.
-        const promptInputs = promptButtons.map(button => { // Each world row advertises its live physical slot, or an explicitly owned input, never a guessed list index.
-          const physicalSlot = promptArchSlots.indexOf(button); // Climb/native-only prompts do not occupy the regular action arch.
-          const archAction = physicalSlot >= 0 ? promptSlotActions[physicalSlot] : null; // The actual touch/keyboard/controller action of this displayed slot.
-          const requiresArchFallback = button.inputAction === 'interact' && physicalSlot >= 0
-            && (promptDevice === 'touch' || controllerInteractUnavailable); // No touch Interact key, and controller A now jumps in ruins.
-          const archBound = promptDevice !== 'controller' || (!!controllerBindings?.[archAction]
-            && (window.InputBindings?.resolveActionForButton?.('controller', controllerBindings[archAction]) || archAction) === archAction); // Do not replace A with another unbound/stolen controller key.
-          const actionId = requiresArchFallback ? (archBound ? archAction : '') : button.inputAction
-            || (button.action === 'climb_branch' ? 'jump' : archAction); // Explicit context actions always win unless the device cannot trigger them.
-          const touchLabel = button.touchInputLabel || (actionId === 'jump' ? 'Jump' : actionId === 'dodge' ? 'Dodge' : actionId === 'toolSelect' ? 'Tool Select'
-            : physicalSlot >= 0 ? `Action ${physicalSlot + 1}` : actionId === 'interact' ? 'Interact' : ''); // Touch shows its actual control rather than an unrelated list position.
-          return {
-            actionId: actionId || '',
-            label: actionId ? window.ActionPromptUI.actionPromptGlyph(actionId, touchLabel) : '',
-            color: actionId ? window.ActionPromptUI.actionPromptColor(actionId) : '#B8C5C0',
-          };
-        });
+        const promptInputs = window.ActionPromptUI.resolveWorldPromptInputs(promptButtons, archLayout); // Exact five-slot layout and live remaps now live outside this monolith.
         window.WorldPopupText?.syncInteractionPrompts?.({
           buttons: promptButtons,
           root: interactionRoot,
@@ -28320,7 +28291,6 @@
         // (e.g. no tool equipped), which is exactly the case a player
         // facing a tree is most likely to be in.
         const climbBtn = btns.find(b => b.action === 'climb_branch');
-        // nonClimbBtns was resolved above for both the actual arch and its popup hints; no second list mapping here.
         const first = nonClimbBtns.find(b => b.allowed && b.style !== 'secondary') || nonClimbBtns.find(b => b.allowed) || nonClimbBtns[0];
         if (first) activeAction = first.action;
         // The dodge button is climbing's only real trigger, so it's the
@@ -28350,7 +28320,7 @@
         // climb_branch is excluded from every arch slot below for the same
         // reason it's excluded from activeAction above — it still stays in
         // the full btns array so the 3D world-space prompt keeps working.
-        // toolBtns/itemBtns also come from the same precomputed slot layout used by world popup hints.
+        // All five physical buttons and the popup hints now read from one shared arch layout.
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
 
@@ -28693,21 +28663,11 @@
           }
         }
 
-        if (heldMode === 'item' && !sitInteraction) {
-          // Item mode: all actions spread across all 5 arch positions
-          // (climb_branch excluded — see nonClimbBtns above)
-          applyAbt('btnAction1',    nonClimbBtns[0], btns.indexOf(nonClimbBtns[0]));
-          applyAbt('btnAction2',    nonClimbBtns[1], btns.indexOf(nonClimbBtns[1]));
-          applyAbt('btnAction3',    nonClimbBtns[2], btns.indexOf(nonClimbBtns[2]));
-          applyAbt('btnItemAction1', nonClimbBtns[3], btns.indexOf(nonClimbBtns[3]));
-          applyAbt('btnItemAction2', nonClimbBtns[4], btns.indexOf(nonClimbBtns[4]));
-        } else {
-          applyAbt('btnAction1',    toolBtns[0], btns.indexOf(toolBtns[0]));
-          applyAbt('btnAction2',    toolBtns[1], btns.indexOf(toolBtns[1]));
-          applyAbt('btnAction3',    toolBtns[2], btns.indexOf(toolBtns[2]));
-          applyAbt('btnItemAction1', itemBtns[0], btns.indexOf(itemBtns[0]));
-          applyAbt('btnItemAction2', itemBtns[1], btns.indexOf(itemBtns[1]));
-        }
+        applyAbt('btnAction1',    archLayout.slots[0], btns.indexOf(archLayout.slots[0]));
+        applyAbt('btnAction2',    archLayout.slots[1], btns.indexOf(archLayout.slots[1]));
+        applyAbt('btnAction3',    archLayout.slots[2], btns.indexOf(archLayout.slots[2]));
+        applyAbt('btnItemAction1', archLayout.slots[3], btns.indexOf(archLayout.slots[3]));
+        applyAbt('btnItemAction2', archLayout.slots[4], btns.indexOf(archLayout.slots[4]));
 
         if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }
