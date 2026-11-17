@@ -1049,6 +1049,10 @@
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
+    const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Reports the latest real panic, direction drift and Hyped echo for copyable on-phone diagnostics.
+    if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.lastSecondaryStrike || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining)) {
+      lines.push('Fey illusions: ' + JSON.stringify(feyIllusionDebug)); // No new HUD or continuous per-frame debug allocations.
+    }
     const playerVitalsDebug = window.PlayerVitals?.getDebug?.(); // Confirms lethal resource ticks reached the shared death handler on mobile.
     if (playerVitalsDebug) lines.push(`Player vitals: hp=${playerVitalsDebug.health}/${playerVitalsDebug.maxHealth} deathHandled=${playerVitalsDebug.deathHandled ? 1 : 0}`);
     const dialogueCameraDebug = window.CinematicCameraRuntime?.debugSnapshot?.(); // Mobile-verifiable live camera/face target after removing the screen-space portrait.
