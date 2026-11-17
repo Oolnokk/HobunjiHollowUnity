@@ -696,6 +696,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   const firstStage=context.Combat.beginStagedAction({windupS:.2,strikeS:.1,recoverS:0});
   CAE.hit(echo,{target:echoTarget,actualDamage:0});
   firstStage.onComplete(firstStage);
+  assert.equal(context.FeyHypedAttacks.isReplaying(player),true,'the first completed strike locks incoming weapon inputs until its Hyped follow-up finishes');
   assert.equal(hypedStages.length,2,'first attack schedules exactly one independent second staged attack');
   assert.equal(hypedVisuals.length,2,'Hyped attack replays the actual authored animation');
   assert(Math.abs(hypedVisuals[1].duration-.15)<1e-6,'second authored animation runs at exactly double speed');
@@ -704,6 +705,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(secondary.damage,4,'8 Hyped stamina produces a 16%-power second strike');
   assert.equal(secondary.knockback,16,'secondary knockback scales with the same factor');
   hypedStages[1].onComplete?.();
+  assert.equal(context.FeyHypedAttacks.isReplaying(player),false,'the completed second strike releases its input lock');
   assert.equal(context.FeyHypedAttacks.debugSnapshot().replayCount,1,'second impact is recorded once');
   assert.equal(CAE.prepare({attacker:player,abilityId:'swingCombo'}).metadata.feyHypedUsed,undefined,'echo credit spent once');
 
@@ -753,11 +755,15 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(accelerated.metadata.feyHypedUsed,4);
   context.Combat.deps.triggerWeaponSwingVisual(.15,{anim:'sweep'});
   const acceleratedStage=context.Combat.beginStagedAction({windupS:.1,strikeS:.05,recoverS:0});
+  CAE.hit(accelerated,{target:echoTarget,actualDamage:0,metadata:{feyPrimaryDamage:40,feyPrimaryKnockback:200}}); // Deliberately differs from context's weaker base 15/50.
   acceleratedStage.onComplete(acceleratedStage);
   const equallyFastEcho=hypedStages.at(-1);
   assert(Math.abs(equallyFastEcho.totalS-.15)<1e-6,'second staged swing is also 2x normal speed, not an accidental 4x');
   assert(Math.abs(hypedVisuals.at(-1).duration-.15)<1e-6,'second authored visual retains the accelerated first duration');
+  secondary=null;
   equallyFastEcho.onStrike();
+  assert(Math.abs(secondary?.damage-3.2)<1e-6,'4 Hyped points copy 8% of the mastered first hit (40), not the weaker 15 base damage');
+  assert(Math.abs(secondary?.knockback-16)<1e-6,'Hyped also copies 8% of the fully mastered first 200 knockback');
   equallyFastEcho.onComplete?.();
   for(const file of ['combat-combo.js','combat-quickattacks.js','combat-flurry.js','combat-charged-breaker.js']) {
     const source=fs.readFileSync('docs/js/combat/'+file,'utf8'); // Tests each actual ability's stage-tempo integration, not only a mocked combat facade.
