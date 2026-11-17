@@ -55,9 +55,11 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
 {
   const node = rig();
   layers.setAxis(node, 'old-carry', 'rotation', 'x', 1.2);
-  node.rotation.x = 0.4; // An absolute grab/recovery/blend owner replaces the old pose.
-  layers.clear(node, 'old-carry'); // Never subtract 1.2 from the new animation.
-  near(node.rotation.x, 0.4);
+  node.rotation.x = 0.4; // An unregistered pose writer may have left a contaminated baseline.
+  layers.clear(node, 'old-carry');
+  near(node.rotation.x, 0); // Unknown writes are rejected, never installed as the new neutral pose.
+  assert.ok(layers.getDebug().outOfBandWrites >= 1);
+  layers.setAbsoluteBase(node, 'rotation', 'x', 0.4); // Legitimate absolute handoff is explicit.
   layers.setAxis(node, 'new-action', 'rotation', 'x', 0.1);
   near(node.rotation.x, 0.5);
   layers.clear(node, 'new-action');
@@ -93,6 +95,61 @@ function near(a, b) { assert.ok(Math.abs(a - b) < 1e-8, `${a} should equal ${b}`
   layers.clear(node, 'tiny-handoff');
   near(node.position.y, 2.00000005);
 }
+// A Three.js-compatible quaternion stand-in tests mixed rotation ownership.
+class Quat {
+  constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); this.isQuaternion = true; }
+  set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
+  clone() { return new Quat(this.x, this.y, this.z, this.w); }
+  copy(q) { return this.set(q.x, q.y, q.z, q.w); }
+  multiply(q) {
+    const a = this.clone();
+    return this.set(a.x * q.w + a.w * q.x + a.y * q.z - a.z * q.y,
+      a.y * q.w + a.w * q.y + a.z * q.x - a.x * q.z,
+      a.z * q.w + a.w * q.z + a.x * q.y - a.y * q.x,
+      a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z);
+  }
+}
+function aroundX(radians) { return new Quat(Math.sin(radians / 2), 0, 0, Math.cos(radians / 2)); }
+function angleX(q) { return 2 * Math.atan2(q.x, q.w); }
+{
+  const node = { ...rig(), quaternion: new Quat(), name: 'npc_composed_chest' };
+  layers.setAxis(node, 'npc-yawn-body', 'rotation', 'x', -0.2);
+  layers.setQuaternion(node, 'drunk-npc-body', aroundX(0.5), { leaseMs: 500 });
+  near(angleX(node.quaternion), 0.3);
+  layers.clear(node, 'npc-yawn-body');
+  near(angleX(node.quaternion), 0.5);
+  layers.clear(node, 'drunk-npc-body');
+  near(angleX(node.quaternion), 0);
+  assert.equal(layers.getDebug().leasedSlots, 0);
+}
+{
+  const node = { ...rig(), quaternion: new Quat(), name: 'npc_interrupted_tilt' };
+  layers.setQuaternion(node, 'drunk-body', aroundX(0.3), { leaseMs: 20 });
+  node.quaternion.copy(aroundX(0.9)); // Unknown writer replaced the owned rotation.
+  layers.clear(node, 'drunk-body');
+  near(angleX(node.quaternion), 0);
+  assert.equal(layers.getDebug().lastOutOfBand.node, 'npc_interrupted_tilt');
+  layers.setQuaternion(node, 'stale-foot', aroundX(-0.25), { leaseMs: 20 });
+  layers.expireStale(Date.now() + 1000);
+  near(angleX(node.quaternion), 0);
+  assert.equal(layers.getDebug().leasedSlots, 0);
+}
+{
+  vm.runInNewContext(fs.readFileSync('docs/js/actor-body-sink.js', 'utf8'), sandbox, { filename: 'actor-body-sink.js' });
+  const sink = sandbox.window.ActorBodySink;
+  const root = { ...rig(), userData: {} };
+  const legs = { modelHeight: 10, drop: 0,
+    setStanceDrop(value) { this.drop = value; }, getStanceDrop() { return this.drop; },
+    setStanceYawDeg() {} };
+  const actor = { legs, lower: [{ obj: root }] };
+  sink.apply(actor, 10, 0, true);
+  near(root.position.y, 1);
+  sink.apply(actor, 15, 0, true);
+  near(root.position.y, 0.5);
+  sink.release(actor);
+  near(root.position.y, 2);
+}
+
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
