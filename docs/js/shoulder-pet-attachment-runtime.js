@@ -135,11 +135,16 @@
     function _applyShoulderPetFinalTransform(c, finalTransform) {
       const group = c.avatarRef?.group;
       if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
+      const fallbackPlayerMesh = finalTransform.faceRotationSource === 'player-body-fallback-no-authored-anchors'
+        ? getPlayerMesh() : null; // The legacy no-perch/no-grip path still arrives with a possibly reflected getWorldQuaternion from game.js.
+      const worldQuaternion = fallbackPlayerMesh?.isObject3D
+        ? worldQuaternionWithoutReflection(fallbackPlayerMesh)
+        : finalTransform.worldQuaternion; // Canonicalize that fallback here, without adding another transform writer to game.js.
       const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
       parent?.updateWorldMatrix?.(true, false);
       const parentWorldQuaternion = parent ? worldQuaternionWithoutReflection(parent)
         : new THREE.Quaternion(); // Parent rotations ignore mirrored matrix decomposition when solving the pet's local attachment.
-      const localQuaternion = parentWorldQuaternion.invert().multiply(finalTransform.worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
+      const localQuaternion = parentWorldQuaternion.invert().multiply(worldQuaternion.clone()); // Local root rotation that renders as the selected world-space attachment frame.
       const localPosition = parent?.worldToLocal
         ? parent.worldToLocal(finalTransform.worldPosition.clone())
         : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
@@ -166,8 +171,8 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
-        rotationSource: finalTransform.rotationSource,
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the scale-free owner body heading.' : 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+        rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
         authoredPerchWorldPosition: finalTransform.perchWorldPosition?.toArray?.() || null,
@@ -180,7 +185,7 @@
         rotationSourceInverted: finalTransform.rotationSourceInverted,
         rotationalOffsetCancelled: finalTransform.rotationalOffsetCancelled,
         rotationFrameWorldQuaternion: finalTransform.rotationFrameWorldQuaternion?.toArray?.() || null,
-        finalWorldQuaternion: finalTransform.worldQuaternion.toArray(),
+        finalWorldQuaternion: worldQuaternion.toArray(), // Report the *actual applied* world orientation, including the legacy fallback repair.
         facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
         shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
         shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Reports the local X lean solved around the grip instead of either sprite center.
