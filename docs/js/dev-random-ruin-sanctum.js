@@ -40,6 +40,8 @@
   const BOSS_TIER = 2;
   const BOSS_HEALTH_MULT = 3;
   const BOSS_WAKE_MS = 1400; // Beat between arriving in the arena and the lich rising.
+  const INTRO_MS = 3600; // The isolated camera and title hold before the boss enters enemy simulation.
+  const INTRO_TITLE_DELAY_MS = 850; // Let the existing camera blend toward the lich before revealing its name.
   const FADE_MS = 320;
 
   // Sanctum layout in tiles (1 tile = 1 world unit), east of the V50 grid.
@@ -911,13 +913,14 @@
   }
 
   async function spawnSkeleton(coffin, roster = null, at = null) {
+    const owner = s, revision = owner?.encounterRevision; // A delayed portrait cannot populate a sanctum that was reset while loading.
     const tile = deps?.TILE || 64, p = at || coffin.rise;
     const minion = await window.MinionCombat?.makeEntity?.({
       speciesId:'harlyao-skeleton', name:'Harlyao Skeleton', tier:cfg('sanctum.skeletons.tier', 1), x:p.x * tile, y:p.z * tile, zoneId:MAP_ID, weaponMetalKey:'nativeCopper',
       roster:roster || undefined,
       extra:{ homeX:p.x * tile, homeY:p.z * tile, state:'chase', keepCorpseAfterLoot:true, sanctumCoffin:coffin.index }, // Looting leaves the body for the lich to raise.
     });
-    if (!minion || !s || deps?.getCurrentArea?.() !== MAP_ID) { disposeActor(minion); return null; }
+    if (!minion || s !== owner || owner?.encounterRevision !== revision || deps?.getCurrentArea?.() !== MAP_ID) { disposeActor(minion); return null; }
     deps.hostileObjects?.add?.(minion);
     coffin.skeleton = minion;
     return minion;
@@ -978,9 +981,12 @@
     const base = corpse.rosterRecord || null;
     const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics:[], cosmeticSlots:{}, appliedDyes:{} } : base) : null;
     coffin.raising = true;
+    const owner=s, revision=owner?.encounterRevision; // A prior attempt's asynchronous resurrection cannot unlock a new attempt's coffin.
     deps?.corpseObjects?.delete?.(corpse);
     if (deps?.despawnCreature) deps.despawnCreature(corpse); else disposeActor(corpse);
-    spawnSkeleton(coffin, roster, at).finally(() => { coffin.raising = false; });
+    spawnSkeleton(coffin, roster, at).finally(() => {
+      if (s===owner && owner.encounterRevision===revision) coffin.raising=false;
+    });
     coffin.raised = (coffin.raised || 0) + 1;
     deps?.showToast?.('The lich raises a fallen skeleton!', false);
     return true;
@@ -1032,59 +1038,176 @@
     deps?._snapCameraTarget?.();
   }
 
+  function endBossIntro(owner, beginCombat = false) {
+    const intro = owner?.intro; // Owns the camera, title, timers and player action lock for one entrance only.
+    if (!intro) return;
+    owner.intro = null;
+    clearTimeout(intro.titleTimer);
+    clearTimeout(intro.endTimer);
+    intro.title?.remove?.();
+    if (window.CinematicCameraRuntime?.activeRecord?.()?.reason === 'ruin-sanctum-boss-intro') window.CinematicCameraRuntime.deactivate();
+    if (intro.lock) window.CharacterActionLocks?.release?.(intro.lock);
+    if (beginCombat && s === owner && owner.inSanctum && owner.boss === intro.boss && Number(intro.boss.health) > 0) {
+      deps?.hostileObjects?.add?.(intro.boss); // No enemy AI, projectiles, summons or damage run while the cinematic is active.
+      wakeCoffins(); // The lich is alone for its introduction; its skeletons rise only after the title clears.
+      owner.lastEncounterEvent = 'combat-started';
+    }
+  }
+
+  function beginBossIntro(owner, boss, label) {
+    const camera = window.CinematicCameraRuntime; // The same blended cinematic-camera owner used by dialogue and puzzle reveals.
+    const arena = owner.layout.arena, floor = Number(owner.context.meta?.floorSurfaceY) || 0;
+    const height = Math.max(1, Number(boss.avatarRef?.modelHeight) || 1.7);
+    const x = boss.x / (deps?.TILE || 64), z = boss.y / (deps?.TILE || 64);
+    const shot = {
+      id:'sanctum_boss_reveal', shotKey:'sanctum-'+owner.encounterRevision,
+      position:{x:Math.max(arena.minX+2.8,x-4.8),y:floor+Math.max(1.55,height*.95),z:z+.55},
+      target:{x,y:floor+Math.max(1,height*.75),z},
+      fovDeg:34,blendSeconds:.95,dialogueFraming:false,
+    }; // Look back across the arena toward the solitary boss instead of moving the player camera itself.
+    if (!camera?.activate?.(MAP_ID,shot,{reason:'ruin-sanctum-boss-intro'})) {
+      owner.lastEncounterEvent='camera-unavailable';
+      deps?.hostileObjects?.add?.(boss);
+      wakeCoffins(); // Camera failure must never trap the player in an unwinnable sanctum.
+      return;
+    }
+    const lock = window.CharacterActionLocks?.acquire?.({owner:'ruin-sanctum-intro',reason:'named lich introduction',participants:['player'],channels:['movement','actions','tools'],timeoutMs:INTRO_MS+1200});
+    const intro = {boss,lock,title:null,titleTimer:null,endTimer:null}; // This owner token also makes all delayed callbacks cancelable on death/exit/reroll.
+    owner.intro = intro;
+    owner.lastEncounterEvent = 'reveal';
+    intro.titleTimer = setTimeout(() => {
+      if (s !== owner || owner.intro !== intro || !owner.inSanctum) return;
+      const title = document.createElement('div'); // Screen-space boss title, not a world label clipped by the camera.
+      title.id='ruin-sanctum-boss-title';
+      title.textContent=String(label || boss.name || 'Lich').toUpperCase();
+      title.setAttribute('role','status');
+      title.style.cssText = "position:fixed;left:50%;top:75%;transform:translate(-50%,-50%);width:94vw;max-width:1200px;box-sizing:border-box;z-index:9990;pointer-events:none;text-align:center;white-space:normal;overflow-wrap:break-word;color:#fff6d8;font-family:'KhymeryyanRomanLetters+Numbers','KhymeryyanRoman',serif;font-size:clamp(28px,6vmin,74px);font-weight:700;line-height:1.08;letter-spacing:.065em;-webkit-text-stroke:2.5px #000;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 5px 12px #000;";
+      document.body.appendChild(title);
+      intro.title = title;
+    },INTRO_TITLE_DELAY_MS);
+    intro.endTimer = setTimeout(() => endBossIntro(owner,true),INTRO_MS);
+  }
+
+  function resetSanctumEncounter(reason='exit') {
+    const owner = s;
+    if (!owner) return;
+    owner.encounterRevision = (owner.encounterRevision || 0) + 1; // Invalidates pending boss and coffin-portrait promises from the previous attempt.
+    owner.bossPending = false;
+    owner.inSanctum = false;
+    owner.enteringSanctum = false;
+    owner.leavingSanctum = false;
+    endBossIntro(owner,false);
+    const boss = owner.boss;
+    if (boss) {
+      window.HarlyaoLichCombat?.clearBossEffects?.(boss);
+      window.DevRandomRuinLichThemes?.resetBossHazards?.(boss);
+      window.SpecialHarlyaoLiches?.applyPlasmSkin?.(boss,false);
+      window.SpecialHarlyaoLiches?.releaseWarhammer?.(boss); // The per-boss patterned weapon texture belongs to the departing guardian.
+      window.SpecialHarlyaoLiches?.clear?.();
+      for (const minion of boss._lichSummons || []) { deps?.corpseObjects?.delete?.(minion); disposeActor(minion); }
+      deps?.corpseObjects?.delete?.(boss);
+      disposeActor(boss);
+    }
+    owner.boss = null;
+    for (const coffin of owner.coffins || []) {
+      if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
+      coffin.skeleton=null;coffin.open=false;coffin.lidT=0;coffin.raising=false;coffin.raised=0;
+      if (coffin.lid) {
+        const rest=coffin.lidRest||{x:0,y:.69,z:0};
+        coffin.lid.position.set(rest.x,rest.y,rest.z);
+        coffin.lid.rotation.x=0;
+      }
+    }
+    // A completed guardian's Key-Stone and claimed loot are permanent; an unfinished encounter restarts from its initial state.
+    if (owner.rearDoor) {
+      owner.rearDoor.open=!!owner.bossDefeated;
+      owner.rearDoor.progress=owner.bossDefeated?1:0;
+      updateRearDoor(0);
+    }
+    for (const fire of owner.arenaFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; }
+    if (!owner.bossDefeated) for (const fire of owner.vaultFires || []) { fire.lit=false; if(fire.anchor)fire.anchor.visible=false; }
+    owner.lastEncounterEvent = 'reset:'+reason;
+  }
+
   function enterSanctum() {
-    if (!s?.entry) return;
+    const owner=s, entry=owner?.entry; // A delayed transition must never use the next ruin's state after teardown.
+    if (!entry || owner.inSanctum || owner.enteringSanctum || owner.leavingSanctum) return;
+    owner.enteringSanctum = true; // Death can happen during the fade, before the player has been teleported.
+    const entryRevision = owner.encounterRevision;
     fadeThen(() => {
-      teleport(s.entry);
-      for (const fire of s.arenaFires || []) igniteFire(fire);
-      s.inSanctum = true;
+      if (s!==owner || owner.encounterRevision!==entryRevision || !owner.enteringSanctum || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID)) return;
+      owner.enteringSanctum = false;
+      teleport(entry);
+      for (const fire of owner.arenaFires || []) igniteFire(fire);
+      owner.inSanctum = true;
       if (!s.boss && !s.bossDefeated && !s.bossPending) {
         s.bossPending = true;
-        setTimeout(() => spawnBoss(), cfg('sanctum.boss.wakeMs', BOSS_WAKE_MS));
+        const owner=s, revision=owner.encounterRevision; // Timers must not resurrect a guardian after death or a return-door exit.
+        setTimeout(() => { if(s===owner && owner.inSanctum && owner.encounterRevision===revision) spawnBoss(owner,revision); }, cfg('sanctum.boss.wakeMs', BOSS_WAKE_MS));
         deps?.showToast?.('Blue flames gutter up around a vast chamber. Something stirs.', true);
       }
     });
   }
 
   function leaveSanctum() {
-    const door = s?.door;
-    if (!door) return;
-    fadeThen(() => { teleport(door.front); s.inSanctum = false; });
+    const owner=s, door=owner?.door;
+    if (!door || owner.leavingSanctum) return;
+    const front=door.front; // Capture the original door anchor before a delayed fade or teardown.
+    resetSanctumEncounter('leave');
+    owner.leavingSanctum = true; // Explicitly track the return fade so death can cancel its late teleport.
+    const exitRevision = owner.encounterRevision;
+    fadeThen(() => {
+      if(s!==owner || owner.encounterRevision!==exitRevision || !owner.leavingSanctum || owner.door!==door || (typeof deps?.getCurrentArea==='function' && deps.getCurrentArea()!==MAP_ID))return;
+      owner.leavingSanctum = false;
+      teleport(front);
+    });
   }
 
-  async function spawnBoss() {
+  async function spawnBoss(owner=s,revision=owner?.encounterRevision) {
     const combat = window.HarlyaoLichCombat;
-    if (!s || s.boss || s.bossDefeated) return;
-    if (deps?.getCurrentArea?.() !== MAP_ID || !combat?.makeEntity) { s.bossPending = false; return; }
+    if (!owner || s!==owner || !owner.inSanctum || owner.encounterRevision!==revision || owner.boss || owner.bossDefeated) return;
+    if (deps?.getCurrentArea?.() !== MAP_ID || !combat?.makeEntity) { owner.bossPending = false; return; }
     combat.allowArea?.(MAP_ID); // Idempotent; covers a lich module that loaded after this one.
     const { arena, zc } = s.layout;
-    const x = (arena.minX + arena.maxX) / 2 + 2.5, z = zc;
+    const x = (arena.minX + arena.maxX) / 2 + 1.5, z = zc; // One and a half tiles toward the rear, clear of the coffins.
     const tile = deps.TILE || 64;
     const ruinLich = !s.isSpecialBoss ? window.DevRandomRuin?.getLichName?.() : null; // The ruin's title names this lich: the same person rises in the sanctum.
-    const creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, nameOverride:ruinLich || undefined, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
-    s.bossPending = false;
-    if (!creature || !s || deps?.getCurrentArea?.() !== MAP_ID) { creature?.avatarRef?.dispose?.(); return; }
+    let creature=null; // A failed async portrait should release the pending state instead of permanently blocking re-entry.
+    try {
+      creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, nameOverride:ruinLich || undefined, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
+    } catch (error) {
+      if (s===owner && owner.encounterRevision===revision) { owner.bossPending=false; owner.lastEncounterEvent='spawn-failed'; }
+      window.__farmLog?.('[random-ruin] sanctum lich spawn failed: '+(error?.message||error),'warn');
+      return;
+    }
+    if(s===owner && owner.encounterRevision===revision)owner.bossPending = false;
+    if (!creature || s!==owner || !owner.inSanctum || owner.encounterRevision!==revision || deps?.getCurrentArea?.() !== MAP_ID) { disposeActor(creature); return; }
     const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));
     creature.maxHealth = max;
     creature.health = max;
     creature.isRuinSanctumBoss = true;
     creature.lichRaiseDead = { canRaise:() => deadSkeletons().length > 0, raise:lich => raiseDead(lich) }; // Instead of summoning new minions.
-    deps.hostileObjects?.add?.(creature);
-    s.boss = creature;
-    wakeCoffins();
+    s.boss = creature; // Keep the prepared avatar visible without enrolling its AI until the introduction finishes.
+    window.SpecialHarlyaoLiches?.tick?.(creature,0); // Establish head flames/weapon visuals for the frozen cinematic without running the hostile AI.
     const label = (s.isSpecialBoss && window.SpecialHarlyaoLiches?.defFor?.(s.bossType)?.name) || ruinLich || combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
-    deps?.showToast?.(`${label} rises from the sanctum floor!`, false);
+    beginBossIntro(owner,creature,label);
     window.__farmLog?.(`[random-ruin] sanctum boss ${s.bossType} spawned hp=${max}`, 'world');
   }
 
   function disposeActor(entity) {
     if (!entity) return;
+    window.Combat?.telegraph?.cancel?.(entity); // Clear pending combat warnings before the abandoned actor leaves the update loop.
+    window.Combat?.cancelStagedForAttacker?.(entity); // No staged Strike callback may fire after the sanctum encounter is retired.
     deps?.hostileObjects?.delete?.(entity);
+    deps?.corpseObjects?.delete?.(entity);
+    if (typeof window.BanditCombat?.discardEntity === 'function') {
+      window.BanditCombat.discardEntity(entity); // Canonical hostile teardown covers every weapon socket, trail, texture, HUD and late avatar.
+      return;
+    }
     entity.avatarRef?.group?.parent?.remove?.(entity.avatarRef.group);
     entity.groundShadow?.parent?.remove?.(entity.groundShadow);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
-    entity._banditRangedToolHolder?.parent?.remove?.(entity._banditRangedToolHolder);
-    entity.avatarRef?.dispose?.();
+    for (const holder of [entity._banditToolHolder,entity._banditRangedToolHolder,entity._banditFlaskToolHolder,entity._banditTrailMesh]) holder?.parent?.remove?.(holder);
+    entity.avatarRef?.dispose?.(); // Isolated authoring/test tools may not load the complete bandit module.
   }
 
   function removeLichHeart(owner = s) {
@@ -1140,7 +1263,7 @@
   }
 
   function updateBoss(now) {
-    if (!s?.boss || s.bossDefeated) return;
+    if (!s?.boss || s.bossDefeated || s.intro) return;
     const boss = s.boss;
     const dead = !(Number(boss.health) > 0) || boss.dead === true || !deps?.hostileObjects?.has?.(boss);
     if (!dead) return;
@@ -1204,13 +1327,14 @@
       s = {
         context, rng, built:false, rejects:[], braziers:[], litOrder:[], occluders:[], door:null, bgs:null,
         layout:reservedLayout(context), // floorProjection reserved these tiles; recover the plan from the live grid size.
-        boss:null,bossPending:false,
+        boss:null,bossPending:false,intro:null,encounterRevision:0,lastEncounterEvent:'unvisited', // Separate attempts never reuse delayed actor spawns or cinematic ownership.
         bossDefeated:window.DevRandomRuin?.getSeed?.()!=null
           &&window.RuinSites?.isActiveRuinBossDefeated?.(window.DevRandomRuin.getSeed())===true,
-        inSanctum:false, // Re-entry restores the boss outcome from the same world/cycle/site as the brazier network.
+        inSanctum:false, enteringSanctum:false, leavingSanctum:false, // Both fade directions are cancelable if the player dies or the ruin tears down.
         isSpecialBoss:context.specialBoss === true, roomCoffins:[], // Site generation explicitly opts into the three named key guardians; dev/ordinary ruins stay unchanged.
       };
     },
+    onPlayerDeath() { if (s?.inSanctum || s?.enteringSanctum || s?.leavingSanctum || s?.intro || s?.bossPending) resetSanctumEncounter('death'); }, // The checkpoint host calls this before moving the player.
     update(kit, now, dt) {
       if (!s) return;
       deps = kit.deps || deps;
@@ -1253,17 +1377,16 @@
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
-        inSanctum:s.inSanctum,
+        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },
     clear() {
       if (!s) return;
+      resetSanctumEncounter('ruin-teardown'); // Cancel all delayed reveals/spawns before the larger ruin detaches.
       if (s.bgs) window.Music?.unregisterFurnitureSfxSource?.(s.bgs);
       removeLichHeart(); // Old pickup and its glow material must not survive ruin teardown.
-      if (s.boss) { for (const minion of s.boss._lichSummons || []) disposeActor(minion); disposeActor(s.boss); }
       for (const coffin of [...(s.coffins||[]),...(s.roomCoffins||[])]) if (coffin.skeleton) { deps?.corpseObjects?.delete?.(coffin.skeleton); disposeActor(coffin.skeleton); }
-      if (s.boss) window.SpecialHarlyaoLiches?.applyPlasmSkin?.(s.boss,false); // Temporary charge-retexture materials never survive a reroll.
       const occlusion = window.DevRandomRuin?.getOcclusionMeshes?.();
       if (occlusion) for (const mesh of s.occluders) { const i = occlusion.indexOf(mesh); if (i >= 0) occlusion.splice(i, 1); }
       for (const object of s.hiddenDecor || []) object.visible = true;
@@ -1292,6 +1415,7 @@
     debugShove:(entity, dirX, dirZ, speedPxS = 900) => { const t = deps?.TILE || 64; if (!entity) return false; deps?.damageCreature?.(entity, 1, entity.x - dirX * t, entity.y - dirZ * t, speedPxS, {}); return true; }, // Headless tests: a 1-damage hit from the opposite side.
     debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),
+    resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
     getState:() => s,
   });

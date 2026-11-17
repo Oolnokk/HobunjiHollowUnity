@@ -292,6 +292,16 @@ function assertPlasmSeams(t) {
   assert.equal(followup[1].position.x,pursuing.x,'Later icicles use the current tracked position');
   assert.equal(t.api.snapshot().activeBossIcicles,2);
   assert.equal(followup[1].geometry.attributes.position.count,7*3,'Later drops also remain single needles');
+  // A full encounter reset must detach every boss-only icicle while leaving seeded room hazards untouched.
+  const ordinaryBefore=t.api.snapshot().icicles-2;
+  t.api.resetBossHazards(boss);
+  assert.equal(t.api.snapshot().bossIcicleEmitter,null,'Retiring Nanahi removes the moving icicle origin');
+  assert.equal(t.api.snapshot().activeBossIcicles,0,'No temporary boss icicles survive a sanctum reset');
+  assert.equal(t.api.snapshot().icicles,ordinaryBefore,'Seeded room icicles are not reset by the boss-specific cleanup');
+  assert.equal(followup[0].parent,null,'Already released boss needles are detached on retreat');
+  assert.equal(followup[1].parent,null,'Every in-flight boss needle is detached on retreat');
+  assert.equal(t.api.triggerBossBlizzard(boss),0,'A retired Nanahi emitter cannot release another needle');
+
   t.tick(30,.25);
   assert.equal(t.api.snapshot().activeBossIcicles,0,'Completed boss icicles are removed without keeping invisible mesh instances');
   assert.equal(followup[0].parent,null,'Shared-geometry icicle cleanup detaches the first temporary mesh');
