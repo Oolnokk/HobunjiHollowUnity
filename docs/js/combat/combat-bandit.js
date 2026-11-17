@@ -1159,6 +1159,7 @@
     const firstLungeDuration = Number(c._banditLungeDur) || 0; // Used only if the second authored strike also has a legal original lunge.
     return hype.beginNpcMelee(c, {
       ...options,
+      feyHypedNpcTarget: target, // Protects the second strike from a vanished or map-transitioned enemy.
       onFeyHypedNpcEchoStart: ratio => {
         if (!firstLunge || !(ratio > 0) || !target || !(Number(target.health) > 0)) return;
         if (c._banditLunging) cancelBanditLunge(c); // Finish the original movement budget before launching an independent second burst.
