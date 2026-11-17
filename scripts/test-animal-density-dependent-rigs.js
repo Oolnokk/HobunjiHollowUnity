@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const shoulderSource = fs.readFileSync('docs/js/animal-shoulder-spline.js','utf8'); // Real seven-point shoulder and split-layer adapter.
 const responseSource = fs.readFileSync('docs/js/animal-head-material-response.js','utf8'); // Real compression/stretch head skinning adapter.
+const paritySource = fs.readFileSync('docs/js/animal-shoulder-spline-layering.js','utf8'); // Real layer visibility parity when wireframe is active.
 
 class Attribute {
   constructor(array,size){this.array=array;this.itemSize=size;this.count=array.length/size;}
@@ -36,7 +37,7 @@ class Geometry {
   dispose(){this.disposed=true;}
 }
 function transform(){return{x:0,y:0,z:0,copy(other){this.x=other.x;this.y=other.y;this.z=other.z;return this;}};}
-class Material { clone(){return new Material();}dispose(){this.disposed=true;} }
+class Material { constructor(map=null){this.map=map;}clone(){return new Material(this.map);}dispose(){this.disposed=true;} }
 class Mesh {
   constructor(geometry,material){
     this.geometry=geometry;this.material=material;this.name='animal';this.userData={};this.isSkinnedMesh=true;
@@ -110,4 +111,27 @@ assert(overlays.every(mesh=>!mesh.visible));
 avatar.dispose();
 assert.equal(originalDisposals,1,'normal animal disposal still called exactly once');
 assert(overlays.every(mesh=>mesh.geometry.disposed),'all replacement split geometries released');
-console.log('OK: real animal shoulder spline, split overlays, head material compression/yaw, live retessellation, wireframe, and disposal');
+
+// Regression for animals spawned while diagnostics are already enabled: clones must never freeze cyan wireframe materials into their permanent coat.
+const initialMaterial = new Material('temporary-cyan-wireframe'); // Simulates the source skinned face while the dev wireframe swaps its material.
+const originalMaterial = new Material('painted-genotype'); // The underlying runtime source texture must be cloned into the split overlay.
+const newlySpawned = new Mesh(new Geometry(4,4),initialMaterial);
+newlySpawned.skeleton.bones=[frontBone];group.add(newlySpawned);
+windowStub.PNGPlaneAvatar.meshBudget.originalPortraitMaterial = mesh => mesh===newlySpawned ? originalMaterial : mesh.material;
+const cloneStart=shoulderSource.indexOf('  function cloneMaterialForOverlay(');
+const cloneEnd=shoulderSource.indexOf('  function refreshOverlayGeometry(',cloneStart);
+assert(cloneStart>0 && cloneEnd>cloneStart,'real overlay clone implementation located');
+const newLayer = new Function('window','THREE','source',shoulderSource.slice(cloneStart,cloneEnd) +
+  "return cloneOverlayMesh(THREE,source,'split_left_front');")(windowStub,THREE,newlySpawned);
+assert.equal(newLayer.material.map,'painted-genotype','spawn-during-wireframe clones original genotype material, never cyan wireframe');
+newLayer.mesh.userData.hobunjiShoulderSplitOverlay=true;
+group.userData.hobunjiShoulderRest={splitOverlayVisible:true};
+new Function('window',paritySource)(windowStub);
+wireframe=true;
+windowStub.HobunjiShoulderSplitLayerParity.syncOverlay(newlySpawned,newLayer.mesh);
+assert.equal(newLayer.mesh.visible,false,'late parity resync cannot make a diagnostic split-frame overlay visible');
+wireframe=false;
+windowStub.HobunjiShoulderSplitLayerParity.syncOverlay(newlySpawned,newLayer.mesh);
+assert.equal(newLayer.mesh.visible,true,'parity restores true requested split visibility after wireframe');
+assert.equal(newLayer.mesh.material.map,'painted-genotype','original genotype texture remains intact after toggling');
+console.log('OK: real animal shoulder spline, split overlays, material compression/yaw, live retessellation, spawn-during-wireframe, and disposal');
