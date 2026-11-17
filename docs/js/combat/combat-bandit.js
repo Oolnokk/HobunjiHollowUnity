@@ -1145,6 +1145,7 @@
   }
 
   function beginBanditMeleeStage(c, options, target) {
+    window.FeyIllusions?.setActionDuration?.(c, (Number(options.windupS) || 0) + (Number(options.strikeS) || 0) + (Number(options.recoverS) || 0)); // A Demented NPC's perception rotates over its actual two-strike lifetime, not the default 220ms fallback.
     const hype = window.FeyHypedAttacks; // Shared enhanced-Stamina executor owns the two NPC stages, not a duplicate AI or render pose.
     const payment = hype?.claimNpcMelee?.(c); // Only actually spent, eligible Hyped Stamina is committed to this particular NPC melee attack.
     if (!payment) return window.Combat.beginStagedAction(options);
