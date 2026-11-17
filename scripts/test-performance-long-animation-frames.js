@@ -64,12 +64,12 @@ function fixture({ supported = true } = {}) {
   const makeScript = (url, forced) => ({
     sourceURL: url, forcedStyleAndLayoutDuration: forced,
   }); // The browser provides script attribution only for some long frames.
-  observer.fire([{ duration: 95, scripts: [
+  observer.fire([{ duration: 95, startTime: 100, styleAndLayoutStart: 155, scripts: [
     makeScript('https://test.invalid/docs/js/inventory-ui.js?v=old', 11),
     makeScript('https://test.invalid/docs/js/held-object-render-order.js?v=old', 0),
   ] }]);
   f.setMenuOpen(true);
-  observer.fire([{ duration: 126, scripts: [
+  observer.fire([{ duration: 126, startTime: 200, styleAndLayoutStart: 260, scripts: [
     makeScript('https://test.invalid/docs/js/inventory-ui.js?v=new', 7),
     makeScript('https://test.invalid/docs/js/action-arch-icons.js', 4),
   ] }]);
@@ -78,6 +78,10 @@ function fixture({ supported = true } = {}) {
   assert.equal(snap.frames, 2);
   assert.equal(snap.totalMs, 221);
   assert.equal(snap.maxMs, 126);
+  assert.equal(snap.styleLayoutFrames, 2, 'browser phase boundaries are tracked independently from script attribution');
+  assert.equal(snap.styleLayoutPhaseMs, 106, 'style/layout-to-frame-end totals include the later render tail');
+  assert.equal(snap.menuClosed.styleLayoutPhaseMs, 40);
+  assert.equal(snap.menuOpen.styleLayoutPhaseMs, 66);
   assert.equal(snap.forcedStyleMs, 22);
   assert.equal(snap.menuClosed.frames, 1);
   assert.equal(snap.menuClosed.forcedStyleMs, 11);
