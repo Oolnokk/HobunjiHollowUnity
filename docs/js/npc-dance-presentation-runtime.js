@@ -109,6 +109,7 @@
     let left = null;
     let right = null;
     entry.walker?.root?.traverse?.(node => {
+      if (!belongs(node)) return; // A rebuilt avatar can coexist briefly with old sockets under the same NPC root.
       if (node?.name === 'left_hand_socket') left = node;
       else if (node?.name === 'right_hand_socket') right = node;
     });
