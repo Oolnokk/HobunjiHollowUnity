@@ -7,6 +7,7 @@ on:
     paths:
       - 'desktop/**'
       - 'scripts/test-windows-desktop.js'
+      - 'scripts/test-windows-updates.js'
       - '.github/workflows/windows-desktop.yml'
   push:
     branches:
@@ -15,6 +16,7 @@ on:
       - 'docs/**'
       - 'desktop/**'
       - 'scripts/test-windows-desktop.js'
+      - 'scripts/test-windows-updates.js'
       - '.github/workflows/windows-desktop.yml'
 
 permissions:
