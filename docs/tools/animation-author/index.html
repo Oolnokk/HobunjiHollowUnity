@@ -5040,6 +5040,10 @@ async function addNpcAnimationActor(npcId, options = {}) {
     setAnimationRecentChange(`${animationAuthor.mode === 'single' ? 'Set the single-avatar preview to' : 'Added NPC actor'} “${actor.label}”.`);
     return actor;
   } catch (error) {
+    if (superseded()) {
+      log(`Ignoring late ${npc.name || npc.id} preview failure after workspace switch: ${error.message}`, 'warn');
+      return discardObsoletePreview('failed portrait loading'); // A dead request cannot replace another editor operation's error/status overlay.
+    }
     showOverlay('Could not add NPC actor', error.message, false);
     setStatus(`Add actor failed: ${error.message}`, 'bad');
     throw error;
