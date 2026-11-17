@@ -727,6 +727,14 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(player.angle,playerAngleBefore,'Demented illusion cannot overwrite the player body facing/camera settings');
   fey.update(.1,player);
   assert(Math.abs(Math.abs(fey.movementRotationRad(player))-4*Math.PI/180)<.0001,'full movement-camera interpolation ends at precisely 4°');
+  const yawBeforeTimedSpend=fey.movementRotationRad(player);
+  randomQueue=[.99]; // Deterministically choose one direction for this second, independently timed exertion.
+  RS.spendStamina(player,2,'timed movement',{durationS:.22});
+  assert.equal(fey.setActionDuration(player,.4),true,'actual authored action time replaces the 220ms fallback');
+  fey.update(.2,player);
+  assert(Math.abs(Math.abs(fey.movementRotationRad(player)-yawBeforeTimedSpend)-Math.PI/180)<.0001,
+    'halfway through a 400ms action, 2 spent stamina produce exactly 1° of the 2° turn');
+  fey.update(.2,player);
   const gameFeyHooks=fs.readFileSync('docs/game.js','utf8'); // Uses real closure-owned gameplay seam, not a duplicate mock camera.
   assert(gameFeyHooks.includes('window.FeyIllusions?.cameraYawDeg?.(player)'), 'real gameplay camera azimuth consumes Fey yaw');
   assert(gameFeyHooks.includes('window.FeyIllusions?.movementRotationRad?.(player)'), 'non-shoulder movement consumes the same yaw');
@@ -768,6 +776,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   for(const file of ['combat-combo.js','combat-quickattacks.js','combat-flurry.js','combat-charged-breaker.js']) {
     const source=fs.readFileSync('docs/js/combat/'+file,'utf8'); // Tests each actual ability's stage-tempo integration, not only a mocked combat facade.
     assert(source.includes('hypedAttackTempo') && source.includes('speedMultiplierForNextAction'),file+' must accelerate its initial paid swing');
+    assert(source.includes('setActionDuration') || source.includes('durationS },'),file+' must ease Demented rotation over the real action length');
   }
 
   RS.addEnhancedResource(player,'hypedStamina',2);
