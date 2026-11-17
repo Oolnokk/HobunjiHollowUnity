@@ -185,14 +185,14 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261117toolWalkProbe1"></script>
+  <script src="js/held-action-animations.js?v=20261117hRigHands1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
-  <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261116skeeriChatheadLoader2"></script>
-  <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
-  <script src="js/rig-transform-layers.js?v=20261117hRigLayers5"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
+  <script src="js/rig-transform-layers.js?v=20261117hRigLayers6"></script>
+  <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
+  <script src="js/character-action-locks.js?v=20261117hRigDanceLoader1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261113npcYawn1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -205,7 +205,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs through named compositor layers and procedural knee folding. -->
-  <script src="js/procedural-leg-animation.js?v=20261114footYaw1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261117hRigLegs1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
