@@ -51,12 +51,6 @@
     drawAbdomenButton.textContent = activeBox === 'abdomen' ? 'Drag on sprite to draw abdomen…' : 'Draw abdomen box on sprite';
   }
 
-  function rigForRecord(record) {
-    const id = String(record?.id || '').trim();
-    const saved = id ? readPreviewRigs()?.[id] : null; // The painter's unsent game preview overrides the repository snapshot.
-    return saved || record?.headRig || null;
-  }
-
   function loadRegions(record) {
     const saved = String(record?.id || '').trim() ? readPreviewRigs()?.[record.id] : null;
     const rig = record?.headRig || {};
@@ -82,7 +76,15 @@
 
   const normalizeBeforeRegions = normalizedRig;
   normalizedRig = function normalizedRigWithGrowthRegions() {
-    const rig = normalizeBeforeRegions();
+    let rig = normalizeBeforeRegions();
+    if (!rig && state.image && ((customEnabled && customFrame) || (abdomenEnabled && abdomenFrame))) {
+      // Region-only rigs must be saveable even without authored neck paint or a shoulder spline.
+      // All-zero Head Influence keeps adult head/neck art stationary while growth applies only to eligible babies/pets.
+      rig = { enabled: true, coordinateSpace: 'sprite-normalized-top-left',
+        pivot: { x: .5, y: .5 },
+        weightMap: { width: 2, height: 2, encoding: 'rle-u9', unsetValue: 256, data: [4, 0] },
+        minDeg: -30, maxDeg: 30, restDeg: 0, turnSpeedDeg: 120, meshResolution: 48 };
+    }
     if (!rig) return rig;
     rig.babyHeadUseCustomFrame = customEnabled && !!customFrame;
     if (customFrame) rig.babyHeadCustomFrame = { ...customFrame };
