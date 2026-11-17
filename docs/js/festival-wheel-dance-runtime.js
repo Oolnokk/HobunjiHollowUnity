@@ -63,13 +63,19 @@
   function stop(reason='canceled') {
     if(!session)return false;
     const old=session;session=null; // Clear before releasing locks or camera selection can reenter gameplay.
+    const claimedPose = !!old.poseSession; // Scoped ownership prevents a late dance cleanup from overwriting a newer scene/animation.
+    const poseRelease = old.poseSession?.release(); // Restore only transforms still authored by this session, before releasing action locks.
     window.WorldActionInputClaims?.clearClaims?.('paired-dance');
     for(const actor of old.actors) {
       actor.hands.setPoseProvider('paired-dance',null);
       actor.pants?.setDepthBiasLimit?.('paired-dance',null);
-      actor.root.position.copy(actor.initial.position);actor.root.quaternion.copy(actor.initial.quaternion);
-      actor.legs.group.quaternion.copy(actor.initial.legRotation);actor.neck.quaternion.copy(actor.initial.neck);
-      actor.legs.update(0,0,false,null);actor.legs.pants?.update?.();actor.hands.useIdlePose();
+      if (!claimedPose) { // Older standalone previews without the rig compositor keep their original restoration path.
+        actor.root.position.copy(actor.initial.position);actor.root.quaternion.copy(actor.initial.quaternion);
+        actor.legs.group.quaternion.copy(actor.initial.legRotation);actor.neck.quaternion.copy(actor.initial.neck);
+      }
+      if (actor.root.parent && actor.legs.group.parent) {
+        actor.legs.update(0,0,false,null);actor.legs.pants?.update?.();actor.hands.useIdlePose();
+      }
     }
     if(old.cameraRecord && window.CinematicCameraRuntime?.activeRecord?.()===old.cameraRecord)window.CinematicCameraRuntime.deactivate(); // Never cancel a new cutscene/dialogue that took over.
     deps?.restoreCamera?.(old.cameraState);
@@ -92,9 +98,16 @@
     if(!a){lastStopReason=lastStartFailure?.code||'waiting-for-procedural-rigs';return false;}
     const b=captureActor(walker.root,walker.avatarGroup,walker.legs,'partner');
     if(!b){lastStopReason=lastStartFailure?.code||'waiting-for-procedural-rigs';return false;}
+    const poseSession=window.ActorRigCompositor?.createAbsoluteSession?.('festival-wheel-dance') || null; // One compositor owner for both complete actor rigs.
+    if (poseSession) {
+      const claimed=[a,b].every(actor => poseSession.capture(actor.root,['position','quaternion'])
+        && poseSession.capture(actor.legs.group,['quaternion'])
+        && poseSession.capture(actor.neck,['quaternion']));
+      if(!claimed){poseSession.release();return failStart('rig-pose-already-owned');}
+    }
     const separation=Math.min(RADIUS*2*(a.scale+b.scale)/2,(Math.min(a.reach.left,a.reach.right)+Math.min(b.reach.left,b.reach.right))*.6); // Keep an elbow reserve instead of assuming all species have equal arms.
     const heightDifference=b.shoulderCenter.y*b.scale-a.shoulderCenter.y*a.scale; // Compensates for tall/short partners before adding rhythmic rocking.
-    session={player,partner:walker.root,walker,actors:[a,b],elapsed:0,heading:Math.atan2(n.x-p.x,n.z-p.z),
+    session={player,partner:walker.root,walker,actors:[a,b],poseSession,elapsed:0,heading:Math.atan2(n.x-p.x,n.z-p.z),
       anchor:new T.Vector3((p.x+n.x)/2,Math.max(p.y,n.y),(p.z+n.z)/2),separation:Math.max(.12,separation),
       hopHeight:Math.min(a.legLength*.42,b.legLength*.42,Math.min(a.reach.left,a.reach.right,b.reach.left,b.reach.right)*.35),
       baseTilt:Math.max(-.42,Math.min(.42,Math.atan2(heightDifference,Math.max(.12,separation))*.45)),
@@ -264,6 +277,8 @@
   }
   function applyFrame() {
     const s=session;if(!s)return false;
+    if(s.poseSession&&!s.poseSession.owns())return false; // A newer solver or a rebuilt rig displaced this action.
+    try {
     const pose=sample(s.elapsed,s.pose),rock=Math.sin(pose.progress*Math.PI*8),amplitude=Math.abs(rock),support=rock>=0?1:0; // Lower dancer supports the alternating hop and bends smoothly with it.
     if(s.lastSupport!==null && support!==s.lastSupport)s.actors[support].root.localToWorld(s.supportPoint.copy(s.actors[support].hipLocal)); // Transfer the pivot onto the partner's actual landing position.
     s.yaw.setFromAxisAngle(s.up,s.heading+pose.spin);s.tilt.setFromAxisAngle(s.xAxis,s.baseTilt+pose.tilt*.65);s.rotation.copy(s.yaw).multiply(s.tilt);
@@ -286,6 +301,9 @@
     for(let i=0;i<2;i++){eyeWorld(a);eyeWorld(b);aimEye(a,b.eye);aimEye(b,a.eye);}
     eyeWorld(a);eyeWorld(b);updateCameraView();
     return true;
+    } finally {
+      s.poseSession?.stamp(); // Capture all action-authored output, including partial frames rejected by the reach solver.
+    }
   }
   function update(dt,paused=false,currentArea='town') {
     if(!session)return;
@@ -298,12 +316,12 @@
       session.hopHeight=Math.min(...session.actors.map(a=>Math.min(a.legLength*.42,a.reach.left*.35,a.reach.right*.35))); // A late GLB keeps its actual sole height and fixed leg reach.
     }
     if(!paused){const step=Math.max(0,Math.min(.05,Number(dt)||0));session.elapsed+=step;if(session.cameraMode==='orbit')session.orbitAzimuth-=ORBIT_SPEED*step;} // Counter-spin advances only with the dance, never while paused.
-    if(!applyFrame()){stop('anatomical-reach');return;}
+    if(!applyFrame()){stop(session?.poseSession && !session.poseSession.owns()?'pose-owner-taken-over':'anatomical-reach');return;}
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
-    return {latestChange:'Action 2 switches shoulder-offset follow and wide slow counter-orbit views; paired garments use physical depth instead of a whole-garment feet-covering pull.',
-      active:!!session,lastStopReason,lastStartFailure,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
+    return {latestChange:'Paired roots, legs and neck now release only compositor-owned pose transforms after interruptions; paired garments keep physical depth.',
+      active:!!session,lastStopReason,lastStartFailure,poseOwnership:session?.poseSession?'actor-rig-compositor':'legacy-fallback',...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
         actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,pantsDepthBias:a.pants?.maskUniforms?.uPantsDepthBias?.value??null,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
         cameraMode:session.cameraMode,shoulderOffsetH:session.shoulderOffsetH,orbitAzimuthDeg:session.orbitAzimuth*180/Math.PI,orbitSpeedDegS:-4,
