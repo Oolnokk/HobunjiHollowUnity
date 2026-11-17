@@ -276,5 +276,8 @@ assert.equal(lastPreviewPlane.children[0].material.visible, true, 'hidden static
 assert.equal(overlay.material.visible, false, 'static overlay source material stays hidden in gameplay');
 tick(6500);
 assert.equal(creationCount, beforeOverlay + 1, 'loaded static overlays do not cause repeated rebuilds');
+actualPlane.remove(overlay);
+tick(7000);
+assert.equal(creationCount, beforeOverlay + 2, 'removing a static overlay also removes its preview clone');
 api.sync('none', 'No weapon equipped');
 console.log('Loadout fixed 3D weapon preview integration/lifecycle + multilayer flail checks passed.');
