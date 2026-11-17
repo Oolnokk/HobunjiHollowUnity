@@ -17,6 +17,7 @@
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
   const DEFAULT_SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
+  const PANTS_REST_PLANE_Z = 0; // Garment rest art shares the portrait plane, rather than protruding through its front pixels.
   const NPC_SEGMENTS = 32; // Fallback for meshBudget:'npc' when PNGPlaneAvatar.meshBudget is absent; its table is the one place to tune this.
   const segmentsForBudget = mode => (mode === 'npc' ? (global.PNGPlaneAvatar?.meshBudget?.table?.npc?.pantsSegments || NPC_SEGMENTS) : DEFAULT_SEGMENTS);
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
@@ -44,6 +45,72 @@
   function resolveCharacter(speciesId, gender) {
     const characters = rigConfig().characters || {};
     return characters[characterKey(speciesId, gender)] || characters[FALLBACK_CHARACTER_KEY] || null;
+  }
+
+  const BELT_ALPHA_THRESHOLD = 128; // Ignore antialiased background when reading the actual visible torso width.
+
+  // The authored five points specify where the waist belongs vertically, but may predate changes to the
+  // species portrait. Compare against the *actual* connected opaque torso silhouette once at attach time.
+  // Full Character Scale is applied on the common parent later, so it must not be applied to these points twice.
+  function fitBeltToVisibleTorso(character, canvas) {
+    const authored = character?.portraitBeltSpline; // Local portrait-normalized belt authoring, never mutated.
+    if (!Array.isArray(authored) || authored.length !== 5 || !canvas?.getContext) return null;
+    const width = Math.floor(Number(canvas.width)), height = Math.floor(Number(canvas.height)); // True source pixel grid, before whole-character scale.
+    if (width < 8 || height < 8 || authored.some(p => !Number.isFinite(p?.x) || !Number.isFinite(p?.y))) return null;
+    const leftX = Math.min(...authored.map(p => p.x)), rightX = Math.max(...authored.map(p => p.x)); // Reference belt span, not the garment art's fixed width.
+    const authoredSpan = rightX - leftX; // Used to reject unrelated blobs and preserve intentional belt fit when no torso is measurable.
+    if (!(authoredSpan > 0.05)) return null;
+    const authoredCenter = (leftX + rightX) / 2; // Follows an asymmetrical torso instead of assuming portrait x=.5.
+    const centerPixel = Math.max(0, Math.min(width - 1, Math.floor(authoredCenter * width))); // Seed for the connected alpha run.
+    const authoredY = authored.reduce((sum, p) => sum + p.y, 0) / authored.length; // Waist's original vertical position remains authoritative.
+    let ctx; // Portrait data source may be an image-backed or otherwise unreadable canvas; keep the authored fit in that case.
+    try { ctx = canvas.getContext('2d', { willReadFrequently: true }); } catch (_) { return null; } // Read only small rows, not a whole 200x200 portrait.
+    if (!ctx?.getImageData) return null;
+    for (const offset of [0, 0.012, 0.025, 0.04, 0.06, 0.08]) { // A waist at the bottom image edge may require moving up to find connected torso pixels.
+      const y = Math.max(0, Math.min(height - 1, Math.floor((authoredY - offset) * height))); // Search just above the authored belt, not near the head or arms.
+      let pixels; // Current horizontal image row, read once for the candidate waist level.
+      try { pixels = ctx.getImageData(0, y, width, 1).data; } catch (_) { return null; } // Tainted or unavailable 2D sources retain the authored fit.
+      const solid = x => pixels[x * 4 + 3] >= BELT_ALPHA_THRESHOLD; // Find the torso's connected body, not isolated decorations.
+      if (!solid(centerPixel)) continue;
+      let left = centerPixel, right = centerPixel; // Grow a single connected silhouette outward from the belt centre.
+      while (left > 0 && solid(left - 1)) left--;
+      while (right < width - 1 && solid(right + 1)) right++;
+      const span = (right + 1 - left) / width; // Width of real opaque pixels, normalized in the same space as authoring points.
+      if (span < authoredSpan * 0.5 || span > authoredSpan * 1.8 || span >= 0.95) continue; // Skip centreline fragments, whole-row backdrops and arms.
+      const center = (left + right + 1) / (2 * width); // Edge-to-edge centre, including the last opaque pixel's full width.
+      const factor = span / authoredSpan; // Uniform x fit for all five points; retains the authored relative positions and y curvature.
+      const fitted = authored.map(point => ({ x: center + (point.x - authoredCenter) * factor, y: point.y })); // Local width only; parent Full Character Scale remains separate.
+      return { character: { ...character, portraitBeltSpline: fitted }, source: 'connected-torso-alpha', row: y, width: span, authoredWidth: authoredSpan, center, authoredCenter, factor }; // Preserve the original character; render-time taper consumes only these local X values.
+    }
+    return null; // Invisible/cropped/fragmented torso: prefer authored coordinates to guessing.
+  }
+
+  // Only the waist follows alpha width. Stop BEFORE the uppermost cuff spline (which may sit above the knee)
+  // and its bilinear sample neighbours, or the foot-fit correction will inherit a wider cuff.
+  function taperTorsoBeltPoint(portrait, garmentPoint, garment, torsoFit, prepared = null) {
+    if (!torsoFit) return portrait;
+    const belt = garment?.pantsBeltSpline; // Garment source-space waist curve used for the top of the tapered width field.
+    if (!Array.isArray(belt) || belt.length < 2) return portrait;
+    const points = prepared?.beltPoints || [...belt].sort((a, b) => a.x - b.x); // Render builds reuse a single sorted curve across the entire mesh.
+    const x = garmentPoint.x; // Source image X, not deformed portrait X.
+    let beltY = points[0].y; // Clamp outside the authored spline instead of extrapolating past its endpoints.
+    for (let i = 1; i < points.length; i++) {
+      if (x <= points[i].x) {
+        const t = Math.max(0, Math.min(1, (x - points[i - 1].x) / Math.max(1e-9, points[i].x - points[i - 1].x)));
+        beltY = points[i - 1].y + (points[i].y - points[i - 1].y) * t;
+        break;
+      }
+      beltY = points[i].y;
+    }
+    const knees = prepared ? null : [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Only resolve bones for stand-alone diagnostics calls.
+    const kneeY = prepared ? prepared.kneeY : knees.length ? knees.reduce((sum, y) => sum + y, 0) / knees.length : beltY + 0.2; // No per-vertex bones allocation in the 65x65 garment mesh.
+    const openings = prepared ? null : [...(garment?.legOpenings?.left || []), ...(garment?.legOpenings?.right || [])].map(p => p.y).filter(Number.isFinite); // An angled opening may reach ABOVE its knee.
+    const openingMinY = prepared ? prepared.openingMinY : openings.length ? Math.min(...openings) : Infinity; // Earliest opening location in garment source space.
+    const taperEndY = Math.min(kneeY, openingMinY - (prepared?.sampleMargin ?? 0.04)); // Stop BEFORE opening sample neighbours so cuff widths remain identical.
+    const t = Math.max(0, Math.min(1, (garmentPoint.y - beltY) / Math.max(1e-6, taperEndY - beltY))); // 0 at waist, 1 before either calf ring begins.
+    const influence = 1 - t * t * (3 - 2 * t); // Smooth taper joins the untouched leg fit without a hard seam.
+    const desired = torsoFit.center + (portrait.x - torsoFit.authoredCenter) * torsoFit.factor; // Aligned to connected visible torso edges.
+    return { x: portrait.x + (desired - portrait.x) * influence, y: portrait.y }; // Never modify the Y scale or depth used by the leg rig.
   }
 
   // The species' hip pivot and leg length in portrait-canvas terms, from the live legs through the portrait plane.
@@ -125,10 +192,15 @@
   }
 
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
-  function buildGarmentData(THREE, Core, model, plane, garment, character, SEGMENTS = DEFAULT_SEGMENTS) {
+  function buildGarmentData(THREE, Core, model, plane, garment, character, SEGMENTS = DEFAULT_SEGMENTS, torsoFit = null) {
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // The art's beltline laid onto the portrait's.
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
+    const waistPrepared = torsoFit ? (() => { // One small author-data preparation per garment, never per vertex or frame.
+      const kneeYs = [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Existing rig knees determine the taper endpoint.
+      const openingYs = [...(garment?.legOpenings?.left || []), ...(garment?.legOpenings?.right || [])].map(p => p.y).filter(Number.isFinite); // The uppermost cuff node may be above knee Y.
+      return { beltPoints: [...garment.pantsBeltSpline].sort((a, b) => a.x - b.x), kneeY: kneeYs.length ? kneeYs.reduce((sum, y) => sum + y, 0) / kneeYs.length : 0.5, openingMinY: openingYs.length ? Math.min(...openingYs) : Infinity, sampleMargin: 1 / SEGMENTS + 0.005 }; // Reserve one mesh row for bilinear sampling around the first cuff node.
+    })() : null;
     const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap;
     const controls = Core.buildLegOpeningFitControls(garment, Number(character.legThickness) || 1);
     const flipped = portraitsFlipped();
@@ -145,8 +217,8 @@
     const placeOnPlane = (u, v) => { // PNG point -> leg-thickness fit -> belt affine -> portrait plane -> avatar-local.
       const displacement = Core.inverseDistanceDisplacement({ x: u, y: v }, controls.source, controls.target, 2);
       const fitted = { x: Core.clamp(u + displacement.x), y: Core.clamp(v + displacement.y) };
-      const portrait = Core.applyAffine(transform, fitted);
-      point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, 0.012);
+      const portrait = taperTorsoBeltPoint(Core.applyAffine(transform, fitted), { x: u, y: v }, garment, torsoFit, waistPrepared); // Adjust belt width but not knees/ankles.
+      point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, PANTS_REST_PLANE_Z);
       placed.copy(point);
       plane.localToWorld(placed);
       model.worldToLocal(placed);
@@ -283,7 +355,7 @@
       rightAnkle: { color: 0xffad12, samples: (garment.legOpenings?.right || []).map(sampleAt) },
     };
     for (const side of ['left', 'right']) if (rings[side]) splines[`${side}Pole`] = { color: 0xffffff, samples: [rings[side].anchor, rings[side].anchor] }; // The point each ring is looped around the 3D bone at.
-    return { geometry, basePositions, weights, bones2D, beltCenter, beltEnds, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
+    return { geometry, basePositions, weights, bones2D, beltCenter, beltEnds, maskMapping, rings, splines, beltFit: transform, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
   // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
@@ -302,7 +374,7 @@
         front = Math.max(front, corner.z);
       }
     }
-    return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - 0.012 + 0.01)) : 0;
+    return Number.isFinite(front) ? Math.max(0, Math.min(0.3, front - PANTS_REST_PLANE_Z + 0.01)) : 0;
   }
 
   // ── GPU skinning ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -526,14 +598,16 @@
     if (!characterRecord && !hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
+    const torsoFit = characterRecord ? null : fitBeltToVisibleTorso(character, avatarGroup.userData?.sourceCanvas); // Never override an explicit in-editor authoring record.
+    // Keep the authored character fit as the baseline; apply a separate width field to the torso, not the entire trousers.
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget));
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget), torsoFit);
     if (!data) return null;
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       segments: segmentsForBudget(meshBudget), geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
-      beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
+      beltCenter: data.beltCenter, beltEnds: data.beltEnds, beltFit: data.beltFit, torsoAlphaFit: torsoFit ? { source: torsoFit.source, row: torsoFit.row, width: torsoFit.width, authoredWidth: torsoFit.authoredWidth } : null, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       openingWidthScale: 1, // Last applied calf-opening span relative to body X; rebuilt only when character proportions change.
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
@@ -563,14 +637,15 @@
       applyFootDepthBias();
       return true;
     };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,torsoAlphaFit:handle.torsoAlphaFit,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
-      // The garment is a real 3D plane like the portrait's own front/back planes: depth-tested AND depth-writing, so whatever is nearer the camera covers
-      // whatever is behind it, with no other rule (a leg turned behind the portrait is hidden by it; a turned leg's own faces occlude each other).
-      // The small polygon offset is only a tie-breaker for the coplanar rest pose.
-      const overrides = { side: DOUBLE_SIDE, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+      // Pants and the portrait share the exact rest plane. Favor the portrait on coplanar pixels
+      // from EITHER camera direction; a negative polygon offset (and the old +0.012 local depth)
+      // previously forced the garment in front of opaque portrait art. Animated legs still use
+      // genuine 3D depth, while the separate foot camera-depth push keeps feet behind pants.
+      const overrides = { side: DOUBLE_SIDE, depthTest: true, depthWrite: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
       material.onBeforeCompile = shader => {
@@ -812,6 +887,7 @@
       if (!handle.restCaptured) handle.captureRest();
       if (Math.abs(openingWidthRatioForFeet() - handle.openingWidthScale) > 1e-6) {
         handle.alignToRest(); // A late NPC rig scale or live editor change must resize the hems without stacking stretches.
+        rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
       }
       let aim = aimAtLiveLegs();
@@ -825,7 +901,7 @@
         const stance = restStanceBones(handle);
         let stanceDelta = 0, k = 0; // Max change in the standing bind joints, separate from the moving-pose flag.
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; stanceDelta = Math.max(stanceDelta, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
+        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); rebuildSpineShift(spineProfile()); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
@@ -1099,8 +1175,10 @@
     gpuSkinningEnabled: () => gpuSkinGlobal,
     liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
+    fitBeltToVisibleTorso, // Pure portrait-alpha fitting entry for the in-file mobile diagnostics and regression harness.
+    taperTorsoBeltPoint, // Geometry regression hook to prove the same alpha width adjustment does not change knees/ankles.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Feet-overlap depth recalibrates after imported foot replacements; paired-action overrides remain scoped.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Waist now matches readable torso-alpha silhouette; near-horizontal belts no longer shear the legs; cuff and foot-depth rules remain independent.' }),
   });
 })(window);

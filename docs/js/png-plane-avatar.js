@@ -544,8 +544,8 @@
   // The posterior (hip) anchor in the skinned plane's frame, where the spine chain starts (js/character-spine.js); null when unknown (the spine module then estimates).
   const spinePosteriorLocalY = (speciesId, gender, modelHeight, placementRatio, handAttachY) => window.HobunjiCharacterSpine?.posteriorLocalY?.({ speciesId, gender, modelHeight, placementRatio, handAttachY }) ?? null;
 
-  // Mesh budgets: the most vertices a character/animal mesh may use. 'full' is the original detail (player default);
-  // 'npc' is the cap for town NPCs, enemies, livestock and animals, which are drawn again in every scene pass.
+  // Mesh budgets: baseline vertex limits for character and animal meshes. 'full' is the higher-detail player mode;
+  // 'npc' caps town NPCs, enemies, livestock and animals. Skinned humanoid portraits additionally use the density scale below.
   // Pants grid size is read from here by js/pants-garment-renderer.js so there is one place to tune detail.
   const MESH_BUDGETS = Object.freeze({
     full: Object.freeze({ planeSegmentsX: 28, planeSegmentsY: 36, hostileMaskX: 48, hostileMaskY: 60, animalSegments: 72, pantsSegments: 64 }),
@@ -554,9 +554,10 @@
   const PLAYER_BUDGET_KEY = 'hobunji_player_mesh_budget_v1'; // 'npc' | 'full'; per-device display preference, never part of a save.
   let playerBudgetMode = 'full';
   try { playerBudgetMode = window.localStorage?.getItem(PLAYER_BUDGET_KEY) === 'npc' ? 'npc' : 'full'; } catch (_) { /* storage can be blocked; default full */ }
-  // Dev-only portrait resolution experiment. This is independent of the pants and animal mesh budgets.
+  // Shared portrait/animal deformation density: production starts at 40%, with an optional developer A/B override. Pants meshes are independent.
   const PORTRAIT_DENSITY_MIN = 20; // Slider minimum; per-axis segments are never allowed below the skinning minimum.
-  let portraitDensityPercent = 100; // Session-only developer override used by every newly built skinned humanoid portrait.
+  const PORTRAIT_DENSITY_DEFAULT = 40; // Production per-axis subdivision scale for player, NPC and enemy skinned portraits; dev slider may override it.
+  let portraitDensityPercent = PORTRAIT_DENSITY_DEFAULT; // Current session density used by every newly built skinned humanoid portrait.
   const portraitMeshRefs = new Set(); // Weak references to live skinned portrait meshes for developer retessellation.
   const portraitMeshBuilds = new WeakMap(); // Per-mesh build recipe plus weak-ref token; only mesh owners can retain recipes.
   const portraitMeshFinalizer = typeof FinalizationRegistry === 'function'
@@ -616,6 +617,19 @@
     };
   }
 
+  function animalGrid(authoredResolution, aspectRatio = 1) {
+    const requested = Number(authoredResolution); // Original authored detail, still bounded by the existing NPC animal cap.
+    const maxSeg = Math.min(MESH_BUDGETS.npc.animalSegments, Number.isFinite(requested) ? Math.max(8, Math.round(requested)) : MESH_BUDGETS.npc.animalSegments);
+    const ratio = Number(aspectRatio); // Painted source-map aspect; rejects zero/invalid ratios without creating unusable geometry.
+    const aspect = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+    const baseX = aspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * aspect));
+    const baseY = aspect >= 1 ? Math.max(8, Math.round(maxSeg / aspect)) : maxSeg;
+    return {
+      segmentsX: Math.max(4, Math.round(baseX * portraitDensityPercent / 100)),
+      segmentsY: Math.max(4, Math.round(baseY * portraitDensityPercent / 100)),
+    };
+  }
+
   function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false, hooks = null) {
     if (typeof WeakRef !== 'function' || !mesh) return false; // Build-time density still works if live tracking is unavailable.
     const previous = portraitMeshBuilds.get(mesh);
@@ -658,23 +672,26 @@
     // Animation Author retains its own authored neck-weight builder; only the slider/wireframe lifecycle is shared.
     const registered = registerSkinnedPortrait(mesh, config.THREE, config.width, config.height, config.neckLocal,
       {}, config.mode || 'full', false,
-      { buildGeometry: config.buildGeometry, afterGeometryChange: config.afterGeometryChange || null,
-        onWireframeChanged: config.onWireframeChanged || null });
+      { buildGeometry: config.buildGeometry, resolveGrid: config.resolveGrid || null,
+        afterGeometryChange: config.afterGeometryChange || null, onWireframeChanged: config.onWireframeChanged || null,
+        animal: config.animal === true });
     if (registered) config.onWireframeChanged?.(portraitWireframeEnabled);
     return registered;
   }
 
   function portraitDensityDebug() {
-    let tracked = 0, triangles = 0;
+    let tracked = 0, triangles = 0, animalFaces = 0; // Diagnostics distinguish the animal skins that now share the slider.
     for (const ref of portraitMeshRefs) {
       const mesh = ref.deref();
       if (!mesh) { portraitMeshRefs.delete(ref); continue; }
       if (!portraitMeshBuilds.has(mesh) || !mesh.geometry) continue;
       tracked++;
-      triangles += (mesh.geometry.getAttribute?.('position')?.count || 0) / 3;
+      if (portraitMeshBuilds.get(mesh)?.animal) animalFaces++;
+      const geometry = mesh.geometry; // Indexed animal PlaneGeometry stores its triangle topology in the index buffer, unlike non-indexed humanoid skins.
+      triangles += (geometry.getIndex?.()?.count ?? geometry.index?.count ?? geometry.getAttribute?.('position')?.count ?? 0) / 3;
     }
     return { percent: portraitDensityPercent, player: portraitGrid(playerBudgetMode), npc: portraitGrid('npc'),
-      hostileMask: portraitGrid('npc', true), tracked, triangles, lastRebuilt: lastPortraitRebuilds,
+      hostileMask: portraitGrid('npc', true), tracked, animalFaces, triangles, lastRebuilt: lastPortraitRebuilds,
       wireframe: portraitWireframeEnabled };
   }
 
@@ -692,7 +709,7 @@
       if (!mesh) { portraitMeshRefs.delete(ref); continue; }
       const spec = portraitMeshBuilds.get(mesh);
       if (!spec || !mesh.geometry) continue;
-      const target = portraitGrid(spec.mode, spec.hostileMask);
+      const target = spec.resolveGrid?.() || portraitGrid(spec.mode, spec.hostileMask); // Animal head rigs supply aspect-correct geometry rather than humanoid grid dimensions.
       const old = mesh.geometry;
       if (old.userData?.segmentsX === target.segmentsX && old.userData?.segmentsY === target.segmentsY) continue;
       let nextGeometry = replacements.get(old);
@@ -727,10 +744,13 @@
     forPlayer: () => playerBudgetMode, // Mode name handed to avatar/pants builders for the player rig.
     playerMode: () => playerBudgetMode,
     portraitGrid,
+    animalGrid,
+    defaultPortraitDensityPercent: PORTRAIT_DENSITY_DEFAULT,
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
     wireframeEnabled: () => portraitWireframeEnabled,
+    originalPortraitMaterial: mesh => portraitWireframeOriginals.get(mesh)?.original || mesh?.material, // Split animal overlay clones need the real texture even if their source is temporarily wireframed.
     setPortraitWireframeEnabled,
     registerExternalSkinnedPortrait,
     trackSkinnedClone,
@@ -1853,15 +1873,16 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}) {
+  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}, gridOverride = null) {
     const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
     const width = finite(params.width, finite(fallbackDimensions.width, 1));
     const height = finite(params.height, finite(fallbackDimensions.height, 1));
     const mapAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height) : width / Math.max(0.0001, height);
-    const maxSeg = Math.min(rig.meshResolution, window.PNGPlaneAvatar?.meshBudget?.table?.npc?.animalSegments ?? 30); // Authored detail, clamped to the animal/livestock/pet budget (two planes per animal).
-    const segmentsX = mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect));
-    const segmentsY = mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg;
-    const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Dense enough for painted blend gradients without per-pixel geometry.
+    const grid = gridOverride || window.PNGPlaneAvatar?.meshBudget?.animalGrid?.(rig.meshResolution, mapAspect); // The same per-axis density is used at spawn and by live developer retessellation.
+    const maxSeg = Math.min(rig.meshResolution, window.PNGPlaneAvatar?.meshBudget?.table?.npc?.animalSegments ?? 30); // Legacy standalone preview fallback when the shared budget has not loaded.
+    const segmentsX = grid?.segmentsX ?? (mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect)));
+    const segmentsY = grid?.segmentsY ?? (mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg);
+    const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Paint and shoulder maps sample unchanged normalized UVs at the smaller grid.
     const uv = geometry.getAttribute('uv');
     const skinIndices = new Uint16Array(uv.count * 4); // Root/head bone indices for every plane vertex.
     const skinWeights = new Float32Array(uv.count * 4); // Complementary body/head weights sampled from the paint map.
@@ -1879,6 +1900,7 @@
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
+    geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
     return geometry;
   }
@@ -2026,9 +2048,32 @@
       return applyDegrees(state.currentDeg);
     };
 
+    const meshBudget = window.PNGPlaneAvatar?.meshBudget; // Shared developer density and weak tracking also own the animal head-rig mesh lifecycle.
+    const sourceAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height)
+      : canonicalDimensions.width / Math.max(0.0001, canonicalDimensions.height); // Same source aspect used by buildAnimalWeightedGeometry.
+    const resolveGrid = () => meshBudget?.animalGrid?.(rig.meshResolution, sourceAspect); // Recomputed when the slider changes, without reauthoring the rig.
+    meshBudget?.registerExternalSkinnedPortrait?.(front.mesh, {
+      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
+      buildGeometry: grid => buildAnimalWeightedGeometry(THREE, frontPlane.geometry, rig, false, canonicalDimensions, grid),
+      afterGeometryChange() {
+        // The controller swaps BOTH faces before invoking hooks; rebuild dependent shoulder/paint state once, in that order.
+        avatarRef.refreshShoulderRestGeometry?.();
+        avatarRef.refreshHeadMaterialGeometry?.();
+      },
+      onWireframeChanged(enabled) { avatarRef.refreshAnimalWireframe?.(enabled); },
+    });
+    meshBudget?.registerExternalSkinnedPortrait?.(back.mesh, {
+      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
+      buildGeometry: grid => buildAnimalWeightedGeometry(THREE, backPlane.geometry, rig, true, canonicalDimensions, grid),
+    });
+    let disposed = false; // A creature can be retired by both the wildlife despawner and the save/load teardown.
     avatarRef.dispose = () => {
-      front.weightedGeometry.dispose();
-      back.weightedGeometry.dispose();
+      if (disposed) return;
+      disposed = true;
+      meshBudget?.unregisterSkinnedPortrait?.(front.mesh);
+      meshBudget?.unregisterSkinnedPortrait?.(back.mesh);
+      front.mesh.geometry.dispose(); // Dispose the CURRENT geometry, not the original buffer retired by a live slider change.
+      back.mesh.geometry.dispose();
       front.skeleton.dispose?.();
       back.skeleton.dispose?.();
       if (legacyDispose) legacyDispose();

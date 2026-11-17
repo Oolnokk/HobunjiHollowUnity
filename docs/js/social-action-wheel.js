@@ -923,7 +923,12 @@ ${outerRules}
     const controllerOpen = binding('controller', 'socialWheel', cfg.controllerOpen || DEFAULTS.controllerOpen);
     state.debug.desktopOpenBinding = desktopOpen;
     state.debug.controllerOpenBinding = controllerOpen;
-    debugOutput.textContent = `${state.debug.lastChange} | Open: ${desktopOpen} / ${controllerOpen} | Dodge cancels | ${state.dance ? `Dancing ${state.dance.style}+${state.dance.armStyle}` : 'Not dancing'} | Legs:${state.debug.playerLegRig ? 'yes' : 'pending'} Hands:${state.debug.playerHandRig ? 'yes' : 'pending'}`;
+    const text = `${state.debug.lastChange} | Open: ${desktopOpen} / ${controllerOpen} | Dodge cancels | ${state.dance ? `Dancing ${state.dance.style}+${state.dance.armStyle}` : 'Not dancing'} | Legs:${state.debug.playerLegRig ? 'yes' : 'pending'} Hands:${state.debug.playerHandRig ? 'yes' : 'pending'}`;
+    // social-action-dance-runtime.js appends a "| Runtime:" suffix to this same line;
+    // keep it rather than resetting the text (and queuing a mutation) every tick.
+    const current = String(debugOutput.textContent || '');
+    if (current === text || current.startsWith(`${text} | Runtime:`)) return;
+    debugOutput.textContent = text;
   }
 
   function boot() {
