@@ -29,13 +29,13 @@
     { localeId: 'locale_leaf_pahu_house', name: "Leaf & Pahu's House", category: 'dwelling', zoneId: 'map_eastern_mire', col: 34, row: 29 },
   ];
 
-  // Bit-packed per-tile fog-of-war, one Uint8Array per zone (year+dims
-  // scoped -- discarded and rebuilt fresh whenever a Tothal Shift changes
-  // either). Discovered locales are separate and persist forever (see
+  // Bit-packed per-tile fog-of-war, one Uint8Array per zone (world+year+dims
+  // scoped -- discarded and rebuilt fresh whenever the world, Tothal Shift,
+  // or layout size changes). Discovered locales are separate and persist forever (see
   // below): fixed places retain discovery, while Shift-generated mysteries
   // require rediscovery after the terrain and its hidden sites are replaced.
   const FOG_REVEAL_RADIUS = 7; // tiles, Chebyshev-ish (circular) around the player
-  const _fogCache = new Map(); // zoneId -> { year, cols, rows, bits: Uint8Array }
+  const _fogCache = new Map(); // zoneId -> { worldId, year, cols, rows, bits: Uint8Array }; guards against sharing fog across worlds.
 
   function _fogStorageKey(worldId, zoneId) { return `hobunji_zone_fog_v1_${worldId}_${zoneId}`; }
 
@@ -55,20 +55,20 @@
     const layout = deps._zoneLayouts.get(zoneId);
     if (!layout) return null;
     const year = deps.currentTothalYear();
+    const worldId = deps.tothalWorldId() || 'default'; // World must be part of the in-memory cache key as well as the storage key.
     const cached = _fogCache.get(zoneId);
-    if (cached && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
-    const worldId = deps.tothalWorldId() || 'default';
+    if (cached && cached.worldId === worldId && cached.year === year && cached.cols === layout.cols && cached.rows === layout.rows) return cached;
     let entry = null;
     try {
       const raw = localStorage.getItem(_fogStorageKey(worldId, zoneId));
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.year === year && parsed.cols === layout.cols && parsed.rows === layout.rows) {
-          entry = { year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
+          entry = { worldId, year, cols: parsed.cols, rows: parsed.rows, bits: _base64ToBits(parsed.bits, Math.ceil(parsed.cols * parsed.rows / 8)) };
         }
       }
     } catch {}
-    if (!entry) entry = { year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
+    if (!entry) entry = { worldId, year, cols: layout.cols, rows: layout.rows, bits: new Uint8Array(Math.ceil(layout.cols * layout.rows / 8)) };
     _fogCache.set(zoneId, entry);
     return entry;
   }
@@ -77,6 +77,7 @@
     const entry = _fogCache.get(zoneId);
     if (!entry) return;
     const worldId = deps.tothalWorldId() || 'default';
+    if (entry.worldId !== worldId) return; // A stale cache entry must never be written under another world's storage key.
     try {
       localStorage.setItem(_fogStorageKey(worldId, zoneId), JSON.stringify({ year: entry.year, cols: entry.cols, rows: entry.rows, bits: _bitsToBase64(entry.bits) }));
     } catch {}
@@ -97,13 +98,23 @@
   }
 
   // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
+  let _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Reuses parsed map discoveries across compass ticks, invalidated by any save-meta write or world switch.
   function _loadDiscoveredLocales() {
     const worldId = deps.tothalWorldId();
     if (!worldId) return {};
     try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-      return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
-    } catch { return {}; }
+      const raw = localStorage.getItem('hobunjiSaveMeta') || 'null'; // Compared with the last read to detect same-tab saves without reparsing unchanged metadata.
+      if (_discoveredLocalesCache.worldId !== worldId || _discoveredLocalesCache.raw !== raw) {
+        const meta = JSON.parse(raw);
+        _discoveredLocalesCache = {
+          worldId, raw, locales: (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {},
+        };
+      }
+      return _discoveredLocalesCache.locales;
+    } catch {
+      _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Corrupt/unreadable saves must not expose stale discoveries.
+      return {};
+    }
   }
   function _saveDiscoveredLocales(discovered) {
     const worldId = deps.tothalWorldId();
@@ -113,7 +124,9 @@
       const world = (meta?.worlds || []).find(w => w.id === worldId);
       if (!world) return;
       world.discoveredLocales = discovered;
-      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+      const raw = JSON.stringify(meta); // Persisted text also seeds the reader cache after a successful write.
+      localStorage.setItem('hobunjiSaveMeta', raw);
+      _discoveredLocalesCache = { worldId, raw, locales: { ...discovered } }; // Only successful writes refresh the read cache.
     } catch {}
   }
 
@@ -151,7 +164,7 @@
 
   function discoverEnteredLocale(localeId) {
     if (!ENTER_ONLY_LOCALE_IDS.has(localeId) || deps?.getCurrentArea?.() !== 'map_i_den_banubu') return false;
-    const discovered = _loadDiscoveredLocales(); // Persist the visited flag across shifts and protect old proximity-only save records.
+    const discovered = { ..._loadDiscoveredLocales() }; // Persist the visited flag across shifts and protect old proximity-only save records.
     if (discovered[localeId]?.entered) return false;
     const instance = _allLocaleInstances().find(item => item.localeId === localeId);
     discovered[localeId] = {
@@ -175,7 +188,7 @@
   // Shift secrets require rediscovery in each new cycle; permanent authored
   // locales retain their previous discoveries and current coordinates.
   function _checkLocaleDiscovery(zoneId, pc, pr) {
-    const discovered = _loadDiscoveredLocales();
+    const discovered = { ..._loadDiscoveredLocales() };
     let changed = false;
     for (const inst of _allLocaleInstances()) {
       const discoveryKey = localeDiscoveryKey(inst); // Rerolled shrine map pins expire naturally with the previous Tothal year.
@@ -199,8 +212,11 @@
     if (!entry) return;
     const player = deps.player;
     const pc = Math.floor(player.x / deps.TILE), pr = Math.floor(player.y / deps.TILE);
-    if (_lastFogRevealTile && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
-    _lastFogRevealTile = { zoneId, c: pc, r: pr };
+    const worldId = deps.tothalWorldId() || 'default'; // Invalidates the same-tile guard when changing the active world.
+    const year = deps.currentTothalYear(); // Invalidates the same-tile guard after a Tothal Shift.
+    if (_lastFogRevealTile && _lastFogRevealTile.worldId === worldId && _lastFogRevealTile.year === year
+      && _lastFogRevealTile.zoneId === zoneId && _lastFogRevealTile.c === pc && _lastFogRevealTile.r === pr) return;
+    _lastFogRevealTile = { worldId, year, zoneId, c: pc, r: pr };
     let changed = false;
     const R = FOG_REVEAL_RADIUS, R2 = R * R;
     for (let dr = -R; dr <= R; dr++) {

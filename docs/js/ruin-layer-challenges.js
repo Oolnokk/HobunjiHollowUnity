@@ -343,14 +343,17 @@
     }else if(kind==='dungeonFire'){
       // A short, permanent source brazier ignites the held torch on physical contact.
       // DungeonFire still owns thrown-lit-torch collision with the ice seal and its gate.
-      const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
-        ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.46,.54,.44,8),stone,cx-2.3,y+.24,cz);
-      source.scale.y *= .58; // Shortens the regular authored standing brazier to be reachable by a swinging torch.
-      source.userData.fireHazard=true; // Held adventuring torches use the shared 3D fire-source test; no projectile arm action.
-      source.userData.devRuinFootprintIgnore=true;
-      const flameRoot=new THREE.Group(); // Reuses the player's campfire visual; no custom flame cones or alternative particle recipes.
+      const source=authored('ruinBlueBrazierBowl',cx-2.3,y+.16,cz)
+        ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.5,.35,.24,10),stone,cx-2.3,y+.28,cz); // Low, wide stone bowl replaces the elevated station.
+      source.userData.devRuinFootprintIgnore=true; // Decorative bowl and particles do not enlarge the fixed ignition hitbox.
+      const contact=new THREE.Mesh(new THREE.CylinderGeometry(.52,.44,.84,10),
+        new THREE.MeshBasicMaterial({visible:false})); // Flame-height contact reaches torch swings without blocking player movement.
+      contact.position.y=.30;contact.userData.devRuinFootprintIgnore=true;
+      contact.userData.fireHazard=true; // Torch ignition uses this flame-height collider, not a particle bounding box.
+      source.add(contact);
+      const flameRoot=new THREE.Group(); // Reuse the actual campfire emitter, not a separate solid-cone flame.
       flameRoot.name='ruin-fire-flame-'+id;
-      flameRoot.position.set(cx-2.3,y+.62,cz);group.add(flameRoot);
+      flameRoot.position.set(cx-2.3,y+.42,cz);group.add(flameRoot);
       const flameVisual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flameRoot,{
         scale:.94,rateScale:.8,
       }); // AuthoredFurniture loads campfire_fire from the exact campfire furniture JSON.
@@ -851,6 +854,13 @@
         }
         else for(const remove of registered)remove();
       }
+    };
+    const animateCompleted=rec.animate; // Existing ice/gate completion motion continues unchanged.
+    rec.animate=dt=>{
+      if(rec.disposed)return;
+      animateCompleted?.(dt);
+      if(rec.solved)for(const emitter of flameVisuals)
+        emitter.update?.(Math.max(0,Math.min(.05,Number(dt)||0)),true); // Permanent bowls/sconces stay animated after the puzzle no longer ticks.
     };
     rec.dispose=()=>{
       if(rec.disposed)return;

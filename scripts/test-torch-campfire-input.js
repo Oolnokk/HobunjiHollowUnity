@@ -10,6 +10,7 @@ const campfireCode = read('docs/js/wilderness-campfire.js'); // Actual persisten
 const composerCode = read('docs/js/dev-random-ruin-dungeon-fire.js'); // Standalone dungeon source braziers.
 const layerCode = read('docs/js/ruin-layer-challenges.js'); // Native layered fire-ice rooms.
 const checkpointCode = read('docs/js/ruin-checkpoint-travel.js'); // Shaft and jump-platform source braziers.
+const findBlocksCode = read('docs/js/dev-ruin-find-blocks.js'); // Four-block room used to retain the obsolete ammo-arming brazier.
 
 assert.match(game, /activeTool === 'adventuring'[\s\S]{0,190}button\.dataset\.action !== toolActions\.adventuring\[slot - 1\]/,
   'equipped torch actions must not be marked as contextual attack blockers');
@@ -114,11 +115,14 @@ assert.equal(camp.beginInteractionHold('action2'),false,'campfire interaction is
 assert.match(composerCode,/dungeon_fire_regular_brazier/,'solo source uses a regular low brazier');
 assert.match(composerCode,/group\.userData\.fireHazard = true/,'solo source is torch-lightable');
 assert.match(composerCode,/function controls\(kit\) \{\s*return \[\]/,'solo source no longer claims Action 1');
-assert.match(layerCode,/source\.userData\.fireHazard=true/,'layered source is torch-lightable');
-assert.match(layerCode,/source\.scale\.y \*= \.58/,'layered standing source is shortened');
+assert.match(layerCode,/contact\.userData\.fireHazard=true/,'layered bowl uses the dedicated flame-height torch ignition collider');
+assert.match(layerCode,/authored\('ruinBlueBrazierBowl'/,'layered source is a true low bowl instead of a shrunken tall stand');
+assert.match(layerCode,/contact\.userData\.devRuinFootprintIgnore=true/,'the flame contact geometry must not block a dungeon walkway');
 assert.match(checkpointCode,/render\(shaftHeat,true\)/,'floor-zero shaft has a permanent lit torch-lighting source');
 assert.match(checkpointCode,/render\(source,true\)/,'jump platforms have permanent lit torch-lighting sources');
-for (const [label, code] of [['solo',composerCode],['layered',layerCode],['checkpoint',checkpointCode]]) {
+assert.match(findBlocksCode,/contact\.userData\.fireHazard=true/,'Find the Blocks contains a precise, permanent flame collider for torch swings');
+assert.match(findBlocksCode,/attachCampfireFlame/,'Find the Blocks uses the shared campfire particle emitter');
+for (const [label, code] of [['solo',composerCode],['layered',layerCode],['checkpoint',checkpointCode],['find-blocks',findBlocksCode]]) {
   assert(!code.includes('Ignite Next Shot'),label+' braziers never show projectile arm interaction');
   assert(!code.includes('armNextProjectile'),label+' braziers never arm ordinary ranged projectiles');
 }
