@@ -11,6 +11,8 @@ const part6 = fs.readFileSync('docs/tools/animal-head-rig/author-part6.js', 'utf
 const part10 = fs.readFileSync('docs/tools/animal-head-rig/author-part10.js', 'utf8');
 assert(editor.includes('id="babyHeadScale" type="range" min="100" max="145"'), 'the slider supports 100–145% on mobile');
 assert(editor.includes('id="babyHeadCompare"'), 'comparison button is available without devtools');
+assert(editor.includes('id="babyHeadShortening"'), 'brachycephaly is mobile adjustable separately from size');
+assert(editor.includes('id="babyHeadUsePainted" type="checkbox"'), 'the older painted Head selection is user-toggleable');
 assert(editor.indexOf('id="babyHeadScalePanel"') < editor.indexOf('<h2>Animal variables'), 'baby size is at the top of the editor instead of hidden in preview settings');
 assert(editor.indexOf('attachment-rig-profiles.js') < editor.indexOf('baby-animal-head-warp.js'), 'authored species frames load before baby warp');
 assert(editor.indexOf('author-part10.js') > editor.indexOf('author-part9.js'), 'final authoring extension loads after existing shoulder handlers');
@@ -34,7 +36,7 @@ assert(!part6.includes('paintCtx.drawImage(previewImageForAnimal('), 'shoulder p
 
 const listeners = new Map(); // Event callbacks used to simulate mobile slider changes and compare taps.
 const elements = new Map(); // Minimal DOM fixtures for the public editor controls.
-for (const id of ['babyHeadScale', 'babyHeadScaleLabel', 'babyHeadCompare', 'babyHeadPreviewState', 'animalId', 'status', 'previewAngle', 'previewBadge']) {
+for (const id of ['babyHeadScale', 'babyHeadScaleLabel', 'babyHeadShortening', 'babyHeadShorteningLabel', 'babyHeadUsePainted', 'babyHeadCompare', 'babyHeadPreviewState', 'animalId', 'status', 'previewAngle', 'previewBadge']) {
   const attrs = new Map();
   elements.set(id, { value: '', textContent: '', addEventListener(event, fn) {
     const key = id + ':' + event;
@@ -46,11 +48,12 @@ const splitInputs = []; // Captures the true order of warp and separator clippin
 let lastPreviewScale = null, lastPreviewFrame = null;
 const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 'sprite-normalized-top-left' };
 const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
+let lastShortening = null, lastPainted = null;
 const warp = {
-  getScale: () => 1.23, MAX_SCALE: 1.45, validateFrame,
+  getScale: () => 1.23, MAX_SCALE: 1.45, getShortening: () => .20, MAX_SHORTENING: .45, validateFrame,
   frameForKind: kind => kind === 'grehlr' ? canonical : null,
-  applyToCanvas: (_source, kind, scale, frame) => {
-    applied++; lastPreviewScale = scale; lastPreviewFrame = frame;
+  applyToCanvas: (_source, kind, scale, frame, shortening, painted) => {
+    applied++; lastPreviewScale = scale; lastPreviewFrame = frame; lastShortening = shortening; lastPainted = painted;
     return { kind, scale, frame, warped: true };
   },
 };
@@ -106,11 +109,14 @@ const slider = elements.get('babyHeadScale');
 const label = elements.get('babyHeadScaleLabel');
 ctx.draw();
 assert.equal(slider.value, '123', 'new species inherits universal default');
+assert.equal(elements.get('babyHeadShortening').value, '20', 'new species inherits 20% shortening');
+assert.equal(elements.get('babyHeadUsePainted').checked, false, 'new species defaults to idle opacity selection');
 assert.match(label.textContent, /inherited/);
 ctx.applyRecord({ id: 'grehlr', headRig: { babyHeadScale: 1.35 } });
 ctx.draw();
 assert.equal(slider.value, '135', 'switching species loads its authored baby size');
 assert.equal(ctx.normalizedRig().babyHeadScale, 1.35, 'export includes the per-species size');
+assert.equal(ctx.normalizedRig().babyHeadShortening, undefined, 'unmodified shortening inherits game default');
 assert.equal(ctx.captureHistoryState().babyHeadScale, 1.35);
 listeners.get('babyHeadScale:pointerdown')[0]();
 assert.equal(checkpoints, 1, 'slider begins an undoable edit');
@@ -124,6 +130,8 @@ assert.match(elements.get('previewBadge').textContent, /Baby 145%/, 'preview vis
 const first = ctx.previewImageForAnimal(image);
 assert.equal(applied, 1, 'new scale produces exactly one rasterized preview');
 assert.equal(lastPreviewScale, 1.45);
+assert.equal(lastShortening, 0.20, 'the skull-depth setting reaches the exact runtime texture warp');
+assert.equal(lastPainted, false, 'idle-alpha selection is initially active');
 assert.equal(lastPreviewFrame.width, canonical.width, 'chathead box beats painted Head influence as alpha-mask source');
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
 assert.equal(applied, 1, 'no per-triangle recomposition');
@@ -143,17 +151,39 @@ assert.equal(ctx.previewSplitLayerCanvases().left, image, 'original comparison u
 assert.equal(splitCalls, 1, 'original compare takes the regular unwarped split path');
 assert.match(elements.get('babyHeadPreviewState').textContent, /Showing original/);
 assert.equal(ctx.normalizedRig().babyHeadScale, 1.45, 'comparison does not mutate authored scale');
+const shortenInput = elements.get('babyHeadShortening');
+shortenInput.value = '35';
+listeners.get('babyHeadShortening:input')[0]();
+ctx.draw();
+assert.equal(ctx.normalizedRig().babyHeadShortening, 0.35, 'shortening persists as a species-specific override');
+assert.equal(lastShortening, 0.35, 'live preview uses the edited brachycephaly');
+const paintedCheckbox = elements.get('babyHeadUsePainted');
+paintedCheckbox.checked = true;
+listeners.get('babyHeadUsePainted:change')[0]();
+ctx.draw();
+assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, true, 'older painted-head selection exports to game');
+assert.equal(ctx.captureHistoryState().babyHeadUsePaintedFrame, true, 'selection mode participates in undo snapshots');
+ctx.previewImageForAnimal(image);
+assert.equal(lastPainted, true, 'preview switches to painted region without touching source artwork');
+paintedCheckbox.checked = false;
+listeners.get('babyHeadUsePainted:change')[0]();
+ctx.draw();
+assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, undefined, 'unchecking restores the new idle-opacity default');
 listeners.get('babyHeadCompare:click')[0]();
 ctx.draw();
 assert.equal(ctx.previewImageForAnimal(image), first, 'switching back immediately restores cached enlarged preview');
 ctx.drawGuides({ x: 0, y: 0, width: 100, height: 100 });
 assert.equal(guides, 1, 'source canvas outlines the actual head frame as a guide only');
-ctx.restoreHistoryState({ basic: true, babyHeadScale: 1.35 });
+ctx.restoreHistoryState({ basic: true, babyHeadScale: 1.35, babyHeadShortening: 0.15, babyHeadUsePaintedFrame: true });
 ctx.draw();
 assert.equal(slider.value, '135', 'undo restores the slider');
+assert.equal(elements.get('babyHeadShortening').value, '15', 'undo restores skull shortening');
+assert.equal(elements.get('babyHeadUsePainted').checked, true, 'undo restores the selection method');
 ctx.applyRecord({ id: 'custom-pet', headRig: {} });
 ctx.draw();
 assert.equal(slider.value, '123', 'switching species does not leak another animal setting');
+assert.equal(elements.get('babyHeadShortening').value, '20', 'switching species restores inherited shortening');
+assert.equal(elements.get('babyHeadUsePainted').checked, false, 'switching species restores original alpha selection');
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
 ctx.applyRecord({ id: 'moot', headRig: { babyHeadFrame: canonical } });
 ctx.draw();
