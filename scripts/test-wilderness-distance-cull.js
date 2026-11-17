@@ -85,7 +85,11 @@ const standalone = attach(scene, mesh('distant_mesa_rock', 182));
 const terrainSource = attach(scene, mesh('zone_floor', 0, { terrainRenderChunkSource: true },
   { frustumCulled: false })); // TerrainRenderChunks keeps the source as parent of draw-range children.
 const terrainChunk = attach(terrainSource, mesh('zone_floor__spatial_chunk_10_0', 0,
-  { terrainRenderChunk: true }, { minX: 159, maxX: 175 }));
+  { terrainRenderChunk: true, hobunjiTerrainEdgeIdColor: { r: 1 } },
+  { minX: 159, maxX: 175, onBeforeRender() {} })); // Production _markTerrainEdgeId installs this render hook.
+const unsafeTerrainHook = attach(scene, mesh('zone_floor__spatial_chunk_12_0', 0,
+  { terrainRenderChunk: true }, { minX: 190, maxX: 200, onBeforeRender() {} }));
+// An unrelated custom render hook on a spatial chunk is NOT proven safe to skip.
 terrainChunk.geometry.computeBoundingBox = function () {
   this.computed = (this.computed || 0) + 1;
   this.boundingBox = new Box3({ x: 0, y: -1, z: -1 }, { x: 220, y: 1, z: 1 });
@@ -107,7 +111,8 @@ assert.equal(terrainChunk.geometry.computed, undefined, 'authoritative terrain b
 assert.equal(taggedInstancedWall.visible, false, 'authoritatively bounded wall instances culled');
 for (const [object, message] of [
   [nearRock, 'near geometry'], [farTree, 'tree vegetation'], [farGrass, 'grass vegetation'],
-  [farHooked, 'render-hook mesh'], [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
+  [farHooked, 'render-hook mesh'], [unsafeTerrainHook, 'unknown terrain render hook'],
+  [farSkinned, 'skinned rig'], [farInstanced, 'other instanced culler'],
   [farWater, 'water surface'], [nearEdge, 'large bounds intersect near space'],
   [invisibleChild, 'hidden ancestor'], [plantBatch, 'reagent vegetation batch'],
   [actor, 'actor'], [untagged, 'untagged unrelated mesh'],
@@ -206,4 +211,4 @@ const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
 const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
 assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
   'distance cull is restored by renderWorldPasses finally before wall/prop restore');
-console.log('PASS wilderness distance cull: terrain draw-range bounds, batches, chunks, instances, exclusions, streaming, hysteresis, camera, restore, A/B and fail-open');
+console.log('PASS wilderness distance cull: terrain edge-ID hook and draw-range bounds, batches, chunks, instances, exclusions, streaming, hysteresis, camera, restore, A/B and fail-open');
