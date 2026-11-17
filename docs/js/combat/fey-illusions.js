@@ -32,15 +32,11 @@
   }); // Used by the existing shared EffectBuffBar provider.
   const DEG_TO_RAD = Math.PI / 180; // Used by the one-degree-per-Stamina disorientation rule.
   const DEFAULT_ACTION_S = 0.22; // Easing fallback for stamina spends with no authored action duration.
-  const HYPED_REPLAY_DELAY_MS = 55; // Used for the rapid secondary impact after a real strike, never for its initial hit.
   const activeTurns = new WeakMap(); // Actor -> uncommitted angular drift, advanced by ResourceSystem.tick.
   const perceivedYaw = new WeakMap(); // Player -> accumulated camera and movement-basis offset without rewriting the user's own camera controls.
   const panicRolls = new WeakMap(); // Actor -> one in-flight roll, including its collision/ally hit deduplication.
-  const hypedCredits = new WeakMap(); // Attacker -> Hyped Stamina actually spent on their next attack context.
   let registered = false; // Prevents multiple providers in tool previews.
   let lastEffect = null; // Most recent actual illusion or triggered response for mobile diagnostics.
-  let lastSecondaryStrike = null; // Most recent actual Hyped follow-up, including skipped targets.
-  let replayCount = 0; // Counts only secondary impacts that actually reached the ordinary damage owner.
 
   const rng = () => window.GameRandom?.random?.() ?? Math.random();
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -74,17 +70,18 @@
   function apply(id, target, options = {}) {
     const effect = EFFECTS[id];
     const resource = rs();
-    if (!effect || !target || !(finite(target.health) > 0) || !resource || !potency(options.weaponKey)) return false;
+    const power = Math.max(0, finite(options.effectMultiplier, 1)); // A Hyped echo scales both illusion buildup and the probability of a sensory turn.
+    if (!effect || !target || !(finite(target.health) > 0) || !resource || !potency(options.weaponKey) || !power) return false;
     ensureBuffProvider();
     let applied = false;
     if (effect.chance != null) {
-      applied = rng() < effect.chance && turnTargetAround(target); // One seeded 10% roll per actual hit, never a per-frame check.
+      applied = rng() < Math.min(1, effect.chance * power) && turnTargetAround(target); // Independent seeded 10% roll, scaled by the second attack's Hyped power.
     } else {
       const recipient = effect.grant ? (options.attacker || target) : target;
       const idToApply = effect.grant || effect.affliction;
       const amount = effect.grant
-        ? resource.addEnhancedResource?.(recipient, idToApply, effect.buildup, { reason: 'Fey: ' + id })
-        : resource.addAffliction?.(recipient, idToApply, effect.buildup);
+        ? resource.addEnhancedResource?.(recipient, idToApply, effect.buildup * power, { reason: 'Fey: ' + id })
+        : resource.addAffliction?.(recipient, idToApply, effect.buildup * power);
       applied = finite(amount) > 0;
     }
     if (!applied) return false;
@@ -104,17 +101,7 @@
       state.remainingS = Math.max(state.remainingS, finite(transaction.durationS, DEFAULT_ACTION_S), 0.001);
       activeTurns.set(entity, state);
     }
-    const hypeUsed = (payment.consumed || []).filter(entry => entry.id === 'hypedStamina')
-      .reduce((total, entry) => total + Math.max(0, finite(entry.rawConsumed)), 0);
-    const actionKind = String(transaction.actionKind || '');
-    const offensive = /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind)
-      || (!actionKind && /attack|swing|strike|breaker|flurry|shot/i.test(String(transaction.reason || '')));
-    if (hypeUsed > 0 && offensive) {
-      const credit = hypedCredits.get(entity) || { used: 0, expiresAt: 0 };
-      credit.used += hypeUsed;
-      credit.expiresAt = performance.now() + 4000; // A stale canceled attack cannot empower an unrelated swing later.
-      hypedCredits.set(entity, credit);
-    }
+    window.FeyHypedAttacks?.onStaminaSpent?.(entity, payment, transaction); // Dedicated staged-attack owner consumes Hyped only for actually completed weapon actions.
     if (finite(payment.panicSpent) > 0 && transaction.dodge) {
       const panicSpent = finite(payment.panicSpent);
       panicRolls.set(entity, {
@@ -124,61 +111,6 @@
       }); // The next ordinary roll spends every Panicked point once, including its bonus cost.
       lastEffect = { id: 'panickedDodge', label: 'Panicked dodge', spent: panicSpent, reachMultiplier: 1 + 0.1 * panicSpent };
     }
-  }
-
-  function prepareHypedAttack(context) {
-    const actor = context?.attacker;
-    const credit = actor && hypedCredits.get(actor);
-    if (!credit) return;
-    hypedCredits.delete(actor); // One paid attack, not every later attack until the timer expires.
-    if (credit.expiresAt < performance.now()) return;
-    context.metadata ||= {};
-    context.metadata.feyHypedUsed = credit.used; // The attack-context metadata travels to every real on-hit observer.
-  }
-
-  function replayHypedHit(event) {
-    const amount = Math.max(0, finite(event?.metadata?.feyHypedUsed));
-    if (!(amount > 0) || !event?.target || event?.metadata?.feyHypedReplay) return;
-    const ratio = amount * 0.02; // Deliberately uncapped: the authored rule is 2% per Hyped point.
-    const originalTarget = event.target; // Used to validate the still-present target after the short second-strike delay.
-    const attacker = event.attacker;
-    const deps = window.Combat?.deps;
-    const targetArea = originalTarget.areaId;
-    setTimeout(() => {
-      if (!(finite(originalTarget.health) > 0) || !(finite(attacker?.health) > 0)
-        || (targetArea && originalTarget.areaId !== targetArea)
-        || (deps?.getCurrentArea && targetArea && deps.getCurrentArea() !== targetArea)) {
-        lastSecondaryStrike = { ratio, skipped: 'target unavailable' };
-        return;
-      }
-      // Require a fresh second-hit geometry test for melee, rather than duplicating an
-      // enemy that already left the swing cone. The first hit is never replayed here.
-      if (event.rangePx > 0 && event.halfConeRad > 0 && window.Combat?.meleeHit
-        && !window.Combat.meleeHit(attacker, originalTarget, {
-          rangePx: event.rangePx, halfConeRad: event.halfConeRad,
-          yaw: finite(attacker?.angle, finite(attacker?.facing)),
-          pitch: deps?.getPlayerMeleeAimPitch?.() || 0,
-        })) {
-        lastSecondaryStrike = { ratio, skipped: 'second strike missed' };
-        return;
-      }
-      if (typeof deps?.damageCreature !== 'function') {
-        lastSecondaryStrike = { ratio, skipped: 'no combat damage owner' };
-        return;
-      }
-      const hitAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(event.afflictionBonuses, ratio)
-        || Object.fromEntries(Object.entries(event.afflictionBonuses || {}).map(([id, points]) => [id, points * ratio]));
-      const damage = Math.max(0, finite(event.damage) * finite(event.modifiers?.damage, 1) * ratio);
-      const knockback = Math.max(0, finite(event.knockbackPxS) * finite(event.modifiers?.knockback, 1) * ratio);
-      deps.damageCreature(originalTarget, damage, finite(attacker.x), finite(attacker.y), knockback, {
-        abilityId: event.abilityId, afflictionBonuses: hitAfflictions,
-        footingDamageMultiplier: finite(event.modifiers?.footingDamage, 1) * ratio,
-        feyHypedReplay: true,
-      });
-      replayCount++;
-      lastSecondaryStrike = { ratio, used: amount, target: originalTarget.name || originalTarget.id || 'target', at: Date.now() };
-      window.EnchantmentSystem?.logEvent?.('Hyped follow-up ×' + ratio.toFixed(2));
-    }, HYPED_REPLAY_DELAY_MS); // One fast second impact; never triggers another chained copy.
   }
 
   function pointSegmentDistance(x, y, ax, ay, bx, by) {
@@ -305,18 +237,16 @@
   ensureBuffProvider();
   if (!registered && typeof document !== 'undefined') document.addEventListener?.('DOMContentLoaded', ensureBuffProvider, { once: true });
   window.addEventListener?.('hobunjiPlayerReady', ensureBuffProvider);
-  window.CombatAttackEvents?.on?.('prepare', prepareHypedAttack);
-  window.CombatAttackEvents?.on?.('hit', replayHypedHit);
 
   window.FeyIllusions = Object.freeze({
     EFFECTS, apply, potency, playerSymptoms, ensureBuffProvider,
-    onStaminaSpent, prepareHypedAttack, replayHypedHit, onDodgeBlocked, update,
+    onStaminaSpent, onDodgeBlocked, update,
     movementRotationRad, cameraYawDeg,
     isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
       || (entity === player() && Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
-      registered, lastEffect, lastSecondaryStrike, replayCount,
+      registered, lastEffect, hype: window.FeyHypedAttacks?.debugSnapshot?.() || null,
       playerTurnRadiansRemaining: activeTurns.get(player())?.remainingRad || 0,
       cameraMovementYawDeg: cameraYawDeg(player()), // Mobile probe confirms the actual additive gameplay-camera and locomotion basis.
       activePanicRoll: panicRolls.get(player()) ? {
