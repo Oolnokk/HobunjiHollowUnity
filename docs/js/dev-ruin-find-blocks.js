@@ -493,6 +493,10 @@
           root.RuinInteractionAudio?.watchMovement?.(gate,(gate.position.y-gateStart)/3.2); // Rumble on the physical gate's rise, not every solved frame.
         }
       },
+      animate(dt) {
+        if(disposed||!solved)return;
+        sourceFlameVisual?.update?.(Math.max(0,Math.min(.05,Number(dt)||0))); // A revisited completed room animates its permanent fire without ticking puzzle logic.
+      },
       snapshot(){return {id,variant,netVariant,stairMirror,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
