@@ -747,6 +747,7 @@
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
     'dabinggi-hound-den-mother': 'dabinggi-hound',
+    'moot-herd-mother': 'moot', // Standalone head-rig previews resolve the mother to Moot even before genetics initializes.
   }); // Scaled/art-identical variants deliberately share their base species' normalized UV weights.
 
   // Extend the existing genotype alias table with the future-safe Dabinggi
