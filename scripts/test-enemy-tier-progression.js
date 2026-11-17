@@ -87,6 +87,55 @@ for (let tier = 0; tier <= 7; tier++) {
   const weapon = vm.runInContext(`banditWeaponFor(globalThis.config, 'grunt', ${tier})`, context);
   close(weapon.dmgMultiplier, progression.weaponMultiplier(weapon.metalKey, tier, metalDefs, metals), 'real bandit grade damage');
 }
+
+// Exercise the real enemy definition factory: scaled HP must not leave a hostile
+// with less Stamina than its own opening attack costs (Omgurku-vs-Porakaneki used to stall forever here).
+const factoryConstants = [ // Read the actual combat tuning instead of mirroring numeric values in this fixture.
+  'BANDIT_BASE_MAX_HEALTH', 'BANDIT_BASE_MAX_STAMINA', 'BANDIT_BASE_ATTACK_DAMAGE',
+  'BANDIT_MASTERY_DAMAGE_PER_LEVEL', 'BANDIT_ATTACK_RANGE_TILES',
+  'BANDIT_ATTACK_HALF_CONE_DEG', 'BANDIT_ATTACK_STAMINA_COST',
+  'BANDIT_ATTACK_COOLDOWN_S_CAPTAIN', 'BANDIT_ATTACK_COOLDOWN_S_OTHER',
+];
+for (const name of factoryConstants) {
+  const value = bandit.match(new RegExp('(?:const|let) ' + name + ' = ([0-9.]+);')); // Static fallback values used by the spawn factory.
+  assert(value, 'Missing combat tuning: ' + name);
+  context[name] = Number(value[1]);
+}
+context.BANDIT_RANK_LABEL = { grunt: 'Bandit', lieutenant: 'Lieutenant', captain: 'Captain', flasker: 'Flasker' };
+context.deps.TILE = 64;
+context.banditRangedWeaponFor = () => null;
+context.rollBanditFlaskLoadout = () => [];
+context.banditFlaskerTuning = () => null;
+context.banditAbilityLoadout = () => ({ tap1: 'combo', tap2: null, hold1: null, hold2: null });
+context.weaponEfficiency = 1; // Altered below to verify heavy, light, and malformed weapon efficiency safely.
+window.WeaponShapeStats = { forShape: () => ({ power: 1, speed: 1, range: 1, efficiency: context.weaponEfficiency }) };
+vm.runInContext(functionText('makeBanditDef'), context);
+function actualEnemyDef(cfg, rank, tier, efficiency = 1) {
+  context.scopedConfig = cfg; // The VM evaluates the production factory against exactly this authored config.
+  context.weaponEfficiency = efficiency; // Mock only weapon shape coefficients, not any stamina math.
+  context.testRank = rank;
+  context.testTier = tier;
+  return vm.runInContext('makeBanditDef(scopedConfig, testRank, testTier, 0, 1)', context);
+}
+for (const rank of ['grunt', 'lieutenant', 'captain', 'flasker']) {
+  for (let tier = 0; tier <= 7; tier++) {
+    for (const efficiency of [0.65, 1, 1.4, 0]) {
+      const fighter = actualEnemyDef(config, rank, tier, efficiency); // All enemy tiers must be capable of starting combat.
+      assert(Number.isFinite(fighter.attackStaminaCost) && fighter.attackStaminaCost > 0, 'bad efficiency cannot create NaN or infinite cost');
+      assert(fighter.maxStamina >= fighter.attackStaminaCost * 2,
+        rank + ' tier ' + tier + ', efficiency ' + efficiency + ': cannot pay for two opening attacks');
+      assert(fighter.maxHealth > 0 && Number.isFinite(fighter.maxHealth), 'stamina fix must not corrupt health scaling');
+    }
+  }
+}
+assert.equal(actualEnemyDef(config, 'grunt', 0).maxHealth, 17, 'tier-zero grunt HP remains at the balanced marked-Breaker threshold');
+assert.equal(actualEnemyDef(config, 'lieutenant', 0).maxHealth, 29, 'tier-zero lieutenant HP stays unchanged');
+const originalMineStamina = Math.round(context.BANDIT_BASE_MAX_STAMINA * preservedMine.grunt[1] * (1 + 0.12)); // Existing Ghoul grunt capacity before new bandit tiers.
+const mineBaseline = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1);
+assert.equal(mineBaseline.maxStamina, originalMineStamina, 'mine stamina stays historically calibrated when sufficient for one attack');
+const mineHeavy = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1, 0.5);
+assert(mineHeavy.maxStamina >= mineHeavy.attackStaminaCost, 'even a Ghoul with an inefficient weapon cannot be permanently unable to attack');
+
 const mineConfig = {...config, _preserveMineEnemyTiers:true}; // Mine Ghouls retain their separate ten-floor level sequence.
 context.mineConfig = mineConfig;
 assert.equal(vm.runInContext("banditMasteryFor(mineConfig,'grunt',10)",context), 5, 'deep-mine Ghoul mastery remains maxed');
