@@ -23,7 +23,7 @@ vm.runInContext(splineSource, context, { filename: 'animal-shoulder-spline.js' }
 
 const api = context.window.HobunjiGrehlrHeadRigCorrection;
 assert(api, 'Grehlr correction module should expose a debug-visible API');
-assert.equal(api.version, 7);
+assert.equal(api.version, 8);
 assert.equal(context.window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS.grehlr, sharedRig,
   'correction mutates the shared rig object in place');
 assert.equal(sharedRig.legacy, undefined, 'obsolete shared-rig keys are cleared before applying the authored correction');
@@ -36,18 +36,26 @@ assert.equal(rest.useSpline, true);
 assert.equal(rest.useRun1, false);
 assert.equal(rest.splitFrame, true);
 assert.equal(rest.splitRightUsesIdle, false);
-assert.equal(rest.frameShiftX, 0.54);
+assert.equal(rest.frameShiftX, 0.55);
+assert.equal(rest.separatorRotationDeg, 0);
+assert.equal(rest.separatorAspect, 1.3333333333333333);
+assert.equal(rest.beforePoints.length, 7);
+assert.equal(rest.afterPoints.length, 7);
+assert.equal(sharedRig.babyHeadScale, 1.15);
+assert.equal(sharedRig.babyHeadShortening, .06);
+assert.equal(sharedRig.babyHeadUsePaintedFrame, false);
+assert.equal(sharedRig.babyHeadUseCustomFrame, false);
+assert.equal(sharedRig.babyAbdomenEnabled, false);
 assert.equal(rest.followFrameShiftX, true);
 
-// The uploaded Grehlr shoulder record is a legacy guide+splinePoints export;
-// the v10 runtime must still migrate it into explicit BEFORE/AFTER lines.
+// The uploaded Grehlr shoulder pose is already authored as explicit BEFORE/AFTER curves;
+// normalization must not fall back to the obsolete legacy rest-guide migration.
 const normalizedRest = context.window.AnimalShoulderSpline.normalizeRest({ shoulderRest: rest });
 assert.equal(normalizedRest.beforePoints.length, 7);
 assert.equal(normalizedRest.afterPoints.length, 7);
-assert.equal(normalizedRest.migratedFromLegacy, true);
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[0])), JSON.parse(JSON.stringify(rest.restGuide.a)));
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints[6])), JSON.parse(JSON.stringify(rest.restGuide.b)));
-assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints)), JSON.parse(JSON.stringify(rest.splinePoints)));
+assert.equal(normalizedRest.migratedFromLegacy, false);
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.beforePoints)), JSON.parse(JSON.stringify(rest.beforePoints)));
+assert.deepEqual(JSON.parse(JSON.stringify(normalizedRest.afterPoints)), JSON.parse(JSON.stringify(rest.afterPoints)));
 
 function decodedCellCount(map) {
   assert.equal(map?.width, 128);
@@ -70,4 +78,4 @@ assert.equal(decodedCellCount(sharedRig.weightMap), expectedCells, 'Influence ma
 assert.equal(decodedCellCount(sharedRig.compressibilityMap), expectedCells, 'Compressibility map decodes to the full authored grid');
 assert.equal(decodedCellCount(sharedRig.stretchabilityMap), expectedCells, 'Stretchability map decodes to the full authored grid');
 
-console.log('grehlr-head-rig-correction: v7 BEFORE/AFTER migration integrity passed');
+console.log('grehlr-head-rig-correction: v8 uploaded Grehlr neck, shoulder and baby-growth parity passed');
