@@ -183,6 +183,8 @@ assert(mount.x > 9.5 * T, 'three-rock patch does not permanently obstruct forwar
 assert.equal(win.Mounts.ridingDebug.autoRockJumps, 1, 'rock cluster is crossed with one airborne leap');
 
 
+assert.match(read('docs/js/pixel-probe.js'), /coasting=\$\{!!mountedRide\.coasting\}/, 'mobile Pixel Probe renders real coasting state without requiring a console');
+
 // A manual jump on clear ground must retain normal forward speed and airborne steering.
 // The rock-crossing hop above stays a scripted traversal, but ordinary air time
 // must not replace the riding controller with the old 0.8-tile horizontal lerp.
@@ -359,6 +361,62 @@ now += 1000 / 60;
 win.Mounts.updateMountedMovement(1 / 60);
 assert(win.Mounts.ridingDebug.speedPxS > 340 * 0.85, 'after boost stops, strike-frame inertia remains instead of being discarded');
 assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'strike cannot continue to accelerate the mount');
+const speedAtRelease = win.Mounts.ridingDebug.speedPxS; // Compare the real carrier across the first half-second after the attack's speed grant ends.
+for (let i = 0; i < 30; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+const speedAfterCoast = win.Mounts.ridingDebug.speedPxS; // Passive momentum should decay smoothly rather than shedding ~225 px/s immediately.
+assert(speedAfterCoast < speedAtRelease, 'released combat acceleration cannot keep increasing the carrier speed');
+assert(speedAtRelease - speedAfterCoast < 140, 'mounted windup release coasts gently for half a second instead of sharply decelerating');
+assert.equal(win.Mounts.ridingDebug.coasting, true, 'mobile diagnostics distinguish unpowered coasting from active windup boost');
+input.x = -1; input.y = 0; // Opposite reins deliberately override coasting with the existing strong brake.
+for (let i = 0; i < 12; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(win.Mounts.ridingDebug.speedPxS < speedAfterCoast - 150, 'deliberate reverse-rein braking is still substantially stronger than passive drag');
+assert.equal(win.Mounts.ridingDebug.coasting, false, 'actively braking must not be reported as coasting');
+input.x = 1; input.y = 0;
+
+
+function runCoastAtFrameRate(fps) {
+  // Reset on clear ground at ordinary cruise before replaying the same 0.5 s
+  // charged acceleration and 0.5 s unpowered coasting at different frame rates.
+  mount.x = 22 * T; mount.y = 9 * T;
+  input.x = 1; input.y = 0;
+  for (let i = 0; i < 240; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+  assert(Math.abs(win.Mounts.ridingDebug.speedPxS - 340 * 0.66) < 0.01, 'frame-rate fixture returns to ordinary cruise');
+  assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 2.5, 1), true);
+  for (let i = 0; i < fps / 2; i++) { now += 1000 / fps; win.Mounts.updateMountedMovement(1 / fps); }
+  const accelerated = win.Mounts.ridingDebug.speedPxS; // Same funded 0.5 s charge, independent of simulation frequency.
+  assert.equal(win.Mounts.clearMountedCombatWindupBoost('mountedCharge'), true);
+  mount.x = 15 * T; // Plenty of space for coasting; do not accidentally test boundary collision.
+  for (let i = 0; i < fps / 2; i++) { now += 1000 / fps; win.Mounts.updateMountedMovement(1 / fps); }
+  return { accelerated, coasted: win.Mounts.ridingDebug.speedPxS };
+}
+const coast30fps = runCoastAtFrameRate(30); // Low-FPS mobile regression: movement uses elapsed seconds, not a fixed per-frame bleed.
+const coast60fps = runCoastAtFrameRate(60); // Gameplay reference for the half-second transition.
+const coast120fps = runCoastAtFrameRate(120); // High-FPS check: no accidental multiplicative slowing each update.
+for (const sample of [coast30fps, coast120fps]) {
+  assert(Math.abs(sample.accelerated - coast60fps.accelerated) < 12, 'charge acceleration is consistent across frame rates');
+  assert(Math.abs(sample.coasted - coast60fps.coasted) < 12, 'passive coasting is consistent across frame rates');
+  assert(sample.coasted < sample.accelerated, 'unpowered mount coasting never adds speed');
+}
+
+mount.x = 22 * T; mount.y = 9 * T;
+for (let i = 0; i < 240; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+const wheatBeforeExpiryCheck = win.Mounts.ridingDebug.wheatRemaining; // Wheat tests must consume one charge and cannot reuse combat boost state.
+assert.equal(win.Mounts.accelerateMount(), true);
+for (let i = 0; i < 82; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert.equal(win.Mounts.ridingDebug.boostSeconds, 0, 'wheat surge ends normally rather than lingering after its duration');
+const wheatReleaseSpeed = win.Mounts.ridingDebug.speedPxS; // Surviving physical forward momentum when the wheat timer expires.
+for (let i = 0; i < 30; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(wheatReleaseSpeed > 340 * 0.85, 'wheat acceleration achieves a real speed increase before expiring');
+assert(wheatReleaseSpeed - win.Mounts.ridingDebug.speedPxS < 140, 'wheat expiry uses the same gentle passive coasting as mounted combat');
+assert.equal(win.Mounts.ridingDebug.wheatRemaining, wheatBeforeExpiryCheck - 1, 'coasting does not consume additional wheat charges');
+
+mount.x = 18.5 * T; mount.y = 6.5 * T; // Same collision-tested tall boulder as the earlier riding regression.
+assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 3.5, 1), true);
+for (let i = 0; i < 50; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
+assert(mount.x < 20 * T, 'charged coasting does not phase through a tall collision barrier');
+assert(win.Mounts.ridingDebug.speedPxS < 60, 'collision drag remains powerful even when the rider is charging');
+assert.equal(win.Mounts.ridingDebug.coasting, false, 'collision that stops the mount cannot report continued coasting');
+assert.equal(win.Mounts.clearMountedCombatWindupBoost('mountedCharge'), true);
 
 // Mobile auto-target must change the mount's path into a circle, not alter
 // projectile aiming or override explicit manual reins.
@@ -393,6 +451,7 @@ assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
 assert.equal(win.Mounts.ridingDebug.jumping, true);
 win.Mounts.toggleMount();
 assert.equal(win.Mounts.rideState, 'dismountingDown');
+assert.equal(win.Mounts.ridingDebug.coasting, false, 'dismount never exposes stale mount coasting diagnostics');
 win.Mounts.updateMountRide(0);
 assert.equal(mountHudClasses.has('with-mounted-wheat'), false, 'dismount removes the wheat-only player-vitals visibility override');
 assert.equal(mount._mountHop, null, 'dismount cancels an in-progress rock hop');
