@@ -854,7 +854,7 @@
 
       const shortenTuning = document.createElement('label'); // Touch-friendly global muzzle shortening, independent of the enlargement slider.
       shortenTuning.style.cssText = tuning.style.cssText;
-      const initialShortening = headWarp.getShortening?.() ?? 0; // Global shortening also applies to eligible Small shoulder pets.
+      const initialShortening = headWarp.getShortening?.() ?? 0.08; // Inherited 8% shortening also applies to eligible Small shoulder pets.
       shortenTuning.innerHTML = `Baby head shortening <input type="range" aria-label="Baby head shortening" min="0" max="${headWarp.MAX_SHORTENING || 0.45}" step="0.01" value="${initialShortening}" style="flex:1;min-width:100px;"><output>${Math.round(initialShortening * 100)}%</output>`;
       const shortenSlider = shortenTuning.querySelector('input');
       const shortenValue = shortenTuning.querySelector('output');
