@@ -87,6 +87,7 @@
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const windupS = WINDUP_S * timeScale / fundedTempo;
       const strikeS = STRIKE_S * timeScale / fundedTempo;
+      window.FeyIllusions?.setActionDuration?.(deps.player, windupS + strikeS); // Each Flurry expenditure owns a precise drift interpolation until its corresponding strike.
       const dirSign = count % 2 === 0 ? -1 : 1;
 
       const baseAbil = deps.weaponAbility('cut')
