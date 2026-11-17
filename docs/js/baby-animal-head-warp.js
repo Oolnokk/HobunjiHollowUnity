@@ -10,6 +10,7 @@
   const DEFAULT_SHORTENING = 0.20; // Default 20% front-to-back shortening relative to the enlarged head.
   const MAX_SHORTENING = 0.45; // Prevents an unnaturally flattened or inverted skull.
   const SHORTENING_STORAGE_KEY = 'hobunji_baby_head_shortening_v1'; // Saved global Nursery shortening, independent of head enlargement.
+  const MAX_ABDOMEN_SCALE = 1.8; // Upper safety bound for the optional abdominal-growth region.
   const FALLOFF_RADIUS = 0.85; // In units of the larger head-frame half-extent; adjacent neck/body pixels move less with distance.
   const debug = { applied: 0, skipped: 0, lastKind: null, lastFrame: null, lastError: null }; // Exposed in Nursery Debug for mobile inspection.
 
@@ -90,6 +91,19 @@
     const { previewRig, committed } = babyHeadConfigForKind(kind);
     return (previewRig?.babyHeadUsePaintedFrame ?? committed?.babyHeadUsePaintedFrame) === true;
   }
+  function customHeadFrameForKind(kind) {
+    const { previewRig, committed } = babyHeadConfigForKind(kind); // Use a specifically authored box instead of the dialogue portrait.
+    if ((previewRig?.babyHeadUseCustomFrame ?? committed?.babyHeadUseCustomFrame) !== true) return null;
+    return validateFrame(previewRig?.babyHeadCustomFrame ?? committed?.babyHeadCustomFrame);
+  }
+  function abdomenForKind(kind) {
+    const { previewRig, committed } = babyHeadConfigForKind(kind);
+    const enabled = (previewRig?.babyAbdomenEnabled ?? committed?.babyAbdomenEnabled) === true;
+    const frame = validateFrame(previewRig?.babyAbdomenFrame ?? committed?.babyAbdomenFrame);
+    const authoredScale = previewRig?.babyAbdomenScale ?? committed?.babyAbdomenScale;
+    const scale = Number.isFinite(authoredScale) ? Math.max(1, Math.min(MAX_ABDOMEN_SCALE, authoredScale)) : 1.2;
+    return { enabled: enabled && !!frame, frame, scale }; // Missing/invalid rectangles cannot accidentally deform whole torsos.
+  }
   function maskModeForKind(kind) { return usePaintedHeadForKind(kind) ? 'legacy-frame' : 'idle-alpha'; }
 
   function isSmallSizeVariantPet(kind, genotype, stableRole) {
@@ -147,6 +161,8 @@
   }
 
   function frameForKind(kind, usePaintedHead = usePaintedHeadForKind(kind)) {
+    const custom = customHeadFrameForKind(kind);
+    if (custom) return custom; // Explicit head-growth box overrides both the chathead portrait and painted automatic bounds.
     const normalized = String(kind || '').trim().toLowerCase().replace(/_/g, '-'); // Canonical species key for head-rig and chathead profiles.
     const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(normalized) || normalized; // Species variants share the actual authored head paint.
     const previews = readPreviewRigs(); // Same cached object as scaleForKind to avoid duplicate JSON parses.
@@ -391,32 +407,45 @@
     return output;
   }
 
-  function applyToCanvas(canvas, kind, previewScale = null, previewFrame = null, previewShortening = null, previewPainted = null) {
+  function applyToCanvas(canvas, kind, previewScale = null, previewFrame = null,
+                         previewShortening = null, previewPainted = null, previewAbdomen = null) {
     const selectedScale = previewScale == null ? scaleForKind(kind) : clampScale(previewScale);
     const selectedShortening = previewShortening == null ? shorteningForKind(kind) : clampShortening(previewShortening);
     const painted = previewPainted == null ? usePaintedHeadForKind(kind) : previewPainted === true;
-    if (!canvas || (selectedScale <= 1 && selectedShortening <= 0)) { debug.skipped++; return canvas; }
+    const abdomen = previewAbdomen == null ? abdomenForKind(kind) : previewAbdomen;
+    const abdomenFrame = abdomen?.enabled ? validateFrame(abdomen.frame) : null;
+    const abdomenScale = abdomenFrame && Number.isFinite(abdomen.scale)
+      ? Math.max(1, Math.min(MAX_ABDOMEN_SCALE, abdomen.scale)) : 1;
+    const growAbdomen = !!abdomenFrame && abdomenScale > 1;
+    const growHead = selectedScale > 1 || selectedShortening > 0;
+    if (!canvas || (!growHead && !growAbdomen)) { debug.skipped++; return canvas; }
     const frame = validateFrame(previewFrame) || frameForKind(kind, painted);
-    const mask = painted ? null : maskForKind(kind, frame);
-    if (!frame || (!painted && (!mask || mask.frameKey !== frameKey(frame)))) {
+    const mask = growHead && !painted ? maskForKind(kind, frame) : null;
+    const canGrowHead = growHead && !!frame && (painted || !!mask && mask.frameKey === frameKey(frame));
+    if (growHead && !canGrowHead && !growAbdomen) {
       debug.skipped++; debug.lastKind = kind; debug.lastFrame = 'idle opacity mask unavailable';
       debug.lastError = 'Prepare the idle head opacity mask before enlarging ' + kind
         + (debug.lastMaskError ? ': ' + debug.lastMaskError : '');
       return canvas;
     }
     try {
-      const w = canvas.width, h = canvas.height; // Original native pose resolution; no recropping or new mask generation.
+      const w = canvas.width, h = canvas.height; // Final composited pose art, never a shared adult texture.
       const src = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, w, h);
       if (!src) return canvas;
-      const warped = warpPixels(src.data, w, h, frame, selectedScale, mask, selectedShortening, painted ? 'legacy-frame' : 'idle-alpha');
-      if (!warped) return canvas;
+      let pixels = src.data;
+      if (canGrowHead) pixels = warpPixels(pixels, w, h, frame, selectedScale, mask, selectedShortening,
+        painted ? 'legacy-frame' : 'idle-alpha'); // Preserve the existing head mask and brachycephaly behavior.
+      if (growAbdomen) pixels = warpPixels(pixels, w, h, abdomenFrame, abdomenScale, null, 0, 'legacy-frame');
+      if (!pixels) return canvas;
       const output = document.createElement('canvas');
       output.width = w; output.height = h;
       const ctx = output.getContext('2d');
       const image = ctx.createImageData(w, h);
-      image.data.set(warped);
+      image.data.set(pixels);
       ctx.putImageData(image, 0, 0);
-      debug.applied++; debug.lastKind = kind; debug.lastFrame = frame; debug.lastError = null;
+      debug.applied++; debug.lastKind = kind;
+      debug.lastFrame = { head: canGrowHead ? frame : null, abdomen: growAbdomen ? abdomenFrame : null };
+      debug.lastError = growHead && !canGrowHead ? 'Head mask unavailable; abdomen was enlarged independently.' : null;
       return output;
     } catch (error) {
       debug.lastError = String(error?.message || error);
@@ -425,8 +454,9 @@
   }
 
   window.BabyAnimalHeadWarp = Object.freeze({
-    DEFAULT_SCALE, MAX_SCALE, DEFAULT_SHORTENING, MAX_SHORTENING, getScale: () => scale, setScale, scaleForKind,
+    DEFAULT_SCALE, MAX_SCALE, DEFAULT_SHORTENING, MAX_SHORTENING, MAX_ABDOMEN_SCALE, getScale: () => scale, setScale, scaleForKind,
     getShortening, setShortening, shorteningForKind, usePaintedHeadForKind, maskModeForKind,
+    customHeadFrameForKind, abdomenForKind,
     frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, buildIdleMask, maskForKind, primeIdleMask, ensureIdleMask, warpPixels, applyToCanvas,
     debugSnapshot: () => ({ ...debug, scale, shortening, defaultScale: DEFAULT_SCALE, defaultShortening: DEFAULT_SHORTENING, falloffRadius: FALLOFF_RADIUS, masksCached: idleMasks.size, masksPending: pendingIdleMasks.size, rawOnlyKinds: admittedIdleKinds.size }),
   });
