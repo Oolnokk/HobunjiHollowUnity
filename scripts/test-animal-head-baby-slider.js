@@ -50,7 +50,7 @@ const canonical = { x: 0.2, y: 0.2, width: 0.3, height: 0.3, coordinateSpace: 's
 const validateFrame = frame => frame?.coordinateSpace === 'sprite-normalized-top-left' ? frame : null;
 let lastShortening = null, lastPainted = null;
 const warp = {
-  getScale: () => 1.23, MAX_SCALE: 1.45, getShortening: () => .20, MAX_SHORTENING: .45, validateFrame,
+  getScale: () => 1.23, MAX_SCALE: 1.45, getShortening: () => .08, MAX_SHORTENING: .45, validateFrame,
   frameForKind: kind => kind === 'grehlr' ? canonical : null,
   applyToCanvas: (_source, kind, scale, frame, shortening, painted) => {
     applied++; lastPreviewScale = scale; lastPreviewFrame = frame; lastShortening = shortening; lastPainted = painted;
@@ -109,7 +109,7 @@ const slider = elements.get('babyHeadScale');
 const label = elements.get('babyHeadScaleLabel');
 ctx.draw();
 assert.equal(slider.value, '123', 'new species inherits universal default');
-assert.equal(elements.get('babyHeadShortening').value, '20', 'new species inherits 20% shortening');
+assert.equal(elements.get('babyHeadShortening').value, '8', 'new species inherits 8% shortening');
 assert.equal(elements.get('babyHeadUsePainted').checked, false, 'new species defaults to idle opacity selection');
 assert.match(label.textContent, /inherited/);
 ctx.applyRecord({ id: 'grehlr', headRig: { babyHeadScale: 1.35 } });
@@ -130,7 +130,7 @@ assert.match(elements.get('previewBadge').textContent, /Baby 145%/, 'preview vis
 const first = ctx.previewImageForAnimal(image);
 assert.equal(applied, 1, 'new scale produces exactly one rasterized preview');
 assert.equal(lastPreviewScale, 1.45);
-assert.equal(lastShortening, 0.20, 'the skull-depth setting reaches the exact runtime texture warp');
+assert.equal(lastShortening, 0.08, 'the universal 8% default reaches the runtime texture warp');
 assert.equal(lastPainted, false, 'idle-alpha selection is initially active');
 assert.equal(lastPreviewFrame.width, canonical.width, 'chathead box beats painted Head influence as alpha-mask source');
 assert.equal(ctx.previewImageForAnimal(image), first, 'thousands of mesh triangles reuse one cached image');
@@ -170,7 +170,7 @@ paintedCheckbox.checked = false;
 listeners.get('babyHeadUsePainted:change')[0]();
 ctx.draw();
 assert.equal(ctx.normalizedRig().babyHeadUsePaintedFrame, undefined, 'unchecking restores the new idle-opacity default');
-const shortenedPreview = ctx.previewImageForAnimal(image); // The first cached result used the earlier 20% shortening.
+const shortenedPreview = ctx.previewImageForAnimal(image); // Cached result reflects the edited per-species 35% shortening.
 listeners.get('babyHeadCompare:click')[0]();
 ctx.draw();
 assert.equal(ctx.previewImageForAnimal(image), image, 'comparison still returns unmodified artwork after shortening and mode edits');
@@ -187,7 +187,7 @@ assert.equal(elements.get('babyHeadUsePainted').checked, true, 'undo restores th
 ctx.applyRecord({ id: 'custom-pet', headRig: {} });
 ctx.draw();
 assert.equal(slider.value, '123', 'switching species does not leak another animal setting');
-assert.equal(elements.get('babyHeadShortening').value, '20', 'switching species restores inherited shortening');
+assert.equal(elements.get('babyHeadShortening').value, '8', 'switching species restores inherited 8% shortening');
 assert.equal(elements.get('babyHeadUsePainted').checked, false, 'switching species restores original alpha selection');
 assert.equal(ctx.normalizedRig().babyHeadScale, undefined, 'untouched species remains unconfigured');
 ctx.applyRecord({ id: 'moot', headRig: { babyHeadFrame: canonical } });
