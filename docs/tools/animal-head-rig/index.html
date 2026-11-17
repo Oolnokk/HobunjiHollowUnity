@@ -24,7 +24,7 @@
       <input id="babyHeadShortening" type="range" min="0" max="45" step="1" value="8" aria-label="Head shortening percentage">
     </label>
     <label class="row" style="margin-top:8px;justify-content:flex-start">
-      <input id="babyHeadUsePainted" type="checkbox"> Use earlier painted Head selection (instead of idle-sprite alpha)
+      <input id="babyHeadUsePainted" type="checkbox" checked> Use original painted Head growth method (default; uncheck for idle-alpha)
     </label>
     <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">
       <label class="row" style="justify-content:flex-start"><input id="babyHeadUseCustomFrame" type="checkbox"> Override portrait with a custom head-growth box</label>
@@ -43,7 +43,7 @@
       <button id="babyHeadCompare" type="button" aria-pressed="false">Show original for comparison</button>
       <span id="babyHeadPreviewState" class="small" role="status" aria-live="polite">Load a species to preview.</span>
     </div>
-    <div class="hint" style="margin-top:6px;">Choose an animal, then use the Draw buttons and drag diagonally across its source sprite. Custom head growth replaces the chathead portrait box; the older painted selection checkbox still controls alpha-mask versus rectangular falloff. Abdomen growth is independent and optional. Both regions are previewed before shoulder deformation, without changing painted source art. Save the rig to apply these per-species settings in game.</div>
+    <div class="hint" style="margin-top:6px;">Choose an animal, then use the Draw buttons and drag diagonally across its source sprite. Custom head growth replaces the chathead portrait box; the painted Head selection is the default (uncheck for the alternative idle-alpha mask). Abdomen growth is independent and optional. Both regions are previewed before shoulder deformation, without changing painted source art. Save the rig to apply these per-species settings in game.</div>
     <div class="row" style="justify-content:space-around;font-size:12px;margin-top:8px"><span>Original head</span><span>Shortened / enlarged head</span></div>
     <canvas id="babyHeadComparisonCanvas" width="580" height="180" aria-label="Original versus shortened and enlarged baby head pixels" style="width:100%;height:135px;border:1px solid var(--line);border-radius:8px;background:#30353c;image-rendering:pixelated;touch-action:auto"></canvas>
     <div id="babyHeadPixelDelta" class="hint" role="status" aria-live="polite">Load an animal to compare its actual head pixels.</div>
@@ -70,7 +70,7 @@
     <div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0">
       <label>Copy shoulder pose from species<select id="shoulderCopySource"><option value="">Choose a species…</option></select></label>
       <button id="shoulderCopyFromSpecies" type="button" disabled>Copy complete shoulder pose</button>
-      <div id="shoulderCopyStatus" class="hint" role="status" aria-live="polite">Copies BEFORE/AFTER points, all shoulder checkboxes, separator, and material maps. Leaves the current species' head paint and other settings alone.</div>
+      <div id="shoulderCopyStatus" class="hint" role="status" aria-live="polite">Copies BEFORE/AFTER points, shoulder checkboxes, and material maps, but keeps this species' frame-divider X and angle. Leaves head paint and other settings alone.</div>
     </div>
     <label class="row" style="justify-content:flex-start"><input id="shoulderRestUseSpline" type="checkbox"> Enable body spline</label>
     <label>Paint source<select id="shoulderPaintSource"><option value="left">Left source · Head paint</option><option value="right">Right source · Shoulder paint</option><option value="composite">Composite split · Shoulder paint</option></select></label>
@@ -89,7 +89,7 @@
 </div>
 <script src="../../js/creature-genetics-render.js?v=20261117animalRetry4"></script>
 <script src="../../config/attachment-rig-profiles.js?v=20261116skeeriGrip1"></script> <!-- Match the game's authored chathead boxes in baby-size previews. -->
-<script src="../../js/baby-animal-head-warp.js?v=20261117short8a"></script>
+<script src="../../js/baby-animal-head-warp.js?v=20261117legacyHead2"></script>
 <script src="../../js/creature-genetics.js"></script>
 <script src="../../js/grehlr-head-rig-correction.js?v=20260917uploads1"></script>
 <script src="../../js/animal-head-rig-authored.js?v=20261116mootPaint132b"></script>
@@ -107,8 +107,8 @@
 <script src="./author-part7.js"></script>
 <script src="./author-part8.js"></script>
 <script src="./author-part9.js"></script>
-<script src="./author-part10.js?v=20261117short8a"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
-<script src="./author-part11.js?v=20261117regionOnly2"></script> <!-- Shoulder pose cloning and custom head/abdomen boxes. -->
+<script src="./author-part10.js?v=20261117legacyHead2"></script> <!-- Per-species baby-scale serialization, history, and live texture preview. -->
+<script src="./author-part11.js?v=20261117keepDivider2"></script> <!-- Shoulder pose cloning and custom head/abdomen boxes. -->
 <script src="../../js/modular-weapon-bridge-fill.js?v=20261115hatTab1"></script>
 <script src="./hat-tab.js?v=20261115hatTab1"></script>
 </body>
