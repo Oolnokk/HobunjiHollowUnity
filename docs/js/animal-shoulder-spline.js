@@ -444,7 +444,8 @@
     if (!source?.geometry || !source?.skeleton || !source?.parent) return null;
     const geometry = source.geometry.clone(), sharedSkinWeight = source.geometry.getAttribute?.('skinWeight'), sharedSkinIndex = source.geometry.getAttribute?.('skinIndex');
     if (sharedSkinWeight) geometry.setAttribute('skinWeight', sharedSkinWeight); if (sharedSkinIndex) geometry.setAttribute('skinIndex', sharedSkinIndex);
-    const material = Array.isArray(source.material) ? source.material.map(cloneMaterialForOverlay) : cloneMaterialForOverlay(source.material), overlay = new THREE.SkinnedMesh(geometry, material);
+    const originalMaterial = window.PNGPlaneAvatar?.meshBudget?.originalPortraitMaterial?.(source) || source.material; // A new pet can spawn while dev wireframe is active; never permanently clone its temporary cyan diagnostic material.
+    const material = Array.isArray(originalMaterial) ? originalMaterial.map(cloneMaterialForOverlay) : cloneMaterialForOverlay(originalMaterial), overlay = new THREE.SkinnedMesh(geometry, material);
     overlay.name = `${source.name || 'animal'}_${suffix}`; overlay.position.copy(source.position); overlay.quaternion.copy(source.quaternion); overlay.scale.copy(source.scale); overlay.renderOrder = source.renderOrder || 0; overlay.frustumCulled = source.frustumCulled;
     overlay.userData = { ...source.userData, hobunjiShoulderSplitOverlay: true }; overlay.onBeforeRender = source.onBeforeRender; overlay.bindMode = source.bindMode; overlay.bind(source.skeleton, source.bindMatrix?.clone?.() || source.bindMatrix); overlay.visible = false; source.parent.add(overlay);
     return { mesh: overlay, geometry, material, textures: [] };
