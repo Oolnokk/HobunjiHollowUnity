@@ -174,7 +174,7 @@
     if (_cavernWorkerUnavailable || typeof Worker !== 'function') return null;
     if (_cavernWorker) return _cavernWorker;
     try {
-      const worker = new Worker('js/cavern-generator-worker.js?v=20261116deepAudit1'); // Owns long-running SDF work, never the scene graph.
+      const worker = new Worker('js/cavern-generator-worker.js?v=20261117deepAudit3'); // Owns long-running SDF work, never the scene graph.
       worker.onmessage = ({ data }) => {
         const job = _cavernWorkerJobs.get(data?.id);
         if (!job) return;
@@ -201,8 +201,9 @@
 
   function generateCavernFloorAsync(seedText, generationOptions = {}) {
     const cacheKey = cavernFloorCacheKey(seedText, generationOptions); // Uses the same seed and shape as the synchronous compatibility path.
-    if (generationOptions.cache !== false && _cavernFloorCache.has(cacheKey)) return Promise.resolve(_cavernFloorCache.get(cacheKey));
-    if (_asyncCavernFloors.has(cacheKey)) return _asyncCavernFloors.get(cacheKey);
+    const useCache = generationOptions.cache !== false; // An explicit cache:false request must perform its own fresh carve, not reuse an in-flight one.
+    if (useCache && _cavernFloorCache.has(cacheKey)) return Promise.resolve(_cavernFloorCache.get(cacheKey));
+    if (useCache && _asyncCavernFloors.has(cacheKey)) return _asyncCavernFloors.get(cacheKey);
     const worker = cavernFloorWorker();
     if (!worker) return Promise.resolve(generateCavernFloor(seedText, generationOptions)); // Explicit compatibility fallback when workers are blocked.
     const startedAt = performance.now(); // Measures the wall-clock cost without a browser main-thread stall.
@@ -226,7 +227,7 @@
         reject(error);
       }
     }).then(floorData => {
-      if (generationOptions.cache !== false) _cavernFloorCache.set(cacheKey, floorData);
+      if (useCache) _cavernFloorCache.set(cacheKey, floorData);
       _cavernWorkerDebug.completed++;
       _cavernWorkerDebug.lastDurationMs = Math.round(performance.now() - startedAt);
       return floorData;
@@ -235,8 +236,10 @@
       _cavernWorkerDebug.lastError = String(error?.message || error);
       window.__farmLog?.('[cavern-worker] ' + _cavernWorkerDebug.lastError + '; using synchronous fallback.', 'warn');
       return generateCavernFloor(seedText, generationOptions); // Keep the original entrance/dungeon generation path functional on restricted browsers.
-    }).finally(() => _asyncCavernFloors.delete(cacheKey));
-    _asyncCavernFloors.set(cacheKey, job);
+    }).finally(() => {
+      if (_asyncCavernFloors.get(cacheKey) === job) _asyncCavernFloors.delete(cacheKey);
+    }); // Only the owner may remove an in-flight cache entry.
+    if (useCache) _asyncCavernFloors.set(cacheKey, job);
     return job;
   }
 
