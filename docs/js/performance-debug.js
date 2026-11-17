@@ -1221,6 +1221,13 @@
       root.addEventListener('hobunji:player-mesh-budget-changed', updateDensityLabel); // Player may opt into NPC mesh density without changing the developer slider.
       densityRow.append(densityLabel, densitySlider, densityStatus, densityHelp);
       box.appendChild(densityRow);
+      const wireframe = makeCheckboxRow('settingPortraitMeshWireframe', 'Show skinned portrait wireframe', portraitBudget.wireframeEnabled(),
+        'Developer-only full-plane cyan wireframe replaces painted portrait textures temporarily, so even transparent PNG regions reveal the triangle grid. Covers player, town NPCs and enemies; turning off restores their original materials without changing poses.');
+      wireframe.input.addEventListener('change', () => portraitBudget.setPortraitWireframeEnabled(wireframe.input.checked));
+      root.addEventListener('hobunji:portrait-wireframe-changed', () => {
+        wireframe.input.checked = portraitBudget.wireframeEnabled();
+      });
+      box.appendChild(wireframe.row);
       updateDensityLabel();
     }
 
