@@ -47,8 +47,9 @@ assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are nor
   const point = { x: .34, y: .91 }; // Left authored waist edge in portrait space before the alpha correction.
   const waist = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .28 }, garment, result); // Exact connected-alpha edge at the garment waist.
   const midLeg = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .39 }, garment, result); // Transitional region between belt and knees.
-  const knee = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .48 }, garment, result); // Knee is no longer influenced by torso width.
-  const cuff = Renderer.taperTorsoBeltPoint(point, { x: .34, y: .62 }, garment, result); // The previous foot-width/leg-opening correction remains independent.
+  const kneeY = (garment.legBones.left.knee.y + garment.legBones.right.knee.y) / 2; // Current authored knee row, never a legacy fixed image coordinate.
+  const knee = Renderer.taperTorsoBeltPoint(point, { x: .34, y: kneeY + 0.005 }, garment, result); // Immediately below the real knee: zero waist influence.
+  const cuff = Renderer.taperTorsoBeltPoint(point, { x: .34, y: garment.legBones.left.ankle.y }, garment, result); // Existing foot opening is independent of waist.
   assert(Math.abs(waist.x - .25) < 1e-9 && waist.y === point.y, 'only waist width changes to match visible torso, not waist height');
   assert(midLeg.x > .25 && midLeg.x < .34 && midLeg.y === point.y, 'torso width eases smoothly into thigh width');
   assert(knee.x === point.x && cuff.x === point.x && knee.y === point.y && cuff.y === point.y,
