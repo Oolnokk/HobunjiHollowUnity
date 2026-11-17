@@ -294,6 +294,7 @@
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
     'voorg-ass-herd-mother': 'voorg-ass',
+    'moot-herd-mother': 'moot', // Herd-Mother borrows Moot genotype art, eye overlays, and authored rig scales.
   };
   const CREATURE_SIZE_PROFILE_ALIAS = {
     puktuk: 'gar-wolf',
