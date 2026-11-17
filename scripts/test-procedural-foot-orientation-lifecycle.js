@@ -272,6 +272,35 @@ assert.equal(realHeadTurn.bodyDeadzone.correctiveSource, 'headtrack',
   'the headtrack priority is preserved from gameplay');
 renderWindow.Combat.deps.player.perpState = null;
 
+// Rapid reversals, wrapped ±180° turns, both authored weapon yaw signs and
+// moving the camera around the player must never leave the *final* painted
+// portrait inside the 40° forbidden angle around either camera perpendicular.
+const turnCameraPositions = [
+  { x: 0, z: 10 }, { x: 10, z: 0 }, { x: 0, z: -10 }, { x: -10, z: 0 },
+]; // Different camera quadrants stress the shared camera-relative perpendicular calculation.
+for (const rotationDirection of [1, -1]) {
+  for (let headingDeg = -180; headingDeg <= 180; headingDeg += 15) {
+    for (const visualOffsetDeg of [-40, -15, 0, 15, 40]) {
+      const baseYaw = deg(headingDeg * rotationDirection);
+      composedYaw = baseYaw + deg(visualOffsetDeg);
+      const cameraPosition = turnCameraPositions[Math.abs(Math.floor((headingDeg + 180) / 45)) % turnCameraPositions.length];
+      const liveCamera = { position: cameraPosition };
+      renderWindow.Combat.deps.player.perpState = {
+        movementYaw: baseYaw, lastMovementYaw: baseYaw,
+      };
+      const debug = { baseFacingYaw: baseYaw, authoredAbsoluteYaw: false };
+      applyTurnClamp(liveCamera, [], debug);
+      const currentPerps = turnApi.cameraRelativePerpsAtWorldPosition(turnPlayer.position, cameraPosition);
+      const gap = Math.min(...currentPerps.map(perp => Math.abs(signed(debug.bodyDeadzone.renderedYaw - perp))));
+      assert(gap + 1e-9 >= turnApi.PERP_DEAD_RAD,
+        'camera-dependent deadzone excludes edge-on after turn=' + headingDeg + ', visual yaw=' + visualOffsetDeg);
+      assert(Math.abs(signed(debug.bodyDeadzone.renderedYaw - (composedYaw + debug.bodyDeadzone.correction))) < 1e-9,
+        'whole-body correction matches the composed portrait through wrapped sharp-turn boundaries');
+    }
+  }
+}
+renderWindow.Combat.deps.player.perpState = null;
+
 // Check the shoulder-pet solver's actual rotation resolver, not a copied
 // implementation, under a negative-scale portrait parent.
 const petRuntimeSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8');
