@@ -7,7 +7,7 @@
   const STORAGE_KEY = 'hobunji_baby_head_warp_scale_v1'; // Keeps the Nursery experiment's chosen scale across reloads without modifying saves.
   const DEFAULT_SCALE = 1.23; // User-approved universal 123% for babies and qualifying genetically Small shoulder pets.
   const MAX_SCALE = 1.45; // Safety cap for the Nursery slider and public setter.
-  const DEFAULT_SHORTENING = 0.20; // Default 20% front-to-back shortening relative to the enlarged head.
+  const DEFAULT_SHORTENING = 0.08; // Universal inherited 8% front-to-back shortening for babies and eligible Small shoulder pets.
   const MAX_SHORTENING = 0.45; // Prevents an unnaturally flattened or inverted skull.
   const SHORTENING_STORAGE_KEY = 'hobunji_baby_head_shortening_v1'; // Saved global Nursery shortening, independent of head enlargement.
   const MAX_ABDOMEN_SCALE = 1.8; // Upper safety bound for the optional abdominal-growth region.
@@ -25,7 +25,8 @@
   }
 
   let shortening = (() => {
-    try { const saved = window.localStorage?.getItem(SHORTENING_STORAGE_KEY); return saved == null ? DEFAULT_SHORTENING : clampShortening(saved); }
+    try { const saved = window.localStorage?.getItem(SHORTENING_STORAGE_KEY); return saved == null || Number(saved) === 0.20
+      ? DEFAULT_SHORTENING : clampShortening(saved); // Migrate the former 20% global default; keep other chosen amounts.
     catch (_) { return DEFAULT_SHORTENING; }
   })(); // Current shortening used by babies and genetically Small pets when a species has no override.
   function getShortening() { return shortening; }
