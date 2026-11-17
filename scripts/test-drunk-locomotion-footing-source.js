@@ -9,15 +9,28 @@ const modulePath = path.join(__dirname, '..', 'docs', 'js', 'drunk-locomotion.js
 const source = fs.readFileSync(modulePath, 'utf8');
 
 class Quaternion {
-  constructor() {
-    this.x = 0; this.y = 0; this.z = 0; this.w = 1;
-    this.isQuaternion = true;
+  constructor() { this.identity(); this.isQuaternion = true; }
+  set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
+  identity() { return this.set(0, 0, 0, 1); }
+  clone() { return new Quaternion().copy(this); }
+  copy(q) { return this.set(q.x, q.y, q.z, q.w); }
+  invert() { return this.set(-this.x, -this.y, -this.z, this.w); }
+  multiply(q) {
+    const a = this.clone(); // Snapshot left operand for the same quaternion multiplication as Three.js.
+    return this.set(a.x * q.w + a.w * q.x + a.y * q.z - a.z * q.y,
+      a.y * q.w + a.w * q.y + a.z * q.x - a.x * q.z,
+      a.z * q.w + a.w * q.z + a.x * q.y - a.y * q.x,
+      a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z);
   }
-  identity() { this.x = this.y = this.z = 0; this.w = 1; return this; }
-  clone() { const q = new Quaternion(); q.x = this.x; q.y = this.y; q.z = this.z; q.w = this.w; return q; }
-  invert() { return this; }
-  multiply() { return this; }
-  setFromEuler() { return this; }
+  setFromEuler(e) {
+    const cx = Math.cos(e.x / 2), sx = Math.sin(e.x / 2); // X local half-rotation.
+    const cy = Math.cos(e.y / 2), sy = Math.sin(e.y / 2); // Y local half-rotation.
+    const cz = Math.cos(e.z / 2), sz = Math.sin(e.z / 2); // Z local half-rotation.
+    return this.set(sx * cy * cz + cx * sy * sz,
+      cx * sy * cz - sx * cy * sz,
+      cx * cy * sz - sx * sy * cz,
+      cx * cy * cz + sx * sy * sz);
+  }
 }
 
 class Euler {
@@ -56,6 +69,8 @@ const context = {
 };
 context.globalThis = context.window;
 vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'rig-transform-layers.js'), 'utf8'),
+  context, { filename: 'rig-transform-layers.js' }); // Real compositor runs before the drunken gait wrapper.
 vm.runInContext(source, context, { filename: modulePath });
 
 // The player's unsteady gait follows CURRENT missing Footing, even when sober.
@@ -96,5 +111,12 @@ const npcLegs = ProceduralLegAnimation.attach(THREE, {}, {
 });
 npcLegs.update(0.016, 1.2, false, false);
 assert.strictEqual(npcProviderCalls, 1);
+const ownership = context.window.ActorRigCompositor; // Real named quaternion owner used by the production NPC gait.
+assert.ok(ownership.getDebug().quaternionWrites > 0, 'NPC drunk body tilt enters the shared compositor');
+assert.ok(ownership.getDebug().activeLayers > 0, 'NPC sway remains owned while the gait is active');
+npcLegs.dispose();
+assert.strictEqual(ownership.getDebug().activeLayers, 0, 'Interrupted NPC gait releases its body quaternion layer');
+assert.ok(Math.abs(npcBodyRoot.quaternion.x) < 1e-8 && Math.abs(npcBodyRoot.quaternion.w - 1) < 1e-8,
+  'NPC body returns to the original clean quaternion after disposal');
 
 console.log('drunk-locomotion footing sources: all checks passed');
