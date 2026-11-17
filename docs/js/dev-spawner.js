@@ -260,7 +260,7 @@
     }
     const tierGrid = document.getElementById('devSpawnBanditTierGrid');
     if (tierGrid) {
-      tierGrid.innerHTML = [0, 1, 2, 3].map(t => {
+      tierGrid.innerHTML = Array.from({ length: (window.EnemyTierProgression?.MAX_TIER ?? 7) + 1 }, (_, index) => index).map(t => {
         const active = t === devSpawnBanditTier ? ' fed-active' : '';
         return `<button type="button" class="fed-btn${active}" data-tier="${t}">Tier ${t}</button>`;
       }).join('');
@@ -701,7 +701,7 @@
     document.getElementById('devSpawnBanditTierGrid')?.addEventListener('click', (e) => {
       const btn = e.target.closest('.fed-btn');
       if (!btn) return;
-      devSpawnBanditTier = deps.clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, 3);
+      devSpawnBanditTier = deps.clamp(Math.round(Number(btn.dataset.tier)) || 0, 0, window.EnemyTierProgression?.MAX_TIER ?? 7);
       renderDevSpawnPanel();
     });
     document.getElementById('devSpawnBtnAction')?.addEventListener('click', spawnSelectedDevArenaCreature);
