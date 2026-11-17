@@ -118,6 +118,8 @@
   function craftMetalTool(shapeKey, metalKey) {
     window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
     if (!deps.UNLOCKED_TOOL_SHAPES.includes(shapeKey) || !deps.VERDIGRIS_METAL_KEYS.includes(metalKey)) { deps.showToast('Discover this weapon shape and choose a smithing metal first.', false); return; }
+    const itemKey = deps.craftedToolItemKey(shapeKey, metalKey); // Reject repeated purchases before charging materials or changing an item's grade.
+    if (deps.getGearInventory()?.tools?.[itemKey]) { deps.showToast('You already own this tool in that metal.', false); return; }
     const forgeBars = window.MetalReinforcement.forgeBarCost(CRAFT_BAR_COST, metalKey, deps.METAL_DEFS); // Higher-tier new tools cost more bars instead of bypassing the metal sink.
     const barKey = deps.metalBarItemKey(metalKey);
     if ((deps.inventory[barKey] || 0) < forgeBars) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
@@ -125,7 +127,6 @@
     deps.inventory[barKey] -= forgeBars;
     deps.clampInventoryStack(barKey);
     deps.inventory.gold -= CRAFT_LABOR_GOLD;
-    const itemKey = deps.craftedToolItemKey(shapeKey, metalKey);
     const gearInventory = deps.getGearInventory();
     if (!gearInventory.tools) gearInventory.tools = {};
     gearInventory.tools[itemKey] = true;
