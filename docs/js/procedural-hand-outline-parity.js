@@ -17,7 +17,7 @@
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
   const meshRigStates = new WeakMap(); // Mesh -> owning rig, so held-overlay scissor bounds can be corrected before they are measured.
-  const MAX_SNAPSHOT_AGE_MS = 160;
+  const MAX_SNAPSHOT_AGE_MS = 1000; // Shared limit for shell/depth replay: tolerate slow frames, reject poses older than one second.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Shared shell uniform is restored after each hand draw.
   const OUTLINE_REFERENCE_DEPTH = 5; // Distant outlines shrink beyond this depth; closer hands keep the feet's baseline thickness.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
@@ -45,11 +45,8 @@
   }
 
   function secondaryPassKind(scene, camera, material) {
-    // Every colorless (depth-only) draw of the hand must use the visible hand's pose, not just
-    // the layer-4 PNG occluder replay: held-object-render-order's shell x-ray replay rebuilds
-    // depth with the full camera mask, and left unlocked it drew the hand at the stale
-    // pre-sync pose (~0.07u off) while the shell was locked to the visible pose, so the shell
-    // was not occluded by the hand and showed as black over it.
+    // All colorless hand-depth replays must use the visible hand pose, including
+    // held-object shell depth rebuilds that run with the full camera layer mask.
     if (
       !scene?.overrideMaterial
       && material?.colorWrite === false
@@ -424,7 +421,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'All colorless hand depth replays (not only the layer-4 occluder) reuse the visible hand pose, so the shell is occluded by the hand it outlines. Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
+        latestChange: 'Colorless hand-depth replays and shell passes reuse the visible hand pose; a one-second snapshot window accommodates frame hitches without indefinite pose staleness.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
