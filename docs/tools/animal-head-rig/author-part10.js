@@ -6,7 +6,7 @@ const babyHeadScaleSlider = $('babyHeadScale'); // Percentage slider placed next
 const babyHeadScaleLabel = $('babyHeadScaleLabel'); // Shows saved override vs inherited Nursery default.
 const babyHeadShorteningSlider = $('babyHeadShortening'); // Brachycephalic front-to-back shortening, independent of enlargement.
 const babyHeadShorteningLabel = $('babyHeadShorteningLabel'); // Displays inherited or authored skull-depth change.
-const babyHeadUsePaintedCheckbox = $('babyHeadUsePainted'); // Restores the earlier painted-Head rectangle selection.
+const babyHeadUsePaintedCheckbox = $('babyHeadUsePainted'); // Toggles the default original painted-Head rectangle or optional idle-alpha selection.
 const babyHeadCompareButton = $('babyHeadCompare'); // Before/after comparison without changing the authored value.
 const babyHeadPreviewState = $('babyHeadPreviewState'); // Mobile-readable preview state and missing-frame explanation.
 const babyHeadWarp = window.BabyAnimalHeadWarp; // Reuses the baby's exact nearest-neighbor runtime pixel warp.
@@ -20,7 +20,7 @@ const babyHeadPixelDelta = $('babyHeadPixelDelta'); // Reports actual pixel chan
 const babyHeadDebug = { hits: 0, misses: 0, lastSpecies: null, lastError: null, splitsAfterWarp: 0, comparisonPixelChanges: 0 }; // Captured by the in-editor mobile diagnostics.
 let authoredBabyHeadScale = null; // Null inherits the Nursery's experimental global default.
 let authoredBabyHeadShortening = null; // Null inherits the game's global brachycephalic shortening.
-let authoredBabyHeadUsePainted = false; // Existing rigs default to the newer idle-opacity selection.
+let authoredBabyHeadUsePainted = true; // All species inherit the original painted-Head growth method unless explicitly opted out.
 let babyPreviewFrame = null; // Frame resolved once per editor draw, not once per mesh triangle.
 let babyPreviewFrameSource = 'none'; // Helps distinguish authored chathead boxes from painted-head fallbacks.
 let comparingBabyOriginal = false; // Temporary visual toggle; never enters exported rig data.
@@ -122,7 +122,7 @@ applyRecord = function applyRecordWithBabyHeadScale(record, index = -1) {
   const savedShortening = saved?.babyHeadShortening ?? record?.headRig?.babyHeadShortening;
   authoredBabyHeadShortening = typeof savedShortening === 'number' && Number.isFinite(savedShortening)
     ? clamp(savedShortening, 0, babyHeadWarp?.MAX_SHORTENING ?? 0.45) : null;
-  authoredBabyHeadUsePainted = (saved?.babyHeadUsePaintedFrame ?? record?.headRig?.babyHeadUsePaintedFrame) === true;
+  authoredBabyHeadUsePainted = (saved?.babyHeadUsePaintedFrame ?? record?.headRig?.babyHeadUsePaintedFrame) !== false;
   comparingBabyOriginal = false;
   syncBabyHeadScaleControl();
   syncBabyHeadShorteningControl();
@@ -138,8 +138,8 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   else delete rig.babyHeadScale; // Inherit 123% without discarding the actual authored head mask source.
   if (authoredBabyHeadShortening != null) rig.babyHeadShortening = authoredBabyHeadShortening;
   else delete rig.babyHeadShortening; // An empty shortening override inherits the global default.
-  if (authoredBabyHeadUsePainted) rig.babyHeadUsePaintedFrame = true;
-  else delete rig.babyHeadUsePaintedFrame; // Default preserves original idle opacity-mask behavior.
+  if (authoredBabyHeadUsePainted) delete rig.babyHeadUsePaintedFrame; // Inherit the default original painted-Head growth method.
+  else rig.babyHeadUsePaintedFrame = false; // Persist an explicit opt-in to the newer idle-sprite alpha mask.
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
   const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
   const frame = (authoredBabyHeadUsePainted ? paintedBabyHeadFrame() : null)
@@ -166,7 +166,7 @@ const restoreHistoryBeforeBabyHead = restoreHistoryState;
 restoreHistoryState = function restoreHistoryWithBabyHeadScale(snapshot) {
   authoredBabyHeadScale = snapshot?.babyHeadScale ?? null;
   authoredBabyHeadShortening = snapshot?.babyHeadShortening ?? null;
-  authoredBabyHeadUsePainted = snapshot?.babyHeadUsePaintedFrame === true;
+  authoredBabyHeadUsePainted = snapshot?.babyHeadUsePaintedFrame !== false;
   syncBabyHeadScaleControl();
   syncBabyHeadShorteningControl();
   return restoreHistoryBeforeBabyHead(snapshot);
