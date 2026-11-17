@@ -66,13 +66,14 @@
   function meleeFireContact(combat, player, hitOptions, scene) {
     const box = new deps.THREE.Box3(); // Shared by furniture, ruin and tent contact checks for a single strike.
     const contact = new deps.THREE.Vector3(); // Returned to the fire receiver synchronously for its feedback.
-    return root => {
+    return (root, actorBox = null) => {
       if (!root || !scene) return null;
       let parent = root;
       while (parent && parent !== scene && parent.visible !== false) parent = parent.parent;
       if (parent !== scene) return null;
       root.updateWorldMatrix?.(true, true);
-      box.setFromObject(root);
+      if (actorBox) box.copy(actorBox); // Actor hitboxes exclude decorative fire particles and use the same portrait geometry as melee attacks.
+      else box.setFromObject(root);
       if (box.isEmpty()) return null;
       const acceptPoint = (origin, point) => {
         // Sight-mode cover is available even outside combat. Hitting the fixture's own surface counts.
