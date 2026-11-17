@@ -21,7 +21,8 @@ async function persistBeforeClose(game) {
     }
     const result = await folder.syncNow({ reason: 'desktop-window-close' }); // Completion must precede the OS window closing.
     const action = String(result?.lastAction || 'unknown'); // Reports stopped/error writes in the existing core.
-    if (!result || result.state !== 'ready' || result.dataLossRisk || /error|blocked|risk/i.test(action)) {
+    const primaryCommitted = /^(?:saved-browser-to-folder|saved-primary-recovery-error|autosaved-browser-to-folder|autosaved-primary-recovery-error|autosync-skipped-unchanged)$/.test(action); // Only canonical completed writes or verified no-op may authorize a close.
+    if (!result || result.state !== 'ready' || result.dataLossRisk || !primaryCommitted) {
       return { ok: false, error: result?.lastError || result?.dataLossRisk || action };
     }
     return { ok: true, mode: 'folder', action };
