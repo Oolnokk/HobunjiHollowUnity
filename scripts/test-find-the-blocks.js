@@ -120,6 +120,12 @@ function test(seed,size=24){
   });
   assert.equal(room.blocks.length,4);
   assert.equal(room.plates.length,4);
+  const fireBowls=[]; // All native low-bowl fire sources are inspectable without a console or interaction prompt.
+  soloGroup.traverse(object=>{if(object?.userData?.fireHazard===true)fireBowls.push(object);});
+  assert.equal(fireBowls.length,1,'Find the Blocks provides exactly one reusable torch-lighting hazard');
+  assert.equal(fireBowls[0].name,'find-blocks-low-bowl-brazier');
+  assert(!state.controls.some(control=>control.kind==='findBlocksBrazier'),'low fire sources never capture Action 1 to arm ammunition');
+  assert.equal(room.snapshot().sourceFireHazard,true,'mobile debug reports the physical fire source');
   const named=new Map();
   soloGroup.traverse(object=>{if(object?.isMesh&&object?.name)named.set(object.name,object);});
   for(const name of ['find-block-net','find-block-inset-net','find-blocks-pressure-plate-0',
