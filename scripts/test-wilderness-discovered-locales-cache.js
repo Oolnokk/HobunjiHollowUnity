@@ -62,7 +62,7 @@ context.WildernessMap.init({
 });
 const visibleIds = () => context.WildernessMap._test.visibleLandmarks(zoneId).map(record => record.localeId); // Fast read path exercised by map and waypoint UI.
 
-assert.deepEqual(visibleIds(), [], 'new world must start with no discoveries');
+assert.equal(visibleIds().length, 0, 'new world must start with no discoveries');
 const firstParseCount = parseCalls; // Warm-cache baseline; includes the separate threat-marker loader.
 for (let i = 0; i < 60; i++) visibleIds();
 assert.equal(parseCalls, firstParseCount, 'unchanged metadata must not be reparsed on repeat reads');
