@@ -85,7 +85,8 @@ load('docs/js/perk-system.js');
 load('docs/js/combat/companion-offense.js');
 load('docs/js/combat/combat-attack-events.js');
 load('docs/js/combat/combat-enchantments.js');
-load('docs/js/combat/fey-illusions.js'); // Test real neutral Fey effects against ResourceSystem, not a mocked status API.
+load('docs/js/combat/fey-illusions.js'); // Tests the real sensory effects through ResourceSystem.
+load('docs/js/combat/fey-hyped-attacks.js'); // Tests the staged second attack rather than a cosmetic delayed impact.
 context.__hobunjiPlayerProfile = { abilityProgression: { plain: { chargedBreaker: { 1: 0 } }, magic: { chargedBreaker: { 1: 0 } } } }; // CombatProgression loads its saved choices from the profile at startup.
 load('docs/js/combat/combat-progression.js');
 delete context.__hobunjiPlayerProfile;
@@ -677,13 +678,32 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(echo.metadata.feyHypedUsed,8);
   const echoTarget=makeEntity({name:'Echo target',health:90,x:10});
   let secondary=null;
+  const hypedStages=[]; // Actual first/second actions inspected without requiring a browser frame loop.
+  const hypedVisuals=[]; // Captures both full authored pose durations for verifying the 2x speed rule.
+  context.Combat.beginStagedAction=opts=>{
+    const stage={...opts,totalS:(opts.windupS||0)+(opts.strikeS||0)+(opts.recoverS||0),cancelled:false};
+    hypedStages.push(stage);
+    return stage;
+  };
+  context.Combat.init=deps=>{context.Combat.deps=deps;};
+  assert.equal(context.FeyHypedAttacks.installCombatBridge(),true);
+  context.Combat.deps.triggerWeaponSwingVisual=(duration,options)=>hypedVisuals.push({duration,options});
+  context.Combat.init(context.Combat.deps);
   context.Combat.meleeHit=()=>true; // Existing gameplay hit authority, not an invented cone test.
   context.Combat.deps.damageCreature=(target,damage,x,y,knockback,opts)=>{secondary={target,damage,knockback,opts};};
-  context.setTimeout=callback=>{callback();return 1;}; // Deterministically run deferred second impact.
+  context.Combat.deps.triggerWeaponSwingVisual(.30,{anim:'sweep',holdS:.1}); // Initial authored presentation belongs to the original strike.
+  const firstStage=context.Combat.beginStagedAction({windupS:.2,strikeS:.1,recoverS:0});
   CAE.hit(echo,{target:echoTarget,actualDamage:0});
-  assert(secondary,'Hyped paid attack repeats the hit');
+  firstStage.onComplete(firstStage);
+  assert.equal(hypedStages.length,2,'first attack schedules exactly one independent second staged attack');
+  assert.equal(hypedVisuals.length,2,'Hyped attack replays the actual authored animation');
+  assert(Math.abs(hypedVisuals[1].duration-.15)<1e-6,'second authored animation runs at exactly double speed');
+  hypedStages[1].onStrike(); // A second independently tested hit, not a copy of first on-hit damage.
+  assert(secondary,'Hyped paid attack strikes independently a second time');
   assert.equal(secondary.damage,4,'8 Hyped stamina produces a 16%-power second strike');
   assert.equal(secondary.knockback,16,'secondary knockback scales with the same factor');
+  hypedStages[1].onComplete?.();
+  assert.equal(context.FeyHypedAttacks.debugSnapshot().replayCount,1,'second impact is recorded once');
   assert.equal(CAE.prepare({attacker:player,abilityId:'swingCombo'}).metadata.feyHypedUsed,undefined,'echo credit spent once');
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
