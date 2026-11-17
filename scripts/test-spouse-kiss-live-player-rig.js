@@ -100,6 +100,15 @@ const composer = {
 };
 const window = {
   THREE, PlayerBodyTransformComposer: composer,
+  SharedAttackPose: {
+    createHeadFrame(Three) { return { position: new Three.Vector3() }; }, // Reused production mouth-frame contract.
+    headFrame(frame, model) {
+      const neck = model?.userData?.neckRig?.neckJoint; // Real Three.js head pivot supplies the test lip landmark.
+      if (!neck?.parent) return false;
+      neck.getWorldPosition(frame.position);
+      return true;
+    },
+  }, // Unlike the old fixture, this exercises the skinned mouth reprojection that caused a late ownership mismatch.
   WorldPortraitLife: { getPlayerAvatar() { return { group: playerModel }; } },
   RuntimeFrameScheduler: { register(name, cb, options) {
     assert.equal(name, 'spouse-kiss'); assert.equal(options.phase, 'pre-render'); update = cb;
