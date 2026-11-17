@@ -186,20 +186,20 @@
       family: "enhanced", tags: ["enhanced", "mirror"],
       desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     },
-    phantomWoundsHealth: {
-      name: "Phantom Wounds", resource: "health", extend: "currentBack", priority: 31, recovers: true,
-      family: "control", tags: ["fey", "illusion", "perceived-injury"],
-      desc: "Imaginary cuts feel and look real, but these nonlethal segments do not lower Health, max Health, or apply damage over time."
+    dementedStamina: {
+      name: "Demented Stamina", resource: "stamina", extend: "currentBack", priority: 32, recovers: true,
+      family: "control", tags: ["fey", "illusion", "vertigo"],
+      desc: "Each point of Stamina spent rotates perceived movement/facing one degree in a random direction, eased across the action."
     },
-    phantomBloodHealth: {
-      name: "False Bleeding", resource: "health", extend: "currentBack", priority: 32, recovers: true,
-      family: "control", tags: ["fey", "illusion", "apparent-blood"],
-      desc: "The bearer sees themselves bleeding. No actual blood is lost, and this affliction never triggers the ordinary Bleeding damage tick."
+    panickedStamina: {
+      name: "Panicked Stamina", resource: "stamina", extend: "currentBack", priority: 33, recovers: true,
+      family: "control", tags: ["fey", "illusion", "panic"],
+      desc: "Spared during normal exertion. The next dodge spends all of it on top of its normal cost, gaining 10% reach per point and potentially colliding with allies or walls."
     },
-    phantomPainFooting: {
-      name: "Phantom Pain", resource: "footing", extend: "currentBack", priority: 33, recovers: true,
-      family: "control", tags: ["fey", "illusion", "pain"],
-      desc: "Pain without bodily injury. Shows a Footing affliction segment but does not subtract Footing, break posture, or cause damage."
+    hypedStamina: {
+      name: "Hyped Stamina", resource: "stamina", extend: "currentBack", priority: 37, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "fey", "illusion", "hype"],
+      desc: "Enhanced Stamina spent on an attack triggers a rapid second strike, whose effect scales by 2% per point used."
     }
   };
 
@@ -209,6 +209,10 @@
       benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
     }),
     moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
+    hypedStamina: Object.freeze({
+      resource: "stamina", conversionRate: 1, normalPriority: 10, beneficialPriority: 110,
+      benefitsTransaction: tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponFire|combatWeaponAttack)$/.test(String(tx?.actionKind || '')),
+    }),
     resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
@@ -481,6 +485,8 @@
 
   function initEntity(entity) {
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
+    // Old sensory-only Fey segments are not carried over into the new exertion-based afflictions.
+    for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting"]) delete entity.afflictions[obsolete];
     if (Object.prototype.hasOwnProperty.call(entity, "_timedCombatDebuffs")) delete entity._timedCombatDebuffs; // Timed combat statuses are runtime-only and must never survive a fresh spawn/profile initialization.
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
@@ -925,43 +931,47 @@
   }
 
   function spendStamina(entity, amount, reason = "action", transaction = {}) {
+    if (!entity) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1, panicSpent: 0 };
     entity.lastAttackAttemptAt = nowMs();
-    amount *= timedDebuffModifier(entity, "staminaCost"); // Taxed raises the price of the action itself without altering the Stamina resource/affliction bands.
+    const actionKind = String(transaction?.actionKind || ''); // Structured action kind shared by resource-specific stamina spending.
+    const label = String(reason || ''); // Legacy reason labels preserve dodge detection for untyped actions.
+    const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Also covers the ordinary roll's second somersault payment.
+    amount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "staminaCost");
     if (entity === window.Combat?.deps?.player) {
-      const actionKind = String(transaction?.actionKind || ''); // Structured action type is authoritative when callers provide one.
-      const label = String(reason || ''); // Legacy combat actions that don't yet supply a type still retain their costs.
-      const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
       const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
-      const heavy = transaction?.heavy === true || (actionKind === 'offensiveHeldCharge' && transaction?.abilityId === 'chargedBreaker') || (actionKind === 'offensiveHeldFlurry' && transaction?.abilityId === 'acceleratingFlurry'); // Heavy melee abilities pay Lead Knuckles tax; a charged thrown/ranged projectile is not a knuckle attack.
+      const heavy = transaction?.heavy === true || (actionKind === 'offensiveHeldCharge' && transaction?.abilityId === 'chargedBreaker') || (actionKind === 'offensiveHeldFlurry' && transaction?.abilityId === 'acceleratingFlurry');
       if (dodge) amount *= statModifier(entity, 'dodgeStaminaCost');
       if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
-    }
-    if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
-      amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
+      amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08);
     }
-    if (!(amount > 0)) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1 };
-    recordPunishedAction(entity, "staminaSpend"); // Resets the avoidance bonus for Wounded/Infected/Shattered Stamina whenever the punished action is actually taken.
-    const enhanced = resolveEnhancedResourceTransaction(entity, "stamina", amount, { ...transaction, reason }); // Moralized/Furious participate before ordinary/black Stamina through one reusable transaction API.
-    const ordinaryCost = enhanced.ordinaryRemaining;
-
+    // Panicked Stamina is a reserved affliction, not an ordinary enhanced
+    // resource. Other Stamina pays for ordinary actions first. A dodge draws
+    // the ENTIRE panic reserve as an additional cost, never a substitute.
+    const panicSpent = dodge ? removeAffliction(entity, "panickedStamina", getAffliction(entity, "panickedStamina")) : 0;
+    const finish = result => {
+      const payment = { ...result, panicSpent }; // Shared with FeyIllusions's direction, roll and ally-impact reactions.
+      window.FeyIllusions?.onStaminaSpent?.(entity, payment, { ...transaction, actionKind, reason, dodge });
+      return payment;
+    };
+    if (!(amount > 0) && !(panicSpent > 0)) return finish({ spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1 });
+    recordPunishedAction(entity, "staminaSpend");
+    const enhanced = resolveEnhancedResourceTransaction(entity, "stamina", amount, { ...transaction, reason });
+    const ordinaryCost = enhanced.ordinaryRemaining + panicSpent; // Enhanced points do not cover the panic surcharge.
     if (entity.exhaustion.active) {
-      entity.stamina = 0; // Reassert the invariant even if an external/load path injected stale regular Stamina since the previous tick.
+      entity.stamina = 0;
       entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina - ordinaryCost, 0, 100));
-      return { spent: 0, excess: ordinaryCost, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
+      return finish({ spent: 0, excess: ordinaryCost, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier });
     }
-
     const before = entity.stamina;
     const after = clamp(before - ordinaryCost, 0, entity.maxStamina || 0);
     const normalSpent = round1(before - after);
     const excess = round1(ordinaryCost - normalSpent);
     entity.stamina = after;
-
     if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
     if (excess > 0) enterExhausted(entity, excess, reason);
-
     enforceCaps(entity);
-    return { spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier };
+    return finish({ spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier });
   }
 
   // Balance loss from being hit (see game.js's damagePlayer/damageCreature,
