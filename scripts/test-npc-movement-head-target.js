@@ -72,7 +72,7 @@ for (const channel of ['head', 'pose']) {
     'scoped paired ' + channel + ' lock suppresses regular movement gaze');
   assert.deepEqual({ x: neck.rotation.x, y: neck.rotation.y, z: neck.rotation.z }, restoredWindow,
     'paired ' + channel + ' head orientation survives even a lingering bed flag');
-  assert.equal(walker._npcMotionLookActive, false, 'old NPC movement gaze no longer owns the head');
+  assert.equal(walker._npcMotionLookActive, true, 'old movement gaze cleanup stays pending until paired gaze releases');
   assert.equal(window.clears, clearsBefore + 1, 'stale headtrack hint is cleared without rewriting the bone');
 }
 lockedChannel = null;
@@ -80,6 +80,7 @@ walker._bedLieActive = false;
 walker._npcMotionLookActive = true;
 gaze.updateWalker(walker, walker.root.position.x, walker.root.position.z, options);
 assert.equal(neck.rotation.y, 0, 'ordinary idle head tracking resumes after paired lock release');
+assert.equal(walker._npcMotionLookActive, false, 'the formerly deferred motion-gaze cleanup finally completes');
 delete window.CharacterActionLocks;
 
 // Minimal Three.js quaternion composition; tests actual head orientation,
