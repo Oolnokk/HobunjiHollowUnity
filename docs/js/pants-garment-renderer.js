@@ -85,8 +85,8 @@
     return null; // Invisible/cropped/fragmented torso: prefer authored coordinates to guessing.
   }
 
-  // Only the waist follows alpha width. Scale would otherwise propagate through the whole affine and
-  // re-widen the calf openings, undoing the independently authored foot-fit correction.
+  // Only the waist follows alpha width. Stop BEFORE the uppermost cuff spline (which may sit above the knee)
+  // and its bilinear sample neighbours, or the foot-fit correction will inherit a wider cuff.
   function taperTorsoBeltPoint(portrait, garmentPoint, garment, torsoFit, prepared = null) {
     if (!torsoFit) return portrait;
     const belt = garment?.pantsBeltSpline; // Garment source-space waist curve used for the top of the tapered width field.
@@ -104,7 +104,10 @@
     }
     const knees = prepared ? null : [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Only resolve bones for stand-alone diagnostics calls.
     const kneeY = prepared ? prepared.kneeY : knees.length ? knees.reduce((sum, y) => sum + y, 0) / knees.length : beltY + 0.2; // No per-vertex bones allocation in the 65x65 garment mesh.
-    const t = Math.max(0, Math.min(1, (garmentPoint.y - beltY) / Math.max(1e-6, kneeY - beltY))); // 0 at waist, 1 at knees and below.
+    const openings = prepared ? null : [...(garment?.legOpenings?.left || []), ...(garment?.legOpenings?.right || [])].map(p => p.y).filter(Number.isFinite); // An angled opening may reach ABOVE its knee.
+    const openingMinY = prepared ? prepared.openingMinY : openings.length ? Math.min(...openings) : Infinity; // Earliest opening location in garment source space.
+    const taperEndY = Math.min(kneeY, openingMinY - (prepared?.sampleMargin ?? 0.04)); // Stop BEFORE opening sample neighbours so cuff widths remain identical.
+    const t = Math.max(0, Math.min(1, (garmentPoint.y - beltY) / Math.max(1e-6, taperEndY - beltY))); // 0 at waist, 1 before either calf ring begins.
     const influence = 1 - t * t * (3 - 2 * t); // Smooth taper joins the untouched leg fit without a hard seam.
     const desired = torsoFit.center + (portrait.x - torsoFit.authoredCenter) * torsoFit.factor; // Aligned to connected visible torso edges.
     return { x: portrait.x + (desired - portrait.x) * influence, y: portrait.y }; // Never modify the Y scale or depth used by the leg rig.
@@ -195,7 +198,8 @@
     const dimensions = portraitDimensions(model, plane);
     const waistPrepared = torsoFit ? (() => { // One small author-data preparation per garment, never per vertex or frame.
       const kneeYs = [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Existing rig knees determine the taper endpoint.
-      return { beltPoints: [...garment.pantsBeltSpline].sort((a, b) => a.x - b.x), kneeY: kneeYs.length ? kneeYs.reduce((sum, y) => sum + y, 0) / kneeYs.length : 0.5 };
+      const openingYs = [...(garment?.legOpenings?.left || []), ...(garment?.legOpenings?.right || [])].map(p => p.y).filter(Number.isFinite); // The uppermost cuff node may be above knee Y.
+      return { beltPoints: [...garment.pantsBeltSpline].sort((a, b) => a.x - b.x), kneeY: kneeYs.length ? kneeYs.reduce((sum, y) => sum + y, 0) / kneeYs.length : 0.5, openingMinY: openingYs.length ? Math.min(...openingYs) : Infinity, sampleMargin: 1 / SEGMENTS + 0.005 }; // Reserve one mesh row for bilinear sampling around the first cuff node.
     })() : null;
     const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap;
     const controls = Core.buildLegOpeningFitControls(garment, Number(character.legThickness) || 1);
