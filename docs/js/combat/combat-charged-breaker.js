@@ -301,6 +301,7 @@
       const baseLungePx = deps.TILE
         * lerp(LUNGE_TILE_MUL_MIN, LUNGE_TILE_MUL_MAX, poseCharge)
         * (1 + (effects.stats.lungeMul || 0));
+      const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, 'chargedBreaker') || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
         weaponKey: deps.currentWeaponKey(),
@@ -330,7 +331,7 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
