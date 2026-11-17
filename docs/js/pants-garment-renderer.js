@@ -540,18 +540,37 @@
     handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array(handle.basePositions.length), 3));
     installGpuSkin(THREE, handle, gpuSkin);
 
-    const depthBiasLimits=new Map(); // Scoped close-contact actions can suppress the cosmetic feet-covering pull without moving the garment or disabling depth tests.
+    const depthBiasLimits=new Map(); // Paired close-contact animations may limit the feet-behind-pants cosmetic push.
+    let lastFootAnatomyRevision=legHandle.anatomyRevision?.() ?? null; // Only GLB/foot-rig replacements warrant rescanning 3D bounds.
+    let appliedFootDepthBias=0; // Report the current drawing-only foot offset in mobile diagnostics.
+    const applyFootDepthBias=()=>{
+      let bias=handle.depthBiasBase||0; // Restores normal pants coverage automatically when animation scopes release.
+      for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
+      appliedFootDepthBias=bias;
+      handle.maskUniforms.uPantsDepthBias.value=bias;
+      legHandle.setFootDepthPush?.(bias); // Do not move the garment or the physical foot placement.
+    };
     handle.setDepthBiasLimit=(owner,limit=null)=>{
       if(!owner)return false;
       if(limit==null)depthBiasLimits.delete(owner);
       else if(Number.isFinite(limit)&&limit>=0)depthBiasLimits.set(owner,limit);
       else return false;
-      let bias=handle.depthBiasBase||0; // Restore the ordinary foot overlay automatically after the last scope releases it.
-      for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
-      handle.maskUniforms.uPantsDepthBias.value=bias;
-      handle.legHandle?.setFootDepthPush?.(bias); // The pull is applied to the FEET (pushed away), never to the garment: see installFootDepthPush.
+      applyFootDepthBias();
       return true;
     };
+    handle.refreshFootDepthBias=()=>{
+      const revision=legHandle.anatomyRevision?.();
+      if(revision==null||revision===lastFootAnatomyRevision)return false;
+      lastFootAnatomyRevision=revision;
+      const liveFeet=(footObjects||['left_foot','right_foot'].map(name=>legHandle.group?.getObjectByName?.(name))).filter(Boolean); // Replace stale fallback feet with current imported GLBs.
+      const lift=footFrontLift(THREE,avatarGroup,liveFeet);
+      handle.model.updateMatrixWorld?.(true);
+      const world=handle.model.matrixWorld.elements;
+      handle.depthBiasBase=lift*Math.hypot(world[0],world[1],world[2]); // Same world-space scale as initial calibration.
+      applyFootDepthBias(); // Preserve scoped animation caps across asynchronous foot replacement.
+      return true;
+    };
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:lastFootAnatomyRevision,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
@@ -773,6 +792,7 @@
     handle.update = () => {
       const SEGMENTS = handle.segments;
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
+      handle.refreshFootDepthBias(); // Final foot GLBs may arrive after the garment attaches; scan only on anatomy changes.
       const visible = handle.model.visible !== false && legHandle.group?.visible !== false;
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
@@ -890,7 +910,7 @@
     const worldElements = handle.model.matrixWorld.elements;
     handle.depthBiasBase = footLift * Math.hypot(worldElements[0], worldElements[1], worldElements[2]); // How far the feet protrude toward the camera, in world units.
     handle.maskUniforms.uPantsDepthBias.value = handle.depthBiasBase; // Stored feet-covering distance (scoped limits can lower it); drives the feet's depth push, not the garment.
-    legHandle.setFootDepthPush?.(handle.depthBiasBase);
+    applyFootDepthBias();
     handle.captureRest(); // The legs' stance at attach is the rest pose the initial 2D warp targets.
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
     handle.alignToRest = () => {
@@ -1056,6 +1076,6 @@
     resolveCharacter,
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), lastChange: 'Scoped depth-bias limits keep close-contact garments behind other characters; ordinary feet-covering depth is restored when the action releases.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Feet-overlap depth recalibrates after imported foot replacements; paired-action overrides remain scoped.' }),
   });
 })(window);
