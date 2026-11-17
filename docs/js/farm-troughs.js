@@ -397,7 +397,7 @@
 (() => {
   'use strict';
   if (window.LivestockNursery) return;
-  const nurserySrc = 'js/livestock-nursery.js?v=20261117animalRetry2';
+  const nurserySrc = 'js/livestock-nursery.js?v=20261117short8a';
   const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261117babyChatheadNames1';
 
   if (document.readyState === 'loading') {

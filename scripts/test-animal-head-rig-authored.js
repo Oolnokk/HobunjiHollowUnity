@@ -44,9 +44,9 @@ vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
 
 const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
 assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-16-moot-painted-baby-pets1');
+assert.equal(api.version, '2026-11-17-gar-wolf-grehlr-rigs1');
 const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
-const targets = ['puktuk', 'gar-wolf', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Six original Puktuk shoulder copies; Moot has an independently editable Voorg-Ass copy.
+const targets = ['puktuk', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Five species retain the original Puktuk shoulder; Gar-wolf now has an uploaded independent pose.
 const puktuk = api.get('puktuk');
 const expectedShoulder = puktuk.shoulderRest;
 assert.deepEqual(plain(puktuk.pivot), { x: .484375, y: .5 }, 'uploaded shoulder must not overwrite Puktuk head paint');
@@ -85,7 +85,27 @@ assert.equal(api.get('uumkaoii').weightMap.width, 128, 'Uumkao\'ii keeps its pai
 assert.equal(api.get('moot').weightMap.width, 128, 'Moot receives Voorg-Ass detailed neck paint, not a body-only placeholder');
 assert.equal(api.get('gar-wolf').shoulderRest.weightMap, undefined, 'new Puktuk shoulder does not inherit old Gar-wolf shoulder paint');
 
-assert.equal(api.get('grehlr').shoulderRest.frameShiftX, .54, 'Grehlr unchanged');
+
+const garWolf = api.get('gar-wolf'); // Uploaded species-specific head and shoulder, replacing the original shared Puktuk pose.
+assert.equal(garWolf.shoulderRest.frameShiftX, .43, 'Gar-wolf uses its uploaded divider position');
+assert.equal(garWolf.shoulderRest.separatorRotationDeg, -28, 'Gar-wolf uses its uploaded divider angle');
+assert.equal(garWolf.shoulderRest.useRun1, false, 'Gar-wolf keeps its uploaded resting-frame choice');
+assert.equal(garWolf.shoulderRest.splitFrame, false, 'Gar-wolf keeps split frames disabled');
+assert.equal(garWolf.babyHeadShortening, .24, 'Gar-wolf keeps its 24% brachycephaly override');
+assert.equal(garWolf.babyHeadUsePaintedFrame, false, 'Gar-wolf explicitly selects alpha growth');
+assert.equal(garWolf.babyAbdomenScale, 1.2, 'Gar-wolf keeps its abdomen growth');
+const grehlrRig = api.get('grehlr'); // This upload supersedes the earlier Grehlr shoulder and baby-growth values.
+assert.equal(grehlrRig.shoulderRest.frameShiftX, .55, 'Grehlr uses its uploaded divider position');
+assert.equal(grehlrRig.shoulderRest.separatorRotationDeg, 0, 'Grehlr uses its uploaded divider angle');
+assert.equal(grehlrRig.shoulderRest.splitFrame, true, 'Grehlr keeps split frames enabled');
+assert.equal(grehlrRig.babyHeadScale, 1.15, 'Grehlr uses its uploaded 115% head scale');
+assert.equal(grehlrRig.babyHeadShortening, .06, 'Grehlr keeps its 6% brachycephaly');
+assert.equal(grehlrRig.babyHeadUsePaintedFrame, false, 'Grehlr explicitly selects alpha growth');
+assert.equal(grehlrRig.babyAbdomenEnabled, false, 'Grehlr has abdomen growth disabled');
+for (const mapName of ['weightMap', 'compressibilityMap', 'stretchabilityMap']) {
+  const map = grehlrRig[mapName]; // Guard against truncated or dropped uploaded Grehlr paint.
+  assert.equal(map.data.reduce((sum, value, index) => sum + (index % 2 === 0 ? value : 0), 0), map.width * map.height, mapName + ' decodes exactly');
+}
 const uumkaoiiShoulder = api.get('uumkaoii').shoulderRest; // Latest user-edited Uumkao'ii shoulder pose.
 assert.equal(uumkaoiiShoulder.useSpline, true);
 assert.equal(uumkaoiiShoulder.useRun1, false);

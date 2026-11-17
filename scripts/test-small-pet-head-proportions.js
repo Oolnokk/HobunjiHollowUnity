@@ -82,8 +82,8 @@ const warp = {
   debugSnapshot: () => ({ lastError: null }),
 };
 const win = {
-  HobunjiGrehlrHeadRigCorrection: { version: 7 },
-  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-16-moot-painted-baby-pets1' },
+  HobunjiGrehlrHeadRigCorrection: { version: 8 },
+  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-17-gar-wolf-grehlr-rigs1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => true },
   AnimalShoulderSpline: {
     version: 10,
@@ -144,9 +144,14 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert(overlays.some(x => x.visible === true && x.image), 'split foreground receives enlarged left layer');
   assert(frameSwaps.at(-1).url.startsWith('data:image/png'), 'split back face gets the enlarged right layer');
   const composedCount = composited.length;
-  provider();
+  const overlayUploads = overlays.filter(event => event.image).length; // Each actual split canvas may be uploaded once, never per frame.
+  for (let i = 0; i < 25; i++) provider(); // Many ordinary render passes must not provoke repeated texture swaps.
   await flush();
   assert.equal(composited.length, composedCount, 'split cache is stable across frames');
+  assert.equal(overlays.filter(event => event.image).length, overlayUploads,
+    'unchanged shoulder split canvas is not re-uploaded as a new GPU texture each render');
+  assert(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.reusedOverlays >= 25,
+    'mobile debug counter verifies that duplicate overlay writes were suppressed');
 
   // The existing head-paint and genotype key must invalidate when coat patterns change.
   splitPet.genotype = { ...splitPet.genotype, pattern: 'spectacles' };
@@ -161,6 +166,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   provider();
   assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.active, 0);
   assert(bridgeSource.includes('smallPetHeadFrameCache.delete(companion)'), 'leaving shoulder invalidates pending textures');
+  const splineSource = fs.readFileSync('docs/js/animal-shoulder-spline.js', 'utf8');
+  assert(splineSource.includes('layer.canvas === canvas'), 'low-level shoulder setter also reuses existing CanvasTextures');
+  assert(bridgeSource.includes('MAX_SHOULDER_SPRITE_PIXELS'), 'large wearable sprite raster memory is bounded');
+  assert(bridgeSource.includes('canvas.toBlob('), 'browser PNG encode is asynchronous instead of synchronous base64');
 
   // Uploaded Moot painting is committed, not merely present in a local browser.
   const rigWindow = { CreatureGeneticsRender: { ANIMAL_HEAD_RIGS: {}, HEAD_RIG_VARIANT_ALIASES: {} } };

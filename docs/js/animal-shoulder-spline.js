@@ -470,8 +470,11 @@
   }
   function setLayerCanvas(THREE, layer, canvas) {
     if (!layer || !canvas) return false;
+    const materials = materialsFor(layer);
+    if (layer.canvas === canvas && layer.textures.length === materials.length) return true; // Never dispose/recreate/upload textures for an unchanged split sprite every render pass.
     for (const old of layer.textures) old?.dispose?.(); layer.textures.length = 0;
-    for (const material of materialsFor(layer)) { const texture = copyTextureTransform(new THREE.CanvasTexture(canvas), material?.map); material.map = texture; material.needsUpdate = true; layer.textures.push(texture); }
+    for (const material of materials) { const texture = copyTextureTransform(new THREE.CanvasTexture(canvas), material?.map); material.map = texture; material.needsUpdate = true; layer.textures.push(texture); }
+    layer.canvas = canvas; // Cached canvas identity is shared by both front and back overlay instances.
     return true;
   }
   function disposeLayer(layer) { if (!layer) return; layer.mesh?.parent?.remove?.(layer.mesh); for (const texture of layer.textures || []) texture?.dispose?.(); for (const material of materialsFor(layer)) material?.dispose?.(); layer.geometry?.dispose?.(); }

@@ -303,6 +303,7 @@
       this.disposeChunk(record);
       this.scene.remove(staged.group);
       staged.group.clear?.();
+      residencyVersion++; // Cancelling a partially built chunk changes scene residency.
       this.stagedCancels++;
       return true;
     }
