@@ -121,6 +121,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       const otherActor = new T.Group(); // Independent scene actor, not a child of the pants wearer.
       scene.add(otherActor);
       const otherPortrait = portrait.clone();
+      otherPortrait.visible = true; // Cloning the deliberately hidden wearer portrait must not hide the independent actor.
       otherPortrait.position.z = 0.004;
       otherActor.add(otherPortrait);
       camera.position.set(cx, cy, 3);
