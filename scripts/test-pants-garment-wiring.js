@@ -100,11 +100,26 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
 {
  const source=fs.readFileSync('docs/js/pants-garment-renderer.js','utf8'); // The same closure installed on each real garment handle.
  const start=source.indexOf('    const depthBiasLimits=new Map();'),end=source.indexOf('    const createMesh =',start);
- const handle={depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // A nearby character must occlude the garment's physical depth.
- vm.runInNewContext(source.slice(start,end),{handle});
+ const model={matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},updateMatrixWorld(){}};
+ const handle={model,depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // Synthetic avatar and garment using the production callback.
+ let revision=0,lift=.2,measures=0;
+ const pushes=[],foot={name:'replacement GLB foot'};
+ const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value),group:{getObjectByName:()=>foot}};
+ const footFrontLift=()=>{measures++;return lift;}; // A scan only when the actual foot geometry changes.
+ vm.runInNewContext(source.slice(start,end),{handle,legHandle,footFrontLift,THREE:{},avatarGroup:model,footObjects:null});
  assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert.equal(handle.setDepthBiasLimit('other',NaN),false);assert.equal(handle.setDepthBiasLimit('other',-1),false);
+ revision++;
+ assert.equal(handle.refreshFootDepthBias(),true,'final foot GLBs trigger recalibration');
+ assert.equal(handle.depthBiasBase,.2);
+ assert.equal(handle.maskUniforms.uPantsDepthBias.value,0,'paired pose limit survives foot replacement');
+ assert.equal(handle.refreshFootDepthBias(),false,'ordinary frames do not rescan foot geometry');
+ assert.equal(measures,1);assert.equal(pushes.at(-1),0);
  handle.setDepthBiasLimit('close-contact',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.1);
- handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'last release restores the original feet-covering pull');
+ handle.setDepthBiasLimit('other',null);assert.equal(handle.maskUniforms.uPantsDepthBias.value,.2,'release restores the recalibrated value');
+ assert.equal(pushes.at(-1),.2,'leg owner receives the updated foot depth push');
+ lift=.3;revision++;assert.equal(handle.refreshFootDepthBias(),true);
+ assert.equal(handle.maskUniforms.uPantsDepthBias.value,.3,'subsequent GLB replacements also work');
+ assert.equal(handle.getFootDepthBiasDebug().anatomyRevision,2);
 }
