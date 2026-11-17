@@ -277,6 +277,48 @@ const root = path.resolve(__dirname, '..');
       assert.match(await page.locator('#inventoryDirectUseBtn').innerText(), /Already learned/);
       assert.equal(await page.evaluate(key => window.__items.inventory[key], keys[0]), 1);
       assert.deepEqual(await page.evaluate(() => window.__observerLoops), []);
+      // Inventory readability should update a changed Pack detail without rescanning unrelated menu pages.
+      const readabilityBefore = await page.evaluate(() => window.InventoryUI.debugSnapshot().menuReadability.fullPasses);
+      await page.evaluate(() => {
+        const tinyLabel = document.createElement('span'); // The in-browser scan must raise a newly injected 8px text label to the menu floor.
+        tinyLabel.id = 'inventoryPerformanceTinyLabel';
+        tinyLabel.textContent = 'Tiny inventory label';
+        tinyLabel.style.fontSize = '8px';
+        document.getElementById('invGridArea').appendChild(tinyLabel);
+      });
+      await page.waitForTimeout(100);
+      const readabilityAfter = await page.evaluate(() => ({
+        fullPasses: window.InventoryUI.debugSnapshot().menuReadability.fullPasses,
+        fontPx: parseFloat(getComputedStyle(document.getElementById('inventoryPerformanceTinyLabel')).fontSize),
+      }));
+      assert.equal(readabilityAfter.fullPasses, readabilityBefore, 'single Pack subtree mutation does not request a full-menu readability scan');
+      assert(readabilityAfter.fontPx >= 11, 'scoped readability still applies the 11px menu font floor');
+      // Real mode clicks, not a direct call to decorate(), must trigger lazy Gear layout building.
+      await page.evaluate(() => {
+        const pane = document.getElementById('mpInventory'); // Existing observer and click bridge own this fixture.
+        const section = document.createElement('div'); // Gear rows mimic the section emitted by EquipmentPanel.
+        section.id = 'invEquipSection';
+        for (const heading of ['Tool Slots', 'Owned Tools', 'Clothing', 'Owned Clothing']) {
+          const label = document.createElement('div');
+          label.className = 'inv-equip-label';
+          label.textContent = heading;
+          const row = document.createElement('div');
+          row.className = 'inv-equip-row';
+          section.append(label, row);
+        }
+        pane.appendChild(section);
+        const gearButton = document.createElement('button');
+        gearButton.id = 'invTabGear';
+        gearButton.textContent = 'Gear';
+        gearButton.addEventListener('click', () => pane.classList.add('inv-mode-gear'));
+        pane.appendChild(gearButton);
+        gearButton.click();
+      });
+      await page.waitForTimeout(125);
+      assert.equal(await page.evaluate(() => !!document.querySelector('#invEquipSection > .gear-loadout-grid')), true,
+        'mode click automatically builds the Gear loadout when it first becomes visible');
+      assert.deepEqual(await page.evaluate(() => window.__observerLoops), [],
+        'lazy Gear decoration never starts an inventory mutation feedback loop');
       assert.deepEqual(errors, []);
     }
     console.log('controller mastery inventory browser tests passed');
