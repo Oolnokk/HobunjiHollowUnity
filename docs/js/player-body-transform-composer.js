@@ -595,7 +595,7 @@
       renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
       let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
       try {
-      if (playerMesh) {
+      if (playerMesh?.isObject3D) {
         renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
         renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
       }
