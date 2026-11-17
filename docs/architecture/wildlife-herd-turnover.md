@@ -2,7 +2,7 @@
 
 ## Surface-herd turnover
 
-The Northern Cliffs have two independent roaming-herd slots, each with a daily species roll from **Moot** and **Voorg-Ass**. Either species can occupy both slots, or the population can be mixed. Both appear in herds of 8–12 adults, with one genotype per herd; only Voorg-Asses have a Herd-Mother carrying babies. Nazgraku gatherers retain their own small reserved forager slot.
+The Northern Cliffs have two independent roaming-herd slots, each with a daily species roll from **Moot** and **Voorg-Ass**. Either species can occupy both slots, or the population can be mixed. Both appear in herds of 8–12 adults, with one genotype per herd. **Both Moot and Voorg-Ass herds have exactly one Herd-Mother carrying 2–4 babies.** Each carried baby inherits the herd genotype and is obtainable only by looting its mother's corpse; the existing Farm/Stable Nursery can raise the recovered baby. Nazgraku gatherers retain their own small reserved forager slot.
 
 The shared `WildlifeSpawn.advanceCaveMidnight` civil-midnight hook re-rolls surface herds in all zones that declare `roamingHerdSpecies`. Herds entirely beyond **24 tiles** from the player disappear at midnight and may be repopulated off-camera. If even one living member is close, the whole herd remains in place until the player exits its map; only then is the pending turnover applied. A slot's species does not change within the same day, and corpse loot is preserved. This uses the existing two-second wildlife spawn scan, with no extra timer or frame loop.
 
