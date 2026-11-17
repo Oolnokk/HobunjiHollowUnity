@@ -17,7 +17,7 @@
 
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced hand meshes may need hooks.
   const meshRigStates = new WeakMap(); // Mesh -> owning rig, so held-overlay scissor bounds can be corrected before they are measured.
-  const MAX_SNAPSHOT_AGE_MS = 160;
+  const MAX_SNAPSHOT_AGE_MS = 1000; // Wall-clock guard only. 160 ms expired on slow/hitching frames (visible draw -> shell pass can span >160 ms), so the shell fell back to the stale pre-sync hand pose and flashed black over the hand.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Shared shell uniform is restored after each hand draw.
   const OUTLINE_REFERENCE_DEPTH = 5; // Distant outlines shrink beyond this depth; closer hands keep the feet's baseline thickness.
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
@@ -420,7 +420,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
+        latestChange: 'Hand outline snapshot stays valid for 1 s instead of 160 ms so slow frames no longer draw the shell at a stale pose. Held hand matrices refresh before overlay scissor calculation and again at visible draw without recomputing render-time body-composer transforms; outlines reuse that capture.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };
