@@ -48,7 +48,10 @@ assert.deepEqual([meshBudget.animalGrid(48, 128/75).segmentsX, meshBudget.animal
 assert.deepEqual([meshBudget.animalGrid(48, 75/128).segmentsX, meshBudget.animalGrid(48, 75/128).segmentsY], [7, 12], 'tall animal UV maps keep their authored aspect');
 assert.deepEqual([meshBudget.animalGrid(12, 12).segmentsX, meshBudget.animalGrid(12, 12).segmentsY], [5, 4], 'minimum preserves a usable skin grid even for narrow painted rigs');
 assert.deepEqual([meshBudget.animalGrid(48, NaN).segmentsX, meshBudget.animalGrid(48, NaN).segmentsY], [12, 12], 'invalid authored aspect cannot poison GPU geometry');
-assert.equal(meshBudget.resolve('npc').pantsSegments, 32, 'portrait density leaves pants budget intact');
+assert.equal(meshBudget.resolve('npc').pantsSegments, 14, 'NPC pants use 14×14 cells (~19% of the former 32×32 triangles)');
+assert.equal(meshBudget.resolve('full').pantsSegments, 29, 'player pants use 29×29 cells (~21% of the former 64×64 triangles)');
+assert.equal(meshBudget.resolve('npc').pantsSegments ** 2 / 32 ** 2 < 0.21, true, 'NPC triangle reduction reaches the 20% target');
+assert.equal(meshBudget.resolve('full').pantsSegments ** 2 / 64 ** 2 < 0.21, true, 'player triangle reduction reaches the 20% target');
 assert.equal(meshBudget.resolve('npc').animalSegments, 30, 'portrait density leaves animal budget intact');
 
 const skeleton = { id: 'live-rig' }; // Shared with mesh to prove no replacement/rebind happens.
