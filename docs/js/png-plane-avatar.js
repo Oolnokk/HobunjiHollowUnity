@@ -563,6 +563,45 @@
     ? new FinalizationRegistry(ref => portraitMeshRefs.delete(ref))
     : null; // Removes dead weak-ref entries even if the developer panel is never opened again.
   let lastPortraitRebuilds = 0; // Number of live meshes actually retessellated by the latest slider change.
+  let portraitWireframeEnabled = false; // Session-only diagnostic used by the game and Animation Author, never saved.
+  const portraitWireframeOriginals = new WeakMap(); // Original materials/temporary diagnostic materials for registered skinned portraits.
+
+  function applyPortraitWireframe(mesh, THREE) {
+    if (!mesh?.isSkinnedMesh) return;
+    const previous = portraitWireframeOriginals.get(mesh);
+    if (!portraitWireframeEnabled) { releasePortraitWireframe(mesh); return; }
+    if (previous || !THREE?.MeshBasicMaterial) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const debugMaterials = materials.map((_, index) => new THREE.MeshBasicMaterial({
+      name: `portrait_dev_wireframe_${index}`, color: 0x5cf0ff, wireframe: true,
+      transparent: true, opacity: 0.9, depthTest: false, depthWrite: false,
+      side: THREE.DoubleSide, skinning: true, toneMapped: false,
+    })); // Opaque grid lines include transparent PNG areas, revealing the actual full-plane topology.
+    portraitWireframeOriginals.set(mesh, { original: mesh.material, debugMaterials });
+    mesh.material = Array.isArray(mesh.material) ? debugMaterials : debugMaterials[0];
+  }
+
+  function releasePortraitWireframe(mesh) {
+    const previous = portraitWireframeOriginals.get(mesh);
+    if (!previous) return;
+    mesh.material = previous.original;
+    for (const mat of previous.debugMaterials) mat.dispose?.();
+    portraitWireframeOriginals.delete(mesh);
+  }
+
+  function setPortraitWireframeEnabled(enabled) {
+    const next = enabled === true;
+    if (portraitWireframeEnabled === next) return false;
+    portraitWireframeEnabled = next;
+    for (const ref of portraitMeshRefs) {
+      const mesh = ref.deref();
+      if (!mesh) { portraitMeshRefs.delete(ref); continue; }
+      const spec = portraitMeshBuilds.get(mesh);
+      if (spec) applyPortraitWireframe(mesh, spec.THREE);
+    }
+    try { window.dispatchEvent(new Event('hobunji:portrait-wireframe-changed')); } catch (_) { /* no DOM (tests) */ }
+    return true;
+  }
 
   function portraitGrid(mode, hostileMask = false) {
     const budget = mode === 'npc' ? MESH_BUDGETS.npc : MESH_BUDGETS.full;
@@ -574,23 +613,26 @@
     };
   }
 
-  function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false) {
+  function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false, hooks = null) {
     if (typeof WeakRef !== 'function' || !mesh) return false; // Build-time density still works if live tracking is unavailable.
     const previous = portraitMeshBuilds.get(mesh);
     if (previous) { // Re-registration updates the recipe but must not add another WeakRef for the same mesh.
-      Object.assign(previous, { THREE, width, height, neckLocal, options, mode, hostileMask });
+      Object.assign(previous, { THREE, width, height, neckLocal, options, mode, hostileMask, ...(hooks || {}) });
+      applyPortraitWireframe(mesh, THREE);
       return true;
     }
     const ref = new WeakRef(mesh); // This token never keeps a despawned avatar alive.
-    portraitMeshBuilds.set(mesh, { THREE, width, height, neckLocal, options, mode, hostileMask, ref });
+    portraitMeshBuilds.set(mesh, { THREE, width, height, neckLocal, options, mode, hostileMask, ref, ...(hooks || {}) });
     portraitMeshRefs.add(ref);
     portraitMeshFinalizer?.register(mesh, ref, ref);
+    applyPortraitWireframe(mesh, THREE);
     return true;
   }
 
   function unregisterSkinnedPortrait(mesh) {
     const spec = portraitMeshBuilds.get(mesh);
     if (!spec) return false;
+    releasePortraitWireframe(mesh); // Restore source materials before any portrait-owned disposal.
     portraitMeshBuilds.delete(mesh); // Used by avatar, hostile and cloned-visitor disposal.
     portraitMeshRefs.delete(spec.ref);
     portraitMeshFinalizer?.unregister(spec.ref);
@@ -602,8 +644,18 @@
     if (!spec || !clone?.isSkinnedMesh || clone.geometry !== source.geometry) return false;
     // Doorstep visitors share the source mesh's geometry but own separate bones;
     // both users must change to the SAME new geometry before the old buffer is freed.
+    const sourceOriginal = portraitWireframeOriginals.get(source)?.original;
+    if (sourceOriginal) clone.material = sourceOriginal; // The visitor copied a debug material; it must restore the real texture when the toggle is turned off.
     return registerSkinnedPortrait(clone, spec.THREE, spec.width, spec.height, spec.neckLocal,
       spec.options, spec.mode, spec.hostileMask);
+  }
+
+  function registerExternalSkinnedPortrait(mesh, config) {
+    if (!config?.THREE || typeof config.buildGeometry !== 'function') return false;
+    // Animation Author retains its own authored neck-weight builder; only the slider/wireframe lifecycle is shared.
+    return registerSkinnedPortrait(mesh, config.THREE, config.width, config.height, config.neckLocal,
+      {}, config.mode || 'full', false,
+      { buildGeometry: config.buildGeometry, afterGeometryChange: config.afterGeometryChange || null });
   }
 
   function portraitDensityDebug() {
@@ -616,7 +668,8 @@
       triangles += (mesh.geometry.getAttribute?.('position')?.count || 0) / 3;
     }
     return { percent: portraitDensityPercent, player: portraitGrid(playerBudgetMode), npc: portraitGrid('npc'),
-      hostileMask: portraitGrid('npc', true), tracked, triangles, lastRebuilt: lastPortraitRebuilds };
+      hostileMask: portraitGrid('npc', true), tracked, triangles, lastRebuilt: lastPortraitRebuilds,
+      wireframe: portraitWireframeEnabled };
   }
 
   function setPortraitDensityPercent(value) {
@@ -627,6 +680,7 @@
     portraitDensityPercent = next;
     let rebuilt = 0;
     const replacements = new Map(); // One new BufferGeometry for every distinct old geometry; doorstep clones share the replacement.
+    const updated = []; // Notify custom author rigs after all skinned meshes have switched to the new geometry.
     for (const ref of portraitMeshRefs) {
       const mesh = ref.deref();
       if (!mesh) { portraitMeshRefs.delete(ref); continue; }
@@ -637,18 +691,25 @@
       if (old.userData?.segmentsX === target.segmentsX && old.userData?.segmentsY === target.segmentsY) continue;
       let nextGeometry = replacements.get(old);
       if (!nextGeometry) {
-        nextGeometry = buildSkinnedPlaneGeometry(spec.THREE, spec.width, spec.height, spec.neckLocal, {
-          ...spec.options, ...target,
-        });
+        nextGeometry = spec.buildGeometry
+          ? spec.buildGeometry(target)
+          : buildSkinnedPlaneGeometry(spec.THREE, spec.width, spec.height, spec.neckLocal, {
+              ...spec.options, ...target,
+            });
         if (!nextGeometry) continue;
         // Hostile front/back meshes each use one material and one face of the shared topology.
         if (spec.options.frontOnly) nextGeometry.setDrawRange(0, nextGeometry.groups[0].count);
         replacements.set(old, nextGeometry);
       }
       mesh.geometry = nextGeometry; // Swap every live user before disposing its shared old GPU buffer.
+      if (spec.afterGeometryChange) updated.push({ spec, mesh, nextGeometry });
       rebuilt++;
     }
     for (const old of replacements.keys()) old.dispose();
+    for (const item of updated) {
+      try { item.spec.afterGeometryChange(item.nextGeometry, item.mesh); }
+      catch (error) { console.warn('[portrait-density] author rig refresh failed', error); }
+    }
     lastPortraitRebuilds = rebuilt;
     try { window.dispatchEvent(new Event('hobunji:portrait-density-changed')); } catch (_) { /* tests/no DOM */ }
     return true;
@@ -663,6 +724,9 @@
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
+    wireframeEnabled: () => portraitWireframeEnabled,
+    setPortraitWireframeEnabled,
+    registerExternalSkinnedPortrait,
     trackSkinnedClone,
     unregisterSkinnedPortrait,
     setPlayerMode(mode) {
