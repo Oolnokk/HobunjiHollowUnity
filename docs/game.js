@@ -7033,10 +7033,13 @@
           updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
         }
       }
+      function isCorpseFlameSubmerged(corpse) {
+        const corpseGrid = corpse.areaGrid || (corpse.areaId === currentArea ? window.GridTileAccessors.getActiveGrid() : null); // Never test an inactive area's corpse against the current area's water.
+        return !!corpseGrid && isWaterSurfaceAt(corpse.x, corpse.y, corpseGrid);
+      }
       function tickCorpses(dt) {
         window.CreatureDeath.updateCorpses(dt);
-        window.BurningEntityHazards?.tickCorpses?.(dt, corpseObjects,
-          corpse => isWaterSurfaceAt(corpse.x, corpse.y, corpse.areaGrid || window.GridTileAccessors.getActiveGrid())); // Burning bodies extinguish in water; the existing corpse registry remains authoritative.
+        window.BurningEntityHazards?.tickCorpses?.(dt, corpseObjects, isCorpseFlameSubmerged); // Stable callback: no per-frame allocation when no corpses are burning.
         updateCorpseVisualLod();
         window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
       }
