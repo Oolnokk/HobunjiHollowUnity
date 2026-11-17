@@ -1084,6 +1084,9 @@
   function previewParts(plane) {
     const state = states.get(plane?.parent); // Only the exact cached weapon root can supply this head, rope and its authored metal masks.
     if (!state || state.plane !== plane || !state.config.flail) return null;
+    if (!state.root.parent && state.chain && state.headRoot) {
+      effects?.refreshMetal(state, performance.now()); // Holstered, never-held flail heads still receive their own saved plating/verdigris before previewing.
+    }
     return {
       ready: !!(state.chain && state.headRoot && state.headParts.length === state.config.flail.head.layers.length),
       chain: state.chain, headRoot: state.headRoot,
