@@ -475,6 +475,12 @@
     return session;
   }
 
+  function absoluteOwner(node, property) {
+    // Read-only ownership query used by late render guards (such as talon
+    // carry release) to avoid replaying an obsolete pose over a newer action.
+    return absoluteClaims.get(node)?.get(property)?.session?.owner || null;
+  }
+
   function channelStore(name) {
     const key = String(name || '');
     if (!key) return null;
@@ -484,7 +490,7 @@
 
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
-    clear, clearAll, expireStale, channelStore, createAbsoluteSession,
+    clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner,
     getDebug() { return { ...stats, ...absoluteStats, activeAbsoluteClaims, leasedSlots: leased.size }; },
   });
   // Both names are compatibility APIs over ONE ownership authority.
