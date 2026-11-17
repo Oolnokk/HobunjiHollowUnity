@@ -72,10 +72,11 @@ const context = {
     HELD_SHAPE_DEFS: {hatchet: {slots:['weapon'], dmgType:'sharp', animStyle:'sweep'}},
     craftedToolItemKey: (shape, metal) => `${shape}_${metal}`,
     metalDmgMultiplier: key => 0.85 + 0.05 * (metalDefs[key]?.tier || 0)
-  }
+  },
+  configuredWeaponMetalKey: cfg => typeof cfg?.weaponMetalKey === 'string' && metalDefs[cfg.weaponMetalKey] ? cfg.weaponMetalKey : null // Direct seam to the production config override used by special humanoids.
 };
 vm.createContext(context);
-vm.runInContext(['banditMasteryFor','rollBanditWeaponMetalKey','banditWeaponFor'].map(functionText).join('\n'), context);
+vm.runInContext(['banditMasteryFor','banditWeaponShapeKeys','rollBanditWeaponMetalKey','banditWeaponFor'].map(functionText).join('\n'), context);
 for (let tier = 0; tier <= 7; tier++) {
   assert.equal(vm.runInContext(`banditMasteryFor(globalThis.config, 'grunt', ${tier})`, Object.assign(context, {config})), Math.floor(tier / 2), 'real mastery pacing');
   const weapon = vm.runInContext(`banditWeaponFor(globalThis.config, 'grunt', ${tier})`, context);
