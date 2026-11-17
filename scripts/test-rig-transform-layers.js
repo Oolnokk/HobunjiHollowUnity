@@ -225,6 +225,77 @@ class XYZ {
   near(root.position.y, 2);
 }
 
+// The production NPC wrist overlay is idempotent across repeated render passes,
+// yet accepts a new ordinary hand-driver pose as its clean baseline.
+class Position3 {
+  constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); }
+  clone() { return new Position3(this.x, this.y, this.z); }
+  copy(v) { Object.assign(this, { x: v.x, y: v.y, z: v.z }); return this; }
+}
+{
+  const socket = { name: 'npc_left_hand_socket', parent: { name: 'live-hand-rig' },
+    position: new Position3(0, 1, 0), quaternion: new Quat() };
+  const apply = (node, basePos, baseQuat) => {
+    node.position.y = basePos.y + 0.7;
+    node.quaternion.copy(baseQuat).multiply(aroundX(.2));
+  }; // Identical dance pose reused by the ordinary, outline, and depth renders.
+  for (let render = 0; render < 12; render++) {
+    assert.equal(layers.applyPoseOverlay(socket, 'npc-dance-hand:test:left', apply), true);
+    near(socket.position.y, 1.7);
+    near(angleX(socket.quaternion), .2);
+  }
+  assert.equal(layers.absoluteOwner(socket, 'quaternion'), 'npc-dance-hand:test:left');
+  assert(layers.getDebug().absoluteOwners.some(o => o.owner === 'npc-dance-hand:test:left' && o.claims === 2));
+  socket.position.y = 3.1; // Ordinary procedural hand driver authored a new grip between render passes.
+  socket.quaternion.copy(aroundX(.15));
+  layers.applyPoseOverlay(socket, 'npc-dance-hand:test:left', apply);
+  near(socket.position.y, 3.8);
+  near(angleX(socket.quaternion), .35);
+  assert.equal(layers.releasePoseOverlay(socket, 'npc-dance-hand:test:left'), true);
+  near(socket.position.y, 3.1);
+  near(angleX(socket.quaternion), .15);
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+  layers.applyPoseOverlay(socket, 'npc-dance-hand:test:left', apply);
+  socket.quaternion.copy(aroundX(.51)); // New forearm/paired pose took ownership of rotation only.
+  layers.releasePoseOverlay(socket, 'npc-dance-hand:test:left');
+  near(socket.position.y, 3.1);
+  near(angleX(socket.quaternion), .51);
+  const owner = layers.createAbsoluteSession('spouse-kiss');
+  assert(owner.capture(socket, ['position', 'quaternion']));
+  assert.equal(layers.applyPoseOverlay(socket, 'npc-dance-hand:test:left', apply), false,
+    'late dance hand render must not steal a scripted spouse/paired grip');
+  owner.release();
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+}
+{
+  const leg = { name: 'shared-ik-thigh', position: new Position3(0, 1, 0),
+    quaternion: new Quat(), parent: {} };
+  layers.setAxis(leg, 'drunk-leg-sway', 'position', 'y', .2);
+  layers.setQuaternion(leg, 'npc-yawn-leg', aroundX(.1));
+  leg.position.y = 2; // Absolute IK solver authored its fresh neutral position.
+  leg.quaternion.copy(aroundX(.3)); // A new thigh quaternion from walking, sitting, or recorded ragdoll.
+  assert(layers.setSolvedBase(leg, 'position', leg.position));
+  assert(layers.setSolvedBase(leg, 'quaternion', leg.quaternion));
+  near(leg.position.y, 2.2);
+  near(angleX(leg.quaternion), .4);
+  assert(layers.restoreSolvedBase(leg, 'quaternion'));
+  near(angleX(leg.quaternion), .3); // Hover interpolation begins from the clean base, not the prior additive twist.
+  leg.quaternion.copy(aroundX(.2));
+  layers.setSolvedBase(leg, 'quaternion', leg.quaternion);
+  near(angleX(leg.quaternion), .3);
+  layers.clear(leg, 'drunk-leg-sway');
+  layers.clear(leg, 'npc-yawn-leg');
+  near(leg.position.y, 2);
+  near(angleX(leg.quaternion), .2);
+  const scripted = layers.createAbsoluteSession('recorded-absolute-impact');
+  assert(scripted.capture(leg, ['quaternion']));
+  leg.quaternion.copy(aroundX(.8)); // A stray regular gait update ran while a recorded pose held the leg.
+  assert.equal(layers.setSolvedBase(leg, 'quaternion', leg.quaternion), false);
+  near(angleX(leg.quaternion), .2);
+  scripted.release();
+  assert.equal(layers.getDebug().activeAbsoluteClaims, 0);
+}
+
 // Workshop loads runtime scripts independently from the gameplay loader.
 const editorScripts = fs.readFileSync('docs/tools/enemy-loadout-editor/preview.js', 'utf8');
 const ledgerAt = editorScripts.indexOf("'js/rig-transform-layers.js?v=");
