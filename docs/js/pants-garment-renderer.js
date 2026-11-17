@@ -87,11 +87,11 @@
 
   // Only the waist follows alpha width. Scale would otherwise propagate through the whole affine and
   // re-widen the calf openings, undoing the independently authored foot-fit correction.
-  function taperTorsoBeltPoint(portrait, garmentPoint, garment, torsoFit) {
+  function taperTorsoBeltPoint(portrait, garmentPoint, garment, torsoFit, prepared = null) {
     if (!torsoFit) return portrait;
     const belt = garment?.pantsBeltSpline; // Garment source-space waist curve used for the top of the tapered width field.
     if (!Array.isArray(belt) || belt.length < 2) return portrait;
-    const points = [...belt].sort((a, b) => a.x - b.x); // Supports asymmetrical authored five-point waist splines.
+    const points = prepared?.beltPoints || [...belt].sort((a, b) => a.x - b.x); // Render builds reuse a single sorted curve across the entire mesh.
     const x = garmentPoint.x; // Source image X, not deformed portrait X.
     let beltY = points[0].y; // Clamp outside the authored spline instead of extrapolating past its endpoints.
     for (let i = 1; i < points.length; i++) {
@@ -102,8 +102,8 @@
       }
       beltY = points[i].y;
     }
-    const knees = [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Ends the width adjustment at actual authored knee level.
-    const kneeY = knees.length ? knees.reduce((sum, y) => sum + y, 0) / knees.length : beltY + 0.2; // Missing author bones still fade before the hems.
+    const knees = prepared ? null : [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Only resolve bones for stand-alone diagnostics calls.
+    const kneeY = prepared ? prepared.kneeY : knees.length ? knees.reduce((sum, y) => sum + y, 0) / knees.length : beltY + 0.2; // No per-vertex bones allocation in the 65x65 garment mesh.
     const t = Math.max(0, Math.min(1, (garmentPoint.y - beltY) / Math.max(1e-6, kneeY - beltY))); // 0 at waist, 1 at knees and below.
     const influence = 1 - t * t * (3 - 2 * t); // Smooth taper joins the untouched leg fit without a hard seam.
     const desired = torsoFit.center + (portrait.x - torsoFit.authoredCenter) * torsoFit.factor; // Aligned to connected visible torso edges.
@@ -193,6 +193,10 @@
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // The art's beltline laid onto the portrait's.
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
+    const waistPrepared = torsoFit ? (() => { // One small author-data preparation per garment, never per vertex or frame.
+      const kneeYs = [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Existing rig knees determine the taper endpoint.
+      return { beltPoints: [...garment.pantsBeltSpline].sort((a, b) => a.x - b.x), kneeY: kneeYs.length ? kneeYs.reduce((sum, y) => sum + y, 0) / kneeYs.length : 0.5 };
+    })() : null;
     const weightGrid = garment.weightMap?.encoding === 'rle8' ? Core.decodeWeightGridRle(garment.weightMap) : garment.weightMap;
     const controls = Core.buildLegOpeningFitControls(garment, Number(character.legThickness) || 1);
     const flipped = portraitsFlipped();
@@ -209,7 +213,7 @@
     const placeOnPlane = (u, v) => { // PNG point -> leg-thickness fit -> belt affine -> portrait plane -> avatar-local.
       const displacement = Core.inverseDistanceDisplacement({ x: u, y: v }, controls.source, controls.target, 2);
       const fitted = { x: Core.clamp(u + displacement.x), y: Core.clamp(v + displacement.y) };
-      const portrait = taperTorsoBeltPoint(Core.applyAffine(transform, fitted), { x: u, y: v }, garment, torsoFit); // Adjust belt width but not knees/ankles.
+      const portrait = taperTorsoBeltPoint(Core.applyAffine(transform, fitted), { x: u, y: v }, garment, torsoFit, waistPrepared); // Adjust belt width but not knees/ankles.
       point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, PANTS_REST_PLANE_Z);
       placed.copy(point);
       plane.localToWorld(placed);
