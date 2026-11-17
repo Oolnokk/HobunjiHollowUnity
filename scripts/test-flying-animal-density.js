@@ -82,6 +82,12 @@ density=40;
 handlers.get('hobunji:portrait-density-changed')();
 assert.equal(animal.perched.geometry.parameters.widthSegments,13);
 assert(high.disposed,'second change also frees retired geometry');
+animal.setPerchSpline(null); // Hatchlings intentionally use unwarped perched art even when adults have an authored spline.
+const flat=animal.perched.geometry;
+assert(Math.abs(flat.attributes.position.array[0]-baseX)<1e-6,'hatchling removes the authored perched deformation');
+density=100;
+handlers.get('hobunji:portrait-density-changed')();
+assert(Math.abs(animal.perched.geometry.attributes.position.array[0]-baseX)<1e-6,'hatchling remains unwarped after a live density change');
 animal.dispose();
 assert.equal(handlers.size,0,'despawn removes its live slider callback');
 assert(animal.perched.geometry.disposed,'final buffer freed on despawn');
