@@ -19,8 +19,8 @@ class Vector3 {
     const iz = q.w * z + q.x * y - q.y * x;
     const iw = -q.x * x - q.y * y - q.z * z;
     return this.set(ix * q.w - iw * q.x - iy * q.z + iz * q.y,
-      iy * q.w - iw * q.y + iz * q.x - ix * q.z,
-      iz * q.w - iw * q.z + ix * q.y - iy * q.x);
+      iy * q.w - iw * q.y - iz * q.x + ix * q.z,
+      iz * q.w - iw * q.z - ix * q.y + iy * q.x);
   }
 }
 class Quaternion {
