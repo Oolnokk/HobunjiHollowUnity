@@ -11,6 +11,15 @@ vm.createContext(win);
 for (const file of ['docs/config/pants-rigs.js', 'docs/js/pants-rig-core.js', 'docs/js/pants-garment-renderer.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), win, { filename: file });
 const Renderer = win.PantsGarmentRenderer;
 assert(Renderer, 'renderer did not install');
+const rendererSource = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Production portrait/feet depth contract, not a synthetic replacement.
+assert(rendererSource.includes('const PANTS_REST_PLANE_Z = 0;'),
+  'rest garment lies on its owner\'s portrait rather than protruding through it');
+assert(rendererSource.includes('point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, PANTS_REST_PLANE_Z);'),
+  'the actual placed garment vertices use the neutral portrait depth');
+assert(rendererSource.includes('polygonOffsetFactor: 2, polygonOffsetUnits: 2'),
+  'coplanar portrait pixels win the tie-break from either viewing direction');
+assert(rendererSource.includes('front - PANTS_REST_PLANE_Z + 0.01'),
+  'the camera-space foot push follows the same neutral pants depth');
 
 // Shipped data: the starter garment exists with a valid 5-channel weight map, and unknown species fall back to __default.
 const rigs = win.HOBUNJI_PANTS_RIGS;
