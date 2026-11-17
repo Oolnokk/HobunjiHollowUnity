@@ -1025,6 +1025,18 @@
     return copies;
   }
 
+  // Read-only assembly bridge for the Loadout viewport: flexible parts are siblings
+  // of the haft plane, not children of it. Never reparent the live equipment.
+  function previewParts(plane) {
+    const state = states.get(plane?.parent); // Only the exact cached weapon root can supply this head, rope and its authored metal masks.
+    if (!state || state.plane !== plane || !state.config.flail) return null;
+    return {
+      ready: !!(state.chain && state.headRoot && state.headParts.length === state.config.flail.head.layers.length),
+      chain: state.chain, headRoot: state.headRoot,
+      metalTargets: (state.metalTargets || []).slice(), // The live per-layer, post-occlusion head masks; the natural rope is not a metal emitter.
+    };
+  }
+
   function enchantmentTargets(visual) {
     const sourceTargets = states.get(visual)?.metalTargets || []; // Source masks exclude covered head/weapon metal; never include the chain.
     const plane = visual?.userData?.toolPlane;
@@ -1044,7 +1056,7 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
