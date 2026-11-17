@@ -65,10 +65,11 @@
         || data.hobunjiWildernessDistanceCull === true
         || (!isChunk && WORLD_NAME.test(String(node.name || '')));
       const skip = excluded || prohibited(node);
-      if (!skip && meshEligible(node, isChunk, taggedWorld)) {
+      if (skip) continue; // Prune complete tree/actor/weather subtrees instead of walking their many meshes on every scan.
+      if (meshEligible(node, isChunk, taggedWorld)) {
         candidates.push({ mesh: node, kind: isBatch ? 'batch' : isChunk ? 'chunk' : 'scenery' });
       }
-      for (const child of node.children || []) stack.push({ node: child, chunk: isChunk, excluded: skip });
+      for (const child of node.children || []) stack.push({ node: child, chunk: isChunk, excluded: false });
     }
     stats.scans++;
     stats.scanMs = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : now) - start);
