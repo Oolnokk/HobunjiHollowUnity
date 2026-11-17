@@ -33831,6 +33831,13 @@
         if (!Array.isArray(gearInventory.unlockedSpecialAmmo)) gearInventory.unlockedSpecialAmmo = [];
         for (const ammoId of ['shrapnel', 'concussive']) if (!gearInventory.unlockedSpecialAmmo.includes(ammoId)) gearInventory.unlockedSpecialAmmo.push(ammoId);
         window.EquipmentPanel.ensureGearClothingCollection();
+        let clearedArchivedGarment = false; // Saved on boot if a legacy outfit still wears a garment now in long-term storage.
+        for (const [slot, article] of Object.entries(gearInventory.clothing || {})) {
+          if (article?.archived !== true) continue;
+          gearInventory.clothing[slot] = null;
+          clearedArchivedGarment = true;
+        }
+        if (clearedArchivedGarment) saveGearInventory();
         window.DyeSystem.ensureCollection();
         window.PatternLibrary?.ensureCollection();
         window.TrinketSystem?.ensureCollections?.(gearInventory); // Old saves gain empty trinket lists; nothing is dropped.
@@ -33852,7 +33859,7 @@
           stable.push(starter);
           activeCompanionId = starter.id;
         }
-        if (!activeCompanionId && stable.length) activeCompanionId = stable[0].id;
+        // A saved null companion slot is intentional. Never reactivate the first Stable animal on reload.
         // Backfill genotype-less stable entries from older saves (e.g. a
         // starter Bingo saved before pattern genes existed) so they render
         // real genes instead of the plain uncolored sprite forever. Also
@@ -33872,25 +33879,36 @@
         // whose saved item no longer exists in this character's gearInventory
         // (sold/lost since, or a save from before this field existed), which
         // then falls through to the starter-gear defaults just below.
-        if (playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object') {
-          for (const [slot, itemId] of Object.entries(playerData.equipmentSlots)) {
+        const savedEquipmentSlots = playerData.equipmentSlots && typeof playerData.equipmentSlots === 'object'
+          ? playerData.equipmentSlots : null; // Distinguishes a deliberately empty saved slot from a missing legacy slot.
+        if (savedEquipmentSlots) {
+          for (const [slot, itemId] of Object.entries(savedEquipmentSlots)) {
             if (!itemId || !(slot in equipmentSlots)) continue;
             const stillOwned = slot === 'whistle'
               ? gearInventory.whistles.some(w => w.id === itemId)
-              : !!gearInventory.tools[itemId];
+              : !!gearInventory.tools[itemId] && gearInventory.archivedTools?.[itemId] !== true;
             if (stillOwned) equipmentSlots[slot] = itemId;
           }
         }
-        // Set default equipment slot assignments
+        const needsLegacyAssignment = slot => !savedEquipmentSlots
+          || !Object.prototype.hasOwnProperty.call(savedEquipmentSlots, slot); // Only slots absent from an old save receive starter defaults.
+        const usableStarterTool = key => gearInventory.tools[key] && gearInventory.archivedTools?.[key] !== true; // Long-term stored tools cannot be selected as starter fallbacks.
+        // Preserve explicit nulls in saved equipment slots; never re-equip gear the player deliberately put away.
         equipmentSlots.adventuring = 'torch'; // All pre-existing characters receive the torch without buying one.
-        if (gearInventory.tools.hoe_nativeCopper)      equipmentSlots.hoe    = equipmentSlots.hoe    || 'hoe_nativeCopper';
-        else if (gearInventory.tools.bronzehoe)        equipmentSlots.hoe    = equipmentSlots.hoe    || 'bronzehoe';
-        if (gearInventory.tools.pickshovel_nativeCopper) equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel_nativeCopper';
-        else if (gearInventory.tools.pickshovel)       equipmentSlots.shovel = equipmentSlots.shovel || 'pickshovel';
-        if (gearInventory.tools.hatchet_nativeCopper)  equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet_nativeCopper';
-        else if (gearInventory.tools.hatchet)          equipmentSlots.weapon = equipmentSlots.weapon  || 'hatchet';
-        if (gearInventory.tools.crossbow)               equipmentSlots.ranged = equipmentSlots.ranged || 'crossbow';
-        if (gearInventory.whistles.length)  equipmentSlots.whistle = equipmentSlots.whistle || gearInventory.whistles[0].id;
+        if (needsLegacyAssignment('hoe')) {
+          if (usableStarterTool('hoe_nativeCopper')) equipmentSlots.hoe ||= 'hoe_nativeCopper';
+          else if (usableStarterTool('bronzehoe')) equipmentSlots.hoe ||= 'bronzehoe';
+        }
+        if (needsLegacyAssignment('shovel')) {
+          if (usableStarterTool('pickshovel_nativeCopper')) equipmentSlots.shovel ||= 'pickshovel_nativeCopper';
+          else if (usableStarterTool('pickshovel')) equipmentSlots.shovel ||= 'pickshovel';
+        }
+        if (needsLegacyAssignment('weapon')) {
+          if (usableStarterTool('hatchet_nativeCopper')) equipmentSlots.weapon ||= 'hatchet_nativeCopper';
+          else if (usableStarterTool('hatchet')) equipmentSlots.weapon ||= 'hatchet';
+        }
+        if (needsLegacyAssignment('ranged') && usableStarterTool('crossbow')) equipmentSlots.ranged ||= 'crossbow';
+        if (needsLegacyAssignment('whistle') && gearInventory.whistles.length) equipmentSlots.whistle ||= gearInventory.whistles[0].id;
         // A cutscene preview's ephemeral profile can inherit gearInventory
         // (and an already-equipped whistle) straight from the real local
         // save via docs/index.html's onboarding-profile handoff, and the

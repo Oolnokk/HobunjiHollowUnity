@@ -834,8 +834,12 @@
     const defs = combatDeps.TOOL_ITEM_DEFS || null;
     const gearInventory = liveGearInventory(combatDeps);
     const panelKey = document.getElementById('iiToolMastery')?.dataset.toolKey;
+    const selectedGearKey = document.getElementById('iiDetail')?.dataset?.gearToolKey; // Gear's item-selection owner supplies exact identity, independent of duplicate display names.
     const name = document.getElementById('iiName')?.textContent?.trim() || '';
     if (!name) return null;
+    const selectedDef = selectedGearKey && defs?.[selectedGearKey]; // Verify the detail title still belongs to this selection before trusting a cached dataset field.
+    if (selectedDef && gearInventory?.tools?.[selectedGearKey]
+        && name.startsWith(selectedDef.label + ' — Mastery ') && /\(Gear(?: Storage)?\)$/.test(name)) return selectedGearKey;
     const cleanedName = name
       .replace(/\s*\(Gear\)\s*/ig, ' ')
       .replace(/\s+—\s+Mastery\s+\d+\s*\/\s*\d+.*$/i, '')
@@ -966,6 +970,8 @@
     };
   }
 
-  window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability };
+  window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability,
+    __test: { selectedDetailToolKey }, // Exercises the same resolver used by the visible mastery panel without duplicating its rules.
+  };
 })();
 
