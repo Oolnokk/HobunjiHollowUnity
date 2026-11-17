@@ -80,9 +80,34 @@
       const center = (left + right + 1) / (2 * width); // Edge-to-edge centre, including the last opaque pixel's full width.
       const factor = span / authoredSpan; // Uniform x fit for all five points; retains the authored relative positions and y curvature.
       const fitted = authored.map(point => ({ x: center + (point.x - authoredCenter) * factor, y: point.y })); // Local width only; parent Full Character Scale remains separate.
-      return { character: { ...character, portraitBeltSpline: fitted }, source: 'connected-torso-alpha', row: y, width: span, authoredWidth: authoredSpan };
+      return { character: { ...character, portraitBeltSpline: fitted }, source: 'connected-torso-alpha', row: y, width: span, authoredWidth: authoredSpan, center, authoredCenter, factor }; // Preserve the original character; render-time taper consumes only these local X values.
     }
     return null; // Invisible/cropped/fragmented torso: prefer authored coordinates to guessing.
+  }
+
+  // Only the waist follows alpha width. Scale would otherwise propagate through the whole affine and
+  // re-widen the calf openings, undoing the independently authored foot-fit correction.
+  function taperTorsoBeltPoint(portrait, garmentPoint, garment, torsoFit) {
+    if (!torsoFit) return portrait;
+    const belt = garment?.pantsBeltSpline; // Garment source-space waist curve used for the top of the tapered width field.
+    if (!Array.isArray(belt) || belt.length < 2) return portrait;
+    const points = [...belt].sort((a, b) => a.x - b.x); // Supports asymmetrical authored five-point waist splines.
+    const x = garmentPoint.x; // Source image X, not deformed portrait X.
+    let beltY = points[0].y; // Clamp outside the authored spline instead of extrapolating past its endpoints.
+    for (let i = 1; i < points.length; i++) {
+      if (x <= points[i].x) {
+        const t = Math.max(0, Math.min(1, (x - points[i - 1].x) / Math.max(1e-9, points[i].x - points[i - 1].x)));
+        beltY = points[i - 1].y + (points[i].y - points[i - 1].y) * t;
+        break;
+      }
+      beltY = points[i].y;
+    }
+    const knees = [garment?.legBones?.left?.knee?.y, garment?.legBones?.right?.knee?.y].filter(Number.isFinite); // Ends the width adjustment at actual authored knee level.
+    const kneeY = knees.length ? knees.reduce((sum, y) => sum + y, 0) / knees.length : beltY + 0.2; // Missing author bones still fade before the hems.
+    const t = Math.max(0, Math.min(1, (garmentPoint.y - beltY) / Math.max(1e-6, kneeY - beltY))); // 0 at waist, 1 at knees and below.
+    const influence = 1 - t * t * (3 - 2 * t); // Smooth taper joins the untouched leg fit without a hard seam.
+    const desired = torsoFit.center + (portrait.x - torsoFit.authoredCenter) * torsoFit.factor; // Aligned to connected visible torso edges.
+    return { x: portrait.x + (desired - portrait.x) * influence, y: portrait.y }; // Never modify the Y scale or depth used by the leg rig.
   }
 
   // The species' hip pivot and leg length in portrait-canvas terms, from the live legs through the portrait plane.
@@ -164,7 +189,7 @@
   }
 
   // Static part of the garment for one avatar: rest vertices, weights, 2D bones in avatar-local space.
-  function buildGarmentData(THREE, Core, model, plane, garment, character, SEGMENTS = DEFAULT_SEGMENTS) {
+  function buildGarmentData(THREE, Core, model, plane, garment, character, SEGMENTS = DEFAULT_SEGMENTS, torsoFit = null) {
     const transform = Core.solveAffine(garment.pantsBeltSpline, character.portraitBeltSpline); // The art's beltline laid onto the portrait's.
     if (!transform) return null;
     const dimensions = portraitDimensions(model, plane);
@@ -184,7 +209,7 @@
     const placeOnPlane = (u, v) => { // PNG point -> leg-thickness fit -> belt affine -> portrait plane -> avatar-local.
       const displacement = Core.inverseDistanceDisplacement({ x: u, y: v }, controls.source, controls.target, 2);
       const fitted = { x: Core.clamp(u + displacement.x), y: Core.clamp(v + displacement.y) };
-      const portrait = Core.applyAffine(transform, fitted);
+      const portrait = taperTorsoBeltPoint(Core.applyAffine(transform, fitted), { x: u, y: v }, garment, torsoFit); // Adjust belt width but not knees/ankles.
       point.set((flipped ? 0.5 - portrait.x : portrait.x - 0.5) * dimensions.width, (0.5 - portrait.y) * dimensions.height, PANTS_REST_PLANE_Z);
       placed.copy(point);
       plane.localToWorld(placed);
@@ -566,10 +591,10 @@
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
     const torsoFit = characterRecord ? null : fitBeltToVisibleTorso(character, avatarGroup.userData?.sourceCanvas); // Never override an explicit in-editor authoring record.
-    if (torsoFit) character = torsoFit.character; // Shared torso-fitting rule for Nuhongan and every other humanlike species.
+    // Keep the authored character fit as the baseline; apply a separate width field to the torso, not the entire trousers.
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget));
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget), torsoFit);
     if (!data) return null;
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
@@ -1143,6 +1168,7 @@
     liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
     fitBeltToVisibleTorso, // Pure portrait-alpha fitting entry for the in-file mobile diagnostics and regression harness.
+    taperTorsoBeltPoint, // Geometry regression hook to prove the same alpha width adjustment does not change knees/ankles.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
     debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Waist now matches readable torso-alpha silhouette; near-horizontal belts no longer shear the legs; cuff and foot-depth rules remain independent.' }),
