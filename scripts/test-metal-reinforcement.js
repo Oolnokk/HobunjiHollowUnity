@@ -40,6 +40,9 @@ while (true) {
 }
 assert.equal(steps, 23, 'six metals with four grades each require 23 upgrades from copper I');
 assert.equal(barTotal, 102, 'full reinforcement chain spends 102 metal bars');
+assert.equal(reinforcement.forgeBarCost(3, 'nativeCopper', metalDefs), 3, 'starter copper forging retains its existing cost');
+assert.equal(reinforcement.forgeBarCost(3, 'leadedBronze', metalDefs), 18, 'advanced metal forging also consumes additional bars');
+assert.equal(reinforcement.forgeBarCost(3, 'invalid', metalDefs), Infinity, 'invalid metals may not forge');
 assert(goldTotal > 0, 'labor is charged for all purchases');
 assert.equal(purchasedGrades.length, new Set(purchasedGrades).size, 'no grade repeated');
 near(status.multiplier, 1.15, 'original peak combat/tool power');
@@ -95,6 +98,10 @@ assert.match(shop, /MetalReinforcement\?\.next\(current/, 'smith looks up one ne
 assert.doesNotMatch(shop, /mc-reinforce-select/, 'arbitrary metal-tier selection is removed');
 assert.match(shop, /setToolReinforcement\(itemKey, metalKey, 0\)/, 'ordinary new tools begin at grade I');
 assert.match(foundry, /setToolReinforcement\(key, metal, 0\)/, 'modular new tools begin at grade I');
+assert.match(shop, /forgeBarCost\(CRAFT_BAR_COST, metalKey/, 'the ordinary smith uses scaled forging costs');
+assert.match(foundry, /forgeBarCost\(cost.bars, metal, deps.METAL_DEFS\)/, 'the foundry uses the same scaled forging costs');
+const inventoryUI = read('docs/js/inventory-ui.js'); // Equipment detail cards expose the reinforcement grade when CombatDeps provides it.
+assert.match(inventoryUI, /toolReinforcementProgress\?\.\(itemKey\)/, 'Pack shows the actual graded reinforcement');
 assert(html.indexOf('js/metal-reinforcement.js') < html.indexOf('js/metal-craft-shop.js'), 'progression module loads before shop');
 assert.match(game, /toolReinforcementProgress,\s*setToolReinforcement/, 'game injects grade progress into smith');
 console.log(`Metal reinforcement passed: ${steps} upgrades, ${barTotal} bars, old .90×–1.15× endpoints and save compatibility.`);
