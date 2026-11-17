@@ -110,4 +110,19 @@ assert.match(editor, /<option value="7">Tier 7<\/option>/, 'workshop can preview
 assert(index.indexOf('enemy-tier-progression.js') < index.indexOf('bounty-board.js'), 'enemy policy must load before bounty runtime');
 assert(index.indexOf('metal-reinforcement.js') < index.indexOf('game.js?v'), 'smith policy must load before game boot');
 assert.match(combatManifest, /combat-bandit\.js\?v=[A-Za-z0-9_-]+/, 'new combat changes cannot be hidden by cached old build');
+
+const workshopPreview = read('docs/tools/enemy-loadout-editor/preview.js'); // Workshop has its own script loader, separate from the actual game.
+const workshopApp = read('docs/tools/enemy-loadout-editor/app.js'); // Verify the workshop module chain is versioned.
+function cacheVersion(sourceText, pattern, label) {
+  const found = sourceText.match(pattern); // Match current URLs without pinning any exact cache token.
+  assert(found?.[1], label + ' must have a versioned URL');
+  return found[1];
+}
+for (const name of ['combat-bandit', 'combat-lich']) {
+  const pattern = new RegExp(name + '\\.js\\?v=([A-Za-z0-9_-]+)'); // The game and workshop must use the same combat source.
+  assert.equal(cacheVersion(workshopPreview, pattern, 'workshop ' + name), cacheVersion(combatManifest, pattern, 'game ' + name), name + ' workshop must not use stale combat code');
+}
+assert.match(workshopApp, /\.\/preview\.js\?v=[A-Za-z0-9_-]+/, 'workshop app imports its versioned preview');
+assert.match(editor, /tools\/enemy-loadout-editor\/app\.js\?v=[A-Za-z0-9_-]+/, 'workshop document imports its versioned app');
+
 console.log('Enemy progression passed: 8 tiers, 4 rank curves, shared .75-1.50 weapon grades, 10-level Ghoul compatibility, bounty and arena UI.');
