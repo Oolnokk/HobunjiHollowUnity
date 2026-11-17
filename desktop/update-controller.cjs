@@ -63,7 +63,12 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     win.webContents.on('will-navigate', event => event.preventDefault());
     win.webContents.on('did-finish-load', () => win.webContents.send(CHANNELS.changed, snapshot()));
     win.once('ready-to-show', () => win.show());
-    win.on('closed', () => { if (updateWindow === win) updateWindow = null; });
+    win.on('closed', () => {
+      if (updateWindow === win) {
+        dismissedVersion = state.targetVersion; // Closing the screen behaves like Later.
+        updateWindow = null;
+      }
+    });
     void win.loadFile(path.join(__dirname, 'update.html')).catch(error => {
       logger.error('[Hobunji desktop] Could not open update screen', error);
       if (!win.isDestroyed()) win.close();
