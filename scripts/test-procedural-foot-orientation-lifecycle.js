@@ -154,4 +154,85 @@ failDuringRollback = false;
 assert.equal(renderWrapper({}, {}), 'drawn', 'normal rendering recovers after the interrupted rollback');
 assert.equal(temporaryYaw, 0, 'no stale rotation survives the recovery frame');
 
+
+// Execute the actual facing clamp against identical gameplay headings but
+// different cosmetic idle-stance yaws. None may choose a different side of the
+// camera's dead zone or leave the pet/feet with mismatched corrections.
+const facingSource = between(composerSource,
+  '  function applyRenderedFacingDeadzone(camera, undo, renderDebug) {',
+  '\n  const absoluteLegsParentQuaternion =');
+let composedYaw = 0; // The visible player root after additive weapon-stanced yaw, used by the test's quaternion fixture.
+const turnDelta = { angle: 0, setFromAxisAngle(_axis, radians) { this.angle = radians; return this; } }; // Captures the final world-yaw correction handed to all body/attachment owners.
+const turnForward = {
+  x: 0, z: 1,
+  set(x, _y, z) { this.x = x; this.z = z; return this; },
+  applyQuaternion(q) { this.x = Math.sin(q.yaw); this.z = Math.cos(q.yaw); return this; },
+}; // Samples the production compositor's scale-independent world-facing vector.
+const turnPivot = { set() { return this; } }; // The test's fixed posterior pivot does not need a world-matrix implementation.
+const turnPlayer = { visible: true, position: { x: 0, z: 0 }, localToWorld: p => p }; // Simulated player render root.
+const turnPet = { name: 'shoulder-pet' }; // Scene-sibling shoulder attachment receives the same world correction.
+const turnLegs = { name: 'player-legs' }; // Counter-rotation retains the procedural feet's authored heading.
+const turnApplied = []; // Records player/shoulder/leg correction parity per render.
+const turnApi = {
+  cameraRelativePerpsAtWorldPosition: () => [Math.PI / 2, -Math.PI / 2],
+  perpClamp(_state, raw) { return { effectiveTarget: raw < 0 ? -0.8 : 0.8 }; },
+}; // A deliberately sharp deadzone side switch exposes any accidental stance-driven clamp.
+const applyTurnClamp = new Function(
+  'window', 'playerMesh', 'renderFacingForward', 'hierarchyWorldQuaternion',
+  'renderFacingState', 'wrapSignedAngle', 'renderFacingRotation', 'renderFacingUp',
+  'renderFacingPivot', 'playerPosteriorY', 'currentOwnedRootEntries',
+  'applyWorldDelta', 'renderFacingTranslation', 'playerLegRoot',
+  'counterRotateLegRootForRender', 'currentPlayerNeckJoint',
+  facingSource + '\nreturn applyRenderedFacingDeadzone;'
+)(
+  { PerpRotation: turnApi }, turnPlayer, turnForward, () => ({ yaw: composedYaw }),
+  {}, a => Math.atan2(Math.sin(a), Math.cos(a)), turnDelta, AXIS_Y,
+  turnPivot, 0, () => [{ root: turnPlayer }, { root: turnPet }],
+  root => { turnApplied.push({ root: root.name || 'player', angle: turnDelta.angle }); },
+  {}, turnLegs, () => { turnApplied.push({ root: 'legs', angle: turnDelta.angle }); },
+  () => null
+);
+for (const stanceYaw of [-1.1, -0.2, 0, 0.2, 1.1]) {
+  composedYaw = 0.1 + stanceYaw;
+  turnApplied.length = 0;
+  const debug = { baseFacingYaw: 0.1, authoredAbsoluteYaw: false };
+  applyTurnClamp({ position: { x: 0, z: 10 } }, [], debug);
+  assert(Math.abs(debug.bodyDeadzone.rawYaw - 0.1) < 1e-9,
+    'cosmetic weapon body yaw cannot change the deadzone heading');
+  assert(Math.abs(debug.bodyDeadzone.composedYaw - composedYaw) < 1e-9,
+    'mobile debug reports the actual composed heading separately from the gameplay heading');
+  assert(Math.abs(debug.bodyDeadzone.correction - 0.7) < 1e-9,
+    'the same gameplay heading always selects the same deadzone edge, even if stance yaw crosses center');
+  assert.deepEqual(turnApplied.map(entry => entry.root), ['player', 'shoulder-pet', 'legs'],
+    'the player, pinned shoulder pet and procedural legs receive the same correction pass');
+  assert(turnApplied.every(entry => Math.abs(entry.angle - 0.7) < 1e-9),
+    'body, attachment and leg compensation share one correction quaternion');
+}
+composedYaw = -0.8;
+const authoredTurn = { baseFacingYaw: 0.1, authoredAbsoluteYaw: true };
+applyTurnClamp({ position: { x: 0, z: 10 } }, [], authoredTurn);
+assert(Math.abs(authoredTurn.bodyDeadzone.rawYaw + 0.8) < 1e-9,
+  'authored absolute crawl/bed heading still selects its own facing edge');
+
+// Check the shoulder-pet solver's actual rotation resolver, not a copied
+// implementation, under a negative-scale portrait parent.
+const petRuntimeSource = fs.readFileSync('docs/js/shoulder-pet-attachment-runtime.js', 'utf8');
+const petOrientationSource = between(petRuntimeSource,
+  '    function worldQuaternionWithoutReflection(node) {',
+  '    const SHOULDER_PET_HALF_TURN_QUATERNION =');
+const shoulderOrientation = new Function('THREE', 'window',
+  petOrientationSource + '\nreturn worldQuaternionWithoutReflection;'
+)({ Quaternion: Q }, { ProceduralLegAnimation: { worldQuaternionWithoutScale: worldWithoutScale } });
+const mirrorParent = { isObject3D: true, parent: null, quaternion: yaw(0.71), scale: { x: -1, y: 1, z: 1 } }; // Real portraits can have reflected X scale.
+const mirroredNeck = { isObject3D: true, parent: mirrorParent, quaternion: pitch(0.27),
+  getWorldQuaternion() { throw new Error('reflected matrix decomposition cannot own shoulder orientation'); } };
+const expectedPetOrientation = mirrorParent.quaternion.clone().multiply(mirroredNeck.quaternion);
+assert(equalOrientation(shoulderOrientation(mirroredNeck), expectedPetOrientation),
+  'shoulder perch follows the physical reflected-neck orientation without a false half-turn');
+const shoulderWithoutLegApi = new Function('THREE', 'window',
+  petOrientationSource + '\nreturn worldQuaternionWithoutReflection;'
+)({ Quaternion: Q }, {});
+assert(equalOrientation(shoulderWithoutLegApi(mirroredNeck), expectedPetOrientation),
+  'independent attachment editor composes the same physical orientation without the leg runtime');
+
 console.log('PASS: mirrored foot contacts, stance/climb reset, and render-only body yaw preserve foot facing and rollback failed renders');
