@@ -900,6 +900,80 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
     'fully offscreen NPC battles cannot silently discard paid Hyped');
   assert(resourceHypeSource.includes('combatNpcMelee'),'NPC Hyped must remain action-eligible in enhanced-resource definitions');
 
+  // Execute the actual shipped BanditCombat combo with paid Hyped; this
+  // catches wiring errors between the shared staged executor, NPC strike
+  // handler, lunge owner, actor-specific damage and combo-chain bookkeeping.
+  {
+    const npcCode=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8');
+    const npcSlice=(start,end)=>{
+      const a=npcCode.indexOf(start),b=npcCode.indexOf(end,a);
+      assert(a>=0&&b>a,'BanditCombat NPC seam found: '+start);
+      return npcCode.slice(a,b);
+    };
+    const npcBanditSource=npcSlice('  function beginBanditMeleeStage(','  function resolvedBanditCombatTarget(')
+      +npcSlice('  function damageBanditCombatTarget(','  // Mirrors combat-quickattacks.js')
+      +npcSlice('  function fireBanditComboStep(','  function fireBanditQuickAttack(');
+    const liveStages=hypedStages; // Existing Combat.beginStagedAction test bridge records the real NPC stage options too.
+    const liveLunges=[],liveNpcHits=[]; // Compare original and second real damage/lunge dispatch without reimplementing the bandit attack.
+    const savedComboData=context.Combat.comboData,savedComboPose=context.Combat.comboStepPose;
+    const savedAimSolution=context.Combat.meleeAimSolution,savedMeleeHit=context.Combat.meleeHit,savedAudio=context.AudioSystem;
+    const npcDef={attackDamage:20,attackRangePx:45,attackCooldownS:1,attackTag:'blunt',
+      attackStaminaCost:8,weaponShapeStats:{speed:1,power:1,range:1,efficiency:1}};
+    const npcCombatant=makeEntity({name:'Stage integration NPC',isBandit:true,areaId:'arena',x:0,y:0,
+      _banditComboIndex:0,def:npcDef});
+    const npcOpponent=makeEntity({name:'Stage integration target',areaId:'arena',x:30,y:0});
+    const stageNpcDeps={TILE:64,HOSTILE_BITE_KNOCKBACK_PX_S:200,
+      damagePlayer:(damage,x,y,knockback)=>{liveNpcHits.push({damage,knockback});return damage;},
+      damageCreature:()=>{throw Error('NPC attacking player must use the real player damage path');}};
+    const npcCombatScope={
+      window:context,performance:context.performance,Math,deps:stageNpcDeps,
+      beginBanditLunge(c,durationPx,durationS,hitTest,target){
+        c._banditLunging=true;c._banditLungeDistancePx=durationPx;c._banditLungeDur=durationS;
+        c._banditLungeT=durationS;c._banditLungeHitTest=hitTest;
+        liveLunges.push({distance:durationPx,duration:durationS});
+      },
+      cancelBanditLunge(c){c._banditLunging=false;},
+      finishBanditAction(c){c._banditAction=null;},
+      banditAttackBaseline:def=>({damage:def.attackDamage,rangePx:def.attackRangePx,knockbackPxS:200}),
+      spawnBanditTrailArc(){},banditRetreatDurationS:()=>.2,
+      BANDIT_COMBO_CHAIN_GAP_S:.1,BANDIT_LUNGE_HALT_MARGIN:.68,
+    };
+    try {
+      context.Combat.comboData={swingCombo:[
+        {name:'First swing',damageMul:2,rangeMul:2,halfConeDeg:55,knockbackMul:1,windupS:.2,strikeS:.1,lungeMul:1,anim:'thrust',dirSign:1},
+        {name:'Second swing',damageMul:1,rangeMul:1,halfConeDeg:45,knockbackMul:1,windupS:.2,strikeS:.1,lungeMul:1,anim:'thrust',dirSign:1},
+      ]};
+      context.Combat.comboStepPose=()=>({});
+      context.Combat.meleeAimSolution=()=>({pitch:0});
+      context.Combat.meleeHit=()=>true;
+      context.AudioSystem={playWeaponHitSfx(){}};
+      vm.createContext(npcCombatScope);
+      vm.runInContext(npcBanditSource,npcCombatScope,{filename:'combat-bandit.js#hyped-npc-integration'});
+      RS.addEnhancedResource(npcCombatant,'hypedStamina',8);
+      RS.spendStamina(npcCombatant,8,'bandit attack',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+      const firstIndex=liveStages.length;
+      assert.equal(npcCombatScope.fireBanditComboStep(npcCombatant,npcDef,{tap1:'swingCombo'},npcOpponent),true);
+      const firstStage=liveStages[firstIndex];
+      assert(firstStage&&Math.abs(firstStage.totalS-.15)<.00001,'real NPC combo first stage is sped up 2x');
+      firstStage.onStrike(firstStage);firstStage.onComplete(firstStage);
+      const secondStage=liveStages[firstIndex+1];
+      assert(secondStage&&Math.abs(secondStage.totalS-.15)<.00001,'real NPC combo echo stage is sped up 2x');
+      secondStage.onStrike(secondStage);secondStage.onComplete(secondStage);
+      assert.equal(liveNpcHits.length,2,'real NPC melee damage authority dispatches exactly two independently tested strikes');
+      assert.equal(liveNpcHits[0].damage,40);
+      assert(Math.abs(liveNpcHits[1].damage-6.4)<.00001,'real NPC second hit preserves the first hit’s true damage and scales 2% per Hyped point');
+      assert(Math.abs(liveNpcHits[1].knockback/liveNpcHits[0].knockback-.16)<.00001);
+      assert.equal(liveLunges.length,2,'the second real NPC combo stage launches its own swept lunge');
+      assert(Math.abs(liveLunges[1].distance/liveLunges[0].distance-.16)<.00001);
+      assert.equal(npcCombatant._banditComboLandCount,1,'two Hyped hits count as one combo step for NPC chain timing');
+      assert.equal(npcCombatant._banditAction,null,'completed NPC echo clears the combat owner');
+    } finally {
+      context.Combat.comboData=savedComboData;context.Combat.comboStepPose=savedComboPose;
+      context.Combat.meleeAimSolution=savedAimSolution;context.Combat.meleeHit=savedMeleeHit;
+      context.AudioSystem=savedAudio;
+    }
+  }
+
   hostileObjects.pop(); // Restore the original combat roster before unrelated relic/quest assertions.
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
