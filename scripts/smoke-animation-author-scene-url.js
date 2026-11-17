@@ -31,6 +31,22 @@ async function main() {
         if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
         return applyKissPresetV1546();
       };
+      window.MultiAvatarAnimationAuthor.__testSceneBuild = () => {
+        const summarize = actors => (actors || []).map(actor => ({
+          id: actor.id, label: actor.label, sourceId: actor.source?.id,
+        })); // Captures the exact mode and actor loss while loading the URL fixture.
+        const height = kissPairHeightV1546(); // Production solver exposes whether geometry or missing actors caused the rejection.
+        return {
+          mode: animationAuthor.mode,
+          selectedActorId: animationAuthor.selectedActorId,
+          activeActors: summarize(animationAuthor.actors),
+          savedModeActors: Object.fromEntries(Object.entries(animationAuthor.modeStates)
+            .map(([key, value]) => [key, summarize(value.actors)])),
+          pair: { first: height.leader?.source?.id, second: height.partner?.source?.id,
+            solution: height.solution },
+          source: state.resolvedSha,
+        };
+      };
       window.MultiAvatarAnimationAuthor.__testRealMouths = () => {
         const THREE = state.three.THREE; // Probe actual species-specific B'shuakauitl mouth coordinates.
         const pose = window.SharedAttackPose;
@@ -76,8 +92,20 @@ async function main() {
         JSON.stringify({ schema: 'hobunji.multi-avatar-animation.v8', actors: [{ id: 'stale-autosave' }] }));
     });
     await page.goto(PAGE, { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await page.waitForFunction(() => window.MultiAvatarAnimationAuthor?.getActors?.().length === 2 &&
-      document.getElementById('maaPresetSelect')?.value === 'kiss', null, { timeout: 120000 });
+    // Finish as soon as the explicit URL build succeeds OR its repository load reports completion.
+    // A rejected kiss must print its real actor/mode/solver state, rather than merely time out.
+    await page.waitForFunction(() => {
+      const actors = window.MultiAvatarAnimationAuthor?.getActors?.() || [];
+      const preset = document.getElementById('maaPresetSelect')?.value;
+      const status = document.getElementById('statusPill')?.textContent || '';
+      return (actors.length === 2 && preset === 'kiss') ||
+        (actors.length > 0 && /Loaded \\d+ NPCs/.test(status));
+    }, null, { timeout: 45000 });
+    const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
+    if (sceneBuild.activeActors.length !== 2 ||
+        document.getElementById('maaPresetSelect') === null) {
+      throw Error('URL scene creation lost an actor or failed to initialize: ' + JSON.stringify(sceneBuild));
+    }
     const result = await page.evaluate(() => {
       const api = window.MultiAvatarAnimationAuthor;
       const actors = api.getActors();
