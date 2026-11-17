@@ -249,7 +249,10 @@
   function collectTargets(now) {
     const scene = deps.getActiveScene?.();
     const player = deps.getPlayerTile?.();
-    if (!scene || !player) return [];
+    if (!scene || !Number.isFinite(player?.x) || !Number.isFinite(player?.z)) {
+      releaseLandmarkCache(); // Loading/retiring a scene must not keep the old wilderness in memory during an active Sense transition.
+      return [];
+    }
     const out = [];
     if (window.FarmworkUI?.isOpen?.()) {
       for (const { root, category } of window.FarmworkUI.glowTargets()) {
