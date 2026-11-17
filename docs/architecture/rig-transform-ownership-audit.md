@@ -217,3 +217,36 @@ absolute writers require separate ownership and interruption audits. Avoid
 blind periodic whole-skeleton resets: they would override valid intentional
 poses. The old audit's earlier migration checklist is retained as historical
 context, not as the current list of unimplemented features.
+
+## Follow-up interruption audit and fixes (17 November 2026)
+
+A separate audit reproduced a real missing cross-owner handoff: a named additive
+joint effect was expiring while a scoped absolute action owned the same
+position/quaternion. The expiration called the old ledger's out-of-band
+reconciliation and reset the authored pose. In a deterministic production-code
+fixture a held joint at Y=3 snapped to Y=1 without the absolute action ending.
+
+The shared compositor now **defers additive writes, removals and lease expiry
+under active absolute property claims**, including NPC dance overlays; it does
+not silently renew expired effects. An absolute action captures the **clean**
+IK baseline beneath any active named contributions. On a valid release it
+restores that clean baseline and recomposes only contributions that still
+exist; on a successor pose takeover it discards obsolete suspended
+contributions without writing over the new owner. A concurrent
+`setAbsoluteBase` call is also rejected while another scoped action owns
+that property. Hand overlays retain a separate clean underlying baseline so
+their exit does not double-add existing wrist effects or lose deferred ones.
+
+The NPC dance socket search now filters by the **current procedural-hand rig
+generation**, even if old and replacement rigs coexist under one NPC root.
+Creature impact pivots are validated against the current avatar root, and
+stale pivots are detached rather than remaining as ghost render meshes.
+An attempted living-creature reaction does not touch persistent corpse
+geometry.
+
+Regressions added to `test-rig-transform-layers.js` exercise lease expiry
+during a held action, additive refresh while suspended, restoration after
+handoff, newer native takeover, concurrent explicit baselines, and effects
+added or removed below a hand overlay. The real NPC-dance and creature-impact
+fixture tests also exercise overlapping old/new rig generations. These checks
+complement, but do not replace, real game/browser interruption soak testing.
