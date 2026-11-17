@@ -227,7 +227,12 @@ function createWindow() {
     event.preventDefault();
     void saveAndClose(win);
   });
-  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+      app.quit(); // Quit hidden update windows too when the player has saved and closed the game.
+    }
+  });
   win.webContents.on('did-fail-load', (_event, code, description, url, mainFrame) => {
     if (mainFrame && code !== -3) void dialog.showMessageBox(win, {
       type: 'error', title: 'Hobunji Hollow — Loading failed',
