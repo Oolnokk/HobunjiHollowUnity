@@ -8,6 +8,7 @@ const source = fs.readFileSync('docs/js/animal-baby-arrival.js', 'utf8'); // Ful
 const timers = []; // Simulated browser timers for asynchronous queue order and automatic reveal close.
 const lockState = { acquired: 0, released: 0 }; // Checks that game input focus is always restored.
 let controllerClaims = 0; // Checks explicit focus handoff instead of relying on a delayed DOM observer.
+const portraitCalls = []; // Records the real chathead-rendering seam for new-baby UI regression checks.
 const document = {
   activeElement: null,
   head: null,
@@ -33,6 +34,7 @@ function element(tag) {
           ['input', element('input')], ['p', element('p')], ['.aba-error', element('div')],
           ['[data-ctrl-cancel]', element('button')], ['.aba-reroll', element('button')],
           ['button', element('button')], ['h2', element('h2')], ['.aba-grown', element('span')],
+          ['.aba-chathead', element('canvas')], ['.aba-chathead-fallback', element('span')],
         ]);
       }
       return this.elements.get(selector) || null;
@@ -49,6 +51,12 @@ document.activeElement.isConnected = true;
 const window = {
   ControllerUI: { focusPanel(root) { assert.equal(root.id, 'animalBabyArrivalOverlay'); controllerClaims++; return true; } }, // Simulates the universal controller navigator's explicit modal claim.
   CREATURE_DB: { puktuk: { label: 'Puktuk' } },
+  AnimalChatheadFrame: {
+    async renderCreatureChathead(canvas, kind, options) {
+      portraitCalls.push({ canvas, kind, genotype: options.genotype }); // Captures the actual crop renderer invocation without requiring image assets in Node.
+      return true;
+    },
+  },
   CharacterActionLocks: {
     acquire() {
       lockState.acquired++;
@@ -72,13 +80,20 @@ const feature = window.AnimalBabyArrival;
 assert(feature, 'the arrival module exports its public UI API');
 for (let i = 0; i < 300; i++) {
   const name = feature.generateName();
-  assert.match(name, /^[A-Z][a-z]{2,29}$/, 'generated pet names have a cute two-syllable format');
+  assert.match(name, /^[A-Z][a-z]{2,6}$/, 'generated pet names contain two plain syllables and at most one final consonant');
+  assert.doesNotMatch(name, /(kins|bean|puff|fie|bee|let)$/i, 'ornamental nickname endings have been removed');
+}
+for (const [ending, index] of [['b', 4], ['g', 5], ['p', 6]]) {
+  const rolls = [0, 0.9, 0, 0, (index + 0.2) / 7]; // Selects two simple ba syllables, then the targeted single-letter coda.
+  let roll = 0; // Advances through the deterministic random draw sequence for each required final consonant.
+  assert.equal(feature.generateName(() => rolls[roll++]), 'Baba' + ending, 'supports a final ' + ending + ' without an ornamental suffix');
 }
 assert.equal(feature.requestName({}, { commit() {} }), false, 'cannot queue an animal without identity');
 
 let saved = ''; // Captures the player-approved name, not the random default before confirmation.
 let refreshes = 0; // Confirms successful renames refresh their owning panel exactly once.
-assert.equal(feature.requestName({ id: 'new_1', kind: 'puktuk' }, {
+const babyGenotype = { base: { color: '#ab78cd' } }; // Must reach the shared chathead renderer unchanged for inherited baby coloration.
+assert.equal(feature.requestName({ id: 'new_1', kind: 'puktuk', genotype: babyGenotype }, {
   scope: 'nursery',
   commit(name) { saved = name; return true; },
   refresh() { refreshes++; },
@@ -93,6 +108,11 @@ const root = document.getElementById('animalBabyArrivalOverlay');
 assert(root && !root.hidden && root.attributes['data-ctrl-modal'] === '', 'naming dialog captures controller/modal focus');
 const form = root.children[0];
 const input = form.querySelector('input');
+assert.equal(portraitCalls.length, 1, 'naming asks the canonical animal chathead renderer to paint the newborn');
+assert.equal(portraitCalls[0].kind, 'puktuk', 'the portrait uses the newborn species');
+assert.equal(portraitCalls[0].genotype, babyGenotype, 'the portrait uses the newborn inherited genotype');
+assert.equal(portraitCalls[0].canvas.attributes['aria-label'], 'Baby Puktuk portrait', 'the canvas has a meaningful accessible label');
+assert(!form.innerHTML.includes('🐣') && !form.innerHTML.includes('🎲'), 'the naming UI uses an animal portrait rather than emoji decorations');
 assert.match(input.value, /^[A-Z][a-z]+$/, 'input is prefilled with a suggested name');
 assert.equal(document.activeElement, input, 'input receives keyboard focus');
 assert.equal(controllerClaims, 1, 'naming dialog explicitly takes controller focus');
@@ -105,6 +125,7 @@ root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
 assert(root.hidden, 'Later dismisses without changing saved names');
 assert.equal(lockState.acquired, 1, 'both naming prompts share one input lock');
 assert.equal(lockState.released, 1, 'finishing the queue releases the player lock');
+assert.equal(portraitCalls.length, 2, 'each queued animal requests its own portrait, not the prior baby canvas');
 
 feature.celebrateMaturation({ id: 'adult_1', name: 'Pudding', kind: 'puktuk' });
 feature.celebrateMaturation({ id: 'adult_2', name: 'Bobo', kind: 'grehlr' });
