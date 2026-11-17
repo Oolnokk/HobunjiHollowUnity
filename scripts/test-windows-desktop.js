@@ -63,6 +63,8 @@ async function checkClosePersistence() {
     syncNow: async options => { calls.push(['folder', options.reason]); return { state: 'ready', lastAction: 'saved' }; },
   }; // Canonical folder writer used for successful close scenarios.
   const runtime = {
+    isReady: () => true, // Live serializer readiness must gate writes to the primary save folder.
+    captureSnapshot: () => ({ ok: true, captured: true, snapshot: {} }), // Real writer snapshots live gameplay before disk writes.
     flushNow: async options => { calls.push(['browser', options.reason]); return { ok: true, captured: true }; },
   }; // Live browser fallback used whenever the folder is not writable.
   const game = { LocalSaveFolder: folder, HobunjiRuntimeSave: runtime, __hobunjiGameStarted: true }; // Game facade provided by the renderer.
@@ -76,6 +78,20 @@ async function checkClosePersistence() {
   output = await vm.runInNewContext(CLOSE_SAVE_SCRIPT, { window: game });
   assert.equal(output.mode, 'folder', 'Serialized renderer script runs without Node APIs');
   assert.equal(calls.length, 1);
+
+  // A ready folder is not proof that the live game's serializer is ready.
+  calls.length = 0;
+  runtime.isReady = () => false;
+  output = await persistBeforeClose(game);
+  assert.equal(output.ok, false, 'Do not mirror an outdated browser snapshot when the live serializer is unavailable');
+  assert.match(output.error, /serializer is not ready/);
+  assert.equal(calls.length, 0, 'Unsafe folder save must never be started');
+  runtime.isReady = () => true;
+  const liveCapture = runtime.captureSnapshot; // Restored after asserting a missing capture API is rejected.
+  delete runtime.captureSnapshot;
+  output = await persistBeforeClose(game);
+  assert.equal(output.ok, false, 'The serializer must provide a live capture method');
+  runtime.captureSnapshot = liveCapture;
 
   calls.length = 0;
   game.HobunjiAutosavePause = { isPaused: () => true };
@@ -116,6 +132,11 @@ async function checkClosePersistence() {
   output = await persistBeforeClose(game);
   assert.equal(output.ok, true, 'Without a configured folder, live browser saves remain supported');
   assert.deepEqual(calls, [['browser', 'desktop-window-close']]);
+
+  runtime.flushNow = () => ({ ok: true, captured: false });
+  output = await persistBeforeClose(game);
+  assert.equal(output.ok, false, 'A flush that succeeded without capturing gameplay may never authorize an exit');
+  assert.match(output.error, /not captured/);
 
   runtime.flushNow = () => ({ ok: false, error: 'Storage quota exceeded' });
   output = await persistBeforeClose(game);
