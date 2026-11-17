@@ -13,6 +13,12 @@
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
   const absoluteClaims = new WeakMap(); // Node -> named absolute position/quaternion/scale owner; action sessions hold their own references.
   let activeAbsoluteClaims = 0; // Mobile ownership count used to spot an interrupted actor pose that never released.
+  const absoluteOwnerCounts = new Map(); // Action name -> active property-claim count, reported by mobile rig diagnostics.
+  function changeAbsoluteOwnerCount(owner, delta) {
+    const count = (absoluteOwnerCounts.get(owner) || 0) + delta; // Recomputed only on action acquire/release, never on animation ticks.
+    if (count > 0) absoluteOwnerCounts.set(owner, count);
+    else absoluteOwnerCounts.delete(owner);
+  }
   const absoluteStats = { captures: 0, restored: 0, skipped: 0, conflicts: 0, invalidated: 0 }; // Debug counters for paired-pose handoffs.
 
   const stats = {
@@ -381,6 +387,7 @@
         entries.push(entry);
         claims.set(property, entry);
         activeAbsoluteClaims++;
+        changeAbsoluteOwnerCount(owner, 1);
         absoluteStats.captures++;
       }
       return true;
@@ -450,6 +457,7 @@
         } // An external position-only takeover cannot trigger an unrelated old quaternion reset.
         claims.delete(entry.property);
         activeAbsoluteClaims--;
+        changeAbsoluteOwnerCount(owner, -1);
         if (!claims.size) absoluteClaims.delete(entry.node);
         if (owned) {
           entry.node[entry.property].copy(entry.base);
@@ -491,7 +499,11 @@
   const compositor = Object.freeze({
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
     clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner,
-    getDebug() { return { ...stats, ...absoluteStats, activeAbsoluteClaims, leasedSlots: leased.size }; },
+    getDebug() {
+      return { ...stats, ...absoluteStats, activeAbsoluteClaims,
+        absoluteOwners: Array.from(absoluteOwnerCounts, ([owner, claims]) => ({ owner, claims })), // Only enumerated on explicit mobile diagnostics.
+        leasedSlots: leased.size };
+    },
   });
   // Both names are compatibility APIs over ONE ownership authority.
   global.ActorRigCompositor = compositor;
