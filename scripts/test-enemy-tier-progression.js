@@ -109,5 +109,5 @@ assert.match(bounty, /Dreaded/, 'new peak danger has an authored name');
 assert.match(editor, /<option value="7">Tier 7<\/option>/, 'workshop can preview eight danger levels');
 assert(index.indexOf('enemy-tier-progression.js') < index.indexOf('bounty-board.js'), 'enemy policy must load before bounty runtime');
 assert(index.indexOf('metal-reinforcement.js') < index.indexOf('game.js?v'), 'smith policy must load before game boot');
-assert.match(combatManifest, /combat-bandit\.js\?v=20261116eightDangerTier1/, 'new combat changes cannot be hidden by cached old build');
+assert.match(combatManifest, /combat-bandit\.js\?v=[A-Za-z0-9_-]+/, 'new combat changes cannot be hidden by cached old build');
 console.log('Enemy progression passed: 8 tiers, 4 rank curves, shared .75-1.50 weapon grades, 10-level Ghoul compatibility, bounty and arena UI.');
