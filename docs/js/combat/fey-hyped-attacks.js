@@ -13,12 +13,14 @@
   const MIN_SECOND_S = 0.035; // Keeps a valid second-action cadence for zero-duration/instant staged effects.
   let serial = 0; // Unique per-attack marker carried through CombatAttackEvents.hit metadata.
   let replayCount = 0; // Count of actual second strike target hits for mobile Pixel Probe.
+  let npcReplayCount = 0; // Count of real NPC second attacks that connect with an independently tested target.
+  let lastNpcEcho = null; // On-phone diagnostics for NPC double-strike hit, miss, cancellation and stamina spend.
   let lastEcho = null; // Last real second-strike result, including cancelled/missed outcomes.
   let bridgeInstalled = false; // True once Combat.beginStagedAction uses the one-time optional feature adapter.
 
   const numeric = (x, d = 0) => Number.isFinite(Number(x)) ? Number(x) : d;
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
-  const isOffensive = tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack)$/.test(String(tx?.actionKind || ''))
+  const isOffensive = tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack|combatNpcMelee)$/.test(String(tx?.actionKind || ''))
     || (!tx?.actionKind && /attack|swing|strike|breaker|flurry|jab|stab|heavy/i.test(String(tx?.reason || '')));
   const actorAlive = actor => actor && numeric(actor.health, 1) > 0;
 
@@ -49,6 +51,103 @@
     if (!credit || (abilityId && credit.abilityId && abilityId !== credit.abilityId)) return false;
     credits.delete(actor);
     return true;
+  }
+
+  function claimNpcMelee(actor) {
+    const paid = actor && credits.get(actor); // Consumes only the NPC's own eligible stamina transaction, never the player's pending attack.
+    if (!actor || actor === window.Combat?.deps?.player || !paid || paid.abilityId !== 'npcMelee' || paid.expiresAt < now()) return null;
+    credits.delete(actor); // This one payment funds both stages of exactly one NPC melee action.
+    return Object.freeze({ used: paid.used, ratio: paid.used * 0.02, tempo: 2 });
+  }
+
+  function npcDamagePayload(actor, target, damage, knockback, opts = {}) {
+    const sequence = actor?._feyHypedNpcSequence; // Only NPCs whose actual staged attack spent Hyped take this path.
+    if (!sequence) return null;
+    if (!sequence.echo) {
+      sequence.firstHit = { target, damage, knockback, opts: {
+        ...opts,
+        afflictionBonuses: { ...(opts.afflictionBonuses || {}) },
+        fixedAfflictionBuildup: { ...(opts.fixedAfflictionBuildup || {}) },
+      } }; // Snapshot the committed mastery/quick/weapon modifiers before the second independently collision-tested strike.
+      return null;
+    }
+    const primary = sequence.firstHit?.target === target ? sequence.firstHit : null;
+    const source = primary || { damage, knockback, opts };
+    const base = source.opts || {};
+    const scaledAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(base.afflictionBonuses, sequence.ratio)
+      || Object.fromEntries(Object.entries(base.afflictionBonuses || {}).map(([id, value]) => [id, numeric(value) * sequence.ratio]));
+    sequence.echoHits++;
+    npcReplayCount++;
+    return {
+      damage: Math.max(0, numeric(source.damage)) * sequence.ratio,
+      knockback: Math.max(0, numeric(source.knockback)) * sequence.ratio,
+      opts: {
+        ...base, afflictionBonuses: scaledAfflictions,
+        fixedAfflictionBuildup: Object.fromEntries(Object.entries(base.fixedAfflictionBuildup || {})
+          .map(([id, value]) => [id, numeric(value) * sequence.ratio])),
+        feyHypedReplay: true, // Secondary strikes never spend more Stamina or manufacture an additional pair.
+      },
+    };
+  }
+
+  function beginNpcMelee(actor, opts, payment) {
+    const combat = window.Combat;
+    if (!payment || typeof combat?.beginStagedAction !== 'function') return combat?.beginStagedAction?.(opts);
+    const activeArea = actor.areaId; // A removed/repositioned NPC cannot land a second swing in a later map.
+    const sequence = { ratio: payment.ratio, used: payment.used, echo: false, echoHits: 0, firstHit: null };
+    const originalStrike = opts.onStrike, originalComplete = opts.onComplete, originalCancel = opts.onCancel;
+    const npcLive = () => numeric(actor.health, 1) > 0 && (!activeArea || actor.areaId === activeArea)
+      && actor._feyHypedNpcSequence === sequence;
+    const clean = () => {
+      if (actor._feyHypedNpcSequence === sequence) delete actor._feyHypedNpcSequence;
+      sequence.firstHit = null; // Avoid keeping the previous duel target alive via a completed strike.
+    };
+    actor._feyHypedNpcSequence = sequence; // Existing NPC damage authority consults it only during this attack's two staged strikes.
+    const duration = {
+      windupS: Math.max(0.001, numeric(opts.windupS) / payment.tempo),
+      strikeS: Math.max(0.001, numeric(opts.strikeS) / payment.tempo),
+      recoverS: Math.max(0, numeric(opts.recoverS) / payment.tempo),
+    }; // The NPC's current SharedAttackPose timeline and its subsequent copy both run at twice the authored speed.
+    const firstOpts = {
+      ...opts, ...duration,
+      onComplete: first => {
+        if (!npcLive()) {
+          clean();
+          originalComplete?.(first);
+          lastNpcEcho = { used: payment.used, skipped: 'actor died, left area or changed attack' };
+          return;
+        }
+        sequence.echo = true; // Original onStrike still owns independent real-time NPC meleeHit and conditional bonuses.
+        sequence.echoHits = 0;
+        actor.telegraphState = 'windup';
+        const second = combat.beginStagedAction({
+          ...opts, ...duration,
+          data: { ...(opts.data || {}), feyHypedNpcEcho: true },
+          onStrike: stage => { if (npcLive()) originalStrike?.(stage); },
+          onComplete: stage => {
+            const hits = sequence.echoHits;
+            clean();
+            originalComplete?.(stage); // Cooldown, combo chaining and authored swing settle happen only after the second stage.
+            lastNpcEcho = { used: payment.used, ratio: payment.ratio, hits, ability: opts.data?.voiceAbilityId || opts.data?.comboId || 'npcMelee' };
+          },
+          onCancel: stage => {
+            clean();
+            originalCancel?.(stage);
+            lastNpcEcho = { used: payment.used, cancelled: true };
+          },
+        });
+        actor._banditAction = second; // EnemyWeaponStances/SharedAttackPose remain the single pose and animation owner.
+        if (actor._banditSwingWindupCurve) actor._banditSwingWindupCurve.action = second; // A charged NPC repeats its existing partial-windup curve on the second strike.
+      },
+      onCancel: stage => {
+        clean();
+        originalCancel?.(stage); // No phantom hit if the NPC is staggered or its first stage is canceled.
+        lastNpcEcho = { used: payment.used, cancelled: true };
+      },
+    };
+    const first = combat.beginStagedAction(firstOpts);
+    if (first?.cancelled) clean();
+    return first;
   }
 
   function prepare(context) {
@@ -245,10 +344,10 @@
   window.CombatAttackEvents?.on?.('hit', onHit);
   installCombatBridge();
   window.FeyHypedAttacks = Object.freeze({
-    onStaminaSpent, prepare, onHit, clearCredit, speedMultiplierForNextAction, installCombatBridge,
+    onStaminaSpent, prepare, onHit, clearCredit, claimNpcMelee, npcDamagePayload, beginNpcMelee, speedMultiplierForNextAction, installCombatBridge,
     isReplaying: actor => !!actor && replayingActors.has(actor), // Central CombatInput gate prevents other player attacks interrupting the paid two-strike sequence.
     debugSnapshot: () => ({
-      bridgeInstalled, replayCount, lastEcho, activeHypedAttacks: attacks.size,
+      bridgeInstalled, replayCount, lastEcho, npcReplayCount, lastNpcEcho, activeHypedAttacks: attacks.size,
       playerPending: !!pendingByActor.get(window.Combat?.deps?.player),
     }),
   });
