@@ -152,4 +152,28 @@ assert.equal(feature.debugSnapshot().lastPortrait.status, 'unavailable', 'mobile
 portraitFallbackForm.querySelector('[data-ctrl-cancel]').listeners.click();
 assert(root.hidden, 'missing portraits never prevent dismissing the modal');
 assert.equal(lockState.released, 3, 'portrait failure still releases the input lock');
-console.log('Animal baby arrival/naming/animation tests passed.');
+// Async image loads must neither block input nor overwrite a later dialog's result.
+async function testAsyncPortraitOwnership() {
+  let resolveFirstPortrait; // Held image job simulates a delayed species asset while the player opens the next baby.
+  window.AnimalChatheadFrame = { renderCreatureChathead() {
+    return new Promise(resolve => { resolveFirstPortrait = resolve; });
+  } };
+  feature.requestName({ id: 'slow_baby', kind: 'puktuk' }, { commit: () => true });
+  flush(0);
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'loading', 'delayed image does not delay the naming modal');
+  root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
+
+  window.AnimalChatheadFrame = { async renderCreatureChathead() { return true; } };
+  feature.requestName({ id: 'fresh_baby', kind: 'puktuk' }, { commit: () => true });
+  flush(0);
+  await Promise.resolve();
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'resolved image marks the active baby portrait ready');
+  resolveFirstPortrait(false);
+  await Promise.resolve();
+  assert.equal(feature.debugSnapshot().lastPortrait.id, 'fresh_baby', 'a stale portrait failure cannot overwrite another animal');
+  assert.equal(feature.debugSnapshot().lastPortrait.status, 'ready', 'a stale portrait failure cannot hide the new chathead');
+  root.children[0].querySelector('[data-ctrl-cancel]').listeners.click();
+  assert.equal(lockState.released, 5, 'both delayed and new prompts release their input locks');
+  console.log('Animal baby arrival/naming/animation tests passed.');
+}
+testAsyncPortraitOwnership().catch(error => { console.error(error); process.exitCode = 1; });
