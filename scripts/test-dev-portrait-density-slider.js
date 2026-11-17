@@ -85,6 +85,26 @@ assert.equal(player.geometry.userData.segmentsY, 36);
 assert.equal(meshBudget.portraitDensityDebug().triangles, 4032 + 2992, 'diagnostics count actual current geometry');
 assert.equal(events.filter(event => event === 'hobunji:portrait-density-changed').length, 3);
 
+// Doorstep visitors have independently posed skeletons but borrow their source NPC geometry.
+const visitor = { isSkinnedMesh: true, geometry: player.geometry, skeleton: { id: 'visitor-pose' } };
+const oldShared = player.geometry;
+assert.equal(meshBudget.trackSkinnedClone(player, visitor), true, 'a visitor using the real source geometry is registered');
+assert.equal(meshBudget.trackSkinnedClone(player, visitor), true, 're-registering a visitor cannot create duplicate weak references');
+assert.equal(meshBudget.portraitDensityDebug().tracked, 3);
+assert.equal(meshBudget.trackSkinnedClone(enemy, { isSkinnedMesh: true, geometry: player.geometry }), false, 'unrelated geometry is not misregistered');
+assert.equal(meshBudget.setPortraitDensityPercent(75), true, 'slider can update shared live geometry');
+assert.notStrictEqual(player.geometry, oldShared);
+assert.strictEqual(visitor.geometry, player.geometry, 'the visitor and source now share exactly one new geometry');
+assert.equal(oldShared.disposed, true, 'the shared old buffer is disposed after both users have swapped');
+assert.strictEqual(visitor.skeleton.id, 'visitor-pose', 'visitor skeleton is unchanged');
+assert.equal(meshBudget.portraitDensityDebug().lastRebuilt, 3, 'three meshes were updated');
+assert.equal(builds.length, 8, 'the shared geometry was rebuilt once, not once per clone');
+assert.equal(meshBudget.unregisterSkinnedPortrait(visitor), true, 'removing the visitor unregisters its shared rig');
+assert.equal(meshBudget.unregisterSkinnedPortrait(visitor), false, 'unregistering twice is harmless');
+assert.equal(meshBudget.portraitDensityDebug().tracked, 2);
+assert.equal(meshBudget.setPortraitDensityPercent(100), true);
+assert.equal(meshBudget.portraitDensityDebug().lastRebuilt, 2, 'only remaining living rig owners update');
+
 assert(uiSource.includes("densitySlider.type = 'range'"), 'dev UI has a real range input');
 assert(uiSource.includes("densityRow.setAttribute('data-dev-only', '')"), 'slider is hidden outside developer mode');
 assert(uiSource.includes('portraitBudget.setPortraitDensityPercent(Number(densitySlider.value))'), 'the UI uses the production budget authority');
