@@ -465,7 +465,7 @@ console.log('Pants rig bone skinning: PASS');
     'left ankle spline lengthens by the foot-width ratio');
   assert(near(xAt(stretched, 3, 4) - xAt(stretched, 3, 3), 0.25 * longoranWidthRatio, 1e-6),
     'right ankle spline gets the same lengthening independently');
-  assert(near((xAt(stretched, 3, 0) + xAt(stretched, 3, 1)) / 2, 0.125) && near((xAt(stretched, 3, 3) + xAt(stretched, 3, 4)) / 2, 0.875),
+  assert(near((xAt(stretched, 3, 0) + xAt(stretched, 3, 1)) / 2, 0.125, 1e-6) && near((xAt(stretched, 3, 3) + xAt(stretched, 3, 4)) / 2, 0.875, 1e-6),
     'each opening stays centred on its own knee-to-ankle pole');
   assert(near(xAt(stretched, 2, 0) - xAt(rest, 2, 0), (xAt(stretched, 3, 0) - xAt(rest, 3, 0)) * 0.5, 1e-6),
     'the extra width tapers smoothly toward the knee');
