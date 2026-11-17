@@ -1,6 +1,6 @@
 // Baby/small-pet head size and brachycephaly on completed genotype textures.
-// Default head selection is the idle chathead opacity mask; optional legacy selection
-// restores the earlier painted-Head rectangle and its soft falloff.
+// Default head selection uses the earlier painted-Head rectangle and soft falloff.
+// The optional idle-chathead alpha method remains available per species.
 (() => {
   'use strict';
 
@@ -95,7 +95,7 @@
   }
   function usePaintedHeadForKind(kind) {
     const { previewRig, committed } = babyHeadConfigForKind(kind);
-    return (previewRig?.babyHeadUsePaintedFrame ?? committed?.babyHeadUsePaintedFrame) === true;
+    return (previewRig?.babyHeadUsePaintedFrame ?? committed?.babyHeadUsePaintedFrame) !== false; // Legacy painted selection is the default; explicit false opts into idle alpha.
   }
   function customHeadFrameForKind(kind) {
     const { previewRig, committed } = babyHeadConfigForKind(kind); // Use a specifically authored box instead of the dialogue portrait.
