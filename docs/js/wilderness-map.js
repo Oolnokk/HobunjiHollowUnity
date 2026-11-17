@@ -97,13 +97,23 @@
   }
 
   // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
+  let _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Reuses parsed map discoveries across compass ticks, invalidated by any save-meta write or world switch.
   function _loadDiscoveredLocales() {
     const worldId = deps.tothalWorldId();
     if (!worldId) return {};
     try {
-      const meta = JSON.parse(localStorage.getItem('hobunjiSaveMeta') || 'null');
-      return (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {};
-    } catch { return {}; }
+      const raw = localStorage.getItem('hobunjiSaveMeta') || 'null'; // Compared with the last read to detect same-tab saves without reparsing unchanged metadata.
+      if (_discoveredLocalesCache.worldId !== worldId || _discoveredLocalesCache.raw !== raw) {
+        const meta = JSON.parse(raw);
+        _discoveredLocalesCache = {
+          worldId, raw, locales: (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {},
+        };
+      }
+      return _discoveredLocalesCache.locales;
+    } catch {
+      _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Corrupt/unreadable saves must not expose stale discoveries.
+      return {};
+    }
   }
   function _saveDiscoveredLocales(discovered) {
     const worldId = deps.tothalWorldId();
@@ -113,7 +123,9 @@
       const world = (meta?.worlds || []).find(w => w.id === worldId);
       if (!world) return;
       world.discoveredLocales = discovered;
-      localStorage.setItem('hobunjiSaveMeta', JSON.stringify(meta));
+      const raw = JSON.stringify(meta); // Persisted text also seeds the reader cache after a successful write.
+      localStorage.setItem('hobunjiSaveMeta', raw);
+      _discoveredLocalesCache = { worldId, raw, locales: { ...discovered } }; // Only successful writes refresh the read cache.
     } catch {}
   }
 
@@ -151,7 +163,7 @@
 
   function discoverEnteredLocale(localeId) {
     if (!ENTER_ONLY_LOCALE_IDS.has(localeId) || deps?.getCurrentArea?.() !== 'map_i_den_banubu') return false;
-    const discovered = _loadDiscoveredLocales(); // Persist the visited flag across shifts and protect old proximity-only save records.
+    const discovered = { ..._loadDiscoveredLocales() }; // Persist the visited flag across shifts and protect old proximity-only save records.
     if (discovered[localeId]?.entered) return false;
     const instance = _allLocaleInstances().find(item => item.localeId === localeId);
     discovered[localeId] = {
@@ -175,7 +187,7 @@
   // Shift secrets require rediscovery in each new cycle; permanent authored
   // locales retain their previous discoveries and current coordinates.
   function _checkLocaleDiscovery(zoneId, pc, pr) {
-    const discovered = _loadDiscoveredLocales();
+    const discovered = { ..._loadDiscoveredLocales() };
     let changed = false;
     for (const inst of _allLocaleInstances()) {
       const discoveryKey = localeDiscoveryKey(inst); // Rerolled shrine map pins expire naturally with the previous Tothal year.
