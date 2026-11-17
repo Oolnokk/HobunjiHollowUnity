@@ -212,7 +212,8 @@
     hypedStamina: Object.freeze({
       resource: "stamina", conversionRate: 1, normalPriority: 10, beneficialPriority: 110,
       requiresBeneficialTransaction: true, // Hyped is NEVER burned by walking, loading, dodging or other unrelated Stamina actions.
-      benefitsTransaction: tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack)$/.test(String(tx?.actionKind || '')),
+      benefitsTransaction: tx => /^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|combatWeaponAttack)$/.test(String(tx?.actionKind || ''))
+        && String(tx?.abilityId || '') !== 'thrownWeapon', // Thrown/ranged shots use a separate ammo/projectile pipeline and cannot perform a physical second melee swing.
     }),
     resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
