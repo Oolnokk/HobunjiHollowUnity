@@ -6,6 +6,17 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Uses the checked-out branch in CI and local runs.
 const source = fs.readFileSync(path.join(ROOT, 'docs/js/wildlife-spawn.js'), 'utf8');
+class Group {
+  constructor() {
+    this.children = []; this.userData = {};
+    this.position = { set: (x,y,z) => { this.position.x=x; this.position.y=y; this.position.z=z; } };
+    this.rotation = { y:0 };
+    this.scale = { set: (x,y,z) => { this.scale.x=x; this.scale.y=y; this.scale.z=z; } };
+  }
+  add(...children) { for (const child of children) { this.children.push(child); child.parent=this; } }
+  remove(...children) { for (const child of children) { const at=this.children.indexOf(child); if (at>=0) this.children.splice(at,1); child.parent=null; } }
+}
+const plane = () => ({ material: { map:null }, clone() { return { ...this }; } }); // Mirrors billboard material sharing used for both species' carried babies.
 const hostiles = new Set(); // Shared live entity roster used to verify spawning and full scene cleanup.
 const removed = []; // Captures cleanup requests made to the game's despawnCreature interface.
 const logs = []; // Collects mobile log output for midnight census assertions.
@@ -22,8 +33,10 @@ const layout = { cols:100,rows:100,dens:[],tiles:[],foliagePatches:[
   {centroid:{x:50,y:50},tiles:[{x:50,y:50},{x:51,y:50}]},
 ] }; // Real foliage anchors separated enough to exercise proximity culling.
 const w = {
+  THREE: { Group },
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: { moot: { anchors: { saddle: { position: {x:0.3,y:0.19,z:0.02} } } }, 'voorg-ass': { anchors: { saddle: { position: {x:0,y:0.12,z:0} } } } } }, // Explicit distinct saddles reveal accidental use of the wrong species' rig.
   BanditCamps:{ensureCurrentZoneCamps(){}},
-  CreatureGenetics:{makeDefaultGenotype(kind){return {sizeClass:'medium',base:{color:kind==='moot'?'#aaaaaa':'#bbbbbb'}}}},
+  CreatureGenetics:{makeDefaultGenotype(kind){return {sizeClass:'medium',base:{color:kind==='moot'?'#aaaaaa':'#bbbbbb'}}},creatureSizeScale(kind,sizeClass){return kind==='moot'?(sizeClass==='small'?{x:0.35,y:0.35}:{x:1.5,y:1.5}):(sizeClass==='small'?{x:0.34,y:0.34}:{x:1.1,y:1.1})}},
   CreatureGeneticsRender:{SPECIES:{}},
   VoorgAssRegistration:{KIND:'voorg-ass',HERD_MOTHER_KIND:'voorg-ass-herd-mother',
     ensureCreatureDefs(db){db['voorg-ass']={};db['voorg-ass-herd-mother']={}},
@@ -39,7 +52,7 @@ const deps = {CREATURE_DB:{nazgraku:{}},EXTERIOR_ZONES:{map_northern_cliffs:zone
   TILE:10,TileType:{RIVER:'river',STREAM:'stream'},player:{x:205,y:205},
   rnd:()=>randomSequence.length ? randomSequence.shift() : randomValue,getCurrentArea:()=>area,_isZoneArea:id=>id==='map_northern_cliffs',
   getCutscenePreviewActive:()=>false,buildZoneScene:()=>true,
-  makeCreatureEntity(kind,x,y,opts){return {id:++nextId,creatureKey:kind,health:50,x,y,...opts}},
+  makeCreatureEntity(kind,x,y,opts){const group=new Group(),frontPlane=plane(),backPlane=plane();group.add(frontPlane,backPlane);return {id:++nextId,creatureKey:kind,health:50,x,y,avatarRef:{group,frontPlane,backPlane},...opts}},
   despawnCreature(creature){removed.push(creature)},
   showToast(){},
 }; // Minimal production wildlife dependencies; no separate substitute herd simulator.
@@ -52,6 +65,14 @@ assert.deepEqual(Array.from(herds(), herd => herd.species),['moot','moot']);
 assert(herds().every(h=>h.adults===12&&h.mothers===1&&h.carriedBabies===4),'Moot herds have 8-12 adults and one mother carrying 2-4 babies');
 assert.equal([...hostiles].filter(c=>c.creatureKey==='moot-herd-mother').length,2,'one Moot Herd-Mother is a living member of each herd');
 assert([...hostiles].filter(c=>c.isHerdMother).every(c=>c.carriedBabyItemKey==='mootBaby'),'wild Moot mothers carry recoverable Moot babies');
+const firstMootMother=[...hostiles].find(c=>c.creatureKey==='moot-herd-mother'); // Real mock world creature used to verify post-stream visual restoration.
+assert.equal(firstMootMother._carriedBabyVisuals.length,4,'Moot babies receive actual three-dimensional attachments');
+assert(firstMootMother._carriedBabyVisuals.every(g=>g.parent===firstMootMother.avatarRef.group),'Moot babies remain attached to their mother');
+assert(firstMootMother._carriedBabyVisuals.every(g=>g.children[0].material===firstMootMother.avatarRef.frontPlane.material),'babies reuse their own Moot genotype material');
+assert.equal(Math.round(firstMootMother._carriedBabyVisuals[0].position.x*1000),215,'Moot babies use the Moot saddle rather than the Voorg-Ass saddle');
+assert.equal(Math.round(firstMootMother._carriedBabyVisuals[0].scale.x*10000),2333,'Moot children use the Moot small-to-large authored scale ratio');
+assert.equal(w.WildlifeSpawn.restoreHerdMotherVisuals(firstMootMother),4,'visual promotion restores all carried Moot babies');
+assert.equal(firstMootMother.avatarRef.group.children.filter(g=>g.userData?.herdCarriedBaby).length,4,'repeated promotion must replace rather than duplicate attachments');
 assert.equal([...hostiles].filter(c=>c.creatureKey==='nazgraku').length,5,'Nazgraku remains independent');
 randomValue=0.01;
 w.WildlifeSpawn.advanceCaveMidnight(10);
