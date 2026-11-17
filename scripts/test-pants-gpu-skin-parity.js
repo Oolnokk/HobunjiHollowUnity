@@ -56,6 +56,8 @@ const handle = Renderer.attach(THREE, {
   garmentRecord: rigs.garments.pants_basic, characterRecord: rigs.characters.__default, meshBudget: 'npc',
 });
 assert(handle, 'garment attached to the synthetic avatar');
+assert.strictEqual(handle.segments, 14, 'NPC pants now use 14x14 quads (19.1% of previous triangles)');
+assert.strictEqual(handle.geometry.index.count / 3, 2 * 14 * 14, 'triangle count follows the reduced indexed grid');
 const portraitRestZ = model.getObjectByName('frontPlane').position.z; // Genuine front/rear portrait rest surface in avatar-local depth.
 assert(handle.basePositions.every((coordinate, i) => (i % 3 !== 2) || Math.abs(coordinate - portraitRestZ) < 1e-6),
   'unanimated pants lie on the portrait plane, never 0.012 units in front of opaque portrait pixels');
