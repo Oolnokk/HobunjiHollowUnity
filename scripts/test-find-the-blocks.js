@@ -123,7 +123,8 @@ function test(seed,size=24){
   const fireBowls=[]; // All native low-bowl fire sources are inspectable without a console or interaction prompt.
   soloGroup.traverse(object=>{if(object?.userData?.fireHazard===true)fireBowls.push(object);});
   assert.equal(fireBowls.length,1,'Find the Blocks provides exactly one reusable torch-lighting hazard');
-  assert.equal(fireBowls[0].name,'find-blocks-low-bowl-brazier');
+  assert.equal(fireBowls[0].name,'find-blocks-brazier-fire-contact','only the compact flame collider is an ignition hazard');
+  assert.equal(fireBowls[0].parent.name,'find-blocks-low-bowl-brazier','the flame collider remains attached to its bowl');
   assert(!state.controls.some(control=>control.kind==='findBlocksBrazier'),'low fire sources never capture Action 1 to arm ammunition');
   assert.equal(room.snapshot().sourceFireHazard,true,'mobile debug reports the physical fire source');
   const named=new Map();
