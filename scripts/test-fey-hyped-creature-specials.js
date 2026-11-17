@@ -252,6 +252,22 @@ const close = (got, want, msg) => assert(Math.abs(got - want) < .00001, msg + ':
     events[0].opts.afflictionBonuses.bruisedHealth * .16, 'nonlethal Guard Charge status scaled');
 }
 
+// At 50 Hyped, the second special is exactly as strong as the first but
+// still needs its replay flag for correct one-shot procs and hit diagnostics.
+{
+  events.length = 0;
+  const creature = makeCreature();
+  const victim = makeTarget();
+  RS.addEnhancedResource(creature, 'hypedStamina', 50);
+  pay(creature, 50);
+  assert.equal(attacks.start(creature, 'hypedTestSpecial', { target: victim }), true);
+  run(creature);
+  assert.equal(events.length, 2, 'full-strength Hyped still performs exactly two attacks');
+  close(events[1].amount, events[0].amount, '50 Hyped grants a 100% second hit');
+  assert.equal(events[1].opts.feyHypedReplay, true, '100% second effect is a replay, not an ordinary attack that can recurse');
+  assert.equal(creature._lastHypedCreatureAttack.hits, 1, 'full-strength second contact is counted in mobile diagnostics');
+}
+
 const feySources = ['docs/game.js','docs/js/combat/combat-grehlr-stink.js',
   'docs/js/combat/combat-grehlr-burrow.js','docs/js/combat/combat-attach.js'];
 const sources = feySources.map(path => fs.readFileSync(path, 'utf8'));
@@ -260,5 +276,10 @@ assert.equal((sources[0].match(/actionKind: 'combatCreatureSpecial'/g) || []).le
 assert(sources[1].includes('creatureEffectRatio?.(creature)'), 'direct Grehlr Winded Stamina scales on the echo');
 assert(sources[2].includes('creature?._animalAttack?.hyped?.phase === 1'), 'Grehlr burrow self-cost only charged once');
 assert(sources[3].includes('creatureDamagePayload?.(c, amount, 0, opts)'), 'attached Swarm ticks use their author-owned damage pipeline');
-assert(hype.debugSnapshot().creatureReplayCount >= 4, 'mobile diagnostics track real creature secondary contacts');
+const pingdortSource = fs.readFileSync('docs/js/pingdort-flocks.js', 'utf8'); // Delayed Shattercasks impacts happen after the named attack has cleared.
+assert(pingdortSource.includes('state.boulder.pendingFeyHypedImpactRatio=echoScale')
+  && pingdortSource.includes('delete burden.pendingFeyHypedImpactRatio')
+  && pingdortSource.includes('150*feyScale'),
+  'Hyped Pingdort boulder carries exactly one reduced impact, then returns to an ordinary burden');
+assert(hype.debugSnapshot().creatureReplayCount >= 5, 'mobile diagnostics track all real creature secondary contacts');
 console.log('Hyped creature specials: native Pounce, Charge, paid top-ups, movement, afflictions, whiff, cancellation, map safety, Furious precedence PASS');
