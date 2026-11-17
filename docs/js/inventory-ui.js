@@ -697,9 +697,11 @@
     if (!itemKey) return {};
     const effectiveMetalKey = combatDeps?.toolEffectiveMetalKey?.(itemKey) || def?.metalKey || null;
     const metal = effectiveMetalKey ? combatDeps?.METAL_DEFS?.[effectiveMetalKey] : null;
+    const reinforcement = combatDeps?.toolReinforcementProgress?.(itemKey); // Display the actual saved reinforcement grade, not only the material tier.
     const rawQuality = def?.qualityLabel ?? def?.quality ?? def?.qualityTier ?? null;
     let label = '';
-    if (metal?.label) label = metal.label + (metal.tier != null ? ` T${metal.tier}` : '');
+    if (reinforcement?.label) label = reinforcement.label;
+    else if (metal?.label) label = metal.label + (metal.tier != null ? ` T${metal.tier}` : '');
     else if (rawQuality != null) label = String(rawQuality);
     else if (effectiveMetalKey) label = titleCase(humanizeKey(effectiveMetalKey));
 

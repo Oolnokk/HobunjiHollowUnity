@@ -404,8 +404,8 @@
   }
 
   function banditTierForSite(cfg, view, site) {
-    const per = Number(cfg?.difficultyTiers?.tierDistanceTiles || 14);
-    const maxTier = Number(cfg?.difficultyTiers?.maxTier ?? 3);
+    const per = Number(cfg?.difficultyTiers?.tierDistanceTiles || 12);
+    const maxTier = Number(cfg?.difficultyTiers?.maxTier ?? 7);
     if (!view?.entry || !(per > 0)) return 0;
     const cx = site.x + site.w / 2, cy = site.y + site.h / 2;
     const dist = Math.hypot(cx - view.entry.x, cy - view.entry.y);

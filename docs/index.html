@@ -56,7 +56,7 @@
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
   <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
        and menu controller polling. Must load before game.js. -->
-  <script src="js/controller-input.js?v=20261117deepAudit2"></script>
+  <script src="js/controller-input.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
@@ -316,7 +316,7 @@
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261115nativeArena1"></script>
+  <script src="onboarding.js?v=20261116starter075grade1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261116fey1"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -352,12 +352,13 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261115h87cbbde"></script>
+  <script src="js/bandit-camps.js?v=20261116eightDangerTier1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
        calls window.BountyBoard.init(...) during its own setup. -->
-  <script src="js/bounty-board.js?v=20261114derivedBanditNames1"></script>
+  <script src="js/enemy-tier-progression.js?v=20261116tier8a"></script>
+  <script src="js/bounty-board.js?v=20261116tier8a"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-config"></script>
@@ -633,8 +634,9 @@
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261111modToolRuntime1"></script>
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
-  <script src="js/foundry-shop.js?v=20261110forgeButton1"></script>
-  <script src="js/metal-craft-shop.js?v=20261104hPatternQuick1435a"></script>
+  <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
+  <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
+  <script src="js/metal-craft-shop.js?v=20261116subtiers1"></script>
   <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
        wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
        window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
@@ -674,7 +676,7 @@
   <script src="js/enemy-collision-reposition.js?v=20261103h605175f"></script>
   <script src="js/farm-surface-sample.js?v=20261016a"></script>
   <script src="js/farm-furniture-surface-elevation.js?v=20261002hwinlift1"></script>
-  <script src="js/dev-spawner.js?v=20261115h121bf94"></script>
+  <script src="js/dev-spawner.js?v=20261116tier8a"></script>
   <script src="js/dev-arena-pond-dummy.js?v=20261115nativeArena1"></script>
   <!-- Furniture Placer panel (window.FurniturePlacer) — the discoverable,
        inventory-scoped furniture selector. Choosing Place arms the shared
@@ -735,7 +737,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls each module's init(...) during its
        own setup. -->
-  <script src="js/tasks-panel.js?v=20261116knotwork2"></script>
+  <script src="js/tasks-panel.js?v=20261116tier8a"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
   <script src="js/wildlife-debug-panel.js?v=20261114herdAudit2"></script>
@@ -766,7 +768,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261117deepAudit2"></script>
+  <script src="js/equipment-panel.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -805,7 +807,7 @@
   <!-- Cave height tuning (window.HobunjiCaveShapeConfig), read by cavern-generator.js at carve time. -->
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
-  <script src="js/cavern-generator.js?v=20261117deepAudit3"></script>
+  <script src="js/cavern-generator.js?v=20261117deepAuditMainMerge1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
@@ -1154,7 +1156,7 @@
         <div class="fed-grid" id="devSpawnSpeciesGrid"></div>
       </div>
       <div class="fed-section" id="devSpawnBanditTierSection">
-        <div class="fed-label">Bandit difficulty tier (distance-from-town stand-in, 0-3)</div>
+        <div class="fed-label">Bandit difficulty tier (distance-from-town stand-in, 0-7)</div>
         <div class="fed-grid" id="devSpawnBanditTierGrid"></div>
       </div>
       <div class="fed-section fed-actions">
@@ -2920,7 +2922,7 @@
   <script src="js/bed-lie-pose.js?v=20261115h7c94bd7"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261117deepAudit4"></script>
+  <script src="game.js?v=20261117deepAuditMainMerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

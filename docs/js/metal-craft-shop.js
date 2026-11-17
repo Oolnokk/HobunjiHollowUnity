@@ -118,16 +118,19 @@
   function craftMetalTool(shapeKey, metalKey) {
     window.WeaponTrustVisits?.syncSmithingShapeUnlocks?.();
     if (!deps.UNLOCKED_TOOL_SHAPES.includes(shapeKey) || !deps.VERDIGRIS_METAL_KEYS.includes(metalKey)) { deps.showToast('Discover this weapon shape and choose a smithing metal first.', false); return; }
+    const itemKey = deps.craftedToolItemKey(shapeKey, metalKey); // Reject repeated purchases before charging materials or changing an item's grade.
+    if (deps.getGearInventory()?.tools?.[itemKey]) { deps.showToast('You already own this tool in that metal.', false); return; }
+    const forgeBars = window.MetalReinforcement.forgeBarCost(CRAFT_BAR_COST, metalKey, deps.METAL_DEFS); // Higher-tier new tools cost more bars instead of bypassing the metal sink.
     const barKey = deps.metalBarItemKey(metalKey);
-    if ((deps.inventory[barKey] || 0) < CRAFT_BAR_COST) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
+    if ((deps.inventory[barKey] || 0) < forgeBars) { deps.showToast(`Not enough ${deps.METAL_DEFS[metalKey].label} bars.`, false); return; }
     if ((deps.inventory.gold || 0) < CRAFT_LABOR_GOLD) { deps.showToast("Not enough gold for the smith's labor.", false); return; }
-    deps.inventory[barKey] -= CRAFT_BAR_COST;
+    deps.inventory[barKey] -= forgeBars;
     deps.clampInventoryStack(barKey);
     deps.inventory.gold -= CRAFT_LABOR_GOLD;
-    const itemKey = deps.craftedToolItemKey(shapeKey, metalKey);
     const gearInventory = deps.getGearInventory();
     if (!gearInventory.tools) gearInventory.tools = {};
     gearInventory.tools[itemKey] = true;
+    deps.setToolReinforcement(itemKey, metalKey, 0); // New forging starts at grade I; old saves without grades retain their original power.
     deps.saveGearInventory();
     // A newly-created crafted tool must immediately replace its base sprite
     // world texture with the metal/mastery-generated canvas. Previously only
@@ -235,26 +238,24 @@
     });
   }
 
-  // Same cost as smithing a whole new tool — see task spec. Keeps the
-  // tool's own base-metal identity (itemKey never changes, so its
-  // mastery/verdigris/plating all keep tracking exactly as before); only
-  // its effective damage/efficacy borrows metalKey's tier (see
-  // toolEffectiveMetalKey/toolMetalMultiplier, game.js).
-  function reinforceMetalTool(itemKey, metalKey) {
+  // Each purchase advances exactly one reinforcement grade. The tool keeps its
+  // literal item key, sprite/verdigris, plating, and independent mastery.
+  function reinforceMetalTool(itemKey) {
     const def = deps.TOOL_ITEM_DEFS[itemKey];
-    const metal = deps.METAL_DEFS[metalKey];
-    if (!def?.metalKey || !metal) return;
-    const currentTier = deps.METAL_DEFS[deps.toolEffectiveMetalKey(itemKey)]?.tier || 0;
-    if (metal.tier <= currentTier) { deps.showToast("That metal isn't stronger than what this tool already fights with.", false); return; }
-    const barKey = deps.metalBarItemKey(metalKey);
-    if ((deps.inventory[barKey] || 0) < CRAFT_BAR_COST) { deps.showToast(`Not enough ${metal.label} bars.`, false); return; }
-    if ((deps.inventory.gold || 0) < CRAFT_LABOR_GOLD) { deps.showToast("Not enough gold for the smith's labor.", false); return; }
-    deps.inventory[barKey] -= CRAFT_BAR_COST;
+    if (!def?.metalKey || !deps.getGearInventory()?.tools?.[itemKey]) return;
+    const current = deps.toolReinforcementProgress(itemKey); // Authoritative per-item saved grade/legacy strength.
+    const next = window.MetalReinforcement?.next(current, deps.METAL_DEFS, deps.VERDIGRIS_METAL_KEYS); // Only the immediate next grade may be purchased.
+    if (!next) { deps.showToast('This tool has reached maximum reinforcement.', false); return; }
+    const barKey = deps.metalBarItemKey(next.metalKey);
+    if ((deps.inventory[barKey] || 0) < next.bars) { deps.showToast(`Need ${next.bars} ${deps.METAL_DEFS[next.metalKey].label} bars for ${next.label}.`, false); return; }
+    if ((deps.inventory.gold || 0) < next.gold) { deps.showToast("Not enough gold for the smith's labor.", false); return; }
+    deps.inventory[barKey] -= next.bars;
     deps.clampInventoryStack(barKey);
-    deps.inventory.gold -= CRAFT_LABOR_GOLD;
-    deps.setToolReinforcement(itemKey, metalKey);
-    deps.showToast(`${def.label} reinforced with ${metal.label}!`, true);
+    deps.inventory.gold -= next.gold;
+    deps.setToolReinforcement(itemKey, next.metalKey, next.grade);
+    deps.showToast(`${def.label} reinforced to ${next.label}!`, true);
     renderMetalCraftShopPage();
+    deps.buildInventoryGrid();
     deps.saveMemberWorldData();
   }
 
@@ -273,7 +274,7 @@
 
     const craftHdr = document.createElement('div');
     craftHdr.className = 'shop-section-label';
-    craftHdr.textContent = `🔨 Craft a New Tool  (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)`;
+    craftHdr.textContent = `🔨 Craft a New Tool  (from ${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g; advanced metals cost more bars)`;
     list.appendChild(craftHdr);
 
     const shapeTabs = document.createElement('div');
@@ -290,6 +291,7 @@
 
     deps.VERDIGRIS_METAL_KEYS.forEach(metalKey => {
       const metal = deps.METAL_DEFS[metalKey];
+      const forgeBars = window.MetalReinforcement.forgeBarCost(CRAFT_BAR_COST, metalKey, deps.METAL_DEFS); // Visible smithing bar cost matches purchase validation.
       const owned = deps.inventory[deps.metalBarItemKey(metalKey)] || 0;
       const itemKey = deps.craftedToolItemKey(metalCraftActiveShape, metalKey);
       const alreadyOwned = !!gearInventory?.tools?.[itemKey];
@@ -300,7 +302,7 @@
         <div class="sh-info">
           <div class="sh-name">${deps.esc(metal.label)} ${deps.esc(deps.TOOL_SHAPE_DEFS[metalCraftActiveShape].label)} (tier ${metal.tier})</div>
           <div class="sh-desc">Bars owned: ${owned}${alreadyOwned ? ' — already smithed' : ''}</div>
-          <div class="sh-price">${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g</div>
+          <div class="sh-price">${forgeBars} bars + ${CRAFT_LABOR_GOLD}g</div>
         </div>
         <button class="shop-buy-btn" data-metal="${metalKey}" ${alreadyOwned ? 'disabled' : ''}>${alreadyOwned ? 'Owned' : 'Smith'}</button>
       `;
@@ -321,8 +323,9 @@
         const def = deps.TOOL_ITEM_DEFS[itemKey];
         const verdigrisPct = Math.round(deps.toolVerdigrisFraction(itemKey) * 100);
         const plating = deps.toolPlating(itemKey);
-        const effectiveMetal = deps.toolEffectiveMetalKey(itemKey);
-        const reinforced = deps.toolReinforcementMetal(itemKey);
+        const reinforcement = deps.toolReinforcementProgress(itemKey); // Current saved grade, including legacy-strength equipment.
+        const nextReinforcement = window.MetalReinforcement?.next(reinforcement, deps.METAL_DEFS, deps.VERDIGRIS_METAL_KEYS); // The one affordable-or-unaffordable step shown in the shop.
+        const nextBarsOwned = nextReinforcement ? (deps.inventory[deps.metalBarItemKey(nextReinforcement.metalKey)] || 0) : 0; // Used by the visible cost/stock notice.
         const platingText = plating
           ? (plating.mode === 'cosmetic' ? `Plated: ${deps.METAL_DEFS[plating.metalKey]?.label}`
             : plating.mode === 'pattern' ? 'Authored verdigris-removal pattern'
@@ -344,24 +347,21 @@
           // editor) replaces whatever plating/pattern this tool already had.
           ...(patternEligible ? [`<option value="pattern">Author a verdigris-removal pattern…</option>`] : []),
         ].join('');
-        const reinforceOptions = deps.VERDIGRIS_METAL_KEYS
-          .filter(k => deps.METAL_DEFS[k].tier > (deps.METAL_DEFS[effectiveMetal]?.tier || 0) && (deps.inventory[deps.metalBarItemKey(k)] || 0) >= CRAFT_BAR_COST)
-          .map(k => `<option value="${k}">${deps.esc(deps.METAL_DEFS[k].label)} (tier ${deps.METAL_DEFS[k].tier})</option>`).join('');
         const row = document.createElement('div');
         row.className = 'shop-row mc-tool-row';
         row.innerHTML = `
           <div class="sh-icon">${def.icon}</div>
           <div class="sh-info">
-            <div class="sh-name">${deps.esc(def.label)}${reinforced ? ' (reinforced: ' + deps.esc(deps.METAL_DEFS[reinforced].label) + ')' : ''}</div>
-            <div class="sh-desc">${deps.esc(platingText)} — Mastery ${deps.toolMasteryLevel(itemKey)}/5</div>
+            <div class="sh-name">${deps.esc(def.label)}</div>
+            <div class="sh-desc">${deps.esc(platingText)} — Mastery ${deps.toolMasteryLevel(itemKey)}/5 — Reinforcement: ${reinforcement ? deps.esc(reinforcement.label) + ' (' + (reinforcement.rank + 1) + '/' + (reinforcement.maxRank + 1) + ')' : 'N/A'}</div>
             <div class="mc-tool-controls">
               <select class="mc-plate-select">${plateOptions}</select>
               <button class="shop-buy-btn mc-plate-btn">Apply</button>
             </div>
-            ${reinforceOptions ? `<div class="mc-tool-controls">
-              <select class="mc-reinforce-select">${reinforceOptions}</select>
-              <button class="shop-buy-btn mc-reinforce-btn">Reinforce (${CRAFT_BAR_COST} bars + ${CRAFT_LABOR_GOLD}g)</button>
-            </div>` : ''}
+            ${nextReinforcement ? `<div class="mc-tool-controls">
+              <button class="shop-buy-btn mc-reinforce-btn">Reinforce to ${deps.esc(nextReinforcement.label)} (${nextReinforcement.bars} bars + ${nextReinforcement.gold}g)</button>
+            </div>
+            <div class="sh-desc">Next step: ${deps.esc(nextReinforcement.label)} · ${nextBarsOwned}/${nextReinforcement.bars} bars owned · Power ${reinforcement.multiplier.toFixed(3)}× → ${nextReinforcement.multiplier.toFixed(3)}×</div>` : '<div class="sh-desc">Maximum metal reinforcement reached.</div>'}
           </div>
         `;
         row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
@@ -369,10 +369,7 @@
           if (choice === 'pattern') { openVerdigrisPatternEditor(itemKey); return; }
           applyMetalToolPlating(itemKey, choice);
         });
-        row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => {
-          const sel = row.querySelector('.mc-reinforce-select');
-          if (sel) reinforceMetalTool(itemKey, sel.value);
-        });
+        row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => reinforceMetalTool(itemKey));
         if (plating?.mode === 'pattern') {
           window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {
             title: 'Verdigris pattern placement',

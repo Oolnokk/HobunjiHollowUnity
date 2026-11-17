@@ -63,7 +63,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261115spherical1',
   'js/alchemy-system.js?v=20261114activeBuffMenu1',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261115spherical1',
+  'js/combat/combat-bandit.js?v=20261116staminaBudget2',
   'js/weapon-tool-stances.js?v=20261117toolStanceWalk1',
   'js/combat/enemy-weapon-stances.js?v=20261111flailPose1',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
@@ -71,7 +71,7 @@ const files = [
   'js/combat/combat-animal-attacks.js?v=20261110attackFxInst1', // Real animal special registry underlies the shared attachment system.
   'js/combat/combat-attach.js?v=20261101h47c5427', // One owner for attach/detach, dodge interruption and victim targeting.
   'js/combat/combat-maskbound-headtaker.js?v=20261101h33d9d71', // Actual Headtaker animation and head throw, not a fabricated preview-only pose.
-  'js/combat/combat-lich.js?v=20261104azgarlu3',
+  'js/combat/combat-lich.js?v=20261116eightDangerTier1',
   'js/combat/combat-enchantments.js?v=20261031ghoulvar1', // Enchantment definitions and the particle vocabulary, for the Shadowknights' enchanted weapons.
   'js/combat/weapon-enchantment-vfx.js?v=20261031h6c09483',
   'js/combat/ghoul-special-variants.js?v=20261031ghoulvar1',
@@ -84,7 +84,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261028a',
   'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261110geomMainMerge1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261116tier8a',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
