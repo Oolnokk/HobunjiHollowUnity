@@ -1107,6 +1107,18 @@
     return points;
   }
 
+  function resetBossHazards(boss) {
+    if (!world || !boss) return;
+    if (world.bossIcicleEmitter?.boss === boss) world.bossIcicleEmitter = null;
+    for (const icicle of world.icicles) {
+      if (icicle.temporary && icicle.owner === boss) icicle.mesh.parent?.remove?.(icicle.mesh); // Shared icicle geometry remains owned by the room, not this attack.
+    }
+    world.icicles = world.icicles.filter(icicle => !(icicle.temporary && icicle.owner === boss));
+    for (const pillar of world.pillars) if (pillar.temporary && pillar.owner === boss) releaseBossPillar(pillar);
+    world.pillars = world.pillars.filter(pillar => !(pillar.temporary && pillar.owner === boss));
+    window.DevRandomRuinTileOccupancy?.refresh?.(); // Removed Azgarlu pillars must stop blocking dodges and projectiles immediately.
+  }
+
   function clearPlasmRadius(x,z,radius=2.4) {
     if(world?.theme!=='kanthic'||!Number.isFinite(Number(x))||!Number.isFinite(Number(z)))return 0;
     const kit=world.kit,range=Math.max(.1,Number(radius)||2.4),rangeSq=range*range;
@@ -1339,7 +1351,7 @@
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&(world.iceTiles.has(tileKey(x,z))||window.RuinJumpShaft?.isIceAt?.(x,z,window.DevRandomRuin?.getPlayerGroundSupportY?.()))?ICE_PHYSICS:null, // No allocations per game frame; jump-shaft ice platforms answer for their own height.
     addPlatformPillar,createPlasmPatch,createPlasmPuddle,
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
-    trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
+    trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard,resetBossHazards, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.
     plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.

@@ -480,6 +480,27 @@ currentArea='farm';
 windowObject.RangedWeapons.update(.1);
 assert.equal(api.debugSnapshot().puddles,0,'Ruin departure disposes remaining boss puddles');
 assert.equal(sharedDisposed,sharedCreated,'Area cleanup releases every composer-owned spell patch exactly once');
+ // Retreat removes the retiring guardian's residual effects immediately, without waiting for the next projectile tick.
+ currentArea=ruinArea;player.areaId=ruinArea;
+ player.afflictions.entrancedHealth=12;
+ player._entrancedCommandState={source:ruinCaster};
+ api.addGooSlow(player);
+ player._kanthicPuddleSink={elapsed:.6};
+ api.clearBossEffects(ruinCaster);
+ assert.equal(player.afflictions.entrancedHealth,0,'Boss disposal clears its legacy Entranced status');
+ assert.equal(player._entrancedCommandState,undefined,'Boss disposal releases its command state');
+ assert.equal(player._kanthicGooSlow,undefined,'Boss disposal restores movement speed immediately');
+ assert.equal(player._kanthicPuddleSink,undefined,'Boss disposal restores presentation height immediately');
+ assert.equal(windowObject.Combat.getMovementSpeedMul(),1,'No retired boss slowdown survives on the active map');
+ player.afflictions.entrancedHealth=7;
+ const unrelatedController={id:'independent'};
+ player._entrancedCommandState={source:unrelatedController};
+ api.clearBossEffects(ruinCaster);
+ assert.equal(player._entrancedCommandState.source,unrelatedController,'Other referential controllers are not overwritten by the retired lich');
+ assert.equal(player.afflictions.entrancedHealth,7,'Other controller buildup is not cleared');
+ delete player._entrancedCommandState;
+ player.afflictions.entrancedHealth=0;
+ 
 
 console.log('Harlyao Lich regression checks passed.');
 

@@ -169,7 +169,7 @@ for(let seed=1;seed<=100;seed++){
   const interior=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // The public runtime exposes the same site without private globals.
   assert(sanctum.includes('context.shaftHub===true')&&sanctum.includes('getShaftSanctumDoorSite'),
     'normal ruins mount the Great Door at the main shaft instead of choosing a V50 wall');
-  assert(sanctum.includes('teleport(s.entry)')&&sanctum.includes('teleport(door.front)'),
+  assert(sanctum.includes('teleport(entry)')&&sanctum.includes('teleport(front)')&&sanctum.includes('s!==owner'),
     'entering the distant sanctum and returning both use the canonical fade teleport');
   assert(interior.includes('getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null'),
     'public ruin API exposes the checked shaft wall site');
