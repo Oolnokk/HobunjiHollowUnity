@@ -10115,6 +10115,7 @@
         window.KnockbackCollisionImpact?.coolBurningOnDodge?.(player);
         player.dodging = true;
         player.dodgeT = DODGE_DUR_S;
+        window.FeyIllusions?.onDodgeStarted?.(player); // Panic multiplies the full authored roll time before the first swept movement step.
         player.dodgeDirX = dirX;
         player.dodgeDirY = dirY;
         player.dodgeCooldownT = DODGE_COOLDOWN_S;
@@ -18989,15 +18990,19 @@
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
             const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
             const descriptor = knockbackCollisionDescriptorAt(struck.x, struck.y, PLAYER_RADIUS * 0.72, player.dodgeDirX, player.dodgeDirY);
-            window.FeyIllusions?.onDodgeBlocked?.(player, {
+            if (window.FeyIllusions?.onDodgeBlocked?.(player, {
               descriptor, hooks: knockbackImpactHooks(player, descriptor, player.dodgeDirX, player.dodgeDirY),
               remainingPx: DODGE_SPEED_PX * Math.max(0, player.dodgeT) * heavyDistanceMul,
-            }); // Ordinary dodges bypass all Fey-only collision classification work.
+            })) {
+              player.dodging = false; player.dodgeT = 0;
+              player.vx = 0; player.vy = 0;
+              return; // The physical impact owner may already have killed/respawned the actor; do not overwrite that state.
+            }
           }
-          player.x = dodgeSwept.x; player.y = dodgeSwept.y;
           player.vx = player.dodgeDirX * dodgeSpeedPx;
           player.vy = player.dodgeDirY * dodgeSpeedPx;
           if (player.dodgeT <= 0) {
