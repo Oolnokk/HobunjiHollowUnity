@@ -1022,28 +1022,43 @@
   // A separate emitter uses the same metal mask, authored particle shapes,
   // colors, and motion as the held weapon. It never enters gameplay's EMITTERS
   // map, which is intentionally limited to the actually drawn melee weapon.
-  function createPreviewEmitter(plane, key) {
+  function createPreviewEmitter(plane, key, metalTargets = null) {
     if (!plane?.isObject3D || !key) return null;
-    const emitter = makeEmitter(plane); // Owned exclusively by the loadout's miniature 3D scene.
-    if (!emitter) return null;
+    const supplied = Array.isArray(metalTargets)
+      ? metalTargets.filter(target => target?.plane?.isObject3D && target.mask?.indices?.length)
+      : null; // A flail supplies its exact per-layer source masks; only ordinary weapons scan the base sprite.
+    if (supplied && !supplied.length) return null; // Never light an empty haft when the head has no metal pixels.
+    const emitters = (supplied || [{ plane }]).map(target => makeEmitter(target.plane)).filter(Boolean); // Independently owned preview heads never enter gameplay's EMITTERS map.
+    if (!emitters.length) return null;
     let disposed = false; // Blocks late mask-decoding promises from attaching to a closed preview.
     let generation = 0; // Invalidates an older preview scan whenever enchantments or visual choices change.
     let activeToken = null; // Tracks the saved visual, enchantment counts and source sprite while this preview stays open.
-    let snapshot = null; // Supplies the existing particle integrator with the preview's independent metal mask.
+    let snapshot = null; // Supplies the existing particle integrator with the preview's independent metal masks.
 
     function refresh() {
       if (disposed) return;
       const visual = normalizedState(key); // Same validated effect/plane/dye choice as the real held-weapon renderer.
       const counts = planarCounts(key); // A newly applied or removed planar enchantment changes emission density.
-      const spritePath = sourceSpriteForWeapon(key); // Use the untouched sprite, never the already-verdigris-colored texture.
+      const spritePath = sourceSpriteForWeapon(key); // Used for ordinary weapons and visual-state invalidation.
       const token = JSON.stringify([visual, counts, spritePath]);
       if (token === activeToken) return;
       activeToken = token;
       const request = ++generation;
-      clearEmitter(emitter);
-      emitter.accumulator = 0;
+      for (const emitter of emitters) {
+        clearEmitter(emitter);
+        emitter.accumulator = 0;
+      }
       snapshot = null;
-      if (!visual || !spritePath) return; // Unenchanted weapons legitimately show no particles.
+      if (!visual) return; // Unenchanted weapons legitimately show no particles.
+      if (supplied) {
+        const maskByPlane = new Map(supplied.map(target => [target.plane, target.mask])); // Head masks follow their respective transformed, recolored layers.
+        const matchedMetalPixels = supplied.reduce((sum, target) => sum + (target.mask.matchedMetalPixels || 0), 0);
+        snapshot = { weaponKey: key, visual, counts, spritePath, mask: {
+          ...supplied[0].mask, matchedMetalPixels,
+        }, maskByPlane };
+        return;
+      }
+      if (!spritePath) return;
       metalMaskForSprite(spritePath).then(mask => {
         if (disposed || request !== generation) return;
         snapshot = { weaponKey: key, visual, counts, spritePath, mask };
@@ -1058,19 +1073,20 @@
         if (disposed) return;
         refresh();
         if (!snapshot?.mask?.indices?.length) return;
-        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, [emitter]);
-        if (camera) faceEmittersTowardCamera([emitter], camera); // Preview particles face its own camera, not the paused game camera.
+        updateEmitters(Math.min(0.05, Math.max(0, Number(dt) || 0)), snapshot, emitters);
+        if (camera) faceEmittersTowardCamera(emitters, camera); // Preview particles face their own camera, not the paused game camera.
       },
       refresh,
       dispose() {
         if (disposed) return;
         disposed = true;
         generation++;
-        disposeEmitter(emitter); // Dispose only this preview's sprite materials/pool; shared shape textures remain cached.
+        for (const emitter of emitters) disposeEmitter(emitter); // Only this scene's pooled particles/materials; never the shared shape textures.
       },
       debugSnapshot() {
         return { weaponKey: key, active: !disposed, visual: snapshot?.visual || null,
-          matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0, particles: emitter.particles.length };
+          matchedMetalPixels: snapshot?.mask?.matchedMetalPixels || 0,
+          emitterPlanes: emitters.length, particles: emitters.reduce((sum, emitter) => sum + emitter.particles.length, 0) };
       },
     };
   }
