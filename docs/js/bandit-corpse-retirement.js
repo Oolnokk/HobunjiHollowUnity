@@ -25,7 +25,7 @@
   let lastRunAt = -Infinity;
   let markerGeometry = null;
   let markerMaterial = null;
-  const stats = { retired: 0, wildlifeRetired: 0, runs: 0, lastRetired: null }; // Read by mobile diagnostics and regression tests.
+  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
 
   function config() {
     const override = window.SCRATCHBONES_CONFIG?.game?.banditCorpseRetire;
@@ -54,17 +54,22 @@
     return { geometry: markerGeometry, material: markerMaterial };
   }
 
-  // Retain the last animal/portrait body image where a straightforward
-  // front-plane texture exists. The 256px frozen copy is deliberately
-  // independent of the old animated rig's texture and disposal lifecycle.
-  // Compound humanoid rigs may have no single assembled body image; they
-  // safely fall back to the existing one-draw silhouette.
+  // Freeze the composed humanoid frontCanvas (appearance, dyed clothing,
+  // hair and face) into ONE static portrait plane. Ordinary animal rigs use
+  // their already-composited front-plane map. The 256px copy owns its texture
+  // independently of the animated rig's eventual disposal. Procedural 3D
+  // legs, pants and accessories are not included in the humanoid canvas.
   function spriteSnapshot(rig, width, c) {
     const THREE = window.THREE;
     if (typeof document === 'undefined' || !THREE?.CanvasTexture || !THREE?.PlaneGeometry) return null;
     const root = rig?.frontPlane;
     if (!root) return null;
-    let best = null; // Largest source body image found under the canonical front plane.
+    const composed = rig?.frontCanvas; // Humanoid bandits already render their full authored portrait into this canvas.
+    const hasComposed = Number(composed?.width) > 0 && Number(composed?.height) > 0;
+    let best = hasComposed
+      ? { image: composed, w: composed.width, h: composed.height, material: null, map: null,
+          mesh: null, pixels: composed.width * composed.height }
+      : null; // A normal humanoid must not accidentally snapshot only its head/eye mesh.
     const consider = node => {
       if (!node?.isMesh || node.visible === false) return;
       const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -76,8 +81,10 @@
         if (w > 0 && h > 0 && (!best || w * h > best.pixels)) best = { image, w, h, material, map, mesh: node, pixels: w * h };
       }
     };
-    if (root.traverse) root.traverse(consider);
-    else consider(root);
+    if (!hasComposed) { // Wildlife retains its live genotype-composited body map.
+      if (root.traverse) root.traverse(consider);
+      else consider(root);
+    }
     if (!best) return null;
     let canvas, texture, geometry, material;
     try {
@@ -89,18 +96,19 @@
       if (!context) return null;
       context.drawImage(best.image, 0, 0, canvas.width, canvas.height);
       texture = new THREE.CanvasTexture(canvas);
-      if (best.map.colorSpace !== undefined) texture.colorSpace = best.map.colorSpace;
+      if (best.map?.colorSpace !== undefined) texture.colorSpace = best.map.colorSpace;
+      else if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
       texture.magFilter = THREE.NearestFilter || texture.magFilter;
       texture.minFilter = THREE.LinearFilter || texture.minFilter;
       // Preserve the authored plane proportions rather than treating the
       // source PNG's transparent padding/aspect as physical body dimensions.
-      const authoredWidth = Number(best.mesh.geometry?.parameters?.width) || Number(rig.modelWidth) || width; // Original sprite width for static scaling.
-      const authoredHeight = Number(best.mesh.geometry?.parameters?.height) || Number(rig.modelHeight) || Number(c.visualModelHeight) || authoredWidth; // Original portrait height for the corpse proxy.
+      const authoredWidth = Number(best.mesh?.geometry?.parameters?.width) || Number(rig.modelWidth) || width; // Composed portrait width when geometry is already gone.
+      const authoredHeight = Number(best.mesh?.geometry?.parameters?.height) || Number(rig.modelHeight) || Number(c.visualModelHeight) || authoredWidth; // Authored vertical proportions, not PNG padding.
       const length = Math.max(width * 0.5, Math.min(4, width * authoredHeight / Math.max(0.1, authoredWidth)));
       geometry = new THREE.PlaneGeometry(width, length);
       geometry.rotateX(-Math.PI / 2);
       material = new THREE.MeshBasicMaterial({
-        map: texture, color: best.material.color?.clone?.() || 0xffffff,
+        map: texture, color: best.material?.color?.clone?.() || 0xffffff,
         transparent: true, alphaTest: 0.15, side: THREE.DoubleSide,
         depthTest: true, depthWrite: true,
       });
@@ -169,6 +177,7 @@
     c._wildlifeDormantSinceMs = null; // The wildlife streamer no longer owns this settled presentation.
     window.BurningAfflictionVfx?.syncEntity?.(c, group); // Keep finite corpse flames alive above the new body.
     stats.retired++;
+    if (snapshot) stats.portraitPlanes++; else stats.fallbackMarkers++;
     if (!c.isBandit) stats.wildlifeRetired++;
     stats.lastRetired = c.id || c.creatureKey || c.def?.label || 'corpse';
     return true;
