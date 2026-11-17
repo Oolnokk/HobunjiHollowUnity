@@ -3,7 +3,7 @@
 'use strict';
 
 self.window = self; // The two existing pure modules export via window.<Namespace>.
-importScripts('cavern-sculptor.js?v=20261116deepAudit1', 'cavern-generator.js?v=20261116deepAudit1');
+importScripts('cavern-sculptor.js?v=20261116deepAudit1', 'cavern-generator.js?v=20261117deepAudit3');
 
 // Exactly the canonical FNV-1a + mulberry32 sequence from WildernessMapGenerator.
 // The worker must not load the entire wilderness/scene generator merely to seed
