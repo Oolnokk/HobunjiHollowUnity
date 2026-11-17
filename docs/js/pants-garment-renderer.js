@@ -284,7 +284,7 @@
       rightAnkle: { color: 0xffad12, samples: (garment.legOpenings?.right || []).map(sampleAt) },
     };
     for (const side of ['left', 'right']) if (rings[side]) splines[`${side}Pole`] = { color: 0xffffff, samples: [rings[side].anchor, rings[side].anchor] }; // The point each ring is looped around the 3D bone at.
-    return { geometry, basePositions, weights, bones2D, beltCenter, beltEnds, maskMapping, rings, splines, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
+    return { geometry, basePositions, weights, bones2D, beltCenter, beltEnds, maskMapping, rings, splines, beltFit: transform, planeNormal: { x: normal.x, y: normal.y, z: normal.z } };
   }
 
   // How far in front of the portrait plane the procedural feet reach (avatar-local +z). The garment is lifted past that so
@@ -534,7 +534,7 @@
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
       segments: segmentsForBudget(meshBudget), geometry: data.geometry, basePositions: data.basePositions, weights: data.weights, bones2D: data.bones2D,
-      beltCenter: data.beltCenter, beltEnds: data.beltEnds, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
+      beltCenter: data.beltCenter, beltEnds: data.beltEnds, beltFit: data.beltFit, planeNormal: data.planeNormal, rings: data.rings, splineSpec: data.splines, debugLines: null, showSplines: !!debugSplines,
       legRollGain: Math.min(4, Math.max(1, Number(character.legRollGain) || 2)),
       openingWidthScale: 1, // Last applied calf-opening span relative to body X; rebuilt only when character proportions change.
       maskMapping: data.maskMapping, footLift, rest: null, restRaw: null, rotationScale: { left: 1, right: 1 }, restFrames: { left: {}, right: {} },
@@ -564,7 +564,7 @@
       applyFootDepthBias();
       return true;
     };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
