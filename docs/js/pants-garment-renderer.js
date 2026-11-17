@@ -812,6 +812,7 @@
       if (!handle.restCaptured) handle.captureRest();
       if (Math.abs(openingWidthRatioForFeet() - handle.openingWidthScale) > 1e-6) {
         handle.alignToRest(); // A late NPC rig scale or live editor change must resize the hems without stacking stretches.
+        rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
       }
       let aim = aimAtLiveLegs();
@@ -825,7 +826,7 @@
         const stance = restStanceBones(handle);
         let stanceDelta = 0, k = 0; // Max change in the standing bind joints, separate from the moving-pose flag.
         for (const side of ['left', 'right']) for (const joint of ['hip', 'ankle']) { const p = stance.bones[side][joint]; stanceDelta = Math.max(stanceDelta, Math.abs(p.x - handle.lastStance[k]), Math.abs(p.y - handle.lastStance[k + 1]), Math.abs(p.z - handle.lastStance[k + 2])); k += 3; }
-        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
+        if (stanceDelta > 2e-4) { handle.captureRest(); handle.alignToRest(); rebuildSpineShift(spineProfile()); handle.dirty = true; aim = aimAtLiveLegs(); moved = poseChanged(aim); } // aim offsets depend on the rest pose just captured.
       }
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
