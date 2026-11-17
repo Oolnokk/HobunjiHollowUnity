@@ -801,6 +801,11 @@
       clearMotion('partner-or-rig-changed');
       return;
     }
+    if (session.poseSession && !session.poseSession.owns()) {
+      clearMotion('pose-owner-taken-over'); // A newer absolute pose or rebuilt rig took over before this tick.
+      return;
+    }
+    try {
     session.elapsed += clamp(finite(context.deltaMs) / 1000, 0, .08);
     const pose = samplePose(session.elapsed);
     const playerIsTaller = session.height.taller === 'first';
@@ -842,6 +847,7 @@
     const expectedKneeWorld = kneeWorld;
     if (pose.blend > .8 && Math.abs(actualKneeWorld - expectedKneeWorld) > Math.max(.03, expectedKneeWorld * .09)) {
       lastError = 'actual-knee-limit-prevents-mouth-contact';
+      session.poseSession?.stamp(); // Capture this partial authored frame so cancellation can restore the affected body.
       clearMotion('knee-limit-mismatch');
       return;
     }
@@ -866,7 +872,18 @@
       try { session.onContact?.(); }
       catch (error) { lastError = 'contact-callback: ' + (error?.message || error); }
     }
+    if (session.poseSession && !session.poseSession.stamp()) {
+      clearMotion('pose-owner-replaced-during-frame');
+      return;
+    }
     if (session.elapsed >= DURATION_S) clearMotion('completed');
+    } catch (error) {
+      if (active === session) {
+        session.poseSession?.stamp(); // A partially completed solver frame must still be undone before locks release.
+        clearMotion('pose-solver-exception');
+      }
+      lastError = 'pose-solver-exception: ' + String(error?.message || error);
+    }
   }
 
   function init() {
