@@ -138,8 +138,7 @@ normalizedRig = function normalizedRigWithBabyHeadScale() {
   else delete rig.babyHeadScale; // Inherit 123% without discarding the actual authored head mask source.
   if (authoredBabyHeadShortening != null) rig.babyHeadShortening = authoredBabyHeadShortening;
   else delete rig.babyHeadShortening; // An empty shortening override inherits the global default.
-  if (authoredBabyHeadUsePainted) delete rig.babyHeadUsePaintedFrame; // Inherit the default original painted-Head growth method.
-  else rig.babyHeadUsePaintedFrame = false; // Persist an explicit opt-in to the newer idle-sprite alpha mask.
+  rig.babyHeadUsePaintedFrame = authoredBabyHeadUsePainted; // Persist either choice; explicit true must override previously committed alpha-only rigs.
   const species = String($('animalId').value || '').trim().toLowerCase().replace(/_/g, '-');
   const base = window.HobunjiAnimalHeadRigSpecies?.baseSpeciesFor?.(species) || species;
   const frame = (authoredBabyHeadUsePainted ? paintedBabyHeadFrame() : null)
