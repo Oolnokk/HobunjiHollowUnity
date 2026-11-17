@@ -787,6 +787,96 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   interrupted.onCancel(interrupted);
   assert.equal(hypedStages.length,countBeforeCancel+1,'cancelled primary cannot create an extra Hyped attack');
   assert.equal(context.FeyHypedAttacks.debugSnapshot().activeHypedAttacks,0,'cancelled actions release their strong target references');
+  // NPC Hyped: eligible resource payments must fund exactly two real staged
+  // attacks from that NPC, never the player's unrelated staged-action bridge.
+  const npc=makeEntity({name:'Hyped NPC',isBandit:true,health:100,stamina:100,areaId:'arena'});
+  const npcTarget=makeEntity({name:'NPC opponent',health:100,x:18,areaId:'arena'});
+  const nHype=context.FeyHypedAttacks;
+  RS.addEnhancedResource(npc,'hypedStamina',8);
+  const npcBefore=RS.getAffliction(npc,'hypedStamina');
+  RS.spendStamina(npc,4,'patrol',{actionKind:'walking'});
+  assert.equal(RS.getAffliction(npc,'hypedStamina'),npcBefore,'NPC walking leaves Hyped enhanced resource untouched');
+  RS.spendStamina(npc,8,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const npcPayment=nHype.claimNpcMelee(npc);
+  assert.equal(npcPayment?.used,8,'NPC melee gets a separately paid Hyped transaction');
+  assert.equal(npcPayment?.tempo,2,'NPC attack runs at precisely twice normal speed');
+  assert.equal(nHype.claimNpcMelee(npc),null,'one NPC payment cannot be claimed twice');
+  assert.equal(nHype.claimNpcMelee(player),null,'player pending credits cannot be stolen by NPC attack stages');
+  const npcResults=[]; // First and second actual committed payloads share the NPC's normal damage authority.
+  let npcCanHit=true, npcComplete=0, npcStrikeCount=0;
+  const npcStagesBefore=hypedStages.length;
+  const npcOptions={
+    windupS:.2,strikeS:.1,recoverS:0,
+    data:{isBandit:true,attacker:npc,voiceAbilityId:'opportunistJab'},
+    onStrike(){
+      npcStrikeCount++;
+      if (!npcCanHit) return; // An original miss cannot skip the paid, independently checked second attack.
+      const second=nHype.npcDamagePayload(npc,npcTarget,40,200,{tag:'sharp',afflictionBonuses:{bleedingHealth:2},footingDamageMultiplier:1.4});
+      npcResults.push(second || {damage:40,knockback:200,opts:{tag:'sharp',afflictionBonuses:{bleedingHealth:2}}});
+    },
+    onComplete(){npcComplete++;},
+    onCancel(){npcComplete=-1;},
+  };
+  const npcFirst=nHype.beginNpcMelee(npc,npcOptions,npcPayment);
+  npc._banditAction=npcFirst;
+  assert(Math.abs(npcFirst.windupS-.1)<.00001&&Math.abs(npcFirst.strikeS-.05)<.00001,
+    'NPC original attack windup and strike are both accelerated, not just its animation');
+  npcFirst.onStrike(npcFirst);
+  npcFirst.onComplete(npcFirst);
+  assert.equal(npcComplete,0,'NPC combo cooldown/retreat cannot run between paired attacks');
+  assert.equal(hypedStages.length,npcStagesBefore+2,'NPC attack creates exactly two authoritatively staged actions');
+  const npcSecond=npc._banditAction;
+  assert(Math.abs(npcSecond.windupS-.1)<.00001&&Math.abs(npcSecond.strikeS-.05)<.00001,'NPC second attack also runs at 2x');
+  npcSecond.onStrike(npcSecond);
+  npcSecond.onComplete(npcSecond);
+  assert.equal(npcStrikeCount,2,'same authored NPC attack executes two independent actual strikes');
+  assert.equal(npcComplete,1,'NPC authored completion runs once, after both strikes');
+  assert.equal(npcResults[0].damage,40);
+  assert(Math.abs(npcResults[1].damage-6.4)<.00001,'8 Hyped points copy 16% of actual first NPC damage');
+  assert(Math.abs(npcResults[1].knockback-32)<.00001,'NPC secondary knockback respects the same ratio');
+  assert(Math.abs(npcResults[1].opts.afflictionBonuses.bleedingHealth-.32)<.00001,'NPC second status magnitude copies committed original');
+  assert.equal(npcResults[1].opts.footingDamageMultiplier,1.4,'Footing effect does not get incorrectly multiplied by the ratio twice');
+  assert.equal(npc._feyHypedNpcSequence,undefined,'completed NPC attacks release all target snapshots and stage state');
+
+  // A missed first NPC swing can still hit on the second actual hit test.
+  RS.addEnhancedResource(npc,'hypedStamina',5);
+  RS.spendStamina(npc,5,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const npcNext=nHype.claimNpcMelee(npc);
+  npcResults.length=0;npcStrikeCount=0;npcComplete=0;npcCanHit=false;
+  const whiffNpc=nHype.beginNpcMelee(npc,npcOptions,npcNext);
+  npc._banditAction=whiffNpc;
+  whiffNpc.onStrike(whiffNpc);
+  npcCanHit=true;
+  whiffNpc.onComplete(whiffNpc);
+  const catchNpc=npc._banditAction;
+  catchNpc.onStrike(catchNpc);
+  catchNpc.onComplete(catchNpc);
+  assert.equal(npcResults.length,1,'second NPC strike can catch a target that dodged the original');
+  assert(Math.abs(npcResults[0].damage-4)<.00001,'a fresh second NPC hit is 10% power with 5 Hyped points');
+
+  // NPC staggers/death cancel the pending echo without leaking stale status.
+  RS.addEnhancedResource(npc,'hypedStamina',3);
+  RS.spendStamina(npc,3,'NPC melee',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
+  const interruptedNpc=nHype.beginNpcMelee(npc,npcOptions,nHype.claimNpcMelee(npc));
+  const beforeNpcCancel=hypedStages.length;
+  interruptedNpc.onCancel(interruptedNpc);
+  assert.equal(hypedStages.length,beforeNpcCancel,'cancelled NPC action schedules no extra strike');
+  assert.equal(npc._feyHypedNpcSequence,undefined,'NPC cancellation cleans paid state');
+  assert.equal(nHype.npcDamagePayload(npc,npcTarget,5,10),null,'ordinary later hits get no stale Hyped multiplier');
+  assert.equal(nHype.debugSnapshot().npcReplayCount>=2,true,'mobile diagnostics count independently tested NPC second contacts');
+
+  // Validate actual gameplay and offscreen-duel call sites instead of a mock-only executor.
+  const banditHypeSource=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8');
+  const stagedDuelHypeSource=fs.readFileSync('docs/js/combat/npc-duel-staging.js','utf8');
+  const resourceHypeSource=fs.readFileSync('docs/js/combat/resource-system.js','utf8');
+  assert.equal((banditHypeSource.match(/c\._banditAction = beginBanditMeleeStage\(c, \{/g)||[]).length,3,
+    'real NPC combo, quick and heavy stages use the shared Hyped executor');
+  assert(banditHypeSource.includes('npcDamagePayload?.(c, target, amount, knockbackPxS, opts)'),
+    'real NPC damage-to-player and damage-to-NPC owner applies the scaled second payload');
+  assert(stagedDuelHypeSource.includes('claimNpcMelee?.(c)'),
+    'fully offscreen NPC battles cannot silently discard paid Hyped');
+  assert(resourceHypeSource.includes('combatNpcMelee'),'NPC Hyped must remain action-eligible in enhanced-resource definitions');
+
   hostileObjects.pop(); // Restore the original combat roster before unrelated relic/quest assertions.
 
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
