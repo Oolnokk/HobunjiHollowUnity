@@ -83,6 +83,7 @@ class TestQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { Object.assign(this, { x, y, z, w }); }
   clone() { return new TestQuaternion(this.x, this.y, this.z, this.w); }
   copy(v) { Object.assign(this, { x: v.x, y: v.y, z: v.z, w: v.w }); return this; }
+  identity() { return this.copy(new TestQuaternion()); } // THREE.Quaternion's API used by the mirrored-parent fallback resolver.
   toArray() { return [this.x, this.y, this.z, this.w]; }
   setFromAxisAngle(a, radians) {
     const s = Math.sin(radians / 2);
@@ -269,5 +270,44 @@ livePlayerMesh = {
 const newOwner = liveRuntime.solveSurfaceTransform(livePerch, liveGrip, livePet);
 assert.ok(newOwner.perchWorldPosition.distanceTo(newNeck.perchWorldPosition) > 1,
   'attachment reads the newly replaced player root and repositions the pinned grip');
+
+// Legacy pets whose authored shoulderPerch/shoulderGrip are absent arrive via
+// game.js with its old getWorldQuaternion() from a potentially reflected rig.
+const reflectedAncestor = { isObject3D: true, quaternion: yaw(27), parent: null, scale: { x: -1, y: 1, z: 1 } }; // Model a body-mirror ancestor, not an animation flip.
+const actualPlayerRoot = {
+  isObject3D: true, quaternion: yaw(14), parent: reflectedAncestor,
+  getWorldQuaternion: () => yaw(221), // A false 180° rotation from negative-scale matrix decomposition must not be applied.
+}; // Physical world orientation is 41°, not the supplied reflected 221°.
+const fallbackRuntime = runtimeFactory({
+  THREE, getPlayerMesh: () => actualPlayerRoot, getPlayerNeckJoint: () => null,
+  getRotationSource: () => 'body', getInvertRotationSource: () => false,
+  getCancelRotationalOffset: () => false,
+});
+const fallbackGroup = {
+  parent: null, position: new TestVector3(), quaternion: new TestQuaternion(),
+  userData: { hobunjiShoulderSpriteCanonicalized: true },
+}; // Actual pet scene sibling has no mirrored ancestor of its own.
+const fallbackPlane = () => ({ rotation: { set() {} }, updateMatrix() {} }); // One canonical plane reset per drawn face.
+const fallbackPet = { avatarRef: {
+  group: fallbackGroup, frontPlane: fallbackPlane(), backPlane: fallbackPlane(),
+} };
+fallbackRuntime.applyFinalTransform(fallbackPet, {
+  worldPosition: new TestVector3(2, 1, 3),
+  worldQuaternion: yaw(221),
+  faceRotationSource: 'player-body-fallback-no-authored-anchors',
+});
+const physicalWorldQuaternion = yaw(41);
+const orientationDot = (a, b) => Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w); // Quaternion parity ignores the equivalent q/-q representation.
+assert.ok(orientationDot(fallbackGroup.quaternion, physicalWorldQuaternion) > 1 - 1e-9,
+  'legacy shoulder pets without authored anchors ignore a reflected 180° body quaternion');
+assert.equal(fallbackGroup.userData.hobunjiShoulderPetAttachment.rotationSource,
+  'player-body-fallback-no-authored-anchors', 'debug identifies this no-authored-anchor ownership path');
+assert.ok(orientationDot(
+  { x: fallbackGroup.userData.hobunjiShoulderPetAttachment.finalWorldQuaternion[0],
+    y: fallbackGroup.userData.hobunjiShoulderPetAttachment.finalWorldQuaternion[1],
+    z: fallbackGroup.userData.hobunjiShoulderPetAttachment.finalWorldQuaternion[2],
+    w: fallbackGroup.userData.hobunjiShoulderPetAttachment.finalWorldQuaternion[3] },
+  physicalWorldQuaternion,
+) > 1 - 1e-9, 'mobile debug reports the repaired applied orientation, not the false reflected source');
 
 console.log('production shoulder grip-pivot solver numerical cases passed');
