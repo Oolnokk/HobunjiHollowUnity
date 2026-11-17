@@ -188,10 +188,71 @@
     return c && !(c.health <= 0) && c.state !== 'dying' && c.state !== 'corpse';
   }
 
+  const LANDMARK_CACHE_TTL_MS = 1000; // Rechecks changing provider membership while standing still (harvested herbs, new camps, streaming chunks).
+  const LANDMARK_MARGIN_TILES = 1; // A tile-center prefilter includes every position reachable within that tile before the next event.
+  let landmarkCache = { scene: null, col: NaN, row: NaN, multiplier: NaN, at: -Infinity, candidates: [] }; // Holds only nearby stationary landmark roots, not moving actors.
+  let landmarkRebuilds = 0; // Dev/mobile counter for static provider rescans.
+  let landmarkReuses = 0; // Dev/mobile counter for static provider scans avoided.
+  let unsubscribeTileEvents = null; // Prevents duplicate listeners if PerceptionMode is initialized again.
+
+  function invalidateLandmarkCache() {
+    landmarkCache.at = -Infinity; // Forces the next active Sense scan to consult scene owners again.
+  }
+
+  function releaseLandmarkCache() {
+    // A cached scene owns its full terrain and attached entities; release it
+    // immediately when Sense is disabled or re-initialized, rather than retaining
+    // an old wilderness zone until the next successful target scan.
+    landmarkCache = { scene: null, col: NaN, row: NaN, multiplier: NaN, at: -Infinity, candidates: [] };
+  }
+
+  function nearbyLandmarks(scene, player, now, senseRangeMultiplier) {
+    const col = Math.floor(player.x); // Uses the same world-tile coordinates as the central player transition event.
+    const row = Math.floor(player.z); // Used to reuse source enumeration while the player remains in this tile.
+    if (landmarkCache.scene === scene && landmarkCache.col === col && landmarkCache.row === row &&
+        landmarkCache.multiplier === senseRangeMultiplier && now >= landmarkCache.at &&
+        now - landmarkCache.at < LANDMARK_CACHE_TTL_MS) {
+      landmarkReuses++;
+      return landmarkCache.candidates;
+    }
+
+    // Scene owners retain authority; never cache whole-scene traversals or moving actors.
+    const denEntrances = scene.children?.find(root => root.name === 'animalDenEntrances');
+    const sources = {
+      caves: (denEntrances?.children || []).filter(root => root.userData?.denCaveEntrance || root.userData?.localeCave),
+      camps: [
+        ...(window.BanditCamps?.senseTargets?.(scene) || []),
+        ...(window.PorakanekiCamps?.senseTargets?.(scene) || []),
+        ...(window.OmgurkuCamps?.senseTargets?.(scene) || []),
+      ],
+      cliffDoors: window.PuzzleCaveEntrances?.senseTargets?.(scene) || [],
+      herbClusters: window.CliffRouteNetwork?.senseTargets?.(scene) || [],
+    };
+    lastStats.landmarkSources = Object.fromEntries(Object.entries(sources).map(([kind, roots]) => [kind, roots.length]));
+    const candidates = []; // Only stationary landmark geometry near this tile remains in the 150ms live distance checks.
+    for (const [kind, roots] of Object.entries(sources)) for (const entry of roots) {
+      const root = entry?.root || entry;
+      if (!root || sceneOf(root) !== scene) continue;
+      const anchor = entry?.anchor; // Site-center override supplied by camp owners, if any.
+      const p = Number.isFinite(anchor?.x) && Number.isFinite(anchor?.z) ? anchor : worldPos(root);
+      const rangeTiles = LANDMARK_RANGE_TILES[kind]; // Preserves category-specific discovery distances.
+      const maxDist = rangeTiles * senseRangeMultiplier + LANDMARK_MARGIN_TILES; // Includes borderline targets as the player moves within one tile.
+      if (Math.hypot(p.x - (col + 0.5), p.z - (row + 0.5)) <= maxDist) {
+        candidates.push({ root, anchor, rangeTiles });
+      }
+    }
+    landmarkCache = { scene, col, row, multiplier: senseRangeMultiplier, at: now, candidates };
+    landmarkRebuilds++;
+    return candidates;
+  }
+
   function collectTargets(now) {
     const scene = deps.getActiveScene?.();
     const player = deps.getPlayerTile?.();
-    if (!scene || !player) return [];
+    if (!scene || !Number.isFinite(player?.x) || !Number.isFinite(player?.z)) {
+      releaseLandmarkCache(); // Loading/retiring a scene must not keep the old wilderness in memory during an active Sense transition.
+      return [];
+    }
     const out = [];
     if (window.FarmworkUI?.isOpen?.()) {
       for (const { root, category } of window.FarmworkUI.glowTargets()) {
@@ -213,23 +274,10 @@
       out.push({ root, category, dist, ...extra });
     };
 
-    // Scene-owned landmark roots are authoritative: no guesswork from terrain proximity,
-    // and no lingering glow for retired cave facades, claimed herbs or unloaded camps.
-    const denEntrances = scene.children?.find(root => root.name === 'animalDenEntrances'); // Direct scene child in ZoneDenTotemFeatures: avoid a full-scene traversal every 150 ms.
-    const landmarkSources = { // Each owner supplies only mounted, meaningful feature geometry.
-      caves: (denEntrances?.children || []).filter(root => root.userData?.denCaveEntrance || root.userData?.localeCave),
-      camps: [
-        ...(window.BanditCamps?.senseTargets?.(scene) || []),
-        ...(window.PorakanekiCamps?.senseTargets?.(scene) || []),
-        ...(window.OmgurkuCamps?.senseTargets?.(scene) || []),
-      ],
-      cliffDoors: window.PuzzleCaveEntrances?.senseTargets?.(scene) || [],
-      herbClusters: window.CliffRouteNetwork?.senseTargets?.(scene) || [],
-    };
-    lastStats.landmarkSources = Object.fromEntries(Object.entries(landmarkSources).map(([kind, roots]) => [kind, roots.length])); // Mobile diagnostics for each source, before distance filtering.
-    for (const [kind, roots] of Object.entries(landmarkSources)) for (const entry of roots) {
-      const root = entry?.root || entry; // Camps supply a mesh plus its shared site center; caves, doors and herbs supply just a mesh.
-      consider(root, 'landmark', undefined, LANDMARK_RANGE_TILES[kind], entry?.anchor); // Landmarks take priority over any overlapping generic interactable.
+    // Only stationary landmark providers are cached. Every candidate's precise
+    // distance, scene ownership and visibility are still checked live below.
+    for (const entry of nearbyLandmarks(scene, player, now, senseRangeMultiplier)) {
+      consider(entry.root, 'landmark', undefined, entry.rangeTiles, entry.anchor);
     }
 
     const sources = deps.getSources();
@@ -513,8 +561,10 @@
     }
     lastRefreshAt = -Infinity;
     lastInfoAt = -Infinity;
+    invalidateLandmarkCache(); // Toggling Sense must not retain a stale static provider snapshot.
     if (!active) {
       targets = [];
+      releaseLandmarkCache(); // Do not retain unloaded zones through stationary landmark roots.
       window.WorldPopupText?.clearInfoLists?.();
       lastStats = { targets: 0, meshes: 0, infoLists: 0, rendered: 0 };
     }
@@ -542,6 +592,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    unsubscribeTileEvents?.();
+    unsubscribeTileEvents = window.PlayerTileEvents?.subscribe?.(invalidateLandmarkCache) || null; // Central tile/area event invalidates only stationary discovery.
+    releaseLandmarkCache(); // A fresh runtime cannot reuse the previous game's scene roots.
     bindButton();
     return api;
   }
@@ -562,6 +615,7 @@
     debugSnapshot: () => ({
       active,
       ...lastStats,
+      landmarkCache: { rebuilds: landmarkRebuilds, reuses: landmarkReuses, candidates: landmarkCache.candidates.length, ttlMs: LANDMARK_CACHE_TTL_MS, holdingScene: !!landmarkCache.scene }, // Visible through PerceptionMode.debugSnapshot on mobile.
       landmarkRanges: LANDMARK_RANGE_TILES, // Unbuffed base radii remain available for mobile debugging.
       rangeMultiplier: rangeMultiplier(), // Current food/potion multiplier is visible without browser devtools.
       ordinaryRangeTiles: effectiveRangeTiles(RANGE_TILES), // Current regular silhouette reveal radius in tiles.

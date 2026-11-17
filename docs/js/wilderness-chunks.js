@@ -348,15 +348,26 @@
     setCenter(col, row) {
       const centerCx = clamp(tileToChunk(col), 0, this.maxCx);
       const centerCz = clamp(tileToChunk(row), 0, this.maxCz);
-      const changed = centerCx !== this.centerCx || centerCz !== this.centerCz;
+      const changed = centerCx !== this.centerCx || centerCz !== this.centerCz; // Stationary players need no static neighborhood traversal.
+      if (!changed) {
+        if (this.failedUntil.size) {
+          let retry = false; // Requeue allocations once their existing five-second failure backoff expires.
+          const now = performance.now(); // Only read the clock while there are failed chunks to revisit.
+          for (const [key, until] of this.failedUntil) {
+            if (until > now) continue;
+            this.failedUntil.delete(key);
+            retry = true;
+          }
+          if (retry) this.enqueueNeighborhood(centerCx, centerCz);
+        }
+        return;
+      }
       this.centerCx = centerCx;
       this.centerCz = centerCz;
       this.enqueueNeighborhood(centerCx, centerCz);
       this.unloadOutside(centerCx, centerCz);
-      if (changed) {
-        for (const record of this.loaded.values()) {
-          updateDebugCage(record, record.cx === centerCx && record.cz === centerCz);
-        }
+      for (const record of this.loaded.values()) {
+        updateDebugCage(record, record.cx === centerCx && record.cz === centerCz);
       }
     }
 
@@ -552,10 +563,13 @@
     const area = deps.getCurrentArea?.();
     const active = deps.isZoneArea?.(area) ? zones.get(area) : null;
     const player = deps.player;
+    globalThis.PlayerTileEvents?.update(area, player?.x, player?.y, deps.TILE); // One authoritative tile observation per game frame, including interiors/area transitions.
+    const validPlayerPosition = !!player && Number.isFinite(player.x) && Number.isFinite(player.y)
+      && Number.isFinite(deps.TILE) && deps.TILE > 0; // Protects static residency against transient invalid coordinates during transitions.
     for (const controller of zones.values()) {
       if (controller === active && player) {
         const region = cinematicRegions.get(controller.mapId); // Scripted loading/playback has priority over gameplay coordinates.
-        if (region) controller.inactiveSeconds = 0; // A cinematic pin never enqueues or stages neighboring chunks.
+        if (region || !validPlayerPosition) controller.inactiveSeconds = 0; // Preserve resident chunks during cinematic pins or invalid-position frames.
         else controller.updateActive(player.x / deps.TILE, player.y / deps.TILE, dt);
       } else {
         controller.updateInactive(dt);
@@ -691,6 +705,11 @@
         ' load=' + LOAD_RADIUS + ' unload=' + UNLOAD_RADIUS +
         ' pace=' + data.streamBuildIntervalMs + 'ms',
     ];
+    const distance = window.WildernessDistanceCull?.snapshot?.(); // Copyable A/B counts from the render-only non-vegetation distance culler.
+    if (distance) lines.push('non-veg distance: ' + (distance.enabled ? distance.distanceTiles + ' tiles' : 'OFF')
+      + ' hidden=' + distance.hidden + ' (chunk ' + distance.hiddenChunk + ', batch ' + distance.hiddenBatch
+      + ', scenery ' + distance.hiddenScenery + ', instanced ' + distance.hiddenInstanced
+      + ') candidates=' + distance.candidates + ' scan=' + distance.scanMs.toFixed(1) + 'ms');
     const persisted = window.__wildernessChunkPersistenceDebug?.(); // Adds save-state coverage to the mobile status panel.
     if (persisted) {
       lines.push('saved year=' + persisted.year + ' chunks=' + persisted.chunks + ' editedTiles=' + persisted.editedTiles);
@@ -703,6 +722,13 @@
         ' last=' + zone.lastBuildMs + 'ms avg=' + zone.averageBuildMs + 'ms'
       );
     }
+    const tiles = window.PlayerTileEvents?.snapshot?.(); // Mobile chunk panel also shows the shared tile/area signal without DevTools.
+    if (tiles) lines.push('tile events: ' + tiles.transitions + ' listeners=' + tiles.subscribers
+      + ' errors=' + tiles.subscriberErrors + ' current=' + (tiles.current
+        ? tiles.current.area + ':' + tiles.current.col + ',' + tiles.current.row : '-'));
+    const sense = window.PerceptionMode?.isActive?.() ? window.PerceptionMode.debugSnapshot() : null; // Display stationary cache savings only while Sense is in use.
+    if (sense?.landmarkCache) lines.push('sense landmarks: scans=' + sense.landmarkCache.rebuilds
+      + ' reuses=' + sense.landmarkCache.reuses + ' candidates=' + sense.landmarkCache.candidates);
     return lines.join('\n');
   }
 
@@ -711,6 +737,15 @@
     if (!force && now - lastDebugRefreshAt < DEBUG_REFRESH_MS) return;
     lastDebugRefreshAt = now;
     const text = debugLines();
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Mobile A/B control beside the existing wilderness grid button.
+    const cullState = window.WildernessDistanceCull?.snapshot?.(); // Reuse the same authoritative state as the diagnostic line.
+    if (cullButton && cullState) {
+      const title = 'Distance Cull: ' + (cullState.enabled ? 'ON' : 'OFF');
+      if (cullButton.textContent !== title) cullButton.textContent = title;
+      if (cullButton.getAttribute('aria-pressed') !== String(cullState.enabled)) {
+        cullButton.setAttribute('aria-pressed', String(cullState.enabled));
+      }
+    }
     // Compare first: an unchanged textContent write still replaces the text node
     // and wakes every body-wide MutationObserver on this periodic refresh.
     const status = document.getElementById('wildernessChunkStatus');
@@ -742,6 +777,17 @@
     if (button && !button.dataset.wildernessChunksBound) {
       button.dataset.wildernessChunksBound = 'true';
       button.addEventListener('click', () => toggleDebug());
+    }
+    const cullButton = document.getElementById('wildernessDistanceCullBtn'); // Touch-friendly way to compare wilderness draw performance without DevTools.
+    if (cullButton && !cullButton.dataset.wildernessCullBound) {
+      cullButton.dataset.wildernessCullBound = 'true';
+      cullButton.addEventListener('click', () => {
+        const culler = window.WildernessDistanceCull;
+        if (!culler?.setEnabled || !culler.snapshot) return;
+        const enabled = culler.setEnabled(culler.snapshot().enabled === false);
+        window.__farmLog?.('Non-vegetation distance culling ' + (enabled ? 'enabled' : 'disabled'), 'info', 'performance');
+        refreshDebugText(true);
+      });
     }
     const auditButton = document.getElementById('wildernessChunkAuditBtn'); // Used to expose the residency scan on mobile without DevTools.
     if (auditButton && !auditButton.dataset.wildernessChunkAuditBound) {
