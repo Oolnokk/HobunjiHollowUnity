@@ -1144,17 +1144,27 @@
     return { damage: def.attackDamage, rangePx: def.attackRangePx, knockbackPxS: deps.HOSTILE_BITE_KNOCKBACK_PX_S };
   }
 
-  function beginBanditMeleeStage(c, options) {
+  function beginBanditMeleeStage(c, options, target) {
     const hype = window.FeyHypedAttacks; // Shared enhanced-Stamina executor owns the two NPC stages, not a duplicate AI or render pose.
     const payment = hype?.claimNpcMelee?.(c); // Only actually spent, eligible Hyped Stamina is committed to this particular NPC melee attack.
     if (!payment) return window.Combat.beginStagedAction(options);
     c._banditSwingHoldS = Math.max(0, Number(c._banditSwingHoldS) || 0) / payment.tempo; // Existing SharedAttackPose holder follows its own doubled-speed attack clock.
     c._banditSwingReturnS = Math.max(0, Number(c._banditSwingReturnS) || 0) / payment.tempo;
+    const firstLunge = c._banditLunging && (Number(c._banditLungeDistancePx) || 0) > 0
+      ? { distancePx: c._banditLungeDistancePx, hitTest: c._banditLungeHitTest } : null; // Captured once because the live lunge's hit-stop clears its cone metadata.
     if (c._banditLunging) {
       c._banditLungeDur /= payment.tempo; // The same swept lunge travels its authored distance within the accelerated first windup.
       c._banditLungeT /= payment.tempo;
     }
-    return hype.beginNpcMelee(c, options, payment);
+    const firstLungeDuration = Number(c._banditLungeDur) || 0; // Used only if the second authored strike also has a legal original lunge.
+    return hype.beginNpcMelee(c, {
+      ...options,
+      onFeyHypedNpcEchoStart: ratio => {
+        if (!firstLunge || !(ratio > 0) || !target || !(Number(target.health) > 0)) return;
+        if (c._banditLunging) cancelBanditLunge(c); // Finish the original movement budget before launching an independent second burst.
+        beginBanditLunge(c, firstLunge.distancePx * ratio, firstLungeDuration, firstLunge.hitTest, firstLunge.hitTest ? target : null);
+      }, // NPC echo movement has the same original obstacle sweeps but 2%-per-point scaled travel, as player Hyped echoes do.
+    }, payment);
   }
 
   function resolvedBanditCombatTarget(c, fallbackTarget) {
@@ -1533,7 +1543,7 @@
         }
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     return true;
   }
 
@@ -1591,7 +1601,7 @@
         c._banditComboIndex = 0;
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     return true;
   }
 
@@ -1665,7 +1675,7 @@
         c._banditHold1CdT = BANDIT_HOLD1_COOLDOWN_S / shapeStats.speed;
       },
       onCancel: () => finishBanditAction(c),
-    });
+    }, targetPlayer);
     if (c._banditSwingWindupCurve) c._banditSwingWindupCurve.action = c._banditAction; // The curve belongs to this one windup only.
     return true;
   }
