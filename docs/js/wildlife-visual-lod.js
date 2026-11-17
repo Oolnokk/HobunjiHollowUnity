@@ -66,6 +66,9 @@
     return c.health > 0 && isFighting(c) && !alwaysVisible(c);
   }
   function update(c, distanceTiles) {
+    // Retired corpses keep their single static world sprite; distance streaming must
+    // never reconstruct the expensive animated rig when the player comes back.
+    if (c?.avatarRef?.isCorpseMarker) return false;
     const eligible = canHide(c); // Companions, mid-attack actors, corpses, and hit reactions always retain usable visuals.
     const fighting = !eligible && canHideWhileFighting(c); // A fight returns to data only beyond its own, wider distance.
     let shouldHide = eligible
