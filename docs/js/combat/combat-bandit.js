@@ -1062,6 +1062,7 @@
       attackCooldownS: (rank === 'captain' ? BANDIT_ATTACK_COOLDOWN_S_CAPTAIN : BANDIT_ATTACK_COOLDOWN_S_OTHER) / shapeStats.speed,
       attackTag: weapon.dmgType,
       weaponKey: weapon.weaponKey,
+      weaponMetalPowerMultiplier: weapon.dmgMultiplier, // Arena and combat diagnostics show the exact effective metal grade, not only the metal's name.
       weaponShapeStats: shapeStats, // Used below to keep NPC attack windups, lunges and affliction delivery in sync.
       rangedWeaponKey,
       banditFlaskLoadout,
