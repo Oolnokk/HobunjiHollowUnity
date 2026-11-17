@@ -1380,12 +1380,19 @@
       _lastAction = 'folder-chosen-awaiting-choice';
       notify();
     } catch (error) {
-      if (error?.name !== 'AbortError') {
+      if (error?.name === 'AbortError') {
+        // Chromium uses AbortError both for Cancel and for an OS-restricted
+        // selection. Keep the existing folder connected, but report this failed
+        // selection so callers never accidentally load the previous folder.
+        _lastError = 'Folder picker canceled or blocked access: ' + String(error?.message || 'No further reason supplied.') +
+          ' If you selected a folder, choose the game-save directory itself rather than the Google Drive root.';
+        _lastAction = 'folder-picker-aborted';
+      } else {
         _state = 'error';
         _lastError = String(error?.message || error);
         _lastAction = 'choose-error';
-        notify();
       }
+      notify();
     }
     return getStatus();
   }
