@@ -31,6 +31,17 @@ async function main() {
         if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
         return applyKissPresetV1546();
       };
+      // Force the formerly intermittent background-mode interruption after Pahu loads.
+      const addNpcBeforeModeSwitch = addNpcAnimationActor;
+      let modeSwitchInjected = false; // The test must perform one interruption, not recursively switch on a default single preview.
+      addNpcAnimationActor = async function(id, options = {}) {
+        const actor = await addNpcBeforeModeSwitch(id, options);
+        if (!modeSwitchInjected && id === 'pahu' && options.preserveMultiScene) {
+          modeSwitchInjected = true;
+          await setAnimationAuthorMode('single');
+        }
+        return actor;
+      };
       window.MultiAvatarAnimationAuthor.__testSceneBuild = () => {
         const summarize = actors => (actors || []).map(actor => ({
           id: actor.id, label: actor.label, sourceId: actor.source?.id,
@@ -38,6 +49,7 @@ async function main() {
         const height = kissPairHeightV1546(); // Production solver exposes whether geometry or missing actors caused the rejection.
         return {
           mode: animationAuthor.mode,
+          modeSwitchInjected,
           selectedActorId: animationAuthor.selectedActorId,
           activeActors: summarize(animationAuthor.actors),
           savedModeActors: Object.fromEntries(Object.entries(animationAuthor.modeStates)
@@ -100,7 +112,8 @@ async function main() {
       return actors.length > 0 && /Loaded \d+ NPCs/.test(status);
     }, null, { timeout: 45000 });
     const sceneBuild = await page.evaluate(() => window.MultiAvatarAnimationAuthor.__testSceneBuild());
-    if (sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
+    if (!sceneBuild.modeSwitchInjected || sceneBuild.mode !== 'multi' ||
+        sceneBuild.activeActors.length !== 2 || !sceneBuild.pair.solution?.contactPossible) {
       throw Error('URL scene creation lost an actor or failed to initialize: ' + JSON.stringify(sceneBuild));
     }
     const result = await page.evaluate(() => {

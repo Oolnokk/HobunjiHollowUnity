@@ -4971,6 +4971,9 @@ async function addNpcAnimationActor(npcId, options = {}) {
   const npc = state.npcs.find(item => String(item.id || item.name) === String(npcId));
   if (!npc) throw new Error(`NPC not found: ${npcId}`);
   await initAnimationWorkspaceScene();
+  if (options.preserveMultiScene && animationAuthor.mode !== 'multi') {
+    await setAnimationAuthorMode('multi'); // Preserve URL-scene actors if another workspace interrupted loading.
+  }
   if (animationAuthor.mode === 'single' && animationAuthor.actors.length) clearAnimationActors();
   if (animationAuthor.mode === 'single') animationAuthor.single.preferredNpcId = String(npc.id || npc.name);
   showOverlay(`Adding ${npc.name || npc.id}`, 'Building a repository-backed two-sided skinned portrait plane.', true);
@@ -4992,6 +4995,9 @@ async function addNpcAnimationActor(npcId, options = {}) {
     } catch (rigError) {
       model.userData.neckRig = null;
       log(`Skinned neck rig could not be built for ${npc.name || npc.id}; using the original rigid plane: ${rigError.stack || rigError.message}`, 'warn');
+    }
+    if (options.preserveMultiScene && animationAuthor.mode !== 'multi') {
+      await setAnimationAuthorMode('multi'); // Portrait construction awaits texture loading; restore the intended workspace before attaching.
     }
     const id = options.id || `actor_${animationAuthor.actorSerial++}`;
     const actor = createAnimationActorShell({
@@ -14434,8 +14440,16 @@ async function installAnimationUrlSceneV1547(scene) {
   animationAuthor.currentTime = 0;
   animationAuthor.creatureTransformProfiles = {};
   animationAuthor.projectName = scene.name || ('Scene — ' + npcs.map(npc => npc.name || npc.id).join(' & '));
-  for (const npc of npcs) {
-    await addNpcAnimationActor(npc.id || npc.name, { skipDefaultPlacement: true });
+  for (const [index, npc] of npcs.entries()) {
+    await addNpcAnimationActor(npc.id || npc.name, {
+      skipDefaultPlacement: true, preserveMultiScene: true,
+    }); // Shareable scenes retain earlier actors if an unrelated workspace briefly becomes active.
+    if (animationAuthor.mode !== 'multi' || animationAuthor.actors.length !== index + 1 ||
+        String(animationAuthor.actors[index]?.source?.id || '').toLowerCase() !== scene.actorIds[index]) {
+      throw new Error('URL scene actor setup interrupted at ' + scene.actorIds[index] +
+        ': mode=' + animationAuthor.mode + ', actors=' + animationAuthor.actors
+          .map(actor => actor.source?.id || actor.id).join(','));
+    }
   }
   // The selected actor is the relationship leader. Keep links deterministic
   // regardless of the addNpc default that selects the most recently added NPC.
