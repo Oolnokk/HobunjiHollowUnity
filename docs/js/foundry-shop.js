@@ -32,6 +32,7 @@
     deps.clampInventoryStack(barKey);
     if (!gear.tools) gear.tools = {};
     gear.tools[key] = true;
+    deps.setToolReinforcement(key, metal, 0); // Newly forged modular weapons also begin at grade I of their metal.
     deps.saveGearInventory();
     deps.buildInventoryGrid();
     deps.buildEquipmentSlots();
