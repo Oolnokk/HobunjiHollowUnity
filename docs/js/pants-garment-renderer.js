@@ -789,7 +789,7 @@
       }
       handle.spineShift = shifts;
     };
-    handle.update = () => {
+    handle.update = (renderOnly = false) => { // Render-time joint offsets must skin the final visible pose without rebinding the neutral stance.
       const SEGMENTS = handle.segments;
       if (handle.disposed || !handle.mesh || !handle.model.parent) return;
       handle.refreshFootDepthBias(); // Final foot GLBs may arrive after the garment attaches; scan only on anatomy changes.
@@ -803,7 +803,7 @@
       let signature = legSignature(aim);
       // The leg group may be repositioned/rescaled after attach (placement, seats): rebind to the stance as it is now. Moving
       // the group also moves the live bones (so the signature changes); a still NPC only re-checks every REST_RECHECK_FRAMES.
-      if (legHandle.getRestStance && handle.lastStance && (signature !== handle.lastSignature || handle.dirty || --handle.restRecheckIn <= 0)) {
+      if (!renderOnly && legHandle.getRestStance && handle.lastStance && (signature !== handle.lastSignature || handle.dirty || --handle.restRecheckIn <= 0)) {
         handle.restRecheckIn = REST_RECHECK_FRAMES;
         const stance = restStanceBones(handle);
         let moved = 0, k = 0;
