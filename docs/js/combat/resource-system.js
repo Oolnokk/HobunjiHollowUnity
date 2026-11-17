@@ -967,6 +967,13 @@
     const after = clamp(before - ordinaryCost, 0, entity.maxStamina || 0);
     const normalSpent = round1(before - after);
     const excess = round1(ordinaryCost - normalSpent);
+    // Unlike the dodge surcharge, ordinary exertion spends the unpanicked
+    // remainder first. Only an overdraw past that remainder consumes panic.
+    if (!dodge && normalSpent > 0) {
+      const panicReserved = Math.min(before, getAffliction(entity, "panickedStamina")); // Anchored to current Stamina until actual expenditure crosses its segment.
+      const consumedPanic = Math.max(0, normalSpent - Math.max(0, before - panicReserved)); // Remaining portion after non-panic Stamina paid.
+      if (consumedPanic > 0) removeAffliction(entity, "panickedStamina", consumedPanic);
+    }
     entity.stamina = after;
     if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
     if (excess > 0) enterExhausted(entity, excess, reason);
