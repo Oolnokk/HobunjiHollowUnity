@@ -955,7 +955,7 @@
         const world = owner.matrixWorld.elements;
         // Every visible actor is ordered by its own camera depth, near or far, so the player never ends up
         // in front of a distant NPC's garment just because that NPC was outside the crossing radius.
-        // Only actors close enough to cross planes with the player take part in the depth-write deferral.
+        // Only actors close enough to cross planes with the player take part when actors.order is 'near'.
         const close = Math.hypot(world[12] - playerWorld[12], world[13] - playerWorld[13], world[14] - playerWorld[14]) <= PORTRAIT_SORT_DISTANCE;
         const depth = (close || orderAll) ? portraitSortPoint.set(world[12], world[13], world[14])
           .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix).z : NaN; // actors.order 'near' ranks only actors within the crossing radius.
@@ -975,9 +975,9 @@
           || (rank.depth === nearest.depth && rank.owner.id > nearest.owner.id)) nearest = rank;
     }
     if (count < 2) return null;
-    // Worn pants are separate meshes drawn at renderOrder 28, i.e. after every portrait. Left to depth alone they
-    // show through any actor whose portrait skipped its depth write (see withPortraitDrawOrder) and through
-    // closer actors generally, so they sort with the actor that wears them instead.
+    // Worn pants are separate meshes at renderOrder 28. They must sort alongside their wearer so a
+    // more distant actor's pants never paint over a nearer actor's portrait; the portraits must ALSO
+    // retain their normal depth writes so the owner's own front/back art can occlude its pants.
     const extras = new Map();
     if (xrayRule('pants.sortWithActor') !== 'off') for (const handle of window.PantsGarmentRenderer?.liveHandles?.() || []) {
       const mesh = handle?.mesh;
