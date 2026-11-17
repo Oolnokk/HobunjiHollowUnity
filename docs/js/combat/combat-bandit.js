@@ -1030,7 +1030,7 @@
   }
 
   function makeBanditDef(cfg, rank, tier, mastery, modelWidth) {
-    const tierRankMultipliers = cfg?.statMultiplierByRankAndTier?.[rank];
+    const tierRankMultipliers = cfg?._preserveMineEnemyTiers ? cfg?.legacyMineStatMultiplierByRankAndTier?.[rank] : cfg?.statMultiplierByRankAndTier?.[rank]; // Mine-specific rank multipliers never inherit rebalance of wilderness camps.
     // Tier-indexed rank curves keep low-star camps weak while preserving
     // meaningful supporting ranks in higher-star camps.
     const weaken = Number(
