@@ -326,6 +326,7 @@
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
+              metadata: { feyPrimaryDamage: actualDamage, feyPrimaryKnockback: actualKnockback }, // Sends the fully mastered pre-mitigation strike magnitude to a possible second Hyped swing.
               afflictionBonuses: hitAfflictions,
               comboStep: comboStep + 1,
               comboFinisher: isFinisher,
