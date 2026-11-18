@@ -46,4 +46,9 @@ assert(tzatzul.includes("startLeg(bird, endpoint, 'orbit'")&&tzatzul.includes("c
 assert(nest.includes('nearestObstacle(map, start, end, half)'),'indoor boss orbit checks the existing physical cave obstacles');
 assert(boss.includes('FlyingCombatOrbit?.tangent?.')&&boss.includes('deps?.sweptMove?.'),
   'Azgarlu curves its evasive dodge while keeping swept wall collision');
+const mobileDebug=read('docs/js/wildlife-debug-panel.js'); // This existing in-game panel is available on mobile without DevTools.
+assert(mobileDebug.includes('no-perch orbits: ')&&mobileDebug.includes('Skeeri aerial combat'),
+  'Tzatzul and Skeeri fallback phases/counters remain visible in the mobile debug panel');
+assert(html.includes('wildlife-debug-panel.js?v=20261118flightOrbitUI1'),
+  'the deployed mobile diagnostics use the new debug-panel asset version');
 console.log('Flying combat orbital evasion geometry and collision integrations PASS');
