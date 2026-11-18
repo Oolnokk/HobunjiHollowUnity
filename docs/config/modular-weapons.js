@@ -29562,7 +29562,7 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       ],
       "maxAttachments": 8,
-      "editorOnly": true,
+      "editorOnly": false,
       "rigRegions": [],
       "shaftArtTransform": {
         "scaleX": 1,
