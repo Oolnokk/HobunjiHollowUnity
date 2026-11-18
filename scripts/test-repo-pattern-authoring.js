@@ -83,7 +83,7 @@ assert.match(weaving, /const outlineDiskOffsetCache = new Map\(\)/, 'large patte
 assert.match(weaving, /for \(const boundaryPixel of boundaryPixels\)/, 'outline dilation expands from motif boundaries instead of searching around every garment pixel');
 assert.match(weaving, /patternDef\?\.usageScaleMultiplier/, 'shared pattern compositor supports a purpose-specific normalized scale multiplier after authored pattern scale resolution');
 assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel, width, height\)/, 'the final stack outline pass receives the source raster dimensions so animal line weight is resolution-relative');
-assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel, width, height\)/, 'the optional overpass clearance uses the same resolution-relative animal outline width before applying its multiplier');
+assert.match(weaving, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[overpassIndex\]\?\.pattern, debugLabel, width, height\)/, 'the optional overpass clearance uses the same resolution-relative animal outline width before applying its multiplier');
 assert.match(weaving, /isAbsoluteOrBlob = \/\^\(\?:https\?:\|blob:\|data:\|\\\/\\\/\)\/i/, 'absolute/CDN repo motif URLs bypass game-relative loadImg normalization');
 assert.match(renderer, /getLastPatternPaintDebug/, 'creature compositor exposes per-region pattern paint diagnostics to Character Studio');
 assert.match(renderer, /compositor returned the unpatterned source/, 'creature compositor reports a visibly unapplied pattern instead of failing silently');
