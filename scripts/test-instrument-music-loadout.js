@@ -14,6 +14,8 @@ const ui = read('docs/js/combat/combat-loadout-ui.js');
 const css = read('docs/style.css');
 const equipment = read('docs/js/equipment-panel.js');
 const loader = read('docs/js/bootstrap/classic-groups/combat-main.js');
+const onboarding = read('docs/onboarding-core.js'); // Character/world reopen must hydrate instrument assignments from saved metadata.
+const onboardingEntry = read('docs/onboarding.js'); // Cache version for that returning-character loader.
 
 const legacy = ['arp-forward-8','arp-reverse-8','tremolo-8','strum-waltz'];
 const storageData = new Map([
@@ -62,6 +64,19 @@ assert.equal(model.getSlots('flute')[1],'arp-reverse-8','character B changes do 
 equipped = 'kurraya';
 assert.equal(model.debugState().instrumentKey,'kurraya','diagnostics follow equipped instrument');
 
+// Startup script ordering can restore a selected character before MusicMinigame
+// is defined. A saved custom pattern must survive until the library is ready.
+const earlyProfile = {characterId:'early',instrumentPatternLoadout:{flute:['strum-waltz','arp-forward-8','tremolo-8','direct'],kurraya:['unknown-old-id','direct','direct','direct']}};
+const earlyWindow = {__hobunjiPlayerProfile:earlyProfile};
+const earlyStorage = {getItem:()=>null,setItem:()=>{}}; // Early preload must not write any character metadata just to inspect patterns.
+vm.runInNewContext(modelSource,{window:earlyWindow,document:{addEventListener(){}},localStorage:earlyStorage,console},{filename:'early-instrument-pattern-loadout.js'});
+assert.equal(earlyWindow.InstrumentPatternLoadout.getSlots('flute')[0],'strum-waltz','early profile restore preserves custom choices even before MusicMinigame loads');
+earlyWindow.MusicMinigame = win.MusicMinigame;
+assert.equal(earlyWindow.InstrumentPatternLoadout.getSlots('flute')[0],'strum-waltz','late music host still resolves the original custom pattern');
+assert.equal(earlyWindow.InstrumentPatternLoadout.getSlots('kurraya')[0],'direct','unavailable legacy patterns fall back only after the library loads');
+assert.equal(earlyWindow.InstrumentPatternLoadout.setSlot('flute',0,'unknown-old-id'),false,'invalid pattern choices cannot be saved after host startup');
+
+
 // Execute the real, isolated audio policy functions against controlled iframe and developer settings.
 const start = engine.indexOf('  const GAME_OVERWORLD_MUSIC =');
 const end = engine.indexOf('  const HOSTED_FLUTE_PERFORMANCE =',start);
@@ -107,4 +122,10 @@ assert.match(ui,/loadoutSubtab_.*id/);
 assert.match(css,/#mpLoadout\.instrument-subtab #combatLoadoutPreview\s*\{\s*display:\s*none/);
 assert.match(equipment,/hobunji-instrument-equipped/);
 assert.match(loader,/combat-loadout-ui\.js\?v=[A-Za-z0-9_-]+/,'combat Loadout UI remains versioned without pinning a specific token');
+assert.match(loader,/loadout-weapon-preview\.js\?v=[A-Za-z0-9_-]+/,'instrument tab preview pause changes must load as a versioned asset');
+assert.match(onboarding,/instrumentPatternLoadout:\s*\{\s*\.\.\.\(char\.instrumentPatternLoadout \|\| \{\}\)\s*\}/,'reopening a character copies saved instrument patterns into its live profile');
+assert.match(onboarding,/playerData\.instrumentPatternLoadout\s*=\s*\{\s*\.\.\.newChar\.instrumentPatternLoadout\s*\}/,'newly created characters have their own pattern record before the ready event');
+assert.match(onboardingEntry,/onboarding-core\.js\?v=[A-Za-z0-9_-]+/,'onboarding reload uses the updated core');
+assert.match(html,/onboarding\.js\?v=[A-Za-z0-9_-]+/,'game startup refreshes the onboarding loader');
+
 console.log('C pentatonic minor lock, Dev override, per-instrument/character patterns, legacy migration and menu wiring: passed.');
