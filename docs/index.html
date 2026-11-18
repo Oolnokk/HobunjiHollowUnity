@@ -186,7 +186,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261118festival1954x1955b"></script>
+  <script src="js/held-action-animations.js?v=20261118captainWeapon1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -303,7 +303,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261117devPortraitCloneLoader1"></script>
+  <script src="js/condition-registry.js?v=20261118captainWeapon1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js.
@@ -355,7 +355,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261117h1fa7791"></script>
+  <script src="js/bandit-camps.js?v=20261118captainWeapon1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -476,7 +476,7 @@
   <script src="js/npc-dialogue-entry-router.js?v=20261116decouple2"></script> <!-- Contextual turn-ins, story priority, favors and merchant entry. -->
   <script src="js/quest-progress-store.js?v=20261116decouple1"></script> <!-- Per-member active quest state; canonical game save still serializes. -->
   <script src="js/gear-member-transaction.js?v=20261116decouple1"></script> <!-- Atomic Garanki gear/inventory write via CharacterMetaSave. -->
-  <script src="js/harlyao-relics.js?v=20261116decouple1"></script>
+  <script src="js/harlyao-relics.js?v=20261118captainWeapon1"></script>
   <script src="js/fey-armament-quest.js?v=20261117feyQuest3"></script> <!-- Garanki/Jubmir Fey-knot investigation; member-scoped story quest. -->
   <!-- Smithy / General Store / Carpenter shop-counter buttons (window.NpcShopButtons),
        initialized by game.js. -->
@@ -636,9 +636,10 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261118h4275f8d"></script>
+  <script src="config/modular-weapons.js?v=20261118captainWarCleaver2"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261118h4275f8d"></script>
+  <script src="js/modular-weapons.js?v=20261118captainWarCleaver2"></script>
+  <script src="js/bandit-captain-armaments.js?v=20261118captain1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
