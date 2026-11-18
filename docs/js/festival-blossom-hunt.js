@@ -27,7 +27,7 @@
   function key(y = year()) { return PREFIX + y; }
   function records() { return questDeps?.getQuestProgress?.() || window.QuestProgressStore?.snapshot?.() || {}; }
   function state() { return records()[key()]; }
-  function targetFor(index) { return BLOSSOMS[index] || null; }
+  function targetFor(found = []) { return BLOSSOMS.find(blossom => !found.includes(blossom.id)) || null; } // The primary riddle is ordered, but opportunistic discoveries are credited in any order.
   function zoneLayout(id) { return mapDeps?._zoneLayouts?.get?.(id) || null; }
   function localeFor(blossom) {
     return zoneLayout(blossom?.zoneId)?.localeInstances?.find?.(entry => entry.localeId === blossom.localeId) || null;
@@ -42,14 +42,14 @@
   }
   function clueFor(blossom) {
     const { layout, locale } = statusFor(blossom);
-    if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not in the current generated wilderness. A Tothal Shift may be needed for older worlds.' };
+    if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not available in this generated wilderness yet; check the mobile placement diagnostics.' };
     return window.LocaleRiddleGenerator?.generate?.({
       zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom',
       seed: [mapDeps?.tothalWorldId?.() || 'world', mapDeps?.currentTothalYear?.() || 'shift', blossom.id, locale.x, locale.y].join(':')
     }) || { ok: false, reason: 'LocaleRiddleGenerator is not loaded' };
   }
   function descriptor(founds = [], shift = null) {
-    const remaining = targetFor(founds.length); // The next uncollected blossom alone supplies the active riddle.
+    const remaining = targetFor(founds); // The first undiscovered blossom supplies the active clue without invalidating other discoveries.
     if (!remaining) return { kind: 'story', provider: 'blossomHunt', icon: '🌸', title: TITLE,
       objective: 'All five blossoms were found before the feast ended!', detail: 'The wilderness remembers your footsteps.',
       found: founds.slice(0, 5), year: year(), shiftYear: shift };
@@ -151,12 +151,14 @@
     const live = state();
     if (live?.status !== 'active' || !event?.to) return;
     const found = Array.isArray(live.progress?.found) ? live.progress.found : [];
-    const target = targetFor(found.length);
-    if (!target || target.zoneId !== event.to.area) return;
-    const locale = localeFor(target);
-    const p = locale && window.LocaleRiddleGenerator?.positionOf?.(locale, 'blossom-tree');
-    if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) return;
-    if (Math.hypot(event.to.col - p.col, event.to.row - p.row) > 3) return;
+    const target = BLOSSOMS.find(blossom => {
+      if (blossom.zoneId !== event.to.area || found.includes(blossom.id)) return false;
+      const locale = localeFor(blossom); // Every physical tree can be discovered once even if its riddle is not currently selected.
+      const p = locale && window.LocaleRiddleGenerator?.positionOf?.(locale, 'blossom-tree');
+      return Number.isFinite(p?.col) && Number.isFinite(p?.row)
+        && Math.hypot(event.to.col - p.col, event.to.row - p.row) <= 3;
+    });
+    if (!target) return;
     const next = [...found, target.id];
     const isDone = next.length === BLOSSOMS.length;
     if (!write(isDone ? 'completed' : 'active', descriptor(next, mapDeps.currentTothalYear?.() ?? null))) return;
@@ -183,7 +185,7 @@
   function menuStatus() {
     const live = state();
     const inProgress = live?.status === 'active' && active();
-    const upcoming = targetFor(Array.isArray(live?.progress?.found) ? live.progress.found.length : 0); // On opening the Quest Log, refresh clues from any newly generated zone; no extra autosave.
+    const upcoming = targetFor(Array.isArray(live?.progress?.found) ? live.progress.found : []); // Already-found out-of-order trees never reappear as pending riddles.
     const liveClue = inProgress && upcoming ? clueFor(upcoming) : null;
     return { active: inProgress, ready: false, objective: live?.progress?.objective || '',
       statusText: inProgress ? `${live.progress?.found?.length || 0} of 5 discovered — festival time is limited.` : null,
