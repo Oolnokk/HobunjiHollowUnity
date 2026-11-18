@@ -215,7 +215,7 @@ async function main(){
   const onboardingCtx=vm.createContext({window:onboardingWindow,document:{},localStorage:{},
     console,URL,Image:class {},setTimeout(){}});
   vm.runInContext(onboardingSource.replace(onboardingHook,
-    '  window.__previewCrownTest={setCosmetics(value){_cosmetics=value;},buildPreviewProfileFromAppearance};\\n'+onboardingHook),
+    '  window.__previewCrownTest={setCosmetics(value){_cosmetics=value;},buildPreviewProfileFromAppearance};\n'+onboardingHook),
     onboardingCtx,{filename:'docs/onboarding-core.js'});
   const previewOption=id=>({id,slot:'hat',layers:[{url:id}]});
   onboardingWindow.__previewCrownTest.setCosmetics({optionCache:new Map([
