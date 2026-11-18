@@ -132,7 +132,7 @@ const oneDen = layoutFor('cyan', 23, 22); // Previously duplicated "a wild anima
 const denPoem = Riddles.generate({zoneId:'map_northern_cliffs',layout:oneDen,instance:oneDen.localeInstances[0],
   targetName:'Cyan Blossom',targetKind:'blossom',landmarks:[
     {kind:'animalDen',name:'a wild animal den',point:{col:30,row:28},source:'generated-animal-den'},
-    {kind:'deadTree',name:'a dead tree',point:{col:14,row:25},source:'generated-year-round-scenery'}
+    {kind:'deadTree',name:'a dead tree',point:{col:29,row:23},source:'generated-year-round-scenery'}
   ],seed:'single-den-anaphora'});
 assert.equal(denPoem.ok,true);
 const denLine=denPoem.stanzas[0].find(line=>/\b(?:den|hollow|refuge|shelter)\b/i.test(line));
