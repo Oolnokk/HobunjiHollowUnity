@@ -1,0 +1,40 @@
+name: Bandit captain weapon and hand regressions
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/bandit-captain-armaments.js'
+      - 'docs/js/combat/combat-bandit.js'
+      - 'docs/js/bandit-camps.js'
+      - 'docs/js/weapon-trust-bandit-loadouts.js'
+      - 'docs/js/procedural-hand-frame-driver.js'
+      - 'docs/js/combat/combat-enchantments.js'
+      - 'docs/js/modular-weapons.js'
+      - 'docs/js/harlyao-relics.js'
+      - 'docs/config/modular-weapons.js'
+      - 'docs/index.html'
+      - 'scripts/test-bandit-captain-armaments.js'
+      - '.github/workflows/check-bandit-captain-armaments.yml'
+  workflow_dispatch:
+
+jobs:
+  captain-and-hand-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Captain unique loot, donor legality, enchantments and grip regression
+        run: node scripts/test-bandit-captain-armaments.js
+      - name: Foundry and cultural weapon compatibility
+        run: |
+          node scripts/test-foundry-modular-weapons.js
+          node scripts/test-weapon-trust-bandit-loadouts.js
+      - name: Hand poses and shared enemy attacks
+        run: |
+          node scripts/test-procedural-hands.js
+          node scripts/test-shared-attack-pose.js
+          node scripts/test-enemy-weapon-stances.js
+      - name: Existing enchantment save and equipment rules
+        run: node scripts/test-enchantments-attunement.js

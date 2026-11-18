@@ -78,6 +78,7 @@
     deps = injectedDeps;
     window.FeyArmamentQuest?.bindInventoryDeps?.(injectedDeps); // Shares the actual relic/gear save seam with the Fey quest.
     window.HachutuRelics?.init?.(injectedDeps); // Share the exact gear/inventory save seam with the dev-only Hachutu weapon drop.
+    window.BanditCaptainArmaments?.init?.(injectedDeps); // Restore individually enchanted captain modular drops with their original donors, without discovering smithing recipes.
   }
 
   const ES = () => window.EnchantmentSystem;
@@ -302,6 +303,7 @@
   // equipment slots render, so a relic equipped last session is a known tool.
   function restore() {
     window.HachutuRelics?.restore?.(); // Hachutu duplicate torch definitions must exist before the loadout panel is rebuilt.
+    window.BanditCaptainArmaments?.restore?.(); // Re-register character-scoped captain weapon keys AFTER saved gear is loaded; init() runs too early for that.
     const g = gear();
     if (!g) return 0;
     if (!g.harlyaoRelics || typeof g.harlyaoRelics !== 'object' || Array.isArray(g.harlyaoRelics)) g.harlyaoRelics = {};

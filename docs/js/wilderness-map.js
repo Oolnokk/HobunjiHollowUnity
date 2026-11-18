@@ -14,6 +14,8 @@
   let _unsubscribeFogTile = null;
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.WildernessLandmarkScenery?.init?.(injectedDeps); // Year-round scene scenery and mobile diagnostics share this map lifecycle.
+    window.FestivalBlossomHunt?.init?.(injectedDeps); // Share real zone layouts and tile transitions with the independent seasonal hunt.
     _unsubscribeFogTile?.();
     _unsubscribeFogTile = window.PlayerTileEvents?.subscribe?.(() => { _fogDirty = true; }) || null; // Tile/area change is the only time fog reveal and locale discovery can gain anything.
     _fogDirty = true;
@@ -215,6 +217,7 @@
   function updateZoneFogAroundPlayer() {
     const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
     if (!_fogDirty && nowMs - _fogCheckedAt < FOG_IDLE_RECHECK_MS && window.PlayerTileEvents) return; // Standing still: no lookups, no string work.
+    window.WildernessLandmarkScenery?.update?.(); // Reuse the existing one-second fog cadence; no new per-frame scenery planner.
     _fogDirty = false;
     _fogCheckedAt = nowMs;
     const currentArea = deps.getCurrentArea();

@@ -27,6 +27,7 @@ assert(Math.abs(layout.maxX*layout.scale+layout.offsets[15][0]-layout.maxX)<1e-1
 assert(Math.abs(layout.maxZ*layout.scale+layout.offsets[15][2]-layout.maxZ)<1e-10);
 const sourceRelief=Math.max(...shell.pos.filter((_,i)=>i%3===1))-Math.min(...shell.pos.filter((_,i)=>i%3===1));
 assert(sourceRelief*.25<.1,'the repeated relief must be a quarter of the current floor variation');
+assert(sourceRelief>.28&&sourceRelief<.34,'ruin floor uses its retained low-relief profile despite outdoor boulder variation');
 
 assert.equal(shell.pieceIds.length,shell.pos.length/3);
 assert.equal(new Set(shell.pieceIds).size,shell.componentCount,'every wilderness rock retains an independent texture identity');
