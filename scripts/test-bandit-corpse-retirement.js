@@ -378,4 +378,14 @@ for (const portraitFlip of [false, true]) {
     'one-plane body follows the final recorded portrait Y axis rather than deathRestRotY + PI/2');
 }
 
+// 17. A compound rider/mount is not flattened to only the humanoid torso.
+{
+  const w = makeWorld(undefined, { productionDefaults: true });
+  const mounted = w.corpse('mounted-rider');
+  mounted.avatarRef.riderMount = { root: {}, upper: {} };
+  assert.equal(w.mod.tick(NOW), 0, 'compound mounted corpse needs a dedicated full-appearance snapshot');
+  assert.equal(mounted.rigDisposed.n, 0, 'mount and rider are both preserved');
+  assert.equal(mounted.avatarRef.isCorpseMarker, undefined);
+}
+
 console.log('bandit corpse retirement: ok');
