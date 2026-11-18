@@ -363,6 +363,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       // own getLeafMaterial() hardcodes opacity to 1 regardless of that
       // param too (it only matters for asset types this port doesn't use).
       mat = new T.MeshBasicMaterial({
+        ...(preset.leafColorHex ? { userData:{hobunjiFixedBlossomColor:true} } : {}), // Seasonal vegetation must not wash out the exact temple-window blossom palette.
         map: tex, color: col, transparent: false,
         opacity: 1, side: T.DoubleSide,
         depthWrite: true, depthTest: true, alphaTest: preset.leafAlphaCutoff ?? 0.5
