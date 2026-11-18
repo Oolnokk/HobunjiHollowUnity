@@ -95,7 +95,8 @@
     "minDistanceFromEntry": 8,
     "preferSeclusion": false,
     "alwaysVisibleOnMap": false,
-    "notes": "Optional terrain probes bias the site toward real water/cliffs without requiring them. The reusable riddle generator inspects the final stamped surroundings and never promises an unmet probe."
+    "notes": "Optional terrain probes bias the site toward real water/cliffs without requiring them. The reusable riddle generator inspects the final stamped surroundings and never promises an unmet probe.",
+    "shiftGeneratedSecret": true
   },
   "festivalBlossom": {
     "id": "white",

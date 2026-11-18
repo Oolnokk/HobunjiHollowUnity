@@ -23,6 +23,7 @@ for (const id of ids) {
   assert.equal(def.objects[0].collision.mode, 'custom', 'tree trunk has a solid collision footprint');
   assert.ok(def.objects[0].collision.w > 0 && def.objects[0].collision.w <= 0.5, 'trunk collider stays narrower than the authored tree locale');
   assert.ok(def.placement.allowedZones.length === 1);
+  assert.equal(def.placement.shiftGeneratedSecret, true, 'new Tothal year hides the newly relocated target until rediscovery');
   assert.ok(Object.values(def.terrainAnchors).every(rule => rule.strength === 'preferred'), 'terrain is preferential, never mandatory');
 }
 let poems = 0; // Counts tested deterministic rhyme variants for regression output.
@@ -35,6 +36,7 @@ for (let i = 0; i < 400; i++) {
   const output = Riddles.generate(options);
   assert.equal(output.ok, true, 'riddle succeeds without relying on requested terrain: ' + i);
   assert.equal(Riddles.validate(output), true);
+  assert.ok(output.stanzas.length <= 2, 'new poems avoid repetitive three-stanza scavenger verses');
   assert.ok(output.text.includes('Cyan Blossom'), 'final stanza names the tree');
   assert.ok(output.text.includes('Northern Cliffs'), 'first stanza names the broad zone');
   assert.equal(output.text, Riddles.generate(options).text, 'riddles stay deterministic after save/reload');
@@ -67,6 +69,10 @@ assert.match(riverFact.value, /west of the river/, 'direction is expressed relat
 const generic = { x: 1, y: 1, objects: [{ key: 'ornament', x: 2, y: 2 }, { key: 'quest-symbol', x: 20, y: 21 }] };
 assert.equal(Riddles.positionOf(generic, 'quest-symbol').col, 20, 'another quest can select its own target object');
 assert.equal(Riddles.positionOf(generic).col, 2, 'generic fallback does not depend on blossom-tree naming');
+const genericPoem = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: layoutFor('cyan'), instance: layoutFor('cyan').localeInstances[0], targetName: 'the ancient obelisk', targetKind: 'target' });
+assert.equal(genericPoem.ok, true, 'a completely unrelated quest can reuse the composer');
+assert.match(genericPoem.text, /the ancient obelisk/);
+assert.doesNotMatch(genericPoem.text, /blossom|petals|flower|tree/i, 'unrelated quests do not inherit festival flavor text');
 
 let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
@@ -79,6 +85,7 @@ for (let i = 0; i < ids.length; i++) {
 }
 const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const world = {
+  FestivalProps: { blossomWindowSwatches: [{ color:'#00ffff' }, { color:'#ff8000' }, { color:'#ffffff' }, { color:'#ffbf00' }, { color:'#ffb3b3' }] },
   LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
   CalendarSystem: { aotYearNumber: () => civilYear, isInitialized: () => calendarReady },
   FestivalCalendar: { current: () => festival ? { id: 'five_blossoms' } : null },

@@ -5,11 +5,11 @@
   const PREFIX = 'five_blossoms_wilderness_hunt:'; // Each civil year gets a separate saved quest record.
   const TITLE = 'The Five Wandering Blossoms'; // TasksPanel and completion toasts use this player-facing quest name.
   const BLOSSOMS = Object.freeze([
-    { id: 'cyan', name: 'Cyan Blossom', color: '#00ffff', zoneId: 'map_northern_cliffs' },
-    { id: 'white', name: 'White Blossom', color: '#ffffff', zoneId: 'map_western_slope' },
-    { id: 'gold', name: 'Golden Blossom', color: '#ffbf00', zoneId: 'map_eastern_mire' },
-    { id: 'amber', name: 'Amber Blossom', color: '#ff8000', zoneId: 'map_southern_cloud_forest' },
-    { id: 'rose', name: 'Rose Blossom', color: '#ffb3b3', zoneId: 'map_southern_cloud_forest' }
+    { id: 'cyan', name: 'Cyan Blossom', color: '#00ffff', zoneId: 'map_northern_cliffs', paletteIndex: 0 },
+    { id: 'white', name: 'White Blossom', color: '#ffffff', zoneId: 'map_western_slope', paletteIndex: 2 },
+    { id: 'gold', name: 'Golden Blossom', color: '#ffbf00', zoneId: 'map_eastern_mire', paletteIndex: 3 },
+    { id: 'amber', name: 'Amber Blossom', color: '#ff8000', zoneId: 'map_southern_cloud_forest', paletteIndex: 1 },
+    { id: 'rose', name: 'Rose Blossom', color: '#ffb3b3', zoneId: 'map_southern_cloud_forest', paletteIndex: 4 }
   ].map(item => Object.freeze({ ...item, localeId: 'locale_five_blossoms_' + item.id }))); // Five authored locale files; two share the southern forest.
   let mapDeps = null; // WildernessMap supplies canonical member/world's generated zone layouts and player tile scale.
   let questDeps = null; // TasksPanel supplies the same member save authority used by other story quests.
@@ -33,6 +33,9 @@
   function localeFor(blossom) {
     return zoneLayout(blossom?.zoneId)?.localeInstances?.find?.(entry => entry.localeId === blossom.localeId) || null;
   }
+  function blossomColor(blossom) {
+    return window.FestivalProps?.blossomWindowSwatches?.[blossom.paletteIndex]?.color || blossom.color; // Temple overpass swatches remain the colour authority even if festival furniture is retinted later.
+  }
   function statusFor(blossom) {
     const layout = zoneLayout(blossom?.zoneId); // The same generated layout is consulted for both visual placement and factual clue selection.
     const locale = localeFor(blossom);
@@ -42,7 +45,7 @@
     const { layout, locale } = statusFor(blossom);
     if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not in the current generated wilderness. A Tothal Shift may be needed for older worlds.' };
     return window.LocaleRiddleGenerator?.generate?.({
-      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', blossomName: blossom.name,
+      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom',
       seed: [mapDeps?.tothalWorldId?.() || 'world', mapDeps?.currentTothalYear?.() || 'shift', blossom.id, locale.x, locale.y].join(':')
     }) || { ok: false, reason: 'LocaleRiddleGenerator is not loaded' };
   }
@@ -131,14 +134,15 @@
       const p = window.LocaleRiddleGenerator?.positionOf?.(instance, 'blossom-tree');
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
       let tree = cachedTreeMeshes.get(blossom.localeId); // A Shift may move the same tree; its materials and geometry do not need rebuilding.
+      const color = blossomColor(blossom); // Never duplicate the temple's live colour-fill palette in an event renderer.
       if (!tree) {
-        tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, blossom.color); // Temple-swatches, carved_smooth green trunk and leaf-card color-fill renderer.
+        tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, color); // Temple-swatches, carved_smooth green trunk and leaf-card color-fill renderer.
         if (!tree) continue;
-        tree.scale.multiplyScalar(18); // A ~3-unit landmark after the preset's quarter scale; apply once, not on every zone transition.
+        tree.scale.multiplyScalar(36); // A ~6-unit flowering landmark after quarter-scale baked foliage, visible among wilderness trees; applied once per cached root.
         cachedTreeMeshes.set(blossom.localeId, tree);
       }
       tree.name = blossom.localeId;
-      tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color: blossom.color, localeId: blossom.localeId };
+      tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color, localeId: blossom.localeId };
       const rawHeight = window.ClimbSystem?.groundYAt?.(p.col + .5, p.row + .5); // Undefined floor must not turn into an implicit valid zero elevation.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
       tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
