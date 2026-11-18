@@ -36,10 +36,11 @@
     const villagers = livingVillagers(walkers);
     lastCast = villagers.map(walker => walker.rec.id);
     const crowdStart = Number(stage.row) + 4.5 + (Number(stage.postZ) || 0); // South of the stage, facing up/north at the two presenters.
+    const columns = Math.max(10, Math.ceil(villagers.length / 4)); // Four ranks maximum; a fixed 16-column cap could place large crowds outside town's southern boundary.
     villagers.forEach((walker,index) => {
-      const columns = Math.min(16, Math.max(10, Math.ceil(villagers.length / 4))); // Up to four audience ranks keep the crowd inside the town's southern border.
       const row = Math.floor(index / columns),column = index % columns;
-      const c = Number(stage.col) + 1.5 + (column - (columns - 1) / 2) * 0.8 + (row % 2 ? 0.25 : 0),
+      const inRank = Math.min(columns, villagers.length - row * columns); // A partly filled row still centers in front of the stage rather than all lining up to one side.
+      const c = Number(stage.col) + 1.5 + (column - (inRank - 1) / 2) * 0.8 + (row % 2 ? 0.25 : 0),
         r = crowdStart + row * 0.95;
       const target = {area:'town',c,r,rotY:180,pose:'stand',activity:'watching the Five Blossoms crowning',
         lookAt:{col:center.c+.5,row:center.r},socialLookAt:{x:center.c,z:center.r,y:1.6},socialWatching:true}; // Upward gaze shares the NPC's existing social look-at presentation.
