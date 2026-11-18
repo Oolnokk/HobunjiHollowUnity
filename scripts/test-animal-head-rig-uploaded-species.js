@@ -65,14 +65,14 @@ for(const [id,scale] of Object.entries(growth)){
   assert.equal(warp.maskModeForKind(id),api.get(id).babyHeadUsePaintedFrame===false?'idle-alpha':'legacy-frame',
     id+': authored alpha versus painted choice survives');
 }
-for(const [id,width,height,abdomenEnabled] of [['gar-wolf',128,56,true],['grehlr',128,96,false]]){
+for(const [id,width,height] of [['gar-wolf',128,56],['grehlr',128,96]]){
   const pixels=new Uint8ClampedArray(width*height*4); // Synthetic nonuniform opaque idle image.
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
     const i=(y*width+x)*4;
     pixels[i]=x*2;pixels[i+1]=y*3;pixels[i+2]=x+y;pixels[i+3]=255;
   }
   const original={width,height,data:pixels,getContext:()=>({getImageData:()=>({data:pixels})})};
-  assert.equal(warp.abdomenForKind(id).enabled,abdomenEnabled,id+': abdomen growth toggle survives');
+  assert.equal(warp.abdomenForKind(id).enabled,api.get(id).babyAbdomenEnabled,id+': uploaded abdomen toggle survives runtime');
   const rig=api.get(id); // Prefer the explicitly enabled custom growth rectangle; retain the authored fallback frame.
   const expectedFrame=rig.babyHeadUseCustomFrame===true ? rig.babyHeadCustomFrame : rig.babyHeadFrame;
   assert.deepEqual(plain(warp.frameForKind(id)),plain(expectedFrame),id+': selected authored head rectangle is active');
