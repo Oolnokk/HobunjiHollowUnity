@@ -11,6 +11,10 @@
       "path": "./leather_headband.json"
     },
     {
+      "id": "appearance::hat::five_blossom_crown",
+      "path": "./five_blossom_crown.json"
+    },
+    {
       "id": "citywatch_helmet",
       "path": "./citywatch_helmet.json"
     },
