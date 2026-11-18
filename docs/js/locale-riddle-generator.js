@@ -50,11 +50,20 @@
     for (const c of String(value)) { n ^= c.charCodeAt(0); n = Math.imul(n, 16777619); }
     return n >>> 0;
   }
+  const FLAT_TILE_INDEX = new WeakMap(); // Actual runtime _zoneLayouts sometimes store flat {c,r,...} records, unlike merged Map and editor dictionaries.
   function tileAt(layout, col, row) {
     const map = layout?.maps?.find?.(m => m.id === 'map_generated_wilderness_root') || layout?.maps?.[0] || layout; // Authored generator workspace, or already folded runtime layout.
     if (col < 0 || row < 0) return null;
     const tiles = map?.tiles;
-    if (Array.isArray(tiles)) return tiles[row]?.[col] || null;
+    if (Array.isArray(tiles) && Array.isArray(tiles[0])) return tiles[row]?.[col] || null;
+    if (Array.isArray(tiles)) {
+      let indexed = FLAT_TILE_INDEX.get(tiles);
+      if (!indexed) {
+        indexed = new Map(tiles.map(t => [String(t.c ?? t.col) + ',' + String(t.r ?? t.row), t]));
+        FLAT_TILE_INDEX.set(tiles, indexed);
+      }
+      return indexed.get(`${col},${row}`) || null;
+    }
     if (tiles instanceof Map || typeof tiles?.get === 'function') return tiles.get(`${col},${row}`) || null; // Tothal's real merged wilderness keeps tiles in a Map, unlike the editor's JSON dictionary.
     return tiles?.[`${col},${row}`] || null;
   }
