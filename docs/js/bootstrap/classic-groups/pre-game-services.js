@@ -6,8 +6,8 @@
     "js/companion-movement-speed.js?v=20261114ownerpaceReview5",
     "js/audio-system.js?v=20261115exertionVoiceGateReview3",
     "js/honeyfuzzle-audio.js?v=20261114queenPerf1",
-    "js/scratchbones-emoji-reactions.js?v=20261109scaleglow1",
-    "js/animal-vocalizations.js?v=20261117mootMother1",
+    "js/scratchbones-emoji-reactions.js?v=20261117emojiHeadSide1",
+    "js/animal-vocalizations.js?v=20261117emojiHeadSide1",
     "js/music-system.js?v=20261108shaftfade1",
     "js/audio-track-gain-settings.js?v=20260920trackgain2"
   ]; // Cache versions are owned by this feature area, rather than the shared index page.
