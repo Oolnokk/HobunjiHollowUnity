@@ -264,6 +264,28 @@ for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'grass',el
 const dryRoute=Riddles.generate(canyonOptions);
 assert.equal(dryRoute.evidence.route[0].crossing,null,'dry ground cannot produce phantom river crossings');
 assert.doesNotMatch(dryRoute.text,/crossing the river/,'the poem omits a river when no crossing exists');
+const waterfallTerrain=layoutFor('cyan',27,30); // Two separate real falls of different measured vertical drops.
+for(let row=0;row<waterfallTerrain.rows;row++)for(let col=0;col<waterfallTerrain.cols;col++)
+  waterfallTerrain.tiles[row][col].elevTier=1;
+waterfallTerrain.tiles[14][18]={type:'waterfall',elevTier:3};
+waterfallTerrain.tiles[13][18]={type:'river',elevTier:1};
+waterfallTerrain.tiles[19][39]={type:'waterfall',elevTier:2};
+waterfallTerrain.tiles[18][39]={type:'river',elevTier:1};
+const waterfallSites=Scenery.planForLayout('map_northern_cliffs',waterfallTerrain,'unit-world:waterfalls');
+const waterfallVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:waterfallTerrain,instance:waterfallTerrain.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:waterfallSites,seed:'highest-verified-waterfall'});
+assert.equal(waterfallVerse.ok,true);
+assert.equal(waterfallVerse.evidence.uniqueStart.kind,'waterfallAnchor','the objectively tallest waterfall outranks the dyed-rock fallback');
+assert.deepEqual(waterfallVerse.evidence.uniqueStart.coordinate,{col:18,row:14},'start is the fall with the greatest actual plateau drop');
+assert.match(waterfallVerse.text,/^(?:Begin|Start|Stand) at the tallest waterfall in Northern Cliffs/,'no tie exists, so tallest waterfall is a unique true landmark');
+const edgeTerrain=layoutFor('cyan',25,20); // Without a painted marker, only one actual west-edge river opening exists.
+edgeTerrain.tiles[11][0]={type:'river',elevTier:0};
+edgeTerrain.tiles[12][0]={type:'river',elevTier:0};
+const edgeVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:edgeTerrain,instance:edgeTerrain.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',seed:'single-western-exit'});
+assert.equal(edgeVerse.ok,true);
+assert.equal(edgeVerse.evidence.uniqueStart?.kind,'riverEdgeAnchor','a single cardinal river boundary crossing is an unambiguous natural anchor');
+assert.match(edgeVerse.text,/western boundary/,'cardinal river boundary directions match the actual map edge');
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
   targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
