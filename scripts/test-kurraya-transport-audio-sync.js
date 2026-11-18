@@ -240,7 +240,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=[A-Za-z0-9_.-]+'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=[A-Za-z0-9_.-]+&overworld=1'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
