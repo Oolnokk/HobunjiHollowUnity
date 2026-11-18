@@ -56,20 +56,20 @@
       eyes:['In {value}, look with searching eyes','Within {value}, the hidden answer lies'],
       door:['In {value}, begin to explore','Seek {value}; the land holds something more'],
       tree:['Search {value}; the country holds the key',"In {value}, the goal you seek you'll see"],
-      flow:['To {value}, let the search now go','Begin in {value}; let your knowledge grow']
+      flow:['Toward {value}, set your feet and go','Begin in {value}; let your knowledge grow']
     },
     bearing:{
-      way:['Look {value}; let the landmark point the way','Seek {value}; do not let your steps stray','Search {value}; let that clue have its say'],
+      way:['Look {value}; let this bearing point the way','Seek {value}; do not let your steps stray','Search {value}; let that clue have its say'],
       ground:['Search {value}; a clue waits to be found','Look {value}; the bearing marks this ground','Go {value}; let that hint define your bound'],
       side:['Look {value}; let the clue be your guide','Seek {value}; set other hints aside','Search {value}; let this bearing abide'],
       place:['Search {value}; it helps to fix the place',"Look {value}; pursue the riddle's trace",'Seek {value}; explore the nearby space'],
       eyes:['Look {value}; let the clue direct your eyes','Search {value}; the hidden answer lies','Seek {value}; there waits the sought-for prize'],
       door:['Look {value}; then search a little more',"Seek {value}; there's ground left to explore",'Go {value}; find what the land holds in store'],
       tree:['Look {value}; this hint becomes your key',"Search {value}; there's more for you to see",'Seek {value}; let the clue set you free'],
-      flow:['Search {value}; let what follows show','Look {value}; follow what you know','Go {value}; let the searching onward flow']
+      flow:['Search {value}; the riddle has more to show','Look {value}; follow what you know','Go {value}; let the searching onward flow']
     },
     blossom:{
-      way:['Find {value}; its blossoms end your way','Seek {value}; where colored petals stay'],
+      way:['Find {value}; its blossoms end your way','At {value}, the colored petals stay'],
       ground:['Find {value}; where colored blooms are found','Seek {value}; its roots hold to the ground'],
       side:['Find {value}; let its branches be your guide','Seek {value}; where colored blooms abide'],
       place:['Find {value}; the blossom marks the place','Seek {value}; where petals lend their grace'],
@@ -83,7 +83,7 @@
       ground:['Find {value}; the answer has been found','Seek {value}; its place is on this ground'],
       side:['Find {value}; set other hints aside','Seek {value}; the last clue is your guide'],
       place:["Find {value}; you've reached the sought-for place",'Seek {value}; it ends your wandering chase'],
-      eyes:['Find {value}; the final answer lies','At {value}, the search has earned its prize'],
+      eyes:['At {value}, the final answer lies','At {value}, the search has earned its prize'],
       door:['Seek {value}; no need to search for more','Find {value}; here ends what you explore'],
       tree:['Find {value}; let that be your key','Seek {value}; the answer you will see'],
       flow:['Find {value}; let the wandering slow','Seek {value}; the answer you will know']
@@ -92,18 +92,18 @@
   const LANDMARK_BANK = Object.freeze({
     water:{flow:['Search {value}; follow where the waters flow','Look {value}; follow what the waters show'],side:['Look {value}; let the water be your guide']},
     path:{way:['Search {value}; the trodden track defines the way','Look {value}; let the trail have its say'],side:['Seek {value}; let the footpath be your guide']},
-    boulder:{A:['Search {value}; the earth holds fast to stone','Look {value}; the unyielding rock is shown'],ground:['Seek {value}; the stubborn stone marks the ground']},
-    stoneCairn:{A:['Look {value}; a cairn has gathered stone','Search {value}; the piled stones make their mark known'],ground:['Seek {value}; stacked stones rise from the ground']},
-    brokenPillar:{A:['Look {value}; a fractured pillar speaks in stone','Seek {value}; the broken masonry is shown'],ground:['Search {value}; scarred masonry marks the ground']},
-    deadTree:{tree:['Look {value}; bare branches hold the key','Seek {value}; the leafless tree is yours to see'],eyes:['Search {value}; bare branches sketch the skies']},
-    cliffDoor:{door:['Look {value}; the cliffside keeps a door','Seek {value}; stone guards a way to explore'],place:['Search {value}; the cliff door marks the place']},
+    boulder:{A:['Search {value}; the earth holds fast to stone','Look {value}; the unyielding rock is shown'],ground:['Seek {value}; the stubborn stone marks the ground'],eyes:['Search {value}; the boulder rises before your eyes']},
+    stoneCairn:{A:['Look {value}; a cairn has gathered stone','Search {value}; the piled stones make their mark known'],ground:['Seek {value}; stacked stones rise from the ground'],eyes:['Seek {value}; let stacked stones guide your eyes']},
+    brokenPillar:{A:['Look {value}; a fractured pillar speaks in stone','Seek {value}; the broken masonry is shown'],ground:['Search {value}; scarred masonry marks the ground'],place:['Look {value}; shattered masonry marks the place']},
+    deadTree:{tree:['Look {value}; bare branches hold the key','Seek {value}; the leafless tree is yours to see'],eyes:['Search {value}; bare branches sketch the skies'],side:['Seek {value}; let the leafless tree be your guide']},
+    cliffDoor:{door:['Look {value}; the cliffside keeps a door','Seek {value}; stone guards a way to explore'],place:['Search {value}; the cliff door marks the place'],side:['Look {value}; let the cliffside door be your guide']},
     rootTotem:{ground:['Look {value}; the carved sign marks the ground'],side:['Seek {value}; let the root totem be your guide']},
-    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place']}
+    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place'],ground:['Look {value}; a creature refuge marks the ground']}
   }); // Witness-specific language only appears for measured and typed structures.
   const SIGNATURE = Object.freeze({
-    water:['flow','side'],path:['way','side'],boulder:['A','ground'],
-    stoneCairn:['A','ground'],brokenPillar:['A','ground'],deadTree:['tree','eyes'],
-    cliffDoor:['door','place'],rootTotem:['ground','side'],animalDen:['B','place']
+    water:['flow','side'],path:['way','side'],boulder:['A','ground','eyes'],
+    stoneCairn:['A','ground','eyes'],brokenPillar:['A','ground','place'],deadTree:['tree','eyes','side'],
+    cliffDoor:['door','place','side'],rootTotem:['ground','side'],animalDen:['B','place','ground']
   }); // Favor signature rhymes but leave variety available.
 
   function hash(value) {

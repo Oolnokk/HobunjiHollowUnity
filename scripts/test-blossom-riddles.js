@@ -93,6 +93,15 @@ for (let seed = 0; seed < 1200; seed++) {
 }
 assert.equal(coveredFamilies.size,10,'all ten phonetic families exercised');
 assert.ok(['stoneCairn','brokenPillar','deadTree','cliffDoor','rootTotem','animalDen'].every(kind=>coveredLandmarks.has(kind)),'all registered landmark types represented');
+// Empty landscapes must never borrow a physical landmark simply to finish a rhyme.
+for (let seed = 0; seed < 400; seed++) {
+  const zone = layoutFor('cyan');
+  const verse = Riddles.generate({zoneId:'map_northern_cliffs',layout:zone,instance:zone.localeInstances[0],
+    targetKind:'blossom',targetName:'Cyan Blossom',seed:'empty-landscape-'+seed});
+  assert.equal(verse.ok,true);
+  assert.doesNotMatch(verse.text,/\b(?:cairn|pillar|cliff door|landmark|boulder|river|trail|animal den|root totem)\b/i,
+    'no terrain-specific nouns may appear when no such feature was inspected');
+}
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);

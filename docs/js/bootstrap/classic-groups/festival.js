@@ -10,7 +10,7 @@
     "js/festival-potluck-contest.js?v=20261109festRarityMerge2",
     "js/festival-locale-activities.js?v=20261118fiveBlossomsLocale1",
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
-    "js/locale-riddle-generator.js?v=20261118rhymeBanksTen2",
+    "js/locale-riddle-generator.js?v=20261118rhymeBanksTen3",
     "js/festival-blossom-hunt.js?v=20261118goldWesternSlope1",
     "js/festival-system.js?v=20261118fiveBlossomsHunt2",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
