@@ -94,7 +94,7 @@ const expected = Object.entries(api.getConfig().shafts).flatMap(([shaft, record]
     && !api.isDisallowed(shaft, head)).map(([head]) => shaft + '|' + head));
 assert.deepEqual(placed.sort(), expected.sort(), 'Bulk sleeves only target true multi-ended hafts');
 assert(placed.includes('bshuakauitl|dagger-sword'), 'Two-ended B\'Shuakauitl is eligible');
-assert(placed.some(pair => pair.startsWith('pick-shovel|')), 'Two-ended Pick-Shovel remains eligible');
+assert(!placed.some(pair => pair.startsWith('pick-shovel|')), 'Pick-Shovel is single-headed at the scoop end now, so bulk sleeve placement skips it');
 assert(!placed.some(pair => ['kylie', 'hatchet', 'hoe', 'warhammer', 'fishing-mace', 'bgungku', 'dagger'].some(shaft => pair.startsWith(shaft + '|'))),
   'Single-ended hafts never receive mass recipe placements');
 assert(bulkApproval.questions.every(question => question.includes('Kylie') && question.includes('Undo')),

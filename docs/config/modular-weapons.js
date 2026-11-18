@@ -3821,7 +3821,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "flipX": true,
           "flipY": true,
           "layerOrder": "haft-over-head",
-          "scaleX": 0.5
+          "scaleX": 0.5,
+          "scaleY": 2
         },
         "pickshovel-scoop": {
           "scaleX": 0.6,
@@ -3900,12 +3901,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_longsword.png",
       "overrides": {
         "dagger-sword": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 0.8657,
           "layerOrder": "haft-over-head"
         },
         "dagger": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 1.1,
           "layerOrder": "haft-over-head"
         },
@@ -3916,7 +3917,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "fishing-spear": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 2,
           "y": 10,
           "layerOrder": "haft-over-head"
@@ -3924,7 +3925,8 @@ window.MODULAR_WEAPON_CONFIG = {
         "harlyao-broadsword": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-longsword": {
           "scaleX": 0.9,
@@ -3952,7 +3954,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 2.2,
           "flipY": true,
           "y": 20,
@@ -3965,7 +3967,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "plains-blade": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 0.75,
           "x": -6,
           "y": 20,
@@ -3978,7 +3980,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "warhammer": {
           "scaleX": 0.9,
@@ -11682,17 +11685,6 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "eye",
           "start": {
-            "x": 207,
-            "y": 319
-          },
-          "end": {
-            "x": 207,
-            "y": 239
-          }
-        },
-        {
-          "type": "tang",
-          "start": {
             "x": 195,
             "y": 856
           },
@@ -11704,12 +11696,12 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 227,
-            "y": 279
+            "x": 195,
+            "y": 856
           },
           "end": {
-            "x": 187,
-            "y": 279
+            "x": 195,
+            "y": 776
           }
         },
         {

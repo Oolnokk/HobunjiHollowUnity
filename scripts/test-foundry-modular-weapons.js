@@ -129,7 +129,7 @@ assert.deepEqual(plain(broadShaft.mounts), [
 assert.deepEqual(plain(longShaft.mounts), [
   { type: 'tang', start: { x: 200.5, y: 655 }, end: { x: 200.5, y: 575 } },
 ], 'Longsword retains its separately imported tang instead of inheriting broadsword geometry');
-assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.9);
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.63); // Thinned toward a rapier (0.9 x 0.7).
 assert.equal(api.settings('harlyao-longsword', 'dagger').scaleY, 1.1);
 assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.

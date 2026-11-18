@@ -11,7 +11,7 @@ function boot(storage = {}) {
   return { api: window.ModularWeapons, committed: window.MODULAR_WEAPON_CONFIG, storage };
 }
 const { api, committed } = boot();
-const generatedCompanionShafts = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']; // Six shipped 90-degree tangs whose old start/end were reversed.
+const generatedCompanionShafts = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe']; // Five shipped 90-degree tangs whose old start/end were reversed. Pick-Shovel's pick-end companion was removed on purpose: weighted heads now sit opposite the pick pommel and blades only use the scoop-end tang.
 for (const key of generatedCompanionShafts) {
   const shaft = committed.shafts[key], eye = shaft.mounts.find(m => m.type === 'eye');
   const center = { x: (eye.start.x + eye.end.x) / 2, y: (eye.start.y + eye.end.y) / 2 }; // Companion tang shares the sleeve center.
@@ -94,6 +94,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
     const mx = (eye.start.x + eye.end.x) / 2, my = (eye.start.y + eye.end.y) / 2;
     const dx = eye.end.x - eye.start.x, dy = eye.end.y - eye.start.y;
     const length = Math.hypot(dx, dy);
+    if (shaftKey === 'pick-shovel') continue; // Deliberate: eye sits opposite the pick pommel beside the straight scoop tang; no perpendicular companion.
     const matches = tangs.filter(t => Math.hypot((t.start.x + t.end.x) / 2 - mx, (t.start.y + t.end.y) / 2 - my) < 0.001);
     assert.equal(matches.length, 1, shaftKey + ': every eye has exactly one overlapping companion tang');
     const cross = matches[0];
@@ -115,7 +116,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
   }
 }
 assert.equal(totalEye, eyeLocations.length);
-assert.equal(totalTang, 20, 'All original tangs plus the Grapple-Flail legacy rigid tang remain registered');
+assert.equal(totalTang, 19, 'All original tangs (minus the removed Pick-Shovel pick-end tang) plus the Grapple-Flail legacy rigid tang remain registered');
 const rigidShafts = Object.values(committed.shafts).filter(shaft => !shaft.flailAssembly); // Legacy authored pair count stays unchanged when new flexible shafts are registered.
 const rigidHeads = Object.values(committed.heads).filter(head => !head.flailAssembly); // Flexible heads do not require a full rigid Cartesian layer-order table.
 assert.equal(rigidShafts.length * rigidHeads.length, 272, 'All original 272 explicitly authored rigid pairs remain intact');
