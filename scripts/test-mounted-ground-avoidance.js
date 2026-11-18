@@ -173,6 +173,7 @@ const startX = 4.8; // Outside the first real tread, slightly before the west la
 mount.x = startX * TILE; mount.y = 6.5 * TILE;
 player.x = mount.x; player.y = mount.y; player.physicalFeetY = 0.08;
 mount.avatarRef.group.position.set(startX, 0.58, 6.5);
+mount.groundShadow = { position: position() }; // Scene-sibling shadow must follow the rendered bridge tread independently of the physics XY.
 deps.updateCreatureMesh = (creature, dt) => {
   const targetX = creature.x / TILE;
   const override = Number(creature.surfaceYOverride?.()); // Production renderer uses exact floor as the target.
@@ -200,6 +201,8 @@ for (let x = startX + boostedTileStep; x < 13.1; x += boostedTileStep) {
   if (visibleTop !== null) {
     near(mount.avatarRef.group.position.y, visibleTop + 0.5,
       'smoothed animal visual feet cannot sink into the real bridge at x=' + visibleX);
+    near(mount.groundShadow.position.y, visibleTop,
+      'mount ground shadow follows the actual visible stair height at x=' + visibleX);
   }
   near(rider.position.y - mount.avatarRef.group.position.y, 0.2,
     'mounted rider remains seated over final visible animal root even on 24 FPS stair crossings');
