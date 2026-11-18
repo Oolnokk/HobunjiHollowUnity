@@ -5,6 +5,7 @@ const path = require('node:path'); // Builds paths relative to this test for CI 
 const vm = require('node:vm'); // Runs browser-only seasonal quest code in an isolated fake window.
 
 const ROOT = path.join(__dirname, '..'); // Used to resolve the same files served by the game.
+const Scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Shared, independent year-round landmark plan used by both renderer and riddle clues.
 const Riddles = require('../docs/js/locale-riddle-generator.js'); // Reusable UMD source is also valid CommonJS.
 const locales = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/locales/index.json'), 'utf8')).locales; // All five authored targets must be indexed for Tothal Shift placement.
 const ids = ['cyan', 'white', 'gold', 'amber', 'rose']; // Each target has its own standalone locale JSON and unique temple color.
@@ -57,6 +58,26 @@ const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWate
 assert.equal(missing.ok, true);
 assert.equal(missing.evidence.waterFound, false);
 assert.equal(missing.facts.filter(f => f.kind === 'distance').length, 0, 'missing landmarks must not lead to numeric tile-count instructions');
+// Year-round scenery must be deterministic, terrain-safe, distinct and visible to treasure riddles.
+const sceneryWorld = layoutFor('cyan', 30, 30);
+const landmarks = Scenery.planForLayout('map_northern_cliffs', sceneryWorld, 'unit-world:1156');
+assert.ok(landmarks.length >= 6, 'dense year-round landmarks exist across a simple exterior zone');
+assert.equal(landmarks, Scenery.planForLayout('map_northern_cliffs', sceneryWorld, 'unit-world:1156'), 'zone plan is cached and unchanged on revisit');
+assert.notDeepEqual(landmarks, Scenery.planForLayout('map_northern_cliffs', sceneryWorld, 'unit-world:1157'), 'new Tothal cycle moves the scenery');
+for (const landmark of landmarks) {
+  assert.equal(sceneryWorld.tiles[landmark.point.row][landmark.point.col].type, 'grass');
+  assert.ok(Math.hypot(landmark.point.col - 30, landmark.point.row - 30) >= 6, 'authored locale clearance remains intact');
+  assert.ok(['stoneCairn','brokenPillar','deadTree'].includes(landmark.kind));
+}
+const cliffDoorClue = Riddles.generate({
+  zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
+  targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
+  landmarks:[{name:'a cliff door', point:{col:28,row:26}, source:'registered-cliff-door'}], seed:'cliff-door-example'
+});
+assert.equal(cliffDoorClue.ok, true);
+assert.ok(cliffDoorClue.facts.some(f=>f.source==='registered-cliff-door'), 'only a registered, physically present cliff door becomes a clue');
+assert.doesNotMatch(cliffDoorClue.text, forbiddenTiming);
+assert.doesNotMatch(cliffDoorClue.text, forbiddenCounting);
 const withWater = layoutFor('cyan');
 withWater.tiles[23][26] = { type: 'stream' };
 const present = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: withWater, instance: withWater.localeInstances[0], blossomName: 'Cyan Blossom' });
@@ -64,6 +85,12 @@ assert.equal(present.ok, true);
 assert.equal(present.evidence.waterFound, true);
 assert.ok(present.facts.some(f => f.kind === 'water'));
 // The real Tothal zone fold stores tiles in a Map, not an object or 2D array.
+const flat = layoutFor('cyan');
+flat.tiles[22][26] = { type:'stream' };
+flat.tiles = flat.tiles.flatMap((line,row)=>line.map((tile,col)=>({c:col,r:row,...tile}))); // Actual runtime _zoneLayouts also permits flat {c,r} records.
+const fromFlat = Riddles.generate({zoneId:'map_northern_cliffs',layout:flat,instance:flat.localeInstances[0],blossomName:'Cyan Blossom'});
+assert.equal(fromFlat.ok,true);
+assert.equal(fromFlat.evidence.waterFound,true,'flat runtime tile records must expose real terrain');
 const merged = layoutFor('cyan');
 const target = merged.localeInstances[0];
 merged.tiles[23][26] = { type: 'river' };
