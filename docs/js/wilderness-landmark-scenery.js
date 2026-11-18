@@ -53,7 +53,7 @@ function cairns(T,host,sites){
   }
  }
  mesh.count=index;mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
- mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};mesh.userData.wildernessLandmarkScenery=true;host.add(mesh);
+ mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};mesh.userData.wildernessLandmarkScenery=true;mesh.userData.ownsWildernessCairnBuffers=true;host.add(mesh);
 }
 function deadwood(host,sites){
  for(const site of sites.filter(s=>s.kind==='deadTree')){
@@ -77,7 +77,11 @@ async function debris(host,sites,ticket,zoneId){
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
 }
-function clear(){serial++;group?.parent?.remove?.(group);group=null;scene=null;area='';}
+function clear(){
+ serial++;
+ group?.traverse?.(node=>{if(node.userData?.ownsWildernessCairnBuffers){node.geometry?.dispose?.();node.material?.dispose?.();}}); // Per-zone instanced cairn buffers are owned; shared foliage and authored-furniture buffers are not.
+ group?.parent?.remove?.(group);group=null;scene=null;area='';
+}
 function update(){
  const zone=deps?.getCurrentArea?.(),layout=deps?._zoneLayouts?.get?.(zone),active=root.GridTileAccessors?.getActiveScene?.();
  if(!layout||!active||!String(zone).startsWith('map_')){if(group)clear();return;}
