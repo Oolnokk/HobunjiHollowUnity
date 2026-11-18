@@ -100,8 +100,9 @@
         const t = tileAt(layout, x, y);
         if (!t) continue;
         const type = String(t.type || '').toLowerCase();
-        if (WATER.has(type) || (Number(t.water) > 0) || t.path === true || type === 'path')
-          samples.push({ col: x, row: y, d, type: WATER.has(type) || Number(t.water) > 0 ? 'water' : 'path', waterType: type });
+        const boulder = type === 'rock' && (t.rockKind === 'undiggableBoulder' || t.generatedObjectType === 'undiggableBoulder' || !!t.boulderId); // Only genuine solid, generated boulder formations supply a stone landmark.
+        if (WATER.has(type) || (Number(t.water) > 0) || t.path === true || type === 'path' || boulder)
+          samples.push({ col:x, row:y, d, type: boulder ? 'boulder' : WATER.has(type) || Number(t.water) > 0 ? 'water' : 'path', waterType:type });
       }
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
@@ -123,6 +124,8 @@
     }
     const path = samples.find(s => s.type === 'path');
     if (path && path.d <= 16) facts.push({ kind: 'path', value: relationship(point, path, 'the trail'), source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
+    const boulder = samples.find(s => s.type === 'boulder');
+    if (boulder) facts.push({ kind:'boulder', value:relationship(point,boulder,'the undiggable boulder'), source:'post-generation-boulder-tile', coordinate:{col:boulder.col,row:boulder.row}, distance:boulder.d });
     const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId && !String(other.localeId || '').startsWith('locale_five_blossoms_')); // Never give away a different blossom as a landmark.
     const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale' })); // Already-stamped locale anchors are authoritative.
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem' }); // Uses the existing root-totem placement index.
@@ -135,7 +138,7 @@
     if (landmark) facts.push({ kind: 'landmark', value: relationship(point, landmark.point, landmark.name), source: landmark.source, distance: landmark.d });
     // No made-up landmarks and no literal tile counts. Sparse locations simply get a shorter, broader poem.
     facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value: String(targetName || blossomName || instance.name || 'the destination'), source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
-    return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, landmarkFound: !!landmark, optionalTerrainFallback: !water && !path && !landmark } };
+    return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, boulderFound: !!boulder, landmarkFound: !!landmark, optionalTerrainFallback: !water && !path && !boulder && !landmark } };
   }
   function lineFor(fact, rhyme, seed, offset) {
     const choices = BANK[fact.kind]?.[rhyme];
