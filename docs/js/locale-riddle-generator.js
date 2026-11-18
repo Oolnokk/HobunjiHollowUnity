@@ -13,31 +13,35 @@
   const BANK = Object.freeze({
     zone: {
       A: [f => `In ${f.value}, begin your search by the fading light`, f => `The trails of ${f.value} shall guide your sight`, f => `Seek through ${f.value} before the fall of night`],
-      B: [f => `Let ${f.value} be the first place you go`, f => `Within ${f.value}, the hidden petals glow`, f => `The land of ${f.value} has more to show`]
+      B: [f => `Let ${f.value} be the first place you go`, f => `Within ${f.value}, quiet secrets grow`, f => `The land of ${f.value} has more to show`]
     },
     sector: {
       A: [f => `Keep to ${f.value}, and hold your bearing right`, f => `In ${f.value}, follow the morning light`, f => `Search ${f.value} with the stars in sight`],
-      B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `This secret lies in ${f.value}, where tender petals grow`]
+      B: [f => `Turn to ${f.value}, where older secrets grow`, f => `In ${f.value}, a patient seeker ought to go`, f => `Search ${f.value}, where hidden signs may show`]
     },
     water: {
       A: [f => `Search ${f.value} in the clear daylight`, f => `Look ${f.value}, and keep the banks in sight`, f => `Seek ${f.value} before the night`],
-      B: [f => `Go ${f.value}, where hidden petals glow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Search ${f.value} for the bloom below`]
+      B: [f => `Go ${f.value}, where hidden secrets show`, f => `Look ${f.value}, and let your footsteps slow`, f => `Seek ${f.value}, where quiet waters flow`]
     },
     path: {
       A: [f => `Seek ${f.value}, beyond the fading light`, f => `Look ${f.value}, with the route in sight`, f => `Search ${f.value} before the night`],
-      B: [f => `Go ${f.value}, where hidden blossoms grow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Beyond ${f.value}, the petals glow`]
+      B: [f => `Go ${f.value}, where hidden secrets grow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Seek ${f.value}, where lost signs show`]
     },
     landmark: {
       A: [f => `Look ${f.value}, and mark it right`, f => `Search ${f.value}, with the marker in sight`, f => `Seek ${f.value} before the night`],
-      B: [f => `Walk ${f.value}, where hidden wonders show`, f => `Search ${f.value}, then let your footsteps slow`, f => `Go ${f.value}, where secret blossoms grow`]
+      B: [f => `Walk ${f.value}, where hidden wonders show`, f => `Search ${f.value}, then let your footsteps slow`, f => `Go ${f.value}, where older secrets grow`]
     },
-    tree: {
-      A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
-      B: [f => `The tree of ${f.value} is what you ought to know`, f => `At the ${f.value} tree, the final colors glow`, f => `Seek ${f.value} petals, not the grass below`]
+    blossom: {
+      A: [f => `Seek ${f.value}, its petals catching light`, f => `Find ${f.value}, where colors blossom bright`, f => `Remember ${f.value} when the boughs come into sight`],
+      B: [f => `At ${f.value}, the secret petals glow`, f => `Beside ${f.value}, the final colors show`, f => `Reach ${f.value} beneath the branches low`]
+    },
+    target: {
+      A: [f => `Find ${f.value} beneath the fading light`, f => `Seek ${f.value} until it meets your sight`, f => `Let ${f.value} guide the search tonight`],
+      B: [f => `At ${f.value}, the answer starts to show`, f => `Reach ${f.value} before the shadows grow`, f => `Look for ${f.value}, and you will know`]
     },
     distance: {
       A: [f => `Count ${f.value} beneath the light`, f => `Mark ${f.value} by the final light`, f => `Measure ${f.value} to keep your bearing right`],
-      B: [f => `Walk ${f.value} before the blossoms show`, f => `Seek ${f.value} and let your footsteps slow`, f => `Go ${f.value}, where hidden petals glow`]
+      B: [f => `Walk ${f.value} before the signs may show`, f => `Seek ${f.value} and let your footsteps slow`, f => `Go ${f.value}, where hidden secrets grow`]
     }
   }); // Each verified descriptor has several interchangeable A and B lines with matching terminal sounds.
 
@@ -68,7 +72,7 @@
     const x = col / cols, y = row / rows;
     const horiz = x < 1 / 3 ? 'western' : x >= 2 / 3 ? 'eastern' : '';
     const vert = y < 1 / 3 ? 'northern' : y >= 2 / 3 ? 'southern' : '';
-    return vert && horiz ? `the ${vert}-${horiz} quarter` : vert ? `the ${vert} reaches` : horiz ? `the ${horiz} reaches` : 'the heart of the zone';
+    return vert && horiz ? `the ${vert.slice(0,-3)}${horiz.slice(0,-3)} sector` : vert ? `the ${vert} reaches` : horiz ? `the ${horiz} reaches` : 'the heart of the zone';
   }
   function relationship(point, feature, name) {
     const dx = point.col - feature.col, dy = point.row - feature.row; // Describe where to search FROM a visible feature, never where the feature lies from an unknown tree.
@@ -93,7 +97,7 @@
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
   }
-  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, blossomName = 'unknown', radius = 24 } = {}) {
+  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, radius = 24 } = {}) {
     const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
     if (!layout || !instance || !Number.isFinite(point.col) || !Number.isFinite(point.row) ||
@@ -129,7 +133,7 @@
       facts.push({ kind: 'distance', value: horizontal.value, source: 'final-grid-distance', distance: horizontal.distance });
       facts.push({ kind: 'distance', value: vertical.value, source: 'final-grid-distance', distance: vertical.distance });
     }
-    facts.push({ kind: 'tree', value: blossomName, source: 'stamped-target-tree' });
+    facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value: String(targetName || blossomName || instance.name || 'the destination'), source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
     return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, landmarkFound: !!landmark, optionalTerrainFallback: !water && !path && !landmark } };
   }
   function lineFor(fact, rhyme, seed, offset) {
@@ -139,23 +143,19 @@
   }
   function compose({ facts, seed = 'locale-riddle' } = {}) {
     if (!Array.isArray(facts) || facts.length < 2) return null;
-    const stanzas = []; // Every stanza is ABAB; the last stanza always specifies the actual target tree.
-    for (let i = 0; i < facts.length; i += 2) {
-      const first = facts[i], second = facts[i + 1] || facts[facts.length - 1];
-      if (first === second) break;
-      stanzas.push([
-        lineFor(first, 'A', seed + ':' + i, 0) + ',',
-        lineFor(second, 'B', seed + ':' + i, 0) + ';',
-        lineFor(first, 'A', seed + ':' + i, 1) + ',',
-        lineFor(second, 'B', seed + ':' + i, 1) + '.'
-      ]); // Paired descriptors describe the same verified surroundings twice, with fresh rhyming phrasing.
+    const groups = []; // Four distinct facts per ABAB stanza when available; avoid the old twelve-line repetitive verse.
+    for (let index = 0; index < facts.length; index += 4) groups.push(facts.slice(index, index + 4));
+    if (groups.length > 1 && groups[groups.length - 1].length === 1) {
+      const prior = groups[groups.length - 2]; // Keep the final target in a meaningful closing couplet.
+      groups[groups.length - 1].unshift(prior[prior.length - 1]);
     }
-    const last = facts[facts.length - 1];
-    if (facts.length % 2) {
-      const partner = facts[facts.length - 2];
-      stanzas.push([lineFor(partner,'A',seed+':end',0)+',',lineFor(last,'B',seed+':end',0)+';',lineFor(partner,'A',seed+':end',1)+',',lineFor(last,'B',seed+':end',1)+'.']);
-    }
-    return stanzas;
+    return groups.map((group, stanzaIndex) => {
+      const lines = group.length >= 4 ? group
+        : group.length === 3 ? [group[0], group[1], group[0], group[2]]
+        : [group[0], group[1], group[0], group[1]]; // Small tails may repeat one fact, but normal stanzas do not.
+      return lines.map((fact, i) => lineFor(fact, i % 2 ? 'B' : 'A', seed + ':' + stanzaIndex, i >= 2 ? 1 : 0)
+        + (i === 3 ? '.' : i === 1 ? ';' : ','));
+    });
   }
   function validate(result) {
     if (!result?.stanzas?.length) return false;
