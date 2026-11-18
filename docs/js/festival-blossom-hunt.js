@@ -22,10 +22,12 @@
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
   let lastGenerated = null; // Debug snapshot describes which final terrain evidence made it into the clue.
   let registeredYear = null; // Registers real character-owned blossom inventory items once per civil year.
-  let pickPromptEl = null; // Mobile/touch button is the same explicit pick action as the controller Action 3 claim.
   let advertisedPick = ''; // Avoid reinstalling GameplayInputRouter claims on each 200ms festival tick.
   let turnInRunning = false; // Disallows double-awards while a cutscene awaits dialogue input.
   let lastTurnIn = null; // Developer mobile snapshot reports first/later awards and failed saves.
+  let clueTarget = null; // Tracks the next blossom whose saved clue was last reconciled.
+  let clueLayout = null; // Tracks that target's workspace object, so same-cycle forced regeneration invalidates the saved clue.
+  let clueSynced = false; // Recheck saved clues on member/world load and while generated terrain is incomplete.
 
   function year() { return Number(window.CalendarSystem?.aotYearNumber?.()); }
   function active() { return window.FestivalCalendar?.current?.()?.id === 'five_blossoms'; }
@@ -58,7 +60,8 @@
     const { layout, locale } = statusFor(blossom);
     if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not available in this generated wilderness yet; check the mobile placement diagnostics.' };
     return window.LocaleRiddleGenerator?.generate?.({
-      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom',
+      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom', requireUniqueStart: true,
+      terrainGenerationKey: String(mapDeps?.tothalWorldId?.() || 'world') + ':' + String(mapDeps?.currentTothalYear?.() || 'shift'), // Natural-landmark cache follows the same cycle as the physical witness stones.
       landmarks: [
         ...(window.WildernessLandmarkScenery?.landmarksFor?.(blossom.zoneId, layout) || []),
         ...(window.CaveSiteSystem?.outdoorPuzzleSitesForZone?.(blossom.zoneId) || []).map(site => ({
@@ -94,6 +97,13 @@
       window.__farmLog?.('[blossom-hunt] ' + lastStatus, 'warn');
       return false;
     }
+    if (status === 'active') {
+      clueTarget = targetFor(Array.isArray(progress?.found) ? progress.found : []);
+      clueLayout = clueTarget ? zoneLayout(clueTarget.zoneId) : null;
+      clueSynced = !clueTarget || lastGenerated?.ok === true; // A fallback clue must be retried when its stamped layout becomes available.
+    } else {
+      clueTarget = null; clueLayout = null; clueSynced = true;
+    }
     return true;
   }
   function start() {
@@ -124,15 +134,39 @@
     const civilYear = year(); // Used as a readiness gate so an unloaded calendar cannot accidentally expire a saved annual quest.
     if (!Number.isSafeInteger(civilYear) || window.CalendarSystem?.isInitialized?.() === false) return;
     const shift = mapDeps.currentTothalYear?.() ?? 'unknown';
-    const newKey = [civilYear, active() ? 'festival' : 'ordinary', shift].join(':');
-    if (newKey === calendarKey || Date.now() < retrySaveAfter) return;
-    retrySaveAfter = 0;
-    calendarKey = newKey;
-    expireOutdated();
-    if (active()) start();
+    const isFestival = active(); // Keeps all quest expiry and clue checks on the existing festival tick.
+    const newKey = [civilYear, isFestival ? 'festival' : 'ordinary', shift].join(':');
+    const calendarChanged = newKey !== calendarKey; // Full quest scans still happen only at calendar boundaries.
+    const layoutChanged = !!clueTarget && zoneLayout(clueTarget.zoneId) !== clueLayout; // O(1) workspace identity check catches forced same-cycle regeneration.
+    if ((!calendarChanged && clueSynced && !layoutChanged) || Date.now() < retrySaveAfter) return;
+    if (calendarChanged) {
+      retrySaveAfter = 0;
+      calendarKey = newKey;
+      expireOutdated();
+      if (isFestival) start();
+    }
     const live = state();
-    if (active() && live?.status === 'active' && String(live.progress?.shiftYear ?? '') !== String(shift ?? '')) {
-      write('active', descriptor(Array.isArray(live.progress.found) ? live.progress.found : [], shift)); // Re-roll a clue after a Shift: old terrain facts cannot survive reshuffling.
+    if (!isFestival || live?.status !== 'active') {
+      clueTarget = null; clueLayout = null; clueSynced = true;
+      return;
+    }
+    const found = Array.isArray(live.progress?.found) ? live.progress.found : [];
+    const target = targetFor(found);
+    const targetLayout = target ? zoneLayout(target.zoneId) : null;
+    if (target && (!targetLayout || !localeFor(target))) {
+      clueSynced = false; // A partially rebuilt wilderness must not overwrite a real saved riddle with a missing-locale fallback.
+      return;
+    }
+    const updated = descriptor(found, shift); // Generate once from the newly stamped terrain, not from cached pre-Shift evidence.
+    if (target && !lastGenerated?.ok) {
+      clueSynced = false; // Keep the previous saved verse until terrain evidence and the generator are ready.
+      return;
+    }
+    const shiftChanged = String(live.progress?.shiftYear ?? '') !== String(shift ?? '');
+    if (shiftChanged || updated.detail !== live.progress?.detail) {
+      write('active', updated); // Preserves found blossoms and real Pack items while replacing only stale quest fields.
+    } else {
+      clueTarget = target; clueLayout = targetLayout; clueSynced = true; // Identical rerolls need no new member save.
     }
   }
   function clearTrees() {
@@ -151,21 +185,22 @@
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
       const instance = localeFor(blossom);
-      const foliage = window.FoliageGenerator?.buildPottedBlossomTreeMesh;
+      const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // Full green three-tier tree; tabletop one-rung flowers are a separate builder.
       if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
       const p = window.LocaleRiddleGenerator?.positionOf?.(instance, 'blossom-tree');
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
       const color = blossomColor(blossom); // Never duplicate the temple's live colour-fill palette in an event renderer.
       const tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, color); // Public builder reuses cached Three.js geometry/materials; one cheap instance per active scene.
       if (!tree) continue;
-      tree.scale.multiplyScalar(36); // A ~6-unit flowering landmark after the tabletop preset's quarter scale.
+      // The dedicated wilderness builder already normalizes its outer bounds to a 2×2×2-tile silhouette.
       tree.traverse?.(child => { if (child.geometry) child.userData.festivalSharedFoliage = true; }); // Zone teardown must not dispose the foliage generator's globally shared GPU buffers.
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color, localeId: blossom.localeId };
       const tilePixels = Number(mapDeps?.TILE) || 64; // ClimbSystem's worldSurfaceY sampler takes movement/pixel units, not map tiles.
       const rawHeight = window.ClimbSystem?.groundYAt?.((p.col + .5) * tilePixels, (p.row + .5) * tilePixels); // Sample the actual highland/mire floor beneath the blossom.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
-      tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
+      const plantingOffset = Number(tree.position?.y) || 0; // Wilderness builder seats the generated roots at local ground level after normalizing the full tree bounds.
+      tree.position.set(p.col + .5, (rawHeight != null && Number.isFinite(height) ? height : 0) + plantingOffset, p.row + .5); // Preserve the builder's root contact while honoring the sampled plateau height.
       scene.add(tree);
       visibleTrees.set(blossom.localeId, tree);
     }
@@ -201,32 +236,17 @@
     lastStatus = 'Picked '+blossom.id+' by interaction ('+next.length+'/5)'; syncPickPrompt();
     return true;
   }
-  function createPickPrompt() {
-    if (typeof document === 'undefined' || !document.body?.appendChild) return null;
-    let button = document.getElementById?.('fiveBlossomsPick');
-    if (button) return button;
-    button = document.createElement('button'); // A tangible tap target for mobile; Action 3 remains the controller/keyboard route.
-    button.id = 'fiveBlossomsPick';button.type = 'button';button.hidden = true;
-    button.setAttribute('aria-label','Pick blossom from tree');
-    button.style.cssText = 'position:fixed;bottom:calc(13vh + 70px);left:14px;z-index:1100;min-height:48px;min-width:150px;padding:10px 14px;border-radius:10px;background:#355d40;color:#fff;border:2px solid #e0bb66;font:700 14px system-ui;box-shadow:0 3px 12px #0008;touch-action:manipulation;';
-    button.addEventListener('click',() => {const target=nearbyTree();if(target)pickBlossom(target.id);}); // Rechecks actual player distance on tap.
-    document.body.appendChild(button);
-    return button;
-  }
   function syncPickPrompt() {
     const target = nearbyTree();
     const next = target?.id || '';
-    if (!pickPromptEl) pickPromptEl = createPickPrompt();
-    if (pickPromptEl) {
-      pickPromptEl.hidden = !target;
-      if (target) pickPromptEl.textContent = '🌸 Pick '+target.name;
-    }
-    if (next === advertisedPick) return; // Reusing one prompt/claim eliminates frame- or tick-level input registration churn.
-    advertisedPick = next;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
-    if (!target) router?.clearClaims?.('five-blossoms-tree');
-    else router?.setClaims?.('five-blossoms-tree',[{actionId:'action3',priority:65,label:'Pick '+target.name,
-      onPress:() => pickBlossom(target.id)}]); // Action 3 avoids commandeering weapon swings near the tree.
+    if (!router?.setClaims || next === advertisedPick) return;
+    advertisedPick = next;
+    if (!target) router.clearClaims?.('five-blossoms-tree');
+    else router.setClaims('five-blossoms-tree',[{
+      actionId:'action3',priority:65,label:'Pick '+target.name,hudIcon:'🌸',showInArch:true,
+      onPress:() => pickBlossom(target.id)
+    }]); // One native arch slot on touch, keyboard and controller; no separate positioned DOM button.
   }
   function onTile() {
     syncCalendar();
@@ -235,13 +255,17 @@
   }
   function init(deps) {
     mapDeps = deps;calendarKey = '';retrySaveAfter = 0;registeredYear = null;turnInRunning = false;lastTurnIn = null;
+    clueTarget = null; clueLayout = null; clueSynced = false; // Do not inherit the previous member/world's saved-clue state.
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    router?.clearClaims?.('five-blossoms-tree'); // Never retain a previous character's Action 3 claim after switching worlds.
+    if (typeof document !== 'undefined') document.getElementById?.('fiveBlossomsPick')?.remove?.(); // Remove any legacy fixed-position button left by a cached older module.
     advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
     clearTrees(); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
   }
-  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;registerItems(); }
+  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;clueTarget = null;clueLayout = null;clueSynced = false;registerItems(); }
   function update() {
     syncCalendar();buildVisibleTrees();syncPickPrompt(); // Uses the existing festival low-frequency tick; never scans other zones per frame.
   }
@@ -312,7 +336,8 @@
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
       displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
-      nearbyPick:nearbyTree()?.id || null,advertisedPick,registeredYear,turnInRunning,lastTurnIn,
+      savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
+      nearbyPick:nearbyTree()?.id || null,advertisedPick,usesNativeArch:true,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
   }

@@ -1132,6 +1132,44 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     return tree; // Instancing clones meshes only: variant BufferGeometries and materials remain cached.
   }
 
+  const WILDERNESS_BLOSSOM_BASE = Object.freeze({ // A short shadewood-like tree, independent of the one-tier tabletop flowers.
+    ...TREE_PRESETS.shadewood,
+    variantCount:2, vinesEnabled:false, climbBranchChance:0, rootsEnabled:true,
+    trunkLength:4.3, trunkRadius:0.19, trunkBend:0.24, trunkWonk:0.24, trunkTwist:0.2,
+    trunkNoise:0.25, trunkNoiseOctaves:2, rootCount:5, rootLength:0.5, rootRadius:0.08,
+    knotAt:0.42, knotTiers:3, knotTierSpacing:0.2, knotCount:5,
+    knotLength:1.95, knotLengthJitter:0.25, knotRadius:0.095, knotUpDownBias:0.18,
+    knotCurl:0.35, knotWonk:0.2, knotTierLengthDelta:-0.25, knotTierRadiusDelta:-0.2,
+    branchArchExtra:0.15,
+    leafWidth:1.3, leafOffsetY:-0.12, leafAlong01:0.78, leafPrismLengthOffset:0.15,
+    leafTexture:TREE_PRESETS.shadewood.leafTexture, leafTintH:115, leafTintS:0.55, leafTintL:0.35,
+    blossomSprigsPerBranch:2, blossomSize:0.16, scaleMul:1
+  });
+  const wildernessBlossomPresets = new Map(); // Reuses seeded branch geometry for every wilderness tree sharing a temple swatch.
+  function buildWildernessBlossomTreeMesh(seed, blossomColorHex) {
+    const hex = typeof blossomColorHex === 'string' && /^#[0-9a-f]{6}$/i.test(blossomColorHex)
+      ? blossomColorHex.toLowerCase() : '#ffb3b3'; // Invalid swatches fall back to a stable, cached rose preset.
+    let preset = wildernessBlossomPresets.get(hex);
+    if (!preset) {
+      preset = Object.freeze({ ...WILDERNESS_BLOSSOM_BASE, blossomColorHex:hex });
+      wildernessBlossomPresets.set(hex,preset);
+    }
+    const tree = buildTreeInstance('wildernessBlossom:' + hex,preset,xfnv1a('wildernessBlossom:' + String(seed)));
+    const bounds = new T.Box3().setFromObject(tree); // Measure each seeded variant once per placed tree before enforcing the tile footprint.
+    const size = bounds.getSize(new T.Vector3()); // Used only to normalize the final 2x2x2-tile envelope, not to rebuild geometry.
+    const radialScale = 2 / Math.max(size.x,size.z,0.001);
+    const heightScale = 2 / Math.max(size.y,0.001);
+    tree.scale.x *= radialScale;tree.scale.z *= radialScale;tree.scale.y *= heightScale;
+    const finalBounds = new T.Box3().setFromObject(tree);
+    tree.position.y -= finalBounds.min.y; // The roots sit on the sampled ground rather than straddling the wilderness floor.
+    tree.userData.wildernessBlossom = {
+      seed:String(seed),blossomColor:hex,foliageColor:'green',
+      branchTiers:3,branchesPerTier:5,blossomSprigsPerBranch:2,
+      footprintTiles:2,heightTiles:2,sharedGeometry:true
+    }; // Mobile inspector and regression harness can distinguish these trees from decorative single-tier flowers.
+    return tree;
+  }
+
   function applyPottedBlossomFinish(mesh, preset, part) {
     if (!preset.pottedBlossomFinish) return; // Normal trees and bushes retain their existing native finishes.
     const materials = naturalSurfaces || window.NaturalSurfaceMaterials; // Reuses animal-body tint and the bounded natural-surface PNG cache.
@@ -1176,6 +1214,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
 
     const woodGeoms = [];
     const leafGeoms = [];
+    const blossomGeoms = []; // Tiny tinted leaf-plane flowers on the outermost branch segments of wilderness blossom trees.
     const vineGeoms = [];
     let climbBranchLocal = null; // Populated below for presets that opt into climbBranchChance (shadewood).
     let climbBranchGeom = null; // Kept as its OWN mesh (not merged into woodGeoms) so buildTreeInstance can show/hide it per tile instance — see the climb-branch block below.
@@ -1420,6 +1459,26 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
       }
 
+      if (preset.blossomColorHex && branchSegs.length) {
+        const perBranch = Math.max(1, Math.floor(preset.blossomSprigsPerBranch || 2));
+        for (const branch of branchSegs) {
+          const axis = branch.b.clone().sub(branch.a);
+          for (let i = 0; i < perBranch; i++) {
+            const pos = branch.a.clone().addScaledVector(axis,0.76 + 0.21 * (i + 0.5) / perBranch);
+            pos.y += 0.05 + rand() * 0.08; // Outer twigs, just above the leafy branch rather than a giant canopy-wide petal.
+            const bloomSize = (preset.blossomSize || 0.16) * (0.8 + rand() * 0.35);
+            for (let face = 0; face < 2; face++) {
+              const petal = unitLeaf.clone(); // Two crossed tiny planes make each sprig visible from more than one direction.
+              const yaw = rand() * Math.PI * 2 + face * Math.PI * 0.5;
+              const tilt = (rand() - 0.5) * 0.7;
+              const matrix = new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(new T.Euler(tilt,yaw,0)),new T.Vector3(bloomSize,bloomSize,1));
+              petal.applyMatrix4(matrix);
+              blossomGeoms.push(petal);
+            }
+          }
+        }
+      }
+
       // Leaf cards: one big textured "frond" per branch, oriented the same
       // way the source tool's prism frame does — Z along the branch, Y
       // banked toward a single fixed point near the trunk base (not each
@@ -1638,6 +1697,16 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const merged = mergeGeoms(vineGeoms);
       merged.computeVertexNormals();
       group.add(new T.Mesh(merged, hexBarkMat(preset.vineColorHex ?? 0x3a5f3a)));
+    }
+    if (blossomGeoms.length) {
+      const petals = new T.Mesh(mergeGeomsWithUV(blossomGeoms),new T.MeshBasicMaterial({
+        map:getLeafTexture('assets/leaves/leaf_1.png'),color:new T.Color(preset.blossomColorHex),
+        side:T.DoubleSide,transparent:false,depthWrite:true,alphaTest:0.5
+      }));
+      applyPottedBlossomFinish(petals,{pottedBlossomFinish:true,leafColorHex:preset.blossomColorHex},'petals');
+      petals.name='wilderness-blossom-sprigs';
+      petals.userData.noOutline=true;
+      group.add(petals); // Keep the actual leaf canopy last: other tree callers inspect the last mesh for canopy bounds.
     }
     if (leafGeoms.length) {
       const merged = mergeGeomsWithUV(leafGeoms);
@@ -3034,7 +3103,11 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const seedU32 = xfnv1a(`wd_${col}_${row}`);
       return buildWeedsGroup(seedU32);
     },
-    pottedBlossomRecipe:POTTED_BLOSSOM_BASE, // Debuggable one-rung silhouette; tests and mobile inspector can audit branch counts.
+    pottedBlossomRecipe:POTTED_BLOSSOM_BASE, // Table flowers retain their original single-rung green-stem/color-filled-petal design.
+    wildernessBlossomRecipe:WILDERNESS_BLOSSOM_BASE, // Separate three-tier short-tree specification, independent of festival pottery.
+    buildWildernessBlossomTreeMesh(seed, blossomColorHex) {
+      return buildWildernessBlossomTreeMesh(seed,blossomColorHex);
+    },
     buildPottedBlossomTreeMesh(seed, leafColorHex) {
       return buildPottedBlossomTreeMesh(seed, leafColorHex); // Public generator entry for festival vases, including editor previews.
     },

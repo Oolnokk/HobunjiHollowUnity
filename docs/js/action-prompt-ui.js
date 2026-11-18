@@ -16,6 +16,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     ensureDialogueChoiceSelectionStyle();
+    installClaimedArchPointerRouting(); // Opt-in contextual HUD actions use the same five physical arch buttons on touch/desktop.
   }
 
   // Dialogue rows already receive .ctrl-nav-focus from the shared controller/
@@ -65,6 +66,52 @@
     return device === 'touch' || (device === 'controller' && !controllerActionAvailable('interact'));
   } // Touch has no Interact key; inside ruins the controller's Interact key may be claimed by Jump.
 
+  const claimedArchPointerPresses = new Map(); // Keeps physical press ownership paired even if a pickup immediately removes its arch icon.
+  function claimedArchButton(event) {
+    const button = event?.target?.closest?.('button.abt'); // Existing touch/desktop arch, not a second floating overlay.
+    const action = String(button?.dataset?.action || '');
+    const match = /^context_arch_(action[1-5])$/.exec(action);
+    if (!match) return null;
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    return router?.claimFor?.(match[1])?.showInArch ? { actionId:match[1], router } : null;
+  }
+  function installClaimedArchPointerRouting() {
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function' || document.__claimedArchPointerRoutingInstalled) return;
+    document.__claimedArchPointerRoutingInstalled = true;
+    document.addEventListener('pointerdown',event => {
+      const entry = claimedArchButton(event);
+      if (!entry) return;
+      const source = 'context-arch:pointer:' + String(event.pointerId); // Physical source pairs the action's press/release in the canonical router.
+      claimedArchPointerPresses.set(event.pointerId,{...entry,source});
+      entry.router.route(entry.actionId,'press',{source}); // Action 3 pickup and future opt-in contextual actions have one input owner.
+      event.preventDefault?.();event.stopImmediatePropagation?.(); // Prevent game.js from also firing an unknown synthetic action id.
+    },true);
+    const end = (event,phase) => {
+      const entry = claimedArchPointerPresses.get(event.pointerId);
+      if (!entry) return;
+      claimedArchPointerPresses.delete(event.pointerId);
+      entry.router.route(entry.actionId,phase,{source:entry.source});
+      event.preventDefault?.();event.stopImmediatePropagation?.();
+    };
+    document.addEventListener('pointerup',event => end(event,'release'),true);
+    document.addEventListener('pointercancel',event => end(event,'cancel'),true);
+    window.addEventListener?.('blur',() => claimedArchPointerPresses.clear()); // Router owns release/cancel on blur; discard our local pointer lookup.
+  }
+
+  let archClaimsCache = {router:null,revision:-1,buttons:null}; // Reuse opt-in arch rows across HUD frames until an input claim actually changes.
+  function activeArchClaimButtons() {
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    const revision = router?.getArchRevision?.(); // Zero allocation: only winning visible contextual-arch changes invalidate the HUD, not unrelated world input claims.
+    if (revision !== undefined && archClaimsCache.router === router && archClaimsCache.revision === revision) return archClaimsCache.buttons;
+    const buttons = ['action1','action2','action3','action4','action5'].map(actionId => { // InputBindings owns these five real semantic inputs; itemAction1/2 are only layout/prompt aliases.
+      const claim = router?.claimFor?.(actionId);
+      return claim?.showInArch ? {action:'context_arch_' + actionId,inputAction:actionId,
+        label:claim.label,icon:claim.hudIcon,style:'secondary',allowed:true,worldInteraction:true} : null;
+    });
+    archClaimsCache = {router,revision,buttons};
+    return buttons;
+  }
+
   function createActionArchLayout(buttons, heldMode, sitInteraction) {
     const nonClimbBtns = buttons.filter(b => b.action !== 'climb_branch' && b.nativeInput !== true); // Only these occupy the five physical action buttons.
     const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
@@ -76,6 +123,11 @@
     const slots = heldMode === 'item' && !sitInteraction
       ? [nonClimbBtns[0], nonClimbBtns[1], nonClimbBtns[2], nonClimbBtns[3], nonClimbBtns[4]]
       : [toolBtns[0], toolBtns[1], toolBtns[2], itemBtns[0], itemBtns[1]]; // One layout supplies both the buttons and their floating hints.
+    const contextualButtons = activeArchClaimButtons(); // Cached by router revision so this adds no per-frame claim-owner scans.
+    for (let i = 0; i < contextualButtons.length; i++) {
+      if (contextualButtons[i]) slots[i] = contextualButtons[i];
+      // The actual callback and priority remain owned by the canonical input router.
+    }
     return { nonClimbBtns, toolBtns, itemBtns, slots };
   }
 

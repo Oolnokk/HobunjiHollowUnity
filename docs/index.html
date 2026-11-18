@@ -62,12 +62,12 @@
        window.InputBindings.loadInputBindings() during its own setup. -->
   <script src="js/input-bindings.js?v=20261116dungeonJump2"></script>
   <!-- Canonical gameplay input router (legacy WorldActionInputClaims API): world claims, contextual attack suppression and interrupted hold ownership across all devices. -->
-  <script src="js/world-action-input-claims.js?v=20261113inputrouter1"></script>
+  <script src="js/world-action-input-claims.js?v=20261118archClaims1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
   <!-- Shared contextual prompt, controller binding hints, and physical action-arch layout extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
-  <script src="js/action-prompt-ui.js?v=20261118h3f47e04"></script>
+  <script src="js/action-prompt-ui.js?v=20261118archClaims1"></script>
   <!-- Cutscene Director preview standalone helpers extracted out of
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
@@ -245,7 +245,7 @@
   <script src="js/wildlife-food-web.js?v=20261109nohuknukSnow1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
-  <script src="js/foliage-generator.js?v=20261118blossomPng25v3"></script>
+  <script src="js/foliage-generator.js?v=20261118forestBlossom1"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
@@ -2933,7 +2933,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261118pairedContinuity2"></script>
+  <script src="game.js?v=20261118contextualArchBadge2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -209,6 +209,10 @@ assert.equal(concisePoem.ok,true);
 assert.equal(concisePoem.stanzas.length,2);
 assert.equal(concisePoem.stanzas[1].length,2,'the short ending is a rhymed couplet');
 assert.equal((concisePoem.text.match(/Cyan Blossom/g)||[]).length,1,'do not repeat the target in a sparse ending');
+const unmarkedStrict=Riddles.generate({zoneId:'map_northern_cliffs',layout:layoutFor('cyan'),
+  instance:layoutFor('cyan').localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true});
+assert.equal(unmarkedStrict.ok,false,'festival must fail closed instead of starting its clue at a vague or unverified marker');
+assert.match(unmarkedStrict.reason,/uniquely verified starting landmark/);
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);
@@ -223,8 +227,116 @@ assert.notDeepEqual(landmarks, Scenery.planForLayout('map_northern_cliffs', scen
 for (const landmark of landmarks) {
   assert.equal(sceneryWorld.tiles[landmark.point.row][landmark.point.col].type, 'grass');
   assert.ok(Math.hypot(landmark.point.col - 30, landmark.point.row - 30) >= 6, 'authored locale clearance remains intact');
-  assert.ok(['stoneCairn','brokenPillar','deadTree'].includes(landmark.kind));
+  assert.ok(['stoneCairn','brokenPillar','deadTree','witnessStone'].includes(landmark.kind));
 }
+const witnessSites=landmarks.filter(s=>s.kind==='witnessStone'); // The only color-marked stone is physically included in the year-round scene plan.
+assert.equal(witnessSites.length,1,'the whole zone has one—and only one—uniquely dyed riddle starting rock');
+assert.ok(witnessSites[0].unique && witnessSites[0].dyeId?.startsWith('dye:CLOTH:'),'witness inscription uses a named game dye');
+assert.ok(/^#[0-9a-f]{6}$/i.test(witnessSites[0].ink),'marked rock has a real renderable dye hex');
+const witnessVerse = Riddles.generate({ zoneId:'map_northern_cliffs',layout:sceneryWorld,instance:sceneryWorld.localeInstances[0],
+  targetObjectKey:'blossom-tree',targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route' });
+assert.equal(witnessVerse.ok,true,'unique witness route still passes strict verse rhyme checks');
+assert.match(witnessVerse.text,/^(?:Begin|Start|Stand) at the only /,'the first line starts at the unique painted rock, not a vague zone or sector');
+assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions contain actual cardinal bearings, including a direct first-line couplet');
+assert.ok(witnessVerse.evidence.route.every(step=>/ground|climbing|descending/.test(step.elevation)),'every walking leg states its elevation change or level ground');
+assert.equal(witnessVerse.evidence.uniqueStart.dyeId,witnessSites[0].dyeId,'riddle ink matches the rock painted by the scenery renderer');
+assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
+  instance:sceneryWorld.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route'}).text,
+  'inscription, route and elevation are deterministic on load');
+const canyonMap=layoutFor('cyan',25,20); // A raised target lies directly across a low-tier river from the uniquely marked stone.
+for(let row=0;row<canyonMap.rows;row++)for(let col=0;col<canyonMap.cols;col++)
+  canyonMap.tiles[row][col].elevTier=1;
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'river',elevTier:0};
+canyonMap.tiles[20][25]={type:'grass',elevTier:2};
+const fixedMarker={kind:'witnessStone',name:'the only bright violet-inscribed witness stone',dyeName:'bright violet',
+  dyeId:'dye:CLOTH:bright_violet',unique:true,point:{col:10,row:20},source:'generated-year-round-scenery'}; // A physical candidate used by the pure riddle generator.
+const canyonOptions={zoneId:'map_northern_cliffs',layout:canyonMap,instance:canyonMap.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:[fixedMarker],seed:'verified-canyon'};
+const canyonVerse=Riddles.generate(canyonOptions);
+assert.equal(canyonVerse.ok,true,'canyon crossing can still be rhymed with a unique landmark');
+assert.equal(canyonVerse.evidence.route.length,1,'the route does not invent intermediate waypoints');
+assert.equal(canyonVerse.evidence.route[0].bearing,'east','the route heads east from the rock to the target');
+assert.match(canyonVerse.evidence.route[0].elevation,/climbing/,'real higher target forces an upward instruction');
+assert.equal(canyonVerse.evidence.route[0].crossing?.type,'river','the intervening river must be identified');
+assert.equal(canyonVerse.evidence.route[0].crossing?.canyon,true,'lowered river between high banks really cuts a canyon');
+assert.match(canyonVerse.text,/crossing the river cutting a canyon/,'the actual poem calls out the river and its canyon');
+canyonMap.tiles[20][25].elevTier=1; // Opposite canyon banks are at equal height; the intermediate river remains one tier below.
+const equalBankRoute=Riddles.generate(canyonOptions);
+assert.equal(equalBankRoute.ok,true);
+assert.match(equalBankRoute.evidence.route[0].elevation,/descending.*climbing/,
+  'equal start/end heights must still describe the descent into and ascent out of the canyon');
+assert.doesNotMatch(equalBankRoute.evidence.route[0].elevation,/roughly level ground/,
+  'a valley is not level ground simply because the endpoints share a plateau tier');
+assert.equal(equalBankRoute.evidence.route[0].crossing?.canyon,true);
+canyonMap.tiles[20][25].elevTier=2; // Restore raised destination for the remaining no-canyon controls.
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18].elevTier=1;
+const nonCanyon=Riddles.generate(canyonOptions);
+assert.equal(nonCanyon.evidence.route[0].crossing?.canyon,false,'a flat river is not invented as a canyon');
+assert.doesNotMatch(nonCanyon.text,/cutting a canyon/,'do not make up a canyon when the river has level banks');
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'grass',elevTier:1};
+const dryRoute=Riddles.generate(canyonOptions);
+assert.equal(dryRoute.evidence.route[0].crossing,null,'dry ground cannot produce phantom river crossings');
+assert.doesNotMatch(dryRoute.text,/crossing the river/,'the poem omits a river when no crossing exists');
+const ridgeMap=layoutFor('cyan',25,20); // Same-height route endpoints with a real high ridgeline between them.
+for(let row=0;row<ridgeMap.rows;row++)for(let col=0;col<ridgeMap.cols;col++)ridgeMap.tiles[row][col].elevTier=1;
+for(let row=0;row<ridgeMap.rows;row++)ridgeMap.tiles[row][17].elevTier=3;
+const ridgeRoute=Riddles.generate({...canyonOptions,layout:ridgeMap,instance:ridgeMap.localeInstances[0]});
+assert.match(ridgeRoute.evidence.route[0].elevation,/climbing.*descending/,
+  'a ridge on the bearing must be mentioned even when the start and destination are both lower');
+const waterfallTerrain=layoutFor('cyan',27,30); // Two separate real falls of different measured vertical drops.
+for(let row=0;row<waterfallTerrain.rows;row++)for(let col=0;col<waterfallTerrain.cols;col++)
+  waterfallTerrain.tiles[row][col].elevTier=1;
+waterfallTerrain.tiles[14][18]={type:'waterfall',elevTier:3};
+waterfallTerrain.tiles[13][18]={type:'river',elevTier:1};
+waterfallTerrain.tiles[19][39]={type:'waterfall',elevTier:2};
+waterfallTerrain.tiles[18][39]={type:'river',elevTier:1};
+const waterfallSites=Scenery.planForLayout('map_northern_cliffs',waterfallTerrain,'unit-world:waterfalls');
+const waterfallVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:waterfallTerrain,instance:waterfallTerrain.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:waterfallSites,seed:'highest-verified-waterfall'});
+assert.equal(waterfallVerse.ok,true);
+assert.equal(waterfallVerse.evidence.uniqueStart.kind,'waterfallAnchor','the objectively tallest waterfall outranks the dyed-rock fallback');
+assert.deepEqual(waterfallVerse.evidence.uniqueStart.coordinate,{col:18,row:14},'start is the fall with the greatest actual plateau drop');
+assert.match(waterfallVerse.text,/^(?:Begin|Start|Stand) at the tallest waterfall in Northern Cliffs/,'no tie exists, so tallest waterfall is a unique true landmark');
+const cliffFallLayout=layoutFor('cyan',27,30); // The actual waterfall renderer also creates sheets across dry cliff-to-waterfall edges.
+for(let row=0;row<cliffFallLayout.rows;row++)for(let col=0;col<cliffFallLayout.cols;col++)
+  cliffFallLayout.tiles[row][col].elevTier=1;
+cliffFallLayout.tiles[12][15]={type:'waterfall',elevTier:4}; // Its lower neighbors are GRASS, not river tiles.
+cliffFallLayout.tiles[20][40]={type:'waterfall',elevTier:2}; // A visibly smaller waterfall for unique max-drop ranking.
+const dryCliffFall=Riddles.generate({zoneId:'map_northern_cliffs',layout:cliffFallLayout,
+  instance:cliffFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:Scenery.planForLayout('map_northern_cliffs',cliffFallLayout,'world:cliff-falls'),seed:'dry-fall-renderer-contract'});
+assert.equal(dryCliffFall.ok,true);
+assert.equal(dryCliffFall.evidence.uniqueStart.kind,'waterfallAnchor','real dry-cliff waterfalls qualify even with no adjacent river tile');
+assert.deepEqual(dryCliffFall.evidence.uniqueStart.coordinate,{col:15,row:12},'tallest visible dry-cliff curtain wins');
+const flatWaterfall=layoutFor('cyan',27,30); // A waterfall-labeled tile without a vertical curtain is not an actual visible waterfall.
+flatWaterfall.tiles[12][15]={type:'waterfall',elevTier:0};
+const noCurtain=Riddles.generate({zoneId:'map_northern_cliffs',layout:flatWaterfall,
+  instance:flatWaterfall.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:Scenery.planForLayout('map_northern_cliffs',flatWaterfall,'world:no-curtain'),seed:'no-curtain'});
+assert.equal(noCurtain.ok,true);
+assert.equal(noCurtain.evidence.uniqueStart.kind,'witnessStone',
+  'a flat waterfall tile without a rendered curtain cannot outrank the visible dye-marked rock');
+const reusedFallLayout=layoutFor('cyan',27,30); // A forced cycle may reuse the workspace object's identity.
+for(let row=0;row<reusedFallLayout.rows;row++)for(let col=0;col<reusedFallLayout.cols;col++)
+  reusedFallLayout.tiles[row][col].elevTier=1;
+reusedFallLayout.tiles[13][17]={type:'waterfall',elevTier:3};
+const naturalOptions={zoneId:'map_northern_cliffs',layout:reusedFallLayout,
+  instance:reusedFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom'};
+const priorCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1156'});
+assert.deepEqual(priorCycle.evidence.uniqueStart.coordinate,{col:17,row:13});
+reusedFallLayout.tiles[13][17]={type:'grass',elevTier:1};
+reusedFallLayout.tiles[21][39]={type:'waterfall',elevTier:4};
+const nextCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1157'});
+assert.deepEqual(nextCycle.evidence.uniqueStart.coordinate,{col:39,row:21},
+  'natural landmark cache detects Tothal year changes even if the same mutable layout instance was reused');
+const edgeTerrain=layoutFor('cyan',25,20); // Without a painted marker, only one actual west-edge river opening exists.
+edgeTerrain.tiles[11][0]={type:'river',elevTier:0};
+edgeTerrain.tiles[12][0]={type:'river',elevTier:0};
+const edgeVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:edgeTerrain,instance:edgeTerrain.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',seed:'single-western-exit'});
+assert.equal(edgeVerse.ok,true);
+assert.equal(edgeVerse.evidence.uniqueStart?.kind,'riverEdgeAnchor','a single cardinal river boundary crossing is an unambiguous natural anchor');
+assert.match(edgeVerse.text,/western boundary/,'cardinal river boundary directions match the actual map edge');
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
   targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
@@ -279,6 +391,7 @@ const sampledHeights = []; // Checks the live tree altitude sampler's pixel-spac
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
 const pickedItems = new Set(); // Simulates the persistent character-scoped Pack Key Items until the dedicated crown test exercises the real service.
 const itemDefs = new Map(); // Verifies each picked blossom was registered as an inventory item with a year-specific key.
+const actionClaims = new Map(); // Verifies the real hunt advertises native Action 3 without creating a floating button.
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
 const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_western_slope', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
 for (let i = 0; i < ids.length; i++) {
@@ -286,7 +399,8 @@ for (let i = 0; i < ids.length; i++) {
   if (!zones.has(zone)) zones.set(zone, layoutFor(id, 15 + 14 * (i % 2), 16 + 14 * (i % 2)));
   else zones.get(zone).localeInstances.push(layoutFor(id, 48, 44).localeInstances[0]);
 }
-const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
+const plantedTrees = []; // Tracks final scene positions to catch accidental loss of the foliage builder's local planting offset.
+const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); plantedTrees.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const world = {
   FestivalProps: { blossomWindowSwatches: [{ color:'#00ffff' }, { color:'#ff8000' }, { color:'#ffffff' }, { color:'#ffbf00' }, { color:'#ffb3b3' }] },
   LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
@@ -298,10 +412,11 @@ const world = {
     has: id => pickedItems.has(id),
     grant(id) {if(!itemDefs.has(id))return {ok:false};const granted=!pickedItems.has(id);pickedItems.add(id);return {ok:true,granted};},
     revoke(id) {const removed=pickedItems.delete(id);return {ok:true,removed};} },
-  GameplayInputRouter: {setClaims(){},clearClaims(){}},
+  GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
+  WildernessLandmarkScenery: {landmarksFor(zone,layout){return Scenery.planForLayout(zone,layout,'unit-world:'+shiftYear);}}, // The real hunt now uses the same dye-marked landmarks as the scene.
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
-  FoliageGenerator: { buildPottedBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
+  FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
   ClimbSystem: { groundYAt: (x,y) => { sampledHeights.push({x,y}); return 0; } }
 };
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/festival-blossom-hunt.js'), 'utf8'), vm.createContext({ window: world, console }));
@@ -315,6 +430,39 @@ calendarReady = true;
 hunt.update();
 const questId = 'five_blossoms_wilderness_hunt:1156';
 assert.equal(progress[questId]?.status, 'active', 'festival automatically starts the world-member quest');
+// A dev-forced regeneration reuses the Tothal cycle but replaces the generated workspace object.
+const northId = 'map_northern_cliffs'; // Only the unfinished cyan clue is active at this point.
+const originalNorth = zones.get(northId); // Restore the authored sample after exercising new placements.
+const firstClue = progress[questId].progress.detail; // The original saved verse must not survive a changed physical location.
+const beforeForceSaves = saveCalls; // Idle checks must not trigger repeated member-save writes.
+zones.set(northId, layoutFor('cyan', 48, 45));
+hunt.update();
+const forcedClue = progress[questId].progress.detail;
+assert.notEqual(forcedClue, firstClue, 'same-cycle forced regeneration replaces the saved verse');
+assert.equal(forcedClue, hunt.__test.clueFor(hunt.BLOSSOMS[0]).text, 'persisted verse describes the new generated terrain');
+assert.equal(progress[questId].progress.shiftYear, shiftYear, 'rebuild does not invent a different Tothal cycle');
+assert.equal(progress[questId].progress.found.length, 0, 'forced regeneration does not reset collected progress');
+assert.equal(saveCalls, beforeForceSaves + 1, 'changed same-cycle terrain writes the corrected verse only once');
+hunt.update();
+assert.equal(saveCalls, beforeForceSaves + 1, 'unchanged layouts do not cause save spam on festival ticks');
+zones.delete(northId); // During a shift, the old layout may disappear before the replacement finishes stamping.
+hunt.update();
+assert.equal(progress[questId].progress.detail, forcedClue, 'missing intermediate locale does not overwrite the saved verse');
+assert.equal(hunt.debugSnapshot().savedClueSynced, false, 'mobile diagnostic exposes a pending regeneration');
+zones.set(northId, layoutFor('cyan', 33, 45));
+hunt.update();
+assert.equal(progress[questId].progress.detail, hunt.__test.clueFor(hunt.BLOSSOMS[0]).text, 'recovered zone immediately refreshes persisted clue');
+assert.notEqual(progress[questId].progress.detail, forcedClue, 'recovered locale no longer points to the pre-regeneration site');
+zones.set(northId, originalNorth);
+hunt.update();
+assert.equal(progress[questId].progress.detail, firstClue, 'restored layout recreates the original deterministic verse');
+assert.equal(hunt.debugSnapshot().savedClueSynced, true, 'diagnostic confirms persisted clue matches current placement');
+const beforeIdenticalForce = saveCalls; // A fresh workspace with identical terrain must not write redundant progress.
+zones.set(northId, layoutFor('cyan', 15, 16));
+hunt.update();
+assert.equal(saveCalls, beforeIdenticalForce, 'same-cycle rebuild with an identical verse avoids a disk write');
+zones.set(northId, originalNorth);
+hunt.update();
 for (const id of ids) {
   currentZone = assignedZones[id];
   const instance = zones.get(currentZone).localeInstances.find(x => x.localeId.endsWith(id));
@@ -324,9 +472,26 @@ for (const id of ids) {
   tileListener({to:currentTile});
   assert.ok(!progress[questId].progress.found.includes(id),id+' must NOT be picked merely by entering its tile');
   assert.equal(hunt.nearbyTree()?.id,id,'the real tree becomes interactable inside reach');
+  const pickClaim=actionClaims.get('five-blossoms-tree')?.[0];
+  assert.equal(pickClaim?.actionId,'action3',id+': pick action is assigned to the real third arch button');
+  assert.equal(pickClaim?.showInArch,true,id+': pickup uses shared action-arch presentation');
+  assert.equal(pickClaim?.hudIcon,'🌸',id+': the arch displays the blossom icon');
   assert.equal(hunt.pickBlossom(id),true,id+' is picked only by interacting');
   assert.ok(progress[questId].progress.found.includes(id),id+' is recorded after interaction');
+  assert.equal(actionClaims.has('five-blossoms-tree'),false,id+': claiming a tree removes its native arch action until a new tree is nearby');
   assert.equal(world.KeyItemSystem.has(hunt.itemKey(id)),true,id+' is carried as a real Pack item');
+  if (id === 'cyan') {
+    const originalWest = zones.get('map_western_slope'); // Preserve the fixture after checking the next active riddle.
+    const reshiftedWest = layoutFor('white', 37, 42); // Changes only the still-uncollected white target.
+    reshiftedWest.localeInstances.push(originalWest.localeInstances.find(entry => entry.localeId.endsWith('gold')));
+    zones.set('map_western_slope', reshiftedWest);
+    hunt.update();
+    assert.equal(progress[questId].progress.found.join(','), 'cyan', 'forced shift preserves picked blossoms');
+    assert.equal(world.KeyItemSystem.has(hunt.itemKey('cyan')), true, 'forced shift preserves carried physical blossom');
+    assert.equal(progress[questId].progress.detail, hunt.__test.clueFor(hunt.BLOSSOMS[1]).text, 'next saved clue uses regenerated target');
+    zones.set('map_western_slope', originalWest);
+    hunt.update();
+  }
 }
 assert.equal(progress[questId].status,'active','all five physical blossoms still require Father Hunundi turn-in');
 assert.equal(progress[questId].progress.found.length,5);
@@ -359,6 +524,7 @@ currentZone = 'map_northern_cliffs';
 hunt.update();
 assert.ok(hunt.debugSnapshot().displayedTrees.includes('locale_five_blossoms_cyan'), 'the tree remains a physical wilderness locale outside the festival');
 assert.equal(treeBuilds, 6, 'a revisited zone receives a fresh tree instance while shared source geometry remains cached by FoliageGenerator');
+assert.ok(plantedTrees.every(tree => tree.position.y === .25), 'scene placement retains the builder\'s root-level offset above the sampled floor');
 const northTree = Riddles.positionOf(zones.get('map_northern_cliffs').localeInstances[0], 'blossom-tree');
 assert.ok(sampledHeights.some(p => p.x === (northTree.col + .5) * deps.TILE && p.y === (northTree.row + .5) * deps.TILE), 'tree floor is sampled in pixel-space, not map-tile coordinates');
 assert.equal(protectedMeshCount, treeBuilds, 'every scene-local blossom clone protects shared GPU buffers during zone disposal');
