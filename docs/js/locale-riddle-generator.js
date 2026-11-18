@@ -20,16 +20,16 @@
       B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `This secret lies in ${f.value}, where tender petals grow`]
     },
     water: {
-      A: [f => `With ${f.value}, you are drawing right`, f => `Look for ${f.value} in the daylight`, f => `When ${f.value} shines, hold your course in sight`],
-      B: [f => `By ${f.value}, still waters shine and glow`, f => `Find ${f.value}, then let the search go slow`, f => `Beyond ${f.value}, new secrets show`]
+      A: [f => `Search ${f.value} in the clear daylight`, f => `Look ${f.value}, and keep the banks in sight`, f => `Seek ${f.value} before the night`],
+      B: [f => `Go ${f.value}, where hidden petals glow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Search ${f.value} for the bloom below`]
     },
     path: {
-      A: [f => `Where ${f.value} bends, keep the path in sight`, f => `Along ${f.value}, the stones catch light`, f => `Find ${f.value} before the night`],
-      B: [f => `Follow ${f.value}, where the footsteps go`, f => `Beside ${f.value}, let your pace grow slow`, f => `Past ${f.value}, the wind will blow`]
+      A: [f => `Seek ${f.value}, beyond the fading light`, f => `Look ${f.value}, with the route in sight`, f => `Search ${f.value} before the night`],
+      B: [f => `Go ${f.value}, where hidden blossoms grow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Beyond ${f.value}, the petals glow`]
     },
     landmark: {
-      A: [f => `Near ${f.value}, your search comes right`, f => `Keep ${f.value} within your sight`, f => `Beside ${f.value}, watch for colored light`],
-      B: [f => `By ${f.value}, a hidden wonder may show`, f => `Where ${f.value}, your path should go`, f => `Beyond ${f.value}, the petals glow`]
+      A: [f => `Look ${f.value}, and mark it right`, f => `Search ${f.value}, with the marker in sight`, f => `Seek ${f.value} before the night`],
+      B: [f => `Walk ${f.value}, where hidden wonders show`, f => `Search ${f.value}, then let your footsteps slow`, f => `Go ${f.value}, where secret blossoms grow`]
     },
     tree: {
       A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
@@ -51,15 +51,18 @@
     if (col < 0 || row < 0) return null;
     const tiles = map?.tiles;
     if (Array.isArray(tiles)) return tiles[row]?.[col] || null;
+    if (tiles instanceof Map || typeof tiles?.get === 'function') return tiles.get(`${col},${row}`) || null; // Tothal's real merged wilderness keeps tiles in a Map, unlike the editor's JSON dictionary.
     return tiles?.[`${col},${row}`] || null;
   }
   function dimensions(layout) {
     const map = layout?.maps?.find?.(m => m.id === 'map_generated_wilderness_root') || layout?.maps?.[0] || layout; // Coordinates in localeInstances refer to the same final-grid workspace.
     return { cols: Number(map?.cols) || 0, rows: Number(map?.rows) || 0 };
   }
-  function positionOf(instance) {
-    const tree = (instance?.objects || []).find(o => o.key === 'blossom-tree') || instance?.objects?.[0]; // Use the actual stamped tree position, never only the locale's top-left anchor.
-    return { col: Number(tree?.x ?? tree?.col ?? instance?.x ?? instance?.col), row: Number(tree?.y ?? tree?.row ?? instance?.y ?? instance?.row) };
+  function positionOf(instance, objectKey = null) {
+    const objects = instance?.objects || []; // Every quest supplies its target object key instead of teaching this reusable module about blossoms.
+    const landmark = (objectKey && objects.find(o => o.key === objectKey || o.id === objectKey))
+      || instance?.connectors?.[0] || objects[0] || instance; // Generic fallback favors walkable entrances and then authored objects.
+    return { col: Number(landmark?.x ?? landmark?.col), row: Number(landmark?.y ?? landmark?.row) };
   }
   function sectorAt(col, row, cols, rows) {
     const x = col / cols, y = row / rows;
@@ -67,10 +70,11 @@
     const vert = y < 1 / 3 ? 'northern' : y >= 2 / 3 ? 'southern' : '';
     return vert && horiz ? `the ${vert}-${horiz} quarter` : vert ? `the ${vert} reaches` : horiz ? `the ${horiz} reaches` : 'the heart of the zone';
   }
-  function bearing(dx, dy) {
+  function relationship(point, feature, name) {
+    const dx = point.col - feature.col, dy = point.row - feature.row; // Describe where to search FROM a visible feature, never where the feature lies from an unknown tree.
     const x = dx > 2 ? 'east' : dx < -2 ? 'west' : '';
     const y = dy > 2 ? 'south' : dy < -2 ? 'north' : '';
-    return y && x ? `to the ${y}-${x}` : `to the ${y || x || 'nearby'}`;
+    return y || x ? `${y && x ? y + '-' + x : y || x} of ${name}` : `near ${name}`;
   }
   function nearbyEvidence(layout, point, radius = 24) {
     const size = dimensions(layout); // Limits actual map reads to the neighborhood, never an expensive full-map scan.
@@ -89,8 +93,8 @@
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
   }
-  function inspect({ zoneId, zoneName, layout, instance, blossomName = 'unknown', radius = 24 } = {}) {
-    const point = positionOf(instance);
+  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, blossomName = 'unknown', radius = 24 } = {}) {
+    const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
     if (!layout || !instance || !Number.isFinite(point.col) || !Number.isFinite(point.row) ||
       size.cols <= 0 || size.rows <= 0 || point.col < 0 || point.row < 0 || point.col >= size.cols || point.row >= size.rows) return { ok: false, reason: 'missing stamped locale or its final-grid map' };
@@ -102,10 +106,10 @@
     const water = samples.find(s => s.type === 'water');
     if (water) {
       const kind = ['river', 'stream', 'waterfall'].includes(water.waterType) ? water.waterType : 'open water';
-      facts.push({ kind: 'water', value: `the ${kind} ${bearing(water.col - point.col, water.row - point.row)}`, source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
+      facts.push({ kind: 'water', value: relationship(point, water, 'the ' + kind), source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
     }
     const path = samples.find(s => s.type === 'path');
-    if (path && path.d <= 16) facts.push({ kind: 'path', value: `a trail ${bearing(path.col - point.col, path.row - point.row)}`, source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
+    if (path && path.d <= 16) facts.push({ kind: 'path', value: relationship(point, path, 'the trail'), source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
     const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId && !String(other.localeId || '').startsWith('locale_five_blossoms_')); // Never give away a different blossom as a landmark.
     const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale' })); // Already-stamped locale anchors are authoritative.
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem' }); // Uses the existing root-totem placement index.
@@ -114,7 +118,7 @@
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
       .sort((a, b) => a.d - b.d)[0]; // Missing optional landmarks simply cannot enter a poem.
-    if (landmark) facts.push({ kind: 'landmark', value: `${landmark.name} ${bearing(landmark.point.col - point.col, landmark.point.row - point.row)}`, source: landmark.source, distance: landmark.d });
+    if (landmark) facts.push({ kind: 'landmark', value: relationship(point, landmark.point, landmark.name), source: landmark.source, distance: landmark.d });
     if (facts.length < 4) {
       const horizontal = point.col < size.cols / 2
         ? { value: `${Math.round(point.col)} map tiles east of the western boundary`, distance: point.col }

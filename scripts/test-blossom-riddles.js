@@ -50,6 +50,21 @@ const present = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: withWa
 assert.equal(present.ok, true);
 assert.equal(present.evidence.waterFound, true);
 assert.ok(present.facts.some(f => f.kind === 'water'));
+// The real Tothal zone fold stores tiles in a Map, not an object or 2D array.
+const merged = layoutFor('cyan');
+const target = merged.localeInstances[0];
+merged.tiles[23][26] = { type: 'river' };
+merged.tiles[24][25] = { type: 'path' };
+merged.tiles = new Map(merged.tiles.flatMap((row, y) => row.map((tile, x) => [x + ',' + y, tile])));
+const fromMap = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: merged, instance: target, targetObjectKey: 'blossom-tree', blossomName: 'Cyan Blossom' });
+assert.ok(fromMap.ok, 'real folded Map layout produces a clue');
+assert.ok(fromMap.facts.some(f => f.kind === 'water'), 'Map-based river is not silently omitted');
+assert.ok(fromMap.facts.some(f => f.kind === 'path'), 'Map-based path is not silently omitted');
+const riverFact = fromMap.facts.find(f => f.kind === 'water');
+assert.match(riverFact.value, /west of the river/, 'direction is expressed relative to the visible river, not the hidden tree');
+const generic = { x: 1, y: 1, objects: [{ key: 'ornament', x: 2, y: 2 }, { key: 'quest-symbol', x: 20, y: 21 }] };
+assert.equal(Riddles.positionOf(generic, 'quest-symbol').col, 20, 'another quest can select its own target object');
+assert.equal(Riddles.positionOf(generic).col, 2, 'generic fallback does not depend on blossom-tree naming');
 
 let festival = true, civilYear = 1156, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().

@@ -31,7 +31,7 @@
         if (override?.locales) return override.locales.filter(isStamped);
       }
       try {
-        const idxRes = await fetch('config/locales/index.json');
+        const idxRes = await fetch('config/locales/index.json?v=20261118fiveBlossomsLocaleCache1');
         if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
         const idx = await idxRes.json();
         // Fetched in parallel (the boot-time Tothal Shift, and so the first
