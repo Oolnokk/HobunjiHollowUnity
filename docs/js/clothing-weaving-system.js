@@ -153,9 +153,9 @@
   // so every consumer (portrait rendering, loom/redye previews, debug
   // snapshots) agrees on what "this item has a pattern" and "what pattern
   // applies to this specific layer" mean.
-  function normalizePatternStack(value) {
+  function normalizePatternStack(value, maxEntries = 2) {
     const raw = Array.isArray(value) ? value : (Array.isArray(value?.patterns) ? value.patterns : [value]); // Used by every woven/runtime caller so optional second-pattern data has one save-compatible normalization seam.
-    return raw.filter(pattern => !!pattern && typeof pattern === 'object').slice(0, 2); // The shared compositor intentionally supports at most primary + overpass.
+    return raw.filter(pattern => !!pattern && typeof pattern === 'object').slice(0, Math.max(2, Math.min(7, Number(maxEntries) || 2))); // Normal weaving remains two-slot; animal fused masks opt into up to six primary shapes plus one overpass.
   }
 
   function forcedOverpassPatternForWeaving(weaving, role = undefined) {
@@ -891,7 +891,7 @@
       .loomcraft-panel{width:min(860px,100%);max-height:94vh;overflow:auto;background:#11191e;border:1px solid #355046;border-radius:16px;color:#eef8f5;box-shadow:0 20px 60px rgba(0,0,0,.55)}
       .loomcraft-head{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid rgba(255,255,255,.1)}
       .loomcraft-head h2{font-size:17px;margin:0}.loomcraft-close{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:inherit;border-radius:9px;width:32px;height:32px}
-      .loomcraft-body{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,.8fr);gap:14px;padding:14px}@media(max-width:680px){.loomcraft-body{grid-template-columns:1fr}}
+      .loomcraft-body{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,.8fr);gap:14px;padding:14px}.loomcraft-preview-column{position:sticky;top:12px;align-self:start;z-index:2}@media(max-width:680px){.loomcraft-body{display:flex;flex-direction:column}.loomcraft-preview-column{order:-1;top:0;width:100%;background:#11191e;border:1px solid #355046;border-radius:12px;padding:6px;box-shadow:0 7px 18px rgba(0,0,0,.45)}.loomcraft-preview{min-height:105px;max-height:25dvh}.loomcraft-preview img{max-height:23dvh}.loomcraft-stats{max-height:8dvh;overflow:auto}}
       .loomcraft-card{border:1px solid #2c443c;background:rgba(255,255,255,.035);border-radius:12px;padding:11px;margin-bottom:10px}.loomcraft-card h3{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin:0 0 8px;color:#b9d5cc}
       .loomcraft-behindToggle{min-height:24px;padding:3px 9px;font-size:10px;text-transform:none;letter-spacing:0;font-weight:700;border-radius:8px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;cursor:pointer}.loomcraft-behindToggle.active{outline:2px solid #7fc7bc;background:#1a3432}
       .loomcraft-field{display:grid;gap:5px;margin-bottom:9px}.loomcraft-field label{font-size:11px;font-weight:800;color:#a9c0b9}.loomcraft-field select,.loomcraft-field button{min-height:38px;border-radius:9px;border:1px solid #3a564d;background:#17232a;color:#eef8f5;padding:7px 9px}
@@ -1058,7 +1058,7 @@
             <div class="loomcraft-card" data-optional-trim-card style="display:none"><h3>Added trim</h3><label class="loomcraft-pattern-swap"><input type="checkbox" data-field="trimEnabled"><span>Add this garment's authored trim</span></label><div class="loomcraft-field" data-trim-dye-slot-field><label>Color trim with</label><select data-field="trimDyeSlot"><option value="A">Dye A</option><option value="B">Dye B</option><option value="C">Dye C</option></select></div><div class="loomcraft-note">This is a fixed, clothing-specific, non-tiling overlay authored separately for each supported species/gender. It renders above woven patterns and receives its own black separation outline.</div></div>
             <div class="loomcraft-card"><h3>Weaving pattern</h3><div data-pattern-layers><span class="loomcraft-note">Loading…</span></div><div class="loomcraft-note">Uses the same saved/unlocked pattern library and authoring workflow as mastered-tool verdigris removal. Each layer's motif is baked into this crafted item. By default it uses Dye C; enable opposite dyes to reuse the two fabric dyes instead.${advanced ? ' Advanced Loom: add an optional overpass pattern above the base motif; any overpass doubles the wool cost.' : ''}</div></div>
           </div>
-          <div><div class="loomcraft-card"><h3>Preview <button class="loomcraft-behindToggle" type="button" data-act="toggleBehindView" style="display:none">Behind view</button></h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
+          <div class="loomcraft-preview-column"><div class="loomcraft-card"><h3>Preview <button class="loomcraft-behindToggle" type="button" data-act="toggleBehindView" style="display:none">Behind view</button></h3><div class="loomcraft-preview" data-preview><span class="loomcraft-note">Loading preview…</span></div><div class="loomcraft-stats" data-stats></div></div><button class="loomcraft-craft" type="button" data-act="craft">Craft</button></div>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -2881,21 +2881,44 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
+  function fuseSampledPatternMasks(masks, separators, primaryCount) {
+    const combinedMask = new Uint8Array(masks[0] || []); // Primary color-fill mask; same-layer additions fuse by union before any outlines are grown.
+    let combinedSeparator = separators[0] ? new Uint8Array(separators[0]) : null; // Internal motif separation is suppressed where another fused motif overlaps it.
+    for (let index = 1; index < primaryCount; index++) {
+      const next = masks[index], separator = separators[index];
+      if (!next) continue;
+      const previous = new Uint8Array(combinedMask); // Only used to remove separators crossing an already-painted motif.
+      for (let p = 0; p < combinedMask.length; p++) if (next[p]) combinedMask[p] = 1;
+      if (combinedSeparator || separator) {
+        const nextSeparator = new Uint8Array(combinedMask.length); // Internal marks never create seams between two intersecting primary motifs.
+        for (let p = 0; p < combinedMask.length; p++) {
+          if ((combinedSeparator?.[p] && !next[p]) || (separator?.[p] && !previous[p])) nextSeparator[p] = 1;
+        }
+        combinedSeparator = nextSeparator;
+      }
+    }
+    return { combinedMask, combinedSeparator };
+  }
+
   async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
-    const patterns = normalizePatternStack(rawPatterns);
+    const requestedFusedCount = Math.max(1, Math.min(6, Math.floor(Number(options.fusedPrimaryCount) || 1))); // Only animal painting opts into six fused primary masks; clothes retain the existing two-slot behavior.
+    const maxEntries = requestedFusedCount > 1 ? requestedFusedCount + 1 : 2;
+    const patterns = normalizePatternStack(rawPatterns, maxEntries);
     if (!imageOrCanvas || !patterns.length) return imageOrCanvas;
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "") + (options.continuousSurface === true ? ":continuous" : ""); // Continuous fur coats must not cache-collide with per-garment-cell phase offsets.
+    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "") + (options.continuousSurface === true ? ":continuous" : "") + (requestedFusedCount > 1 ? `:fused:${requestedFusedCount}:${JSON.stringify(renderable)}` : ''); // Include all same-layer motifs so edited third+ motifs cannot hit a stale two-slot cache.
     if (options.cache !== false && patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
 
     const motifUrls = await Promise.all(renderable.map(async pattern =>
       pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId)
     )); // Used by primary + optional overpass without changing either reusable pattern definition.
     const loaded = await Promise.all(motifUrls.map(url => url ? loadImageUrl(url) : Promise.resolve(null)));
-    const active = renderable.map((pattern, index) => ({ pattern, motif: loaded[index] })).filter(entry => !!entry.motif).slice(0, 2);
+    const active = renderable.map((pattern, sourceIndex) => ({ pattern, motif: loaded[sourceIndex], sourceIndex })).filter(entry => !!entry.motif).slice(0, maxEntries); // Preserve the original slot: an unavailable fused asset must not turn an overpass into a fused shape.
     if (!active.length) return imageOrCanvas;
+    const overpassIndex = active.findIndex((entry, index) => index > 0 && entry.sourceIndex >= requestedFusedCount); // Normal slot 2 still creates a clearance; same-ink additions never do.
+    const fusedCount = overpassIndex >= 0 ? overpassIndex : active.length; // Number of masks unioned under one perimeter.
 
     const directMaskPass = exactDirectMaskPass(active); // Exact garment trim masks must bypass every generic repeating-pattern translation/scaling seam.
     const pad = patternWorkPad(directMaskPass);
@@ -2930,9 +2953,9 @@
     // uses the item's pattern dye as before. The overpass is compared against the primary's actual ink.
     const primaryInkHex = /^#[0-9a-f]{6}$/i.test(String(active[0].pattern.inkColorHex || '')) ? active[0].pattern.inkColorHex : colorHex;
     const [r, g, b] = hexRgb(primaryInkHex);
-    const overpassInkHex = active.length > 1 && /^#[0-9a-f]{6}$/i.test(String(active[1].pattern.inkColorHex || ''))
-      && String(active[1].pattern.inkColorHex).toLowerCase() !== String(primaryInkHex).toLowerCase()
-      ? active[1].pattern.inkColorHex : null; // Same-color overpasses take the old single-pass fast path. // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
+    const overpassInkHex = overpassIndex >= 0 && /^#[0-9a-f]{6}$/i.test(String(active[overpassIndex].pattern.inkColorHex || ''))
+      && String(active[overpassIndex].pattern.inkColorHex).toLowerCase() !== String(primaryInkHex).toLowerCase()
+      ? active[overpassIndex].pattern.inkColorHex : null; // Same-color overpasses take the old single-pass fast path. // Optional per-instance slot-2 dye, shared across weaving, animal paint and furniture; older stacks retain one ink.
     const directShadeFill = window.ColorFill?.shadeFillPixels;
     const pixelCount = width * height;
     const garmentMask = new Uint8Array(pixelCount); // Reusable patterns avoid authored dark outlines; exact direct masks instead honor every opaque garment pixel selected by manual authoring.
@@ -2971,26 +2994,27 @@
       await window.PixelWorkYield?.maybeYield();
     }
 
-    const combinedMask = new Uint8Array(sampledMasks[0]); // Primary motif is the under-strand when an overpass exists.
-    let combinedSeparator = sampledSeparators[0] ? new Uint8Array(sampledSeparators[0]) : null;
-    if (sampledMasks[1]) {
-      const overpassMask = sampledMasks[1]; // Slot 2 is always the visually-over strand.
-      const overpassOutlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[1]?.pattern, debugLabel, width, height);
-      const clearanceMultiplier = overpassClearanceMultiplier(active[1]?.pattern); // Player/dev-authored slot-2 gap, clamped to 3×..12× normal outline width.
+    const fused = fuseSampledPatternMasks(sampledMasks, sampledSeparators, fusedCount); // Union happens BEFORE outlining; overlaps cannot leave outlines inside the common shape.
+    const combinedMask = fused.combinedMask;
+    let combinedSeparator = fused.combinedSeparator;
+    if (overpassIndex >= 0) {
+      const overpassMask = sampledMasks[overpassIndex]; // Only the distinct overpass punches clearance through the fused primary shape.
+      const overpassOutlineWidth = scaledOutlineWidth(PATTERN_OUTLINE_WIDTH, active[overpassIndex]?.pattern, debugLabel, width, height);
+      const clearanceMultiplier = overpassClearanceMultiplier(active[overpassIndex]?.pattern); // Player/dev-authored slot-2 gap, clamped to 3×..12× normal outline width.
       const clearanceMask = buildPatternOutlineMask(
         overpassMask,
         garmentMask,
         width,
         height,
         overpassOutlineWidth * clearanceMultiplier, // Invisible clearance uses the authored 3×..12× multiple through the exact same raster-outline function as the visible border.
-        sampledSeparators[1],
+        sampledSeparators[overpassIndex],
       );
       await window.PixelWorkYield?.maybeYield();
       for (let p = 0; p < pixelCount; p++) {
         if (clearanceMask[p] || overpassMask[p]) combinedMask[p] = 0; // Punch the under-strand before any black outline exists.
       }
       for (let p = 0; p < pixelCount; p++) if (overpassMask[p]) combinedMask[p] = 1; // Then place the over-strand itself back on top.
-      const overSeparator = sampledSeparators[1];
+      const overSeparator = sampledSeparators[overpassIndex];
       if (combinedSeparator || overSeparator) {
         const nextSeparator = new Uint8Array(pixelCount);
         for (let p = 0; p < pixelCount; p++) {
@@ -3020,17 +3044,17 @@
       samplePredicate: i => !!garmentMask[i >> 2],
       applyPredicate: i => {
         const p = i >> 2;
-        return !!garmentMask[p] && !!combinedMask[p] && (!overpassInkHex || !sampledMasks[1]?.[p]);
+        return !!garmentMask[p] && !!combinedMask[p] && (!overpassInkHex || !sampledMasks[overpassIndex]?.[p]);
       },
     });
-    if (overpassInkHex && sampledMasks[1]) {
+    if (overpassInkHex && overpassIndex >= 0) {
       // A second shade-fill pass uses the uncolored authored source, not the primary ink, so the
       // overpass retains its own dye/shading without bleeding into the under-strand or its clearance.
       directShadeFill(base.data, hexRgb(overpassInkHex), {
         sourceData: shadeSourceData,
         debugLabel,
         samplePredicate: i => !!garmentMask[i >> 2],
-        applyPredicate: i => !!garmentMask[i >> 2] && !!sampledMasks[1][i >> 2],
+        applyPredicate: i => !!garmentMask[i >> 2] && !!sampledMasks[overpassIndex][i >> 2],
       });
     }
 
@@ -3355,7 +3379,7 @@
     garmentPaintToMotif, // Inverts the exact mesh scale/rotation/offsets before a normal motif PNG is exported.
     garmentMotifToPaint, // Restores a saved full-canvas motif to the direct-paint surface using the same transform.
     applyPatternToTintedImage, // Save-compatible single-pattern wrapper.
-    applyPatternStackToTintedImage, // Shared primary+overpass compositor; slot 2 punches an authored 3×..12×-outline-width invisible clearance through slot 1 before black outlining.
+    applyPatternStackToTintedImage, // Shared primary+overpass and opt-in fused-primary compositor; slot 2 punches an authored 3×..12×-outline-width invisible clearance through slot 1 before black outlining.
     renderProfileWithWovenPatterns, // Stable adapter used by NpcAvatarPreview when later runtime wrappers replace the initially wrapped global renderer.
     decorateAvatarDataWithWovenItems, // Reuses the player's woven portrait marker contract for NPC/default clothing without duplicating renderer internals.
     patternStackForLayer: weavingPatternsForRole, // Character Studio edits the same per-layer primary/overpass data as the loom.
@@ -3367,7 +3391,7 @@
     reweaveMaterialCost,
     woolCostForSlot: slot => WOOL_COST_BY_SLOT[slot] || 1, // Commission quotes reuse the loom's actual wool cost per garment slot.
     debugSnapshot,
-    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, spriteLayerPaletteKey, paletteKeysForCosmeticSprites, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, spriteLayerPaletteKey, paletteKeysForCosmeticSprites, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, fuseSampledPatternMasks, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
