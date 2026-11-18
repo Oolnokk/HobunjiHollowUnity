@@ -1,0 +1,86 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Main-release builds inject a monotonically increasing version and a private,
+// persistent signing keystore. PR debug builds never have these credentials.
+def releaseCode = System.getenv('HOBUNJI_ANDROID_VERSION_CODE') // Android update candidate ordering.
+def releaseName = System.getenv('HOBUNJI_ANDROID_VERSION_NAME') // Displayed in the APK installer.
+def signingPath = System.getenv('HOBUNJI_ANDROID_KEYSTORE_PATH') // CI-provided keystore, never checked in.
+def signingAlias = System.getenv('HOBUNJI_ANDROID_KEY_ALIAS') // CI-selected release key alias.
+def signingStorePassword = System.getenv('HOBUNJI_ANDROID_KEYSTORE_PASSWORD') // CI secret for the keystore.
+def signingKeyPassword = System.getenv('HOBUNJI_ANDROID_KEY_PASSWORD') // CI secret for the release signer.
+
+android {
+    namespace 'com.oolnokk.hobunjihollow'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.oolnokk.hobunjihollow'
+        minSdk 28
+        targetSdk 35
+        versionCode releaseCode ? Integer.parseInt(releaseCode) : 1
+        versionName releaseName ?: '0.1.0'
+    }
+
+    signingConfigs {
+        release {
+            if (signingPath && signingAlias && signingStorePassword && signingKeyPassword) {
+                storeFile file(signingPath)
+                storePassword signingStorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (signingPath && signingAlias && signingStorePassword && signingKeyPassword) {
+                signingConfig signingConfigs.release // Stable certificate is required for in-place Android updates.
+            }
+            minifyEnabled false
+        }
+    }
+
+    buildFeatures { buildConfig true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging { resources { excludes += ['META-INF/DEPENDENCIES'] } }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.18.0'
+    implementation 'androidx.documentfile:documentfile:1.1.0'
+    implementation 'androidx.core:core:1.17.0' // FileProvider serves only the verified update APK.
+    testImplementation 'junit:junit:4.13.2' // Tests release ordering and hostile asset metadata.
+}
+
+// Retain the original web game's complete docs tree; do not fork its assets.
+def gameAssets = layout.buildDirectory.dir('generated/hobunji-assets')
+def copyGameAssets = tasks.register('prepareHobunjiAssets', Sync) {
+    from(rootProject.file('../docs')) { into 'game'; exclude 'index.html' }
+    // Handle index separately: CopySpec paths are source-relative, so a
+    // filesMatching('game/index.html') rule did not run on the copied file.
+    from(rootProject.file('../docs/index.html')) {
+        into 'game'
+        filter { String line ->
+            line.replace('<head>', '<head>\n  <script src="android-bridge.js"></script>')
+                .replace('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', '../vendor/three.min.js')
+                .replace('https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js', '../vendor/TransformControls.js')
+        }
+    }
+    from(rootProject.file('bridge.js')) { into 'game'; rename { 'android-bridge.js' } }
+    from(rootProject.file('node_modules/three/build/three.min.js')) { into 'vendor' }
+    from(rootProject.file('node_modules/three/examples/js/controls/TransformControls.js')) { into 'vendor' }
+    into(gameAssets)
+}
+android.sourceSets.main.assets.srcDirs += gameAssets
+tasks.configureEach { task ->
+    // Both merger and release-lint model consume the copied game assets.
+    // Gradle 9 rejects undeclared consumption of Sync task outputs.
+    if (task.name.matches('merge.*Assets') || task.name.toLowerCase(java.util.Locale.ROOT).contains('lint')) {
+        task.dependsOn(copyGameAssets) // All lint/report phases consume the same generated source-set assets.
+    }
+}

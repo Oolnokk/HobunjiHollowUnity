@@ -12,7 +12,7 @@
   const PANEL_ID = 'hobunjiCloudSavePanel';
   const LAUNCHER_ID = 'hobunjiCloudSaveLauncher';
   const SETTINGS_ROW_ID = 'hobunjiCloudSaveSettingsRow';
-  const STATIC_PREVIEW_HOSTS = new Set(['raw.githack.com', 'rawgit.com', 'localhost', '127.0.0.1', '::1']); // Hosts that cannot serve this repo's Netlify Functions and should not emit expected 404 probes.
+  const STATIC_PREVIEW_HOSTS = new Set(['raw.githack.com', 'rawgit.com', 'localhost', '127.0.0.1', '::1', 'appassets.androidplatform.net']); // Android's local HTTPS asset host does not serve Netlify Functions. // Hosts that cannot serve this repo's Netlify Functions and should not emit expected 404 probes.
 
   let _user = null;
   let _remote = null;
