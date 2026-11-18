@@ -14,6 +14,8 @@ const frameSwaps = [];
 const overlays = [];
 let canvasSerial = 0; // Gives each composited/warped frame a distinct URL in the assertions.
 let splitFrame = false; // Test toggle between ordinary shoulder art and split left/right presentation.
+let maskUnavailable = false; // Simulates temporarily missing idle head alpha data for split poses.
+const fakeClock = { now: 10000 }; // Advances cache retry deadlines without waiting in CI.
 function canvas(extra = {}) {
   const id = ++canvasSerial;
   const calls = [];
@@ -76,6 +78,7 @@ const warp = {
   scaleForKind: () => 1.23,
   async ensureIdleMask(kind, idleCanvas = null) {
     maskRequests.push({ kind, sourcePose: idleCanvas?.frame || null });
+    if (maskUnavailable) return null; // Force the production split compositor's retry path, not an unwarped fallback.
     return { kind, opaquePixels: 20 }; // Represents a cached idle alpha silhouette supplied by the actual warp module.
   },
   applyToCanvas(input, kind) {
@@ -107,7 +110,8 @@ const doc = {
   querySelector: () => null,
   createElement(tag) { assert.equal(tag, 'canvas'); return canvas(); },
 };
-vm.runInNewContext(bridgeSource, { window: win, document: doc, console }, { filename: 'player-body-attachment-bridge.js' });
+vm.runInNewContext(bridgeSource, { window: win, document: doc, console, Date: { now: () => fakeClock.now } },
+  { filename: 'player-body-attachment-bridge.js' });
 const provider = hooks.shoulderPets;
 assert.equal(typeof provider, 'function', 'bridge exposes the existing shoulder-pet integration provider');
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -225,5 +229,43 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moot.babyHeadScale, undefined, 'Moot must inherit the new 123% default instead of freezing a species override');
   assert.equal(moot.babyHeadFrame.width, 0.46468750000000003);
   assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2729887486531961);
-  console.log('Rare Small pet final textures, naturally Small exemption, split patterns and eyes, and Moot paint pass.');
+
+  // A naturally Small adult in a split perch also has genotype art, even though its head is not enlarged.
+  const naturallySmallSplitPet = companion('pingdort', 'small');
+  deps.companionObjects = [naturallySmallSplitPet];
+  provider();
+  await flush();
+  await flush();
+  const originalSplitUrl = naturallySmallSplitPet.__hobunjiShoulderSplitUrl;
+  const originalComposites = composited.length;
+  assert(originalSplitUrl, 'normal-size split pose is initially composited');
+  naturallySmallSplitPet.genotype.color = 'copper'; // In-place stable/Color Pools mutation must invalidate the old right/left pair.
+  provider();
+  await flush();
+  await flush();
+  assert.equal(composited.length, originalComposites + 2, 'normal-sized split pet recolors both frames after an in-place genotype change');
+  assert.notEqual(naturallySmallSplitPet.__hobunjiShoulderSplitUrl, originalSplitUrl, 'new genotype never keeps the stale split texture URL');
+
+  // A missing alpha mask must not lock in a permanently unwarped two-layer portrait.
+  const initiallyFailed = win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed;
+  maskUnavailable = true;
+  const maskPendingPet = companion('grehlr', 'small');
+  deps.companionObjects = [maskPendingPet];
+  provider();
+  await flush();
+  await flush();
+  assert.equal(maskPendingPet.__hobunjiShoulderSplitUrl || null, null,
+    'temporarily unreadable idle head mask must not accept an ordinary adult-looking split texture');
+  assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed, initiallyFailed + 1,
+    'mobile diagnostics report missing head masks rather than silently accepting incomplete growth');
+  maskUnavailable = false;
+  fakeClock.now += 2100; // Production retry interval is two seconds; no real timer is required.
+  const beforeRetryWarp = warped.length;
+  provider();
+  await flush();
+  await flush();
+  assert(maskPendingPet.__hobunjiShoulderSplitUrl, 'split portrait retries and installs when the idle head mask becomes readable');
+  assert.equal(warped.length, beforeRetryWarp + 2, 'both split layers receive the enlarged head on retry');
+
+  console.log('Rare Small pets, normal Small genotype changes, split mask recovery, and Moot paint pass.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
