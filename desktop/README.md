@@ -96,6 +96,28 @@ format.
 Do not run simultaneous writes from the browser, desktop app, and another
 machine; Google Drive is not a transactional database and may create conflicts.
 
+## Checking whether Windows is actually using your GPU
+
+Open **View → Graphics Status** in the installed game (no developer console).
+The report lists the Chromium WebGL acceleration state, detected/active display
+adapters, and the **main game's live WebGL renderer**, when it is available.
+Use **Copy Details** to paste the full result into a support conversation.
+
+- A renderer containing **SwiftShader**, **llvmpipe**, or **Microsoft Basic Render
+  Driver** signals a software fallback. WebGL working does not by itself prove
+  hardware acceleration.
+- An ANGLE renderer naming an Intel/AMD/NVIDIA GPU plus Chromium's accelerated
+  WebGL status suggests hardware rendering; it does **not** guarantee the
+  discrete GPU is selected or that the game's framerate is GPU-bound.
+- If multiple GPUs are present, Windows **Settings → System → Display →
+  Graphics** can set the installed Hobunji Hollow executable to *High
+  performance*. Restart the game after changing the Windows GPU preference.
+  Windows Task Manager's **GPU engine** column can help validate active usage.
+- A failed or not-yet-initialized game WebGL canvas produces a diagnostic
+  message; the status operation never forces a new renderer or changes
+  acceleration flags. Heavy work on the JavaScript main/render thread can
+  still cause low FPS even when the correct GPU is active.
+
 ## Known limits
 
 - This first installer and its auto-updates are **not code signed**. Windows SmartScreen may warn; production distribution should be code signed.
