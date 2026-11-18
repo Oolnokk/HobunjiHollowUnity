@@ -105,4 +105,38 @@ sleepSandbox.updateSleeperForTest();
 assert.equal(sleepFrames.at(-1), true, 'sleep textures resume once the pet leaves its shoulder perch');
 assert.equal(headDownCalls.length, 1, 'ordinary sleeping neck pose resumes once unperched');
 
-console.log('PASS shoulder texture ownership blocks ordinary animation and sleep writers, then releases both on unperch');
+// A generated shoulder portrait also owns game.js's URL-keyed GPU cache entry.
+// Revoking a blob URL alone must not leave that texture retained in either cache map.
+const cleanupStart = gameSource.indexOf('function releaseCreatureTemporaryFrameTexture(url) {');
+const cleanupEnd = gameSource.indexOf('      // Genotype-composited textures', cleanupStart);
+assert(cleanupStart >= 0 && cleanupEnd > cleanupStart, 'the production generated-sprite cache cleanup is accessible');
+const cache = { front: new Map(), back: new Map() }; // Recreates game.js's native URL-keyed sprite texture cache.
+const cleanupSandbox = { _creatureTexCache: cache };
+vm.createContext(cleanupSandbox);
+vm.runInContext(`
+  ${gameSource.slice(cleanupStart, cleanupEnd)}
+  globalThis.releaseTemporaryTextureForTest = releaseCreatureTemporaryFrameTexture;
+`, cleanupSandbox, { filename: 'game.js:releaseCreatureTemporaryFrameTexture' });
+let disposed = 0;
+const front = { dispose() { disposed++; } };
+const back = { dispose() { disposed++; } };
+cache.front.set('blob:shoulder-portrait', front);
+cache.back.set('blob:shoulder-portrait', back);
+assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('blob:shoulder-portrait'), true, 'generated blob texture is released');
+assert.equal(cache.front.size, 0, 'old front texture must not remain in the sprite cache');
+assert.equal(cache.back.size, 0, 'old back texture must not remain in the sprite cache');
+assert.equal(disposed, 2, 'both independent GPU texture objects are disposed once');
+assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('blob:shoulder-portrait'), false, 'double cleanup is harmless');
+
+const shared = { dispose() { disposed++; } }; // Shared two-sided shader uses the same GPU texture on both planes.
+cache.front.set('data:image/png;base64,grown-pet', shared);
+cache.back.set('data:image/png;base64,grown-pet', shared);
+assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('data:image/png;base64,grown-pet'), true,
+  'older browsers using a data URL also release their generated texture cache entries');
+assert.equal(disposed, 3, 'shared front/back textures are never double-disposed');
+cache.front.set('assets/creaturesprites/pingdort_idle.png', front);
+assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('assets/creaturesprites/pingdort_idle.png'), false,
+  'permanent species PNGs must never be purged by the pet-only cleanup API');
+assert.equal(cache.front.size, 1, 'original species textures stay cached');
+
+console.log('PASS shoulder texture ownership, sleeper handoff, and temporary GPU cache disposal');
