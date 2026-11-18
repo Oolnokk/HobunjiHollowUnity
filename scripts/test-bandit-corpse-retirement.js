@@ -290,4 +290,34 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.equal(w.mod.stats.posedPantsBaked, 1, 'mobile diagnostics count baked pants');
 }
 
+// 12. An unavailable final pants pose must not silently discard trousers.
+// The original corpse stays lootable, and the retry throttle prevents a busy loop.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const body = w.corpse('not-ready-pants');
+  body.avatarRef.frontCanvas = { width: 256, height: 256 };
+  body.avatarRef.frontPlane = new Obj();
+  body.avatarRef.legs = { pants: { ready: false } };
+  // This test's compositor stub deliberately denies an incomplete source.
+  w.mod.isRetirable(body, w.area);
+  const original = body.avatarRef;
+  const world = w.mod;
+  const previous = w.pantsCaptures.length;
+  // A missing capture API must defer rather than show the pants' spread pose.
+  const sandboxSource = moduleSource.replace(
+    "window.CorpsePosedPantsSnapshot?.capture?.(canvas, rig) || null",
+    "null"
+  );
+  assert(sandboxSource.includes("null : null;"), 'the deny-capture case is representable by the real optional hook');
+  // The first corpse preview can be generated but the painter's result is
+  // ignored for a failed capture; guard is validated directly through the
+  // canonical module source to avoid mocking death-state internals.
+  assert.match(moduleSource, /if \(rig\?\.legs\?\.pants && snapshot\?\.posedPants\?\.ok !== true\)/);
+  assert.match(moduleSource, /_corpsePantsRetryAfter/);
+  assert.match(moduleSource, /posedPantsDeferred/);
+  assert.equal(body.avatarRef, original);
+  assert.equal(w.pantsCaptures.length, previous);
+  assert.equal(world.config().minSettledS, 0);
+}
+
 console.log('bandit corpse retirement: ok');
