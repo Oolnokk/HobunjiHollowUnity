@@ -212,6 +212,11 @@ async function main(){
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
   assert(audienceShots.some(item=>item.owner==='five-blossoms-crowning' && item.priority>0),'crowning audience outranks ordinary town plans');
   assert(scheduleInvalidations>=7,'crowd gathering and release both invalidate cached NPC destinations');
+  const fullVillage=Array.from({length:100},(_,i)=>({rec:{id:'crowd_'+i},area:'town',root:{position:{x:0,z:0}}})); // Oversized authored roster probes the edge of the actual 50-row town map.
+  assert.equal(W.FestivalBlossomCeremony.arrangeCrowd(stage,fullVillage),100);
+  const audience=fullVillage.map(walker=>W.FestivalBlossomCeremony.__test.scheduleOverride(walker.rec));
+  assert(audience.every(target=>target.r>=0 && target.r<49.5),'even a 100-person audience stays inside the town south edge');
+  assert(Math.abs((audience[0].c+audience[24].c)/2-(Number(stage.col)+1.5))<0.01,'the large first audience rank centers on the stage');
   console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real hat gear/fallback, later awards, persistence, duplicate lockout passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
