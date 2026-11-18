@@ -272,7 +272,8 @@
     smallPetHeadFrameCache.set(companion, entry);
     Promise.resolve().then(async () => {
       const warp = window.BabyAnimalHeadWarp;
-      if (headRequiresIdleMask(kind)) {
+      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0;
+      if (wantsGrowth && headRequiresIdleMask(kind)) {
         let mask = await warp?.ensureIdleMask?.(kind); // Prefer the original idle art, not genotype-specific run/eye overlays.
         if (!mask && !renderer?.SPECIES?.[kind]?.base?.idle) {
           const idleUrl = shoulderIdleFrame(companion, combatDeps).url;
@@ -293,7 +294,10 @@
     }).then(async composed => {
       if (!composed) throw new Error('Neither genotype compositor nor raw sprite supplied this pose');
       const enlarged = warpSmallPetSource(composed, kind);
-      if (!enlarged || enlarged === composed) throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
+      if (!enlarged || (enlarged === composed && ((window.BabyAnimalHeadWarp?.scaleForKind?.(kind) ?? 1) > 1
+        || (window.BabyAnimalHeadWarp?.shorteningForKind?.(kind) ?? 0) > 0))) {
+        throw new Error(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastError || 'No enlargable painted head frame');
+      } // The user's 100%/0% experimental setting intentionally produces unwarped art, not a failed portrait.
       const url = await canvasAsSpriteUrl(enlarged);
       if (smallPetHeadFrameCache.get(companion) !== entry) {
         releasePetSpriteUrl(url); // Old pending equip cannot leak its encoded image.
@@ -353,11 +357,11 @@
 
     if (needsSmallPetHead(companion, combatDeps)) {
       const warp = window.BabyAnimalHeadWarp; // The same committed baby-head settings used by the nursery and single-frame pet portrait.
-      const mask = headRequiresIdleMask(kind) ? await warp?.ensureIdleMask?.(kind, idleSource) : true; // Legacy painted selection needs no alpha readback.
+      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0;
+      const mask = wantsGrowth && headRequiresIdleMask(kind) ? await warp?.ensureIdleMask?.(kind, idleSource) : true; // No alpha readback when painted mode or 100%/0%.
       if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No readable idle-head opacity mask for shoulder split');
       const left = warpSmallPetSource(idleSource, kind); // Grow already-composited eyes, coat and pattern pixels before seam clipping.
       const right = rightUsesIdle ? left : warpSmallPetSource(rightSource, kind);
-      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0;
       if (wantsGrowth && (left === idleSource || right === rightSource)) {
         throw new Error('Shoulder split head enlargement unavailable for ' + kind);
       }
