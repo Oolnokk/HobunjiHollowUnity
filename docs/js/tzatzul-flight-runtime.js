@@ -583,8 +583,14 @@
     if (state.phase === 'swoop') { if (bird._tzNestMother || state.captive) returnHome(bird); else seekFood(bird); return; }
     if (state.phase === 'search') { seekFood(bird); return; }
     if (state.phase === 'orbit') {
+      const foe = orbitCombatFoe(bird); // Aerial evasion replaces only the resting perch, never the enemy's attack cycle.
+      if (foe && !state.retreating && !state.captive && (state.orbitLegs || 0) % 3 === 0
+        && swoop(bird, foe)) {
+        if (bird._tzNestMother) window.TzatzulNestEncounter?.recordOrbitDive?.(bird);
+        return; // Resume the canonical swept-body attack after three evasive chords.
+      }
       if (state.roost && (state.orbitLegs || 0) % 4 === 0 && returnHome(bird)) return; // Periodically recheck the real perch.
-      if (!startCombatOrbit(bird)) { state.phase = 'await-roost'; bird.tzatzulFlightPose = 'glide'; }
+      if (!startCombatOrbit(bird)) { state.phase = 'await-roost'; state.orbitRetryS = .65; bird.tzatzulFlightPose = 'glide'; }
       return;
     }
     if (state.phase === 'return') {
