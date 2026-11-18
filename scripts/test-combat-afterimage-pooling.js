@@ -139,7 +139,7 @@ const stats = () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages
 const ghosts = () => scene.children.filter(object => object.name === 'combat_portrait_afterimage'); // Currently attached visual snapshots.
 assert.equal(stats().enabled, false, 'combat afterimages are disabled by default when storage is empty');
 assert.equal(afterimageToggle.checked, false, 'Visual Effects checkbox starts unchecked even when markup/default DOM differs');
-assert.equal(afterimageToggle.listeners.change instanceof Function, true, 'Visual Effects checkbox is wired for runtime changes');
+assert.equal(typeof afterimageToggle.listeners.change, 'function', 'Visual Effects checkbox is wired across VM realms');
 player.lunging = true;
 enemy._banditLunging = true;
 combat.update(0.016);
