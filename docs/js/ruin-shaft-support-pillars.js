@@ -22,7 +22,7 @@
     const height=Number(platform?.y)-Number(slabThickness)-Number(pitY); // Capital meets the underside, not the walkable top.
     if(!Number.isFinite(height)||height<=0||![platform?.x,platform?.z,pitY].every(Number.isFinite))return null;
     return {id:platform.id,x:platform.x,z:platform.z,bottomY:pitY,topY:platform.y-slabThickness,height,
-      footprintTiles:footprint};
+      slabWidth:platform.w,slabDepth:platform.d,footprintTiles:footprint};
   }
   function recipeFromSquarePillar(source){
     const sourceParts=source?.parts;
@@ -53,6 +53,21 @@
       tileSpan:{version:1,enabled:true,axis:'y',baseHeight,targetHeight:baseHeight,
         startTiles:1,middleTiles:1,endTiles:1,totalTiles:3,tileSize:1}};
     return {data,bottom,footWidth:Number(foot.sx),footDepth:Number(foot.sz)};
+  }
+  function recipeForPlatform(profile,placement){
+    const tiles=placement.footprintTiles; // Both footing axes use the same 2×2 or 3×3 instance tile count.
+    const slabSpan=Math.max(.1,Math.min(placement.slabWidth,placement.slabDepth)); // Capital stays under even the narrowest slab.
+    const capital=Math.min(tiles*.96,slabSpan*.92);
+    const widths={
+      [PART.foot]:tiles,[PART.rise]:tiles*.82,
+      [PART.shaft]:Math.min(tiles*.64,capital*.76),
+      [PART.neck]:Math.min(tiles*.76,capital*.86),
+      [PART.cap]:capital,
+    }; // The broad plinth tapers to a slab-sized capital; a 3-tile foot must not stick through a 1-tile landing.
+    return {...profile.data,parts:profile.data.parts.map(part=>{
+      const width=widths[part.id];
+      return width?{...part,transform:{...part.transform,sx:width,sz:width}}:part;
+    })}; // Only this placed instance is widened; the reusable Furniture Author recipe stays unchanged.
   }
   function loadSource(){
     if(!sourcePromise){
@@ -120,12 +135,10 @@
           if(disposed)break;
           let visual=null;
           try{
-            visual=furniture.buildGroup(recipe.data,0x7b7466);
+            visual=furniture.buildGroup(recipeForPlatform(recipe,placement.geometry),0x7b7466);
             const span=furniture.setTileSpan(visual,placement.geometry.height); // IKMC ladder solver: fixed foot, stretched shaft, rigid capital.
             if(!span?.enabled||span.errors?.length||visual.userData?.tileSpanDiagnostics?.errors?.length)
               throw new Error('Vertical tile-span could not resolve the shaft attachments');
-            visual.scale.set(placement.geometry.footprintTiles/recipe.footWidth,1,
-              placement.geometry.footprintTiles/recipe.footDepth); // Per-instance 2×2 or 3×3 tile-sized square foundation.
             visual.position.y=-recipe.bottom;
             markVisualOnly(visual);
             visual.name='authored-pillar-square-'+placement.geometry.id;
@@ -160,5 +173,5 @@
       },
     };
   }
-  return Object.freeze({SOURCE,footprintTiles,layout,recipeFromSquarePillar,mount});
+  return Object.freeze({SOURCE,footprintTiles,layout,recipeFromSquarePillar,recipeForPlatform,mount});
 });
