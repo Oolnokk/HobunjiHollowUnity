@@ -4,8 +4,8 @@
   'use strict';
   if (global.HobunjiBeltStowRig) return;
 
-  const TORCH_WIDTH = 0.17; // Used by the identical gameplay and Rig Coordinates torch planes.
-  const TORCH_HEIGHT = 0.38; // Authored torch's displayed height before any item-specific scale.
+  const TORCH_WIDTH = 0.5; // Same base plane width as game.js makeToolPlaneMesh / the Attack Animation Editor.
+  const TORCH_HEIGHT = TORCH_WIDTH * (1204 / 450); // Actual torch.png 450×1204 baseline; a loaded PNG or held-plane geometry can override this aspect.
   const TORCH_SPRITE = 'assets/toolsprites/torch.png'; // First supported item in this extensible belt slot.
   const RAD = Math.PI / 180; // Converts exported rig rotation degrees to Three.js radians.
   const AXES = ['x', 'y', 'z']; // The JSON coordinate format shared with other attachment anchors.
@@ -109,26 +109,44 @@
       root.add(flame);
     }
 
-    let idleScale = 1; // One neutral torch multiplier for both game belt art and the Animation Author preview.
+    let idleScale = 1; // Authored Neutral multiplier shared with the held tool and projectile.
+    let sourceWidth = TORCH_WIDTH; // Live held-plane width, used to size the belt without a miniature surrogate.
+    let sourceHeight = TORCH_HEIGHT; // Live held-plane height, used to preserve the PNG aspect and handle-end position.
+    function applyDimensions() {
+      art.scale.set(sourceWidth / TORCH_WIDTH * idleScale, sourceHeight / TORCH_HEIGHT * idleScale, 1);
+      art.position.y = sourceHeight * idleScale * .5; // Anchor the handle's lower end at the belt rig, not the enlarged sprite center.
+      if (flame) {
+        flame.position.y = (sourceHeight + .05) * idleScale; // Sit just above the -Y torch-tip PNG after its 180° upright rotation.
+        flame.scale.set(.13 * idleScale, .23 * idleScale, 1);
+      }
+    }
+    function setSourceDimensions(width, height) {
+      const w = Number(width), h = Number(height); // Real geometry from the equipped tool or decoded asset dimensions.
+      if (![w, h].every(Number.isFinite) || w < .05 || w > 3 || h < .05 || h > 6) return false;
+      if (Math.abs(w - sourceWidth) < 1e-5 && Math.abs(h - sourceHeight) < 1e-5) return false;
+      sourceWidth = w; sourceHeight = h;
+      applyDimensions(); // Scale the existing mesh, avoiding runtime geometry/texture allocation.
+      return true;
+    }
     function setIdleScale(value) {
       const numeric = Number(value); // Current authored torch Neutral scale from WeaponToolStances, including editor overrides.
       const next = Number.isFinite(numeric) && numeric > 0 ? Math.min(3, Math.max(.1, numeric)) : 1;
       if (next === idleScale) return;
       idleScale = next;
-      art.scale.set(next, next, 1); // Same uniform scale as the held animation, without baking it into saved belt-rig transforms.
-      art.position.y = -(TORCH_HEIGHT / 2) * (1 - next); // Keep the grip/handle end in place as the artwork changes size.
-      if (flame) {
-        flame.position.y = art.position.y + .24 * next;
-        flame.scale.set(.13 * next, .23 * next, 1);
-      }
+      applyDimensions();
     }
+    applyDimensions(); // Both neutral and custom-rig previews begin with the grip/handle at the authored belt anchor.
     setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
-      root, art, flame, setIdleScale,
+      root, art, flame, setIdleScale, setSourceDimensions,
       get idleScale() { return idleScale; },
+      get sourceDimensions() { return { width: sourceWidth, height: sourceHeight }; }, // On-demand author/mobile preview, never sampled by the render loop.
       setTexture(texture) {
         if (!texture || art.material.map === texture) return false;
         art.material.map = texture; art.material.needsUpdate = true;
+        const imageWidth = Number(texture.image?.naturalWidth || texture.image?.width); // Decoded PNG ratio can update preview geometry when the source artwork changes.
+        const imageHeight = Number(texture.image?.naturalHeight || texture.image?.height);
+        if (imageWidth > 0 && imageHeight > 0) setSourceDimensions(TORCH_WIDTH, TORCH_WIDTH * imageHeight / imageWidth);
         return true;
       },
       setBurning(burning, timeMs = 0) {
