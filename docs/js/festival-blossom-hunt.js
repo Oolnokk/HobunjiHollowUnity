@@ -16,7 +16,8 @@
   let unsubTile = null; // Released on world/character reinit so duplicate listeners cannot award a find twice.
   let visibleScene = null; // Scene owner of the five-tree renderer; replaced cleanly on zone transitions.
   let visibleZone = ''; // Active map ID used to avoid scanning inactive wilderness zones per frame.
-  let visibleTrees = new Map(); // Per-locale Three.js roots, removed when the active scene/season changes.
+  let visibleTrees = new Map(); // Per-locale Three.js roots attached to the currently active scene.
+  let cachedTreeMeshes = new Map(); // Keep one cached mesh per flower across zone revisits, avoiding repeated GPU geometry/material allocation.
   let calendarKey = ''; // Day/year/Shift change gate; ordinary animation frames do not touch quest saves.
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
   let lastGenerated = null; // Debug snapshot describes which final terrain evidence made it into the clue.
@@ -119,17 +120,21 @@
       if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
       const instance = localeFor(blossom);
       const foliage = window.FoliageGenerator?.buildPottedBlossomTreeMesh;
-      if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
+      if (!instance || (!foliage && !cachedTreeMeshes.has(blossom.localeId))) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
       const p = window.LocaleRiddleGenerator?.positionOf?.(instance);
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
-      const tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, blossom.color); // Reuses the temple-swatches, carved_smooth green trunk and leaf-card color-fill renderer.
-      if (!tree) continue;
+      let tree = cachedTreeMeshes.get(blossom.localeId); // A Shift may move the same tree; its materials and geometry do not need rebuilding.
+      if (!tree) {
+        tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, blossom.color); // Temple-swatches, carved_smooth green trunk and leaf-card color-fill renderer.
+        if (!tree) continue;
+        tree.scale.multiplyScalar(18); // A ~3-unit landmark after the preset's quarter scale; apply once, not on every zone transition.
+        cachedTreeMeshes.set(blossom.localeId, tree);
+      }
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color: blossom.color, localeId: blossom.localeId };
       const rawHeight = window.ClimbSystem?.groundYAt?.(p.col + .5, p.row + .5); // Undefined floor must not turn into an implicit valid zero elevation.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
       tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
-      tree.scale.multiplyScalar(18); // A ~3-unit-tall landmark after the tabletop preset's 0.25 base scale, with a canopy visible from the surrounding locale.
       scene.add(tree);
       visibleTrees.set(blossom.localeId, tree);
     }
@@ -183,7 +188,7 @@
       activeFestival: active(), questId: key(), status: live?.status || 'not_started', found: live?.progress?.found || [],
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
-      displayedTrees: [...visibleTrees.keys()], lastStatus,
+      displayedTrees: [...visibleTrees.keys()], cachedTreeMeshes: cachedTreeMeshes.size, lastStatus,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
   }

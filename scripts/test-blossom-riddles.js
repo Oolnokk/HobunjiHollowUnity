@@ -51,7 +51,7 @@ assert.equal(present.ok, true);
 assert.equal(present.evidence.waterFound, true);
 assert.ok(present.facts.some(f => f.kind === 'water'));
 
-let festival = true, civilYear = 1156, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0; // Test calendar and movement are controlled without real-time timers.
+let festival = true, civilYear = 1156, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
 const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_eastern_mire', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
@@ -69,7 +69,7 @@ const world = {
   PlayerTileEvents: { subscribe(listener) { tileListener = listener; return () => { if (tileListener === listener) tileListener = null; }; } },
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
-  FoliageGenerator: { buildPottedBlossomTreeMesh() { return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} } }; } },
+  FoliageGenerator: { buildPottedBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} } }; } },
   ClimbSystem: { groundYAt: () => 0 }
 };
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/festival-blossom-hunt.js'), 'utf8'), vm.createContext({ window: world, console }));
@@ -102,6 +102,7 @@ assert.equal(progress['five_blossoms_wilderness_hunt:1157'].status, 'expired', '
 currentZone = 'map_northern_cliffs';
 hunt.update();
 assert.ok(hunt.debugSnapshot().displayedTrees.includes('locale_five_blossoms_cyan'), 'the tree remains a physical wilderness locale outside the festival');
+assert.equal(treeBuilds, 5, 'five cached trees are reused on zone revisit instead of rebuilding GPU geometry');
 assert.ok(saveCalls >= 8, 'every discovery and calendar transition saved progress');
 assert.ok(hunt.debugSnapshot().present.every(item => item.stamped), 'all five quest locales are visible to runtime diagnostics');
 console.log('Five Blossoms hunt: ' + poems + ' seeded riddles; five stamped locales; saved progress, reward lockout and expiry checked.');
