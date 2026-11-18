@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
-// A colored lunge blur reuses the original textures and GPU skeleton with a 2x2-reduced grid.
-// The effect must never CPU-bake or copy the character's animated portrait. Uses real Three.js r128 if available.
+// A lunge afterimage used to clone the whole skinned portrait grid (png-plane-avatar.js buildSkinnedPlaneGeometry:
+// segmentsX x segmentsY cells, 6 non-indexed vertices per cell, front face then back face = 4,032 triangles) and run
+// boneTransform on all 12,096 vertices per snapshot. The ghost now merges 2x2 cells into one quad using the block's
+// four corner vertices. This builds a grid with that exact layout on a real three r128 SkinnedMesh and runs the
+// production snapshotter: the ghost must have a quarter of the triangles, UVs and posed positions taken from the right
+// source corners (both faces), the right material groups, and must be reusable from the pool. A geometry that is not
+// that grid keeps the full clone. Needs three.js r128; skips (exit 0) when it is not resolvable from here.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -46,69 +51,70 @@ function gridPortrait(segX, segY, withUserData = true) {
 }
 
 function runner(mesh) {
-  const scene = new THREE.Scene(); // Host scene used to confirm the effect is a single independent draw.
-  const root = new THREE.Group(); scene.add(root); root.add(mesh);
-  const player = { x: 0, y: 0, lunging: true, dodging: false, stamina: 200 }; // Movement that drives the real combat update wrapper.
+  const scene = new THREE.Scene(); const root = new THREE.Group(); scene.add(root); root.add(mesh);
+  const player = { x: 0, y: 0, lunging: false, dodging: false, stamina: 200 };
   const combat = { abilities: { register() {} }, deps: { player, playerMesh: root, TILE: 64, hostileObjects: [], getCurrentArea: () => null }, update() {}, setMovementSpeedMul() {} };
-  const windowStub = {
-    Combat: combat, THREE,
-    BanditCombat: { setCombatExpression() {} },
-    WorldPortraitLife: { setPlayerCombatExpression() {}, isPlayerCombatExpressionApplied: () => true },
-  };
-  let now = 1000; // Controlled milliseconds for the 55ms movement sample cadence.
-  vm.runInNewContext(source, { window: windowStub, performance: { now: () => now }, console }, { filename: 'combat-blink-dodge.js' });
-  combat.update(0.016); // Establish the initial location without forcing a teleport or generating a smear.
+  const windowStub = { Combat: combat, THREE, BanditCombat: { setCombatExpression() {} }, WorldPortraitLife: { setPlayerCombatExpression() {}, isPlayerCombatExpressionApplied: () => true }, HobunjiSpritePngSurface: { alphaTest: () => 0.001 } };
+  let now = 1000;
+  vm.runInNewContext(source, { window: windowStub, document: { createElement: () => ({ width: 0, height: 0, getContext: () => ({ clearRect() {}, drawImage() {} }) }) }, performance: { now: () => now }, console }, { filename: 'combat-blink-dodge.js' });
+  assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.enabled, false, 'runtime defaults off');
+  windowStub.HobunjiDodgeFeedback.setAfterimagesEnabled(true); // Geometric correctness is tested with the optional legacy effect explicitly enabled.
+  player.lunging = true; combat.update(0.016);
   const step = () => { player.x += 64; now += 60; combat.update(0.06); };
-  const smears = () => scene.children.filter(child => child.name === 'combat_portrait_motion_smear');
-  return { step, smears, debug: () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages };
+  const ghosts = () => scene.children.filter(child => child.name === 'combat_portrait_afterimage');
+  return { step, ghosts, debug: () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages };
 }
 
-const mesh = gridPortrait(28, 36);
-const skinCalls = { count: 0 }; // Used to forbid expensive per-snapshot CPU vertex baking.
-mesh.boneTransform = () => { skinCalls.count++; throw new Error('No CPU pose baking allowed for a GPU skinned smear'); };
-mesh.material[0].color.setRGB(0.82, 0.23, 0.51);
-mesh.material[1].color.setRGB(0.21, 0.44, 0.96);
+const segX = 28, segY = 36, mesh = gridPortrait(segX, segY);
 const run = runner(mesh);
 run.step();
-const smear = run.smears()[0];
-assert(smear, 'a quick lunge creates a visible motion smear');
-assert.equal(run.smears().length, 1, 'one actor has only one smear mesh, not three ghost portraits');
-assert.strictEqual(smear.skeleton, mesh.skeleton, 'new mesh shares the original animated skeleton');
-assert.notStrictEqual(smear.geometry, mesh.geometry, 'reduced geometry is built only once for a new avatar');
-assert.equal(smear.geometry.getAttribute('position').count, mesh.geometry.getAttribute('position').count / 4);
-assert.deepEqual(smear.geometry.groups.map(g => [g.start, g.count, g.materialIndex]), [[0, 1512, 0], [1512, 1512, 1]]);
-for (const channel of ['uv', 'skinIndex', 'skinWeight']) {
-  assert.equal(smear.geometry.getAttribute(channel).count, 3024, channel + ' must retain avatar color or live GPU skinning');
+const ghost = run.ghosts()[0];
+assert.ok(ghost, 'a lunge produced a ghost');
+const g = ghost.geometry, pos = g.getAttribute('position'), uv = g.getAttribute('uv');
+const sourceTris = mesh.geometry.getAttribute('position').count / 3;
+assert.equal(sourceTris, 4032, 'the fixture matches the real 28x36 two-sided grid');
+assert.equal(pos.count / 3, sourceTris / 4, 'the ghost has a quarter of the triangles');
+assert.equal(g.groups.length, 2, 'front and back material groups are kept');
+assert.deepEqual(g.groups.map(group => [group.start, group.count, group.materialIndex]), [[0, pos.count / 2, 0], [pos.count / 2, pos.count / 2, 1]]);
+assert.ok(!g.getAttribute('skinIndex') && !g.getAttribute('skinWeight'), 'the ghost is a plain static mesh');
+
+// Every ghost vertex must equal the stock-skinned source vertex whose UV it carries (corner vertices of a block).
+mesh.skeleton.update();
+const sourceUv = mesh.geometry.getAttribute('uv'), sourcePos = mesh.geometry.getAttribute('position');
+const v = new THREE.Vector3();
+const expectedByUv = new Map(); // "face|u|v" -> posed position of that corner (each plane position is a unique grid corner).
+const half = sourcePos.count / 2;
+for (let i = 0; i < sourcePos.count; i += 1) {
+  v.fromBufferAttribute(sourcePos, i); mesh.boneTransform(i, v);
+  expectedByUv.set(`${i < half ? 0 : 1}|${sourceUv.getX(i).toFixed(5)}|${sourceUv.getY(i).toFixed(5)}`, [v.x, v.y, v.z]);
 }
-assert.equal(skinCalls.count, 0, 'no CPU boneTransform calls during smear creation');
-assert.deepEqual(smear.material[0].color.toArray(), mesh.material[0].color.toArray(), 'front RGB remains identical');
-assert.deepEqual(smear.material[1].color.toArray(), mesh.material[1].color.toArray(), 'back RGB remains identical');
-assert.equal(smear.material[0].depthWrite, false, 'the translucent trail does not write occlusion depth');
-const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <skinning_vertex>',
-  fragmentShader: '#include <common>\n#include <premultiplied_alpha_fragment>\n#include <dithering_fragment>' }; // Unit-level shader instrumentation, no live WebGL necessary.
-smear.material[0].onBeforeCompile(shader, {});
-assert.match(shader.vertexShader, /transformed\.xz -= uSmearDirection/);
-assert.match(shader.fragmentShader, /gl_FragColor\.a \*= uSmearOpacity \* smoothstep/);
-assert(!shader.fragmentShader.includes('gl_FragColor.rgb ='), 'RGBA color is preserved; shader modifies alpha only');
-const originalGeometry = smear.geometry, originalMaterial = smear.material[0]; // Detect unnecessary mesh recompilation after warmup.
-for (let i = 0; i < 10; i++) run.step();
-assert.equal(run.smears().length, 1, 'successive lunge ticks never allocate extra ghost meshes');
-assert.strictEqual(run.smears()[0].geometry, originalGeometry, 'the reduced GPU geometry is reused across the entire lunge');
-assert.strictEqual(run.smears()[0].material[0], originalMaterial, 'no new material/shader compilation each sample');
-assert.equal(run.debug().entriesCreated, 1);
-assert(run.debug().entriesReused > 0);
-assert.equal(skinCalls.count, 0, 'no CPU pose baking occurs during repeated movement');
+let worst = 0;
+for (let i = 0; i < pos.count; i += 1) {
+  const key = `${i < pos.count / 2 ? 0 : 1}|${uv.getX(i).toFixed(5)}|${uv.getY(i).toFixed(5)}`;
+  const want = expectedByUv.get(key);
+  assert.ok(want, `ghost vertex ${i} maps to a source corner (${key})`);
+  worst = Math.max(worst, Math.abs(pos.getX(i) - want[0]), Math.abs(pos.getY(i) - want[1]), Math.abs(pos.getZ(i) - want[2]));
+}
+assert.ok(worst < 1e-5, `ghost corners are the posed source vertices (worst error ${worst})`);
+// The ghost covers the same rectangle as the source: min/max of its positions match.
+const bounds = (attribute, count) => { let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity; for (let i = 0; i < count; i += 1) { minX = Math.min(minX, attribute.getX(i)); maxX = Math.max(maxX, attribute.getX(i)); minY = Math.min(minY, attribute.getY(i)); maxY = Math.max(maxY, attribute.getY(i)); } return [minX, maxX, minY, maxY]; };
+const gb = bounds(pos, pos.count);
+const sb = [...expectedByUv.values()].reduce((b, p) => [Math.min(b[0], p[0]), Math.max(b[1], p[0]), Math.min(b[2], p[1]), Math.max(b[3], p[1])], [Infinity, -Infinity, Infinity, -Infinity]);
+for (let i = 0; i < 4; i += 1) assert.ok(Math.abs(gb[i] - sb[i]) < 1e-5, 'the ghost spans the same posed silhouette extent');
 
-// Odd grid dimensions preserve both faces, including last partial cell.
-const odd = runner(gridPortrait(5, 7));
-odd.step();
-assert.equal(odd.smears()[0].geometry.getAttribute('position').count / 6, 2 * 3 * 4,
-  'odd dimensions are decimated to ceil(width/2) by ceil(height/2) blocks per face');
+// Pool reuse keeps the decimated topology and refreshes its pose.
+const createdBefore = run.debug().entriesCreated;
+for (let i = 0; i < 6; i += 1) run.step();
+assert.equal(run.ghosts().length, 3, 'one actor keeps at most three live ghosts');
+assert.ok(run.debug().entriesReused > 0, 'evicted ghosts are reused from the pool');
+assert.equal(run.debug().entriesCreated, createdBefore + 2, 'only the first three ghosts were allocated');
+for (const ghostMesh of run.ghosts()) assert.equal(ghostMesh.geometry.getAttribute('position').count / 3, 1008, 'reused ghosts stay decimated');
 
-// If an unusual portrait is not a recognized skinned grid, reuse its geometry
-// by reference rather than cloning thousands of vertices on first strike.
-const unusualPortrait = gridPortrait(4, 4, false);
-const unusual = runner(unusualPortrait);
-unusual.step();
-assert.strictEqual(unusual.smears()[0].geometry, unusualPortrait.geometry, 'unsupported topology reuses source geometry by reference');
-console.log('OK: one skinned color smear replaces decimated ghosts and preserves live textures, bones and alpha-only fade');
+// A segment count that does not divide by 2 still tiles (edge blocks are narrower) and keeps every cell covered.
+const odd = runner(gridPortrait(5, 7)); odd.step();
+assert.equal(odd.ghosts()[0].geometry.getAttribute('position').count / 6, 2 * 3 * 4, 'odd 5x7 grid merges into 3x4 blocks per face');
+
+// Not the grid (no segment metadata) -> full clone, old behaviour.
+const plain = runner(gridPortrait(4, 4, false)); plain.step();
+assert.equal(plain.ghosts()[0].geometry.getAttribute('position').count, 4 * 4 * 6 * 2, 'a geometry without grid metadata keeps the full-density clone');
+console.log('OK: afterimage ghosts are decimated, correct, pooled and capped');
