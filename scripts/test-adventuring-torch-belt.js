@@ -37,7 +37,7 @@ const document = {
     return { width: 0, height: 0, getContext() {
       return {
         createLinearGradient() { return { addColorStop() {} }; },
-        beginPath() {}, moveTo() {}, bezierCurveTo() {}, fill() {}, set fillStyle(value) { this.fill = value; },
+        beginPath() {}, moveTo() {}, bezierCurveTo() {}, fill() {}, set fillStyle(value) { this._fillStyle = value; },
       };
     } };
   },
