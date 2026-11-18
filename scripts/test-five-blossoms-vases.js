@@ -38,6 +38,16 @@ assert(tableScale>0&&tableScale<1 && proportionSource.includes("'tableSmall', 't
 const runtimeTableParts=smallTable.parts.map(part=>({...part,transform:{...part.transform,y:part.transform.y*tableScale,sy:part.transform.sy*tableScale}})); // Same floor-rooted transform used to render the authored table.
 const runtimeTop=tabletop*tableScale; // Actual world-space contact plane in table-local coordinates.
 assert(fs.existsSync('docs/assets/leaves/leaf_1.png'),'blossoms reuse the real bush leaf PNG plane');
+const mapEditorHtml=fs.readFileSync('docs/tools/map-editor/index.html','utf8'); // Editor previews must support the same natural-surface PNG fill as gameplay.
+const standaloneFoliageHtml=fs.readFileSync('docs/tools/foliage-generator/index.html','utf8'); // Authoring preview must not load a stale cached generator.
+const editorFoliageScript=mapEditorHtml.indexOf('../../js/foliage-generator.js?v=');
+const editorNaturalConfig=mapEditorHtml.indexOf('../../config/natural-surface-materials.js?v=');
+const editorNaturalMaterial=mapEditorHtml.indexOf('../../js/natural-surface-materials.js?v=');
+const editorFestivalScript=mapEditorHtml.indexOf('../../js/festival-props.js?v=');
+assert(editorFoliageScript>=0&&editorNaturalConfig>editorFoliageScript&&editorNaturalMaterial>editorNaturalConfig&&editorFestivalScript>editorNaturalMaterial,
+  'Map Editor installs the canonical body-style PNG fill pipeline before creating feast vases');
+assert(standaloneFoliageHtml.includes('js/foliage-generator.js?v=20261118blossomPng25v2'),
+  'standalone foliage author requests current flower PNG code, not an older cached generator');
 const foliageSource=fs.readFileSync('docs/js/foliage-generator.js','utf8');
 assert(foliageSource.includes("leafTexture:'assets/leaves/leaf_1.png'"),
   'blossom preset uses bush leaf art, not a white SVG replacement');
@@ -82,6 +92,11 @@ const flowerMat=leafWindow.leafMaterialForTest({...recipe,leafColorHex:'#00ffff'
 assert.equal(flowerMat.color.value,'#00ffff','a bright cyan vase actually gets cyan material, not greenish HSL');
 assert.equal(flowerMat.map.path,'assets/leaves/leaf_1.png','vase leaves keep the original bush PNG source');
 assert.equal(flowerMat.userData.hobunjiFixedBlossomColor,true,'seasonal code can recognize the fixed flower pigment');
+leafWindow.NaturalSurfaceMaterials={naturalizeMesh(){}}; // Production owns the final texture; no need to fetch a second raw leaf card.
+const finalLeaf=leafWindow.leafMaterialForTest({...recipe,leafColorHex:'#ff8000'});
+assert.equal(finalLeaf.map,null,'avoid duplicate leaf PNG fetches (and nested Map Editor 404s) when the body-filled card will replace the material');
+assert.equal(finalLeaf.alphaTest,0.5,'preserve the petal alpha cutout state for the final PNG material');
+assert.equal(finalLeaf.side,leafTHREE.DoubleSide,'festival petals remain visible from both sides');
 
 const finishStart=foliageSource.indexOf('  function applyPottedBlossomFinish('); // Run the production PNG material hook, not a parallel mock implementation.
 const finishEnd=foliageSource.indexOf('  function buildConiferTreeGroup(',finishStart);
