@@ -85,7 +85,7 @@ assert.deepEqual(smear.material[0].color.toArray(), mesh.material[0].color.toArr
 assert.deepEqual(smear.material[1].color.toArray(), mesh.material[1].color.toArray(), 'back RGB remains identical');
 assert.equal(smear.material[0].depthWrite, false, 'the translucent trail does not write occlusion depth');
 const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <skinning_vertex>',
-  fragmentShader: '#include <common>\n#include <dithering_fragment>' }; // Unit-level shader instrumentation, no live WebGL necessary.
+  fragmentShader: '#include <common>\n#include <premultiplied_alpha_fragment>\n#include <dithering_fragment>' }; // Unit-level shader instrumentation, no live WebGL necessary.
 smear.material[0].onBeforeCompile(shader, {});
 assert.match(shader.vertexShader, /transformed\.xz -= uSmearDirection/);
 assert.match(shader.fragmentShader, /gl_FragColor\.a \*= uSmearOpacity \* smoothstep/);
@@ -107,7 +107,8 @@ assert.equal(odd.smears()[0].geometry.getAttribute('position').count / 6, 2 * 3 
 
 // If an unusual portrait is not a recognized skinned grid, reuse its geometry
 // by reference rather than cloning thousands of vertices on first strike.
-const unusual = runner(gridPortrait(4, 4, false));
+const unusualPortrait = gridPortrait(4, 4, false);
+const unusual = runner(unusualPortrait);
 unusual.step();
-assert.strictEqual(unusual.smears()[0].geometry, unusual.smears()[0].geometry, 'unsupported topology must remain renderable');
+assert.strictEqual(unusual.smears()[0].geometry, unusualPortrait.geometry, 'unsupported topology reuses source geometry by reference');
 console.log('OK: one skinned color smear replaces decimated ghosts and preserves live textures, bones and alpha-only fade');
