@@ -50,6 +50,7 @@
         if (walker.root?.position) {walker.root.position.x=c+.5;walker.root.position.z=r+.5;}
       } catch (error) { lastError = 'Could not position '+walker.rec.id+': '+String(error?.message || error); }
     });
+    window.NpcScheduling?.invalidateTargetDecisions?.(); // Invalidate walker-local schedule leases before the fade reveals the newly gathered audience.
     return holding.size;
   }
   function scheduleOverride(rec) { return holding.get(rec?.id) || null; }
@@ -118,10 +119,10 @@
       if(!awarded) awarded=!!onProclaim(); // Skip/fast-forward still grants the same crown, never twice.
       return {ok:awarded,first:true,crowd:lastCast.length};
     }catch(error){lastError=String(error?.message||error);window.__farmLog?.('[five-blossom-crowning] '+lastError,'error');return {ok:false,reason:lastError,awarded};}
-    finally {holding.clear();running=false;lock?.release?.();}
+    finally {holding.clear();window.NpcScheduling?.invalidateTargetDecisions?.();running=false;lock?.release?.();} // Villagers promptly resume their previous routines on scene exit.
   }
   function init(injected) {
-    deps = injected || null;holding.clear();running=false;
+    deps = injected || null;holding.clear();window.NpcScheduling?.invalidateTargetDecisions?.();running=false;
     window.NpcScheduling?.registerTargetOverride?.(OWNER,scheduleOverride,100); // A live audience temporarily outranks dates, farmwork and shared meals.
   }
   function snapshot(){return {running,stageId:stageRoot()?.id||null,crowdCount:holding.size,lastCast,lastError};}
