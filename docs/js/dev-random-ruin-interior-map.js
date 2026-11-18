@@ -1795,6 +1795,10 @@
     }
     return false;
   }
+  function shaftBodyBlocksAtFeet(x,z,half=.2,feetY=0) {
+    const radius=Math.max(.025,Number(half)||0),feet=Number(feetY); // The same complete body volume used by heightless walking and dodging.
+    return Number.isFinite(feet)&&shaftVoxelBlocksAt(x,z,radius,feet+.055,feet+SHAFT_BODY_HEIGHT);
+  }
   function shaftBodyBlocksAt(x,z,half=.2,worldY=null){
     const radius=Math.max(.025,Number(half)||0); // A shared occupancy caller supplies this horizontal radius in world tiles.
     const explicitY=worldY!=null?Number(worldY):NaN; // Only projectiles and other height-aware probes pass a world height.
@@ -1802,7 +1806,7 @@
     const playerFeet=ruin?.supportY; // Heightless movement (walk, dodge, lunge) uses the current shaft support story.
     const airborneFeet=deps.player?._freeJump ? Number(deps.player.physicalFeetY) : NaN; // Heightless jump motion still uses the airborne player's real feet.
     const feet=Number.isFinite(airborneFeet)?airborneFeet:Number.isFinite(playerFeet)?playerFeet:0;
-    return shaftVoxelBlocksAt(x,z,radius,feet+.055,feet+SHAFT_BODY_HEIGHT);
+    return shaftBodyBlocksAtFeet(x,z,radius,feet);
   }
   // Skeeri flight is a volume sweep through the SAME live shaft/wing voxels that stop the player's
   // forced movement. Thin wall edges and solid 3D props must block the path as well as voxel centers.
@@ -2414,6 +2418,7 @@
       const floor=Math.max(0,Math.min(count-1,Math.floor(Number(requestedFloor)||0)));
       const y=floor*(ruin.shaftHubPlan?.options?.floorHeight||4);
       const blocked=new Set(),open=new Set(); // A floor-specific projection of the ACTUAL CellGrid3D solids; the old occupancy legend cannot see these voxels.
+      const gridOwners=new Map(); // Per-cell authoritative voxel grid; collisions and map projections must agree at overlapping shaft/wing mouths.
       for(const [scope,entry] of ruin.shaftGrids){
         const grid=entry.grid,level=grid.yToLevel(y+.05);
         if(level<0||level>=grid.levels)continue;
@@ -2423,6 +2428,9 @@
           const cx=Math.floor(x),cz=Math.floor(z);
           if(cx<0||cz<0||cx>=ruin.cols||cz>=ruin.rows||entry.contains&&!entry.contains(x,z))continue;
           const key=cx+','+cz;
+          let owner=gridOwners.get(key);
+          if(owner===undefined){owner=window.RuinLayerPlayable?.selectGrid?.(ruin.shaftGrids,cx+.5,cz+.5,y)||null;gridOwners.set(key,owner);}
+          if(owner&&owner!==grid)continue; // An unopened border in an overlapping wing cannot hide an open, selectable shaft portal.
           if(grid.isSolid(col,row,level))blocked.add(key);
           else if(grid.canStand(col,row,level))open.add(key);
         }
@@ -2434,7 +2442,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,shaftBodyBlocksAt,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,shaftBodyBlocksAt,shaftBodyBlocksAtFeet,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     checkpointTravel:ruin.checkpointRuntime?.getState?.()||null,
     floorShellRepair:ruin.floorShellRepair?.count||0, // Visible supported cells after intentionally floorless puzzle areas have been cut out.
