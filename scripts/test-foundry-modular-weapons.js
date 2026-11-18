@@ -20,19 +20,25 @@ const torchShaft = api.getConfig().shafts.hachutuTorchStaff; // Entire live staf
 const blowgunShaft = api.getConfig().shafts.bshuakauitl; // Approved donor controls mount types, heads, exclusions and fitting.
 assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
-assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
+assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff_short.png'); // Dedicated art with half-length, slightly thinner branch clusters (the non-modular Torch-Staff keeps the original sprite).
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
 // The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
 const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
 assert(torchShaft.shaftArtTransform.enabled === true && torchStretch > 1, 'Torch-Staff haft is lengthened');
-const BOTTOM_LIFT = -140, TOP_DROP = 50; // Both ends are drawn in toward the middle so their heads clear the branch clusters.
-const stretchY = (y, lift = 0) => 602 + torchStretch * (y - 602) + (y > 602 ? lift : TOP_DROP);
-const stretched = mounts => plain(mounts.map(m => ({ type: m.type, start: { x: m.start.x, y: stretchY(m.start.y, BOTTOM_LIFT) } })));
-const near = (a, b, msg) => { assert.equal(a.length, b.length, msg); a.forEach((m, i) => { assert.equal(m.type, b[i].type, msg); assert(Math.abs(m.start.x - b[i].start.x) < 1e-6 && Math.abs(m.start.y - b[i].start.y) < 1e-6, msg); }); };
-near(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts),
-  'Torch-Staff retains all donor mount types and (stretched) starts');
-near(plain(torchShaft.mounts.slice(0, 2).map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts.slice(0, 2)),
-  'Both inherited eye mounts retain their donor geometry, stretched with the haft');
+// Torch-Staff mounts keep the donor's types, x positions and arrow vectors (stretched with the haft) but are laid out
+// symmetrically about the sprite centre, just inside its shortened branch clusters.
+const stretchY = y => 602 + torchStretch * (y - 602);
+const near = (a, b, msg) => assert(Math.abs(a - b) < 1e-6, msg + ` (${a} vs ${b})`);
+blowgunShaft.mounts.forEach((m, i) => {
+  const t = torchShaft.mounts[i];
+  assert.equal(t.type, m.type, 'Torch-Staff retains donor mount types');
+  near(t.start.x, m.start.x, 'Torch-Staff retains donor mount x');
+  near(t.end.x - t.start.x, m.end.x - m.start.x, 'Torch-Staff retains donor arrow x');
+  near(t.end.y - t.start.y, torchStretch * (m.end.y - m.start.y), 'Torch-Staff retains donor arrow lengths, stretched with the haft');
+});
+const tm = type => torchShaft.mounts.filter(m => m.type === type);
+for (const type of ['eye', 'tang']) near(tm(type)[0].start.y + tm(type)[1].start.y, 1204, `${type} mounts mirror about the sprite centre`);
+const stretchedBottomEyeStart = torchShaft.mounts[0].start.y; // Donor index 0 is the lower eye.
 assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
 assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
@@ -46,7 +52,7 @@ api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
 const originalMount = blowgunShaft.mounts[0];
 assert(Math.abs(shiftedMounts[0].start.x - ((originalMount.start.x - 225) * 1.5 + 250)) < 1e-6);
-assert(Math.abs(shiftedMounts[0].start.y - ((stretchY(originalMount.start.y, BOTTOM_LIFT) - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
+assert(Math.abs(shiftedMounts[0].start.y - ((stretchedBottomEyeStart - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
 assert.equal(api.matchingMounts(api.getConfig().shafts.hachutuTorchStaff, api.getConfig().heads.warhammer).length, 2,
   'both sleeve mounts remain usable after shaft duplication transform');
 const extraCopy = plain(api.getConfig());

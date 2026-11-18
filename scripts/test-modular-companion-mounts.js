@@ -58,19 +58,19 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       // whose tangs are independently offset by the artist rather than center-snapped.
       if (shaftKey === 'hachutuTorchStaff') {
         const donor = committed.shafts.bshuakauitl; // Donor validates copied starts while leaving authored staff tang tips independent.
-        const k = shaft.shaftArtTransform.scaleY, sy = y => 602 + k * (y - 602) + (y > 602 ? -140 : 50); // Lengthened donor copy; both ends drawn in toward the middle (bottom -140, top +50 net).
+        const k = shaft.shaftArtTransform.scaleY; // The staff haft is a deliberately lengthened donor copy with its own short-branch art.
         assert(shaft.shaftArtTransform.enabled === true && k > 1, 'Torch-Staff haft is lengthened');
         const close = (a, b) => Math.abs(a - b) < 1e-6;
         donor.mounts.forEach((m, i) => {
           const t = shaft.mounts[i];
           assert.equal(t.type, m.type, 'Torch-Staff retains donor mount types');
-          assert(close(t.start.x, m.start.x) && close(t.start.y, sy(m.start.y)), 'Torch-Staff retains donor mount starts, stretched with the haft');
-          if (i < 2) assert(close(t.end.x, m.end.x) && close(t.end.y, sy(m.end.y)), 'Torch-Staff retains both source eye mounts');
+          assert(close(t.start.x, m.start.x) && close(t.end.x - t.start.x, m.end.x - m.start.x), 'Torch-Staff retains donor mount x geometry');
+          assert(close(t.end.y - t.start.y, k * (m.end.y - m.start.y)), 'Torch-Staff retains donor arrow lengths, stretched with the haft');
         });
-        [[941.6863824754939, 221.7599119115615], [303.16373428761597, 158.12411992422858]].forEach(([y, x], i) => {
-          const e = shaft.mounts[2 + i].end;
-          assert(close(e.x, x) && close(e.y, sy(y)), 'Reauthored staff tang tips are preserved (stretched)');
-        });
+        for (const type of ['eye', 'tang']) {
+          const pair = shaft.mounts.filter(m => m.type === type);
+          assert(close(pair[0].start.y + pair[1].start.y, 1204), 'Torch-Staff ' + type + ' mounts mirror about the sprite centre');
+        }
       }
       continue;
     }
