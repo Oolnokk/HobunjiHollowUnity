@@ -345,7 +345,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     let mat = _leafMatCache.get(preset);
     if (!mat) {
       const tex = getLeafTexture(preset.leafTexture);
-      const col = new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
+      const col = preset.leafColorHex
+        ? new T.Color(preset.leafColorHex) // Preserve exact bright authored flower colors; do not remap white/pink through green foliage HSL.
+        : new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
       // Opaque alphaTest cutout, NOT alpha-blended — matches the source
       // tool's getLeafMaterial() exactly, comment and all: "Leaf art is a
       // binary cutout, not blended glass. This avoids transparent-card
@@ -1099,6 +1101,34 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     knotLength: 1.6, knotRadius: 0.11, knotUpDownBias: 0.6,
     rootsEnabled: true, rootCount: 5, rootLength: 0.7, rootRadius: 0.13,
     rootTaper: 0.78, rootSpread: 0.8, rootCurl: 0.35, rootWonk: 0.45, variantCount: 4 };
+
+  const POTTED_BLOSSOM_BASE = Object.freeze({ // Decorative tabletop sapling: exactly ONE tier (rung) of five branches.
+    ...TREE_PRESETS.bush,
+    radialSegments:6, ringSegments:8, variantCount:2,
+    trunkLength:0.68, trunkRadius:0.046, trunkBend:0.22, trunkWonk:0.25, trunkTwist:0.18,
+    trunkNoise:0.2, trunkNoiseOctaves:2,
+    rootsEnabled:false, knotEnabled:true, knotAt:0.68, knotTiers:1, knotTierSpacing:0,
+    knotCount:5, knotLength:0.34, knotRadius:0.024, knotTaper:0.86,
+    knotUpDownBias:0.48, knotCurl:0.3, knotWonk:0.18,
+    leavesPerBranch:4, leafWidth:0.24, leafLength:0.32,
+    leafRandYawDeg:115, leafRandPitchDeg:35, leafRandRollDeg:20, leafRadial:0.09,
+    leafSpread:0.72, leafJitterAlong:0.05, leafJitterSide:0.03, leafJitterNormal:0.035,
+    leafTexture:'assets/leaves/leaf_1.png',
+    barkColorHex:0x4b9a62, scaleMul:1,
+  });
+  const pottedBlossomPresets = new Map(); // One stable per-color preset; its geometry/material share the existing tree-variant cache.
+  function buildPottedBlossomTreeMesh(seed, leafColorHex) {
+    const hex = typeof leafColorHex === 'string' && /^#[0-9a-f]{6}$/i.test(leafColorHex)
+      ? leafColorHex.toLowerCase() : '#ffb3b3'; // Invalid or missing swatches never poison a shared variant key.
+    let preset = pottedBlossomPresets.get(hex);
+    if (!preset) {
+      preset = Object.freeze({ ...POTTED_BLOSSOM_BASE, leafColorHex:hex });
+      pottedBlossomPresets.set(hex, preset);
+    }
+    const tree = buildTreeInstance('pottedBlossom:' + hex, preset, xfnv1a('pottedBlossom:' + String(seed)));
+    tree.userData.pottedBlossom = { seed:String(seed), leafColor:hex, woodColor:'#4b9a62', branchTiers:1, branchesPerTier:5 };
+    return tree; // Instancing clones meshes only: variant BufferGeometries and materials remain cached.
+  }
 
   function buildConiferTreeGroup(preset, seedU32) {
     const rand = mulberry32(seedU32);
@@ -2975,6 +3005,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     buildWeedsMesh(col, row) {
       const seedU32 = xfnv1a(`wd_${col}_${row}`);
       return buildWeedsGroup(seedU32);
+    },
+    buildPottedBlossomTreeMesh(seed, leafColorHex) {
+      return buildPottedBlossomTreeMesh(seed, leafColorHex); // Public generator entry for festival vases, including editor previews.
     },
     buildShrubMesh(col, row) {
       const seedU32 = xfnv1a(`sh_${col}_${row}`);
