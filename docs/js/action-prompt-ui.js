@@ -98,6 +98,20 @@
     window.addEventListener?.('blur',() => claimedArchPointerPresses.clear()); // Router owns release/cancel on blur; discard our local pointer lookup.
   }
 
+  let archClaimsCache = {router:null,revision:-1,buttons:null}; // Reuse opt-in arch rows across HUD frames until an input claim actually changes.
+  function activeArchClaimButtons() {
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    const revision = router?.getRevision?.(); // No allocation: input router increments this only on advertised-claim changes.
+    if (revision !== undefined && archClaimsCache.router === router && archClaimsCache.revision === revision) return archClaimsCache.buttons;
+    const buttons = ARCH_ACTIONS.map(actionId => {
+      const claim = router?.claimFor?.(actionId);
+      return claim?.showInArch ? {action:'context_arch_' + actionId,inputAction:actionId,
+        label:claim.label,icon:claim.hudIcon,style:'secondary',allowed:true,worldInteraction:true} : null;
+    });
+    archClaimsCache = {router,revision,buttons};
+    return buttons;
+  }
+
   function createActionArchLayout(buttons, heldMode, sitInteraction) {
     const nonClimbBtns = buttons.filter(b => b.action !== 'climb_branch' && b.nativeInput !== true); // Only these occupy the five physical action buttons.
     const isItemButton = b => b.inputAction === 'itemAction1' || b.inputAction === 'itemAction2'
@@ -109,13 +123,10 @@
     const slots = heldMode === 'item' && !sitInteraction
       ? [nonClimbBtns[0], nonClimbBtns[1], nonClimbBtns[2], nonClimbBtns[3], nonClimbBtns[4]]
       : [toolBtns[0], toolBtns[1], toolBtns[2], itemBtns[0], itemBtns[1]]; // One layout supplies both the buttons and their floating hints.
-    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
-    for (const [i, actionId] of ARCH_ACTIONS.entries()) {
-      const claim = router?.claimFor?.(actionId);
-      if (!claim?.showInArch) continue;
-      slots[i] = { action:'context_arch_' + actionId, inputAction:actionId,
-        label:claim.label, icon:claim.hudIcon, style:'secondary', allowed:true, worldInteraction:true };
-      // A claim's actual priority/press callback remains owned by the router, never duplicated in this presentational row.
+    const contextualButtons = activeArchClaimButtons(); // Cached by router revision so this adds no per-frame claim-owner scans.
+    for (let i = 0; i < contextualButtons.length; i++) {
+      if (contextualButtons[i]) slots[i] = contextualButtons[i];
+      // The actual callback and priority remain owned by the canonical input router.
     }
     return { nonClimbBtns, toolBtns, itemBtns, slots };
   }
