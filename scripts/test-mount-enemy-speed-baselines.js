@@ -41,7 +41,7 @@ assert.equal(mountHelpers.mountedTopSpeedPxS(), 0, 'zero-speed player effects ca
 mountContext.window.CompanionMovementSpeed = null;
 assert(Math.abs(mountHelpers.mountedTopSpeedPxS() - 238 * 1.1 * 1.2) < 1e-9, 'standalone tools retain a safe base-speed fallback');
 
-const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt)');
+const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null)');
 const moveEnd = gameSource.indexOf('\n      // Grid-walkability predicate', moveStart);
 assert(moveStart > 0 && moveEnd > moveStart, 'real shared creature movement function is extractable');
 const player = {}; // Player-owned allied pets must not receive the enemy chase floor.
@@ -84,6 +84,9 @@ assert.equal(patrol.x, 110, 'idle and patrol locomotion stays authored');
 const retreat = enemy('chase', 110);
 move(retreat, 1000, 0, 95, 1);
 assert.equal(retreat.x, 95, 'special movement requests are never normalized as pursuit');
+const lichRetreat = enemy('chase', 110, { lichType: 'hronal' }); // Lich tactical retreat requests authored chaseSpeed but must not receive pursuit normalization.
+move(lichRetreat, 1000, 0, 110, 1, { pursuit: false });
+assert.equal(lichRetreat.x, 110, 'explicitly defensive movement keeps the authored speed even when equal to chaseSpeed');
 const ally = enemy('chase', 110, { master: player, isCompanion: true });
 move(ally, 1000, 0, 110, 1);
 assert.equal(ally.x, 110, 'player-owned pets are not accelerated like enemies');
