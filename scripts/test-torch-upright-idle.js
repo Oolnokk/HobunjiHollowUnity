@@ -228,9 +228,19 @@ for (let i = 0; i < 4; i++) {
 }
 holder.userData.authoredToolActionActive = true;
 const orbitCountBeforeAction = orbitCalls; // Confirms the idle-only orbit does not double-scale swing and throw frames.
+let throwing = true; // Simulates the real windup-to-Strike torch throw lifecycle, independent of generic sword swings.
+window.AdventuringTools = { isThrowSequenceActive: () => throwing };
 holder.updateMatrixWorld();
 assert.equal(orbitCalls, orbitCountBeforeAction, 'active torch actions already own their orbit and must not get an idle transform');
 assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, false, 'real authored torch actions own their pose');
+assert.equal(renderedScale, .68, 'the held torch does not balloon to unscaled size during its throwing animation');
+assert.equal(holder.scale.x, 1, 'torch throw scaling is temporary and cannot accumulate across frames');
+holder.updateMatrixWorld();
+assert.equal(renderedScale, .68, 'repeated throw frames retain a stable authored torch size');
+assert.equal(holder.scale.x, 1, 'repeated throw frame restores the holder scale');
+throwing = false; // Ordinary torch swings and other authored actions retain their original animation scale.
+holder.updateMatrixWorld();
+assert.equal(renderedScale, 1, 'a torch swing is not shrunk by the throw-only fix');
 holder.userData.authoredToolActionActive = false;
 holder.updateMatrixWorld();
 assert.equal(window.WeaponToolStances.debugSnapshot().stanceApplied, true, 'torch returns to upright idle after its action');
