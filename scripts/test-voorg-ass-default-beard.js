@@ -122,6 +122,7 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
       ],
     } } },
   }; // Base coat owns both pattern slots; beard remains anatomical, not a paintable allele.
+  const paintedSig = render.genotypeSignature('voorg-ass', paintedGenotype); // Verifies live composing never writes hidden genes into the paint signature.
   for (const frame of ['idle', 'run1', 'run2']) {
     paintCalls.length = 0;
     const result = await render.composeFrame('voorg-ass', frame, paintedGenotype);
@@ -130,14 +131,13 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
     assert.deepEqual(colorAt(1), [0xee, 0xee, 0xee], frame + ': highlight stays authored');
     assert.deepEqual(colorAt(2), [0xc0, 0x40, 0x40], frame + ': dark hoof/non-coat detail remains unpatterned');
     assert.deepEqual(colorAt(3), [0x20, 0xd0, 0xf0], frame + ': beard inherits the base coat Color Pools paint');
-    assert.equal(paintCalls.length, 2, frame + ': one body and one beard paint pass');
-    assert.deepEqual(paintCalls[0].paintedPixels, [0], frame + ': body pattern is clipped to the source-key coat');
-    assert.deepEqual(paintCalls[1].paintedPixels, [3], frame + ': beard receives the same base region without touching hooves');
+    assert.equal(paintCalls.length, 1, frame + ': body and beard share one continuous Color Pools motif pass');
+    assert.deepEqual(paintCalls[0].paintedPixels, [0, 3], frame + ': single coat stencil includes beard but excludes hoof and highlights');
     assert(paintCalls.every(call => call.patternCount === 2), frame + ': both pattern slots cover body and beard');
     assert(paintCalls.every(call => call.dyeHex === '#20d0f0'), frame + ': both share the same coat dye');
   }
   assert.equal(paintedGenotype.beard1, undefined, 'Color Pools does not create beard genes');
-  assert.equal(render.genotypeSignature('voorg-ass', paintedGenotype), render.genotypeSignature('voorg-ass', paintedGenotype), 'painted genotype signature remains deterministic');
+  assert.equal(render.genotypeSignature('voorg-ass', paintedGenotype), paintedSig, 'painting the beard does not mutate the genotype signature');
 
   assert.equal(render.genotypeSignature('voorg-ass', genotype), sig, 'default beard never mutates the inherited genotype');
   assert.equal(genotype.beard1, undefined, 'no beard1 allele is created in a saved genotype');
