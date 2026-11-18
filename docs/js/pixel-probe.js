@@ -1243,6 +1243,13 @@
     if (mountedRide && window.Mounts?.rideState !== 'none') {
       lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s coasting=${!!mountedRide.coasting} wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s combatBurst=${Number(mountedRide.combatBoostSeconds || 0).toFixed(2)}s/x${Number(mountedRide.combatBoostMultiplier || 1).toFixed(2)} windup=${mountedRide.windupOwner || '-'} paid=${Math.round((mountedRide.windupSpentFraction || 0)*100)}% x${Number(mountedRide.windupMultiplier || 1).toFixed(2)} momentumDamage=x${Number(mountedRide.meleeDamageMultiplier || 1).toFixed(2)} orbit=${mountedRide.orbitActive ? (mountedRide.orbitTarget || '-') : '-'} radius=${Number(mountedRide.orbitRadiusPx || 0).toFixed(0)}px recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
     }
+    if (mountedRide && window.Mounts?.rideState !== 'none') {
+      lines.push(`Mount speed sources: playerRun=${Number(mountedRide.playerRunSpeedPxS || 0).toFixed(1)}px/s unboostedRiding=${Number(mountedRide.topSpeedPxS || 0).toFixed(1)}px/s (run x1.1 x training)`); // Phone-visible proof of current speed inheritance independent of actual coasting velocity.
+    }
+    const lastEnemyPursuit = window.__enemyPursuitSpeedDebug; // Shared hostile mover publishes the latest ordinary chase, without a frame-level console.
+    if (lastEnemyPursuit?.lastEnemyId) {
+      lines.push(`Enemy pursuit: last=${lastEnemyPursuit.lastEnemyId} requested=${Number(lastEnemyPursuit.lastRequestedPxS || 0).toFixed(1)}px/s resolved=${Number(lastEnemyPursuit.lastResolvedPxS || 0).toFixed(1)}px/s floor=${Number(lastEnemyPursuit.targetPxS || 0).toFixed(1)}px/s`);
+    }
     const mountedMelee = window.Combat?.mountedCombat?.debug; // Mobile diagnostics for fixed one-off strikes and their combo-mastery momentum.
     if (mountedMelee && window.Mounts?.rideState === 'mounted') {
       lines.push(`Mounted melee: attempted=${mountedMelee.attempts} strikes=${mountedMelee.strikes} last=${JSON.stringify(mountedMelee.lastHit || null)}`);

@@ -1874,7 +1874,7 @@
     let moving = false; // Returned to shared hostile locomotion/animation state.
     if (dist < minRange) {
       const away = aimAngle + Math.PI; // Retreat vector keeps ranged lich from face-tanking.
-      moving = !!deps.moveCreatureToward?.(lich, lich.x + Math.cos(away) * tile * 1.5, lich.y + Math.sin(away) * tile * 1.5, lich.def.chaseSpeed, dt);
+      moving = !!deps.moveCreatureToward?.(lich, lich.x + Math.cos(away) * tile * 1.5, lich.y + Math.sin(away) * tile * 1.5, lich.def.chaseSpeed, dt, { pursuit: false }); // Repositioning away from an approaching player is not a pursuit-speed-floor event.
     } else if (dist > maxRange) {
       moving = !!deps.moveCreatureToward?.(lich, target.x, target.y, lich.def.chaseSpeed, dt);
     } else if (lich._lichPrimaryCooldownS > 0.4) {

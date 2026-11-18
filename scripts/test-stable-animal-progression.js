@@ -168,7 +168,8 @@ stable[1].level = 20;
 stable[1].animalPerks = { mountSpeed: 1, mountAcceleration: 1, mountManeuverability: 1,
   mountMeleeDamage: 2, mountMeleeStamina: 3, mountCombatBurst: 4, mountCliffClimb: 1 }; // Existing Cliff Runner investment stays active alongside combat perks.
 context.Mounts.updateMountedMovement(0.5);
-assert.equal(mountedChecks.speed, 104, 'Fleet Stride scales only the mount riding top speed');
+assert.equal(mountedChecks.speed, 100, 'Fleet Stride no longer rewrites any mount species speed, even temporarily');
+assert.equal(context.StableAnimalProgression.mountRidingModifiers().baseSpeed, 1.04, 'Fleet Stride still supplies its +4% multiplier to the mounted movement authority');
 assert.equal(mountedChecks.accel, 11, 'Quick Start scales the existing mount acceleration');
 assert(Math.abs(mountedChecks.turnClamp - 0.108) < 1e-9, 'Sure Turning expands the existing heading turn clamp');
 assert.equal(mount.def.mountSpeed, 100, 'temporary riding speed scaling never mutates the shared mount definition');
