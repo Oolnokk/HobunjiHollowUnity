@@ -162,6 +162,9 @@
       + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
       + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
       + ' · last: ' + fmt(wings?.lastCaptiveRestore) + '</div>'
+      + '<div>Portrait offset repairs: ' + (wings?.captivePositionRestores ?? 0)
+      + ' · newer pose retained: ' + (wings?.captivePositionHandoffs ?? 0)
+      + ' · late replay fixed: ' + (wings?.staleCarryPositionCorrections ?? 0) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
