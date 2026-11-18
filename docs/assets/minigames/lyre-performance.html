@@ -5990,6 +5990,10 @@
         const previous = JSON.parse(localStorage.getItem('musicSystemDemoSettingsV13') || 'null'); // NPC/player iframe saves must not overwrite the legacy Music Lab auto-pick preset.
         if (Array.isArray(previous?.autoPickSlots)) serializable.autoPickSlots = previous.autoPickSlots;
         else delete serializable.autoPickSlots;
+        if (!gameMusicDevMode()) {
+          serializable.tonicMidi = previous && Number.isFinite(previous.tonicMidi) ? previous.tonicMidi : 48; // Keep the last developer choice without allowing it to sound in ordinary gameplay.
+          serializable.scaleName = previous && SCALES[previous.scaleName] ? previous.scaleName : 'Pentatonic Minor';
+        }
       } catch (_) { delete serializable.autoPickSlots; }
     }
     try { localStorage.setItem('musicSystemDemoSettingsV13', JSON.stringify(serializable)); }
@@ -7706,6 +7710,12 @@
   // Same-origin host bridge: external gameplay controls call the real music engine
   // during the user's trusted pointer gesture instead of forwarding synthetic DOM events.
   window.HobunjiMusicControlBridge = {
+    syncGameplayTuning() {
+      if (!GAME_OVERWORLD_MUSIC || gameMusicDevMode() || state.tonicMidi === 48 && state.scaleName === 'Pentatonic Minor') return false;
+      applyPerformanceTonic(48,{persist:false}); // Restores the fixed key when Dev Mode is turned off during an already-open performance.
+      applyPerformanceScale('Pentatonic Minor',{persist:false});
+      return true;
+    },
     wakeAudio() {
       return ensureAudio();
     },
@@ -8250,6 +8260,7 @@
         heldAutomaticDurationMs: heldAutomaticNote ? Math.max(0, bridgeNow - oldestHeldAt) : 0,
         heldAutomaticNoteCount: heldAutomaticNote ? heldFrets.length : 0,
         pluckInputMode: state.pluckInputMode || 'direct',
+        tonicMidi: state.tonicMidi, scaleName: state.scaleName, // Player-side mobile diagnostics confirm the actual sounding key and scale.
         kurrayaMixLevel:state.kurrayaMixLevel,
         metronomeMixLevel:state.metronomeMixLevel,
         padMixLevel:state.padMixLevel,
