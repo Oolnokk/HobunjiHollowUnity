@@ -122,7 +122,7 @@
   }
   function init(injected) {
     deps = injected || null;holding.clear();running=false;
-    window.NpcScheduling?.registerTargetOverride?.(OWNER,scheduleOverride);
+    window.NpcScheduling?.registerTargetOverride?.(OWNER,scheduleOverride,100); // A live audience temporarily outranks dates, farmwork and shared meals.
   }
   function snapshot(){return {running,stageId:stageRoot()?.id||null,crowdCount:holding.size,lastCast,lastError};}
   window.FestivalBlossomCeremony = Object.freeze({init,play,buildScene,arrangeCrowd,snapshot,__test:{livingVillagers,scheduleOverride,stageSpot}});
