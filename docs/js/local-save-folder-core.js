@@ -85,7 +85,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
-      req.onsuccess = () => resolve(req.result ?? null);
+      req.onsuccess = () => resolve(window.HobunjiAndroidFiles?.restoreHandle?.(req.result) ?? req.result ?? null); // Restore Android SAF directory token when read from IndexedDB.
       req.onerror = () => reject(req.error);
     });
   }
@@ -94,7 +94,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(value, key);
+      tx.objectStore(STORE).put(window.HobunjiAndroidFiles?.serializeHandle?.(value) ?? value, key); // Preserve normal native handles; serialize Android SAF tokens.
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

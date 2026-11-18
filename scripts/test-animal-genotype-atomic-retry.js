@@ -48,7 +48,7 @@ function makeHarness(options = {}) {
     performance: { now: () => 0 },
     fetch: async () => {
       maskAttempts++;
-      if (options.failMasksOnce && maskAttempts === 1) throw new Error('transient mask request error');
+      if (options.failMasksAlways || (options.failMasksOnce && maskAttempts === 1)) throw new Error('transient mask request error');
       return { ok: true, json: async () => ({
         'gar-wolf': { idle: { encoding: 'selected-pixel-index-runs-v1', width: 2, height: 1, runs: [0, 2] } },
       }) };
@@ -116,5 +116,31 @@ function assertComplete(canvas) {
     this.width = source.width; this.height = source.height; this.draws = ['recovered-paint'];
   }
   assertComplete(await painted.compositor.composeFrame('gar-wolf', 'idle', paintedGenes));
+  // Full-body Nelk has no authored mask and must not depend on the shared
+  // masks JSON; otherwise Android file/fetch failures strand every layer.
+  const nelkGenes = {
+    base: { color: '#775533' },
+    brushtail: { copies: 1, enabled: true, color: '#BB8855' },
+    cape: { copies: 1, enabled: true, color: '#669944' },
+    spectacles: { copies: 1, enabled: true, color: '#88AA66' },
+  }; // Exercises the caped-tail variant and all three Nelk overlays.
+  const nelk = makeHarness({ failMasksAlways: true });
+  const completeNelk = await nelk.compositor.composeFrame('nelk', 'idle', nelkGenes, 'B');
+  for (const sprite of ['nelk_idle.png', 'nelk_brushtail-caped_idle.png',
+    'nelk_cape_idle.png', 'nelk_spectacles_idle.png', 'nelk_eye-B.png']) {
+    assert.ok(completeNelk.draws.some(v => v.includes(sprite)), 'Nelk must draw ' + sprite);
+  }
+  assert.equal(nelk.maskAttempts, 0, 'Nelk should not fetch unrelated mask JSON');
+  await nelk.compositor.prewarm(['nelk']);
+  assert.equal(nelk.maskAttempts, 0, 'Nelk-only prewarm skips mask JSON');
+
+  const nelkEye = makeHarness({ failMasksAlways: true, failImage: 'nelk_eye-B.png' });
+  await assert.rejects(nelkEye.compositor.composeFrame('nelk', 'idle', nelkGenes, 'B'),
+    /Incomplete nelk\/idle genotype artwork \(eyes\)/,
+    'Failed Nelk eye overlay must not commit a plain texture');
+  const recoveredNelk = await nelkEye.compositor.composeFrame('nelk', 'idle', nelkGenes, 'B');
+  assert.ok(recoveredNelk.draws.some(v => v.includes('nelk_eye-B.png')), 'Nelk eye retries successfully');
+  assert.equal(nelkEye.maskAttempts, 0, 'Nelk retry must not depend on masks');
+
   console.log('Animal genotype atomic/retry tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

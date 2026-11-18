@@ -1,0 +1,9 @@
+{
+  "name": "hobunji-hollow-android-assets",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned WebGL runtime used by the Android offline APK",
+  "dependencies": {
+    "three": "0.128.0"
+  }
+}

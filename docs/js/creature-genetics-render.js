@@ -595,7 +595,7 @@
       return null;
     }
     const baseUrl = spec.base[frame] || spec.base.idle;
-    const masks = await loadBaseMasks();
+    const masks = spec.fullBaseRecolor ? null : await loadBaseMasks(); // Full-recolor species such as Nelk do not need base masks; unrelated fetch errors must never block their eyes or patterns.
     const tMasks = performance.now();
     const mask = masks?.[kind]?.[frame];
     const storedBaseColor = genotype?.base?.color; // Retained for the bodystripes overlay when its Drenkirra color roles swap.
@@ -735,7 +735,7 @@
   async function prewarm(kinds) {
     const t0 = performance.now();
     const targets = kinds && kinds.length ? kinds : Object.keys(SPECIES);
-    try { await loadBaseMasks(); }
+    try { if (targets.some(kind => SPECIES[kind] && !SPECIES[kind].fullBaseRecolor)) await loadBaseMasks(); }
     catch (error) {
       // Prewarm is opportunistic: a transient mask failure must not cancel the
       // rest of the sprite prefetch or become an unhandled rejection at startup.
