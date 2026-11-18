@@ -174,9 +174,33 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           failures.push({side,depth,teleported,held,y,voxelBlocked:collision?.grid?.blockedHere??null});
       }
     }
-    return {seed:state.seed,requestedSeed,portals:floor.sides,checked:floor.sides.length*(wall+1),probe,failures};
+    // These are the real V50 entrance-wall meshes, not decorative lookalikes.
+    // At least one rendered entrance wall MUST have a structural, height-aware collision footprint.
+    const wallCollision={rendered:0,blocked:0,instanced:0};
+    const entranceRoot=api.getRuntimeContext()?.root;
+    entranceRoot?.traverse?.(node=>{
+      if(!node.isMesh||!node.userData?.ruinInteriorWall||node.visible===false||wallCollision.rendered>=120)return;
+      const geometry=node.geometry;if(!geometry)return;
+      geometry.computeBoundingBox?.();if(!geometry.boundingBox)return;
+      node.updateWorldMatrix?.(true,false);
+      const center=geometry.boundingBox.getCenter(new THREE.Vector3());
+      if(node.isInstancedMesh){
+        if(node.count<1)return;
+        const matrix=new THREE.Matrix4();
+        node.getMatrixAt(0,matrix);
+        center.applyMatrix4(matrix);
+        wallCollision.instanced++;
+      }
+      center.applyMatrix4(node.matrixWorld);
+      wallCollision.rendered++;
+      const hit=window.DevRandomRuinTileOccupancy?.solidAt?.(center.x,center.z,.03,center.y);
+      if(hit?.tag==='v50-structural-wall')wallCollision.blocked++;
+    });
+    return {seed:state.seed,requestedSeed,portals:floor.sides,checked:floor.sides.length*(wall+1),probe,failures,wallCollision};
   });
   assert.deepEqual(cavePortals.failures,[], 'real two-door F2 cave remains physically blocked: '+JSON.stringify(cavePortals));
+  assert(cavePortals.wallCollision.rendered>0 && cavePortals.wallCollision.blocked>0,
+    'visible V50 entrance masonry must participate in the actual collision-footprint registry: '+JSON.stringify(cavePortals.wallCollision));
 
   console.log('[F2 portal probe passed]',JSON.stringify({seed:cavePortals.seed,portals:cavePortals.portals,checked:cavePortals.checked}));
 
