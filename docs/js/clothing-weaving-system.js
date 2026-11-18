@@ -3213,8 +3213,8 @@
     const colorHex = swapPatternColors ? clothColorHex : patternColorHex;
     const basePatternKey = patternStackCanvasKey(tinted, patterns, colorHex, prefix);
     const trimSlot = normalizeTrimDyeSlot(descriptor?.weaving?.trim?.dyeSlot);
-    const fullKey = `${basePatternKey}|natural-markings:${JSON.stringify(naturalMarkings)}` + (trimPattern
-      ? `|garment-trim:${trimSlot}:${trimColorHex}:${JSON.stringify(trimPattern)}`
+    const fullKey = `${basePatternKey}|natural-markings:${compactPatternCacheKey(JSON.stringify(naturalMarkings))}` + (trimPattern
+      ? `|garment-trim:${trimSlot}:${trimColorHex}:${compactPatternCacheKey(JSON.stringify(trimPattern))}`
       : ''); // Final-cache key includes both passes so trim-only and woven+trim sprites never alias plain woven output.
     const cached = cachedPatternedCanvas(fullKey);
     if (cached) {
@@ -3236,7 +3236,7 @@
             decorated,
             [trimPattern],
             trimColorHex,
-            `${prefix}:garment-trim:${trimSlot}:${JSON.stringify(normalizePatternStack(patterns))}`,
+            `${prefix}:garment-trim:${trimSlot}:${compactPatternCacheKey(JSON.stringify(normalizePatternStack(patterns)))}`,
             img,
             'clothing-trim'
           ); // Trim goes last so it overlaps reusable motifs and receives its own independent black outline.
