@@ -38,6 +38,7 @@
     appliedRoots: 0,
     skippedShoulderPets: 0,
     skippedBandits: 0,
+    skippedMountedPhysicalGround: 0, // Counts mounts whose height was resolved by the shared physical town surface, not by this later render hook.
     maxLift: 0,
     lastActor: null,
     lastLift: 0,
@@ -189,6 +190,13 @@
       // PlayerBodyAttachmentBridge and already inherit the player's composed
       // subtle-elevation transform. Lifting them again here would double it.
       lastDebug.skippedShoulderPets++;
+      return false;
+    }
+    if (area === 'town' && actor === window.Mounts?.rideEntity && actor._mountedTownSurfaceActive === true) {
+      // Mounts now sample the same absolute bridge/porch height as the player's
+      // physical feet. Lifting the carrier again here (after rider pinning)
+      // would both double-raise it and visibly detach its rider.
+      lastDebug.skippedMountedPhysicalGround++;
       return false;
     }
     if (!actorIsActiveHere(actor, area)) return false;
@@ -423,6 +431,7 @@
       appliedRoots: 0,
       skippedShoulderPets: 0,
       skippedBandits: 0,
+      skippedMountedPhysicalGround: 0, // Counts physically grounded town mounts skipped by the later animal render-lift hook.
       maxLift: 0,
       lastActor: null,
       lastLift: 0,
