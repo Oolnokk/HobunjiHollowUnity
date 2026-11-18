@@ -4997,6 +4997,17 @@
         }
         return _creatureTexCache.back.get(url);
       }
+      function releaseCreatureTemporaryFrameTexture(url) {
+        // Generated pet portraits are unique to an equip/appearance, unlike permanent species PNG URLs.
+        if (typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return false;
+        const front = _creatureTexCache.front.get(url); // Disposed when a shoulder frame is replaced or unequipped.
+        const back = _creatureTexCache.back.get(url); // Distinct only on renderers without shared front/back mirroring.
+        _creatureTexCache.front.delete(url);
+        _creatureTexCache.back.delete(url);
+        front?.dispose?.();
+        if (back && back !== front) back.dispose?.();
+        return !!(front || back);
+      }
       // Genotype-composited textures for pattern-layer livestock (gar-wolf,
       // dabinggi-hound) — mirrors _creatureTexCache's URL-keyed pattern but
       // keyed by (kind, frame, genotype signature) instead, since the actual
@@ -31094,6 +31105,7 @@
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
+        releaseCreatureTemporaryFrameTexture, // Lets the shoulder presenter release each generated PNG's GPU pair when it releases the URL.
         genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
