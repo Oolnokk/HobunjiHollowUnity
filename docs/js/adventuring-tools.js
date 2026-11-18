@@ -267,6 +267,7 @@
         burnRemainingMs: lit ? Math.max(0, litUntilMs - nowMs()) : 0,
         throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
+        belt: window.AdventuringTorchBelt?.debug || null, // Pixel Probe includes actual belt attachment, texture and flame visibility on mobile.
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
         torchStance: stance ? {
