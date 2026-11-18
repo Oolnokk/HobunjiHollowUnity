@@ -198,7 +198,8 @@
       const tilePixels = Number(mapDeps?.TILE) || 64; // ClimbSystem's worldSurfaceY sampler takes movement/pixel units, not map tiles.
       const rawHeight = window.ClimbSystem?.groundYAt?.((p.col + .5) * tilePixels, (p.row + .5) * tilePixels); // Sample the actual highland/mire floor beneath the blossom.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
-      tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
+      const plantingOffset = Number(tree.position?.y) || 0; // Wilderness builder seats the generated roots at local ground level after normalizing the full tree bounds.
+      tree.position.set(p.col + .5, (rawHeight != null && Number.isFinite(height) ? height : 0) + plantingOffset, p.row + .5); // Preserve the builder's root contact while honoring the sampled plateau height.
       scene.add(tree);
       visibleTrees.set(blossom.localeId, tree);
     }
