@@ -687,7 +687,7 @@
         incompleteLayers.push('default:' + defaultPattern.id);
       }
     }
-    const paintedDefaultCoats = new Map(); // Foreground copies retain the shared pattern after belly/other genetic layers are drawn.
+    const paintedDefaultCoats = new Map(); // Retains the one patterned body+beard surface and source beard alpha for selective foreground restoration.
     ctx.drawImage(baseSource, 0, 0);
     try {
       const coatPaint = colorPoolPaintFor(genotype, 'base'); // Avoid extra mask/overlay work on ordinary non-painted animals.
@@ -722,12 +722,13 @@
       if (coatPaint && !paintedBase) incompleteLayers.push('paint:base');
       if (paintedBase) {
         ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
-        for (const overlay of defaultCoatMasks) paintedDefaultCoats.set(overlay.id, maskedRegionCanvas(paintedBase, overlay.mask, true)); // Retain the beard's translucent feathered edges above the belly.
+        for (const overlay of defaultCoatMasks) paintedDefaultCoats.set(overlay.id, { image: paintedBase, mask: overlay.mask }); // One patterned coat source; do not double-blend its translucent beard edge now.
       }
     } catch (error) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — retryable: ${error.message}`, 'warn');
       incompleteLayers.push('paint:base');
     }
+    const inheritedOverlayCoverage = paintedDefaultCoats.size ? new Uint8Array(bw * bh) : null; // Combined post-coat alpha determines where the beard needs to be restored above genetic patterns.
     for (const patternId of spec.patterns) {
       if (spec.underlayPatterns?.includes(patternId)) continue; // The always-visible tail is already beneath the base, never drawn twice.
       const layer = genotype?.[patternId];
@@ -754,6 +755,14 @@
           incompleteLayers.push('paint:' + patternId);
         }
         ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
+        if (inheritedOverlayCoverage) {
+          const originalAlpha = fitMaskToImage(await artworkAlphaMask(url), bw, bh); // Use authored overlay opacity; Color Pools does not change its silhouette.
+          if (originalAlpha.width !== bw || originalAlpha.height !== bh) throw new Error('Inherited coat overlay alpha dimensions differ from sprite');
+          for (let p = 0; p < inheritedOverlayCoverage.length; p++) {
+            const prior = inheritedOverlayCoverage[p];
+            inheritedOverlayCoverage[p] = prior + Math.round((255 - prior) * originalAlpha.data[p] / 255); // Source-over union of subsequent genetic layers.
+          }
+        }
         drawnPatterns.push(patternId);
       } catch (e) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): pattern "${patternId}" failed to load/recolor (${url}) — retryable: ${e.message}`, 'warn');
@@ -761,7 +770,14 @@
       }
     }
     for (const overlay of defaultCoatOverlays) {
-      ctx.drawImage(paintedDefaultCoats.get(overlay.id) || overlay.image, 0, 0, c.width, c.height); // Reapply beard on top of belly without shifting its shared coat pattern.
+      const painted = paintedDefaultCoats.get(overlay.id);
+      if (painted && inheritedOverlayCoverage) {
+        const originalAlpha = fitMaskToImage(painted.mask, bw, bh); // Existing authored beard edge opacity survives the final foreground pass.
+        if (originalAlpha.width !== bw || originalAlpha.height !== bh) throw new Error('Default beard alpha dimensions differ from sprite');
+        const coverage = new Uint8Array(bw * bh); // Restoration is needed only where a later inherited overlay covered the beard.
+        for (let p = 0; p < coverage.length; p++) coverage[p] = Math.round(originalAlpha.data[p] * inheritedOverlayCoverage[p] / 255);
+        ctx.drawImage(maskedRegionCanvas(painted.image, { width: bw, height: bh, data: coverage }, true), 0, 0, c.width, c.height);
+      } else if (!painted) ctx.drawImage(overlay.image, 0, 0, c.width, c.height); // Ordinary unpainted creatures draw their authored beard once, after the belly.
       drawnPatterns.push(overlay.id + '(default)'); // Anatomical overlay remains non-genetic and unselectable in Color Pools.
     }
     const eyeSkinColor = eyeSkinTintColor(kind, genotype, baseColor); // Nelk spectacles color overrides its base coat only when the pattern is expressed.
