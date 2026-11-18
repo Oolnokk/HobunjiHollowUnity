@@ -58,6 +58,11 @@
     const followDown = shouldFollowOwnerDownCliff(companion, master, areaId); // Re-check terrain when the owner lands below a ledge.
     const descentChanged = followDown !== !!companion._followOwnerDownCliff; // Forces a response immediately on fall or reunion.
     companion._followOwnerDownCliff = followDown; // The mobile debug snapshot and chooser share this transient priority.
+    if (descentChanged && followDown) {
+      companion._travelPath = null; // Clear the old combat route only ONCE; repeated resets would starve stuck recovery/pathfinding.
+      companion._travelPathTarget = null;
+      companion._travelStuckT = 0;
+    }
     if (descentChanged) companion._companionDecisionNextAt = 0;
     const target = companion._companionCombatTarget; // Live current target is validated without any roster scan.
     const radius = Math.max(0, Number(alertPx) || 0);
@@ -87,10 +92,7 @@
       }
       companion._companionCombatTarget = null;
       companion._companionCombatPriority = null;
-      companion._travelPath = null; // An old combat/treasure waypoint must not steer the retreat back uphill.
-      companion._travelPathTarget = null;
-      companion._travelStuckT = 0;
-      return null;
+      return null; // Preserve any route the follower calculated after entering escape mode.
     }
     const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
     let chosen = null, chosenScore = Infinity, currentSeen = false; // Keep a stable target without creating a new array of hostile objects every frame.
