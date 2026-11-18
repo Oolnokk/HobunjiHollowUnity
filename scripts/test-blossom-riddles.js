@@ -209,6 +209,10 @@ assert.equal(concisePoem.ok,true);
 assert.equal(concisePoem.stanzas.length,2);
 assert.equal(concisePoem.stanzas[1].length,2,'the short ending is a rhymed couplet');
 assert.equal((concisePoem.text.match(/Cyan Blossom/g)||[]).length,1,'do not repeat the target in a sparse ending');
+const unmarkedStrict=Riddles.generate({zoneId:'map_northern_cliffs',layout:layoutFor('cyan'),
+  instance:layoutFor('cyan').localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true});
+assert.equal(unmarkedStrict.ok,false,'festival must fail closed instead of starting its clue at a vague or unverified marker');
+assert.match(unmarkedStrict.reason,/uniquely verified starting landmark/);
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);
