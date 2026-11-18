@@ -1,0 +1,242 @@
+#!/usr/bin/env node
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+// Test the actual committed Foundry pair manifest, not a second hand-written
+// compatibility table. No browser renderer or devtools are required.
+class Group {
+  constructor() { this.children = []; this.parent = null; this.userData = {}; this.visible = true; }
+  add(child) { this.children.push(child); child.parent = this; }
+  remove(child) { this.children = this.children.filter(item => item !== child); child.parent = null; }
+}
+const scene = () => { const root = new Group(); return root; };
+const gear = { tools: {}, weaponEnchantments: {}, weaponEnchantmentVisuals: {} };
+let savedGearCount = 0; // Records real captain-loot gear persistence without relying on a browser save UI.
+const eventLog = [];
+const effectIds = {
+  burning: ['Base', 'Hronal'], frostbitten: ['Base', 'Tothal'], mirrored: ['Base', 'Kanthic'],
+  livingFlame: ['Base', 'Hronal'], livingGust: ['Base', 'Ohthic'],
+  fury: ['Flourish', 'Hronal'], moralized: ['Flourish', 'Kanthic'], resolve: ['Flourish', 'Ohthic'],
+  sicced: ['Flourish', 'Tothal'], feyTurnabout: ['Base', 'Fey'], feyHypedPulse: ['Flourish', 'Fey'],
+};
+const definitions = Object.fromEntries(Object.entries(effectIds).map(([id, [type, alignment]]) => [id, { id, type, alignment }]));
+const window = {
+  THREE: { Group }, GameRandom: { random: () => 0.37 }, EnemyLoadoutRules: { ruleFor: () => null },
+  EnchantmentSystem: { DEFINITIONS: definitions, cleanWeaponState: raw => JSON.parse(JSON.stringify(raw)) },
+  CombatAttackEvents: { hit: (_base, patch) => { eventLog.push(patch); return patch; } },
+  Combat: { poses: { SWEEP_POSE: { id: 'real-sweep' } } },
+  WeaponEnchantmentVFX: { ALIGNMENTS: Object.fromEntries(['Tothal', 'Hronal', 'Kanthic', 'Ohthic'].map(id => [id, { dyeIds: ['dye'], effects: [{ id: 'orb' }] }])),
+    createFixedEmitter: () => ({ update() {}, dispose() {} }) },
+};
+const context = vm.createContext({ window, console, performance: { now: () => 1000 } });
+function load(path) { vm.runInContext(fs.readFileSync(path, 'utf8'), context, { filename: path }); }
+load('docs/config/modular-weapons.js');
+load('docs/js/modular-weapons.js');
+load('docs/js/combat/weapon-shape-stats.js');
+const modular = window.ModularWeapons;
+const config = modular.getConfig();
+const donorShapes = [...new Set([...Object.values(config.shafts), ...Object.values(config.heads)].map(item => item.sourceShape))];
+const shapes = Object.fromEntries(donorShapes.map(id => [id, { shapeKey: id, slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light' }]));
+const toolDefs = {};
+const metals = { nativeCopper: { label: 'Copper', tier: 1 } };
+modular.registerDefinitions(toolDefs, shapes, metals, ['nativeCopper']);
+toolDefs.hatchet_nativeCopper = { shapeKey: 'hatchet', metalKey: 'nativeCopper', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp' };
+const culturalWeapons = ['workhammer', 'hatchet', 'fishingmace', 'fishingspear', 'pickshovel', 'bshuakauitl', 'daggerSword', 'plainsSword', 'dagger', 'kylie', 'warCleaver'];
+window.WeaponTrustBanditLoadouts = { allowedMeleeShapes: species => species === 'mao-ao' ? culturalWeapons : ['workhammer', 'hatchet'] };
+window.WEAPON_TRUST_VISIT_CONFIG = { gifts: [{ shapeKey: 'warCleaver' }], bandits: { weaponShapePool: culturalWeapons } };
+const deps = {
+  TOOL_ITEM_DEFS: toolDefs, METAL_DEFS: metals, HELD_SHAPE_DEFS: shapes,
+  rnd: () => 0.37, getGearInventory: () => gear, ensureToolTexture: () => {},
+  makeToolPlaneMesh: key => { const mesh = new Group(); mesh.userData.toolPlane = { isObject3D: true, rotation: { z: 0 } }; mesh.itemKey = key; return mesh; },
+  buildEquipmentSlots: () => {}, saveGearInventory: () => { savedGearCount++; },
+};
+function entity() {
+  const owner = new Group(), stage = scene(), existing = new Group();
+  stage.add(existing);
+  const handRigAvatarRoot = { userData: { proceduralHandToolHolder: existing } };
+  return {
+    id: 'test-captain', isBandit: true, enemyClass: 'bandit', scene: stage, health: 50, stamina: 1, maxStamina: 1,
+    rosterRecord: { appearance: { speciesId: 'mao-ao' } },
+    avatarRef: { group: owner, handRigAvatarRoot },
+    _banditToolHolder: existing, _rangedMode: false, enemyLoadoutKind: 'bandit',
+    def: { weaponKey: 'hatchet_nativeCopper', weaponShapeStats: window.WeaponShapeStats.forShape('hatchet'), maxStamina: 1,
+      attackDamage: 15, attackRangePx: 120, attackHalfConeRad: 1, attackCooldownS: 1, attackStaminaCost: 10,
+      attackTag: 'sharp', banditAbilityLoadout: { tap1: 'swingCombo', tap2: 'jab', hold1: 'chargedBreaker' } },
+  };
+}
+window.BanditCombat = {
+  init: () => true,
+  makeEntity: async () => entity(),
+};
+load('docs/js/bandit-captain-armaments.js');
+const cap = window.BanditCaptainArmaments;
+assert.equal(cap.init(deps), 0);
+window.BanditCombat.init(deps);
+
+// The available donor shapes are exactly the cultural FULL weapons; the
+// candidate generator must also respect every genuine Foundry disallow.
+const pairs = cap.eligiblePairs(culturalWeapons);
+assert(pairs.length > 0, 'captains require at least one real craft-compatible donor pair');
+assert.equal(config.heads['war-cleaver'].editorOnly, false, 'War-cleaver head is available in the real authored catalog');
+assert.equal(config.shafts['war-cleaver'].editorOnly, false, 'War-cleaver haft is now also available, not just the head');
+assert(pairs.some(pair => pair.head === 'war-cleaver'), 'the already-enabled War-cleaver head must be in eligible pair choices');
+assert(pairs.some(pair => pair.shaft === 'war-cleaver'), 'newly enabled War-cleaver haft must have at least one culturally legal Foundry pair');
+for (const pair of pairs) {
+  assert(culturalWeapons.includes(pair.donors[0]) && culturalWeapons.includes(pair.donors[1]));
+  assert.equal(modular.isDisallowed(pair.shaft, pair.head), false, 'the Foundry veto must never be bypassed');
+  assert(!config.shafts[pair.shaft].editorOnly && !config.heads[pair.head].editorOnly && !config.heads[pair.head].craftDisabled);
+}
+assert.equal(cap.eligiblePairs(['hatchet', 'warCleaver']).every(pair => pair.donors.every(shape => ['hatchet','warCleaver'].includes(shape))), true);
+assert.equal(cap.eligiblePairs(['shape-that-does-not-exist']).length, 0, 'no imaginary donor weapons');
+const migratedStorage = new Map(); // Simulates an older browser draft that still marks the War-cleaver grip as editor-only.
+const savedDraft = JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
+savedDraft.shafts['war-cleaver'].editorOnly = true;
+migratedStorage.set('hobunji.modularWeapons.v5', JSON.stringify(savedDraft));
+const migratedWindow = { MODULAR_WEAPON_CONFIG: window.MODULAR_WEAPON_CONFIG,
+  localStorage: { getItem: key => migratedStorage.get(key) || null, setItem: (key, value) => migratedStorage.set(key, value) } };
+vm.runInNewContext(fs.readFileSync('docs/js/modular-weapons.js', 'utf8'), { window: migratedWindow, console });
+assert.equal(migratedWindow.ModularWeapons.getConfig().shafts['war-cleaver'].editorOnly, false, 'existing browser drafts migrate to a usable War-cleaver shaft');
+assert.equal(migratedStorage.get('hobunji.modularWeapons.warCleaverForgeable.v1'), '1', 'the new migration runs just once');
+assert(!cap.eligiblePairs(['workhammer','hatchet']).some(pair => pair.donors.includes('warCleaver')),
+  'captains without the correct cultural donor cannot acquire War-cleaver pieces');
+
+// Star counts, limits and ban on Fey are enforced before spawning.
+for (const [tier, expected] of [[4,2],[5,3],[6,4],[7,5]]) {
+  const stars = cap.capStars(tier);
+  const state = cap.rollEnchantments(stars, () => 0.37);
+  assert.equal(state.base.length + Object.keys(state.flourishes).length, expected, stars + '★ count');
+  assert.equal(state.base.length, 2);
+  assert.equal(new Set(state.base).size, 2, 'bases are distinct');
+  assert.equal(new Set(Object.values(state.flourishes)).size, expected - 2, 'Flourishes are distinct');
+  assert(Object.keys(state.flourishes).every(slot => ['tap1','tap2','hold1'].includes(slot)));
+  for (const id of [...state.base,...Object.values(state.flourishes)]) assert.notEqual(definitions[id].alignment, 'Fey');
+}
+
+(async () => {
+  const below = await window.BanditCombat.makeEntity({}, 'captain', 3, 0, 0);
+  assert.equal(below._banditCaptainArmament, undefined, '4★ captain stays with a full weapon');
+  assert.equal((await window.BanditCombat.makeEntity({}, 'lieutenant', 7, 0, 0))._banditCaptainArmament, undefined);
+  assert.equal((await window.BanditCombat.makeEntity({ weaponShapePool: ['shape-that-does-not-exist'] }, 'captain', 7, 0, 0))._banditCaptainArmament, undefined, 'a restricted full-weapon pool cannot be widened by the modular roller');
+  assert.equal((await window.BanditCombat.makeEntity({ _preserveMineEnemyTiers: true }, 'captain', 7, 0, 0))._banditCaptainArmament, undefined, 'mine ghouls are not ordinary captains');
+  assert.equal((await window.BanditCombat.makeEntity({}, 'captain', 7, 0, 0, { defOverride: { weaponKey: 'authored' } }))._banditCaptainArmament, undefined, 'authored enemy weapons are protected');
+
+  const first = await window.BanditCombat.makeEntity({}, 'captain', 4, 0, 0);
+  const second = await window.BanditCombat.makeEntity({}, 'captain', 7, 0, 0);
+  const weapon = first._banditCaptainArmament, weapon2 = second._banditCaptainArmament;
+  assert(weapon && weapon2, 'eligible captains must have a modular weapon');
+  assert(weapon.key.startsWith(cap.PREFIX) && weapon.key !== weapon2.key, 'each lootable weapon has independent identity');
+  assert.equal(modular.decode(weapon.key).metal, 'nativeCopper');
+  assert.equal(first.def.weaponKey, weapon.key, 'AI damage and rendering use the held unique key');
+  assert(first.def.maxStamina >= first.def.attackStaminaCost * 2, 'new modular grip must retain the ordinary two-opening-attacks stamina floor');
+  assert(first.maxStamina >= first.def.maxStamina && first.stamina >= first.def.attackStaminaCost, 'living captain stamina must be synchronized with its new budget');
+  assert.equal(first._banditToolHolder.userData.hobunjiHeldPortraitOwner, first.avatarRef.group, 'holder remains attached to correct portrait mask');
+  assert.equal(first.avatarRef.handRigAvatarRoot.userData.proceduralHandToolHolder, first._banditToolHolder, 'hands follow the replacement in the same frame');
+  assert.equal(toolDefs[weapon.key].sprite, modular.itemKey(weapon.shaft, weapon.head, weapon.metal), 'special drop reuses the real authored assembled PNG');
+  assert.equal(toolDefs[weapon.key].modular.shaft, weapon.shaft);
+  assert.equal(toolDefs[weapon.key].captainModular, true);
+  assert.deepEqual(Object.keys(gear.tools), [], 'simply spawning a captain cannot grant player ownership');
+  assert.deepEqual(Object.keys(gear.weaponEnchantments), [], "simply spawning must not teach the player's enchantment system");
+  assert(cap.unlootedEnchantmentState(weapon.key), 'living captain holds private enchantments until searched');
+
+  cap.emitHit(first, { health: 5 }, 12, 'tap1', { comboFinisher: true });
+  cap.emitHit(first, { health: 5 }, 12, 'hold2');
+  assert.equal(eventLog.length, 2);
+  assert.equal(eventLog[0].comboFinisher, true);
+  assert.equal(eventLog[0].attacker, first);
+  assert.equal(eventLog[1].slotId, 'hold2', 'counter-riposte still applies Base effects');
+
+  const before = JSON.stringify(modular.unlockedParts([], gear, toolDefs));
+  const name = cap.grantCorpseWeapon(first);
+  assert.match(name, /Captain's/);
+  assert.equal(gear.tools[weapon.key], true);
+  assert.equal(gear.captainModularWeapons[weapon.key].stars, 5);
+  assert.equal(savedGearCount, 1, 'looting a new captain weapon persists gear immediately');
+  assert.equal(gear.weaponEnchantments[weapon.key].base.length, 2);
+  assert.equal(cap.unlootedEnchantmentState(weapon.key), null, 'post-loot magic is now gear-owned');
+  assert.equal(JSON.stringify(modular.unlockedParts([], gear, toolDefs)), before, 'having the complete rare weapon must not unlock either donor or any Foundry recipe');
+  assert.equal(gear.tools.hatchet_nativeCopper, undefined, 'neither full donor weapon was granted');
+  assert.equal(cap.grantCorpseWeapon(first), name, 'retained corpse loot is idempotent');
+  assert.equal(savedGearCount, 1, 'repeated corpse reads do not perform expensive redundant gear saves');
+  assert.deepEqual(Object.keys(gear.tools), [weapon.key]);
+
+  cap.grantCorpseWeapon(second);
+  assert.equal(Object.keys(gear.tools).length, 2, 'two independent captains can both be looted even with the same pair and metal');
+  assert.equal(gear.weaponEnchantments[weapon2.key].base.length + Object.keys(gear.weaponEnchantments[weapon2.key].flourishes).length, 5);
+  delete toolDefs[weapon.key]; delete toolDefs[weapon2.key];
+  assert.equal(cap.restore(), 2, 'save restore must re-register both independent weapon definitions');
+  assert(toolDefs[weapon.key] && toolDefs[weapon2.key]);
+
+  // Game startup injects relic dependencies BEFORE loading the player's saved gear.
+  // The real post-load HarlyaoRelics.restore() must therefore rehydrate captain
+  // definitions again, not rely on a one-off initialization hook.
+  let postLoadRestores = 0; // Counts post-gear-load restoration through the real Harlyao API.
+  const startupWindow = { BanditCaptainArmaments: {
+    init() { return 0; },
+    restore() { postLoadRestores++; return cap.restore(); },
+  } };
+  const relicContext = vm.createContext({ window: startupWindow, console });
+  vm.runInContext(fs.readFileSync('docs/js/harlyao-relics.js', 'utf8'), relicContext);
+  startupWindow.HarlyaoRelics.init({ TOOL_ITEM_DEFS: toolDefs, ITEM_DEFS: {}, inventory: {}, getGearInventory: () => gear });
+  delete toolDefs[weapon.key]; delete toolDefs[weapon2.key];
+  startupWindow.HarlyaoRelics.restore();
+  assert.equal(postLoadRestores, 1, 'late gear restoration calls the captain definition rehydrator');
+  assert(toolDefs[weapon.key] && toolDefs[weapon2.key], 'a character loaded from saved gear can still equip its individual captain weapons');
+
+  assert.equal(modular.decode('banditModular:constructor:dagger:nativeCopper:hi'), null, 'prototype identifiers cannot become parts');
+
+  // Run the REAL hit publisher and enchantment listeners in an isolated
+  // browser-like world: an NPC hit must apply both the Base status and the
+  // qualifying Combo Flourish without creating player gear unlocks.
+  const enemyGear = { weaponEnchantments: {} }; // Read-only player ownership control for real hostile enchantment events.
+  const nativeEnemy = { health: 30, maxHealth: 30 }; // Recipient of the real target damage event.
+  const nativeAttacker = { health: 40, maxHealth: 40 }; // Hostile enchantment wielder and sole Flourish recipient.
+  const nativeState = { base: ['burning', 'mirrored'], flourishes: { tap1: 'fury' } }; // A legal, non-Fey captain loadout.
+  const nativeWindow = {
+    Combat: { deps: { getGearInventory: () => enemyGear, player: {} }, loadout: { SLOT_IDS: ['tap1','tap2','hold1','hold2'] } },
+    ResourceSystem: {
+      addAffliction(target, id, amount) { target[id] = (target[id] || 0) + amount; return amount; },
+      addEnhancedResource(target, id, amount) { target[id] = (target[id] || 0) + amount; return amount; },
+    },
+    BanditCaptainArmaments: { unlootedEnchantmentState: key => key === weapon.key ? nativeState : null },
+    GameRandom: { random: () => 0.9 },
+    __farmLog() {},
+  };
+  const nativeContext = vm.createContext({ window: nativeWindow, console, performance: { now: () => 3000 } });
+  vm.runInContext(fs.readFileSync('docs/js/combat/combat-attack-events.js', 'utf8'), nativeContext);
+  vm.runInContext(fs.readFileSync('docs/js/combat/combat-enchantments.js', 'utf8'), nativeContext);
+  nativeWindow.CombatAttackEvents.hit(null, {
+    attacker: nativeAttacker, target: nativeEnemy, weaponKey: weapon.key,
+    slotId: 'tap1', attackCategory: 'combo', comboFinisher: true, actualDamage: 12,
+  });
+  assert(nativeEnemy.burningHealth > 0, 'real Base listener burns the hostile captain\'s victim');
+  assert(nativeAttacker.mirroredHealth > 0, 'real Base listener credits actual hit damage to the captain');
+  assert(nativeAttacker.furiousStamina > 0, 'real Combo finisher triggers the captain\'s Fury Flourish');
+  assert.equal(Object.keys(enemyGear.weaponEnchantments).length, 0, 'unlooted hostile enchantments never become player-owned gear');
+
+  const gameEntry = fs.readFileSync('docs/index.html', 'utf8'); // Authoring tools must execute the same held-action bootstrap that owns bandit hands.
+  const handRuntimeVersion = /js\/held-action-animations\.js\?v=([A-Za-z0-9_-]+)/.exec(gameEntry)?.[1];
+  assert(handRuntimeVersion, 'gameplay must load a versioned hand runtime');
+  for (const entry of [
+    'docs/tools/animation-author/index.html',
+    'docs/tools/attack-animation-editor/index.html',
+    'docs/tools/enemy-loadout-editor/preview.js',
+    'docs/tools/omgurku-calibration/index.html',
+  ]) {
+    const text = fs.readFileSync(entry, 'utf8');
+    assert(text.includes('held-action-animations.js?v=' + handRuntimeVersion),
+      entry + ' must use the gameplay hand runtime rather than cached old hand attachment rules');
+  }
+
+  const handSource = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8');
+  const actorIndex = handSource.indexOf('const actorHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder === toolHolder');
+  const playerSnapshotIndex = handSource.indexOf('const snapshot = editor ? null : (global.WeaponToolStances');
+  assert(actorIndex > 0 && playerSnapshotIndex > actorIndex, 'actor grip basis must be resolved before consulting player stance snapshot');
+  assert(handSource.includes('const mirrorX = Number(visibleMesh?.scale?.x) < 0'), 'bandit Backhand detects the visible weapon reflection');
+  assert(handSource.includes('if (visualBasis.mirrorX) localOffset.x = -localOffset.x'), 'actual hand socket offset follows the mirrored weapon handle');
+  const combatSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
+  for (const slot of ['tap1','tap2','hold1','hold2']) assert(combatSource.includes("enchantmentSlot: '"+slot+"'"), 'all captain attack families publish their real slot: ' + slot);
+  assert(combatSource.includes('BanditCaptainArmaments?.tick?.'), 'enemy blade VFX are updated by the live hostile weapon loop');
+  console.log('Bandit captain modular/enchantment/loot/hand-pose regression checks passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

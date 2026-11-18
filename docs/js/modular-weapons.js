@@ -5,6 +5,7 @@
   const DRAFT_KEY = 'hobunji.modularWeapons.v5'; // New authored companion mounts and explicit pair layering.
   const KYLIE_TOOL_MIGRATION_KEY = 'hobunji.modularWeapons.kylieToolWorthy.v1'; // Upgrade old local drafts once without permanently locking the editor checkbox.
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
+  const WAR_CLEAVER_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.warCleaverForgeable.v1'; // Enable the shipped War-cleaver haft in old browser drafts without repeatedly overriding editor choices.
   const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
   const PAIR_FIT_MIGRATION_KEY = 'hobunji.modularWeapons.authoredPerpendicularPairFits.v1'; // Adopt the new neutral-angle pair fits only once for preexisting browser drafts.
   const CORRECTED_COMPANION_TANG_SHAFTS = new Set(['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']); // Only the six shipped automatically generated sideways tangs require reversed arrow direction.
@@ -777,9 +778,10 @@
     return config;
   }
   function decode(key) {
-    const match = /^modular:([^:]+):([^:]+):([^:]+)$/.exec(String(key || '')); // Stable keys survive ordinary gear save/restore.
-    return match && Object.hasOwn(config.shafts, match[1]) && Object.hasOwn(config.heads, match[2])
-      ? { shaft: match[1], head: match[2], metal: match[3] } : null; // Inherited prototype fields are not catalog parts.
+    const match = /^(?:modular:([^:]+):([^:]+):([^:]+)|banditModular:([^:]+):([^:]+):([^:]+):([a-z0-9_-]+))$/.exec(String(key || '')); // Unique captain loot shares the real Foundry haft/head/metal codec without becoming a forge recipe.
+    const shaft = match?.[1] || match?.[4], head = match?.[2] || match?.[5], metal = match?.[3] || match?.[6]; // Both key families resolve to the same authored modular donor identity.
+    return match && Object.hasOwn(config.shafts, shaft) && Object.hasOwn(config.heads, head)
+      ? { shaft, head, metal } : null; // Inherited prototype fields are not catalog parts.
   }
   function itemKey(shaft, head, metal) { return `modular:${shaft}:${head}:${metal}`; }
   function sourceShape(key) {
@@ -1102,18 +1104,21 @@
     const oldest = storage?.getItem(LEGACY_DRAFT_KEY); // Existing draft preference stays v5 > v4 > v3.
     const needsKylieUpgrade = storage?.getItem(KYLIE_TOOL_MIGRATION_KEY) !== '1'; // One-time migration preserves future explicit checkbox edits.
     const needsPickShaftUpgrade = storage?.getItem(PICK_SHAFT_MIGRATION_KEY) !== '1'; // Previously stored catalog drafts still allow the newly forgeable Pick-Shovel shaft.
+    const needsWarCleaverUpgrade = storage?.getItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY) !== '1'; // Old local imports otherwise hide the now-authorized War-cleaver grip.
     const needsTangDirectionUpgrade = storage?.getItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY) !== '1'; // Existing v5 drafts may contain the old reversed automatic arrows.
     const needsPairFitUpgrade = storage?.getItem(PAIR_FIT_MIGRATION_KEY) !== '1'; // Authored neutral-angle presets must supersede only their matching old copies.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
       if (needsPickShaftUpgrade && draft.shafts?.['pick-shovel']) draft.shafts['pick-shovel'].editorOnly = false; // Enables old user-authored drafts without altering their mounts or pair art.
+      if (needsWarCleaverUpgrade && draft.shafts?.['war-cleaver']) draft.shafts['war-cleaver'].editorOnly = false; // One-time migration; pair exclusions and authored transforms stay untouched.
       const repairedTangDirection = needsTangDirectionUpgrade && repairLegacyCompanionTangDirections(draft); // Only repair unchanged backwards companion arrows.
       migratedPairFits = needsPairFitUpgrade ? migrateOldPairFits(draft) : 0; // Keep deliberately edited pair corrections intact.
-      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || repairedTangDirection || migratedPairFits > 0);
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0);
     }
     if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
     if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
+    if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
     if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
