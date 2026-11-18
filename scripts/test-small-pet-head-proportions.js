@@ -12,6 +12,7 @@ const warped = [];
 const maskRequests = []; // Tracks the once-per-species idle mask prerequisite before final pose enlargement.
 const frameSwaps = [];
 const overlays = [];
+const releasedTemporarySprites = []; // Confirms shoulder-cache retirement reaches the game-owned GPU cleanup callback.
 let canvasSerial = 0; // Gives each composited/warped frame a distinct URL in the assertions.
 let splitFrame = false; // Test toggle between ordinary shoulder art and split left/right presentation.
 let maskUnavailable = false; // Simulates temporarily missing idle head alpha data for split poses.
@@ -48,6 +49,7 @@ const mediumSpeciesPet = companion('grehlr', 'small');
 const deps = {
   player, companionObjects: [mediumSpeciesPet],
   genotypeKindFor: pet => pet.creatureKey,
+  releaseCreatureTemporaryFrameTexture(url) { releasedTemporarySprites.push(url); return true; },
   setCreatureFrame(avatarRef, url, genotypeKind, frame, genotype) {
     frameSwaps.push({ avatarRef, url, genotypeKind, frame, genotype });
     const texture = { url, isCanvasTexture: !!genotypeKind }; // Simulates the synchronous game-owned material assignment.
@@ -206,6 +208,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   splitPet.stableRole = 'companion';
   provider();
   assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.active, 0);
+  assert(releasedTemporarySprites.some(url => url.startsWith('data:image/png')),
+    'unequipping the pet invokes the game-owned GPU texture cleanup, even on the data-URL fallback');
+  assert(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.temporaryTexturesReleased > 0,
+    'mobile debug tracks successful generated texture releases');
   assert(bridgeSource.includes('smallPetHeadFrameCache.delete(companion)'), 'leaving shoulder invalidates pending textures');
   const splineSource = fs.readFileSync('docs/js/animal-shoulder-spline.js', 'utf8');
   assert(splineSource.includes('layer.canvas === canvas'), 'low-level shoulder setter also reuses existing CanvasTextures');
