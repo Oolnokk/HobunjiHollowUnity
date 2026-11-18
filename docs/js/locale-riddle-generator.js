@@ -7,7 +7,7 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
 
-  const RHYMES = Object.freeze({ A: ['stone', 'known', 'shown', 'alone', 'grown', 'thrown'], B: ['near', 'clear', 'here', 'appear', 'steer'] }); // Permanent terrain vocabulary: neither rhyme family implies a time of day.
+  const RHYMES = Object.freeze({ A: ['stone', 'known', 'shown', 'alone', 'grown', 'thrown', 'own'], B: ['near', 'clear', 'here', 'appear', 'steer'] }); // Permanent terrain vocabulary: neither rhyme family implies a time of day.
   const WATER = new Set(['river', 'stream', 'water', 'lake', 'pond', 'waterfall']); // Map exports and live zones use different water tile spellings.
   const ZONES = Object.freeze({ map_northern_cliffs: 'Northern Cliffs', map_southern_cloud_forest: 'Southern Cloud Forest', map_western_slope: 'Western Slope', map_eastern_mire: 'Eastern Mire' }); // Used for the broadest first line, never inferred from requested terrain.
   const BANK = Object.freeze({
