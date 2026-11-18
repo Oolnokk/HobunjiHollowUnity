@@ -1671,7 +1671,7 @@
     }
     gear.clothing.hat = item; // Instant on-stage replacement; the previous hat remains owned in the wardrobe.
     if (ceremony) ceremony.crowned = true;
-    deps.saveGearInventory?.();
+    else deps.saveGearInventory?.(); // During the ceremony, finishFiveBlossomCrowning first restores the temporarily hidden hood before saving.
     deps.refreshPlayerAvatar?.();
     if (typeof document !== 'undefined') buildEquipmentSlots();
     return item;

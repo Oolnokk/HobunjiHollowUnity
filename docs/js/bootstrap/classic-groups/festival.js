@@ -11,7 +11,7 @@
     "js/festival-locale-activities.js?v=20261118fiveBlossomsLocale1",
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
     "js/locale-riddle-generator.js?v=20261118broadToNarrow1",
-    "js/festival-blossom-hunt.js?v=20261118crownHunt2",
+    "js/festival-blossom-hunt.js?v=20261118crownHunt3",
     "js/festival-blossom-ceremony.js?v=20261118crownStage1",
     "js/festival-system.js?v=20261118crownTurnIn1",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",

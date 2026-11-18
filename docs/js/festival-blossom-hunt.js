@@ -277,6 +277,8 @@
         const played=await ceremony.play({profile,civilYear:nowYear,onProclaim:() =>
           !!window.EquipmentPanel.awardFiveBlossomCrown(nowYear,headwear)});
         if(!played?.ok)throw Error(played?.reason || 'Could not complete the announcement on stage');
+        window.EquipmentPanel.finishFiveBlossomCrowning?.(headwear,true); // Saved full outfit contains the crown AND restored hood before the quest's own member save.
+        headwear = null;
       } else if(!window.EquipmentPanel.awardFiveBlossomCrown(nowYear)) throw Error('Could not award the crown');
       const completed={...descriptor(BLOSSOMS.map(b=>b.id),mapDeps?.currentTothalYear?.() ?? null),
         objective:'Five Blossom Crown received from Father Hunundi Hodu.',
