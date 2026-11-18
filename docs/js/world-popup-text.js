@@ -428,7 +428,7 @@
     return null;
   }
 
-  function showIconEffect(root, { kind, duration, height, offsetX = 0, size, loadParts, sample, onDispose }) {
+  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, size, loadParts, sample, onDispose }) {
     const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
     const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
     const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
@@ -440,7 +440,7 @@
     const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
     plane.visible = false;
     const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
-      height, offsetX, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
+      height, offsetX, headOffset, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
     state.active.push(event);
     Promise.resolve().then(loadParts).then(parts => {
       if (event.cancelled) return;
@@ -489,7 +489,13 @@
     const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
     const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
     plane.position.y += event.height * scaleY;
-    plane.position.addScaledVector(cameraRight, event.offsetX * scaleX); // A camera-facing side offset remains right/left of the head when the actor or camera turns.
+    let sideOffset = event.offsetX * scaleX; // Default camera-facing displacement works for humanoids and non-animal icons.
+    if (event.headOffset) {
+      const axisProjection = Math.abs(matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z); // Animal card width lives on its local Z axis, which narrows in profile.
+      const projectedWidth = Number.isFinite(axisProjection) ? axisProjection : scaleX; // Retain a safe fallback for incomplete legacy matrices.
+      sideOffset = event.headOffset.left * event.headOffset.width * projectedWidth - event.headOffset.gap * scaleX; // Use the projected head crop's LEFT edge, even after a turn.
+    }
+    plane.position.addScaledVector(cameraRight, sideOffset); // Horizontal displacement remains in screen space rather than world X.
     plane.quaternion.copy(camera.quaternion);
     plane.visible = true;
     for (const item of event.items) {
