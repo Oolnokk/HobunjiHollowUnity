@@ -129,13 +129,17 @@
   function referentPhrase(fact, seed, mentioned, mentionedTypes) {
     const type = referentType(fact), nouns = METAPHOR_NOUNS[type];
     const col = fact.coordinate?.col, row = fact.coordinate?.row;
-    if (!nouns || !fact.referenceName || !Number.isFinite(col) || !Number.isFinite(row)) return fact;
+    if (!fact.referenceName || !Number.isFinite(col) || !Number.isFinite(row)) return fact;
+    const fallbackNoun = fact.kind === 'landmark' && /^(?:an?|the) /i.test(fact.referenceName)
+      ? fact.referenceName.replace(/^(?:an?|the) /i, '') : null; // Authored locales may carry a countable name but no registered metaphor class.
+    if (!nouns && !fallbackNoun) return fact; // Never rewrite an unidentified proper noun or free-form locale name.
     const id = type + ':' + col + ',' + row; // Same physical site retains its identifier across stanzas and saves.
-    const noun = nouns[hash(seed + '|metaphor|' + id) % nouns.length];
-    const repeated = mentioned.has(id), another = !repeated && mentionedTypes.has(type);
+    const noun = nouns ? nouns[hash(seed + '|metaphor|' + id) % nouns.length] : fallbackNoun;
+    const category = nouns ? type : type + ':' + fallbackNoun.toLowerCase(); // Unknown locales share a kind only when their named noun is identical.
+    const repeated = mentioned.has(id), another = !repeated && mentionedTypes.has(category);
     const firstArticle = /^an? /i.test(fact.referenceName) ? (/^[aeiou]/i.test(noun) ? 'an' : 'a') : 'the';
     const article = repeated ? (hash(seed + '|repeat|' + id) % 2 ? 'that' : 'the') : another ? 'another' : firstArticle;
-    mentioned.add(id); mentionedTypes.add(type); // Recorded only when a line actually mentions this site.
+    mentioned.add(id); mentionedTypes.add(category); // Recorded only when a line actually mentions this site.
     return { ...fact, value:fact.value.replace(fact.referenceName, article + ' ' + noun) };
   }
 

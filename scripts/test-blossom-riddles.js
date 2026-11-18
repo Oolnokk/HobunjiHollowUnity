@@ -120,6 +120,18 @@ for(let seed = 0; seed < 300; seed++){
   assert.equal(output.text,Riddles.generate(options).text,'metaphors and articles remain deterministic across reloading');
   assert.equal(Riddles.validate(output),true,'anaphora does not disturb terminal rhyme words');
 }
+const untypedNeighbors = layoutFor('cyan', 23, 22); // Existing authored places have arbitrary names, not predefined metaphor kinds.
+untypedNeighbors.localeInstances.push(
+  {localeId:'site_altar_left',name:'a ruined altar',objects:[{key:'altar',x:15,y:20}]},
+  {localeId:'site_altar_right',name:'a ruined altar',objects:[{key:'altar',x:31,y:27}]}
+);
+const untypedPoem = Riddles.generate({zoneId:'map_northern_cliffs',layout:untypedNeighbors,
+  instance:untypedNeighbors.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',seed:'authored-generic-anaphora'});
+assert.equal(untypedPoem.ok,true,'untyped neighbor locales are still eligible for grounded clues');
+assert.match(untypedPoem.stanzas[0][2],/\ba ruined altar\b/,'first authored place stays indefinite');
+assert.match(untypedPoem.stanzas[0][3],/\banother ruined altar\b/,'a second separate authored place uses another');
+assert.match(untypedPoem.stanzas[1][0],/\b(?:the|that) ruined altar\b/,'return to the earlier authored landmark is definite');
+
 const mixedTypes = layoutFor('cyan', 23, 22); // A second kind should not be misidentified as another of the first.
 const mixedVerse = Riddles.generate({zoneId:'map_northern_cliffs',layout:mixedTypes,instance:mixedTypes.localeInstances[0],
   targetName:'Cyan Blossom',targetKind:'blossom',landmarks:[
