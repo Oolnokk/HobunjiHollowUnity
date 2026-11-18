@@ -232,6 +232,7 @@
     isClaimed,
     hasClaim:isClaimed, // Backward-compatible semantic used by early selector arbitration in game.js; keeps potion/ammo/item selectors from pre-empting a visible world interaction.
     claimFor,
+    getRevision: () => revision, // Zero-allocation version check lets the shared arch avoid rescanning unchanged claims every HUD refresh.
     dispatch,
     snapshot,
   });
