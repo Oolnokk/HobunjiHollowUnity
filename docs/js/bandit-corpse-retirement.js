@@ -144,6 +144,22 @@
     }
   }
 
+  // The authored breakThrow can rotate an impact pivot independently of the
+  // original group. Project the LAST rendered portrait Y axis onto the ground
+  // rather than assuming every death clip ends at the fallback +90-degree roll.
+  // The flattened plane's long axis points toward local -Z after rotateX(-PI/2).
+  function settledBodyYaw(rig, c) {
+    const fallback = (Number(c.deathRestRotY) || 0) + Math.PI / 2;
+    const face = rig?.frontPlane;
+    try {
+      face?.updateWorldMatrix?.(true, false);
+      const e = face?.matrixWorld?.elements;
+      const x = Number(e?.[4]), z = Number(e?.[6]); // Transformed local portrait-up axis, before rig retirement.
+      if (Number.isFinite(x) && Number.isFinite(z) && Math.hypot(x, z) > 1e-4) return Math.atan2(-x, -z);
+    } catch (_) { /* The plain old fallback remains safe without a world matrix. */ }
+    return fallback;
+  }
+
   function retire(c) {
     const currentArea = deps?.getCurrentArea?.();
     if (!deps || !isRetirable(c, currentArea)) return false;
@@ -187,7 +203,8 @@
     if (snapshot) {
       // The live character fell with root.rotation.z = +PI/2: its original
       // portrait Y axis therefore lies toward -X, not the new plane's -Z.
-      sprite.rotation.y = Math.PI / 2;
+      // Capturing the final body axis below also handles recorded death
+      // clips whose pivot differs from the 90-degree fallback fall.
       const oldScale = rig.group?.scale; // Preserve authored species proportions after the expensive rig is disposed.
       // Each front card rotates +90 degrees about Y: its horizontal
       // width belongs to the old group's Z axis, not its X/normal axis.
@@ -195,7 +212,7 @@
       if (Number(oldScale?.y) > 0) sprite.scale.z = oldScale.y;
     }
     group.add(sprite);
-    group.rotation.y = Number(c.deathRestRotY) || 0;
+    group.rotation.y = snapshot ? settledBodyYaw(rig, c) : (Number(c.deathRestRotY) || 0);
     group.position.set(c.x / tile, surfaceY + 0.03, c.y / tile);
 
     // The hazard is entity-owned, but its particle presenter belongs to the
