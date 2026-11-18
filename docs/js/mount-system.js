@@ -49,7 +49,8 @@
   const WHEAT_MAX = 6; // Six OoT-style boost charges displayed by the riding HUD.
   const WHEAT_RECOVER_S = 3.3; // Seconds without an active surge before one spent charge regrows.
   const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
-  const CRUISE_SPEED_RATIO = 0.66; // Hands-free forward riding speed, below the maximum gallop.
+  const CRUISE_SPEED_RATIO = 1; // Unboosted travel uses the complete player-derived mount speed, not a reduced hands-free fraction.
+  const MOUNT_PLAYER_RUN_RATIO = 1.1; // Baseline is the current full-input player run speed +10%, before stable perks and temporary boosts.
   const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
   const MOUNT_COAST_DECEL_RATIO = 0.25; // Passive slowdown after wheat/combat acceleration, without weakening deliberate braking or collision stops.
   const MOUNT_COAST_SOFT_BAND_RATIO = 0.3; // Fade passive drag as excess speed approaches ordinary cruise, avoiding a hard-feeling final slowdown.
@@ -285,6 +286,16 @@
     return window.StableAnimalProgression?.mountRidingModifiers?.() || {}; // Existing stable perk API; combat uses the same rider's training as movement.
   }
 
+  function currentPlayerRunningSpeedPxS() {
+    const computed = Number(window.CompanionMovementSpeed?.playerRunningSpeed?.(deps?.player)); // Uses the same live terrain/buff/footing target-speed formula as on-foot locomotion, even while riding.
+    return Number.isFinite(computed) && computed >= 0 ? computed : Math.max(0, Number(deps?.MOVE_SPEED) || 0); // Isolated preview fixtures can still ride before the companion service initializes.
+  }
+
+  function mountedTopSpeedPxS() {
+    const training = Number(mountedTrainingModifiers().baseSpeed); // Fleet Stride applies once outside the animal's shared species definition.
+    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1);
+  }
+
   function mountedMeleeStaminaMultiplier() {
     return Math.max(0.55, Number(mountedTrainingModifiers().meleeStamina) || 1); // Training discounts only mounted melee actions.
   }
@@ -292,9 +303,7 @@
   function mountedMeleeDamageMultiplier() {
     if (mountRideState !== 'mounted' || !mountRideEntity) return 1;
     const currentSpeed = Math.hypot(Number(mountRideEntity.vx) || 0, Number(mountRideEntity.vy) || 0); // Actual carrier displacement, not an intended or visually boosted speed.
-    const baseSpeed = (mountRideEntity.def?.mountSpeed || deps?.MOVE_SPEED || 1) *
-      (deps?.getAlchemySpeedMul?.() || 1) * (deps?.getDevGlobalSpeedMul?.() || 1) *
-      (window.PerceptionMode?.speedMultiplier?.() ?? 1) * (Number(mountedTrainingModifiers().baseSpeed) || 1);
+    const baseSpeed = mountedTopSpeedPxS(); // Damage uses the same unboosted mount cap as actual riding.
     const ratio = currentSpeed / Math.max(1, baseSpeed); // Preserves extra damage from genuinely high boosted velocity, and zero bonus against collisions.
     return (1 + Math.min(1.8, Math.max(0, ratio) * 0.65)) * (Number(mountedTrainingModifiers().meleeDamage) || 1);
   }
@@ -1200,7 +1209,7 @@
     }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
-    const topSpeed = (m.def?.mountSpeed || deps.MOVE_SPEED) * deps.getAlchemySpeedMul() * deps.getDevGlobalSpeedMul() * (window.PerceptionMode?.speedMultiplier() ?? 1); // Training perks still wrap the authored mount speed and acceleration.
+    const topSpeed = mountedTopSpeedPxS(); // Player run ×1.1, then training; wheat and combat multipliers are applied below.
     const stepStartX = m.x, stepStartY = m.y;
     ridingDebug.orbitActive = false; // Reset the frame's steering diagnostic even when manual braking bypasses target pursuit.
     const boosting = mountBoostS > 0;
@@ -1308,7 +1317,8 @@
     get heading() { return mountAngle; },
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
-    get ridingDebug() { return { ...ridingDebug, wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
+    mountedTopSpeedPxS,
+    get ridingDebug() { return { ...ridingDebug, playerRunSpeedPxS: currentPlayerRunningSpeedPxS(), topSpeedPxS: mountedTopSpeedPxS(), wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, setMountedCombatWindupBoost, clearMountedCombatWindupBoost, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };
