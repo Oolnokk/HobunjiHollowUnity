@@ -796,11 +796,20 @@
     const preferred=isRomanceable(rec)?['dance','dining','dance','dining'][(Math.floor(shift/2)+index)%4]
       :((index%5===0&&shift%3===1)?'dance':'dining');
     const kinds=isRomanceable(rec)?[preferred,preferred==='dining'?'dance':'dining']:[preferred];
+    let walkersAtDecision=null; // Lazy NPC roster snapshot, shared across station checks and fallback.
+    const snapshotWalkers=()=>walkersAtDecision ?? (walkersAtDecision=deps.getWalkers?.()||[]);
+    let occupiedStations=null; // Other NPCs' station IDs indexed only when first checked.
+    let reservedStations=null; // Current-shift festival reservations, excluding this NPC.
     const taken=station=>{
       const target=window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
       if(target?.pose==='sit' && window.FurnitureTableSystem?.isSeatTaken?.(target.area||'town',target,rec.id))return true;
-      for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope && assignment.stationId===station.id)return true;
-      return (deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id && w.currentScheduleTarget?.stationId===station.id);
+      if(!occupiedStations){
+        occupiedStations=new Set();
+        for(const other of snapshotWalkers())if(other?.rec?.id!==rec.id)occupiedStations.add(other?.currentScheduleTarget?.stationId);
+        reservedStations=new Set();
+        for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope)reservedStations.add(assignment.stationId);
+      }
+      return reservedStations.has(station.id)||occupiedStations.has(station.id);
     };
     let selected=null;
     if(sharedFeast()){
@@ -825,14 +834,26 @@
       return {...target,stationId:target.stationId||selected.id,activity:festival().name};
     }
     release();
-    const walker=(deps.getWalkers?.()||[]).find(w=>w.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
+    const walkers=snapshotWalkers(), walker=walkers.find(w=>w?.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
     const x=walker?.area==='town'?walker.root.position.x:(anchor?.col||30)+.5, z=walker?.area==='town'?walker.root.position.z:(anchor?.row||25)+.5;
+    const standingClearance=.6; // Keep the previous strict Euclidean spacing.
+    const blockedStandingTiles=new Set(); // Spatial grid allocated only on fallback, not for normal stations.
+    for(const other of walkers){
+      if(other?.rec?.id===rec.id||other?.area!=='town'||!other?.root?.position)continue;
+      const px=other.root.position.x,pz=other.root.position.z; // World position for nearby town-cell clearance.
+      if(!Number.isFinite(px)||!Number.isFinite(pz))continue;
+      for(let row=Math.floor(pz-.5-standingClearance);row<=Math.floor(pz-.5+standingClearance);row++){
+        for(let col=Math.floor(px-.5-standingClearance);col<=Math.floor(px-.5+standingClearance);col++){
+          if(Math.hypot(px-col-.5,pz-row-.5)<standingClearance)blockedStandingTiles.add(col+','+row);
+        }
+      }
+    }
     for(let radius=0;radius<=4;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
       if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
       const c=Math.floor(x)+dx,r=Math.floor(z)+dz;
       if(deps.canStandAt?.('town',c,r)===false)continue;
-      if((deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id&&w.area==='town'&&Math.hypot(w.root.position.x-c-.5,w.root.position.z-r-.5)<.6))continue;
-      return {area:'town',c,r,pose:'stand',activity:festival().name}; // No preferred locale has room; wait on clear ground instead of taking an occupied chair.
+      if(blockedStandingTiles.has(c+','+r))continue;
+      return {area:'town',c,r,pose:'stand',activity:festival().name}; // Preserve the original spiral order and area.
     }
     return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
   }
