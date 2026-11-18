@@ -106,6 +106,11 @@ assert(Math.abs(api.serialize().festivalFun.friend-(96/70+.12))<1e-8,'paired dan
 api.cancelDance();assert.equal(pairedActive,false,'dance releases both actors on cancellation');
 const stageTarget=W.NpcScheduling.override(people[0]);
 assert.equal(stageTarget?.festivalLocaleKind,'bandstand','Foroji walks to the Feast bandstand');
+const danceRoot=roots.find(p=>p.festivalLocale.kind==='dance'); // Editor-relocatable floor is authoritative for the musician's facing.
+assert.equal(stageTarget?.lookAt?.col,danceRoot.col,'the on-duty musician looks at the dance floor');
+assert.equal(stageTarget?.lookAt?.row,danceRoot.row,'the on-duty musician looks at the dance floor');
+const expectedFacing=Math.atan2(danceRoot.col-stageTarget.c,danceRoot.row-stageTarget.r)*180/Math.PI; // +X east is 90 degrees.
+assert(Math.abs(stageTarget.rotY-expectedFacing)<1e-8,'musician body yaw follows the live dancefloor');
 const guestTarget=W.NpcScheduling.override(people[2]);
 assert(guestTarget && guestTarget.stationId,'ordinary NPC scheduler chooses a real meal/dance locale station');
 assert(W.NpcSharedMeals.diagnostics().bowlSpots>0,'shared NPC meal routine sees the Feast serving stations');
