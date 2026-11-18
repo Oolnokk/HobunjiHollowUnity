@@ -28,7 +28,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110releaseGrid1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261118sharedFestivalKey1&overworld=1';
   const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261110releaseGrid1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
@@ -185,7 +185,7 @@
 
     const keyRow = document.createElement('div');
     keyRow.className = 'input-binding-row';
-    keyRow.innerHTML = `<span class="settings-name">Root note</span><select class="settings-select">${FREEPLAY_TONIC_NOTES.map(([name, offset]) => `<option value="${offset}"${offset === currentOffset ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    keyRow.innerHTML = `<span class="settings-name">Shared root note (player + NPCs)</span><select class="settings-select">${FREEPLAY_TONIC_NOTES.map(([name, offset]) => `<option value="${offset}"${offset === currentOffset ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
     keyRow.querySelector('select').addEventListener('change', event => {
       saveLyreAppSettings({ tonicMidi: FREEPLAY_TONIC_BASE_MIDI + Number(event.target.value) });
     });
@@ -193,7 +193,7 @@
 
     const scaleRow = document.createElement('div');
     scaleRow.className = 'input-binding-row';
-    scaleRow.innerHTML = `<span class="settings-name">Scale</span><select class="settings-select">${FREEPLAY_SCALE_NAMES.map(name => `<option value="${name}"${name === currentScale ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    scaleRow.innerHTML = `<span class="settings-name">Shared scale (player + NPCs)</span><select class="settings-select">${FREEPLAY_SCALE_NAMES.map(name => `<option value="${name}"${name === currentScale ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
     scaleRow.querySelector('select').addEventListener('change', event => {
       saveLyreAppSettings({ scaleName: event.target.value });
     });

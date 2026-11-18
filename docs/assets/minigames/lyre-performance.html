@@ -7033,9 +7033,10 @@
     state.selectedSong = type;
     state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
-    const npcScale = type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
-      ? 'Pentatonic Minor' : null; // Keep the generated lead in the same scale when the player joins it.
-    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
+    const overworldSharedTuning = new URLSearchParams(location.search).has('overworld'); // The shipped game uses one saved root/scale for NPCs and players.
+    const npcScale = !overworldSharedTuning && type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
+      ? 'Pentatonic Minor' : null; // Standalone Music Lab preserves its previous practice-song defaults.
+    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : overworldSharedTuning ? null : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
     if (requestedScaleName && state.scaleName !== requestedScaleName) {
       applyPerformanceScale(requestedScaleName,{persist:!npcScale && options.persistScale !== false});
       if (!options.scaleOverride) toast(`${melody.title} switched the note set to ${requestedScaleName}`, 2400);
@@ -7419,7 +7420,7 @@
         // host keeps it selected.
         if (state.game.loopDemo) {
           const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
-          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor');
+          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(state.scaleName);
           startSong(state.selectedSong, {demoMode:state.ambientOnly ? randomNpcAutoPickPattern() : state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
@@ -8144,7 +8145,7 @@
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
     ambientPerformanceState() {
-      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
+      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,tonicMidi:state.tonicMidi,scaleName:state.scaleName,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
     },
     async startAmbientLead(songId, footstepSampleUrl) {
       state.ambientOnly = true; // Set before audio loading so held overworld controls cannot hijack an initializing NPC performance.
@@ -8161,7 +8162,7 @@
       }
       const mode = randomNpcAutoPickPattern(); // NPCs never inherit a player's Single Note/tremolo preference.
       state.rootPadEnabled = true; // An ambient musician always plays the automatic bar-root accompaniment; does not persist over player settings.
-      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor'); // Foroji begins with a new composition instead of the authored practice melody.
+      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(state.scaleName); // Foroji begins with a new composition instead of the authored practice melody.
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
       return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
     },

@@ -767,6 +767,14 @@
       if (routeFailed || waited > 1.5) { stageFailures.set(id,day()); dutyWatch.delete(id); window.__farmLog?.(`[festival] ${id} cannot reach the bandstand; the other musician covers`,'social'); }
     }
   }
+  function faceFestivalBandToDancefloor(target) {
+    const floor = layout()?.decor?.find(piece => piece?.festivalLocale?.kind === 'dance'); // The movable festival dance locale supplies the audience direction.
+    if (!floor || !target || !Number.isFinite(floor.col) || !Number.isFinite(floor.row)) return target;
+    const dx = floor.col - target.c, dz = floor.row - target.r; // NPC schedule heading: +X = 90°, +Z = 0°.
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx,dz) < 0.2) return target;
+    const rotY = Math.atan2(dx,dz) * 180 / Math.PI; // Body points toward the actual dancefloor instead of a static station angle.
+    return { ...target, rotY, lookAt:{col:floor.col,row:floor.row,height:1.2} }; // Head and body share the audience target.
+  }
   function npcTarget(rec) {
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
     if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
@@ -774,7 +782,7 @@
     if (sharedFeast() && stageDuty(rec)) {
       const station = layout()?.npcStations?.find(s=>s.festivalNpcId===rec.id && s.festivalLocaleKind==='bandstand');
       const target = station && window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
-      if (target) { release(); return target; } // Ordinary pathfinding takes the host to the stage during gathering hours.
+      if (target) { release(); return faceFestivalBandToDancefloor(target); } // Keep ordinary stage pathfinding, but face the live dance floor.
     }
     if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
     if (festival()?.id === 'gorkunash') {

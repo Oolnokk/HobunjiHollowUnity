@@ -541,6 +541,61 @@
     sink.apply(state.sinkActor, window.SharedAttackPose?.idleBodySinkPct?.() ?? 0, Number(pose?.bodyYaw) || 0, false);
   }
 
+  function releaseKurrayaStation(state) {
+    const holder = state.kurrayaHolder; // The particular stage prop whose hand claims belong to this walker.
+    if (!holder) return;
+    const data = avatarRootFor(state.walker)?.userData; // Never clear another actor's held equipment.
+    if (data?.proceduralHandToolHolder === holder) {
+      delete data.proceduralHandToolHolder;
+      delete data.proceduralHandToolKey;
+      delete data.proceduralHandGripContext;
+      delete data.proceduralHandFreeRightPose;
+    }
+    state.walker?.legs?.setStanceDrop?.(0, false); // Stop applying the transient Kurraya body sink after performance ends.
+    state.kurrayaHolder = null;
+  }
+
+  function updateKurrayaStation(state, walker) {
+    const action = window.HeldActionAnimations?.kurrayaPlayNote; // Shared Attack Editor animation owns the instrument, free hand, arms and knees.
+    const instrument = window.KurrayaInstrument; // Its clock is started by sounded-note from this NPC's audio iframe.
+    const three = T();
+    if (!action?.poses?.neutral || !instrument?.npcNotePose || !three || !walker?.stationToolMesh?.userData?.kurrayaAssembly) return false;
+    let holder = walker.stationToolMesh; // The two-plane assembly already contains its baked resting tilt.
+    if (!holder.userData.npcKurrayaHolder) {
+      const parent = holder.parent; // Same parent/child split as player heldItemHolder + its Kurraya sprite assembly.
+      if (!parent) return false;
+      const wrapper = new three.Group(); // Authoring moves the holder, never overwrites the sprite's own tilt.
+      wrapper.name = 'npc_kurraya_authored_holder';
+      wrapper.userData.kurrayaAssembly = true;
+      wrapper.userData.npcKurrayaHolder = true;
+      parent.add(wrapper);
+      wrapper.add(holder);
+      walker.stationToolMesh = holder = wrapper; // Existing per-NPC sound-note relay keeps working.
+    }
+    const pose = instrument.npcNotePose(walker.stationKurrayaTwitch); // Same Neutral/Windup/Strike interpolation as the player.
+    if (!pose || !setHolderPose(state, holder, pose)) return false;
+    holder.scale.setScalar(Math.max(0.01, Number(action.poses.neutral.scale) || 0.85)); // Neutral owns the visual scale across the whole note.
+    const avatar = avatarRootFor(walker); // The existing procedural hand driver handles grip, elbow and free plucking hand at render time.
+    if (avatar) {
+      avatar.userData ||= {};
+      avatar.userData.proceduralHandToolKey = 'kurraya';
+      avatar.userData.proceduralHandToolHolder = holder;
+      avatar.userData.proceduralHandGripContext = 'melee';
+      avatar.userData.proceduralHandFreeRightPose = grips()?.sampleFreeRightHand?.(
+        action.poses, action, instrument.npcNoteProgress(walker.stationKurrayaTwitch), action.sequence
+      ) || null;
+    }
+    walker.legs?.setStanceYawDeg?.(Number(pose.bodyYaw) || 0); // The same authored torso direction as player performance.
+    walker.legs?.setStanceDrop?.(Math.max(0, Number(pose.bodySink) || 0) / 100 * (walker.legs.modelHeight || 0), true); // Same 3% strike bend.
+    releaseClaims(walker); // Final hand poses belong to the common render-time hand driver.
+    state.kurrayaHolder = holder;
+    state.mode = 'station-kurraya-authored';
+    state.key = 'kurraya';
+    state.activity = null;
+    state.handsAttached = !!rigFor(walker);
+    return true;
+  }
+
   function updateState(state) {
     const walker = state.walker;
     state.lastUpdateAt = performance.now();
@@ -552,6 +607,7 @@
     state.offscreen = false;
     const loadout = watchmanLoadoutFor(walker);
     if (loadout) {
+      releaseKurrayaStation(state); // Duty changes restore the watchman's original grip and body stance.
       const parent = walker?.root?.parent;
       if (!state.holder) { buildWatchman(state, loadout); releaseClaims(walker); state.mode = 'watchman-loading'; return; }
       if (parent && state.holder.parent !== parent) parent.add(state.holder);
@@ -571,6 +627,8 @@
     if (state.holder) state.holder.visible = false; // An existing outdoor holder must disappear immediately on interior entry.
     const target = walker?.currentScheduleTarget || null;
     const key = normalizeToolKey(target?.toolKey || walker?.stationToolKey);
+    if (key === 'kurraya' && updateKurrayaStation(state, walker)) return; // The authored note path takes priority over generic station swings.
+    releaseKurrayaStation(state); // Leaving the stage relinquishes only the Kurraya's pose ownership.
     if (!key || key === 'kurraya' || !walker?.stationToolMesh) {
       clearBodyYaw(state);
       releaseClaims(walker);
@@ -630,7 +688,7 @@
     const state = {
       walker, original, wrapped: null, holder: null, buildPromise: null, buildGeneration: 0,
       mode: null, key: null, loadout: null, handsAttached: false, lastUpdateAt: null,
-      bodyYaw: null, visualSource: null, ownedTextures: new Set(), disposed: false,
+      bodyYaw: null, kurrayaHolder: null, visualSource: null, ownedTextures: new Set(), disposed: false,
     };
     state.wrapped = function npcHeldV4WalkerUpdate(...args) {
       const result = original.apply(this, args);
@@ -648,6 +706,7 @@
   function disposeState(state) {
     if (!state || state.disposed) return;
     state.disposed = true;
+    releaseKurrayaStation(state); // Despawning and rig replacement must not leave a Kurraya claiming the NPC's hands.
     state.buildGeneration++;
     releaseClaims(state.walker);
     disposeBodyYawWrapper(state);
@@ -685,6 +744,8 @@
         holderVisible: state.holder?.visible ?? null,
         rigReady: !!rig,
         handsAttached: !!state.handsAttached,
+        npcKurrayaAuthored: state.mode === 'station-kurraya-authored', // Mobile inspector reports the full authored note path.
+        npcKurrayaNoteProgress: state.kurrayaHolder ? (window.KurrayaInstrument?.npcNoteProgress?.(walker.stationKurrayaTwitch) ?? null) : null,
         rightHandOwner: claims?.right || null,
         leftHandOwner: claims?.left || null,
         secondaryGripActive: false,

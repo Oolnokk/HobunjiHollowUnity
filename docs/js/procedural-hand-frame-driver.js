@@ -147,6 +147,8 @@
   }
   function freeRightHandFor(record, toolKey) {
     if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
+    const npcAuthored = record?.avatarRoot?.userData?.proceduralHandFreeRightPose; // Musician carries the real authored right-hand pluck pose, not the player's singleton session.
+    if (toolKey === 'kurraya' && record?.avatarRoot?.userData?.proceduralHandToolHolder?.parent && npcAuthored) return npcAuthored;
     return toolKey === 'kurraya' && (playerKurrayaActive(record) || !!playerKurrayaTarget(record))
       ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Keep the independent free hand in authored Neutral while carrying Kurraya, between and after notes.
   }

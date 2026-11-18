@@ -399,7 +399,19 @@
     twitchState.phase=Math.random()*Math.PI*2;
     twitchState.frequency=16+Math.random()*8;
   }
+  function npcNoteProgress(twitchState, now = performance.now()) {
+    const note = window.HeldActionAnimations?.kurrayaPlayNote; // The NPC samples the identical authored note duration as the player.
+    if (!note || !twitchState?.active) return 0;
+    const progress = (now - twitchState.startedAt) / Math.max(50, (Number(note.durationS) || 0.32) * 1000); // The sounded-note event provides this clock.
+    if (progress >= 1) { twitchState.active = false; return 0; }
+    return Math.max(0, progress);
+  }
+  function npcNotePose(twitchState, now = performance.now()) {
+    const note = window.HeldActionAnimations?.kurrayaPlayNote; // One Neutral/Windup/Strike source for both player and NPC.
+    return note?.poses?.neutral ? notePoseAt(note, npcNoteProgress(twitchState, now)) || note.poses.neutral : null;
+  }
   function updateTwitch(twitchState,group) {
+    if (group?.userData?.npcKurrayaHolder) return; // Authored holder/hand/body now updates after NPC walker.update; never add a second wrist rotation.
     if(!twitchState.active||!group?.userData.kurrayaAssembly)return;
     const elapsed=performance.now()-twitchState.startedAt;
     const note=window.HeldActionAnimations?.kurrayaPlayNote;
@@ -715,7 +727,7 @@
     return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,anchorStatus:fluteState.anchorStatus,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, npcNoteProgress, npcNotePose,
     beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
     advanceFluteNote, fluteNotePose: () => fluteState.notePose,
