@@ -35,18 +35,22 @@
   }
   function activeChestClaims(mapId) {
     const record = claimedChestTilesByZone.get(mapId); // A new week has fresh treasure; old claims cannot suppress it.
-    return record?.week === weekIndex() ? record.tiles : null;
+    return record?.week === weekIndex() ? record : null;
   }
   function wasClaimed(mapId, placement) {
-    return !placement.ruinHole && !!activeChestClaims(mapId)?.has(chestTileKey(placement));
+    if (placement.ruinHole) return false;
+    const record = activeChestClaims(mapId); // A chest can move when day-dependent plant/berry exclusions change during a rebuilt scatter.
+    return !!record && (record.tiles.has(chestTileKey(placement))
+      || (Number.isInteger(placement.slot) && record.slots.has(placement.slot)));
   }
   function rememberChestClaim(mapId, placement) {
-    let record = claimedChestTilesByZone.get(mapId); // Shared by every rebuild of this zone during this treasure week.
-    if (!record || record.week !== weekIndex()) {
-      record = { week: weekIndex(), tiles: new Set() };
+    let record = activeChestClaims(mapId); // Shared by every rebuild of this zone during this treasure week.
+    if (!record) {
+      record = { week: weekIndex(), tiles: new Set(), slots: new Set() };
       claimedChestTilesByZone.set(mapId, record);
     }
     record.tiles.add(chestTileKey(placement));
+    if (Number.isInteger(placement.slot)) record.slots.add(placement.slot); // Stable ordinal suppresses relocated copies of a previously claimed chest.
   }
 
   const TREASURE_TIERS = Object.freeze({
@@ -245,11 +249,11 @@
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Ruin-hole placement stays on its independent world-seeded stream.
     const tierRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-tier:' + weekIndex())); // Tier stream does not alter scatter locations or hole rarity.
-    return spots.map(({ col, row }) => {
+    return spots.map(({ col, row }, slot) => {
       const ruinHole = holeRng() < holeChance; // A buried ruin replaces the chest; don't roll (or serialize) loot that can never be claimed.
-      if (ruinHole) return { col, row, found: false, ruinHole: true };
+      if (ruinHole) return { col, row, slot, found: false, ruinHole: true };
       const tier = rollTreasureTier(tierRng);
-      return { col, row, found: false, tier, loot: _rollTreasureLootBundle(tier) };
+      return { col, row, slot, found: false, tier, loot: _rollTreasureLootBundle(tier) };
     });
   }
 
@@ -528,6 +532,14 @@
     let persisted = deps._zoneTreasurePersist.get(mapId);
     let suppressedClaims = 0; // A claim found in a stale placement snapshot forces its meshes to be rebuilt.
     if (persisted?.week === weekIndex()) {
+      const occupiedSlots = new Set(persisted.placements.map(p => p.slot).filter(s => Number.isInteger(s) && s >= 0)); // Legacy saves predate stable weekly scatter slots.
+      let legacySlot = 0; // Assign each remaining legacy chest a distinct ordinal before any future opening can remove it.
+      for (const placement of persisted.placements) {
+        if (Number.isInteger(placement.slot) && placement.slot >= 0) continue;
+        while (occupiedSlots.has(legacySlot)) legacySlot++;
+        placement.slot = legacySlot;
+        occupiedSlots.add(legacySlot++);
+      }
       const before = persisted.placements.length; // An old state restore cannot reinstate a chest that this character already opened.
       persisted.placements = persisted.placements.filter(placement => !wasClaimed(mapId, placement));
       suppressedClaims = before - persisted.placements.length;
@@ -617,11 +629,11 @@
       });
       const claims = claimedChestTilesByZone.get(mapId); // Claimed coordinates are saved even though opened placements themselves are removed.
       out[mapId] = { week: v.week, placements,
-        ...(claims?.week === v.week ? { claimedTiles: [...claims.tiles] } : {}) };
+        ...(claims?.week === v.week ? { claimedTiles: [...claims.tiles], claimedSlots: [...claims.slots] } : {}) };
     });
     for (const [mapId, claims] of claimedChestTilesByZone) {
       if (!out[mapId] && claims.week === weekIndex() && claims.tiles.size) {
-        out[mapId] = { week: claims.week, claimedTiles: [...claims.tiles] }; // Claim-only entry: a lost placement map must not be serialized as an empty complete scatter.
+        out[mapId] = { week: claims.week, claimedTiles: [...claims.tiles], claimedSlots: [...claims.slots] }; // Claim-only entry: a lost placement map must not be serialized as an empty complete scatter.
       }
     }
     return out;
@@ -636,7 +648,10 @@
         .filter(placement => placement?.found && !placement.ruinHole).map(chestTileKey); // Legacy found=true placements remain valid claim tombstones.
       const claimedTiles = [...(Array.isArray(v.claimedTiles) ? v.claimedTiles : []), ...legacy]
         .filter(key => typeof key === 'string' && /^\d+,\d+$/.test(key)); // Reject malformed coordinates in a damaged save.
-      if (claimedTiles.length) claimedChestTilesByZone.set(mapId, { week: v.week, tiles: new Set(claimedTiles) });
+      const claimedSlots = (Array.isArray(v.claimedSlots) ? v.claimedSlots : [])
+        .filter(slot => Number.isInteger(slot) && slot >= 0 && slot < 100000); // Ignore invalid scatter-slot values in damaged saves.
+      if (claimedTiles.length || claimedSlots.length)
+        claimedChestTilesByZone.set(mapId, { week: v.week, tiles: new Set(claimedTiles), slots: new Set(claimedSlots) });
     });
   }
 
@@ -728,6 +743,6 @@
     restoreState,
     updateSparkles,
     debugClaims: () => Object.fromEntries([...claimedChestTilesByZone].map(([mapId, record]) =>
-      [mapId, { week:record.week, claimed:[...record.tiles] }])), // In-game/mobile diagnostics show exactly which buried chest tiles cannot respawn.
+      [mapId, { week:record.week, claimed:[...record.tiles], slots:[...record.slots] }])), // In-game/mobile diagnostics show exactly which buried chest tiles cannot respawn.
   };
 })();
