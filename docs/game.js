@@ -4999,7 +4999,7 @@
       }
       function releaseCreatureTemporaryFrameTexture(url) {
         // Generated pet portraits are unique to an equip/appearance, unlike permanent species PNG URLs.
-        if (typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return false;
+        if (typeof url !== 'string' || !url.startsWith('blob:')) return false; // Data URLs can match between pets on older browsers, so they are not uniquely owned.
         const front = _creatureTexCache.front.get(url); // Disposed when a shoulder frame is replaced or unequipped.
         const back = _creatureTexCache.back.get(url); // Distinct only on renderers without shared front/back mirroring.
         _creatureTexCache.front.delete(url);
