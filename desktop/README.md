@@ -98,6 +98,10 @@ machine; Google Drive is not a transactional database and may create conflicts.
 
 ## Checking whether Windows is actually using your GPU
 
+The desktop executable requests Electron's `force_high_performance_gpu` preference before Chromium starts. This is a preference, not a guarantee: Windows graphics settings, display connections, and driver configuration can still select Intel graphics.
+
+**Verify the Renderer field** in View → Graphics Status after restarting. `ANGLE (Intel ...)` means the game still renders through Intel, even if NVIDIA is listed as a detected adapter. `ANGLE (NVIDIA ...)` confirms that the game context uses the NVIDIA GPU. The report also distinguishes the requested preference from the renderer actually selected.
+
 Open **View → Graphics Status** in the installed game (no developer console).
 The report lists the Chromium WebGL acceleration state, detected/active display
 adapters, and the **main game's live WebGL renderer**, when it is available.

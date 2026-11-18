@@ -35,12 +35,14 @@ function gpuName(device) {
     (device?.active === true ? ' [active]' : device?.active === false ? ' [inactive]' : '');
 }
 
-function describeGraphicsStatus({ accelerationEnabled = null, features = null, gpuInfo = null, webgl = null, errors = [] } = {}) {
+function describeGraphicsStatus({ accelerationEnabled = null, highPerformanceRequested = null, features = null, gpuInfo = null, webgl = null, errors = [] } = {}) {
   const lines = [
     'HOBUNJI HOLLOW — GRAPHICS STATUS',
     '',
     'Hardware acceleration setting: ' + (accelerationEnabled === true ? 'enabled (not proof of GPU rendering)' :
       accelerationEnabled === false ? 'disabled' : 'not reported'),
+    'Discrete GPU preference: ' + (highPerformanceRequested === true ? 'requested at startup (not proof of selection)' :
+      highPerformanceRequested === false ? 'not requested' : 'not reported'),
     'Chromium WebGL: ' + (features?.webgl ?? 'not reported'),
     'Chromium WebGL2: ' + (features?.webgl2 ?? 'not reported'),
     'GPU compositing: ' + (features?.gpu_compositing ?? 'not reported'),
@@ -83,11 +85,14 @@ async function showGraphicsStatus({ app, dialog, clipboard, getGameWindow }) {
   if (!win || win.isDestroyed?.()) return null;
   const errors = []; // Report partial failures onscreen rather than requiring DevTools.
   let accelerationEnabled = null;
+  let highPerformanceRequested = null; // Indicates whether this desktop build requested a discrete adapter before startup.
   let features = null;
   let gpuInfo = null;
   let webgl = null;
   try { accelerationEnabled = app.isHardwareAccelerationEnabled(); }
   catch (error) { errors.push('Acceleration state: ' + String(error?.message || error)); }
+  try { highPerformanceRequested = app.commandLine?.hasSwitch?.('force_high_performance_gpu') ?? null; }
+  catch (error) { errors.push('GPU startup preference: ' + String(error?.message || error)); }
   try { features = app.getGPUFeatureStatus(); }
   catch (error) { errors.push('GPU features: ' + String(error?.message || error)); }
   try { gpuInfo = await app.getGPUInfo('basic'); }
@@ -95,7 +100,7 @@ async function showGraphicsStatus({ app, dialog, clipboard, getGameWindow }) {
   try { webgl = await win.webContents.executeJavaScript(WEBGL_STATUS_SCRIPT, true); }
   catch (error) { errors.push('Game WebGL context: ' + String(error?.message || error)); }
   if (win.isDestroyed?.()) return null;
-  const report = describeGraphicsStatus({ accelerationEnabled, features, gpuInfo, webgl, errors }); // Shared formatter also used by non-Electron regression tests.
+  const report = describeGraphicsStatus({ accelerationEnabled, highPerformanceRequested, features, gpuInfo, webgl, errors }); // Shared formatter also used by non-Electron regression tests.
   const choice = await dialog.showMessageBox(win, {
     type: 'info',
     title: 'Hobunji Hollow — Graphics Status',
