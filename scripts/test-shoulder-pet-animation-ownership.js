@@ -131,9 +131,12 @@ assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('blob:shoulder-portra
 const shared = { dispose() { disposed++; } }; // Shared two-sided shader uses the same GPU texture on both planes.
 cache.front.set('data:image/png;base64,grown-pet', shared);
 cache.back.set('data:image/png;base64,grown-pet', shared);
-assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('data:image/png;base64,grown-pet'), true,
-  'older browsers using a data URL also release their generated texture cache entries');
-assert.equal(disposed, 3, 'shared front/back textures are never double-disposed');
+assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('data:image/png;base64,grown-pet'), false,
+  'non-unique data URL fallbacks must never dispose a texture that another pet may still display');
+assert.equal(disposed, 2, 'shared data-URL textures remain intact until the game reclaims them');
+assert.equal(cache.front.get('data:image/png;base64,grown-pet'), shared, 'fallback texture remains available to other identical pets');
+cache.front.delete('data:image/png;base64,grown-pet'); // Remove the artificial fixture entry, not a production cache operation.
+cache.back.delete('data:image/png;base64,grown-pet');
 cache.front.set('assets/creaturesprites/pingdort_idle.png', front);
 assert.equal(cleanupSandbox.releaseTemporaryTextureForTest('assets/creaturesprites/pingdort_idle.png'), false,
   'permanent species PNGs must never be purged by the pet-only cleanup API');
