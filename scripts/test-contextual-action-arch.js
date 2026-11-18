@@ -6,11 +6,14 @@ const fs = require('node:fs'); // Reads shipped scripts rather than reimplementi
 const scripts = {
   router: fs.readFileSync('docs/js/world-action-input-claims.js','utf8'),
   arch: fs.readFileSync('docs/js/action-prompt-ui.js','utf8'),
-  hunt: fs.readFileSync('docs/js/festival-blossom-hunt.js','utf8')
+  hunt: fs.readFileSync('docs/js/festival-blossom-hunt.js','utf8'),
+  game: fs.readFileSync('docs/game.js','utf8') // This is the actual HUD invalidation path; a standalone arch-row test cannot detect a missing game.js dirty-key.
 };
 assert.doesNotMatch(scripts.hunt,/createPickPrompt|createElement\(['"]button['"]\)/,
   'Five Blossoms must not make a standalone floating pickup button');
 assert.match(scripts.hunt,/showInArch:true/, 'Five Blossoms opts into the native action arch');
+assert.match(scripts.game,/\|\$\{window\.GameplayInputRouter\?\.getArchRevision\?\.\(\) \?\? 0\}`;/,
+  'live game action-bar cache includes visible contextual arch revisions');
 const listeners = new Map(); // Captures only event types registered by the production shared input adapter.
 const window = { addEventListener() {} };
 const document = {
@@ -23,9 +26,16 @@ window.ActionPromptUI.init({});
 const router = window.GameplayInputRouter;
 const first = {action:'cut',label:'Cut'}, second = {action:'torch_throw',label:'Throw torch'};
 let picks=0; // Counts actual claim executions through the same device-neutral dispatcher.
+const noClaimRevision = router.getArchRevision(); // Invisible claims must not force costly action-arch DOM rewrites.
+router.setClaims('invisible-input',[{actionId:'action2',priority:15,label:'ordinary world input'}]);
+assert.equal(router.getArchRevision(),noClaimRevision,'non-visual claims do not invalidate the HUD');
+router.clearClaims('invisible-input');
+assert.equal(router.getArchRevision(),noClaimRevision,'removing an invisible input also leaves the HUD unchanged');
 router.setClaims('five-blossoms-tree',[{
   actionId:'action3',priority:65,label:'Pick Cyan Blossom',hudIcon:'🌸',showInArch:true,onPress(){picks++;}
 }]);
+const blossomRevision = router.getArchRevision(); // Used to check invisible higher-priority ownership and restoration below.
+assert.ok(blossomRevision > noClaimRevision,'revealing a blossom advances the physical action-bar cache');
 for (const heldMode of ['tool','item']) {
   const slots = window.ActionPromptUI.createActionArchLayout([first,second],heldMode,false).slots;
   assert.equal(slots[0],first, 'existing primary arch action is preserved');
@@ -34,6 +44,13 @@ for (const heldMode of ['tool','item']) {
   assert.equal(slots[2].label,'Pick Cyan Blossom');
   assert.equal(slots[2].icon,'🌸');
 }
+router.setClaims('higher-owner',[{actionId:'action3',priority:100,label:'Another modal action'}]);
+assert.ok(router.getArchRevision() > blossomRevision,'higher-priority invisible ownership invalidates stale Pick display');
+assert.equal(window.ActionPromptUI.createActionArchLayout([first,second],'tool',false).slots[2],undefined,
+  'an invisible higher-priority owner suppresses the lower-priority blossom arch icon');
+router.clearClaims('higher-owner');
+assert.equal(window.ActionPromptUI.createActionArchLayout([first,second],'tool',false).slots[2]?.label,'Pick Cyan Blossom',
+  'the Pick icon returns when higher-priority ownership withdraws');
 const button = {dataset:{action:'context_arch_action3'}};
 const event = id => ({
   pointerId:id,target:{closest(selector){return selector==='button.abt'?button:null;}},
