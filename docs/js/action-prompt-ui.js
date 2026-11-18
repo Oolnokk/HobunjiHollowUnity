@@ -76,7 +76,7 @@
     return router?.claimFor?.(match[1])?.showInArch ? { actionId:match[1], router } : null;
   }
   function installClaimedArchPointerRouting() {
-    if (typeof document === 'undefined' || document.__claimedArchPointerRoutingInstalled) return;
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function' || document.__claimedArchPointerRoutingInstalled) return;
     document.__claimedArchPointerRoutingInstalled = true;
     document.addEventListener('pointerdown',event => {
       const entry = claimedArchButton(event);
