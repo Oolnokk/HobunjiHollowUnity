@@ -46,6 +46,7 @@ const w={PerchSupport:supports,__farmLog(){},
   ].map(r=>{supports.register(area,r.support);return r;}):[],releaseInactive(){}},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
+vm.runInNewContext(file('docs/js/flying-combat-orbit.js'),{window:w,Math,console});
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
 const deps={TILE:64,player,hostileObjects:creatures,companionObjects:companions,getCurrentArea:()=>zone,worldSurfaceY:()=>0,
   makeCreatureEntity:(creatureKey,x,y,opts)=>({creatureKey,x,y,areaId:zone,
@@ -175,14 +176,25 @@ supports.attach=function(actor,point,t){ // Simulate a destroyed physical roost 
   return originalAttach(actor,point,t);
 };
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,secondCaptive));
+farBird._tzFlight.fallbackFoe=player;player.health=100; // A living, established combat opponent must be circled when the original perch is gone.
 assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
 for(let i=0;i<80&&farBird._tzFlight.phase==='return';i++)w.TzatzulFlightRuntime.update(.1);
-assert.equal(farBird._tzFlight.phase,'await-roost','missing landing perch cannot create an endless return');
+assert.equal(farBird._tzFlight.phase,'orbit','an unperchable flying enemy circles its foe instead of waiting indefinitely');
 assert.equal(farBird._tzFlight.captive,null,'lost roost releases surviving prey without an invisible cave');
 assert.equal(secondCaptive.tzatzulCapturedBy,null,'lost roost clears captive ownership');
-supports.attach=originalAttach;
+const orbitLeg=farBird._tzFlight.segment; // The real flight line, not an independently teleported steering position.
+assert(orbitLeg&&Math.hypot(orbitLeg.to.x-player.x,orbitLeg.to.y-player.y)/64<=5.01,
+  'first evasive chord stays close to the current foe');
+const orbitBefore=w.TzatzulFlightRuntime.debugSnapshot().orbits;
+for(let i=0;i<50;i++)w.TzatzulFlightRuntime.update(.1);
+assert(w.TzatzulFlightRuntime.debugSnapshot().orbits>orbitBefore,
+  'unavailable perch produces successive ring arcs, not a one-time sidestep');
+let recoveredRoost=false; // Confirms a rebuilt physical perch is reoccupied after real flight, without teleportation.
+supports.attach=function(actor,point,t){if(actor===farBird&&point.dimension===0)recoveredRoost=true;return originalAttach(actor,point,t);};
 w.TzatzulFlightRuntime.ensureZone(zone);
-assert.equal(farBird._tzFlight.phase,'perched','the original perch can recover after scene regeneration');
+for(let i=0;i<100&&!recoveredRoost;i++)w.TzatzulFlightRuntime.update(.1);
+assert(recoveredRoost,'the physical perch takes precedence again as soon as it can be reached');
+supports.attach=originalAttach;
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
 assert(supports.attach(farBird,farBird._tzFlight.roost));

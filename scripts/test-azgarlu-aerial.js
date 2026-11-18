@@ -21,6 +21,7 @@ const window={
   AudioSystem:{playWeaponHitSfx:()=>{}},
   EnemyLoadoutRules:{ruleFor:()=>({})},
 }; // Minimal gameplay dependencies retain the real combo and vertical aim API shapes.
+vm.runInNewContext(read('docs/js/flying-combat-orbit.js'),{window,Math,console});
 vm.runInNewContext(read('docs/js/combat/combat-special-liches.js'),{window,performance:{now:()=>now},console});
 const guardian=window.SpecialHarlyaoLiches;
 const actor={x:0,y:0,groundLift:.5,health:200,lichType:'hronal',def:{chaseSpeed:300},avatarRef:{modelHeight:1.2,legs:{beginLunge(){}}}};
@@ -60,7 +61,15 @@ player.x=150;actor.x=0;actor.y=0;
 window.threat={attacker:player,id:1,yaw:Math.PI,halfConeRad:1.5,rangePx:250,lungePx:0}; // The player's real windup is within Azgarlu's reaction cone.
 assert.equal(ai().handled,true);assert.equal(actor.dodging,true,'Player attack triggers airborne dodge');
 assert.equal(actor._specialAirMotion.kind,'dodge','Dodge changes altitude without gravity');
-window.threat=null;actor._specialDodge=null;actor.dodging=false;actor._specialDodgeCooldownS=0;
+const dodgeStart=Math.atan2(actor.y-player.y,actor.x-player.x); // Real live target defines the center of Azgarlu's evasive circle.
+window.threat=null;
+ai(.12);ai(.12); // A no-perch boss must keep steering tangentially during the already-started dodge.
+const dodgeEnd=Math.atan2(actor.y-player.y,actor.x-player.x);
+assert(Math.abs(Math.atan2(Math.sin(dodgeEnd-dodgeStart),Math.cos(dodgeEnd-dodgeStart)))>.1,
+  'aerial dodge changes bearing around the opponent instead of retreating straight away');
+assert(Math.abs(Math.hypot(actor.x-player.x,actor.y-player.y)-150)<16,
+  'curving dodge stays near the original engagement radius');
+actor._specialDodge=null;actor.dodging=false;actor._specialDodgeCooldownS=0;
 actor._specialModeClock=10.3;actor._specialComboUntilMs=0;actor._specialLunge=null;actor._banditAction=null;ai(.05);
 assert.equal(actor._specialMode,'magic','Melee phase lasts triple the magic phase');
 actor._specialModeClock=3.5;ai(.05);assert.equal(actor._specialMode,'melee','Magic phase remains the brief interruption');

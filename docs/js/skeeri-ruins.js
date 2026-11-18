@@ -45,7 +45,7 @@
   const clamp = (v,a,b) => Math.max(a,Math.min(b,Number(v)||0));
   const hash = str => {let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;}; // Separate deterministic rolls do not perturb the generator RNG.
   const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z); // Flight/trigger distances are measured in world tiles.
-  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,failedSpawns:0,eyeMarkerPixels:0,furPatternPixels:0,lastError:null}; // Readable on mobile without developer console.
+  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,orbits:0,failedSpawns:0,eyeMarkerPixels:0,furPatternPixels:0,lastError:null}; // Readable on mobile without developer console.
   let deps = null; // Injected once by WildlifeSpawn.init: authoritative player, factory and hostile collection.
   let owner = null; // Exactly one disposable generated-ruin encounter session.
   let rigPromise = null; // Shared immutable sprite/JSON download across all three Skeeri sizes.
@@ -340,7 +340,7 @@
     deps.hostileObjects.add(actor);
     const state={id:'skeeri:'+session.seed+':'+index,actor,spec,size,tier,
       phase:'rest',home:{x,z,y},serial:0,segment:null,cooldown:1+index*.4,
-      dead:false,struck:false}; // One actor owns one flight phase; no extra navigation/physics loop.
+      dead:false,struck:false,orbitDirection:index%2?-1:1,orbitRetryS:0}; // One actor owns one flight phase; no extra navigation/physics loop.
     session.actors.add(state);snapshot.spawned++;
     return state;
   }
@@ -505,16 +505,50 @@
     hatch.mesh.position.y=hatch.closedY+.98*clamp(hatch.age/HATCH_OPEN_SECONDS,0,1);
     if(hatch.age>=HATCH_OPEN_SECONDS)spawnHatch(session,hatch);
   }
+  function isAtRoost(session,state) {
+    const here=actorLocation(state.actor,session),home=state.home; // Finished return legs count as landings only at their actual authored perch.
+    return Math.hypot(here.x-home.x,here.z-home.z,here.y-home.y)<.55;
+  }
+  function startCombatOrbit(session,state,player,playerY) {
+    const orbit=window.FlyingCombatOrbit,here=actorLocation(state.actor,session);
+    if(!orbit?.waypoint||!player||!Number.isFinite(player.x)||!Number.isFinite(player.z))return false;
+    const initial=state.orbitDirection===-1?-1:1;
+    for(const side of [initial,-initial]){
+      for(const stepRad of [Math.PI/4,Math.PI/6]){
+        const point=orbit.waypoint({x:here.x,y:here.z},{x:player.x,y:player.z},
+          {unit:1,minRadius:2.8,maxRadius:4.8,direction:side,stepRad}); // One short tangent chord about the moving foe.
+        if(!point)continue;
+        const to={x:point.x,z:point.y,y:Math.max(here.y,playerY+1.7)}; // Stay airborne, above the target's melee reach.
+        if(!flightTo(session,state,to,'orbit',state.spec.speed))continue; // Authoritative ruin voxel check rejects walls and ceilings.
+        state.orbitDirection=side;state.orbitRetryS=0;snapshot.orbits++;
+        return true;
+      }
+    }
+    return false; // A blocked ring never gives a bird permission to phase through stone.
+  }
+  function returnOrOrbit(session,state,player,playerY,returnPhase) {
+    if(flightTo(session,state,state.home,returnPhase,state.spec.speed*1.25))return true;
+    if(startCombatOrbit(session,state,player,playerY))return true;
+    state.phase='orbit';state.orbitRetryS=.65;state.actor.skeeriFlightPose='glide';
+    return false; // Keep the current valid elevated support and retry at a bounded cadence.
+  }
   function updateDiver(session,state,dt,player,playerY) {
     const room=state.home;
     if(state.segment){
       const finished=advance(session,state,dt);
       if(finished && state.phase==='dive'){
-        flightTo(session,state,room,'retreat',state.spec.speed*1.3);
-      }else if(finished && state.phase==='retreat'){
-        state.phase='rest';state.cooldown=2.6+(hash(state.id+snapshot.dives)%5)*.35;
-        state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        returnOrOrbit(session,state,player,playerY,'retreat');
+      }else if(finished && (state.phase==='retreat'||state.phase==='orbit')){
+        if(state.phase==='retreat'&&isAtRoost(session,state)){
+          state.phase='rest';state.cooldown=2.6+(hash(state.id+snapshot.dives)%5)*.35;
+          state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        }else returnOrOrbit(session,state,player,playerY,'retreat');
       }
+      return;
+    }
+    if(state.phase==='orbit'){
+      state.orbitRetryS=Math.max(0,(state.orbitRetryS||0)-dt);
+      if(state.orbitRetryS===0)returnOrOrbit(session,state,player,playerY,'retreat');
       return;
     }
     if(state.phase!=='rest'||!player)return;
@@ -530,11 +564,18 @@
       if(finished && state.phase==='approach'){
         dropBomb(session,state);
         snapshot.bombRuns++;
-        flightTo(session,state,state.home,'return',state.spec.speed*1.25);
-      }else if(finished && state.phase==='return'){
-        state.phase='nest';state.cooldown=7+hash(state.id+snapshot.bombRuns)%6;
-        state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        returnOrOrbit(session,state,player,playerY,'return');
+      }else if(finished && (state.phase==='return'||state.phase==='orbit')){
+        if(state.phase==='return'&&isAtRoost(session,state)){
+          state.phase='nest';state.cooldown=7+hash(state.id+snapshot.bombRuns)%6;
+          state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        }else returnOrOrbit(session,state,player,playerY,'return');
       }
+      return;
+    }
+    if(state.phase==='orbit'){
+      state.orbitRetryS=Math.max(0,(state.orbitRetryS||0)-dt);
+      if(state.orbitRetryS===0)returnOrOrbit(session,state,player,playerY,'return');
       return;
     }
     if(state.phase!=='nest'||!player)return;

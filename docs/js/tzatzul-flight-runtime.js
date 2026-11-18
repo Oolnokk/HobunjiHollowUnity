@@ -19,7 +19,7 @@
   const captured = new Map(); // Actual captured players/creatures, preserving original actor objects and movement state.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
-  const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
+  const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0, orbits: 0,
     retreats: 0, captures: 0, releases: 0, scouts: 0, nestStays: 0, fleeDrops: 0, nestEntries: 0, failedNestEntries: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
@@ -89,6 +89,9 @@
       const support = roost.support;
       const changed = state.roost !== support; // Only rebuilt scenes reset a resting bird's hunt clock.
       state.roost = support; bird.tzatzulNestMapId = roost.caveMapId; // Streamed spire always refreshes cave identity.
+      if (changed && state.phase === 'orbit' && !bird.prone && !(bird.knockbackT > 0)) {
+        state.roostUnavailable = false; returnHome(bird); continue; // Fresh streamed support takes priority over the no-perch combat orbit.
+      }
       if (!bird.prone && !bird._knockbackLedgeFall && !bird._knockbackLedgeAir && !(bird.knockbackT > 0) && (state.phase === 'await-roost' || changed && state.phase === 'perched')) {
         if (state.phase === 'await-roost' && !bird.onPerch) { returnHome(bird); continue; } // Fly back after a real knock-off instead of teleporting to the high spire.
         if (window.PerchSupport?.attach?.(bird, support)) {
@@ -112,7 +115,8 @@
       bird._tzFlight = { identity, roostId: roost.id, roost: roost.support,
         phase: 'perched', elapsed: 0, rest: REST_SECONDS + slot, target: null,
         segment: null, struck: false, captive: null, scoutIndex: slot * 3,
-        delivered: false, nestUntil: null, retreating: false }; // Persistent hunt/cave phases per parent. // Independent phase per animal.
+        delivered: false, nestUntil: null, retreating: false, orbitDirection: slot % 2 ? -1 : 1,
+        orbitLegs: 0, roostUnavailable: false, fallbackFoe: null }; // Persistent hunt/cave phases per parent. // Independent phase per animal.
       deps.hostileObjects.add(bird);
       actors.add(bird);
       spawnedThisDay.add(roost.id);
@@ -422,6 +426,7 @@
       travelFraction: endpoint.travelFraction ?? 1, lastBody: null }; // Retain the full intended leg for cave wall impact damage.
     state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
+    if (target?.health > 0) state.fallbackFoe = target; // Retain the foe across a return leg when the real landing perch vanishes.
     bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
     bird.tzatzulFlightPose = 'flap';
     bird.state = 'idle'; // Avoid an additional ground-pathfinding owner for aerial movement.
@@ -461,7 +466,38 @@
   }
   function returnHome(bird) {
     const state = bird._tzFlight;
-    return startLeg(bird, state.roost, 'return');
+    return state?.roost && startLeg(bird, state.roost, 'return');
+  }
+  function orbitCombatFoe(bird) {
+    const previous = bird._tzFlight?.fallbackFoe; // Last committed dive opponent remains the foe after the return leg.
+    if (previous?.health > 0 && (!previous.areaId || previous.areaId === bird.areaId)
+      && !previous._denHidden && previous.state !== 'dying') return previous;
+    return bird._tzNestMother ? (deps?.player?.health > 0 ? deps.player : null)
+      : choosePrey(bird, TERRITORY_TILES);
+  }
+  function startCombatOrbit(bird) {
+    const state = bird?._tzFlight, orbit = window.FlyingCombatOrbit;
+    const foe = orbitCombatFoe(bird);
+    if (!state || !orbit?.waypoint || !foe || !bird.onPerch || bird.prone) return false;
+    const direction = state.orbitDirection === -1 ? -1 : 1;
+    const target = { x: n(foe.x), y: n(foe.y) }; // Existing target coordinates use world pixels.
+    const location = { x: n(bird.x), y: n(bird.y) };
+    for (const side of [direction, -direction]) {
+      for (const stepRad of [Math.PI / 4, Math.PI / 6]) {
+        const candidate = orbit.waypoint(location, target, {
+          unit: tile(), minRadius: 3, maxRadius: 5, direction: side, stepRad,
+        });
+        if (!candidate) continue;
+        const worldY = Math.max(surface(candidate.x, candidate.y) + 3,
+          n(bird.branchSurfaceY), n(targetBox(foe).max.y) + 1.5); // Keep a flying body above the foe and terrain.
+        const endpoint = { x: candidate.x, y: candidate.y, worldY };
+        if (bird._tzNestMother && !window.TzatzulNestEncounter?.clearAirPath?.(bird, endpoint)) continue;
+        if (!startLeg(bird, endpoint, 'orbit', foe)) continue;
+        state.orbitDirection = side; state.orbitLegs = (state.orbitLegs || 0) + 1;
+        stats.orbits++; return true; // Next short flight leg curves around a LIVE foe, without a separate ticking loop.
+      }
+    }
+    return false; // Never tunnel through cave rock when no circular chord is clear.
   }
   function hit(bird, previous, current) {
     const state = bird._tzFlight;
@@ -529,19 +565,26 @@
     state.segment = null;
     if (state.phase === 'swoop') { if (bird._tzNestMother || state.captive) returnHome(bird); else seekFood(bird); return; }
     if (state.phase === 'search') { seekFood(bird); return; }
+    if (state.phase === 'orbit') {
+      if (state.roost && (state.orbitLegs || 0) % 4 === 0 && returnHome(bird)) return; // Periodically recheck the real perch.
+      if (!startCombatOrbit(bird)) { state.phase = 'await-roost'; bird.tzatzulFlightPose = 'glide'; }
+      return;
+    }
     if (state.phase === 'return') {
       const arrived = !!window.PerchSupport?.attach?.(bird, state.roost);
       if (state.captive) releaseCaptive(state.captive, arrived ? 'returned to roost' : 'roost lost');
       state.phase = arrived ? 'perched' : 'await-roost';
+      state.roostUnavailable = !arrived; // Missing physical support enables the combat-only orbit fallback.
       state.elapsed = 0; state.target = null;
       if (!bird._tzNestMother) state.rest = 0;
       bird.tzatzulFlightPose = arrived ? 'perched' : 'glide';
       if (arrived) {
+        state.orbitLegs = 0;
         bird.tzatzulDivePitchRad = 0;
         if (bird._tzNestMother) return; // The cave encounter owns the perch pause and next dive.
         if (state.delivered || state.retreating) { state.delivered = false; enterNest(bird); }
         else seekFood(bird); // An unseen/rejected victim doesn't feed the hatchlings.
-      } else mark(bird, 'lost roost; released prey and awaiting replacement');
+      } else if (!startCombatOrbit(bird)) mark(bird, 'lost roost; no combat foe to circle');
     }
   }
   let lastArea = null; // Changed-zone detection disposes only old spire scene roots.
@@ -584,7 +627,10 @@
         state.phase = 'await-roost';
         continue;
       }
-      if (state.phase === 'await-roost') continue;
+      if (state.phase === 'await-roost') {
+        if (bird.onPerch) startCombatOrbit(bird); // Airborne but unable to land: keep moving around a present foe.
+        continue;
+      }
       if (state.phase !== 'perched') {
         advance(bird, step);
         if (deps.getCurrentArea?.() !== area) break; // A successful delivery moves the player before the remaining outdoor birds can tick.
@@ -617,9 +663,10 @@
     owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
     resistsCarryKnockback: bird => !!bird?._tzFlight?.captive && bird.health > n(bird.maxHealth, 1) * .3 && !bird.prone, // Small hits do not drop a carried victim until the bird flees.
     sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.
+    flightBodyHalf: hitboxSize, // Nest collision preflight shares the real flying torso box instead of a guessed one.
     returnToRoost: returnHome, // Recovery uses the normal flight path after a genuine perch knock-off.
     beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),
     advanceNestFlight: (bird,dt) => bird?._tzNestMother === true && advance(bird,Math.max(0,Math.min(.1,n(dt)))),
-    __test: Object.freeze({ roosts, choosePrey, seekFood, swoop, returnHome, capture, carryCaptive, releaseCaptive, terrainFlightProfile, flightHeightAt }),
+    __test: Object.freeze({ roosts, choosePrey, seekFood, swoop, returnHome, startCombatOrbit, capture, carryCaptive, releaseCaptive, terrainFlightProfile, flightHeightAt }),
   });
 })();

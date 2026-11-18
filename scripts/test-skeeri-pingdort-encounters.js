@@ -132,6 +132,7 @@ const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
     group.position.set(o.x,o.y,o.z);return {...o,id:'bomb'+(++bombs),group};}},
   InventoryStacks:{MAX_TOTAL:99},FarmAnimals:{queueItemGenotype(){}},
   __hobunjiPlayerProfile:{worldId:'unit'},__farmLog(){}};
+vm.runInNewContext(read('docs/js/flying-combat-orbit.js'),{window:w,Math});
 for(const name of ['skeeri-ruins','pingdort-registration','pingdort-flocks'])
   vm.runInNewContext(read('docs/js/'+name+'.js'),{window:w,Image:TestImage,document:fakeDocument,fetch:testFetch,performance:{now:()=>1000},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,val)=>storage.set(key,String(val))},
@@ -191,6 +192,28 @@ async function check(){
   const before=ruin.actors.size;assert(w.SkeeriRuins.activateCompartment(hatch.id));
   for(let i=0;i<10;i++)w.SkeeriRuins.update(.1);
   assert.equal(ruin.actors.size-before,hatch.size==='small'?3:1);
+  const circlingBird=[...ruin.actors].find(state=>state.size==='small'||state.size==='medium');
+  assert(circlingBird,'a spawned diving Skeeri can use the no-perch fallback');
+  const previousPlayer={x:player.x,y:player.y,floor:playerFloorY}; // Restore the real test encounter after forcing a blocked landing.
+  const home=circlingBird.home,otherX=home.x+2; // Two tiles off its original room perch, facing a nearby live target.
+  PerchSupport.attach(circlingBird.actor,PerchSupport.point('test:airborne',
+    otherX*64,home.z*64,home.y+2));
+  player.x=(home.x+1)*64;player.y=home.z*64;playerFloorY=home.y;
+  const oldClear=w.DevRandomRuin.flightClear;
+  w.DevRandomRuin.flightClear=(_sx,_sy,_sz,ex,_ey,ez)=>
+    Math.hypot(ex-home.x,ez-home.z)>.5; // No path back to the original perch; other flight paths remain clear.
+  circlingBird.phase='orbit';circlingBird.segment=null;circlingBird.orbitRetryS=0;
+  const beforeOrbits=w.SkeeriRuins.debugSnapshot().orbits;
+  w.SkeeriRuins.update(.1);
+  assert.equal(circlingBird.phase,'orbit','a blocked landing turns into a combat circle rather than a frozen retreat');
+  assert(circlingBird.segment,'real flight-support movement continues without a usable perch');
+  assert(w.SkeeriRuins.debugSnapshot().orbits>beforeOrbits,'mobile diagnostics count completed fallback plans');
+  assert(Math.hypot(circlingBird.segment.to.x-(home.x+1),circlingBird.segment.to.z-home.z)<=4.81,
+    'fallback arc encircles the foe instead of fleeing to a distant nest');
+  w.DevRandomRuin.flightClear=oldClear;
+  circlingBird.phase='rest';circlingBird.segment=null;circlingBird.cooldown=99;
+  PerchSupport.attach(circlingBird.actor,PerchSupport.point('test:roost',home.x*64,home.z*64,home.y));
+  player.x=previousPlayer.x;player.y=previousPlayer.y;playerFloorY=previousPlayer.floor;
   const nearby=ruin.hatches.find(h=>h.trigger==='proximity'&&!h.opened); // A distinct hatch lets the original spawn-count assertion remain isolated.
   assert(nearby,'a sealed proximity hatch remains after the explicit activation');
   playerFloorY=nearby.y;
