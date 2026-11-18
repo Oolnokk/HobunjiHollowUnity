@@ -54,7 +54,11 @@
       "h": 1,
       "rot": 0,
       "collision": {
-        "mode": "none"
+        "mode": "custom",
+        "colOffset": 0,
+        "rowOffset": 0,
+        "w": 0.5,
+        "h": 0.5
       }
     }
   ],

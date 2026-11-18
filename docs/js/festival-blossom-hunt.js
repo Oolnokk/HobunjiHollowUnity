@@ -19,6 +19,7 @@
   let visibleTrees = new Map(); // Per-locale Three.js roots attached to the currently active scene.
   let cachedTreeMeshes = new Map(); // Keep one cached mesh per flower across zone revisits, avoiding repeated GPU geometry/material allocation.
   let calendarKey = ''; // Day/year/Shift change gate; ordinary animation frames do not touch quest saves.
+  let retrySaveAfter = 0; // A failed member write retries on a later calendar tick, rather than disabling the quest for the whole festival.
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
   let lastGenerated = null; // Debug snapshot describes which final terrain evidence made it into the clue.
 
@@ -41,7 +42,7 @@
     const { layout, locale } = statusFor(blossom);
     if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not in the current generated wilderness. A Tothal Shift may be needed for older worlds.' };
     return window.LocaleRiddleGenerator?.generate?.({
-      zoneId: blossom.zoneId, layout, instance: locale, blossomName: blossom.name,
+      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', blossomName: blossom.name,
       seed: [mapDeps?.tothalWorldId?.() || 'world', mapDeps?.currentTothalYear?.() || 'shift', blossom.id, locale.x, locale.y].join(':')
     }) || { ok: false, reason: 'LocaleRiddleGenerator is not loaded' };
   }
@@ -57,13 +58,15 @@
       kind: 'story', provider: 'blossomHunt', icon: '🌸', title: TITLE,
       npcName: 'The Feast of the Five Blossoms',
       objective: `Find the ${remaining.name} Tree (${founds.length}/5). The search ends when the festival week ends.`,
-      detail: clue.ok ? clue.text : `The ${remaining.name} riddle cannot be read yet: ${clue.reason}`,
+      detail: clue.ok ? clue.text : `Seek the ${remaining.name} in ${window.LocaleRiddleGenerator?.ZONES?.[remaining.zoneId] || remaining.zoneId}. ${clue.reason}`,
       found: founds.slice(0, 5), year: year(), shiftYear: shift, target: remaining.id
     };
   }
   function write(status, progress) {
     const result = window.QuestProgressStore?.setStatus?.(key(), status, progress);
     if (result === false || result == null) {
+      calendarKey = ''; // A transient save failure must not suppress the next year's start/expiry.
+      retrySaveAfter = Date.now() + 5000; // Prevent expensive repeated disk writes on every 200ms festival tick.
       lastStatus = 'Member save rejected the blossom quest update';
       window.__farmLog?.('[blossom-hunt] ' + lastStatus, 'warn');
       return false;
@@ -88,13 +91,17 @@
         objective: 'The Feast of the Five Blossoms has ended.', detail: 'Return next year for a new set of riddles.', hidden: true
       });
       if (saved) lastStatus = 'Unfinished annual hunt expired at the festival boundary';
+      else { calendarKey = ''; retrySaveAfter = Date.now() + 5000; } // Failed expiry is retried rather than resurrecting the old active quest forever.
     }
   }
   function syncCalendar() {
     if (!questDeps || !mapDeps) return;
+    const civilYear = year(); // Used as a readiness gate so an unloaded calendar cannot accidentally expire a saved annual quest.
+    if (!Number.isSafeInteger(civilYear) || window.CalendarSystem?.isInitialized?.() === false) return;
     const shift = mapDeps.currentTothalYear?.() ?? 'unknown';
-    const newKey = [year(), active() ? 'festival' : 'ordinary', shift].join(':');
-    if (newKey === calendarKey) return;
+    const newKey = [civilYear, active() ? 'festival' : 'ordinary', shift].join(':');
+    if (newKey === calendarKey || Date.now() < retrySaveAfter) return;
+    retrySaveAfter = 0;
     calendarKey = newKey;
     expireOutdated();
     if (active()) start();
@@ -121,7 +128,7 @@
       const instance = localeFor(blossom);
       const foliage = window.FoliageGenerator?.buildPottedBlossomTreeMesh;
       if (!instance || (!foliage && !cachedTreeMeshes.has(blossom.localeId))) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
-      const p = window.LocaleRiddleGenerator?.positionOf?.(instance);
+      const p = window.LocaleRiddleGenerator?.positionOf?.(instance, 'blossom-tree');
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
       let tree = cachedTreeMeshes.get(blossom.localeId); // A Shift may move the same tree; its materials and geometry do not need rebuilding.
       if (!tree) {
@@ -147,7 +154,7 @@
     const target = targetFor(found.length);
     if (!target || target.zoneId !== event.to.area) return;
     const locale = localeFor(target);
-    const p = locale && window.LocaleRiddleGenerator?.positionOf?.(locale);
+    const p = locale && window.LocaleRiddleGenerator?.positionOf?.(locale, 'blossom-tree');
     if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) return;
     if (Math.hypot(event.to.col - p.col, event.to.row - p.row) > 3) return;
     const next = [...found, target.id];
@@ -162,13 +169,13 @@
     collect(event); // Run only on a changed player tile/area; no per-frame distance scans.
   }
   function init(deps) {
-    mapDeps = deps; calendarKey = '';
+    mapDeps = deps; calendarKey = ''; retrySaveAfter = 0;
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
     clearTrees();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt', debugSnapshot);
   }
-  function bindQuestDeps(deps) { questDeps = deps; calendarKey = ''; } // TasksPanel's save/getQuestProgress callbacks provide the canonical persistence.
+  function bindQuestDeps(deps) { questDeps = deps; calendarKey = ''; retrySaveAfter = 0; } // TasksPanel's save/getQuestProgress callbacks provide the canonical persistence.
   function update() {
     syncCalendar();
     buildVisibleTrees(); // Persistent authored tree landmarks remain visible when their annual hunt is inactive.
@@ -180,7 +187,7 @@
     const liveClue = inProgress && upcoming ? clueFor(upcoming) : null;
     return { active: inProgress, ready: false, objective: live?.progress?.objective || '',
       statusText: inProgress ? `${live.progress?.found?.length || 0} of 5 discovered — festival time is limited.` : null,
-      detail: liveClue?.ok ? liveClue.text : live?.progress?.detail || '' };
+      detail: inProgress && upcoming ? (liveClue?.ok ? liveClue.text : `Seek ${upcoming.name} in ${window.LocaleRiddleGenerator?.ZONES?.[upcoming.zoneId] || upcoming.zoneId}. ${liveClue?.reason || 'Clue unavailable.'}`) : live?.progress?.detail || '' }; // Never show last Shift's obsolete terrain clue after regeneration.
   }
   function debugSnapshot() {
     const live = state();
@@ -188,7 +195,7 @@
       activeFestival: active(), questId: key(), status: live?.status || 'not_started', found: live?.progress?.found || [],
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
-      displayedTrees: [...visibleTrees.keys()], cachedTreeMeshes: cachedTreeMeshes.size, lastStatus,
+      displayedTrees: [...visibleTrees.keys()], cachedTreeMeshes: cachedTreeMeshes.size, lastStatus, retrySaveAfter,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
   }

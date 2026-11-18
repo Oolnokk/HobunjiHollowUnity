@@ -20,6 +20,8 @@ for (const id of ids) {
   const def = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/' + entry.file), 'utf8'));
   assert.equal(def.category, 'story_poi');
   assert.equal(def.objects[0].key, 'blossom-tree');
+  assert.equal(def.objects[0].collision.mode, 'custom', 'tree trunk has a solid collision footprint');
+  assert.ok(def.objects[0].collision.w > 0 && def.objects[0].collision.w <= 0.5, 'trunk collider stays narrower than the authored tree locale');
   assert.ok(def.placement.allowedZones.length === 1);
   assert.ok(Object.values(def.terrainAnchors).every(rule => rule.strength === 'preferred'), 'terrain is preferential, never mandatory');
 }
@@ -66,7 +68,7 @@ const generic = { x: 1, y: 1, objects: [{ key: 'ornament', x: 2, y: 2 }, { key: 
 assert.equal(Riddles.positionOf(generic, 'quest-symbol').col, 20, 'another quest can select its own target object');
 assert.equal(Riddles.positionOf(generic).col, 2, 'generic fallback does not depend on blossom-tree naming');
 
-let festival = true, civilYear = 1156, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
+let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
 const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_eastern_mire', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
@@ -78,7 +80,7 @@ for (let i = 0; i < ids.length; i++) {
 const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const world = {
   LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
-  CalendarSystem: { aotYearNumber: () => civilYear },
+  CalendarSystem: { aotYearNumber: () => civilYear, isInitialized: () => calendarReady },
   FestivalCalendar: { current: () => festival ? { id: 'five_blossoms' } : null },
   QuestProgressStore: { snapshot: () => progress, setStatus(id, status, fields) { saveCalls++; progress[id] = { status, progress: { ...progress[id]?.progress, ...fields } }; return true; } },
   PlayerTileEvents: { subscribe(listener) { tileListener = listener; return () => { if (tileListener === listener) tileListener = null; }; } },
@@ -92,6 +94,9 @@ const hunt = world.FestivalBlossomHunt; // Real browser namespace under test.
 const deps = { _zoneLayouts: zones, getCurrentArea: () => currentZone, currentTothalYear: () => shiftYear, tothalWorldId: () => 'unit-world', showToast() {} }; // Same injection shape as WildernessMap.init.
 hunt.bindQuestDeps({ getQuestProgress: () => progress });
 hunt.init(deps);
+hunt.update();
+assert.equal(Object.keys(progress).length, 0, 'calendar initialization must precede quest writes and expirations');
+calendarReady = true;
 hunt.update();
 const questId = 'five_blossoms_wilderness_hunt:1156';
 assert.equal(progress[questId]?.status, 'active', 'festival automatically starts the world-member quest');
@@ -120,4 +125,11 @@ assert.ok(hunt.debugSnapshot().displayedTrees.includes('locale_five_blossoms_cya
 assert.equal(treeBuilds, 5, 'five cached trees are reused on zone revisit instead of rebuilding GPU geometry');
 assert.ok(saveCalls >= 8, 'every discovery and calendar transition saved progress');
 assert.ok(hunt.debugSnapshot().present.every(item => item.stamped), 'all five quest locales are visible to runtime diagnostics');
+const missingZone = zones.get('map_northern_cliffs');
+zones.delete('map_northern_cliffs');
+festival = true;
+civilYear = 1158;
+hunt.update();
+assert.match(hunt.menuStatus().detail, /Northern Cliffs/, 'when a zone is not generated, the quest still names the zone to search');
+zones.set('map_northern_cliffs', missingZone);
 console.log('Five Blossoms hunt: ' + poems + ' seeded riddles; five stamped locales; saved progress, reward lockout and expiry checked.');
