@@ -256,14 +256,14 @@ async function run() {
   const partialRecipeDraft=JSON.parse(JSON.stringify(api.getConfig()));
   partialRecipeDraft.shafts.hachutuTorchStaff.rigRegions=[{
     id:'partialStep',label:'Not recipe center',
-    box:{x0:175,y0:98,x1:205,y1:143},
+    box:{x0:175,y0:229,x1:205,y1:274},
     transform:{scaleX:2,scaleY:.5,x:120,y:30}
   }];
   api.replace(partialRecipeDraft);
   const partialShaft=api.getConfig().shafts.hachutuTorchStaff;
   const partialStrokes=partialShaft.overrides.dagger.bridges.strokes;
   const firstRecipeExpanded=api.expandOps([partialStrokes[0]]);
-  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=98 && op.y<=143),
+  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=229 && op.y<=274),
     'the source recipe really has an internal junction inside this small region');
   const unselectedRecipeOps=api.rigBridgeOperations(partialShaft,partialStrokes);
   assert(unselectedRecipeOps.every(op=>op._rigRegionId !== 'partialStep'),

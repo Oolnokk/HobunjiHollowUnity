@@ -20,7 +20,7 @@ const torchShaft = api.getConfig().shafts.hachutuTorchStaff; // Entire live staf
 const blowgunShaft = api.getConfig().shafts.bshuakauitl; // Approved donor controls mount types, heads, exclusions and fitting.
 assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
-assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff_shortbranch.png'); // Dedicated art with half-length, slightly thinner branch clusters (the non-modular Torch-Staff keeps the original sprite).
+assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff_balanced.png'); // Dedicated art with half-length, slightly thinner branch clusters (the non-modular Torch-Staff keeps the original sprite).
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
 // The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
 const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
