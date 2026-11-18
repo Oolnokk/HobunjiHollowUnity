@@ -25,6 +25,7 @@ function configureFriendsPackage(manifest, version) {
   checkedVersion(version);
   const configured = JSON.parse(JSON.stringify(manifest)); // Build-only copy; never mutate the caller's manifest.
   configured.version = version;
+  configured.productName = PRODUCT_NAME; // Electron uses this to isolate its local profile and runtime edition.
   configured.build.appId = APP_ID;
   configured.build.productName = PRODUCT_NAME;
   configured.build.win.artifactName = 'Hobunji-Hollow-Tester-Setup-' + '$' + '{version}.' + '$' + '{ext}';
