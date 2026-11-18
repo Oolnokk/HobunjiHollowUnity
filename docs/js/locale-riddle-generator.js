@@ -276,16 +276,45 @@
     }
     return {type:name,canyon,coordinates:crossed.map(({col,row})=>({col,row}))}; // Diagnostic evidence retains the exact stamped water tiles.
   }
+  function elevationProfile(layout,from,to) {
+    const dx=to.col-from.col,dy=to.row-from.row;
+    const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))*2)); // Traverse actual intermediate terrain at half-tile intervals, rather than describing only the endpoints.
+    let minimum=Infinity,maximum=-Infinity;
+    for(let i=0;i<=steps;i++) {
+      const point={col:Math.round(from.col+dx*i/steps),row:Math.round(from.row+dy*i/steps)};
+      const height=elevationAt(layout,point);
+      if(height==null)continue;
+      minimum=Math.min(minimum,height);maximum=Math.max(maximum,height);
+    }
+    return minimum===Infinity?null:{minimum,maximum};
+  }
   function routeBearing(layout,from,to,place) {
     const bearing=compass(from,to),before=elevationAt(layout,from),after=elevationAt(layout,to);
     const diff=before==null||after==null?null:after-before;
     const steps=diff==null?null:Math.round(Math.abs(diff)/PLATEAU_UNIT);
-    const elevation=diff==null?'keeping to the visible ground':Math.abs(diff)<.35
-      ?'staying on roughly level ground':diff>0?steps>=2?'climbing '+steps+' plateau tiers':'climbing to higher ground'
-      :steps>=2?'descending '+steps+' plateau tiers':'descending to lower ground';
+    const profile=diff==null?null:elevationProfile(layout,from,to); // The path may descend into a gorge then return to the starting altitude.
+    const trough=!!profile && profile.minimum < Math.min(before,after)-PLATEAU_UNIT*.5;
+    const crest=!!profile && profile.maximum > Math.max(before,after)+PLATEAU_UNIT*.5;
     const crossing=crossingBetween(layout,from,to);
+    let elevation;
+    if(diff==null)elevation='following the visible terrain';
+    else if(trough&&crest)elevation='descending through low ground and climbing over higher ground';
+    else if(trough)elevation=diff>PLATEAU_UNIT*.5
+      ?'descending into lower ground, then climbing to higher ground'
+      :diff< -PLATEAU_UNIT*.5
+        ?'descending into lower ground, then climbing partway back up'
+        :'descending into lower ground, then climbing back up';
+    else if(crest)elevation=diff>PLATEAU_UNIT*.5
+      ?'climbing over higher ground, then descending partway'
+      :diff< -PLATEAU_UNIT*.5
+        ?'climbing over higher ground, then descending to lower ground'
+        :'climbing over higher ground, then descending back down';
+    else if(Math.abs(diff)<.35)elevation='staying on roughly level ground';
+    else if(diff>0)elevation=steps>=2?'climbing '+steps+' plateau tiers':'climbing to higher ground';
+    else elevation=steps>=2?'descending '+steps+' plateau tiers':'descending to lower ground';
     const water=crossing?(crossing.canyon?', crossing the '+crossing.type+' cutting a canyon':', crossing the '+crossing.type):'';
-    return {description:bearing+', '+elevation+water+', toward '+place,bearing,elevation,crossing,from:{...from},to:{...to}};
+    return {description:bearing+', '+elevation+water+', toward '+place,bearing,elevation,crossing,
+      altitudeProfile:profile,from:{...from},to:{...to}};
   }
   const NATURAL_START_CACHE = new WeakMap(); // Generated wilderness layouts are immutable through a Tothal cycle; forced regeneration supplies a new layout.
   function uniqueNaturalStart(layout,zoneName,allowEdgeRivers=false) {
