@@ -14,7 +14,7 @@ assert.match(lyre,/overworldSharedTuning \? null : npcScale \|\| melody\?\.scale
 assert.match(lyre,/randomizeKurrayaSongMelody\(state\.scaleName\)/,'NPC melody generation uses the current shared note set');
 assert.match(lyre,/tonicMidi:state\.tonicMidi,scaleName:state\.scaleName,generated:/,'mobile NPC diagnostic shows its actual sounding tonic and scale');
 assert.match(instrument,/function npcNotePose[\s\S]*?HeldActionAnimations\?\.kurrayaPlayNote/,'NPCs sample the same authored note action');
-assert.match(held,/function updateKurrayaStation[\s\S]*?instrument\.npcNotePose\(walker\.stationKurrayaTwitch\)/,'NPC holder uses sounded notes instead of a generic strum timer');
+assert.match(held,/function updateKurrayaStation[\s\S]*?instrument\.npcNotePose\(walker\.stationKurrayaTwitch, noteAt\)/,'NPC holder uses sounded notes instead of a generic strum timer');
 assert.match(held,/proceduralHandFreeRightPose = grips\(\)\?\.sampleFreeRightHand/,'NPC plucking hand interpolates the same authored free hand as the player');
 assert.match(handDriver,/function freeRightHandFor[\s\S]*?npcAuthored[\s\S]*?return npcAuthored/,'NPC-specific hand target takes effect at the real render-time hand driver');
 assert.match(held,/releaseKurrayaStation\(state\)/,'station cleanup relinquishes animation ownership');
