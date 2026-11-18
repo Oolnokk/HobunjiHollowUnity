@@ -12,7 +12,7 @@
   const ZONES = Object.freeze({ map_northern_cliffs: 'Northern Cliffs', map_southern_cloud_forest: 'Southern Cloud Forest', map_western_slope: 'Western Slope', map_eastern_mire: 'Eastern Mire' }); // Used for the broadest first line, never inferred from requested terrain.
   const BANK = Object.freeze({
     zone: {
-      A: [f => `In ${f.value}, begin your search by the fading light`, f => `The trails of ${f.value} shall guide your sight`, f => `Seek through ${f.value} before the fall of night`],
+      A: [f => `In ${f.value}, begin your search by the fading light`, f => `The lands of ${f.value} shall guide your sight`, f => `Seek through ${f.value} before the fall of night`],
       B: [f => `Let ${f.value} be the first place you go`, f => `Within ${f.value}, quiet secrets grow`, f => `The land of ${f.value} has more to show`]
     },
     sector: {
