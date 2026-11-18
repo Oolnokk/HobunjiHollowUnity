@@ -12,6 +12,7 @@
   let fallbackTexture = null; // Shared single fallback load for a torch that has never been equipped.
   let lastSampleAt = -Infinity; // Throttles expensive five-point skinning against the real waist.
   let placement = 'not ready'; // Mobile Pixel Probe reports actual positioning provenance.
+  let display = null; // Shared belt sprite exposes the same authored idle-scale multiplier used by the held torch.
 
   function playerBody() {
     return global.PlayerBodyTransformComposer?.getPlayerMesh?.()
@@ -31,6 +32,7 @@
     const factory = global.HobunjiBeltStowRig?.createTorchDisplay; // Single authored PNG/particle geometry used by gameplay and Rig Coordinates.
     const preview = factory?.(THREE);
     if (!preview) { placement = 'shared belt art unavailable'; return null; }
+    display = preview;
     root = preview.root;
     art = preview.art;
     flame = preview.flame;
@@ -97,18 +99,19 @@
     const THREE = global.THREE;
     if (!ensureRoot(THREE)) return;
     if (root.parent !== body) body.add(root); // Avatar and mount transitions never leave the old belt copy in the old scene.
-    const stowed = !torch.isHoldingTorch();
+    const burning = torch.isLit(); // Always query the authoritative 30-second flame clock before showing a belt copy.
+    const stowed = burning && !torch.isHoldingTorch();
     root.visible = stowed;
-    if (!stowed) return; // The real held torch is the only visible copy while drawn.
+    if (flame) flame.visible = stowed;
+    if (!stowed) return; // Unlit, burned-out, and thrown torches stay invisible; the flame timer continues independently.
+    const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Shared authored torch Neutral scale, including local editor overrides.
+    display?.setIdleScale?.(idleScale); // Scales around the handle end, matching the held tool's grip-anchored idle animation.
     updateTexture(THREE);
     positionOnBelt(THREE, body, Number(frame.timestamp) || performance.now());
-    const burning = torch.isLit();
     if (flame) {
-      flame.visible = burning;
-      if (burning) {
-        const t = (Number(frame.timestamp) || performance.now()) / 1000;
-        flame.scale.set(.13 * (1 + .07 * Math.sin(t * 13)), .23 * (1 + .08 * Math.sin(t * 11)), 1);
-      }
+      const t = (Number(frame.timestamp) || performance.now()) / 1000;
+      const scale = display?.idleScale || 1; // Uses the actual clamped artwork scale for the decorative flame.
+      flame.scale.set(.13 * scale * (1 + .07 * Math.sin(t * 13)), .23 * scale * (1 + .08 * Math.sin(t * 11)), 1);
     } // Decorative flame is independent of held-fire particles; the 30s state remains authoritative.
   }
 
@@ -121,6 +124,7 @@
         fireVisible: !!flame?.visible && !!root?.visible,
         textureReady: !!art?.material?.map?.image,
         placement,
+        idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
       };
     },
   });
