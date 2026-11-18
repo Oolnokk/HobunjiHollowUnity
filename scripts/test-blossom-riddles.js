@@ -260,6 +260,15 @@ assert.match(canyonVerse.evidence.route[0].elevation,/climbing/,'real higher tar
 assert.equal(canyonVerse.evidence.route[0].crossing?.type,'river','the intervening river must be identified');
 assert.equal(canyonVerse.evidence.route[0].crossing?.canyon,true,'lowered river between high banks really cuts a canyon');
 assert.match(canyonVerse.text,/crossing the river cutting a canyon/,'the actual poem calls out the river and its canyon');
+canyonMap.tiles[20][25].elevTier=1; // Opposite canyon banks are at equal height; the intermediate river remains one tier below.
+const equalBankRoute=Riddles.generate(canyonOptions);
+assert.equal(equalBankRoute.ok,true);
+assert.match(equalBankRoute.evidence.route[0].elevation,/descending.*climbing/,
+  'equal start/end heights must still describe the descent into and ascent out of the canyon');
+assert.doesNotMatch(equalBankRoute.evidence.route[0].elevation,/roughly level ground/,
+  'a valley is not level ground simply because the endpoints share a plateau tier');
+assert.equal(equalBankRoute.evidence.route[0].crossing?.canyon,true);
+canyonMap.tiles[20][25].elevTier=2; // Restore raised destination for the remaining no-canyon controls.
 for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18].elevTier=1;
 const nonCanyon=Riddles.generate(canyonOptions);
 assert.equal(nonCanyon.evidence.route[0].crossing?.canyon,false,'a flat river is not invented as a canyon');
@@ -268,6 +277,12 @@ for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'grass',el
 const dryRoute=Riddles.generate(canyonOptions);
 assert.equal(dryRoute.evidence.route[0].crossing,null,'dry ground cannot produce phantom river crossings');
 assert.doesNotMatch(dryRoute.text,/crossing the river/,'the poem omits a river when no crossing exists');
+const ridgeMap=layoutFor('cyan',25,20); // Same-height route endpoints with a real high ridgeline between them.
+for(let row=0;row<ridgeMap.rows;row++)for(let col=0;col<ridgeMap.cols;col++)ridgeMap.tiles[row][col].elevTier=1;
+for(let row=0;row<ridgeMap.rows;row++)ridgeMap.tiles[row][17].elevTier=3;
+const ridgeRoute=Riddles.generate({...canyonOptions,layout:ridgeMap,instance:ridgeMap.localeInstances[0]});
+assert.match(ridgeRoute.evidence.route[0].elevation,/climbing.*descending/,
+  'a ridge on the bearing must be mentioned even when the start and destination are both lower');
 const waterfallTerrain=layoutFor('cyan',27,30); // Two separate real falls of different measured vertical drops.
 for(let row=0;row<waterfallTerrain.rows;row++)for(let col=0;col<waterfallTerrain.cols;col++)
   waterfallTerrain.tiles[row][col].elevTier=1;
