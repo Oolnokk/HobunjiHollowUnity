@@ -37,11 +37,12 @@
     lastCast = villagers.map(walker => walker.rec.id);
     const crowdStart = Number(stage.row) + 4.5 + (Number(stage.postZ) || 0); // South of the stage, facing up/north at the two presenters.
     villagers.forEach((walker,index) => {
-      const row = Math.floor(index / 10),column = index % 10;
-      const c = Number(stage.col) + 1.5 + (column - 4.5) * 0.8 + (row % 2 ? 0.25 : 0),
+      const columns = Math.min(16, Math.max(10, Math.ceil(villagers.length / 4))); // Up to four audience ranks keep the crowd inside the town's southern border.
+      const row = Math.floor(index / columns),column = index % columns;
+      const c = Number(stage.col) + 1.5 + (column - (columns - 1) / 2) * 0.8 + (row % 2 ? 0.25 : 0),
         r = crowdStart + row * 0.95;
       const target = {area:'town',c,r,rotY:180,pose:'stand',activity:'watching the Five Blossoms crowning',
-        socialLookAt:{x:center.c,z:center.r,y:1.6},socialWatching:true}; // Upward gaze shares the NPC's existing social look-at presentation.
+        lookAt:{col:center.c+.5,row:center.r},socialLookAt:{x:center.c,z:center.r,y:1.6},socialWatching:true}; // Upward gaze shares the NPC's existing social look-at presentation.
       holding.set(walker.rec.id,target);
       try {
         if (walker.area !== 'town') walker.transferToArea?.('town',{c,r});
@@ -100,7 +101,13 @@
       const recordsMap = await records();
       if(!recordsMap.has(HOST_ID)) throw new Error('Father Hunundi is missing from the NPC database');
       const scene = buildScene(recordsMap,profile,stage,civilYear);
-      arrangeCrowd(stage);
+      const gather = async () => {
+        arrangeCrowd(stage); // Authoritative live villagers take the audience spots, not duplicate portrait stand-ins.
+        const fade = window.CutscenePreviewHelpers?.cutscenePreviewFadeEl?.();
+        if (fade) {fade.style.transitionDuration='0s';fade.style.opacity='1';}
+      };
+      if (window.CalendarSystem?.runScreenTransition) await window.CalendarSystem.runScreenTransition(gather);
+      else await gather(); // Fallback for author previews that lack the world-transition iris.
       await runtime.run(scene,{placePlayerAtFinalPosition:true,onDialogueContinue(step) {
         if(step.id!=='blossom_crown_proclaim' || awarded)return;
         const result=onProclaim();
