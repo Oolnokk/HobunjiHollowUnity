@@ -11,6 +11,10 @@ const { configureSaveFolderPermissions } = require('./save-folder-permissions.cj
 const { showGraphicsStatus } = require('./gpu-diagnostics.cjs'); // On-demand native GPU and main-game WebGL reporting, without DevTools.
 const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
 
+// Prefer the discrete GPU for the primary game WebGL context on dual-adapter Windows systems.
+// The operating system may override this; View → Graphics Status reports the actual ANGLE renderer.
+app.commandLine.appendSwitch('force_high_performance_gpu');
+
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
 protocol.registerSchemesAsPrivileged([{ scheme: GAME_SCHEME, privileges: {
   standard: true, secure: true, supportFetchAPI: true, stream: true,
