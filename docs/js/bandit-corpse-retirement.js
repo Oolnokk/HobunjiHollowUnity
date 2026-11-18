@@ -39,6 +39,7 @@
       && !c._banditCorpseRetired && !c.avatarRef?.isCorpseMarker && !c.corpseLooted
       && !c.keepCorpseAfterLoot && !(Number(c.lootHoldSeconds) > 0)
       && !c.isCompanion && !c.isAmphibiousFishCorpse && !c.tzatzulCapturedBy
+      && !c.avatarRef?.riderMount // A mounted bandit owns rider AND animal card; a single rider portrait would erase the mount.
       && !(Number(c._corpseSnapshotRetryAfter) > (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0))
       && c.areaId === currentArea && !!c.avatarRef?.group;
   }
