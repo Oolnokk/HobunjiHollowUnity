@@ -1238,7 +1238,12 @@
       }
     }
     const panel = activePanel(); // A target-less panel retries only when its own content changes, not on every HUD text update.
-    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target));
+    // Selecting an item rebuilds its detail panel (name, tags, action buttons). Those controls are read
+    // fresh by every directional press, and a vanished focus target still reconciles via isConnected
+    // below, so detail-only rebuilds must not re-run the whole subtab/focus/hint reconcile per press.
+    const focusOutsideDetail = !!currentTarget?.isConnected && !currentTarget.closest('[data-ctrl-detail-panel]');
+    const inOwnDetailPanel = target => focusOutsideDetail && !!target?.closest?.('[data-ctrl-detail-panel]');
+    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target) && !inOwnDetailPanel(record.target.nodeType === 1 ? record.target : record.target.parentElement));
     if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || panelContentChanged) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {

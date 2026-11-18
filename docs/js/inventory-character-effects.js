@@ -212,7 +212,8 @@
       #mpInventory.inv-mode-gear .inv-equip-section {
         display:flex;
         flex-direction:column;
-        height:calc(21 * var(--inv-row));
+        height:auto;
+        bottom:0;
         max-height:calc(21 * var(--inv-row));
         overflow:hidden;
         box-sizing:border-box;

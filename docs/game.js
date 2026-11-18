@@ -162,8 +162,10 @@
 
       // ── Menu open/close ────────────────────────────────────
       let menuOpen = false;
+      let mainMenuOpen = false; // True only for the real main menu panel (not modal gates that reuse menuOpen); drives the world-render throttle.
       function openMenu(targetPanel = 'inventory') {
         menuOpen = true;
+        mainMenuOpen = true;
         // Release shoulder-surf's Pointer Lock (see requestShoulderSurfPointerLock
         // below) so the cursor is free to click around the menu — it isn't
         // visible/usable at all while locked.
@@ -186,6 +188,7 @@
       }
       function closeMenu() {
         menuOpen = false;
+        mainMenuOpen = false;
         menuBtn.classList.remove('open');
         menuBtn.setAttribute('aria-expanded', 'false');
         menuBackdrop.classList.remove('open');
@@ -10658,6 +10661,11 @@
       let _layoutSwapInProgress = false;
       const COVERED_WORLD_RENDER_INTERVAL_MS = 250; // World render cadence while a loading screen hides the canvas — see gameLoop.
       let _lastCoveredWorldRenderAt = -Infinity;
+      const MENU_OPEN_WORLD_RENDER_INTERVAL_MS = 100; // World render cadence while the (world-pausing) main menu is open; ~10 fps behind the panel.
+      let _lastMenuWorldRenderAt = -Infinity;
+      let _menuWorldWasThrottled = false;
+      let _menuWorldRendersSkipped = 0; // Exposed through HobunjiMenuWorldThrottle.snapshot() for on-device A/B.
+      window.HobunjiMenuWorldThrottle = { snapshot: () => ({ skipped: _menuWorldRendersSkipped, intervalMs: MENU_OPEN_WORLD_RENDER_INTERVAL_MS, enabled: window.__hobunjiMenuWorldThrottle !== false }), setEnabled: value => { window.__hobunjiMenuWorldThrottle = value !== false; return window.__hobunjiMenuWorldThrottle; } };
       let _layoutCheckAccumS = 0; // Real seconds since checkMapLayoutChanges last ran — see its call in gameLoop.
       const _denNests = new Map(); // mapId → { col, row, w, h, itemKey, liveBirth, label, remaining }
       // Some placed furniture opens a custom panel on interact instead of
@@ -27202,7 +27210,17 @@
         // cadence instead of stopping outright so a freshly loaded area still
         // compiles shaders and uploads textures before the screen lifts.
         const worldCovered = window.LoadingScreenRuntime?.coversWorld?.() === true;
-        if (!worldCovered || now - _lastCoveredWorldRenderAt >= COVERED_WORLD_RENDER_INTERVAL_MS) {
+        // The main menu pauses the world (paused = true) and sits over it, so redrawing the whole scene
+        // (outlines, held overlay, post-process, plus the menu's backdrop blur recompositing every new
+        // canvas frame) at full rate just competes with menu input. Keep a modest cadence so the
+        // backdrop and previews still update; opening/closing always renders at once.
+        const menuThrottled = mainMenuOpen && menuOpen && paused && window.__hobunjiMenuWorldThrottle !== false;
+        if (!menuThrottled) _menuWorldWasThrottled = false;
+        else if (!_menuWorldWasThrottled) { _menuWorldWasThrottled = true; _lastMenuWorldRenderAt = now; } // The frame that opened the menu is already drawn by the unthrottled path.
+        const menuSkipRender = menuThrottled && now - _lastMenuWorldRenderAt < MENU_OPEN_WORLD_RENDER_INTERVAL_MS;
+        if (menuSkipRender) _menuWorldRendersSkipped++;
+        else if (menuThrottled) _lastMenuWorldRenderAt = now;
+        if (!menuSkipRender && (!worldCovered || now - _lastCoveredWorldRenderAt >= COVERED_WORLD_RENDER_INTERVAL_MS)) {
           if (worldCovered) _lastCoveredWorldRenderAt = now;
           renderWorldPasses(now);
         }

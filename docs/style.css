@@ -2604,7 +2604,7 @@
     .inv-equip-section {
       position: absolute;
       left: calc(1 * var(--inv-col));   top:    calc(6 * var(--inv-row));
-      width: calc(35 * var(--inv-col)); height: calc(21 * var(--inv-row));
+      width: calc(35 * var(--inv-col)); height: auto; bottom: 0; max-height: calc(21 * var(--inv-row)); /* cap, see .inv-grid-area */
       display: flex; flex-direction: column; gap: var(--inv-gap);
       padding: calc(0.3 * var(--inv-gap)) var(--inv-pad);
       box-sizing: border-box;
@@ -2683,12 +2683,15 @@
     .inv-grid-area {
       position: absolute;
       left: calc(1 * var(--inv-col));   top:    calc(13 * var(--inv-row));
-      width: calc(33 * var(--inv-col)); height: calc(14 * var(--inv-row));
+      /* Designed height is a CAP, not a fixed size: when the real pane is shorter than the 28-row model
+         (wrapped menu tabs, small screens) the box must end inside #mpInventory (overflow:hidden), otherwise
+         its own scroll range reaches below the clip edge and only controller scrollIntoView can reveal it. */
+      width: calc(33 * var(--inv-col)); height: auto; bottom: 0; max-height: calc(14 * var(--inv-row));
       overflow-y: auto; scrollbar-width: thin;
       min-width: 0;
     }
     /* Short variant matches the new position (alias kept for compat) */
-    .inv-grid-area--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
+    .inv-grid-area--short { top: calc(13 * var(--inv-row)); height: auto; bottom: 0; max-height: calc(14 * var(--inv-row)); }
     .inv-grid {
       display: grid;
       grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -2752,12 +2755,12 @@
     .inv-pgscroll {
       position: absolute;
       left: calc(34 * var(--inv-col)); top:    calc(13 * var(--inv-row));
-      width: calc(2 * var(--inv-col)); height: calc(14 * var(--inv-row));
+      width: calc(2 * var(--inv-col)); height: auto; bottom: 0; max-height: calc(14 * var(--inv-row));
       display: flex; flex-direction: column; align-items: center;
       padding: var(--inv-pad) 0; gap: var(--inv-gap);
       border-left: 1px solid var(--border);
     }
-    .inv-pgscroll--short { top: calc(13 * var(--inv-row)); height: calc(14 * var(--inv-row)); }
+    .inv-pgscroll--short { top: calc(13 * var(--inv-row)); height: auto; bottom: 0; max-height: calc(14 * var(--inv-row)); }
     .ips-btn { font-size: var(--inv-font-xs); color: var(--muted); cursor: pointer; width: 100%; text-align: center; background: none; border: none; font-family: inherit; }
     .ips-btn:hover { color: var(--text); }
     .ips-fill { flex: 1; }
@@ -3244,7 +3247,7 @@
     #mpInventory.inv-mode-pack .inv-pack-clothing { display: flex; }
     #mpInventory.inv-mode-gear .inv-pack-clothing { display: none; }
     /* Pack mode: shrink grid to leave room for clothing section */
-    #mpInventory.inv-mode-pack .inv-grid-area--short { height: calc(9 * var(--inv-row)); }
+    #mpInventory.inv-mode-pack .inv-grid-area--short { max-height: calc(9 * var(--inv-row)); }
     /* Gear mode: equipment visible, item grid hidden */
     #mpInventory.inv-mode-gear .inv-equip-section { display: flex; }
     #mpInventory.inv-mode-gear .inv-cats          { display: none; }
