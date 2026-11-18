@@ -112,4 +112,41 @@ assert(Math.abs(routedPet.x - routeNodes[1].x * TILE) < 0.5,
   'the actual creature cliff animation reaches the destination without a back-attachment');
 assert.equal(routedPet._cliffClimb, null, 'the scripted climb releases movement ownership when it lands');
 
+// Adjacent safe ledge drops should work immediately, without sending a pet
+// back across the zone to the chosen uphill handhold (even if a fight was left behind).
+const descendingGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({
+  elevTier: 0, incline: false, type: 'grass',
+}))); // Single upper ledge with real lower landing tiles.
+descendingGrid[1][1].elevTier = 2;
+const descendingNet = { cols: 6, rows: 6, component: Array(36).fill(0) }; // Separate upper/lower components.
+descendingNet.component[1 * 6 + 1] = 1;
+climbWindow.CliffRouteNetwork.forGrid = () => descendingNet; // Production module still uses the live route-network interface.
+climbApi.init({
+  TILE, getCurrentArea: () => 'wilderness', isZoneArea: () => true, getActiveGrid: () => descendingGrid,
+  getActiveCols: () => 6, getActiveRows: () => 6,
+  tileSurfaceYInArea: t => t.elevTier || 0,
+  isSolid: t => t === 'rock', creatureCanEnterTile: () => true,
+});
+const droppingPet = { id: 'ledge-follower', creatureKey: 'dabinggi-hound', isCompanion: true,
+  stableRole: 'companion', x: 1.5 * TILE, y: 1.5 * TILE, areaId: 'wilderness',
+  health: 100, def: { moveSpeed: TILE * 3 } }; // Owner has already landed two tiles downhill.
+assert.equal(climbApi.navigate(droppingPet, 3.5 * TILE, 1.5 * TILE, TILE * 3, 0.05), true,
+  'a nearby owner drop starts the shared creature movement');
+assert.equal(droppingPet._cliffClimb?.descending, true, 'companion leaps down instead of climbing up');
+assert.equal(droppingPet._cliffClimb?.endX, 2.5 * TILE, 'landing is on the connected lower ground');
+for (let i = 0; i < 16 && droppingPet._cliffClimb; i++)
+  climbApi.navigate(droppingPet, 3.5 * TILE, 1.5 * TILE, TILE * 3, 0.05);
+assert.equal(droppingPet._cliffClimb, null, 'real downward-leap animation completes and releases navigation');
+assert.equal(droppingPet.x, 2.5 * TILE, 'creature actually lands on the lower shelf');
+
+descendingGrid[1][2].type = 'pit'; // The first available drop is no longer safe, even if the owner is below.
+const hazardPet = { ...droppingPet, x: 1.5 * TILE, y: 1.5 * TILE, _cliffClimb: null };
+assert.equal(climbApi.tryCompanionLedgeDrop(hazardPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'no automatic leap into pit terrain');
+assert.equal(hazardPet._cliffClimb, null, 'unsafe downward landing leaves the pet on its current shelf');
+const ownedByMount = { ...hazardPet, stableRole: 'mount' };
+descendingGrid[1][2].type = 'grass';
+assert.equal(climbApi.tryCompanionLedgeDrop(ownedByMount, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'mount movement remains under its dedicated riding controller');
+
 console.log('companion ground-follow and cliff-route regressions passed');
