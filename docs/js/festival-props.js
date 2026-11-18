@@ -66,20 +66,25 @@
           const rawIndex=Number(record.blossomVariant);
           const index=Number.isInteger(rawIndex) ? ((rawIndex % BLOSSOM_WINDOW_SWATCHES.length) + BLOSSOM_WINDOW_SWATCHES.length) % BLOSSOM_WINDOW_SWATCHES.length : 0; // Use authored variant so moving tables preserves their colors.
           const swatch=BLOSSOM_WINDOW_SWATCHES[index];
+          const vasePart=data.parts?.find(part=>part.id==='blossom-vase'); // Pottery placement is independent of whether the optional foliage generator succeeds.
+          root.userData.festivalBlossomVase={variant:index,color:swatch.color,templePattern:swatch.pattern,source:'temple-window-overpass',flowerScale:0.25,foliageReady:false};
+          if (vasePart) {
+            root.userData.festivalBlossomPlacement={group,vasePart}; // The pot and plant share one shift even across late authored table upgrades.
+            alignBlossomVaseToTable(root);
+          } else {
+            window.__farmLog?.('Five Blossoms authored pottery is missing blossom-vase.', 'warn'); // Mobile log catches a malformed furniture export.
+          }
           const tree=window.FoliageGenerator?.buildPottedBlossomTreeMesh?.(record.id || 'blossom-vase',swatch.color);
           if (tree) {
             tree.name='festival-blossom-sapling';
-            const vasePart=data.parts?.find(part=>part.id==='blossom-vase'); // Authored cup's interior floor, so the living stem roots in its bottom even when the vase editor changes its size.
             const cupHeight=Math.abs(Number(vasePart?.transform?.sy)||0.2); // Quarter-sized stalk's planting depth follows the full-size pottery height.
             const cupMidY=Number(vasePart?.transform?.y)||0.63; // Plant the smaller bloom just inside the vase rim, not entirely below it.
-            tree.position.y=cupMidY+cupHeight*0.32; // Stem is anchored inside the upper cup so a quarter-size bloom still rises above the rim.
+            tree.position.y=cupMidY+cupHeight*0.32; // Stem emerges visibly above the upper cup.
             tree.traverse?.(child=>{
               if (child.geometry) child.userData.festivalSharedFoliage=true; // Skip shared foliage-cache GPU disposal when this festival prop is removed.
             });
             group.add(tree);
-            root.userData.festivalBlossomVase={variant:index,color:swatch.color,templePattern:swatch.pattern,source:'temple-window-overpass',flowerScale:0.25};
-            root.userData.festivalBlossomPlacement={group,vasePart}; // Retain the live dressing only until this table is disposed.
-            alignBlossomVaseToTable(root);
+            root.userData.festivalBlossomVase.foliageReady=true;
           } else {
             window.__farmLog?.('Five Blossoms vase is missing FoliageGenerator.buildPottedBlossomTreeMesh.', 'warn'); // Visible in-game diagnostics on mobile.
           }
