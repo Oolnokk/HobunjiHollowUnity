@@ -3007,6 +3007,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const seedU32 = xfnv1a(`wd_${col}_${row}`);
       return buildWeedsGroup(seedU32);
     },
+    pottedBlossomRecipe:POTTED_BLOSSOM_BASE, // Debuggable one-rung silhouette; tests and mobile inspector can audit branch counts.
     buildPottedBlossomTreeMesh(seed, leafColorHex) {
       return buildPottedBlossomTreeMesh(seed, leafColorHex); // Public generator entry for festival vases, including editor previews.
     },
