@@ -178,10 +178,12 @@
       root.updateMatrixWorld?.(true);
       let added = 0;
       root.traverse(mesh => {
-        if (!mesh.isMesh || mesh.isInstancedMesh) return;
+        if (!mesh.isMesh || mesh.isInstancedMesh || (options.onlyRoot && mesh !== root)) return;
         if (options.force ? hiddenOrGhost(mesh, root.parent) : excluded(mesh, root.parent)) return;
         const fp = orientedFootprint(mesh);
-        if (!fp || Math.max(fp.halfU, fp.halfV) < MIN_HALF || Math.max(fp.halfU, fp.halfV) > MAX_HALF) return;
+        if (!fp) return;
+        const longest = Math.max(fp.halfU, fp.halfV), thinnest = Math.min(fp.halfU, fp.halfV); // Long narrow V50 walls need collision; broad slabs must not become blockers.
+        if (longest < MIN_HALF || (longest > MAX_HALF && !(options.allowLongWalls && thinnest <= .6))) return;
         const ground = Number(floorY(fp.cx, fp.cz)) || 0;
         if (fp.maxY < ground + BODY_MIN || fp.minY > ground + BODY_MAX) return;
         fp.tag = tag;
