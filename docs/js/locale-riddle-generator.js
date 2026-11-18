@@ -317,10 +317,10 @@
       altitudeProfile:profile,from:{...from},to:{...to}};
   }
   const NATURAL_START_CACHE = new WeakMap(); // Generated wilderness layouts are immutable through a Tothal cycle; forced regeneration supplies a new layout.
-  function uniqueNaturalStart(layout,zoneName,allowEdgeRivers=false) {
+  function uniqueNaturalStart(layout,zoneName,allowEdgeRivers=false,generationKey='') {
     if(!layout || typeof layout!=='object')return null;
     const cached=NATURAL_START_CACHE.get(layout);
-    if(cached && (cached.waterfall || !allowEdgeRivers || cached.edgeScanned))return cached.waterfall||cached.edge||null;
+    if(cached?.generationKey===generationKey && (cached.waterfall || !allowEdgeRivers || cached.edgeScanned))return cached.waterfall||cached.edge||null;
     const {cols,rows}=dimensions(layout),seen=new Set(),falls=[];
     const valid=(col,row)=>col>=0&&row>=0&&col<cols&&row<rows;
     for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
@@ -381,14 +381,14 @@
           point:group[Math.floor(group.length/2)],source:'verified-boundary-waterway'};break;
       }
     }
-    NATURAL_START_CACHE.set(layout,{waterfall,edge,edgeScanned:allowEdgeRivers}); // At most one full-grid inspection per generated zone.
+    NATURAL_START_CACHE.set(layout,{waterfall,edge,edgeScanned:allowEdgeRivers,generationKey}); // At most one full-grid inspection per generated zone.
     return waterfall||edge;
   }
-  function uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks}) {
+  function uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks,generationKey=''}) {
     const name=zoneName||ZONES[zoneId]||zoneId;
     const candidates=landmarks.filter(x=>x.kind==='witnessStone'&&x.unique===true&&x.source==='generated-year-round-scenery'
       &&Number.isFinite(x.point?.col)&&Number.isFinite(x.point?.row)&&tileAt(layout,x.point.col,x.point.row));
-    const marker=uniqueNaturalStart(layout,name,false)||(candidates.length===1?candidates[0]:null)||uniqueNaturalStart(layout,name,true);
+    const marker=uniqueNaturalStart(layout,name,false,generationKey)||(candidates.length===1?candidates[0]:null)||uniqueNaturalStart(layout,name,true,generationKey);
     if(!marker)return null; // Fall back to broad factual hints if neither a unique natural reference nor the unique dyed marker exists.
     const midpoint={col:(marker.point.col+point.col)/2,row:(marker.point.row+point.row)/2};
     const available=landmarks.filter(x=>x!==marker&&x.kind!=='witnessStone'&&x.kind!=='blossom'
@@ -420,7 +420,7 @@
     return {facts,route,anchor:{name:marker.name,coordinate:{...marker.point},dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
   }
 
-  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false } = {}) {
+  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false, terrainGenerationKey = '' } = {}) {
     const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
     if (!layout || !instance || !Number.isFinite(point.col) || !Number.isFinite(point.row) ||
@@ -462,7 +462,7 @@
     const goalName=String(targetName||blossomName||instance.name||'the destination');
     facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value:goalName, source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
     const witness=(targetKind==='blossom'||blossomName)
-      ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks})
+      ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks,generationKey:String(terrainGenerationKey)})
       :null;
     if(requireUniqueStart&&!witness)return {ok:false,reason:'No uniquely verified starting landmark exists in the generated wilderness',zoneId,point};
     return { ok:true,zoneId,point,facts:witness?.facts||facts,
