@@ -104,9 +104,19 @@
     root.visible = stowed;
     if (flame) flame.visible = stowed;
     if (!stowed) return; // Unlit, burned-out, and thrown torches stay invisible; the flame timer continues independently.
-    const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Shared authored torch Neutral scale, including local editor overrides.
-    display?.setIdleScale?.(idleScale); // Scales around the handle end, matching the held tool's grip-anchored idle animation.
     updateTexture(THREE);
+    const plane = equippedPlane(); // Use the same actual held-tool PNG plane instead of a miniature belt-only approximation.
+    const authoredPlaneSize = plane?.geometry?.parameters; // Real game.js PlaneGeometry dimensions already incorporate PNG aspect.
+    const textureImage = materialMap(plane?.material)?.image || art?.material?.map?.image; // Fallback for unloaded/rebuilt held mesh.
+    const fallbackWidth = global.HobunjiBeltStowRig?.TORCH_WIDTH || .5; // Canonical game/tool editor base width when the live plane is unavailable.
+    const sourceWidth = Number(authoredPlaneSize?.width) > 0 ? Number(authoredPlaneSize.width) : fallbackWidth; // Sprite base width before Neutral size.
+    const sourceHeight = Number(authoredPlaneSize?.height) > 0 ? Number(authoredPlaneSize.height)
+      : Number(textureImage?.height || textureImage?.naturalHeight) > 0 && Number(textureImage?.width || textureImage?.naturalWidth) > 0
+        ? sourceWidth * Number(textureImage.height || textureImage.naturalHeight) / Number(textureImage.width || textureImage.naturalWidth)
+        : global.HobunjiBeltStowRig?.TORCH_HEIGHT || .5; // Preserve real PNG proportions through portrait/tool rebuilds.
+    display?.setSourceDimensions?.(sourceWidth, sourceHeight); // Cached child transform; no per-frame mesh allocations.
+    const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same live Neutral multiplier as the held torch, including editor overrides.
+    display?.setIdleScale?.(idleScale); // Grip stays on the authored belt rig while the PNG extends upward from its handle.
     positionOnBelt(THREE, body, Number(frame.timestamp) || performance.now());
     if (flame) {
       const t = (Number(frame.timestamp) || performance.now()) / 1000;
@@ -125,6 +135,8 @@
         textureReady: !!art?.material?.map?.image,
         placement,
         idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
+        sourceDimensions: display?.sourceDimensions || null, // Same base PNG plane dimensions as the held torch.
+        visibleDimensions: art ? { width: Math.abs(art.scale.x) * (global.HobunjiBeltStowRig?.TORCH_WIDTH || .5), height: Math.abs(art.scale.y) * (global.HobunjiBeltStowRig?.TORCH_HEIGHT || 1.338) } : null, // Confirm full-sized belt art on a phone.
       };
     },
   });
