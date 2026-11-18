@@ -83,6 +83,19 @@
       * alchemyMovementMultiplier();
   }
 
+  function playerRunningSpeed(player) {
+    if (!player) return 0;
+    const base = Math.max(0, Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED); // Full-input target speed read by mounts and stationary followers; never samples rider velocity.
+    return base
+      * playerTerrainMultiplier(player)
+      * generalMovementMultiplier()
+      * devGlobalMovementMultiplier()
+      * playerFootingMultiplier(player)
+      * multiplier(() => window.RangedWeapons?.movementSpeedMultiplier?.(player), 1)
+      * multiplier(() => window.FestivalSystem?.blessingMultiplier?.('speed'), 1)
+      * multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
+  }
+
   function playerMovementSpeed(player) {
     if (!player) return 0;
     const mounts = window.Mounts;
@@ -90,28 +103,20 @@
     const mountActive = ['mounted', 'mountingUp', 'climbLeap'].includes(rideState) && !!mounts?.rideEntity;
     const alchemy = alchemyMovementMultiplier();
     const devGlobal = devGlobalMovementMultiplier();
-    const general = generalMovementMultiplier();
-
     if (mountActive) {
       const mount = mounts.rideEntity;
       const actualVelocity = Math.hypot(Number(mount?.vx) || 0, Number(mount?.vy) || 0);
       if (actualVelocity > 0.5) return actualVelocity; // Mounted velocity already contains acceleration, collision, and every modifier applied by Mounts.
+      const topSpeed = Number(mounts.mountedTopSpeedPxS?.()); // Includes inherited running modifiers and Fleet Stride for stationary followers.
+      if (Number.isFinite(topSpeed) && topSpeed >= 0) return topSpeed;
       const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
       const perception = multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
-      return base * alchemy * devGlobal * perception; // Match updateMountedMovement's actual top-speed composition while stationary.
+      return base * alchemy * devGlobal * perception; // Legacy standalone Mounts fixtures can lack the cap getter.
     }
 
     const actualFootSpeed = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0);
     if (actualFootSpeed > 0.5) return actualFootSpeed; // Partial input, acceleration and collision already resolve into the player's live velocity.
-    const base = Math.max(0, Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
-    return base
-      * playerTerrainMultiplier(player)
-      * general
-      * devGlobal
-      * playerFootingMultiplier(player)
-      * multiplier(() => window.RangedWeapons?.movementSpeedMultiplier?.(player), 1)
-      * multiplier(() => window.FestivalSystem?.blessingMultiplier?.('speed'), 1)
-      * multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
+    return playerRunningSpeed(player); // One target-speed calculation for mounts and companions; only moving players use actual velocity.
   }
 
   function ownerPosition(owner, walker) {
@@ -431,8 +436,10 @@
     update,
     dispose,
     debugSnapshot,
+    playerRunningSpeed,
     __test: Object.freeze({
       playerMovementSpeed,
+      playerRunningSpeed,
       ownerMovementSpeed,
       devGlobalMovementMultiplier,
       sampleOwnerMotion,
