@@ -326,7 +326,10 @@
     if(move) {
       move.elapsed=Math.min(move.duration,move.elapsed+Math.max(0,dt));
       const travel=(deps?.TILE||TILE_FALLBACK)*5.2*dt;
-      const x=actor.x+move.dx*travel,y=actor.y+move.dy*travel;
+      const tangent=window.FlyingCombatOrbit?.tangent?.(actor,move.foe,{
+        direction:move.orbitSign,radius:move.orbitRadius}); // Recompute the tangent about the live foe: no perch means a curved evasion, not a straight sidestep.
+      const dx=tangent?.x??move.dx,dy=tangent?.y??move.dy;
+      const x=actor.x+dx*travel,y=actor.y+dy*travel;
       const swept=deps?.sweptMove?.(actor.x,actor.y,x,y,(px,py)=>deps.canOccupyAt(px,py,(deps.TILE||TILE_FALLBACK)*.32));
       if(swept){actor.x=swept.x;actor.y=swept.y;}
       actor.dodgeT=Math.max(0,move.duration-move.elapsed);
@@ -353,7 +356,8 @@
     const probe=deps?.sweptMove?.(actor.x,actor.y,actor.x+dx*tile*1.45,actor.y+dy*tile*1.45,(px,py)=>deps.canOccupyAt(px,py,tile*.32));
     if(!probe || Math.hypot(probe.x-actor.x,probe.y-actor.y)<tile*.2)return null; // No dodge through blocked ruin walls.
     actor._specialDodgeCount=(actor._specialDodgeCount||0)+1;
-    actor._specialDodge={dx,dy,duration:AZGARLU_DODGE_SECONDS,elapsed:0};
+    actor._specialDodge={dx,dy,duration:AZGARLU_DODGE_SECONDS,elapsed:0,
+      foe:threat.attacker,orbitSign:sign,orbitRadius:distance}; // Retain the opponent and radius for the full aerial evasive arc.
     actor._specialDodgeCooldownS=AZGARLU_DODGE_COOLDOWN;
     actor.dodging=true;actor.dodgeT=AZGARLU_DODGE_SECONDS;
     actor.invulnUntil=performance.now()+AZGARLU_DODGE_SECONDS*1000;
