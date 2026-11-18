@@ -259,17 +259,20 @@
     }
     if(!crossed.length)return null;
     const river=crossed.some(x=>x.type==='river'||x.type==='waterfall'),name=river?'river':'stream';
-    const sideLen=Math.hypot(dx,dy)||1;
-    const perpX=-dy/sideLen,perpY=dx/sideLen;
+    const length=Math.hypot(dx,dy)||1,alongX=dx/length,alongY=dy/length;
     let canyon=false;
     for(const water of crossed){
       const center=elevationAt(layout,water);
-      for(const distance of [2,3]) {
-        const left=elevationAt(layout,{col:Math.round(water.col+perpX*distance),row:Math.round(water.row+perpY*distance)});
-        const right=elevationAt(layout,{col:Math.round(water.col-perpX*distance),row:Math.round(water.row-perpY*distance)});
-        if(left!=null&&right!=null&&center!=null&&left-center>=PLATEAU_UNIT*.75&&right-center>=PLATEAU_UNIT*.75){canyon=true;break;}
+      const banks=[];
+      for(const direction of [-1,1]){
+        for(const distance of [1,2,3,4,5,6]){
+          const col=Math.round(water.col+alongX*distance*direction),row=Math.round(water.row+alongY*distance*direction);
+          const bank=tileAt(layout,col,row);
+          if(!bank || WATERWAY.has(String(bank.type||'').toLowerCase()))continue;
+          banks.push(elevationAt(layout,{col,row}));break; // Sample opposite dry banks across the travel direction, not downstream/upstream in the river.
+        }
       }
-      if(canyon)break;
+      if(center!=null&&banks.length===2&&banks.every(y=>y!=null&&y-center>=PLATEAU_UNIT*.75)){canyon=true;break;}
     }
     return {type:name,canyon,coordinates:crossed.map(({col,row})=>({col,row}))}; // Diagnostic evidence retains the exact stamped water tiles.
   }
