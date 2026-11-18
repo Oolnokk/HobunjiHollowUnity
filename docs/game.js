@@ -6340,7 +6340,7 @@
       // tuning constants) now lives in js/enemy-collision-reposition.js.
       window.EnemyCollisionReposition.init({ creatureCanEnterTile });
 
-      function moveCreatureToward(c, tx, ty, speed, dt) {
+      function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
         // would come out NaN, every subsequent comparison against it is
@@ -6352,7 +6352,7 @@
         const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy affects both cliff-route approaches and ground motion.
         const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky also slows both paths.
         const authoredChaseSpeed = Number(c.def?.chaseSpeed); // Identifies ordinary pursuit requests without affecting sprint attacks, dodges, retreats, or custom AI speeds.
-        const ordinaryPursuit = (c.state === 'chase' || c.state === 'searching') && c.master !== player &&
+        const ordinaryPursuit = movementOptions?.pursuit !== false && (c.state === 'chase' || c.state === 'searching') && c.master !== player &&
           !(c.isCompanion && !c.banditCompanion) && Number.isFinite(speed) && speed > 0 &&
           Number.isFinite(authoredChaseSpeed) && authoredChaseSpeed > 0 && Math.abs(speed - authoredChaseSpeed) < 0.001;
         const armorPaceMul = c._enemyPursuitArmorMul == null ? 1 : Math.max(0, Number(c._enemyPursuitArmorMul) || 0); // Bandit outfit penalties still scale the pursuit floor once.
