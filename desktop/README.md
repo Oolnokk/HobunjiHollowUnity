@@ -71,6 +71,23 @@ update artifacts. Release tagging is `desktop-v<version>`.
 5. Open **View → Save Folder Status** to inspect folder name, autosync status,
    recent operation, and error without Developer Tools.
 
+### When the folder picker reports a canceled or blocked selection
+
+The Windows picker can produce an `AbortError` both when Cancel is clicked and
+when Chromium/Windows refuses access to a selected directory. The game now
+shows the underlying message instead of the generic "Folder access was not
+completed" warning. Open **View → Save Folder Status** to inspect **Last
+operation**, **Error**, **Native picker**, and **File-system permission** without developer tools.
+
+If you selected a folder but received an error, choose the exact game-save
+directory again, not the Google Drive root or a Windows system directory.
+Ensure Google Drive for Desktop has downloaded the directory locally (make it
+available offline). A protected-directory prompt requires your explicit
+approval; choosing another folder or Cancel must not silently reconnect a
+different save. Never delete the existing save directory while troubleshooting.
+When the folder successfully connects, use **Load from Folder** before writing
+a new installation's browser-only save into that location.
+
 The desktop application has its own persistent Chromium profile, so existing
 Chrome/Opera browser storage and directory permissions are *not* inherited.
 The save files themselves are the same format; there is no new desktop save

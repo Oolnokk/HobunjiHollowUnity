@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm'); // Executes the actual renderer close-save script without Electron or browser globals.
 const { persistBeforeClose, CLOSE_SAVE_SCRIPT } = require('../desktop/close-save.cjs'); // Same final-save operation executed by Electron.
 const { GAME_URL, isGameUrl, getGameAsset, localizeGameHtml } = require('../desktop/game-protocol.cjs');
+const { configureSaveFolderPermissions } = require('../desktop/save-folder-permissions.cjs'); // Exercised with simulated Electron session events.
 
 const repo = path.resolve(__dirname, '..'); // Root of the game and desktop packages.
 const roots = { gameRoot: path.join(repo, 'docs'), vendorRoot: path.join(repo, 'desktop', 'vendor') }; // File-routing fixtures for the pure protocol helper.
@@ -47,6 +48,7 @@ assert.ok(manifest.build.extraResources.some(x => x.from === '../docs' && x.to =
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/three.min.js'));
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/TransformControls.js'));
 assert.ok(manifest.build.files.includes('close-save.cjs'), 'Final-save policy ships inside the installed app');
+assert.ok(manifest.build.files.includes('save-folder-permissions.cjs'), 'Native picker policy ships inside the installed app');
 const main = fs.readFileSync(path.join(repo, 'desktop', 'main.cjs'), 'utf8');
 assert.ok(main.includes('nodeIntegration: false'));
 assert.ok(main.includes('contextIsolation: true'));
@@ -54,6 +56,225 @@ assert.ok(main.includes('sandbox: true'));
 assert.ok(main.includes("require('./close-save.cjs')"), 'Desktop main uses the independently tested save policy');
 assert.ok(main.includes('CLOSE_SAVE_SCRIPT'));
 assert.ok(main.includes('autoSyncArmed'));
+
+async function checkFolderPickerPermissions() {
+  let requestHandler, checkHandler, restrictedHandler; // Captures the actual handlers that Electron receives.
+  let nextResponse = 1; // Simulates explicit Allow / Choose Another / Cancel on protected Windows folders.
+  let prompts = 0; // Ensures an untrusted document cannot display a privileged permission prompt.
+  const gameContents = { getURL: () => GAME_URL }; // Trusted installed game renderer.
+  const foreignContents = { getURL: () => 'https://example.invalid' }; // Must never inherit file access.
+  const gameWindow = { webContents: gameContents, isDestroyed: () => false }; // Single authorized BrowserWindow.
+  const ses = {
+    setPermissionRequestHandler: handler => { requestHandler = handler; },
+    setPermissionCheckHandler: handler => { checkHandler = handler; },
+    on: (event, handler) => { if (event === 'file-system-access-restricted') restrictedHandler = handler; },
+  }; // Only the Electron session surface used by the permission module.
+  const guard = configureSaveFolderPermissions({
+    session: ses, getGameWindow: () => gameWindow,
+    dialog: { showMessageBox: async () => { prompts++; return { response: nextResponse }; } },
+  });
+  assert.equal(checkHandler(gameContents, 'fileSystem', GAME_URL), true, 'Game folder permission passes');
+  assert.equal(checkHandler(gameContents, 'fileSystem', undefined), true, 'Missing Chromium origin falls back to the owned game window');
+  assert.equal(checkHandler(null, 'fileSystem', 'hobunji://game'), true, 'Origin-only filesystem checks are supported');
+  assert.equal(checkHandler(null, 'fileSystem', undefined), false, 'An anonymous origin cannot acquire filesystem access');
+  assert.equal(checkHandler(gameContents, 'fileSystem', 'https://example.invalid'), false, 'Foreign permission origin is denied');
+  assert.equal(checkHandler(gameContents, 'fileSystem', GAME_URL, { requestingUrl: 'https://example.invalid' }), false, 'Cross-origin iframe cannot borrow the main window permission');
+  assert.equal(checkHandler(foreignContents, 'fileSystem', GAME_URL), false, 'Foreign WebContents cannot borrow folder permission');
+  assert.equal(checkHandler(gameContents, 'camera', GAME_URL), false, 'Unlisted permissions remain denied');
+  let requested = null; // Records Electron permission-request callback results.
+  requestHandler(gameContents, 'fileSystem', value => { requested = value; }, { requestingUrl: GAME_URL });
+  assert.equal(requested, true);
+  requestHandler(gameContents, 'fileSystem', value => { requested = value; }, { requestingUrl: 'https://example.invalid' });
+  assert.equal(requested, false);
+  assert.equal(guard.getDebugStatus().lastFileSystemCheck, 'request denied (renderer present)', 'Desktop diagnostics report ordinary permission rejection');
+  let restrictedDecision = null; // Records the native sensitive-path callback.
+  await restrictedHandler(null, { origin: 'hobunji://game', webContents: null }, value => { restrictedDecision = value; });
+  assert.equal(restrictedDecision, 'allow', 'Null webContents may still present an explicit protected-folder confirmation');
+  assert.equal(guard.getDebugStatus().lastRestriction, 'Protected folder explicitly allowed');
+  nextResponse = 0;
+  await restrictedHandler(null, { origin: GAME_URL, webContents: gameContents }, value => { restrictedDecision = value; });
+  assert.equal(restrictedDecision, 'tryAgain', 'Choose Another Folder reopens the native picker');
+  nextResponse = 2;
+  await restrictedHandler(null, { origin: GAME_URL, webContents: gameContents }, value => { restrictedDecision = value; });
+  assert.equal(restrictedDecision, 'deny', 'Cancel is never treated as permission');
+  const promptCount = prompts;
+  await restrictedHandler(null, { origin: 'https://example.invalid', webContents: gameContents }, value => { restrictedDecision = value; });
+  assert.equal(restrictedDecision, 'deny', 'Untrusted restricted-folder requests are denied');
+  assert.equal(prompts, promptCount, 'Untrusted requests never get an Allow This Folder prompt');
+  console.log('Desktop folder permission policies and restricted-path decisions OK');
+}
+
+async function checkFolderPickerAbort() {
+  const source = fs.readFileSync(path.join(roots.gameRoot, 'js/local-save-folder-core.js'), 'utf8'); // Actual browser persistence code.
+  const window = {
+    addEventListener() {},
+    showDirectoryPicker: async () => { const error = new Error('Windows denied folder access'); error.name = 'AbortError'; throw error; },
+  }; // A Chromium picker that rejects after a folder is selected.
+  const db = {
+    transaction: () => ({ objectStore: () => ({
+      get: () => {
+        const request = {}; // Empty existing IndexedDB handle store on a new installation.
+        queueMicrotask(() => { request.result = null; request.onsuccess?.(); });
+        return request;
+      },
+    }) }),
+  };
+  const indexedDB = {
+    open: () => {
+      const request = {}; // Async IndexedDB open mirrors the renderer's real initialization sequence.
+      queueMicrotask(() => { request.result = db; request.onsuccess?.(); });
+      return request;
+    },
+  };
+  vm.runInNewContext(source, { window, indexedDB, console, setInterval, clearInterval, setTimeout, clearTimeout });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(window.LocalSaveFolder.getStatus().state, 'not-configured');
+  const aborted = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(aborted.state, 'not-configured', 'Canceled/blocked picker does not connect a phantom folder');
+  assert.equal(aborted.lastAction, 'folder-picker-aborted', 'Chromium AbortError is no longer silently discarded');
+  assert.match(aborted.lastError, /Windows denied folder access/, 'Visible diagnostics retain the original rejection reason');
+  const primary = fs.readFileSync(path.join(roots.gameRoot, 'js/folder-save-primary.js'), 'utf8'); // Real gate logic, isolated for the early-return scenario.
+  const start = primary.indexOf('  async function establishPrimaryFolder(mode) {');
+  const end = primary.indexOf('  async function refreshOnboardingIfNeeded(', start);
+  assert.ok(start >= 0 && end > start, 'Primary folder gate can be isolated for a safe-cancel regression');
+  const factory = new Function('localSave', 'localStorage', 'SAVE_META_KEY', `
+    let lastUiError = '';
+    let lastUiAction = '';
+    ${primary.slice(start, end)}
+    return establishPrimaryFolder;
+  `);
+  let loads = 0; // A canceled Change Folder must not load a previously connected (ready) folder.
+  const oldFolder = {
+    state: 'ready', lastAction: 'folder-picker-aborted', lastError: 'Picker access blocked',
+  };
+  const folder = {
+    isSupported: () => true,
+    getStatus: () => oldFolder,
+    changeFolder: async () => oldFolder,
+    chooseFolder: async () => oldFolder,
+    reconnect: async () => oldFolder,
+    loadFromFolder: async () => { loads++; throw new Error('Should never load old folder'); },
+  };
+  const establish = factory(folder, { getItem: () => null }, 'hobunjiSaveMeta');
+  // Choose/Change failures must not reload the old handle. Reconnect is a
+  // deliberate operation on that handle and sets its own fresh status.
+  for (const mode of ['choose', 'change']) {
+    const result = await establish(mode);
+    assert.equal(result.ok, false, 'Aborted ' + mode + ' reports failure even when the old handle is ready');
+    assert.equal(result.message, 'Picker access blocked');
+  }
+  assert.equal(loads, 0, 'Cancel or blocked selection never triggers an old-folder load');
+  oldFolder.lastAction = 'choose-error';
+  oldFolder.lastError = 'IndexedDB could not store the directory handle';
+  for (const mode of ['choose', 'change']) {
+    const result = await establish(mode);
+    assert.equal(result.ok, false, 'Non-Abort ' + mode + ' errors do not load the old ready folder');
+    assert.match(result.message, /IndexedDB/);
+  }
+  assert.equal(loads, 0, 'Neither picker nor IndexedDB failures can load the previous folder');
+
+  console.log('Renderer directory-picker rejection and stale-handle safety OK');
+}
+
+async function checkFolderSwitchTransactions() {
+  const source = fs.readFileSync(path.join(roots.gameRoot, 'js/local-save-folder-core.js'), 'utf8'); // Exercise production folder selection and persistence sequencing.
+  const missing = () => Object.assign(new Error('File is absent'), { name: 'NotFoundError' }); // Empty portable save directory fixture.
+  const handle = name => ({
+    name, queryPermission: async () => 'granted',
+    getDirectoryHandle: async () => { throw missing(); },
+    getFileHandle: async () => { throw missing(); },
+  }); // Minimal FileSystemDirectoryHandle sufficient for read-only folder inspection.
+  const oldHandle = handle('Existing Saves'); // Previously connected folder must remain authoritative until a new selection commits.
+  const newHandle = handle('Google Drive Saves'); // Candidate directory must not receive writes during a failed transition.
+  let storedHandle = oldHandle; // Mimics the last durable IndexedDB handle, inspected after each selection.
+  let failPut = false; // Simulates a browser profile/IndexedDB storage failure.
+  let puts = 0; // Ensures picker rejection cannot alter persisted folder selection.
+  const db = { transaction: () => {
+    const tx = {
+      objectStore: () => ({
+        get: () => {
+          const request = {}; // Startup reads the previously remembered handle.
+          queueMicrotask(() => { request.result = storedHandle; request.onsuccess?.(); });
+          return request;
+        },
+        put: value => {
+          puts++;
+          queueMicrotask(() => {
+            if (failPut) {
+              tx.error = Object.assign(new Error('IndexedDB transaction aborted'), { name: 'AbortError' });
+              tx.onerror?.();
+            } else {
+              storedHandle = value;
+              tx.oncomplete?.();
+            }
+          });
+        },
+      }),
+    }; // IndexedDB transaction completes asynchronously as in Chromium.
+    return tx;
+  } };
+  const indexedDB = { open: () => {
+    const request = {}; // Simulate browser initialization without a real Windows filesystem.
+    queueMicrotask(() => { request.result = db; request.onsuccess?.(); });
+    return request;
+  } };
+  const window = { addEventListener() {}, showDirectoryPicker: async () => newHandle }; // Replaced with failing native-picker variants below.
+  vm.runInNewContext(source, { window, indexedDB, console, setInterval, clearInterval, setTimeout, clearTimeout });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(window.LocalSaveFolder.getStatus().state, 'ready', 'Existing saved folder initializes as ready');
+  assert.equal(window.LocalSaveFolder.getStatus().folderName, 'Existing Saves');
+  for (const name of ['AbortError', 'NotAllowedError', 'SecurityError']) {
+    window.showDirectoryPicker = async () => { throw Object.assign(new Error('Native picker rejected'), { name }); };
+    const result = await window.LocalSaveFolder.chooseFolder();
+    assert.equal(result.state, 'ready', name + ' leaves the old folder connected');
+    assert.equal(result.folderName, 'Existing Saves');
+    assert.equal(result.lastAction, name === 'AbortError' ? 'folder-picker-aborted' : 'choose-error');
+    assert.equal(storedHandle, oldHandle);
+  }
+  assert.equal(puts, 0, 'Picker errors never write a different IndexedDB handle');
+
+  window.showDirectoryPicker = async () => newHandle;
+  failPut = true;
+  const databaseFailure = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(databaseFailure.lastAction, 'choose-error', 'An IndexedDB AbortError is not confused with picker cancellation');
+  assert.equal(databaseFailure.state, 'ready', 'Failed IndexedDB write leaves the existing folder ready');
+  assert.equal(databaseFailure.folderName, 'Existing Saves', 'Failed IndexedDB write preserves the active directory handle');
+  assert.equal(storedHandle, oldHandle, 'Failed IndexedDB write preserves the remembered directory handle');
+  assert.match(databaseFailure.lastError, /IndexedDB transaction aborted/);
+
+  failPut = false;
+  const connected = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(connected.state, 'ready', 'Successful folder switch eventually becomes ready');
+  assert.equal(connected.folderName, 'Google Drive Saves', 'New folder becomes active only after persistence succeeds');
+  assert.equal(storedHandle, newHandle, 'New folder is remembered after success');
+  assert.equal(connected.autoSyncArmed, false, 'Selecting another directory never initiates automatic writes before an explicit load/save');
+
+  const denied = name => Object.assign(new Error(name + ' is inaccessible on Google Drive'), { name: 'NotAllowedError' }); // Represents an offline or permission-denied directory.
+  const blockedCharacters = { ...handle('Blocked Characters'), getDirectoryHandle: async name => {
+    if (name === 'characters') throw denied(name);
+    throw missing();
+  } }; // Read denial must not be mistaken for an empty folder.
+  window.showDirectoryPicker = async () => blockedCharacters;
+  const unreadableCharacters = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(unreadableCharacters.state, 'error', 'Inaccessible character directory blocks folder initialization');
+  assert.match(unreadableCharacters.lastError, /Could not access characters save directory/);
+  assert.equal(unreadableCharacters.autoSyncArmed, false, 'Folder-access failures do not arm autosync');
+
+  const blockedFarm = { ...handle('Blocked Farm'), getDirectoryHandle: async name => {
+    if (name === 'farm-layouts') throw denied(name);
+    throw missing();
+  } }; // Existing folder farm data cannot silently disappear due to an I/O error.
+  window.showDirectoryPicker = async () => blockedFarm;
+  const unreadableFarm = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(unreadableFarm.state, 'error', 'Inaccessible farm-layout directory blocks folder initialization');
+  assert.match(unreadableFarm.lastError, /Could not access farm-layouts save directory/);
+  assert.equal(unreadableFarm.autoSyncArmed, false, 'Failed farm inspection cannot write an apparent empty farm');
+  console.log('Folder switching and inaccessible cloud-save directory safety OK');
+}
+
+checkFolderPickerPermissions().catch(error => { console.error(error); process.exitCode = 1; });
+checkFolderPickerAbort().catch(error => { console.error(error); process.exitCode = 1; });
+checkFolderSwitchTransactions().catch(error => { console.error(error); process.exitCode = 1; });
 
 // Each path exercises the real save policy rather than inspecting source text.
 async function checkClosePersistence() {

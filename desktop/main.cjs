@@ -7,6 +7,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { GAME_SCHEME, GAME_URL, getGameAsset, isGameUrl, localizeGameHtml } = require('./game-protocol.cjs');
+const { configureSaveFolderPermissions } = require('./save-folder-permissions.cjs'); // Tested Electron permission policy for the native folder picker.
 const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
 
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
@@ -20,9 +21,9 @@ const GAME_ROOT = app.isPackaged
 const VENDOR_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, 'vendor')
   : path.join(__dirname, 'node_modules', 'three'); // Locally bundled r128 files.
-const ALLOWED_PERMISSIONS = new Set(['fileSystem', 'persistent-storage', 'fullscreen', 'clipboard-sanitized-write']); // Only trusted game pages receive these.
 let mainWindow = null; // Single game window.
 let desktopUpdates = null; // Main-process update screen controller, populated after app readiness.
+let folderPermissions = null; // Exposes the most recent native restricted-folder decision in Save Folder Status.
 let closeAllowed = false; // Avoid recursive interception after a successful save.
 let closeInProgress = false; // Serialize repeated close requests.
 
@@ -60,32 +61,6 @@ function registerAssets() {
   });
 }
 
-function configurePermissions() {
-  const ses = session.defaultSession; // Persistent Chromium profile owns the saved folder handle.
-  ses.setPermissionRequestHandler((contents, permission, callback) => {
-    callback(isGameUrl(contents.getURL()) && ALLOWED_PERMISSIONS.has(permission));
-  });
-  ses.setPermissionCheckHandler((contents, permission, origin) => {
-    return !!contents && isGameUrl(contents.getURL()) && isGameUrl(origin) && ALLOWED_PERMISSIONS.has(permission);
-  });
-  ses.on('file-system-access-restricted', async (_event, details, callback) => {
-    if (!isGameUrl(details.origin) || !isGameUrl(details.webContents?.getURL() || '')) {
-      callback('deny'); return;
-    }
-    try {
-      const selected = await dialog.showMessageBox(mainWindow, {
-        type: 'warning',
-        title: 'Hobunji Hollow — Save folder permission',
-        message: 'Allow access to this protected folder?',
-        detail: 'Choose the specific game-save directory rather than an entire Windows system folder.',
-        buttons: ['Choose Another Folder', 'Allow This Folder', 'Cancel'],
-        defaultId: 0, cancelId: 2,
-      });
-      callback(selected.response === 1 ? 'allow' : selected.response === 0 ? 'tryAgain' : 'deny');
-    } catch { callback('deny'); }
-  });
-}
-
 function attachNavigationGuards(contents) {
   contents.on('will-navigate', (event, url) => {
     if (!isGameUrl(url)) {
@@ -117,6 +92,8 @@ async function showSaveStatus() {
     'Last operation: ' + (status.lastAction || 'none'),
     'Last synced: ' + (status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString() : 'never'),
     'Error: ' + (status.lastError || '(none)'),
+    'Native picker: ' + (folderPermissions?.getDebugStatus()?.lastRestriction || 'not checked'),
+    'File-system permission: ' + (folderPermissions?.getDebugStatus()?.lastFileSystemCheck || 'not checked'),
   ] : ['Save system not initialized.'];
   await dialog.showMessageBox(mainWindow, {
     type: 'info', title: 'Hobunji Hollow — Save Folder Status',
@@ -259,7 +236,9 @@ if (!singleInstance) {
   app.whenReady().then(() => {
   app.setAppUserModelId('com.oolnokk.hobunjihollow');
   registerAssets();
-  configurePermissions();
+  folderPermissions = configureSaveFolderPermissions({
+    session: session.defaultSession, dialog, getGameWindow: () => mainWindow,
+  });
   app.on('web-contents-created', (_event, contents) => attachNavigationGuards(contents));
   desktopUpdates = createDesktopUpdates({
     app, BrowserWindow, ipcMain, shell, autoUpdater,
