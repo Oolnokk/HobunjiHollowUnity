@@ -101,7 +101,7 @@ const stem={material:{dispose(){retiredWood++;}},userData:{}},petals={material:{
 finishWindow.applyBlossomFinish(stem,{...recipe,leafColorHex:'#00ffff'},'wood');
 finishWindow.applyBlossomFinish(petals,{...recipe,leafColorHex:'#00ffff'},'petals');
 assert.deepEqual(finishCalls.map(call=>({surface:call.surface,mapping:call.mapping,texture:call.texture,tint:call.tint,tintTreatment:call.tintTreatment})),[
-  {surface:'trunks',mapping:'strand-stretch',texture:'assets/textures/carved_smooth.png',tint:'#4b9a62',tintTreatment:'body-sprite-tint'},
+  {surface:'trunks',mapping:'cylindrical-stretch',texture:'assets/textures/carved_smooth.png',tint:'#4b9a62',tintTreatment:'body-sprite-tint'},
   {surface:'vines',mapping:'strand-stretch',texture:'assets/leaves/leaf_1.png',tint:'#00ffff',tintTreatment:'body-sprite-tint'},
 ], 'both stem and petals use the identical per-pixel body sprite fill operation');
 assert.equal(retiredWood,1,'no discarded per-variant Lambert wood is retained');
