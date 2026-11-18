@@ -38,12 +38,14 @@ jobs:
       - name: Verify desktop and tester build tools
         shell: pwsh
         run: |
-          node scripts/test-windows-desktop.js
-          node scripts/test-windows-updates.js
-          node scripts/test-windows-friends.js
-          node --check scripts/desktop-friends-build.js
-          node --check desktop/main.cjs
-          node --check desktop/update-controller.cjs
+          foreach ($script in @('scripts/test-windows-desktop.js', 'scripts/test-windows-updates.js', 'scripts/test-windows-friends.js')) {
+            node $script
+            if ($LASTEXITCODE -ne 0) { throw "Test failed: $script" }
+          }
+          foreach ($script in @('scripts/desktop-friends-build.js', 'desktop/main.cjs', 'desktop/update-controller.cjs')) {
+            node --check $script
+            if ($LASTEXITCODE -ne 0) { throw "Syntax check failed: $script" }
+          }
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
@@ -62,6 +64,10 @@ jobs:
         shell: pwsh
         run: |
           $version = "0.2.${{ github.run_number }}"
+          $package = Get-Content 'desktop/package.json' -Raw | ConvertFrom-Json
+          if ($package.productName -ne 'Hobunji Hollow Tester' -or $package.build.appId -ne 'com.oolnokk.hobunjihollow.tester') {
+            throw 'Friends installer lost its independent identity'
+          }
           $installer = "desktop/dist/Hobunji-Hollow-Tester-Setup-$version.exe"
           if (-not (Test-Path $installer)) { throw "Missing Friends installer: $installer" }
           if (-not (Test-Path 'desktop/dist/latest.yml')) { throw 'Missing Friends update metadata' }
