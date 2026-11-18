@@ -65,6 +65,7 @@
   const patternedCanvasBytesByKey = new Map(); // Tracks the size of each retained baked canvas.
   let patternedCanvasBytes = 0; // Updated on insert/eviction and shown in the mobile diagnostics.
   let patternedCanvasEvictions = 0; // Counts evictions to reveal cache thrashing.
+  let patternedCanvasEpoch = 0; // Cache generation invalidates late async raster results after appearance changes.
   const pendingPatternStackCanvases = new Map(); // Joins identical simultaneous raster bakes.
   let patternStackJoinCount = 0; // Counts duplicate builds avoided for mobile diagnostics.
   function forgetPatternedCanvas(key) {
@@ -73,17 +74,20 @@
     patternedCanvasCache.delete(key);
   }
   function clearPatternedCanvases() {
+    patternedCanvasEpoch++; // Ignore any old in-flight paint job which finishes after this appearance reset.
     patternedCanvasCache.clear();
     patternedCanvasBytesByKey.clear();
     patternedCanvasBytes = 0;
+    pendingPatternStackCanvases.clear();
+    pendingPatternCanvasPromises.clear(); // Do not reuse stale jobs for the next appearance; old callers may still receive their own images.
   }
   function cachedPatternedCanvas(key) {
     const canvas = patternedCanvasCache.get(key);
     if (canvas) { patternedCanvasCache.delete(key); patternedCanvasCache.set(key, canvas); } // LRU keeps recently displayed frames hot.
     return canvas || null;
   }
-  function rememberPatternedCanvas(key, canvas) {
-    if (!canvas) return canvas;
+  function rememberPatternedCanvas(key, canvas, epoch = patternedCanvasEpoch) {
+    if (!canvas || epoch !== patternedCanvasEpoch) return canvas; // Never cache a result from a previous appearance generation.
     if (patternedCanvasCache.has(key)) forgetPatternedCanvas(key);
     const bytes = Math.max(0, Number(canvas.width) || 0) * Math.max(0, Number(canvas.height) || 0) * 4;
     if (bytes > PATTERNED_CANVAS_CACHE_BYTES) return canvas; // Large temporary canvases are not retained.
@@ -2946,11 +2950,13 @@
     return { combinedMask, combinedSeparator };
   }
 
-  function patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount) {
-    return patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix)
+  function patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount, debugLabel = 'woven-motif') {
+    const width = imageOrCanvas?.naturalWidth || imageOrCanvas?.width || 1; // Separate frame sizes in the baked raster identity.
+    const height = imageOrCanvas?.naturalHeight || imageOrCanvas?.height || 1;
+    return `${cachePrefix}|${width}x${height}|${colorHex}|${debugLabel}|${compactPatternCacheKey(JSON.stringify(renderable))}`
       + (options.inkOnly ? ':ink' : '')
       + (options.continuousSurface === true ? ':continuous' : '')
-      + (requestedFusedCount > 1 ? `:fused:${requestedFusedCount}:${compactPatternCacheKey(JSON.stringify(renderable))}` : ''); // Every fused motif changes the baked-image signature.
+      + `:fused:${requestedFusedCount}`; // One hash covers every motif; outline mode also prevents cross-workflow cache poisoning.
   }
 
   async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
@@ -2959,7 +2965,7 @@
     const patterns = normalizePatternStack(rawPatterns, fusedCount > 1 ? fusedCount + 1 : 2);
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
-    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, fusedCount); // Same key for cache, concurrent bake, and final canvas.
+    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, fusedCount, debugLabel); // Same key for cache, concurrent bake, and final canvas.
     const cached = cachedPatternedCanvas(key);
     if (cached) return cached;
     const pending = pendingPatternStackCanvases.get(key);
@@ -2971,6 +2977,7 @@
   }
 
   async function composePatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
+    const bakeEpoch = patternedCanvasEpoch; // Captured before async image decoding to protect cache invalidation.
     const requestedFusedCount = Math.max(1, Math.min(6, Math.floor(Number(options.fusedPrimaryCount) || 1))); // Only animal painting opts into six fused primary masks; clothes retain the existing two-slot behavior.
     const maxEntries = requestedFusedCount > 1 ? requestedFusedCount + 1 : 2;
     const patterns = normalizePatternStack(rawPatterns, maxEntries);
@@ -2978,7 +2985,7 @@
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount); // A short stable signature avoids retaining large motif PNG strings.
+    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount, debugLabel); // A short stable signature avoids retaining large motif PNG strings.
     if (options.cache !== false) {
       const cached = cachedPatternedCanvas(key);
       if (cached) return cached;
@@ -3105,7 +3112,7 @@
         base.data[i + 3] = combinedMask[p] && !combinedSeparator?.[p] ? 255 : 0;
       }
       ctx.putImageData(base, 0, 0);
-      if (options.cache !== false) rememberPatternedCanvas(key, out);
+      if (options.cache !== false) rememberPatternedCanvas(key, out, bakeEpoch);
       return out;
     }
 
@@ -3147,7 +3154,7 @@
     }
 
     ctx.putImageData(base, 0, 0);
-    if (options.cache !== false) rememberPatternedCanvas(key, out);
+    if (options.cache !== false) rememberPatternedCanvas(key, out, bakeEpoch);
     return out;
   }
 
@@ -3207,6 +3214,7 @@
     portraitPatternStats.cacheMisses++;
     let pending = pendingPatternCanvasPromises.get(fullKey);
     if (!pending) {
+      const pendingEpoch = patternedCanvasEpoch; // Woven garments obey the same appearance-reset epoch as animal surface paint.
       pending = (async () => {
         let decorated = tinted;
         for (const mark of naturalMarkings) {
@@ -3224,11 +3232,11 @@
           ); // Trim goes last so it overlaps reusable motifs and receives its own independent black outline.
         }
         if (descriptor?.furHood) decorated = furApi?.preserveProtectedColors?.(img,decorated,descriptor.furHood,descriptor.role) || decorated; // Last pass protects the immutable source swatches even from optional motifs.
-        rememberPatternedCanvas(fullKey, decorated); // Cached natural+player passes are reused by the portrait's synchronous second render.
+        rememberPatternedCanvas(fullKey, decorated, pendingEpoch); // Old in-flight garment work cannot repopulate a reset cache.
         return decorated;
       })()
         .catch(error => { lastError = String(error?.message || error); throw error; })
-        .finally(() => pendingPatternCanvasPromises.delete(fullKey));
+        .finally(() => { if (pendingPatternCanvasPromises.get(fullKey) === pending) pendingPatternCanvasPromises.delete(fullKey); }); // An old job cannot delete a newer generation's pending entry.
       pendingPatternCanvasPromises.set(fullKey, pending);
     }
     onPatternPending?.(pending);
@@ -3418,7 +3426,7 @@
       equipped: equippedOutfitItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving), addedTrim: weavingHasOptionalTrim(item.weaving) ? normalizeTrimDyeSlot(item.weaving.trim.dyeSlot) : null, crossDyePatterns: weavingUsesCrossDyePatterns(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
-      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, cacheEstimatedBytes: patternedCanvasBytes, cacheBudgetBytes: PATTERNED_CANVAS_CACHE_BYTES, cacheEvictions: patternedCanvasEvictions, pendingStackBakes: pendingPatternStackCanvases.size, joinedStackBakes: patternStackJoinCount, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, cacheEstimatedBytes: patternedCanvasBytes, cacheBudgetBytes: PATTERNED_CANVAS_CACHE_BYTES, cacheEvictions: patternedCanvasEvictions, cacheEpoch: patternedCanvasEpoch, pendingStackBakes: pendingPatternStackCanvases.size, joinedStackBakes: patternStackJoinCount, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
       lastCraftQuality: clone(lastCraftQuality),
       furHoods: window.FurHoodLeatherworking?.debugSnapshot?.() || null, // Read through the same mobile debug panel as cloth and loom failures. // Mobile-visible proof of the input quality groups and averaged star result used by the latest loom craft.
       lastError,
