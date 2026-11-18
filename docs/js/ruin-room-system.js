@@ -72,7 +72,7 @@
       const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
       if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
       return [{id:prefix+':'+String(raw.id||index),kind:prefix==='v50-ground'?'entrance-chamber':'v50',floor:Math.round(y),theme,
-        y,wingId:prefix==='v50-ground'?'v50-ground':null,challenge:null,x,z,w,d,
+        y,wingId:null,challenge:null,x,z,w,d, // Native V50 chamber footprints may be irregular; retain their exact native light projection.
         supportYAt:typeof supportYAt==='function'?supportYAt:null, // V50 uses the floor's exact plateau height when deciding which room is awake.
         ambient:{darknessOffset:0,color}}];
     });
