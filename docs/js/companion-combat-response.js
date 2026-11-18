@@ -28,28 +28,16 @@
   // A follower stranded above its owner must descend before defending a cliff-top fight.
   // The shared terrain and tile size are read-only; no independent pathing or physics is created here.
   function shouldFollowOwnerDownCliff(companion, master, areaId) {
-    if (!companion?.isCompanion || companion.banditCompanion || companion.stableRole === 'mount' ||
-        companion.stableRole === 'shoulderPet' || !master ||
-        (companion.areaId && companion.areaId !== areaId)) return false;
-    const runtime = window.Combat?.deps; // Live area/terrain authority, also used by ordinary companion navigation.
-    if (!runtime?._isZoneArea?.(areaId) || runtime.getCurrentArea?.() !== areaId) return false;
-    const tileSize = Number(runtime.TILE); // The live game's pixel-to-tile conversion; used for both actors.
-    const grid = companion.areaGrid || runtime.getActiveGrid?.() || window.GridTileAccessors?.getActiveGrid?.(); // Same zone grid used to move the creature.
-    if (!Array.isArray(grid) || !Number.isFinite(tileSize) || tileSize <= 0 ||
-        ![companion.x, companion.y, master.x, master.y].every(Number.isFinite)) return false;
-    const petTile = grid[Math.floor(companion.y / tileSize)]?.[Math.floor(companion.x / tileSize)];
-    const ownerTile = grid[Math.floor(master.y / tileSize)]?.[Math.floor(master.x / tileSize)];
-    if (!petTile || !ownerTile || ownerTile.incline) return false;
-    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Shares the live target-decision clock.
-    if (companion._followOwnerDownCliff && (companion._cliffClimb || companion._cliffRouteTravel))
-      return true; // Crossing an incline must not reacquire its old enemy mid-leap.
-    if (petTile.incline) return false;
-    if ((Number(petTile.elevTier) || 0) > (Number(ownerTile.elevTier) || 0)) {
-      companion._companionRetreatUntilMs = nowMs + DESCENT_ESCAPE_GRACE_MS; // Owner still below; refresh until the pet lands.
+    const state = window.CompanionFollowNavigation?.descentState?.(companion, master, areaId);
+    if (!state) return false;
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Same clock as the target-decision lease.
+    if (state.inProgress) return true; // Do not restart combat during a cliff crossing.
+    if (state.above) {
+      companion._companionRetreatUntilMs = nowMs + DESCENT_ESCAPE_GRACE_MS; // Owner is still below.
       return true;
     }
-    return companion._followOwnerDownCliff && nowMs < (companion._companionRetreatUntilMs || 0)
-      && (Number(petTile.elevTier) || 0) === (Number(ownerTile.elevTier) || 0); // Stop after the owner escapes or the grace expires.
+    return companion._followOwnerDownCliff && state.sameTier &&
+      nowMs < (companion._companionRetreatUntilMs || 0); // Post-landing flee grace before re-engaging.
   }
 
   const TARGET_DECISION_INTERVAL_MS = 140; // Full enemy prioritization runs at ~7Hz; a committed target still fights and moves each frame.
@@ -133,6 +121,19 @@
     return chosen;
   }
 
+  function isRescuing(companion, rescueHost) {
+    if (companion?._followOwnerDownCliff || !rescueHost || !(rescueHost.health > 0)) return false;
+    return !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker =>
+      window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle'); // A rescue never supersedes following an escaping owner.
+  }
+
+  function prioritizeOwnerRetreat(companion, target, dt, clearTreasureCue, clearWatchIdle) {
+    if (!companion?._followOwnerDownCliff || companion.banditCompanion) return target;
+    if (companion.treasureCue) clearTreasureCue?.(companion, dt, 'following owner below cliff');
+    if (companion.watchPlayerIdle) clearWatchIdle?.(companion, 'following owner below cliff');
+    return null; // Final arbiter runs AFTER Sicced, downed focus and committed-attack targeting.
+  }
+
   function shouldRestartApproach(stage, targetDistance, attackReach, urgent = false) {
     return stage?.mode === 'backingUp' && (urgent ||
       Number(targetDistance) > Math.max(0, Number(attackReach) || 0) * APPROACH_RESTART_RATIO);
@@ -153,5 +154,6 @@
   }
 
   window.CompanionCombatResponse = Object.freeze({ chooseTarget, shouldReevaluate, validEnemy, shouldRestartApproach,
-    debugSnapshot, shouldFollowOwnerDownCliff, tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
+    debugSnapshot, shouldFollowOwnerDownCliff, isRescuing, prioritizeOwnerRetreat,
+    tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
 })();
