@@ -101,7 +101,7 @@
   let archClaimsCache = {router:null,revision:-1,buttons:null}; // Reuse opt-in arch rows across HUD frames until an input claim actually changes.
   function activeArchClaimButtons() {
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
-    const revision = router?.getRevision?.(); // No allocation: input router increments this only on advertised-claim changes.
+    const revision = router?.getArchRevision?.(); // Zero allocation: only winning visible contextual-arch changes invalidate the HUD, not unrelated world input claims.
     if (revision !== undefined && archClaimsCache.router === router && archClaimsCache.revision === revision) return archClaimsCache.buttons;
     const buttons = ['action1','action2','action3','action4','action5'].map(actionId => { // InputBindings owns these five real semantic inputs; itemAction1/2 are only layout/prompt aliases.
       const claim = router?.claimFor?.(actionId);
