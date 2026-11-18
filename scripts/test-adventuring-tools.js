@@ -234,8 +234,10 @@ assert.match(game, /adventuring: \['torch_swing', 'torch_throw'\]/);
 assert.match(game, /getTorchProjectileVisual: \(\) =>/, 'game supplies the actual held torch texture and world transform');
 assert.match(rangedCode, /projectileSprite:'assets\/toolsprites\/torch\.png', projectileVisualStyle:'spinningWeapon'/,
   'torch uses the thrown hatchet end-over-end spin');
-assert.match(rangedCode, /textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true/,
-  'torch shares the thrown-weapon projectile launch with a permanent burning payload');
+assert.match(rangedCode, /textureSource, sourceTransform, visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true/,
+  'torch keeps its burning projectile payload while using bounded idle scale and direction-aligned artwork');
+assert.match(rangedCode, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/,
+  'torch uses the held release point without copying the oversized held orientation or geometry');
 assert.match(rangedCode, /heldSpin:true,heldSpinRevolutions:2\.5/, 'torch now shares the thrown hatchet in-hand spin');
 assert.match(rangedCode, /invalidateAimTarget\?\.\('torch-strike-release', true\)/, 'torch samples a fresh strike-frame reticle like the hatchet');
 assert.match(game, /AdventuringTools\.updateThrow\(\{/, "torch projectile commits only from the active pose's strike frame");
