@@ -631,4 +631,15 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(lavaProbeHeight, 0, 'lava-rim escape and climb selection measure from physical feet');
 }
 
+{
+  const h=harness({start:{x:3.5,z:3.5},deepSupportY:2});
+  assert(h.window.PlayerJump.start(),'start a real airborne jump before dodging');
+  h.advance(.05);
+  const flight=h.player._freeJump;
+  assert(flight&&flight.phase==='air');
+  h.player.dodging=true;
+  h.advance(.05);
+  assert.equal(h.player._freeJump,flight,'midair dodge never cancels the ballistic jump');
+  assert(h.player.physicalFeetY>0,'midair dodge retains the upper-story physical elevation');
+}
 console.log('player-jump ok');
