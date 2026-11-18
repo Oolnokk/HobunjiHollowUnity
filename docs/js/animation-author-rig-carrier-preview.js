@@ -39,5 +39,29 @@
     return true;
   }
 
-  global.AnimationAuthorRigCarrierPreview = Object.freeze({ placeNpcAtGrip });
+  // Gameplay pins a pet to the live skinned shoulderPerch.sourcePixel (see
+  // shoulder-pet-attachment-runtime.js) and only falls back to the stored x/y.
+  // Those x/y were exported under different portrait metrics, so on this
+  // carrier they float off the body. Resolve the same pixel on the carrier's
+  // own skinned portrait and move the hidden perch there (visualOffset-local).
+  // The carrier art is never mirrored, while the shared resolver mirrors X when
+  // gameplay portraits are flipped, so pre-mirror the pixel to cancel that.
+  function resolvePerchFromSourcePixel({ avatarApi, model, visualOffset, shoulderPerch, sourcePixel, scratch }) {
+    if (!avatarApi?.resolveSkinnedPixelWorldPosition || !model || !visualOffset?.worldToLocal
+        || !shoulderPerch?.position || !scratch?.copy) return false;
+    const px = Number(sourcePixel?.x), py = Number(sourcePixel?.y);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+    const portrait = avatarApi.resolveSkinnedPortraitRoot?.(model);
+    const canvas = portrait?.userData?.sourceCanvas;
+    const width = Number(canvas?.naturalWidth || canvas?.width);
+    if (!(width > 0)) return false;
+    const flipped = avatarApi.getPortraitsFlipped?.() === true;
+    const world = avatarApi.resolveSkinnedPixelWorldPosition(model, { x: flipped ? width - px : px, y: py }, scratch);
+    if (!world) return false;
+    shoulderPerch.position.copy(visualOffset.worldToLocal(world)); // Same point gameplay pins the grip to.
+    shoulderPerch.updateMatrix?.();
+    return true;
+  }
+
+  global.AnimationAuthorRigCarrierPreview = Object.freeze({ placeNpcAtGrip, resolvePerchFromSourcePixel });
 })(window);
