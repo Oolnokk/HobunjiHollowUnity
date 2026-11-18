@@ -8,11 +8,6 @@
   const BLOCKER_ID = 'boney-shinjimi-magic-house'; // Installed in the game's shared player/NPC/projectile blocker registry.
   const ZONES = Object.freeze(['map_northern_cliffs', 'map_western_slope',
     'map_eastern_mire', 'map_southern_cloud_forest']); // Eligible generated wilderness maps.
-  const SECTORS = Object.freeze([ // Compass names for the same nine equal map sectors used by wilderness locale placement.
-    Object.freeze(['Northwest', 'North', 'Northeast']),
-    Object.freeze(['West', 'Center', 'East']),
-    Object.freeze(['Southwest', 'South', 'Southeast']),
-  ]);
   const HOUSE_FILE = 'config/pieces/house-section-3x3.json'; // Reuses an authored three-by-three Highland roof and wall assembly.
   const HAT_ID = 'appearance::hat::old_highlands_kasa'; // Boney's actual authored two-sided kasa, also granted to the player.
   const SIGHT_TILES = 10; // LOS range; existing RangedWeapons rays handle trees, rocks, terrain and cover.
@@ -38,7 +33,6 @@
   const sightProxies = new WeakMap(); // Stable walker-to-actor proxies retain RangedWeapons' LOS/hitbox caches instead of forcing a fresh raycast on every throttled Boney scan.
   let sceneRunning = false; // Prevents overlapping choice cutscenes.
   const state = initialState(); // Saved moon cycle, location, phase, rewards and chase/chores counters.
-  let spoilersRevealed = false; // Controls only the Dev Companion's opt-in location readout; never saved with the world.
 
   function initialState() {
     return { phase:'waiting', cycle:-1, completedCycle:-1, zone:null, home:null, target:null,
@@ -52,12 +46,6 @@
   function area() { return String(deps?.getCurrentArea?.() || ''); }
   function tileSize() { return Math.max(1, finite(deps?.TILE,64)); }
   function layout() { return state.zone ? deps?.getZoneLayout?.(state.zone) : null; }
-  function houseSector(home, map) {
-    if (!home || !(map?.cols > 0) || !(map?.rows > 0)) return null;
-    const col = clamp(Math.floor((home.c + 1.5) / map.cols * 3), 0, 2); // House centre determines its west/centre/east third.
-    const row = clamp(Math.floor((home.r + 1.5) / map.rows * 3), 0, 2); // Increasing map rows point south, matching the house's south doorway.
-    return SECTORS[row][col];
-  }
   function position() { return walker?.root?.position || null; }
   function playerTile() {
     const p=deps?.player;
@@ -132,7 +120,7 @@
     if(state.phase!=='planned'||!state.zone)return;
     const site=chooseHouseSite(state.zone,state.cycle);
     if(!site)return;
-    state.home={...site,sector:houseSector(site,layout())}; // Preserve the sector across reloads even if the zone layout is not loaded yet.
+    state.home=site;
     state.target={c:site.c+1,r:site.r+3};
     state.phase='roam';
     ensureCollision();
@@ -700,8 +688,7 @@
     state.completedCycle=Number.isInteger(raw.completedCycle)?raw.completedCycle:-1;
     state.zone=zoneEligible(raw.zone)?raw.zone:null;
     const goodCoord=p=>Number.isInteger(p?.c)&&Number.isInteger(p?.r);
-    state.home=goodCoord(raw.home)?{c:raw.home.c,r:raw.home.r,
-      sector:SECTORS.some(row=>row.includes(raw.home.sector))?raw.home.sector:null}:null; // Older saves without sector use the loaded layout if available.
+    state.home=goodCoord(raw.home)?{c:raw.home.c,r:raw.home.r}:null;
     state.target=goodCoord(raw.target)?{c:raw.target.c,r:raw.target.r}:null;
     state.phase=['planned','roam','flee','home','leaving','complete'].includes(raw.phase)?raw.phase:'waiting';
     if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
@@ -731,46 +718,10 @@
       weaponContacts:state.weaponContacts,escaped:state.escaped,
       chores:state.chores,reward:state.reward,hatTaken:state.hatTaken,milksGiven:state.milksGiven};
   }
-  function registerSpoilerPanel() {
-    window.DevCompanion?.registerCheatPanel?.({ // Already gated to an active game with Dev Mode enabled.
-      id:'boney-shinjimi-house-spoilers',title:'🌕 Boney Shinjimi’s house',order:41,
-      render:()=>{
-        const sector=state.home?(houseSector(state.home,layout())||state.home.sector):null;
-        const zoneLabel=state.zone
-          ? (deps?.EXTERIOR_ZONES?.[state.zone]?.label || ({
-              map_northern_cliffs:'Northern Cliffs',map_western_slope:'Western Slope',
-              map_eastern_mire:'Eastern Mire',map_southern_cloud_forest:'Southern Cloud Forest',
-            })[state.zone] || state.zone)
-          : 'Not selected';
-        return {
-          summary:spoilersRevealed?'Location revealed':'Location hidden',
-          rows:spoilersRevealed?[
-            ['Encounter',state.phase],
-            ['Zone',zoneLabel],
-            ['Sector',sector || (state.phase==='planned'?'Pending house placement':'Not available')],
-          ]:[],
-          note:spoilersRevealed
-            ? (state.phase==='planned'
-              ? 'The zone is selected; its nine-sector location is not known until the terrain supports a 3×3 house.'
-              : !state.zone
-                ? 'No current house. A new zone is selected on lunar day 14 when the next encounter is eligible.'
-                : 'Sector is the house centre within a 3×3 compass grid of the whole wilderness zone.')
-            : 'Press Show spoilers to reveal the house’s current zone and sector.',
-          actions:[{id:'toggle',label:spoilersRevealed?'🙈 Hide spoilers':'👁 Show spoilers',active:spoilersRevealed}],
-        };
-      },
-      onAction:action=>{
-        if(action!=='toggle')return {ok:false,error:'Unknown Boney spoiler action.'};
-        spoilersRevealed=!spoilersRevealed;
-        return {ok:true}; // Read-only: never rolls a site, reveals the world map, or touches the save.
-      },
-    });
-  }
   function init(injectedDeps) {
-    deps=injectedDeps;scanTimer=0;planTimer=0;spoilersRevealed=false;
+    deps=injectedDeps;scanTimer=0;planTimer=0;
     window.NpcScheduling?.registerTargetOverride?.('boney-shinjimi-moon',targetFor);
     window.DevCompanion?.registerStateProvider?.('boneyShinjimi',debugSnapshot);
-    registerSpoilerPanel();
   }
   window.BoneyShinjimiWilderness=Object.freeze({
     init,update,serialize,restore,debugSnapshot,sceneDefinition,canAcceptMilkGift,offerMilk,

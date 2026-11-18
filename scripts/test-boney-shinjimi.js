@@ -108,14 +108,12 @@ assert.equal(tree.type,'shrub');assert.equal(rock.type,'rock');
 // Full moon is 14/28; a planned site has collision even when render is absent;
 // reward-state persistence is additive and does not re-roll an unfinished house.
 const registered=[];
-let spoilerPanel=null; // Captures the Dev Companion's opt-in readout without a browser or a second-window connection.
 const map={cols:60,rows:60,tiles:Array.from({length:3600},()=>({type:'grass'})),buildings:[]};
 const moonWindow={
   __hobunjiGameStarted:true,GameRandom:{random:()=>0.5},
   NpcPathfinding:{isNpcTileWalkable:()=>true,findNpcPath:()=>[1]},
   AreaFootprintBlockers:{register:(id,provider)=>{registered.push({id,provider});return ()=>{};}},
   NpcScheduling:{registerTargetOverride(){}},
-  DevCompanion:{registerStateProvider(){},registerCheatPanel(spec){spoilerPanel=spec;}},
 };
 const moonContext=vm.createContext({window:moonWindow,console,Math,Date,URLSearchParams});
 vm.runInContext(read('docs/js/boney-shinjimi-wilderness.js'),moonContext);
@@ -127,25 +125,11 @@ let saved=0;const liveDay={day:13},game={
   player:{x:64*25,y:64*25,health:100},save:()=>{saved++;},
 };
 C.init(game);
-assert(spoilerPanel,'Dev Companion location spoilers must be registered during the encounter init');
-assert.equal(spoilerPanel.render().summary,'Location hidden');
-assert.equal(spoilerPanel.render().rows.length,0,'no zone or sector reaches the companion before the spoiler button');
-assert.equal(spoilerPanel.onAction('invalid').ok,false,'unknown actions do not reveal anything');
-assert.equal(spoilerPanel.onAction('toggle').ok,true);
-assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Zone')[1],'Not selected');
 C.update(0.016);assert.equal(C.debugSnapshot().phase,'waiting');
 liveDay.day=14;C.update(0.016);
 const active=C.debugSnapshot();
 assert.equal(active.phase,'roam');
 assert.equal(active.zone,'map_western_slope');
-const expectedSector=[
-  ['Northwest','North','Northeast'],['West','Center','East'],['Southwest','South','Southeast'],
-][Math.floor((active.home.r+1.5)/map.rows*3)][Math.floor((active.home.c+1.5)/map.cols*3)]; // Independent check against the fixed nine-sector compass grid.
-assert.equal(active.home.sector,expectedSector,'new sites save their correct geographical sector');
-assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Zone')[1],'Western Slope');
-assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Sector')[1],expectedSector);
-assert.equal(spoilerPanel.onAction('toggle').ok,true);
-assert.equal(spoilerPanel.render().rows.length,0,'Hide spoilers conceals the location again');
 const levelSurface=map.tiles; // Intentionally varied authored cliff tiers must not be accepted as a 3×3 level house foundation.
 map.tiles=levelSurface.map((tile,index)=>({...tile,elevTier:Math.floor(index/map.cols)%2}));
 assert.equal(C.__test.chooseHouseSite('map_western_slope',active.cycle),null,
@@ -156,18 +140,8 @@ assert.equal(registered.length,1);
 assert.equal(C.__test.wallHit(active.home.c+0.05,active.home.r+1),true,'hidden house remains solid');
 assert.equal(C.__test.wallHit(active.home.c+1.5,active.home.r+2.95),false,'real south doorway remains enterable');
 const persisted=C.serialize();
-assert.equal(persisted.home.sector,expectedSector,'sector is part of the existing world save, not a volatile UI guess');
-game.getZoneLayout=()=>null; // A reload can restore saved encounter state before the target wilderness has generated.
 C.restore(persisted);
 assert.equal(C.debugSnapshot().phase,'roam');
-spoilerPanel.onAction('toggle');
-assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Sector')[1],expectedSector,
-  'saved sector remains inspectable when the target map has not yet streamed in');
-game.getZoneLayout=zone=>zone==='map_western_slope'?map:null;
-C.restore({...persisted,home:{c:persisted.home.c,r:persisted.home.r}});
-assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Sector')[1],expectedSector,
-  'older world saves without a stored sector can infer it from the loaded zone');
-C.restore(persisted);
 assert.equal(C.debugSnapshot().home.c,active.home.c);
 assert.equal(C.__test.lunarDay(14),14);
 assert.equal(C.__test.lunarDay(28),28);
