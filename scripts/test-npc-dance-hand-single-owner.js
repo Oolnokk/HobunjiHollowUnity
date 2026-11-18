@@ -39,7 +39,7 @@ async function run(presentationInstalled, poseLocked = false) {
     rec: { id: 'festival-partner' }, // Shared CharacterActionLocks participant whose authored body pose must survive late social rendering.
     root, state: 'idle', area: 'test', avatarHeight: 0.72, avatarWidth: 0.6,
     avatarGroup: { userData: { proceduralHandRig: { armLengthForSide: () => 0.34 } } },
-    currentScheduleTarget: { socialDance: { stimulusId: 'probe', style: 'loose-sway', armStyle: 'overhead-punch', sourceX: 5, sourceZ: 4.5 } },
+    currentScheduleTarget: { socialLookAt: { x: 5, z: 4.5 }, socialDance: { stimulusId: 'probe', style: 'loose-sway', armStyle: 'overhead-punch', sourceX: 5, sourceZ: 4.5 } },
   };
   const windowObject = {
     THREE: { WebGLRenderer: Renderer },
@@ -56,14 +56,16 @@ async function run(presentationInstalled, poseLocked = false) {
   windowObject.NpcActivityPlanner.init({ listNpcWalkersInArea: () => [walker], getCurrentArea: () => 'test' });
 
   const before = left.position.y;
+  const beforeYaw = root.rotation.y; // The autonomous facing helper used to rewrite the logical root even while paired.
   const beforeBody = { x: root.position.x, y: root.position.y, z: root.position.z }; // Snapshot of the NPC's real paired-dance root before rendering.
   windowObject.THREE.WebGLRenderer.prototype.render.call({}, {}, {});
   const during = left.position.y;
+  const duringYaw = root.rotation.y; // Checks both render-time dance and facing writers during the actual draw.
   const duringBody = { x: root.position.x, y: root.position.y, z: root.position.z }; // Detects a late body transform during the *actual* world render, not only after cleanup.
   await Promise.resolve();
   await Promise.resolve();
   const afterBody = { x: root.position.x, y: root.position.y, z: root.position.z }; // The social render hook also must not strand a pose across frames.
-  return { before, during, after: left.position.y, beforeBody, duringBody, afterBody, debug: windowObject.NpcSocialInhibition.getDebug() };
+  return { before, during, after: left.position.y, beforeYaw, duringYaw, afterYaw: root.rotation.y, logicalYaw: walker.rot, beforeBody, duringBody, afterBody, debug: windowObject.NpcSocialInhibition.getDebug() };
 }
 
 (async () => {
@@ -79,10 +81,14 @@ async function run(presentationInstalled, poseLocked = false) {
   assert.equal(paired.debug.poseOwnedSkips, 1, 'a paired NPC with a stale social dance target skips the complete render-time social pose');
   assert.equal(paired.debug.danceApplications, 0, 'the autonomous dance never reaches the paired actor');
   assert.equal(paired.debug.facingApplications, 0, 'the autonomous facing writer also yields to the paired pose lock');
+  assert.equal(paired.duringYaw, paired.beforeYaw, 'the rendered paired-facing yaw is untouched');
+  assert.equal(paired.logicalYaw, undefined, 'autonomous facing never overwrites the paired NPC logical yaw');
   assert.deepEqual(paired.duringBody, paired.beforeBody, 'the paired dancer root is unchanged *during* actual rendering');
   assert.deepEqual(paired.afterBody, paired.beforeBody, 'the paired dancer root is unchanged after render cleanup');
   assert.equal(paired.during, paired.before, 'the paired dancer hand sockets also remain exclusive');
   assert.ok(owned.debug.danceApplications >= 1, 'ordinary NPC social animation remains active without a pose lock');
+  assert.ok(owned.debug.facingApplications >= 1, 'the normal social facing writer still runs for unlocked NPCs');
+  assert.notEqual(owned.duringYaw, owned.beforeYaw, 'unlocked NPCs still face their social partner');
   assert.notDeepEqual(owned.duringBody, owned.beforeBody, 'ordinary dance still animates the body while rendering');
   assert.deepEqual(owned.afterBody, owned.beforeBody, 'ordinary dance still returns to the previous pose after rendering');
 
