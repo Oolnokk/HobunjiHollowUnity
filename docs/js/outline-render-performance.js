@@ -504,7 +504,8 @@
     try { roots = scoreActorRootProvider?.() || []; } catch (_) { return { meshes: 0, restore }; }
     try {
       for (const root of roots) {
-        if (!root?.traverse) continue;
+        // Settled corpses are ordinary world art, not character x-ray silhouettes.
+        if (!root?.traverse || root.userData?.corpseNoSecondaryPasses) continue;
         let attached = false; // Only visible character rigs in the active scene may write this depth mask.
         for (let node = root; node; node = node.parent) {
           if (node.visible === false) break;
