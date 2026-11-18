@@ -20,8 +20,8 @@ const game = fs.readFileSync('docs/game.js', 'utf8');
 
 assert.match(creatureRenderer, /compositor\(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern', \{ \.\.\.\(compositorOptions \|\| \{\}\), fusedPrimaryCount \}\)/,
   'animal Color Pools labels the shared two-pattern compositor pass separately from clothing weaving');
-assert.match(creatureRenderer, /patterns\.length > 1 \? \{ clearanceMultiplier: Math\.max\(3, Math\.min\(12/,
-  'animal surface-paint diagnostics expose the authored 3×..12× overpass path');
+assert.match(creatureRenderer, /overpass: overpass \? \{ clearanceMultiplier: Math\.max\(3, Math\.min\(12/,
+  'animal surface-paint diagnostics report clearance only for the separate overpass, never for fused motifs');
 
 assert.equal(overrides.npcs.banubu.species, 'grehlr', 'Banubu must be authored as Grehlr');
 assert.equal(overrides.npcs.banubu.kind, 'animal', 'Banubu must use the animal NPC route');
