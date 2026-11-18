@@ -22,7 +22,6 @@
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
   let lastGenerated = null; // Debug snapshot describes which final terrain evidence made it into the clue.
   let registeredYear = null; // Registers real character-owned blossom inventory items once per civil year.
-  let pickPromptEl = null; // Mobile/touch button is the same explicit pick action as the controller Action 3 claim.
   let advertisedPick = ''; // Avoid reinstalling GameplayInputRouter claims on each 200ms festival tick.
   let turnInRunning = false; // Disallows double-awards while a cutscene awaits dialogue input.
   let lastTurnIn = null; // Developer mobile snapshot reports first/later awards and failed saves.
@@ -185,14 +184,14 @@
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
       const instance = localeFor(blossom);
-      const foliage = window.FoliageGenerator?.buildPottedBlossomTreeMesh;
+      const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // Full green three-tier tree; tabletop one-rung flowers are a separate builder.
       if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
       const p = window.LocaleRiddleGenerator?.positionOf?.(instance, 'blossom-tree');
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
       const color = blossomColor(blossom); // Never duplicate the temple's live colour-fill palette in an event renderer.
       const tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, color); // Public builder reuses cached Three.js geometry/materials; one cheap instance per active scene.
       if (!tree) continue;
-      tree.scale.multiplyScalar(36); // A ~6-unit flowering landmark after the tabletop preset's quarter scale.
+      // The dedicated wilderness builder already normalizes its outer bounds to a 2×2×2-tile silhouette.
       tree.traverse?.(child => { if (child.geometry) child.userData.festivalSharedFoliage = true; }); // Zone teardown must not dispose the foliage generator's globally shared GPU buffers.
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color, localeId: blossom.localeId };
@@ -235,32 +234,17 @@
     lastStatus = 'Picked '+blossom.id+' by interaction ('+next.length+'/5)'; syncPickPrompt();
     return true;
   }
-  function createPickPrompt() {
-    if (typeof document === 'undefined' || !document.body?.appendChild) return null;
-    let button = document.getElementById?.('fiveBlossomsPick');
-    if (button) return button;
-    button = document.createElement('button'); // A tangible tap target for mobile; Action 3 remains the controller/keyboard route.
-    button.id = 'fiveBlossomsPick';button.type = 'button';button.hidden = true;
-    button.setAttribute('aria-label','Pick blossom from tree');
-    button.style.cssText = 'position:fixed;bottom:calc(13vh + 70px);left:14px;z-index:1100;min-height:48px;min-width:150px;padding:10px 14px;border-radius:10px;background:#355d40;color:#fff;border:2px solid #e0bb66;font:700 14px system-ui;box-shadow:0 3px 12px #0008;touch-action:manipulation;';
-    button.addEventListener('click',() => {const target=nearbyTree();if(target)pickBlossom(target.id);}); // Rechecks actual player distance on tap.
-    document.body.appendChild(button);
-    return button;
-  }
   function syncPickPrompt() {
     const target = nearbyTree();
     const next = target?.id || '';
-    if (!pickPromptEl) pickPromptEl = createPickPrompt();
-    if (pickPromptEl) {
-      pickPromptEl.hidden = !target;
-      if (target) pickPromptEl.textContent = '🌸 Pick '+target.name;
-    }
-    if (next === advertisedPick) return; // Reusing one prompt/claim eliminates frame- or tick-level input registration churn.
-    advertisedPick = next;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
-    if (!target) router?.clearClaims?.('five-blossoms-tree');
-    else router?.setClaims?.('five-blossoms-tree',[{actionId:'action3',priority:65,label:'Pick '+target.name,
-      onPress:() => pickBlossom(target.id)}]); // Action 3 avoids commandeering weapon swings near the tree.
+    if (!router?.setClaims || next === advertisedPick) return;
+    advertisedPick = next;
+    if (!target) router.clearClaims?.('five-blossoms-tree');
+    else router.setClaims('five-blossoms-tree',[{
+      actionId:'action3',priority:65,label:'Pick '+target.name,hudIcon:'🌸',showInArch:true,
+      onPress:() => pickBlossom(target.id)
+    }]); // One native arch slot on touch, keyboard and controller; no separate positioned DOM button.
   }
   function onTile() {
     syncCalendar();
@@ -272,6 +256,9 @@
     clueTarget = null; clueLayout = null; clueSynced = false; // Do not inherit the previous member/world's saved-clue state.
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    router?.clearClaims?.('five-blossoms-tree'); // Never retain a previous character's Action 3 claim after switching worlds.
+    document?.getElementById?.('fiveBlossomsPick')?.remove?.(); // Remove any legacy fixed-position button left by a cached older module.
     advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
     clearTrees(); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
@@ -348,7 +335,7 @@
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
       displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
       savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
-      nearbyPick:nearbyTree()?.id || null,advertisedPick,registeredYear,turnInRunning,lastTurnIn,
+      nearbyPick:nearbyTree()?.id || null,advertisedPick,usesNativeArch:true,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
   }
