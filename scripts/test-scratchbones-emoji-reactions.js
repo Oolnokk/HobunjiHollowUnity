@@ -26,7 +26,7 @@ class Group {
     this.visible = true;
     this.children = [];
     this.position = new Vector3().set(0, 0, 0);
-    this.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0] };
+    this.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
     this.quaternion = { copy(source) { this.source = source; } };
   }
   add(child) { child.parent = this; this.children.push(child); }
@@ -134,6 +134,7 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(icon.renderOrder, 1200);
   now = 300;
   livestock.position.set(7, 2, 3);
+  livestock.matrixWorld.elements[8] = 1; livestock.matrixWorld.elements[10] = 0; // Front-facing animal card projects its whole Z-axis sprite width onto camera right.
   step();
   const headLeft = 7 + (.25 - .5) * animalOptions.width; // Exact frame left edge in actor-relative screen space.
   assert.ok(love.position.x < headLeft, 'animal emoji sits to the left of its chathead crop');
@@ -141,6 +142,10 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(love.position.z, 3, 'side anchoring must not move the popup toward or away from the camera');
   assert.equal(api.debugSnapshot().last.side, 'animal-left');
   assert.equal(love.quaternion.source, camera.quaternion);
+  const faceOnOffsetX = love.position.x; // Used to detect head alignment changes after rotating the animal plane.
+  livestock.matrixWorld.elements[8] = 0; livestock.matrixWorld.elements[10] = 1; // Edge-on card projects a narrower head crop.
+  step();
+  assert.ok(love.position.x > faceOnOffsetX && love.position.x < livestock.position.x, 'animal emoji follows projected head width as the sprite turns');
   assert.ok(icon.visible && icon.material.opacity > 0);
   const expectedSize = Math.max(.25, Math.min(.62, 1.7 * .38)) / 3; // Actor bounds are 1.7 high in this mock; the reaction is a third of its former size.
   const expectedScale = expectedSize * api.sample('love', now / 1650).scale; // Original animation curves still drive the smaller billboard.
