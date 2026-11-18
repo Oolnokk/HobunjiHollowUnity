@@ -1,4 +1,4 @@
-// Autonomous participation in the four non-Gorkunash festival locales.
+// Autonomous participation in festivals without shared feasting. Five Blossoms now uses NpcSharedMeals like Gorkunash.
 // Reuses the regular NPC schedule and social-presentation pipeline; no frame loop or cloned NPCs.
 (() => {
   'use strict';
@@ -32,7 +32,7 @@
   }
   function update() {
     const festival = deps?.festival?.(); // Missing or suspended festivals must never take over ordinary schedules.
-    if (!festival || festival.id === 'gorkunash' || !deps?.active?.()) {
+    if (!festival || (festival.id === 'gorkunash' || festival.id === 'five_blossoms') || !deps?.active?.()) {
       if (phaseKey) clear();
       return;
     }

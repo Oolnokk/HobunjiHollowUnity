@@ -136,7 +136,7 @@
   }
   function openFeast(index = 0) {
     const api = system();
-    if (api?.festival?.()?.id !== 'gorkunash' || !api.festivalHours?.()) return false;
+    if (!['gorkunash','five_blossoms'].includes(api?.festival?.()?.id) || !api.festivalHours?.()) return false;
     const meal = api.feastDishDetails?.(index);
     if (!meal || meal.id === 'reserved') return false;
     ensure();
@@ -167,40 +167,43 @@
     const api = system(); // One rule authority for disabled state, preview, and commit.
     const f = api.festival();
     const type = feastInspectIndex !== null ? 'feast' : prop.activity.type;
-    root.querySelector('#festivalTitle').textContent = type === 'feast' ? '🍲 Gorkunash potluck dishes'
+    root.querySelector('#festivalTitle').textContent = type === 'feast' ? (f.id === 'gorkunash' ? '🍲 Gorkunash potluck dishes' : '🌸 Five Blossoms buffet')
       : `${f.icon} ${prop.activity.label || window.FestivalCalendar.activityLabels[type]}`;
     root.querySelector('#festivalSubtitle').textContent = `${f.name} · ${window.CalendarSystem.formatCalendarDate()} · gatherings ${api.gatheringHoursLabel()}`;
     const content = root.querySelector('#festivalContent');
     root.querySelector('.festival-card')?.classList?.toggle('festival-offering-view',type==='offering'); // Responsive width only for offerings.
     let html = '';
     if (type === 'feast') {
-      const dishes = api.feastMenu(); // Same persisted seven-pot lineup that the furniture service serves.
+      const dishes = api.feastMenu(); // Both festivals use the same seven physical serving pots.
+      const contest = f.id === 'gorkunash'; // Never show competition points, daily rankings or donation prompts at Five Blossoms.
       const chosen = api.feastDishDetails(feastInspectIndex);
       const describeEffects = effects => Object.entries(effects || {}).filter(([,amount])=>Number(amount)>0)
         .map(([effect,amount])=>window.CookingSystem?.formatEffectStrength?.(effect,amount) || `${effect} (+${amount})`);
-      html = '<p class="festival-note">Contest points multiply ingredient star quality, processing depth and any known source rarity. The actual eating buffs still depend on quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>';
-      html += `<h3>Compare dishes · day ${api.contestStandings()?.day || 1} of 7</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
-        button(`${index+1}. ${meal.label} · ${meal.id==='reserved'?'Not yet entered':meal.score+' points'}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
+      html = contest ? '<p class="festival-note">Contest points multiply ingredient star quality, processing depth and any known source rarity. The actual eating buffs still depend on quality and processing. The strongest dish in the competition may not give you the skill benefits you need today.</p>'
+        : '<p class="festival-note">Seven fixed dishes are served throughout the Feast of the Five Blossoms. Choose the food buffs you like; there is no contest, donation or rotating menu.</p>';
+      html += `<h3>${contest ? 'Compare dishes · day ' + (api.contestStandings()?.day || 1) + ' of 7' : 'The weeklong buffet'}</h3><div class="festival-dish-picker">${dishes.map((meal,index)=>
+        button(`${index+1}. ${meal.label}${contest ? ' · '+(meal.id==='reserved'?'Not yet entered':meal.score+' points') : ''}\n${describeEffects(meal.foodEffects).slice(0,3).join(', ') || 'No food buffs recorded'}`,
           'inspect-pot', meal.id==='reserved', `data-pot-index="${index}" aria-pressed="${index===feastInspectIndex}"`)
       ).join('')}</div>`;
       if (chosen && chosen.id !== 'reserved') {
         html += `<section class="festival-dish-info"><h3>${esc(chosen.label)}</h3>`;
-        html += `<p class="festival-dish-total"><strong>${chosen.score} contest points</strong> · ${chosen.ingredientDetails.length} ingredients</p>`;
+        html += `<p class="festival-dish-total">${contest ? `<strong>${chosen.score} contest points</strong> · ` : ''}${chosen.ingredientDetails.length} ingredients</p>`;
         if (chosen.estimatedQuality) html += '<p class="festival-note">This older dish predates ingredient-quality records. Ingredient stars are estimated from finished-food quality; the saved contest score and eating buffs remain authoritative.</p>';
         if (chosen.estimatedEffects) html += '<p class="festival-note">Individual ingredient buffs are approximate for this older recipe; the total eating effects shown below are the stored values.</p>';
         const inspectedTotal = Math.round((chosen.ingredientDetails || []).reduce((sum,item)=>sum+(Number(item.points)||0),0)*100)/100; // Older saved entries may predate rarity snapshots.
-        if (Math.abs((Number(chosen.score)||0)-inspectedTotal)>0.01) html += '<p class="festival-note">Historical score preserved. The ingredient breakdown reflects current source estimates because the original rarity multipliers were not recorded.</p>';
-        html += '<h4>Ingredient quality and contribution</h4><ul class="festival-ingredient-list">';
+        if (contest && Math.abs((Number(chosen.score)||0)-inspectedTotal)>0.01) html += '<p class="festival-note">Historical score preserved. The ingredient breakdown reflects current source estimates because the original rarity multipliers were not recorded.</p>';
+        html += `<h4>${contest ? 'Ingredient quality and contribution' : 'Ingredients'}</h4><ul class="festival-ingredient-list">`;
         html += chosen.ingredientDetails.map(item=>{
           const contribution=describeEffects(item.effects).join(', ') || 'No cooking buff';
           const rarity = Number(item.rarityMultiplier) || 1; // Cook-time factor is authoritative for the preserved Gorkunash score.
           const math = rarity === 1 ? `${item.stars} × ${item.processingMultiplier ?? item.multiplier}`
             : `${item.stars} × ${item.processingMultiplier} processing × ${rarity.toFixed(2)} rarity (${item.raritySource || 'estimated'})`;
-          return `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`;
+          return contest ? `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)} · ${esc(math)} = <strong>${item.points} points</strong><small>${esc(contribution)}</small></li>`
+            : `<li><strong>${esc(item.icon)} ${esc(item.label)}</strong> · ${'★'.repeat(item.stars)}${'☆'.repeat(5-item.stars)}<small>${esc(contribution)}</small></li>`;
         }).join('') || '<li>Original ingredient details were not recorded for this older dish.</li>';
         html += '</ul><h4>Effects when eaten</h4><div class="festival-dish-total">';
         html += describeEffects(chosen.foodEffects).map(value=>`<div>${esc(value)}</div>`).join('') || 'No recorded food buffs';
-        html += '</div><p class="festival-note">Each seated bite gives five minutes of these buffs, up to fifty minutes total. Fullness still applies. To eat this dish, close the list and aim at its pot with a bowl to use Fill bowl.</p></section>';
+        html += '</div><p class="festival-note">Each seated bite gives four in-game hours of these buffs, up to forty hours total. Fullness still applies. To eat this dish, close the list and aim at its pot with a bowl to use Fill bowl.</p></section>';
       }
     } else if (type === 'welcome') {
       html = `<p>${esc(f.description)}</p><p class="festival-note">All roads, building entrances, and town exits remain open. Rewards are once per festival unless stated otherwise.</p><ul>${api.activityProps().filter(p => p.activity.type !== 'welcome').map(p => `<li>${esc(p.activity.label || window.FestivalCalendar.activityLabels[p.activity.type])} — town tile ${p.col}, ${p.row}</li>`).join('')}</ul>`;

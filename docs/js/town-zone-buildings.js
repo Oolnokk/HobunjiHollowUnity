@@ -183,7 +183,7 @@
       window.HobunjiWalkableElevation?.unregisterFurnitureRails?.(mesh); // Remove old indexed rails before the geometry is disposed.
       townScene?.remove(mesh);
       window.FestivalProps?.dispose?.(mesh);
-      mesh.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+      mesh.traverse(o => { if (o.geometry && !o.userData?.festivalSharedFoliage) o.geometry.dispose(); }); // Generated vase trees share cached foliage geometry across tables/festival rebuilds; only dispose their host furniture.
     }
     _townDecorFurnitureGroups = [];
     window.FurnitureTableSystem?.clearArea('town');

@@ -146,7 +146,7 @@
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261117animalDensity40"></script>
+  <script src="debug.js?v=20261118blossomVases1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261116boneyKasaCfg1"></script>
@@ -244,7 +244,7 @@
   <script src="js/wildlife-food-web.js?v=20261109nohuknukSnow1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
-  <script src="js/foliage-generator.js?v=20261105koma1"></script>
+  <script src="js/foliage-generator.js?v=20261118blossomVases1"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
@@ -261,7 +261,7 @@
   <script src="js/furniture-table-system.js?v=20261115hf9c1b7a"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/furniture-tile-span.js?v=20261114vertical1"></script> <!-- Shared, on-demand rigid ends + surface-rooted elastic middle. -->
-  <script src="js/authored-furniture-runtime.js?v=20261115h2c39474"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261118blossomVases1"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-ink.js?v=20261115chromaticGlow3"></script> <!-- Alpha-only recolor + glow shared with the furniture editor. -->
@@ -500,7 +500,7 @@
        load-order dependency on anything else here; game.js calls into it
        from loadBuildingScene/_loadTownFromWorkspace and its own live-swap
        check. -->
-  <script src="js/festival-calendar.js?v=20261110tzkFortune1"></script>
+  <script src="js/festival-calendar.js?v=20261118fiveBlossomsCal1"></script>
   <script src="js/map-layout-system.js?v=20261111communion2"></script>
   <!-- Gives interior furniture an authored tile footprint/quarter-turn transform and derives occupied-tile collision before the scene consumes the effective layout. -->
   <script src="js/interior-furniture-grid.js?v=20261114dbldim1"></script>
@@ -656,7 +656,7 @@
        calls window.TownZoneBuildings.init(...) during its own setup (and
        reads window.TownZoneBuildings.loadHousePieceFaceTexture as one of
        window.FarmBuildings' own init deps, at that same call-time point). -->
-  <script src="js/town-zone-buildings.js?v=20261114rooftopaccess1"></script>
+  <script src="js/town-zone-buildings.js?v=20261118blossomVases2"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
   <script src="js/map-live-preview.js?v=20261029maskSlots2&window=20260926rebase1"></script>

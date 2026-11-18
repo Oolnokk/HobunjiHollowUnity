@@ -50,8 +50,12 @@ for (const festival of calendar.festivals) {
     assert.equal(calendar.forOrdinal(start + offset)?.id, festival.id);
     const active = window.MapLayoutSystem.getEffectiveMapData(town, { dateOrdinal: start + offset, minutes: 720, weekday: 'Anan' });
     assert.equal(active.activeLayoutId, `festival_${festival.id}`);
-    if(festival.id==='gorkunash')assert(active.decor.some(p=>p.serviceId==='gorkunash-feast'),'feast is an ordinary serving table');
-    else for (const type of festival.activities) assert(active.decor.some(p => p.activity?.type === type), `${festival.id}/${type} missing`);
+    if(['gorkunash','five_blossoms'].includes(festival.id)) {
+      const serviceId=festival.id==='gorkunash'?'gorkunash-feast':'five-blossoms-feast'; // Distinct service, shared interaction model.
+      assert(active.decor.some(p=>p.serviceId===serviceId),festival.id+' has a real serving table');
+      assert(active.decor.some(p=>p.festivalLocale?.kind==='dance'),festival.id+' has a movable paired-dance floor');
+      assert(!active.decor.some(p=>p.activity?.type==='welcome'),festival.id+' has no activity board');
+    } else for (const type of festival.activities) assert(active.decor.some(p => p.activity?.type === type), festival.id+'/'+type+' missing');
     assert.strictEqual(active.transitions, town.transitions, 'all exits stay unchanged');
     assert.strictEqual(active.buildings, town.buildings, 'all original buildings stay open');
     assert.strictEqual(active.routes, town.routes, 'all original roads stay unchanged');
@@ -159,16 +163,15 @@ assert.equal(perform(prop, { mask: 'grehlr' }).ok, false);
 prop = visit('hachutukara', 'sweets'); assert.equal(perform(prop, { npcId: 'friend' }).ok, true); assert.equal(inventory.festivalSweet, 1); assert.equal(perform(prop, { npcId: 'friend' }).ok, false);
 prop = visit('hachutukara', 'duel'); assert.equal(perform(prop), true); assert(duelQuest.transient); assert.equal(duelQuest.practice.area, 'town'); assert(duelQuest.isAvailable());
 civilDay += 7; assert.equal(duelQuest.isAvailable(), false);
-// Real time spent dancing is required. Interruptions and stale/replayed actions never earn rewards.
-prop = visit('five_blossoms', 'dance'); assert.equal(perform(prop).ok, true);
-for (let i = 0; i < 99; i++) { time += 200; api.update(); }
-assert.equal(api.claimed('dance'), false);
-time += 400; api.update(); assert.equal(api.claimed('dance'), true);
-const favorCount = deltas.length;
-assert.equal(perform(prop).ok, true); position.c += 10; time += 200; api.update(); assert.equal(api.dance, null); assert.equal(deltas.length, favorCount);
-assert.equal(perform(prop).ok, false, 'cannot activate distant prop via a stale menu');
-area = 'farm'; assert.equal(api.actionButton(), null);
-assert(saved >= 7);
+// Five Blossoms is a static buffet and free-form dancing; the board cannot grant an old flat Favor reward.
+civilDay=calendar.ordinal(9,15);hour=17;
+assert.equal(api.actionButton(),null,'Five Blossoms has no activity board');
+const fixedMenu=JSON.stringify(api.feastMenu().map(dish=>({id:dish.id,label:dish.label,effects:dish.foodEffects}))); // The whole week shares the same prepared food and buffs.
+assert.equal(api.feastMenu().length,7);
+assert(api.feastMenu().every(dish=>dish.id.startsWith('blossoms:')),'every pot is filled without contributions');
+civilDay+=3;
+assert.equal(JSON.stringify(api.feastMenu().map(dish=>({id:dish.id,label:dish.label,effects:dish.foodEffects}))),fixedMenu,'the buffet never rotates');
+assert.equal(api.claimed('dance'),false,'old marked-dance Favor reward is gone');
 // Remembrance is a real interrupted/completed local observance, not a no-op menu item.
 area='town'; // The preceding stale-action assertion deliberately left the player in the farm.
 prop = visit('tzizkhanash', 'remembrance');
@@ -184,15 +187,8 @@ assert.equal(perform(prop).ok,true);
 position.c+=10;time+=200;api.update();
 assert.equal(api.diagnostics().remembrance,null,'leaving a remembrance locale cancels completion');
 assert.equal(api.claimed('remembrance'),false,'canceled observance cannot claim its reward');
-// Playing along must sound a real note before the player earns the music participation bonus.
-window.MusicMinigame.beginPlayerSession=function(){this.state={active:true,announcedPlaying:false};};
-prop=visit('five_blossoms','music');
-assert.equal(perform(prop).ok,true);
-for(let i=0;i<105;i++){time+=200;api.update();}
-assert.equal(api.claimed('music'),false,'an idle instrument overlay never earns Favor');
-window.MusicMinigame.state.announcedPlaying=true;
-for(let i=0;i<105;i++){time+=200;api.update();}
-assert.equal(api.claimed('music'),true,'active music participation earns the annual reward');
-window.MusicMinigame.state.active=false;time+=200;api.update();
-assert.equal(api.diagnostics().musicParticipation,null,'closing the instrument session clears its activity');
-console.log('Festival calendar, layouts, quality rewards, annual persistence, costumes, dance and active locale participation passed.');
+// Music now uses normal participation, not the obsolete marked-activity claim.
+civilDay=calendar.ordinal(9,15);hour=17;time+=1000;api.update();
+assert.equal(api.actionButton(),null,'music does not resurrect an activity prompt');
+assert.equal(api.claimed('music'),false,'old music completion reward is gone');
+console.log('Festival calendars, buffs, fixed Five Blossoms menu, annual rewards and remembrance passed.');
