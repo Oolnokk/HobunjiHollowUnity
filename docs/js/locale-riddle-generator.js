@@ -325,23 +325,27 @@
     const valid=(col,row)=>col>=0&&row>=0&&col<cols&&row<rows;
     for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
       if(String(tileAt(layout,col,row)?.type||'')!=='waterfall'||seen.has(col+','+row))continue;
-      const queue=[{col,row}],members=[],heights=[];
+      const queue=[{col,row}],members=[];let drop=0;
       seen.add(col+','+row);
       for(let cursor=0;cursor<queue.length;cursor++){
         const item=queue[cursor],tile=tileAt(layout,item.col,item.row);
         members.push(item);
-        const y=elevationAt(layout,item);if(y!=null)heights.push(y);
+        const tier=Number(tile?.elevTier)||0;
+        const waterTop=tier*PLATEAU_UNIT-.10+.015; // Same river/waterfall surface height as ZoneTerrainFeatures.renderedWaterSurfaceY.
         for(const [dx,dy] of [[0,1],[1,0],[0,-1],[-1,0]]){
           const nx=item.col+dx,ny=item.row+dy;
           if(!valid(nx,ny))continue;
           const next=tileAt(layout,nx,ny),type=String(next?.type||'');
-          if(!WATERWAY.has(type))continue; // Plateau tier differences across river-waterfall seams establish true rendered falls.
-          const nextY=elevationAt(layout,{col:nx,row:ny});if(nextY!=null)heights.push(nextY);
+          if(!next)continue;
+          const nextTier=Number(next.elevTier)||0;
+          if(nextTier!==tier){ // The real waterfall curtain renderer creates edges against dry cliffs as well as water.
+            const nextTop=nextTier*PLATEAU_UNIT-(WATERWAY.has(type)?(type==='stream'?.05:.10)-.015:0);
+            drop=Math.max(drop,Math.abs(waterTop-nextTop)); // Measure an actual rendered vertical sheet, not unrelated neighboring elevations.
+          }
           const k=nx+','+ny;
           if(type==='waterfall'&&!seen.has(k)){seen.add(k);queue.push({col:nx,row:ny});}
         }
       }
-      const drop=heights.length?Math.max(...heights)-Math.min(...heights):0;
       if(drop>=PLATEAU_UNIT*.75){
         members.sort((a,b)=>a.row-b.row||a.col-b.col);
         falls.push({point:members[0],drop}); // The waterfall is an actually rendered vertical water sheet, not merely a blue river tile.
