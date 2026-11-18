@@ -30,8 +30,10 @@
     if (!companion?.isCompanion || companion.banditCompanion || companion.stableRole === 'mount' ||
         companion.stableRole === 'shoulderPet' || !master ||
         (companion.areaId && companion.areaId !== areaId)) return false;
-    const tileSize = Number(window.Combat?.deps?.TILE); // The live game's pixel-to-tile conversion; used for both actors.
-    const grid = window.GridTileAccessors?.getActiveGrid?.(); // Current zone's authoritative tier map.
+    const runtime = window.Combat?.deps; // Live area/terrain authority, also used by ordinary companion navigation.
+    if (!runtime?._isZoneArea?.(areaId) || runtime.getCurrentArea?.() !== areaId) return false;
+    const tileSize = Number(runtime.TILE); // The live game's pixel-to-tile conversion; used for both actors.
+    const grid = companion.areaGrid || runtime.getActiveGrid?.() || window.GridTileAccessors?.getActiveGrid?.(); // Same zone grid used to move the creature.
     if (!Array.isArray(grid) || !Number.isFinite(tileSize) || tileSize <= 0 ||
         ![companion.x, companion.y, master.x, master.y].every(Number.isFinite)) return false;
     const petTile = grid[Math.floor(companion.y / tileSize)]?.[Math.floor(companion.x / tileSize)];
