@@ -100,7 +100,7 @@
       deliberateVoidTiles:room.w*room.d-expected,ok:missing===0};
   }
 
-  function wallAudit(room,walkable,wallsX,wallsZ){
+  function wallAudit(room,walkable,wallsX,wallsZ,shaftMouth=null){
     const xEdges=new Set((wallsX||[]).map(([x,z])=>x+','+z));
     const zEdges=new Set((wallsZ||[]).map(([x,z])=>x+','+z));
     let exposed=0,missing=0; // Checks the wall faces emitted by the wing mesher, not an unrelated rectangle outline.
@@ -110,6 +110,10 @@
         [0,-1,xEdges,x+.5,z],[0,1,xEdges,x+.5,z+1],
       ]){
         if(walkable.has(key(x+dx,z+dz)))continue; // Adjoining corridors are intentional entrances, not missing masonry.
+        const exitsToShaft=shaftMouth?.has(key(x,z)) && (
+          (room.side==='E'&&dx===-1)||(room.side==='W'&&dx===1)
+          ||(room.side==='S'&&dz===-1)||(room.side==='N'&&dz===1));
+        if(exitsToShaft)continue; // The real three-cell portal is an intentional OPENING into the shaft, not missing stone.
         exposed++;
         if(!edges.has(ex+','+ez))missing++;
       }
