@@ -53,8 +53,8 @@ assert.equal(classifyItem({ action: 'harvest', inputAction: 'action1' }), false,
 
 assert.match(game, /window\.FarmCrates\?\.init\(\{[\s\S]*?getHeldMode: \(\) => heldMode/,
   'the consumable bridge receives the current semantic held mode');
-assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}`/,
-  'the action-bar cache invalidates when a dynamic item action appears');
+assert.match(game, /const actionButtonKey = btns\.map[\s\S]*?\|\$\{actionButtonKey\}\|\$\{window\.GameplayInputRouter\?\.getArchRevision\?\.\(\) \?\? 0\}`/,
+  'the action-bar cache invalidates for both dynamic item actions and visible contextual-arch claims');
 // Normal held-item input (touch/desktop-keyboard-via-router/controller/direct
 // mouse click) no longer mutates on the first dispatch edge — it is claimed
 // by the generic held-item hold controller on press and only commits once,
