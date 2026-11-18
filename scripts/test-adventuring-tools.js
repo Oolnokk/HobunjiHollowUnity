@@ -136,6 +136,9 @@ torch.updateThrow({active:true,progress:.57,strikeFrac:.57});
 assert.equal(throws, 1, 'the real Strike boundary launches exactly one projectile');
 assert.equal(lastThrowOptions, torchVisual, 'the strike forwards the exact held-plane sprite and world transform');
 assert.equal(torch.debug.throwLaunchOrigin, 'held-plane', 'mobile diagnostics identify the release-frame transform');
+const lastProjectile = { aimSource: 'camera-reticle', targetPoint: {x:1,y:2,z:3}, visualScale:.68 }; // Mocked ranged launch report follows the real runtime getter shape.
+world.RangedWeapons.lastTorchThrow = lastProjectile;
+assert.equal(torch.debug.lastProjectile, lastProjectile, 'Pixel Probe Adventuring Tools diagnostics expose the ranged throw direction and target');
 assert.equal(torch.debug.throwRecovering, true);
 assert.equal(heldTorchVisible, false, 'spent held torch is hidden while the thrown copy exists');
 assert.equal(torch.isLit(), false);
