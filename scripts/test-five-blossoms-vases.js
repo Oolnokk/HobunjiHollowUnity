@@ -165,6 +165,7 @@ for(const table of tables){
   roots.push(root);
   assert.equal(root.userData.festivalBlossomVase.variant,table.blossomVariant);
   assert.equal(root.userData.festivalBlossomVase.source,'temple-window-overpass');
+  assert.equal(root.userData.festivalBlossomVase.foliageReady,true,'the successfully built flower is reported on-device');
   const group=root.children.find(child=>child.name==='festival-dressing');
   const tree=group?.children.find(child=>child.name==='festival-blossom-sapling');
   assert(tree,'a generator-built tree actually appears above the authored pottery vase');
@@ -187,9 +188,21 @@ props.onAuthoredFurnitureReady(coldRoot);
 assert(Math.abs((vase.parts[0].transform.y-vase.parts[0].transform.sy/2+coldGroup.position.y)-runtimeTop)<1e-9,
   'the asynchronous upgrade reattaches the pot to the half-height surface');
 props.dispose(coldRoot);
+const savedGenerator=uiWindow.FoliageGenerator; // Simulate a missing optional foliage module while keeping the authored pottery available.
+uiWindow.FoliageGenerator=null;
+const potOnly=new Group();potOnly.userData.authoredFurnitureData={parts:runtimeTableParts};
+props.decorate(potOnly,{...tables[0],id:'pot-without-tree'});
+const potOnlyDressing=potOnly.children.find(child=>child.name==='festival-dressing');
+assert(potOnlyDressing && !potOnlyDressing.children.some(child=>child.name==='festival-blossom-sapling'),
+  'the fallback can render an authored pot without a tree');
+assert.equal(potOnly.userData.festivalBlossomVase.foliageReady,false,'mobile diagnostics expose the missing foliage generator');
+assert(Math.abs(vase.parts[0].transform.y-vase.parts[0].transform.sy/2+potOnlyDressing.position.y-runtimeTop)<1e-9,
+  'the pot still touches the short table when flower generation is unavailable');
+props.dispose(potOnly);
+uiWindow.FoliageGenerator=savedGenerator;
 for(const root of roots)props.dispose(root);
 assert.equal(disposedFoliage,0,'a removed festival cannot destroy cached shared tree geometry/material used by other vases');
-assert.equal(disposedAuthored,14,'all seven tested vase instances (including the upgrade test) dispose their local geometry/material');
+assert.equal(disposedAuthored,16,'all eight vase instances (including the upgrade and missing-generator tests) dispose local geometry/material');
 const seasonal=fs.readFileSync('docs/js/seasonal-vegetation-tint.js','utf8'); // The weather system must not repaint a deliberate stained-glass accent.
 assert(seasonal.includes('material?.userData?.hobunjiFixedBlossomColor'),'seasonal recoloring skips fixed-color festival leaves');
 const townScript=fs.readFileSync('docs/js/town-zone-buildings.js','utf8'); // Exercise the exact disposal loop used when town decor respawns.
