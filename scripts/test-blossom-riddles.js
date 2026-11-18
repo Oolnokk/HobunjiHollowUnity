@@ -223,8 +223,47 @@ assert.notDeepEqual(landmarks, Scenery.planForLayout('map_northern_cliffs', scen
 for (const landmark of landmarks) {
   assert.equal(sceneryWorld.tiles[landmark.point.row][landmark.point.col].type, 'grass');
   assert.ok(Math.hypot(landmark.point.col - 30, landmark.point.row - 30) >= 6, 'authored locale clearance remains intact');
-  assert.ok(['stoneCairn','brokenPillar','deadTree'].includes(landmark.kind));
+  assert.ok(['stoneCairn','brokenPillar','deadTree','witnessStone'].includes(landmark.kind));
 }
+const witnessSites=landmarks.filter(s=>s.kind==='witnessStone'); // The only color-marked stone is physically included in the year-round scene plan.
+assert.equal(witnessSites.length,1,'the whole zone has one—and only one—uniquely dyed riddle starting rock');
+assert.ok(witnessSites[0].unique && witnessSites[0].dyeId?.startsWith('dye:CLOTH:'),'witness inscription uses a named game dye');
+assert.ok(/^#[0-9a-f]{6}$/i.test(witnessSites[0].ink),'marked rock has a real renderable dye hex');
+const witnessVerse = Riddles.generate({ zoneId:'map_northern_cliffs',layout:sceneryWorld,instance:sceneryWorld.localeInstances[0],
+  targetObjectKey:'blossom-tree',targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route' });
+assert.equal(witnessVerse.ok,true,'unique witness route still passes strict verse rhyme checks');
+assert.match(witnessVerse.text,/^(?:Begin|Start|Stand) at the only /,'the first line starts at the unique painted rock, not a vague zone or sector');
+assert.ok(witnessVerse.text.split('\n').slice(1).some(line=>/north|south|east|west/.test(line)),'route directions contain actual cardinal bearings');
+assert.ok(witnessVerse.evidence.route.every(step=>/ground|climbing|descending/.test(step.elevation)),'every walking leg states its elevation change or level ground');
+assert.equal(witnessVerse.evidence.uniqueStart.dyeId,witnessSites[0].dyeId,'riddle ink matches the rock painted by the scenery renderer');
+assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
+  instance:sceneryWorld.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route'}).text,
+  'inscription, route and elevation are deterministic on load');
+const canyonMap=layoutFor('cyan',25,20); // A raised target lies directly across a low-tier river from the uniquely marked stone.
+for(let row=0;row<canyonMap.rows;row++)for(let col=0;col<canyonMap.cols;col++)
+  canyonMap.tiles[row][col].elevTier=1;
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'river',elevTier:0};
+canyonMap.tiles[20][25]={type:'grass',elevTier:2};
+const fixedMarker={kind:'witnessStone',name:'the only bright violet-inscribed witness stone',dyeName:'bright violet',
+  dyeId:'dye:CLOTH:bright_violet',unique:true,point:{col:10,row:20},source:'generated-year-round-scenery'}; // A physical candidate used by the pure riddle generator.
+const canyonOptions={zoneId:'map_northern_cliffs',layout:canyonMap,instance:canyonMap.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:[fixedMarker],seed:'verified-canyon'};
+const canyonVerse=Riddles.generate(canyonOptions);
+assert.equal(canyonVerse.ok,true,'canyon crossing can still be rhymed with a unique landmark');
+assert.equal(canyonVerse.evidence.route.length,1,'the route does not invent intermediate waypoints');
+assert.equal(canyonVerse.evidence.route[0].bearing,'east','the route heads east from the rock to the target');
+assert.match(canyonVerse.evidence.route[0].elevation,/climbing/,'real higher target forces an upward instruction');
+assert.equal(canyonVerse.evidence.route[0].crossing?.type,'river','the intervening river must be identified');
+assert.equal(canyonVerse.evidence.route[0].crossing?.canyon,true,'lowered river between high banks really cuts a canyon');
+assert.match(canyonVerse.text,/crossing the river cutting a canyon/,'the actual poem calls out the river and its canyon');
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18].elevTier=1;
+const nonCanyon=Riddles.generate(canyonOptions);
+assert.equal(nonCanyon.evidence.route[0].crossing?.canyon,false,'a flat river is not invented as a canyon');
+assert.doesNotMatch(nonCanyon.text,/cutting a canyon/,'do not make up a canyon when the river has level banks');
+for(let row=0;row<canyonMap.rows;row++)canyonMap.tiles[row][18]={type:'grass',elevTier:1};
+const dryRoute=Riddles.generate(canyonOptions);
+assert.equal(dryRoute.evidence.route[0].crossing,null,'dry ground cannot produce phantom river crossings');
+assert.doesNotMatch(dryRoute.text,/crossing the river/,'the poem omits a river when no crossing exists');
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
   targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
@@ -301,6 +340,7 @@ const world = {
     grant(id) {if(!itemDefs.has(id))return {ok:false};const granted=!pickedItems.has(id);pickedItems.add(id);return {ok:true,granted};},
     revoke(id) {const removed=pickedItems.delete(id);return {ok:true,removed};} },
   GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
+  WildernessLandmarkScenery: {landmarksFor(zone,layout){return Scenery.planForLayout(zone,layout,'unit-world:'+shiftYear);}}, // The real hunt now uses the same dye-marked landmarks as the scene.
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
   FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
