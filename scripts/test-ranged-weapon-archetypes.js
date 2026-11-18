@@ -257,6 +257,11 @@ assert.match(rangedWeaponsSource, /sourceTransform\?\.quaternion\?\.isQuaternion
 assert.match(rangedWeaponsSource, /_projectileLocalPlaneZ = new THREE\.Vector3\(0, 0, 1\)[\s\S]*_projectileFallbackEndFlipQuaternion[\s\S]*setFromAxisAngle\(_projectileLocalPlaneZ, Math\.PI\)[\s\S]*baseVisualQuaternion\.multiply\(_projectileFallbackEndFlipQuaternion\)/, 'Unsampled dagger/spear throws must reproduce the held visible tip↔handle reversal around the projectile PNG-plane normal.');
 assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown end flipping must not use a UV mirror; it is a true in-plane rotation consistent with the held weapon.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at the current release frame.');
+assert.match(rangedWeaponsSource, /projectileVisualWidthWorld:\.17, projectileVisualHeightWorld:\.38/, 'Thrown torch uses the same base PNG proportions as the belt, not a giant .5-world-square sprite.');
+assert.match(rangedWeaponsSource, /hasAuthoredVisualHeight[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Torch authored height is not multiplied again by decoded texture aspect.');
+assert.match(rangedWeaponsSource, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/, 'Torch retains its hand origin but strips the oversized held transform.');
+assert.match(rangedWeaponsSource, /cameraRay = normalizedAimRay\(deps\.getPlayerAimRay\?\.\(\)\)/, 'Torch resolves live 3D aim from the camera ray.');
+assert.match(rangedWeaponsSource, /visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true/, 'Torch sprite faces its flight instead of inheriting the held world-facing quaternion.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Projectile debug state must identify exact held-plane launch transforms.');
 assert.match(rangedWeaponsSource, /facingSource:[^\n]*'sampled-held-plane'/, 'Projectile debug state must report when visible facing came directly from the sampled held weapon.');
 assert.match(rangedWeaponsSource, /const swingIndex = 2/, 'Thrown release must select melee swing variant 3 exactly, not a random swing.');
