@@ -75,6 +75,7 @@
   let wouldHitCacheValue = false;
   let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
   let lastTerrainImpact = null; // Recent blocked projectile and its world-space height; displayed in mobile ranged diagnostics.
+  let lastTorchThrow = null; // Mobile Pixel Probe can inspect the actual camera-ray direction, launch pose, and flight artwork size.
   let friendlyFireHits = 0;
   let losRepositions = 0;
   let wouldHitCacheHits = 0;
@@ -134,7 +135,7 @@
   const CONFIG = {
     torch: { // The adventuring throw uses the ordinary swept projectile/ruin-fire route, not separate physics.
       label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
-      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.5, // Spin the full torch end-over-end exactly like a thrown hatchet.
+      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.17, projectileVisualHeightWorld:.38, // Neutral torch PNG geometry, before the same authored idle multiplier used on the belt.
       projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
       heldSpin:true,heldSpinRevolutions:2.5,gripMode:'palm-parallel', // Reuse the hatchet's in-hand spin/flourish and throwing grip; flight spin is independent.
       projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
@@ -714,6 +715,7 @@
     const sourcePlaneWidth = Number(sourceTransform?.planeWidth); // Used to clone the held weapon plane's authored geometry at the release frame.
     const sourcePlaneHeight = Number(sourceTransform?.planeHeight); // Used with sourcePlaneWidth so the projectile starts with the held silhouette exactly.
     const hasExactSourcePlane = weaponSprite && sourcePlaneWidth > 0 && sourcePlaneHeight > 0; // Used to bypass guessed weapon dimensions when the live held plane supplied them.
+    const hasAuthoredVisualHeight = weaponSprite && Number(def.projectileVisualHeightWorld) > 0; // The torch uses its real PNG proportions instead of the generic square thrown-weapon fallback.
     let plane = null;
     let pendingAspect = 1;
     let pendingOpaqueBounds = null; // Delayed image decode may precede the plane mesh constructor; applied as soon as it exists.
@@ -722,7 +724,7 @@
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
-      if (plane && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+      if (plane && !hasExactSourcePlane && !hasAuthoredVisualHeight) plane.scale.y = pendingAspect;
       if (def.rangedType === 'thrown') {
         pendingOpaqueBounds = opaqueSpriteBounds(loadedTexture?.image);
         if (plane) {
@@ -743,12 +745,12 @@
     const longArrow = def.projectileSprite.includes('arrow_long');
     const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5);
     const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
-    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Used with projectilePlaneWidth to preserve sampled held geometry exactly.
+    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (hasAuthoredVisualHeight ? Number(def.projectileVisualHeightWorld) : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38))); // Torch preserves real proportions; generic thrown items retain their existing aspect path.
     plane = new THREE.Mesh(
       new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
-    if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+    if (weaponSprite && !hasExactSourcePlane && !hasAuthoredVisualHeight) plane.scale.y = pendingAspect;
     plane.userData.opaqueBounds = pendingOpaqueBounds;
     if (def.rangedType === 'thrown' && pendingOpaqueBounds) thrownRadiusByDefinition.set(def, opaqueProjectileRadiusWorld(def, plane));
     // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
@@ -1080,6 +1082,9 @@
     if (shotOptions?.preserveSourceOrientation && sourceTransform?.scale?.isVector3) {
       mesh.userData.visual.scale.copy(sourceTransform.scale);
     }
+    if (Number.isFinite(shotOptions?.visualScale)) {
+      mesh.userData.visual.scale.setScalar(Math.min(3, Math.max(.1, shotOptions.visualScale))); // Explicit, bounded Neutral scale replaces an oversized held throw transform for the adventuring torch.
+    }
 
     const afflictionBonuses = projectileAfflictionBonuses(def, team, ammoPayload);
     const trailColors = projectileTrailColors(afflictionBonuses, ammoPayload?.trailColors);
@@ -1131,19 +1136,32 @@
 
   function throwAdventuringTorch(visual = null) {
     if (!deps?.player) return null;
-    const sourceTransform = visual?.sourceTransform || null; // The live adventuring torch plane is sampled at release like a ranged hatchet.
-    const textureSource = visual?.textureSource || null; // Preserve the actual equipped tool art in the projectile.
-    window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Hatchet parity: use the current reticle, not the throttled pre-windup aim result.
-    const aim = playerAimSolution('torch',sourceTransform?.position); // Match the launch-frame origin to the same reticle solution.
+    const heldTransform = visual?.sourceTransform || null; // Release-frame hand position remains authoritative for spawn, not for projectile artwork size/orientation.
+    const sourceTransform = heldTransform?.position ? { position: heldTransform.position } : null; // Never copy the held throw's enlarged scale or world-space quaternion onto a flying torch.
+    const textureSource = visual?.textureSource || null; // Keep the precise colored torch PNG.
+    window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Read the current aim immediately before the projectile spawns.
+    const aim = playerAimSolution('torch',sourceTransform?.position); // Reuses the normal reticle/launch solver for fallback and valid muzzle coordinates.
     if (!aim?.origin || !aim?.direction) return null;
-    const dir=aim.direction;
-    const angle=Math.atan2(dir.z,dir.x);
-    const pitch=Math.atan2(dir.y,Math.hypot(dir.x,dir.z));
-    const projectile=spawnProjectile('torch',aim.origin.x*deps.TILE,aim.origin.z*deps.TILE,
-      angle,'player',deps.player,null,pitch,{
-        textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true,
-      }); // Same swept collision, launch pose, spin and ballistic arc as the thrown hatchet, with an always-lit fire payload.
-    if (projectile) playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike, not input release.
+    const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.()); // A torch is aimed along the player's actual 3D camera/reticle ray, not the animated holder's world-facing orientation.
+    const dir = cameraRay?.direction || aim.direction; // Legacy camera-less/controller previews still use the existing solved direction.
+    const angle = Math.atan2(dir.z, dir.x);
+    const pitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+    const authoredScale = Number(window.WeaponToolStances?.poses?.torchHold?.scale ?? window.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same bounded neutral multiplier as the visible belt torch.
+    const projectile = spawnProjectile('torch', aim.origin.x * deps.TILE, aim.origin.z * deps.TILE,
+      angle, 'player', deps.player, null, pitch, {
+        textureSource, sourceTransform, visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true,
+      }); // The flight-frame quaternion makes the PNG point along the actual world trajectory; the sampled hand frame cannot steer it.
+    if (projectile) {
+      lastTorchThrow = {
+        origin: { x: projectile.mesh.position.x, y: projectile.mesh.position.y, z: projectile.mesh.position.z },
+        direction: { x: dir.x, y: dir.y, z: dir.z },
+        visualScale: projectile.visual.scale.x, launchTransformMode: projectile.launchTransformMode,
+        planeWidth: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.width || 0,
+        planeHeight: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.height || 0,
+        aimSource: cameraRay ? 'camera-ray' : 'fallback-reticle',
+      }; // Inspect trajectory and scale from Pixel Probe without a desktop console.
+      playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike.
+    }
     return projectile;
   }
 
@@ -2324,6 +2342,7 @@
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
     get lastTerrainImpact() { return lastTerrainImpact ? { ...lastTerrainImpact } : null; }, // Mobile debug: where and why the previous shot was blocked.
+    get lastTorchThrow() { return lastTorchThrow ? { ...lastTorchThrow } : null; }, // Actual launch vector, sprite size, and source shown in mobile diagnostics.
     get heldVisualState() { return deps?.getHeldRangedVisualState?.() || null; },
     get aimPitchDeg() { return THREE.MathUtils.radToDeg(playerAimSolution()?.pitch ?? deps?.getPlayerAimPitch?.() ?? 0); },
     get aimSolution() {
@@ -2364,7 +2383,7 @@
     snapshot: () => ({
       latestChange: 'Players and enemies can shoot between elevations where 3D sightlines clear terrain, supports and solid cover.',
       staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
-      lastEvent, lastAudioEvent, lastTerrainImpact: lastTerrainImpact ? { ...lastTerrainImpact } : null, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
+      lastEvent, lastAudioEvent, lastTerrainImpact: lastTerrainImpact ? { ...lastTerrainImpact } : null, lastTorchThrow, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
