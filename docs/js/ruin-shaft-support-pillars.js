@@ -30,17 +30,22 @@
     const byId=new Map(sourceParts.map(part=>[part.id,part])); // Resolves the exact inherited base and capital anchor dimensions.
     if(Object.values(PART).some(id=>!byId.has(id)))throw new Error('Square pillar furniture is missing its base, shaft or capital');
     const foot=byId.get(PART.foot).transform,cap=byId.get(PART.cap).transform;
+    const raised=byId.get(PART.rise).transform,neck=byId.get(PART.neck).transform;
+    const shaftStart=Number(raised.y)+Number(raised.sy)/2,shaftEnd=Number(neck.y)-Number(neck.sy)/2; // True attachment faces, not the source shaft's slight decorative overlaps.
     const bottom=Number(foot.y)-Number(foot.sy)/2,top=Number(cap.y)+Number(cap.sy)/2;
     const baseHeight=top-bottom; // Native part span; do not assume edits to the Furniture Author preserve a hardcoded 1.75.
-    if(!Number.isFinite(baseHeight)||baseHeight<=0||!(Number(foot.sx)>0&&Number(foot.sz)>0))
+    if(!Number.isFinite(baseHeight)||baseHeight<=0||!(shaftEnd>shaftStart)||!(Number(foot.sx)>0&&Number(foot.sz)>0))
       throw new Error('Square pillar authored bounds are invalid');
     const parts=sourceParts.map(part=>{
       let role=part.id===PART.shaft?'stretch':
         [PART.foot,PART.rise].includes(part.id)?'start':'end';
       const overlay={...part,tileSpanRole:role}; // Never mutate the template used by ordinary architectural pillars.
-      if(role==='stretch')overlay.tileSpanRoots={
+      if(role==='stretch'){
+        overlay.transform={...part.transform,y:(shaftStart+shaftEnd)/2,sy:shaftEnd-shaftStart}; // Exact end-to-end middle section: tall spans must not magnify source overlap into the slab.
+        overlay.tileSpanRoots={
         start:{partId:PART.rise,face:'max'},end:{partId:PART.neck,face:'min'},
-      }; // The shaft grows between the raised foot and the fixed neck/capital.
+        }; // The shaft grows between the raised foot and the fixed neck/capital.
+      }
       return overlay;
     });
     const data={schema:'hobunji_furniture_authored_runtime.v1',key:'pillar_square',id:'pillar_square',
