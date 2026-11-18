@@ -283,10 +283,13 @@
       return hinted[hash(seed + '|landmark') % hinted.length];
     return allowed[hash(seed + '|all') % allowed.length];
   }
+  const SCOPE_ORDER = Object.freeze({zone:0, sector:1, water:2, path:3, boulder:4, landmark:5, blossom:6, target:6}); // The poem always guides from region through terrain and visible markers to the exact goal.
+  function scopeRank(fact) { return SCOPE_ORDER[fact?.kind] ?? 5; } // Other quests' custom landmarks belong just before the target.
   function compose({ facts, seed = 'locale-riddle' } = {}) {
     if (!Array.isArray(facts) || facts.length < 2) return null;
-    const groups = []; // Retain two-stanza ABAB structure with the target in the final line.
-    for (let index = 0; index < facts.length; index += 4) groups.push(facts.slice(index, index + 4));
+    const ordered = facts.slice().sort((a,b) => scopeRank(a) - scopeRank(b)); // Stable sort preserves independent clues within a single scale.
+    const groups = []; // Reuse the existing two-stanza ABAB/couplet structure, without reversing the search direction.
+    for (let index = 0; index < ordered.length; index += 4) groups.push(ordered.slice(index, index + 4));
     if (groups.length > 1 && groups[groups.length - 1].length === 1) {
       const prior = groups[groups.length - 2];
       groups[groups.length - 1].unshift(prior[prior.length - 1]);
@@ -294,8 +297,8 @@
     const mentioned = new Set(), mentionedTypes = new Set(); // Per-poem referents prevent indefinite articles from reintroducing the same object.
     return groups.map((group, stanzaIndex) => {
       const lines = group.length >= 4 ? group
-        : group.length === 3 ? [group[0], group[1], group[0], group[2]]
-        : group; // Two remaining different facts become a real couplet.
+        : group.length === 3 ? [group[0], group[1], group[1], group[2]]
+        : group; // Repeated clues stay at the current detail level; never zoom out after reaching a more specific landmark.
       const stanzaSeed = seed + ':' + stanzaIndex;
       if (lines.length === 2) {
         const family = chooseFamily([lines[0], lines[1], lines[1], lines[0]], 0, null, stanzaSeed + '|couplet');

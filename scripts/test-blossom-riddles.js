@@ -151,6 +151,45 @@ const denLine=denPoem.stanzas[0].find(line=>/\b(?:den|hollow|refuge|shelter)\b/i
 assert.ok(denLine,'animal den is present in the generated clue');
 assert.match(denPoem.stanzas[1][0],/\b(?:the|that) (?:wild animal den|beast’s hollow|creature’s refuge|animal shelter)\b/,'revisiting a previously identified den never implies a second den');
 
+// A navigational riddle must narrow steadily: region, sector, water/trail, boulder, local landmark, target.
+// Validate stanza transitions too, especially the old seven-fact tail that jumped back from cairn to boulder.
+const navigationRank = {zone:0,sector:1,water:2,path:3,boulder:4,landmark:5,blossom:6,target:6}; // Matches the public clue hierarchy, not authoring order.
+const scopeMarkers = {
+  zone:'REGION_MARKER',sector:'SECTOR_MARKER',water:'WATER_MARKER',path:'PATH_MARKER',
+  boulder:'BOULDER_MARKER',landmark:'LANDMARK_MARKER',blossom:'BLOSSOM_MARKER'
+}; // Distinct marker phrases let this test recognize the exact fact used by each generated line.
+for (let length = 3; length <= 7; length++) {
+  const kinds = ['zone','sector','water','path','boulder','landmark','blossom'].slice(0, length - 1).concat('blossom');
+  for (let seed = 0; seed < 120; seed++) {
+    const facts = kinds.map(kind => ({kind,value:scopeMarkers[kind]})).reverse(); // Intentionally unordered input.
+    const stanzas = Riddles.compose({facts,seed:'navigation-order-'+length+'-'+seed});
+    assert.ok(stanzas?.length && stanzas.length <= 2,'scope ordering stays within the usual poem length');
+    const levels = stanzas.flat().map(line => {
+      const kind = Object.keys(scopeMarkers).find(key => line.includes(scopeMarkers[key]));
+      assert.ok(kind,'every line refers to a real input fact rather than imaginary terrain');
+      return navigationRank[kind];
+    });
+    assert.equal(levels[0],0,'the wilderness region opens the poem');
+    assert.equal(levels[1],1,'the regional sector follows immediately');
+    assert.equal(levels[levels.length-1],6,'the named objective is always the final clue');
+    assert.ok(levels.every((rank,index)=>index===0||levels[index-1]<=rank),
+      'a poem may repeat the current landmark but never widen the search after narrowing it');
+    assert.equal(Riddles.validate({stanzas}),true,'ordering must retain real ABAB/couplet rhymes');
+  }
+}
+const orderedBiome = layoutFor('cyan', 23, 22); // Real inspector probe with every available level of terrain.
+orderedBiome.tiles[19][19] = {type:'river'};
+orderedBiome.tiles[20][20] = {type:'path'};
+orderedBiome.tiles[25][25] = {type:'rock',rockKind:'undiggableBoulder',boulderId:'order-rock'};
+const orderedPoem = Riddles.generate({zoneId:'map_northern_cliffs',layout:orderedBiome,instance:orderedBiome.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',seed:'full-terrain-order',landmarks:[
+    {kind:'stoneCairn',name:'a stone cairn',point:{col:30,row:28}},
+    {kind:'deadTree',name:'a dead tree',point:{col:16,row:26}}
+  ]});
+assert.equal(orderedPoem.ok,true);
+assert.deepEqual(orderedPoem.facts.map(f=>f.kind),['zone','sector','water','path','boulder','landmark','landmark','blossom'],
+  'runtime physical evidence is assembled from large-scale geography toward the blossom');
+
 // Empty landscapes must never borrow a physical landmark simply to finish a rhyme.
 for (let seed = 0; seed < 400; seed++) {
   const zone = layoutFor('cyan');
