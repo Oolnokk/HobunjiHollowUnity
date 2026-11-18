@@ -41,9 +41,14 @@ assert.deepStrictEqual(awakeCamera?.target, { x: 6.5, y: 0.65, z: 6 }, 'Banubu a
 assert.strictEqual(awakeCamera?.targetNpcId, '', 'Banubu awake camera must use an absolute cavern-centered target');
 assert.deepStrictEqual(sleepCamera?.position, { x: 7.024, y: 0.142, z: 8.3 }, 'Banubu sleeping camera ignores the discarded runtime-only sleep-camera edit');
 assert.strictEqual(sleepCamera?.targetNpcId, 'banubu', 'sleeping dialogue may continue following Banubu’s live face');
-assert.deepStrictEqual(keyCamera?.position, { x: 7.392, y: 0.507, z: 7.3 }, 'only the user-edited key-camera runtime transform is adopted');
-assert.deepStrictEqual(keyCamera?.target, { x: 6.5, y: 0, z: 5.5 }, 'Banubu key camera must aim at the fixed sparkle reveal spot while Banubu moves backward');
+assert.deepStrictEqual(keyCamera?.position, { x: 7.392, y: 0.85, z: 7.3 }, 'key camera must sit above the cave floor to reveal Banubu and the sparkling key');
+assert.deepStrictEqual(keyCamera?.target, { x: 6.5, y: 0.4, z: 5.5 }, 'key camera must look above the stationary sparkle reveal spot instead of into the cave floor');
 assert.strictEqual(keyCamera?.targetNpcId, '', 'Banubu key camera must not follow Banubu away from the stationary key sparkle');
+const keyRevealHorizontalDistance = Math.hypot(keyCamera.position.x - 6.5, keyCamera.position.z - 5.5); // Used to verify the stationary floor-level sparkle remains on-screen after the camera lifts.
+const keyRevealFloorAngleDeg = Math.atan2(0 - keyCamera.position.y, keyRevealHorizontalDistance) * 180 / Math.PI; // The sparkle is rooted at cave-floor height directly below the raised target.
+const keyRevealAimAngleDeg = Math.atan2(keyCamera.target.y - keyCamera.position.y, keyRevealHorizontalDistance) * 180 / Math.PI; // Camera's authored vertical aim must keep the sparkle below center but within its field of view.
+assert(keyRevealAimAngleDeg > keyRevealFloorAngleDeg, 'key camera must look above the sparkle anchor, showing more than bare cave floor');
+assert(keyRevealAimAngleDeg - keyRevealFloorAngleDeg < keyCamera.fovDeg / 2, 'the floor-level sparkle must remain visible in the raised key-camera shot');
 const secret = banubu.connectors.find(c => c.id === 'color_pools_door');
 assert(secret, 'Banubu cave must author its hidden rear connector');
 assert.strictEqual(secret.targetMap, 'map_i_color_pools');

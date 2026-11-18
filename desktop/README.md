@@ -118,6 +118,30 @@ Use **Copy Details** to paste the full result into a support conversation.
   acceleration flags. Heavy work on the JavaScript main/render thread can
   still cause low FPS even when the correct GPU is active.
 
+## If Save and Quit appears stuck
+
+Window close triggers the existing live-game final-save operation, which may wait
+on Google Drive or a busy renderer. The desktop main process now checks for
+a delayed save after 12 seconds and displays a native Windows dialog with
+**Keep Waiting**, **Quit Without Saving**, or **Cancel Close**. Clicking the
+window X again while a save is pending opens the same escape options immediately.
+
+- **Keep Waiting** leaves the save running and offers the choices again after
+  another delay if it still has not finished.
+- **Cancel Close** leaves the game open; a save that finishes later must not
+  unexpectedly exit the game.
+- **Quit Without Saving** deliberately terminates the game immediately, with
+  an explicit warning that recent progress may be lost or a Google Drive
+  write interrupted. It never happens automatically.
+
+The **Game → Quit Without Saving…** menu offers this same emergency exit
+even when no ordinary close is pending, and **View → Shutdown Status**
+reports whether a save is stuck without relying on DevTools.
+
+This is an escape hatch, not a promise that a hung write can be safely
+aborted. Prefer waiting for the save when possible and verify Drive files
+before resuming if you chose to force exit.
+
 ## Known limits
 
 - This first installer and its auto-updates are **not code signed**. Windows SmartScreen may warn; production distribution should be code signed.

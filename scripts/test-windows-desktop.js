@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm'); // Executes the actual renderer close-save script without Electron or browser globals.
 const { persistBeforeClose, CLOSE_SAVE_SCRIPT } = require('../desktop/close-save.cjs'); // Same final-save operation executed by Electron.
+const { createWindowCloseGuard, DEFAULT_SAVE_STALL_MS } = require('../desktop/window-close-guard.cjs'); // Native close watchdog does not depend on a responsive renderer.
 const { GAME_URL, isGameUrl, getGameAsset, localizeGameHtml } = require('../desktop/game-protocol.cjs');
 const { configureSaveFolderPermissions } = require('../desktop/save-folder-permissions.cjs'); // Exercised with simulated Electron session events.
 const { WEBGL_STATUS_SCRIPT, describeGraphicsStatus, showGraphicsStatus } = require('../desktop/gpu-diagnostics.cjs'); // On-demand desktop graphics status; never requires a user console.
@@ -49,6 +50,7 @@ assert.ok(manifest.build.extraResources.some(x => x.from === '../docs' && x.to =
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/three.min.js'));
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/TransformControls.js'));
 assert.ok(manifest.build.files.includes('close-save.cjs'), 'Final-save policy ships inside the installed app');
+assert.ok(manifest.build.files.includes('window-close-guard.cjs'), 'Native close watchdog is bundled in the installer');
 assert.ok(manifest.build.files.includes('save-folder-permissions.cjs'), 'Native picker policy ships inside the installed app');
 assert.ok(manifest.build.files.includes('gpu-diagnostics.cjs'), 'Graphics diagnostics ship inside the Windows installer');
 const main = fs.readFileSync(path.join(repo, 'desktop', 'main.cjs'), 'utf8');
@@ -60,6 +62,12 @@ assert.ok(main.includes('CLOSE_SAVE_SCRIPT'));
 assert.ok(main.includes('autoSyncArmed'));
 assert.ok(main.includes("label: 'Graphics Status'"), 'Game View menu exposes an accessible GPU status dialog');
 assert.ok(main.includes('showGraphicsStatus({'), 'Desktop GPU status invokes the tested diagnostic helper');
+assert.ok(main.includes('createWindowCloseGuard({'), 'Real app uses the independently tested native shutdown watchdog');
+assert.ok(main.includes("label: 'Quit Without Saving…'"), 'Game menu exposes an explicit emergency exit');
+assert.ok(main.includes("label: 'Shutdown Status'"), 'Game menu reports close failures without DevTools');
+assert.ok(main.includes("closingStatus?.saveInProgress"), 'Updater refuses to race an existing final save');
+assert.ok(main.includes("closingStatus?.closeRequested"), 'Updater refuses to race an active shutdown request');
+assert.ok(main.includes("if (closeInProgress) return; // The updater already owns"), 'Normal close cannot launch a second write while update install is saving');
 
 async function checkGraphicsStatus() {
   const software = describeGraphicsStatus({
@@ -347,6 +355,168 @@ checkFolderPickerAbort().catch(error => { console.error(error); process.exitCode
 checkFolderSwitchTransactions().catch(error => { console.error(error); process.exitCode = 1; });
 
 // Each path exercises the real save policy rather than inspecting source text.
+async function checkNativeShutdownGuard() {
+  assert.ok(DEFAULT_SAVE_STALL_MS >= 5000, 'A legitimate slow disk save is given time to complete before the stall prompt');
+
+  const deferred = () => {
+    let resolve; // Completed by the test to simulate renderer saves that never return on their own.
+    const promise = new Promise(done => { resolve = done; });
+    return { promise, resolve };
+  };
+  const settle = async () => { await new Promise(resolve => setImmediate(resolve)); }; // Flushes native dialog and final-save microtasks.
+
+  function fixture(saveBeforeClose, responses = []) {
+    let closed = 0; // Counts normal BrowserWindow.close calls authorized only after successful saves.
+    let destroyed = 0; // Counts explicit user-confirmed BrowserWindow.destroy emergency exits.
+    let allowed = false; // Mirrors main.cjs's closeAllowed guard state.
+    let dead = false; // Simulates a destroyed window for stale async callbacks.
+    const dialogs = []; // All native dialogs are captured with their exact button order and warnings.
+    const scheduled = new Map(); // Fake watchdog clock avoids waiting real seconds in CI.
+    let nextTimer = 0; // Unique watchdog token to detect improper rearming and cancellation.
+    const win = {
+      isDestroyed: () => dead,
+      close: () => { closed++; dead = true; },
+      destroy: () => { destroyed++; dead = true; },
+    };
+    const dialog = { showMessageBox: async (_win, options) => {
+      dialogs.push(options);
+      if (!responses.length) throw new Error('No native response configured');
+      return { response: responses.shift() };
+    } };
+    const guard = createWindowCloseGuard({
+      win, dialog, saveBeforeClose,
+      authorizeClose: () => { allowed = true; },
+      setTimer: callback => { const token = ++nextTimer; scheduled.set(token, callback); return token; },
+      clearTimer: token => { scheduled.delete(token); },
+      logger: { error() {} },
+    });
+    function advanceWatchdog() {
+      const next = scheduled.entries().next();
+      assert.equal(next.done, false, 'A pending save must arm a watchdog');
+      const [token, callback] = next.value; // Simulates the exact expiration of this attempt's watchdog.
+      scheduled.delete(token);
+      callback();
+    }
+    return { guard, dialogs, scheduled, advanceWatchdog, get closed() { return closed; },
+      get destroyed() { return destroyed; }, get allowed() { return allowed; }, get dead() { return dead; } };
+  }
+
+  const immediate = fixture(async () => ({ ok: true }));
+  let prevented = 0; // Verifies ordinary X clicks continue through the save-first interception.
+  immediate.guard.handleClose({ preventDefault: () => { prevented++; } });
+  await settle();
+  assert.equal(prevented, 1);
+  assert.equal(immediate.closed, 1, 'Successful save closes normally');
+  assert.equal(immediate.destroyed, 0, 'Normal close must not force-destroy the renderer');
+  assert.equal(immediate.allowed, true);
+  assert.equal(immediate.scheduled.size, 0, 'Finished saves clear their watchdog');
+  assert.equal(immediate.dialogs.length, 0, 'Fast successful saves require no dialog');
+
+  const hungSave = deferred();
+  const hung = fixture(() => hungSave.promise, [0, 2]);
+  hung.guard.requestClose();
+  assert.equal(hung.guard.getStatus().saveInProgress, true);
+  assert.equal(hung.scheduled.size, 1);
+  hung.advanceWatchdog();
+  await settle();
+  assert.equal(hung.dialogs.length, 1);
+  assert.deepEqual(hung.dialogs[0].buttons, ['Keep Waiting', 'Quit Without Saving', 'Cancel Close']);
+  assert.equal(hung.closed, 0, 'The first stall does not close or discard an unsaved game');
+  assert.equal(hung.destroyed, 0);
+  assert.equal(hung.scheduled.size, 1, 'Keep Waiting rearms the watchdog without another save');
+  hung.advanceWatchdog();
+  await settle();
+  assert.equal(hung.guard.getStatus().closeRequested, false, 'Cancel stops pending auto-close');
+  hungSave.resolve({ ok: true });
+  await settle();
+  assert.equal(hung.closed, 0, 'Late save success after Cancel cannot close the active game');
+
+  const hungForceSave = deferred();
+  const hungForce = fixture(() => hungForceSave.promise, [1]);
+  hungForce.guard.requestClose();
+  hungForce.advanceWatchdog();
+  await settle();
+  assert.equal(hungForce.destroyed, 1, 'Stalled save can be quit explicitly through native UI');
+  assert.equal(hungForce.allowed, true, 'Explicit override authorizes process exit');
+  hungForceSave.resolve({ ok: true });
+  await settle();
+  assert.equal(hungForce.closed, 0, 'Late renderer result must not trigger a second close');
+
+  const secondClickSave = deferred();
+  const secondClick = fixture(() => secondClickSave.promise, [2]);
+  secondClick.guard.requestClose();
+  secondClick.guard.requestClose();
+  await settle();
+  assert.equal(secondClick.dialogs.length, 1, 'Second X click produces exactly one escape dialog');
+  assert.equal(secondClick.guard.getStatus().closeRequested, false);
+  secondClickSave.resolve({ ok: true });
+  await settle();
+  assert.equal(secondClick.closed, 0);
+
+  let retries = 0; // Checks retry after a failed disk write does not reuse the dismissed dialog.
+  const failThenSave = fixture(async () => ++retries === 1 ? { ok: false, error: 'Google Drive sync failed' } : { ok: true }, [0]);
+  failThenSave.guard.requestClose();
+  await settle(); await settle();
+  assert.equal(retries, 2, 'Retry runs another canonical save exactly once');
+  assert.equal(failThenSave.closed, 1, 'Successful retry exits normally');
+  assert.equal(failThenSave.dialogs.length, 1);
+  assert.match(failThenSave.dialogs[0].detail, /Google Drive sync failed/);
+
+  const abortedFailure = fixture(async () => ({ ok: false, error: 'Disk access denied' }), [2]);
+  abortedFailure.guard.requestClose();
+  await settle();
+  assert.equal(abortedFailure.closed, 0);
+  assert.equal(abortedFailure.guard.getStatus().closeRequested, false);
+  assert.equal(abortedFailure.guard.getStatus().lastError, 'Disk access denied');
+
+  const deliberateExit = fixture(async () => { throw new Error('Should not save'); }, [0]);
+  await deliberateExit.guard.requestQuitWithoutSaving();
+  assert.equal(deliberateExit.destroyed, 1, 'Emergency exit requires an affirmative dialog response');
+  assert.equal(deliberateExit.dialogs[0].defaultId, 1, 'Emergency exit defaults to Cancel');
+  const declinedExit = fixture(async () => ({ ok: true }), [1]);
+  await declinedExit.guard.requestQuitWithoutSaving();
+  assert.equal(declinedExit.destroyed, 0, 'Declining emergency exit leaves game running');
+
+  // Cancel while a disk write is in flight, then request close again after gameplay has changed.
+  // The first save must NEVER authorize closing the newer session; another serialized save is mandatory.
+  const staleSave = deferred();
+  const freshSave = deferred();
+  let snapshotAttempts = 0; // Counts distinct final snapshots after Cancel and a later close request.
+  const staleClose = fixture(() => (++snapshotAttempts === 1 ? staleSave.promise : freshSave.promise), [2, 0]);
+  staleClose.guard.requestClose();
+  staleClose.guard.requestClose(); // Cancel the first attempt through the stalled-save dialog.
+  await settle();
+  assert.equal(staleClose.guard.getStatus().closeRequested, false);
+  staleClose.guard.requestClose(); // Re-enter close after the game may have changed.
+  await settle();
+  staleSave.resolve({ ok: true }); // The stale snapshot completes first.
+  await settle();
+  assert.equal(snapshotAttempts, 2, 'New close after Cancel runs a fresh serialized save instead of accepting a stale snapshot');
+  assert.equal(staleClose.closed, 0, 'Earlier successful snapshot must not close the changed game');
+  freshSave.resolve({ ok: true });
+  await settle();
+  assert.equal(staleClose.closed, 1, 'Only the newer completed save permits the final close');
+
+  // A rejected manual emergency exit while another close is pending must not consume the watchdog.
+  const manualPendingSave = deferred();
+  const declinedManual = fixture(() => manualPendingSave.promise, [1, 2]);
+  declinedManual.guard.requestClose();
+  await declinedManual.guard.requestQuitWithoutSaving(); // Explicit menu action, answered Cancel.
+  await settle();
+  assert.equal(declinedManual.destroyed, 0);
+  assert.equal(declinedManual.scheduled.size, 1, 'Cancelling manual Quit Without Saving preserves the pending final-save timeout');
+  declinedManual.advanceWatchdog();
+  await settle();
+  assert.equal(declinedManual.guard.getStatus().closeRequested, false, 'Subsequent stall Cancel still works after manual quit dialog');
+  manualPendingSave.resolve({ ok: true });
+  await settle();
+  assert.equal(declinedManual.closed, 0);
+
+  console.log('Desktop native save-and-quit watchdog, timeout choices, cancel, retry and explicit force exit OK');
+}
+
+checkNativeShutdownGuard().catch(error => { console.error(error); process.exitCode = 1; });
+
 async function checkClosePersistence() {
   const calls = []; // Records the ordering of the existing save APIs.
   const folder = {
