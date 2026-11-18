@@ -224,6 +224,7 @@
       ingredientDetails:window.FestivalPotluckContest?.ingredientBreakdown?.(meal.ingredients,deps?.getItemDefs?.() || {}) || [] };
   }
   function contestStandings() {
+    if (festival()?.id !== 'gorkunash') return null; // Noncompetitive Five Blossoms and other festivals never generate an unrelated contest.
     const record = contestData();
     if (!record) return null;
     const visibleDay = Math.min(7,Math.max(1,day()-(year()*336+4*28+8-1)+1)); // Current scoreboard cannot reveal future festival entries.
@@ -437,7 +438,7 @@
     }
     if(!beginPairedDance(walker))return fail(danceStartMessage());
     response?.(walker,{text:'I would be delighted to dance.',accepted:true,reason:'dance'});
-    return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
+    return commit(`Dancing with ${walker.rec.name||id}: ${GORKUNASH_SOCIAL_FUN_PER_SECOND} Festival Fun per completed second while you remain together.`);
   }
   function updateDanceInvitation(elapsed) {
     if(!pendingDance)return;
@@ -972,13 +973,13 @@
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,pendingAnimalReleases:pendingAnimalReleases(),dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,festivalFunEarned:state.festivalFunEarned,festivalFunPaid:state.festivalFunPaid,festivalMealPortions:state.festivalMealPortions,
-      dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
+      dailyFeast:feastMenu().map(m=>({dish:m.label,...(festival()?.id === 'gorkunash' ? {stars:m.score} : {}),ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),feastMode:sharedFeast() ? (festival()?.id === 'gorkunash' ? 'rotating-contest' : 'fixed-noncompetitive') : null,fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
       fortune:state.blessing?{id:state.blessing.stat,bonus:fortuneBonus(state.blessing.stat),target:window.FestivalCalendar?.blessings?.[state.blessing.stat]?.target}:null,
-      latestChange:'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
+      latestChange:festival()?.id === 'five_blossoms' ? 'Five Blossoms shares Gorkunash NPC buffet, tablemate Fun, buffs and paired dances without any contest or activity board.' : 'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
