@@ -56,6 +56,12 @@
 
   let gameDeps = null;
 
+  function ownsCreatureFrame(creature) {
+    const player = window.Combat?.deps?.player; // The shoulder presenter and ordinary creature animator share this exact ownership test.
+    return !!(player && creature?.health > 0 && creature.stableRole === 'shoulderPet'
+      && creature.avatarRef?.group && (creature.master || player) === player);
+  }
+
   function chainFutureSetter(name, beforeSet) {
     const desc = Object.getOwnPropertyDescriptor(window, name);
     const previousSet = desc?.set;
@@ -151,7 +157,26 @@
   const smallPetEligibility = new WeakMap(); // Caches the expensive size-class genetics query for an unchanged pet.
   const SMALL_PET_SIGNATURE_REFRESH_MS = 250; // Bound in-place genotype/edit propagation without recomputing it every frame.
   const MAX_SHOULDER_SPRITE_PIXELS = 1024 * 1024; // Worn pets occupy a tiny fraction of the screen: limit 6.75MP source raster uploads.
-  const smallPetHeadDebug = { applied: 0, failed: 0, downsampled: 0, reusedOverlays: 0, lastError: null }; // In-game mobile diagnostic for small-pet head processing.
+  const smallPetHeadDebug = { applied: 0, failed: 0, downsampled: 0, reusedOverlays: 0, overwritesRestored: 0, lastError: null }; // Mobile diagnostics distinguish initial growth from recovery after another texture writer.
+
+  function shoulderTextureIsBound(companion, url, binding) {
+    const avatar = companion?.avatarRef; // Compare actual rendered maps, not just a URL string that animation may leave unchanged.
+    if (!binding || binding.url !== url || binding.avatar !== avatar || companion.currentFrameUrl !== url) return false;
+    return (avatar?.frontPlane?.material?.map || null) === binding.frontMap
+      && (avatar?.backPlane?.material?.map || null) === binding.backMap;
+  }
+  function bindShoulderTexture(companion, combatDeps, url, binding) {
+    if (shoulderTextureIsBound(companion, url, binding)) return false;
+    if (binding.url === url && binding.avatar === companion.avatarRef) smallPetHeadDebug.overwritesRestored++;
+    // setCreatureFrame binds a shared source texture synchronously. Its false result only means a genotype composite was not used.
+    combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
+    companion.currentFrameUrl = url;
+    binding.url = url;
+    binding.avatar = companion.avatarRef;
+    binding.frontMap = companion.avatarRef?.frontPlane?.material?.map || null;
+    binding.backMap = companion.avatarRef?.backPlane?.material?.map || null;
+    return true;
+  }
   function needsSmallPetHead(companion, combatDeps) {
     const kind = genotypeKindFor(companion, combatDeps); // Actual genotype species, never a visual-size guess.
     const previous = smallPetEligibility.get(companion), now = Date.now();
@@ -222,10 +247,7 @@
     const existing = smallPetHeadFrameCache.get(companion);
     if (existing?.key === key) {
       if (existing.url) {
-        if (companion.currentFrameUrl !== existing.url) {
-          combatDeps.setCreatureFrame(companion.avatarRef, existing.url, null, 'idle', null); // Already carries eyes, coat and recolored patterns.
-          companion.currentFrameUrl = existing.url;
-        }
+        bindShoulderTexture(companion, combatDeps, existing.url, existing); // Recovers if animation or a rig rebuild replaced the actual GPU map.
         companion.__hobunjiShoulderFrame = existing.url;
         companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? existing.url : null;
         companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? existing.url : null;
@@ -272,8 +294,7 @@
       const owner = combatDeps?.player;
       if (companion.health > 0 && companion.stableRole === 'shoulderPet'
         && (companion.master || owner) === owner && !effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
-        combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
-        companion.currentFrameUrl = url;
+        bindShoulderTexture(companion, combatDeps, url, entry); // Keep a reference to the maps actually bound, not just their URL.
       }
       if (existing?.url && existing.url !== url) releasePetSpriteUrl(existing.url); // A genotype/proportions change replaces the prior encoded portrait.
     }).catch(error => {
@@ -394,9 +415,9 @@
     companion.__hobunjiShoulderSplitFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
-    if (companion.currentFrameUrl !== frameUrl && typeof combatDeps?.setCreatureFrame === 'function') {
-      combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, null, 'idle', null);
-      companion.currentFrameUrl = frameUrl;
+    if (typeof combatDeps?.setCreatureFrame === 'function') {
+      const binding = companion.__hobunjiShoulderSplitBinding || (companion.__hobunjiShoulderSplitBinding = {}); // Retains the expected GPU maps across split-animation and blink updates.
+      bindShoulderTexture(companion, combatDeps, frameUrl, binding);
     }
     return true;
   }
@@ -412,6 +433,7 @@
     }
 
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
+    companion.__hobunjiShoulderSplitBinding = null; // A newly authored split must not accept the previous split's GPU map as current.
     companion.__hobunjiShoulderSplitKey = key;
     companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(async layers => {
       if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
@@ -484,15 +506,24 @@
     const expectsGenotype = !!(companion.genotype && geneticRenderer?.SPECIES?.[selected.genotypeKind]); // Only species with a registered compositor need a ready check.
     const signature = expectsGenotype ? geneticRenderer.genotypeSignature?.(selected.genotypeKind, companion.genotype) : null; // Color Pools/pattern mutations invalidate the same-URL shoulder frame.
     const currentMap = companion.avatarRef?.frontPlane?.material?.map; // The actual display texture, not the requested source sprite URL.
+    const currentBackMap = companion.avatarRef?.backPlane?.material?.map; // Prevent an independent back-card overwrite from going unnoticed.
     const composedReady = !expectsGenotype || (currentMap?.isCanvasTexture === true && companion._shoulderPresentedSignature === signature);
-    if (companion.currentFrameUrl === frameUrl && composedReady) return true;
+    const mapsUnchanged = companion._shoulderPresentedAvatar === companion.avatarRef
+      && companion._shoulderPresentedFrontMap === (currentMap || null)
+      && companion._shoulderPresentedBackMap === (currentBackMap || null);
+    if (companion.currentFrameUrl === frameUrl && composedReady && mapsUnchanged) return true;
     if (expectsGenotype && Date.now() < (companion._shoulderGenotypeRetryAt || 0)) return true; // Retry cold genotypes at a bounded cadence, not every render frame.
     const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
     const actualMap = companion.avatarRef?.frontPlane?.material?.map; // Refresh after the authoritative game texture swap.
     const fullAppearance = !expectsGenotype || (applied !== false && actualMap?.isCanvasTexture === true); // A declined swap may leave an older tinted canvas bound; it is not proof the requested genotype arrived.
     companion._shoulderGenotypeRetryAt = expectsGenotype && !fullAppearance ? Date.now() + 150 : 0; // Plain fallbacks are temporary even when setCreatureFrame returned success.
     if (applied !== false) companion.currentFrameUrl = frameUrl; // A deferred genotype frame must never be marked complete.
-    if (fullAppearance) companion._shoulderPresentedSignature = signature;
+    if (fullAppearance) {
+      companion._shoulderPresentedSignature = signature;
+      companion._shoulderPresentedAvatar = companion.avatarRef;
+      companion._shoulderPresentedFrontMap = actualMap || null;
+      companion._shoulderPresentedBackMap = companion.avatarRef?.backPlane?.material?.map || null;
+    }
     return applied !== false;
   }
 
@@ -512,6 +543,11 @@
     if (companion.__hobunjiShoulderSplitFallbackUrl !== companion.__hobunjiShoulderSplitUrl)
       releasePetSpriteUrl(companion.__hobunjiShoulderSplitFallbackUrl);
     companion.__hobunjiShoulderSplitKey = null; // Cancel in-flight split callbacks when unequipped.
+    companion.__hobunjiShoulderSplitBinding = null;
+    companion._shoulderPresentedAvatar = null; // Release frame ownership after leaving the perch.
+    companion._shoulderPresentedFrontMap = null;
+    companion._shoulderPresentedBackMap = null;
+    companion._shoulderPresentedSignature = null;
     companion.__hobunjiShoulderSplitUrl = null;
     companion.__hobunjiShoulderSplitFallbackUrl = null;
     companion.__hobunjiShoulderSplitLeftCanvas = null;
@@ -549,9 +585,7 @@
     if (player) {
       for (const companion of combatDeps.companionObjects || []) {
         if (!companion?.avatarRef) continue;
-        const isShoulderPet = companion.health > 0
-          && companion.stableRole === 'shoulderPet'
-          && (companion.master || player) === player;
+        const isShoulderPet = ownsCreatureFrame(companion); // Same role/owner/visual check used to suppress the base animator.
         const splineAllowed = splineAllowedFor(companion, combatDeps);
         companion.avatarRef.setShoulderRestEnabled?.(isShoulderPet && splineAllowed);
         if (!isShoulderPet) {
@@ -573,6 +607,7 @@
   });
 
   window.PlayerBodyAttachmentBridge = {
+    ownsCreatureFrame, // Invoked by game.js before any ordinary run/blink texture changes.
     getDebug() {
       const handDebug = window.ProceduralHandAttachments?.getActiveDebug?.().find(entry => entry?.speciesId) || null;
       const activeShoulderPets = window.Combat?.deps?.companionObjects
