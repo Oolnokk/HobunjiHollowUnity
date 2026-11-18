@@ -53,6 +53,10 @@ const zoneId='map_northern_cliffs';
 const zoneLayouts=new Map([[zoneId,worldLayout]]);
 const scene=new THREE.Group(); // Same active scene persists when the Tothal cycle is forcibly advanced.
 let cycle='1156',decorations=0,signals=0;
+const sharedStoneArt={geometry:new THREE.CylinderGeometry(.46,.5,1,6),material:new THREE.MeshLambertMaterial({color:0x85857c})};
+let sharedStoneDisposed=false; // The real OreRockTextures.smallStoneArt resource is shared by all wilderness cairns.
+sharedStoneArt.geometry.addEventListener('dispose',()=>{sharedStoneDisposed=true;});
+window.OreRockTextures={smallStoneArt:()=>sharedStoneArt}; // Renderer-provided shared rock art is required for both cairns and the newly engraved witness.
 window.GridTileAccessors={getActiveScene:()=>scene};
 window.ClimbSystem={groundYAt:()=>1.25};
 window.FurniturePatternSurfaces={
@@ -84,6 +88,8 @@ assert.ok(first?.isMesh,'the physically rendered dyed stone exists inside the li
 assert.equal(decorations,1,'the unique witness stone uses one ruin engraving atlas');
 assert.equal(signals,1,'one visible colored rune exists while the atlas is preparing');
 assert.equal(first.userData.witnessDye.unique,true);
+assert.equal(first.children.find(child=>child.userData?.ruinStoneSignalGlyph)?.position.z,.57,
+  'the dyed rune is outside the irregular stone instead of buried inside its geometry');
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
 scenery.update();
 assert.equal(witnessFor(),first,'unchanged world/layout does not regenerate scenery every frame');
@@ -102,5 +108,6 @@ assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also
 assert.equal(decorations,3,'same-cycle regeneration reuses the canonical engraving pipeline');
 scenery.clear();
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
+assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;
 console.log('ok - blossom tree geometry, three-tier leaves, patterned witness placement, Shift redraw and cleanup');
