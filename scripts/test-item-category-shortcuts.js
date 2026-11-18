@@ -166,7 +166,7 @@ assert.deepEqual(backgroundJumps,[-1,1], 'desktop left/right pointerdown navigat
 assert(priorClick.prevented && priorClick.stopped && nextClick.prevented && nextClick.stopped,
   'category pointerdown cannot also reach gameplay actions');
 assert.equal(fakeMouseEvent('pointerup',0).stopped,true, 'matching pointerup is suppressed before gameplay dispatch');
-assert.equal(fakeMouseEvent('click',0,'backdrop',undefined).stopped,true,
+assert.equal(fakeMouseEvent('click',0,'backdrop',null).stopped,true,
   'legacy MouseEvent clicks without pointerType cannot activate gameplay');
 assert.equal(fakeMouseEvent('pointerdown',0,'backdrop','touch').stopped,false,
   'touch pointerdown cannot impersonate desktop category clicks');
