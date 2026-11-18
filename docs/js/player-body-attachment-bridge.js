@@ -157,7 +157,7 @@
   const smallPetEligibility = new WeakMap(); // Caches the expensive size-class genetics query for an unchanged pet.
   const SMALL_PET_SIGNATURE_REFRESH_MS = 250; // Bound in-place genotype/edit propagation without recomputing it every frame.
   const MAX_SHOULDER_SPRITE_PIXELS = 1024 * 1024; // Worn pets occupy a tiny fraction of the screen: limit 6.75MP source raster uploads.
-  const smallPetHeadDebug = { applied: 0, failed: 0, downsampled: 0, reusedOverlays: 0, overwritesRestored: 0, lastError: null }; // Mobile diagnostics distinguish initial growth from recovery after another texture writer.
+  const smallPetHeadDebug = { applied: 0, failed: 0, downsampled: 0, reusedOverlays: 0, overwritesRestored: 0, temporaryTexturesReleased: 0, lastError: null }; // Mobile diagnostics distinguish initial growth from recovery after another texture writer.
 
   function shoulderTextureIsBound(companion, url, binding) {
     const avatar = companion?.avatarRef; // Compare actual rendered maps, not just a URL string that animation may leave unchanged.
@@ -233,8 +233,12 @@
     return window.BabyAnimalHeadWarp?.maskModeForKind?.(kind) !== 'legacy-frame'; // Original painted-box method does not require a source alpha readback.
   }
   function releasePetSpriteUrl(url) {
-    if (typeof url === 'string' && url.startsWith('blob:') && typeof URL !== 'undefined') {
-      try { URL.revokeObjectURL?.(url); } catch (_) {} // Released on replacement/unequip, not kept alive by the browser indefinitely.
+    if (typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return;
+    if (window.Combat?.deps?.releaseCreatureTemporaryFrameTexture?.(url)) {
+      smallPetHeadDebug.temporaryTexturesReleased++; // Mobile debug counter for generated textures freed from game.js's URL cache.
+    }
+    if (url.startsWith('blob:') && typeof URL !== 'undefined') {
+      try { URL.revokeObjectURL?.(url); } catch (_) {} // An object URL alone does not release its game-owned GPU cache entry.
     }
   }
   function canvasAsSpriteUrl(canvas) {
