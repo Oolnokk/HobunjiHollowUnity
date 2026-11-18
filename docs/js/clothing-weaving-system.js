@@ -2963,9 +2963,15 @@
     if (!imageOrCanvas || options.cache === false) return composePatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix, shadingSource, debugLabel, options);
     const fusedCount = Math.max(1, Math.min(6, Math.floor(Number(options.fusedPrimaryCount) || 1))); // Preserves the actual raster compositor's primary/overpass boundary.
     const patterns = normalizePatternStack(rawPatterns, fusedCount > 1 ? fusedCount + 1 : 2);
-    const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
+    const renderableSlots = patterns.flatMap((pattern, sourceIndex) =>
+      pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId ? [{ pattern, sourceIndex }] : []
+    ); // Preserve original slot indices so a missing fused motif cannot silently become the overpass, or vice versa.
+    const renderable = renderableSlots.map(entry => entry.pattern); // Source image resolution still uses ordinary pattern objects.
     if (!renderable.length) return imageOrCanvas;
-    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, fusedCount, debugLabel); // Same key for cache, concurrent bake, and final canvas.
+    if (fusedCount > 1 && renderableSlots.filter(entry => entry.sourceIndex < fusedCount).length !== fusedCount) {
+      throw new Error('Missing motif image in fused animal pattern group'); // Better than showing an incomplete coat as a successful bake.
+    }
+    const key = patternStackRenderKey(imageOrCanvas, renderableSlots, colorHex, cachePrefix, options, fusedCount, debugLabel); // Same key for cache, concurrent bake, and final canvas.
     const cached = cachedPatternedCanvas(key);
     if (cached) return cached;
     const pending = pendingPatternStackCanvases.get(key);
@@ -2982,10 +2988,16 @@
     const maxEntries = requestedFusedCount > 1 ? requestedFusedCount + 1 : 2;
     const patterns = normalizePatternStack(rawPatterns, maxEntries);
     if (!imageOrCanvas || !patterns.length) return imageOrCanvas;
-    const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
+    const renderableSlots = patterns.flatMap((pattern, sourceIndex) =>
+      pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId ? [{ pattern, sourceIndex }] : []
+    ); // Preserve original slot indices so a missing fused motif cannot silently become the overpass, or vice versa.
+    const renderable = renderableSlots.map(entry => entry.pattern); // Source image resolution still uses ordinary pattern objects.
     if (!renderable.length) return imageOrCanvas;
+    if (requestedFusedCount > 1 && renderableSlots.filter(entry => entry.sourceIndex < requestedFusedCount).length !== requestedFusedCount) {
+      throw new Error('Missing motif image in fused animal pattern group'); // Better than showing an incomplete coat as a successful bake.
+    }
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount, debugLabel); // A short stable signature avoids retaining large motif PNG strings.
+    const key = patternStackRenderKey(imageOrCanvas, renderableSlots, colorHex, cachePrefix, options, requestedFusedCount, debugLabel); // A short stable signature avoids retaining large motif PNG strings.
     if (options.cache !== false) {
       const cached = cachedPatternedCanvas(key);
       if (cached) return cached;
@@ -2995,7 +3007,7 @@
       pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId)
     )); // Used by primary + optional overpass without changing either reusable pattern definition.
     const loaded = await Promise.all(motifUrls.map(url => url ? loadImageUrl(url) : Promise.resolve(null)));
-    const active = renderable.map((pattern, sourceIndex) => ({ pattern, motif: loaded[sourceIndex], sourceIndex })).filter(entry => !!entry.motif).slice(0, maxEntries); // Preserve the original slot: an unavailable fused asset must not turn an overpass into a fused shape.
+    const active = renderableSlots.map((entry, index) => ({ ...entry, motif: loaded[index] })).filter(entry => !!entry.motif).slice(0, maxEntries); // Original sourceIndex is retained through loading and filtering.
     if (!active.length) return imageOrCanvas;
     const overpassIndex = active.findIndex((entry, index) => index > 0 && entry.sourceIndex >= requestedFusedCount); // Normal slot 2 still creates a clearance; same-ink additions never do.
     const fusedCount = overpassIndex >= 0 ? overpassIndex : active.length; // Number of masks unioned under one perimeter.
@@ -3023,12 +3035,8 @@
     // The steps below are pure pixel math on private buffers; between them,
     // give the browser a frame if this job has hogged the main thread (see
     // pixel-work-yield.js). Output pixels are unchanged.
-    const patternCanvases = [];
-    for (const { pattern, motif } of active) {
-      await window.PixelWorkYield?.maybeYield();
-      patternCanvases.push(buildPatternMask(maskWidth, maskHeight, pattern, motif)); // Direct mask receives exact sprite dimensions; reusable motifs retain padded work space.
-    }
-    await window.PixelWorkYield?.maybeYield();
+    // Build each temporary motif only when sampling it below. Keeping six 4-channel
+    // canvases alive at once would waste tens of MiB on large animal sprites.
     // The primary pattern may carry its own ink colour too (procedural mask glyphs paint every pattern in its own hue); otherwise it
     // uses the item's pattern dye as before. The overpass is compared against the primary's actual ink.
     const primaryInkHex = /^#[0-9a-f]{6}$/i.test(String(active[0].pattern.inkColorHex || '')) ? active[0].pattern.inkColorHex : colorHex;
@@ -3052,8 +3060,10 @@
     await window.PixelWorkYield?.maybeYield();
     const sampledMasks = []; // Used below to apply the Celtic-knot-style overpass before any visible black outline is generated.
     const sampledSeparators = [];
-    for (let patternIndex = 0; patternIndex < patternCanvases.length; patternIndex++) {
-      const patternCanvas = patternCanvases[patternIndex]; // Used to preserve ordinary cell stagger while garment-fixed, non-tiling motifs remain stationary across separate fur pieces.
+    for (let patternIndex = 0; patternIndex < active.length; patternIndex++) {
+      await window.PixelWorkYield?.maybeYield();
+      const { pattern, motif } = active[patternIndex]; // One motif's raster is needed only until its alpha/separator samples are recorded.
+      const patternCanvas = buildPatternMask(maskWidth, maskHeight, pattern, motif); // Temporary four-channel buffers become collectible after this iteration.
       const paddedMaskData = patternCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data;
       const separatorCanvas = patternCanvas.__motifClusterSeparatorCanvas;
       const paddedSeparatorData = separatorCanvas ? separatorCanvas.getContext('2d').getImageData(0, 0, maskWidth, maskHeight).data : null;
