@@ -315,6 +315,39 @@ calendarReady = true;
 hunt.update();
 const questId = 'five_blossoms_wilderness_hunt:1156';
 assert.equal(progress[questId]?.status, 'active', 'festival automatically starts the world-member quest');
+// A dev-forced regeneration reuses the Tothal cycle but replaces the generated workspace object.
+const northId = 'map_northern_cliffs'; // Only the unfinished cyan clue is active at this point.
+const originalNorth = zones.get(northId); // Restore the authored sample after exercising new placements.
+const firstClue = progress[questId].progress.detail; // The original saved verse must not survive a changed physical location.
+const beforeForceSaves = saveCalls; // Idle checks must not trigger repeated member-save writes.
+zones.set(northId, layoutFor('cyan', 48, 45));
+hunt.update();
+const forcedClue = progress[questId].progress.detail;
+assert.notEqual(forcedClue, firstClue, 'same-cycle forced regeneration replaces the saved verse');
+assert.equal(forcedClue, hunt.__test.clueFor(hunt.BLOSSOMS[0]).text, 'persisted verse describes the new generated terrain');
+assert.equal(progress[questId].progress.shiftYear, shiftYear, 'rebuild does not invent a different Tothal cycle');
+assert.equal(progress[questId].progress.found.length, 0, 'forced regeneration does not reset collected progress');
+assert.equal(saveCalls, beforeForceSaves + 1, 'changed same-cycle terrain writes the corrected verse only once');
+hunt.update();
+assert.equal(saveCalls, beforeForceSaves + 1, 'unchanged layouts do not cause save spam on festival ticks');
+zones.delete(northId); // During a shift, the old layout may disappear before the replacement finishes stamping.
+hunt.update();
+assert.equal(progress[questId].progress.detail, forcedClue, 'missing intermediate locale does not overwrite the saved verse');
+assert.equal(hunt.debugSnapshot().savedClueSynced, false, 'mobile diagnostic exposes a pending regeneration');
+zones.set(northId, layoutFor('cyan', 33, 45));
+hunt.update();
+assert.equal(progress[questId].progress.detail, hunt.__test.clueFor(hunt.BLOSSOMS[0]).text, 'recovered zone immediately refreshes persisted clue');
+assert.notEqual(progress[questId].progress.detail, forcedClue, 'recovered locale no longer points to the pre-regeneration site');
+zones.set(northId, originalNorth);
+hunt.update();
+assert.equal(progress[questId].progress.detail, firstClue, 'restored layout recreates the original deterministic verse');
+assert.equal(hunt.debugSnapshot().savedClueSynced, true, 'diagnostic confirms persisted clue matches current placement');
+const beforeIdenticalForce = saveCalls; // A fresh workspace with identical terrain must not write redundant progress.
+zones.set(northId, layoutFor('cyan', 15, 16));
+hunt.update();
+assert.equal(saveCalls, beforeIdenticalForce, 'same-cycle rebuild with an identical verse avoids a disk write');
+zones.set(northId, originalNorth);
+hunt.update();
 for (const id of ids) {
   currentZone = assignedZones[id];
   const instance = zones.get(currentZone).localeInstances.find(x => x.localeId.endsWith(id));
@@ -327,6 +360,18 @@ for (const id of ids) {
   assert.equal(hunt.pickBlossom(id),true,id+' is picked only by interacting');
   assert.ok(progress[questId].progress.found.includes(id),id+' is recorded after interaction');
   assert.equal(world.KeyItemSystem.has(hunt.itemKey(id)),true,id+' is carried as a real Pack item');
+  if (id === 'cyan') {
+    const originalWest = zones.get('map_western_slope'); // Preserve the fixture after checking the next active riddle.
+    const reshiftedWest = layoutFor('white', 37, 42); // Changes only the still-uncollected white target.
+    reshiftedWest.localeInstances.push(originalWest.localeInstances.find(entry => entry.localeId.endsWith('gold')));
+    zones.set('map_western_slope', reshiftedWest);
+    hunt.update();
+    assert.equal(progress[questId].progress.found.join(','), 'cyan', 'forced shift preserves picked blossoms');
+    assert.equal(world.KeyItemSystem.has(hunt.itemKey('cyan')), true, 'forced shift preserves carried physical blossom');
+    assert.equal(progress[questId].progress.detail, hunt.__test.clueFor(hunt.BLOSSOMS[1]).text, 'next saved clue uses regenerated target');
+    zones.set('map_western_slope', originalWest);
+    hunt.update();
+  }
 }
 assert.equal(progress[questId].status,'active','all five physical blossoms still require Father Hunundi turn-in');
 assert.equal(progress[questId].progress.found.length,5);
