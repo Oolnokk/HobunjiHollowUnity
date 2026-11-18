@@ -349,7 +349,7 @@
     return commit(meal.label + ': +' + FOOD_PORTION_HOURS + ' in-game hours of meal effects; fullness ' + currentFullness() + '/10; ' + companions + ' tablemates share a serving.');
   }
   function addFestivalFun(id,amount) {
-    if (!id || !Number.isFinite(amount) || amount <= 0 || !sharedFeast() || !festivalHours()) return 0;
+    if (!id || !Number.isFinite(amount) || amount <= 0 || !['gorkunash','five_blossoms'].includes(festival()?.id)) return 0; // Event-scoped eligibility remains self-contained for social gain feedback.
     const key = eventKey() + ':' + id; // Event-scoped cap lets every NPC earn independently across seven days.
     const earned = Math.max(0, Number(state.festivalFunEarned[key]) || 0);
     const credited = Math.min(amount, Math.max(0, GORKUNASH_MAX_FUN - earned)); // Buffet, dance/music and keg share one participation budget.
