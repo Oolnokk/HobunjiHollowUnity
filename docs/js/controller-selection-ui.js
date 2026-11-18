@@ -218,6 +218,18 @@
     return result !== false;
   }
 
+  function stepItemCategoryButtons(frame) {
+    if (state.kind !== 'item' || sharedArch()?.currentMode?.() !== 'item') return false;
+    const previousPressed = state.openerCode !== 'Button0' && frame.pressed?.has?.('Button0'); // A jumps to the preceding owned category while Item Select remains held.
+    const nextPressed = state.openerCode !== 'Button3' && frame.pressed?.has?.('Button3'); // Y jumps to the following owned category without toggling target lock-on.
+    if (Boolean(previousPressed) === Boolean(nextPressed)) return false; // Ignore simultaneous A+Y and ordinary frames.
+    const direction = previousPressed ? -1 : 1; // Shared with desktop clicks and the stacked touch arrows.
+    const moved = sharedArch()?.jumpItemCategory?.(direction);
+    state.lastInput = moved ? `itemSelect ${previousPressed ? 'A previous' : 'Y next'} category` : 'itemSelect category unchanged';
+    state.lastArchDirection = 0; state.nextRepeatAt = 0; // A face-button jump must not inherit a held stick's auto-repeat.
+    return true;
+  }
+
   function updateArch(frame, pad, now) {
     const direction = strongestHorizontalDirection(pad); // Used as a digital left/right channel for every corner arch regardless of which stick supplied it.
     if (!direction) {
@@ -329,7 +341,7 @@
         finishSelection(true, 'opener released');
       } else if (state.kind === 'social') {
         updateSocial(pad);
-      } else {
+      } else if (!stepItemCategoryButtons(frame)) {
         updateArch(frame, pad, frame.now);
       }
       return;

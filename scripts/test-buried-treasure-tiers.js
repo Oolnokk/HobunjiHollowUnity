@@ -33,10 +33,12 @@ class Mesh { constructor(geometry, material) { this.geometry = geometry; this.ma
 class Material { constructor({ color }) { this.color = color; } }
 class TextureLoader { load(path) { return { path }; } }
 
-function harness(roll, legacyPlacement = null, disableMetals = false) {
+function harness(roll, legacyPlacement = null, disableMetals = false, twoChests = false) {
   const mapId = 'buried_tier_test'; // Shared active zone ID used by scatter, lock targeting, and chest removal.
   const TILE = { GRASS: 'grass', TRENCH: 'trench' }; // Distinguishes a buried chest from one ready to open.
-  const tile = { type: TILE.GRASS, elevTier: 0 }; // Single legal diggable tile.
+  const tile = { type: TILE.GRASS, elevTier: 0 }; // First legal treasure tile, where the original chest is opened.
+  const alternateTile = { type: TILE.GRASS, elevTier: 0 }; // A distinct legal tile to simulate rescatters after changing berry/reagent exclusions.
+  let scatterCols = twoChests ? [0, 1] : [0]; // Controls legal sites returned on regeneration without changing their scatter-slot identity.
   const scene = { add() {}, remove() {} }; // World mesh hooks used by production ensureZone.
   const persist = new Map(); // Mimics the normal weekly treasure persistence object.
   const objects = new Map(); // World-object registry that validates in-flight lock successes.
@@ -46,6 +48,7 @@ function harness(roll, legacyPlacement = null, disableMetals = false) {
   const acquired = []; // Captures alchemy bottle acquisition provenance.
   const flushed = []; // Captures the canonical save flush made after a successful lock.
   const inventory = {}; // Rewards must reach this inventory exactly once.
+  const calendar = { day: 1 }; // Controlled test calendar for same-week returns and next-week respawn.
   const itemDefs = { tinBar: { label: 'Tin Bar' } }; // Game canonical definitions used for reward labels.
   const masteryRolls = []; // Inspects rank tables used for rare mastery scrolls.
 
@@ -79,17 +82,17 @@ function harness(roll, legacyPlacement = null, disableMetals = false) {
   vm.runInNewContext(source, vm.createContext(context), { filename: 'wild-treasure.js' });
   const api = context.window.WildTreasure; // The actual browser-facing API under test.
   const deps = {
-    calendar: { day: 1 }, rnd: () => 0.01, getLootPools: () => ({
+    calendar, rnd: () => 0.01, getLootPools: () => ({
       treasureChest: { entries: [{ id: 'metalBars', chance: disableMetals ? 0 : 1 }, { id: 'potion', chance: 0 }, { id: 'clothing', chance: 0 }, { id: 'combatManual', chance: 0 }] },
     }), lootShopWorldState: () => ({}),
     VERDIGRIS_METAL_KEYS: ['tin'], MYSTERY_DYE_ITEM_KEY_BY_POOL: { test: 'dyeTest' },
     metalBarItemKey: metal => metal + 'Bar', METAL_DEFS: { tin: { label: 'Tin' } },
     inventory, ITEM_DEFS: itemDefs,
-    _zoneScenes: new Map([[mapId, { grid: [[tile]], cols: 1, rows: 1, scene }]]),
+    _zoneScenes: new Map([[mapId, { grid: [[tile, alternateTile]], cols: twoChests ? 3200 : 2, rows: 1, scene }]]),
     _zoneTreasurePersist: persist, _zoneTreasureObjects: objects, _zoneTreasureMeshGroups: meshes,
     _zoneReagentPersist: new Map(), _zoneBerryPersist: new Map(),
     _seedFromString: text => text, _mbRng: seed => () => seed.includes(':treasure-tier:') ? roll : 0.5,
-    findZoneFlatEmptyTiles: () => [{ col: 0, row: 0 }],
+    findZoneFlatEmptyTiles: () => scatterCols.map(col => ({ col, row: 0 })),
     TileType: TILE, NORMAL_TOP: 0, TRENCH_TOP: -0.5, PLATEAU_UNIT: 1,
     getCurrentArea: () => mapId, isZoneArea: id => id === mapId,
     refreshItemScroll() {}, buildInventoryGrid() {}, buildPackClothingSection() {}, showToast() {},
@@ -99,8 +102,9 @@ function harness(roll, legacyPlacement = null, disableMetals = false) {
   api.ensureZone(mapId);
   const placement = persist.get(mapId).placements[0]; // Reads the actual saved placement, not test-generated loot.
   return {
-    api, mapId, tile, objects, persist, placement, inventory, started, claimed, acquired, flushed, masteryRolls,
+    api, mapId, tile, objects, meshes, persist, placement, inventory, calendar, started, claimed, acquired, flushed, masteryRolls,
     dig() { tile.type = TILE.TRENCH; api.syncZoneInteractivity(mapId); return objects.get(mapId)?.get('0,0'); },
+    moveScatterToAlternateTile() { scatterCols = twoChests ? [1, 0] : [1]; }, // Regression for a plant or berry placement that changes the eligible chest coordinates.
   };
 }
 
@@ -151,4 +155,65 @@ legacy.started[0].onSuccess({ bonusDrops: 1 });
 assert.equal(legacy.inventory.gold, 4);
 assert.equal(legacy.inventory.tinBar, 2);
 assert.equal(legacy.claimed.length, 0);
-console.log('PASS buried treasure tiers: rarity bounds, simple named curios, lock progression, persisted specialty loot, bound relics and legacy saves.');
+// The scene cache may discard the zone's entire placement record after an opened chest disappears.
+const visit = harness(0); // One real buried chest, deterministically generated at 0,0.
+const dugChest = visit.dig(); // Only the actual successful lock callback should create a claim.
+dugChest.onAction('obj_open_treasure_chest');
+assert.equal(visit.api.serializeState()[visit.mapId].claimedTiles, undefined, 'starting a lock does not mark the chest claimed');
+visit.started[0].onSuccess({ bonusDrops: 0 });
+assert.equal(visit.persist.get(visit.mapId).placements.length, 0, 'opening removes the chest placement');
+assert.deepEqual(Array.from(visit.api.serializeState()[visit.mapId].claimedTiles), ['0,0'], 'the opening saves a separate claim marker');
+assert.deepEqual(Array.from(visit.api.serializeState()[visit.mapId].claimedSlots), [0], 'the opening also remembers the chest scatter slot');
+const barsAfterOpen = visit.inventory.tinBar; // Guards against a duplicate reward from a stale re-created chest.
+visit.persist.delete(visit.mapId); // Simulate accidental loss of zone data on inactive scene disposal.
+visit.moveScatterToAlternateTile(); // Changed resource exclusions can move the same regenerated chest to a different coordinate.
+visit.api.ensureZone(visit.mapId);
+assert.equal(visit.persist.get(visit.mapId).placements.length, 0, 'returning in the same week cannot respawn an opened buried chest');
+assert.equal(visit.objects.get(visit.mapId).size, 0, 'the same-week return does not install an Open interaction');
+assert.equal(visit.inventory.tinBar, barsAfterOpen, 'leaving a zone does not grant another reward');
+visit.persist.delete(visit.mapId); // Save after the active placement map has already been discarded.
+const claimsOnly = JSON.parse(JSON.stringify(visit.api.serializeState()));
+assert.equal(claimsOnly[visit.mapId].placements, undefined, 'claims-only saves do not impersonate a complete set of placements');
+assert.deepEqual(claimsOnly[visit.mapId].claimedSlots, [0], 'claims-only saves retain chest identity even when coordinates change');
+const resumed = harness(0); // Another runtime instance restores the saved character after a restart.
+resumed.api.restoreState(claimsOnly);
+resumed.moveScatterToAlternateTile(); // Different day-dependent avoidance after loading must still respect the old slot.
+resumed.meshes.clear(); // A real restart has no scene meshes from the prior process.
+resumed.api.ensureZone(resumed.mapId);
+assert.equal(resumed.persist.get(resumed.mapId).placements.length, 0, 'save/reload plus zone rebuild preserves the opened chest claim');
+assert.equal(resumed.objects.get(resumed.mapId).size, 0, 'restored chest remains unlootable');
+const freshWorld = harness(0); // A different character without these claims still gets their own loot.
+assert.equal(freshWorld.persist.get(freshWorld.mapId).placements.length, 1, 'claims never leak to another character');
+
+// A quick load may reuse the same existing THREE.Scene rather than starting with a blank cache.
+const reusedScene = harness(0); // Original live scene contains a chest at tile 0,0.
+reusedScene.dig(); // Leave a real stale Open action object registered when another saved state loads.
+assert.equal(reusedScene.objects.get(reusedScene.mapId).size, 1);
+reusedScene.api.restoreState({ [reusedScene.mapId]: {
+  week: 0, placements: [{ col: 1, row: 0, slot: 0, found: false, tier: 1, loot: { metalKeys: ['tin'] } }],
+} }); // The new save has an unclaimed chest at a different tile in the same treasure week.
+assert.equal(reusedScene.objects.has(reusedScene.mapId), false, 'restoring a save invalidates the prior scene chest action registry');
+assert.equal(reusedScene.meshes.has(reusedScene.mapId), false, 'restoring a save invalidates cached chest meshes');
+reusedScene.api.ensureZone(reusedScene.mapId);
+assert.deepEqual(reusedScene.persist.get(reusedScene.mapId).placements.map(p => p.col), [1], 'the restored chest is built at the saved tile, not the previous character tile');
+assert.equal(reusedScene.objects.get(reusedScene.mapId).size, 0, 'the previous Open prompt does not persist into the newly loaded character');
+
+// Two chests may exchange locations after a berry/reagent rescatters: preserve the unclaimed slot.
+const two = harness(0, null, false, true); // A large zone normally spawns two independently claimable weekly chests.
+assert.deepEqual(two.persist.get(two.mapId).placements.map(p => p.slot), [0, 1]);
+const firstOfTwo = two.dig();
+firstOfTwo.onAction('obj_open_treasure_chest');
+two.started[0].onSuccess({ bonusDrops: 0 });
+two.persist.delete(two.mapId);
+two.moveScatterToAlternateTile(); // Slot 0 moves away; unclaimed slot 1 now occupies the old claimed coordinate.
+two.api.ensureZone(two.mapId);
+const survivor = two.persist.get(two.mapId).placements; // Should contain precisely the other chest, irrespective of reused coordinates.
+assert.deepEqual(survivor.map(p => p.slot), [1], 'only the claimed chest slot is suppressed');
+assert.equal(survivor[0].col, 0, 'an unclaimed chest remains available even when moved onto a previously claimed tile');
+assert(two.objects.get(two.mapId).get('0,0'), 'the remaining chest can still be opened after switching coordinates');
+
+visit.calendar.day = 8; // The existing weekly spawn intentionally allows fresh loot after day seven.
+visit.api.ensureZone(visit.mapId);
+assert.equal(visit.persist.get(visit.mapId).placements.length, 1, 'a newly started week still has its own treasure generation');
+assert.equal(visit.persist.get(visit.mapId).placements[0].col, 1, 'new-week treasure may use the newly available tile');
+console.log('PASS buried treasure tiers: rarity bounds, specialty loot, zone re-entry persistence, weekly refresh, legacy saves.');
