@@ -613,6 +613,7 @@
   function clothingGearCollectionKey(item) {
     const cosmeticId = item?.cosmeticId; // The original cosmetic type remains the grouping key for unpatterned dyes.
     if (!cosmeticId) return null;
+    if (item?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && item?.uid) return 'annual-prize:' + item.uid; // Each year's earned crown must survive clothing save migration independently.
     return hasIndividualClothingPattern(item) && item.uid
       ? 'woven:' + item.uid : 'cosmetic:' + cosmeticId; // Bandit pattern frames are individual collectibles across saves and equip swaps.
   }
@@ -1648,7 +1649,13 @@
     const gear = deps?.getGearInventory?.();
     if (!gear) return null;
     gear.clothing ||= {};
-    const oldHat = gear.clothing.hat || null, oldHood = gear.clothing.hood || null;
+    gear.clothingItems ||= [];
+    let oldHat = gear.clothing.hat || null;
+    const oldHood = gear.clothing.hood || null;
+    if (oldHat && !gear.clothingItems.some(item => item === oldHat || (oldHat.uid && item?.uid === oldHat.uid))) {
+      oldHat = oldHat.uid ? oldHat : makeClothingGearEntry({...oldHat,slot:'hat'});
+      if (oldHat) gear.clothingItems.push(oldHat); // Even legacy worn-only hats remain owned when the crown replaces them.
+    }
     const facewrap = /(?:^|::|_)facewrap(?:$|_)/i.test(String(oldHood?.baseCosmeticId || oldHood?.cosmeticId || ''));
     gear.clothing.hat = null; // Cosmetic visibility only; the old physical hat remains in the character's gear collection.
     if (!facewrap) gear.clothing.hood = null; // A facewrap is part of the character's face and stays on.
@@ -1732,7 +1739,7 @@
       const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
       return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
     },
-    __test: { clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,
+    __test: { clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,normalizeGearClothingItems,
       setCrownTestDeps: value => { deps = value; } }, // Headless annual award tests use the actual equipment owner without installing a second UI runtime.
   };
 })();
