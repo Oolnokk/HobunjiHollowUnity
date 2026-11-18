@@ -84,22 +84,25 @@ assert(sleepStart >= 0 && sleepEnd > sleepStart, 'the live wilderness sleeper pa
 const sleeper = { ...animal, stableRole: 'shoulderPet', master: player, _animalSleeping: true,
   avatarRef: { group: { parent: {}, visible: true } } }; // Perch is active even if a stale sleep flag remains on the animal.
 const sleepFrames = []; // True means the sleep presenter would overwrite the grown shoulder portrait.
-const sleepSandbox = { window: windowStub, sleeper, sleepFrames, Symbol };
+const headDownCalls = []; // Tracks ordinary sleep poses, which a shoulder pet must not receive.
+const sleepSandbox = { window: windowStub, sleeper, sleepFrames, headDownCalls, Symbol };
 vm.createContext(sleepSandbox);
 vm.runInContext(`
   let liveSleepFrames = 0;
   const SLEEP_SCALE_Y = 0.5;
   function wildernessSets() { return [[sleeper]]; }
   function setLiveFrame(_animal, _group, _kind, _genotype, _def, sleeping) { sleepFrames.push(sleeping); }
-  function forceHeadDown() { throw new Error('A worn pet cannot inherit the ground-sleeper neck pose'); }
+  function forceHeadDown() { headDownCalls.push(true); }
   function applyTemporaryScale() { return true; }
   ${sleepSource.slice(sleepStart, sleepEnd)}
   globalThis.updateSleeperForTest = applyWildernessSleepers;
 `, sleepSandbox, { filename: 'animal-sleep-presentation.js:applyWildernessSleepers' });
 sleepSandbox.updateSleeperForTest();
 assert.deepEqual(sleepFrames, [false], 'sleep renderer releases rather than overwrites an actively perched portrait');
+assert.equal(headDownCalls.length, 0, 'ground-sleeper neck pose cannot override the shoulder spline');
 sleeper.stableRole = 'companion';
 sleepSandbox.updateSleeperForTest();
 assert.equal(sleepFrames.at(-1), true, 'sleep textures resume once the pet leaves its shoulder perch');
+assert.equal(headDownCalls.length, 1, 'ordinary sleeping neck pose resumes once unperched');
 
 console.log('PASS shoulder texture ownership blocks ordinary animation and sleep writers, then releases both on unperch');
