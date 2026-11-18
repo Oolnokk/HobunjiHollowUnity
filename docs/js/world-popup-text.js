@@ -428,7 +428,7 @@
     return null;
   }
 
-  function showIconEffect(root, { kind, duration, height, size, loadParts, sample, onDispose }) {
+  function showIconEffect(root, { kind, duration, height, offsetX = 0, size, loadParts, sample, onDispose }) {
     const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
     const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
     const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
@@ -440,7 +440,7 @@
     const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
     plane.visible = false;
     const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
-      height, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
+      height, offsetX, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
     state.active.push(event);
     Promise.resolve().then(loadParts).then(parts => {
       if (event.cancelled) return;
@@ -478,7 +478,7 @@
     return state.active.filter(event => event.mode === 'iconEffect' && event.kind === kind).length;
   }
 
-  function updateIconEffect(event, camera, now) {
+  function updateIconEffect(event, camera, cameraRight, now) {
     if (iconAnchorScene(event.root) !== event.scene) return false;
     if (event.startedAt === null) return true;
     const progress = Math.max(0, (now - event.startedAt) / event.lifetimeMs);
@@ -489,6 +489,7 @@
     const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
     const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
     plane.position.y += event.height * scaleY;
+    plane.position.addScaledVector(cameraRight, event.offsetX * scaleX); // A camera-facing side offset remains right/left of the head when the actor or camera turns.
     plane.quaternion.copy(camera.quaternion);
     plane.visible = true;
     for (const item of event.items) {
@@ -931,7 +932,7 @@
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       if (event.mode === 'iconEffect') {
-        if (!updateIconEffect(event, camera, now)) {
+        if (!updateIconEffect(event, camera, cameraRight, now)) {
           state.active.splice(index, 1);
           dispose(event);
         }
