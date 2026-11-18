@@ -380,7 +380,9 @@
       current=waypoint.point;
     }
     const final=routeBearing(layout,current,point,'the flowering tree');
-    route.push(final);facts.push({kind:'routeStep',value:final.description,source:'stamped-target-object',coordinate:{...point},...final});
+    route.push(final);
+    if(waypoint)facts.push({kind:'routeStep',value:final.description,source:'stamped-target-object',coordinate:{...point},...final});
+    else facts[0].value+='; then go '+final.description; // A direct one-leg trip belongs in the opening couplet, never repeated as two fictional moves.
     facts.push({kind:'blossom',value:goalName,source:'stamped-target-object'});
     return {facts,route,anchor:{name:marker.name,coordinate:{...marker.point},dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
   }
