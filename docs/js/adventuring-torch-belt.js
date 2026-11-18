@@ -26,53 +26,14 @@
     const parts = Array.isArray(material) ? material : [material];
     return parts.find(part => part?.map)?.map || null;
   }
-  function makeFlameTexture(THREE) {
-    const canvas = document.createElement('canvas'); // One tiny procedurally drawn flame, not a moving geometry pool.
-    canvas.width = 32; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    const gradient = ctx.createLinearGradient(0, 6, 0, 59);
-    gradient.addColorStop(0, 'rgba(255,238,160,0)');
-    gradient.addColorStop(.24, 'rgba(255,239,175,0.9)');
-    gradient.addColorStop(.65, 'rgba(255,157,42,0.95)');
-    gradient.addColorStop(1, 'rgba(255,71,12,0)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.moveTo(16, 2);
-    ctx.bezierCurveTo(23, 22, 28, 32, 26, 47);
-    ctx.bezierCurveTo(25, 60, 7, 62, 6, 47);
-    ctx.bezierCurveTo(5, 32, 13, 22, 16, 2);
-    ctx.fill();
-    const texture = new THREE.CanvasTexture(canvas); // Shared by the belt's one flame sprite.
-    texture.magFilter = texture.minFilter = THREE.LinearFilter;
-    return texture;
-  }
   function ensureRoot(THREE) {
     if (root) return root;
-    root = new THREE.Group(); root.name = 'adventuring_torch_belt';
-    root.userData.adventuringTorchBelt = true; // Marks it as decorative, never a held weapon or collider.
-    const material = new THREE.MeshBasicMaterial({
-      transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide,
-    }); // Populated from the held plane; no extra PNG decode in the normal case.
-    art = new THREE.Mesh(new THREE.PlaneGeometry(.17, .38), material);
-    art.name = 'stowed_torch_png';
-    art.rotation.z = Math.PI; // The authored torch PNG's flame tip is local -Y.
-    art.renderOrder = 2.32;
-    art.raycast = () => {}; // Belt decoration must never steal world-object taps.
-    root.add(art);
-    const fireTexture = makeFlameTexture(THREE);
-    if (fireTexture) {
-      flame = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: fireTexture, transparent: true, depthTest: true, depthWrite: false,
-        blending: THREE.AdditiveBlending, color: 0xffffff,
-      }));
-      flame.name = 'stowed_torch_flame';
-      flame.position.set(0, .24, .035);
-      flame.scale.set(.13, .23, 1);
-      flame.renderOrder = 2.34;
-      flame.raycast = () => {}; // Flame has no gameplay collision or fire-hazard contact.
-      root.add(flame);
-    }
+    const factory = global.HobunjiBeltStowRig?.createTorchDisplay; // Single authored PNG/particle geometry used by gameplay and Rig Coordinates.
+    const preview = factory?.(THREE);
+    if (!preview) { placement = 'shared belt art unavailable'; return null; }
+    root = preview.root;
+    art = preview.art;
+    flame = preview.flame;
     return root;
   }
   function updateTexture(THREE) {
@@ -105,6 +66,13 @@
     const pants = global.PantsRigRuntime;
     const species = String(body.userData?.speciesId || body.userData?.species || 'mao-ao').toLowerCase();
     const gender = String(body.userData?.gender || 'male').toLowerCase();
+    const configured = global.HobunjiBeltStowRig?.configuredSnapshot(
+      global.HOBUNJI_ATTACHMENT_RIG_PROFILES, species, gender); // Explicit Rig Coordinates placement supersedes the automatic waist spline.
+    if (configured && global.HobunjiBeltStowRig.placeRoot(root, configured)) {
+      placement = 'authored species/gender belt-stow rig';
+      return;
+    }
+    root.scale?.set?.(1, 1, 1); // Clear an older authored transform if the species/profile changed during a live rebuild.
     const record = pants?.characterRecord?.(species, gender);
     if (avatar && belongsToBody(avatar, body) && record && pants.resolveLiveBeltWorldPoints && body.worldToLocal) {
       const points = pants.resolveLiveBeltWorldPoints(avatar, record); // Uses the character's actual animated waist, not guessed trousers scale.
@@ -127,7 +95,7 @@
       return;
     }
     const THREE = global.THREE;
-    ensureRoot(THREE);
+    if (!ensureRoot(THREE)) return;
     if (root.parent !== body) body.add(root); // Avatar and mount transitions never leave the old belt copy in the old scene.
     const stowed = !torch.isHoldingTorch();
     root.visible = stowed;
@@ -141,7 +109,7 @@
         const t = (Number(frame.timestamp) || performance.now()) / 1000;
         flame.scale.set(.13 * (1 + .07 * Math.sin(t * 13)), .23 * (1 + .08 * Math.sin(t * 11)), 1);
       }
-    }
+    } // Decorative flame is independent of held-fire particles; the 30s state remains authoritative.
   }
 
   global.AdventuringTorchBelt = Object.freeze({
