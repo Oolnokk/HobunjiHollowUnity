@@ -248,7 +248,28 @@ async function checkFolderSwitchTransactions() {
   assert.equal(connected.folderName, 'Google Drive Saves', 'New folder becomes active only after persistence succeeds');
   assert.equal(storedHandle, newHandle, 'New folder is remembered after success');
   assert.equal(connected.autoSyncArmed, false, 'Selecting another directory never initiates automatic writes before an explicit load/save');
-  console.log('Folder switching preserves old handles on picker/IndexedDB failures');
+
+  const denied = name => Object.assign(new Error(name + ' is inaccessible on Google Drive'), { name: 'NotAllowedError' }); // Represents an offline or permission-denied directory.
+  const blockedCharacters = { ...handle('Blocked Characters'), getDirectoryHandle: async name => {
+    if (name === 'characters') throw denied(name);
+    throw missing();
+  } }; // Read denial must not be mistaken for an empty folder.
+  window.showDirectoryPicker = async () => blockedCharacters;
+  const unreadableCharacters = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(unreadableCharacters.state, 'error', 'Inaccessible character directory blocks folder initialization');
+  assert.match(unreadableCharacters.lastError, /Could not access characters save directory/);
+  assert.equal(unreadableCharacters.autoSyncArmed, false, 'Folder-access failures do not arm autosync');
+
+  const blockedFarm = { ...handle('Blocked Farm'), getDirectoryHandle: async name => {
+    if (name === 'farm-layouts') throw denied(name);
+    throw missing();
+  } }; // Existing folder farm data cannot silently disappear due to an I/O error.
+  window.showDirectoryPicker = async () => blockedFarm;
+  const unreadableFarm = await window.LocalSaveFolder.chooseFolder();
+  assert.equal(unreadableFarm.state, 'error', 'Inaccessible farm-layout directory blocks folder initialization');
+  assert.match(unreadableFarm.lastError, /Could not access farm-layouts save directory/);
+  assert.equal(unreadableFarm.autoSyncArmed, false, 'Failed farm inspection cannot write an apparent empty farm');
+  console.log('Folder switching and inaccessible cloud-save directory safety OK');
 }
 
 checkFolderPickerPermissions().catch(error => { console.error(error); process.exitCode = 1; });
