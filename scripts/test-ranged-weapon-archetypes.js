@@ -257,8 +257,8 @@ assert.match(rangedWeaponsSource, /sourceTransform\?\.quaternion\?\.isQuaternion
 assert.match(rangedWeaponsSource, /_projectileLocalPlaneZ = new THREE\.Vector3\(0, 0, 1\)[\s\S]*_projectileFallbackEndFlipQuaternion[\s\S]*setFromAxisAngle\(_projectileLocalPlaneZ, Math\.PI\)[\s\S]*baseVisualQuaternion\.multiply\(_projectileFallbackEndFlipQuaternion\)/, 'Unsampled dagger/spear throws must reproduce the held visible tip↔handle reversal around the projectile PNG-plane normal.');
 assert.doesNotMatch(rangedWeaponsSource, /uv\.setY\(i, 1 - uv\.getY\(i\)\)/, 'Thrown end flipping must not use a UV mirror; it is a true in-plane rotation consistent with the held weapon.');
 assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ranged projectiles must launch from the held plane transform sampled at the current release frame.');
-assert.match(rangedWeaponsSource, /projectileVisualWidthWorld:\.17, projectileVisualHeightWorld:\.38/, 'Thrown torch uses the same base PNG proportions as the belt, not a giant .5-world-square sprite.');
-assert.match(rangedWeaponsSource, /hasAuthoredVisualHeight[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Torch authored height is not multiplied again by decoded texture aspect.');
+assert.match(rangedWeaponsSource, /projectileVisualWidthWorld:\.5, \/\/ Same 0\.5-unit held-tool plane width/, 'Thrown torch uses the exact held-tool base width, not an unrelated miniature projectile plane.');
+assert.match(rangedWeaponsSource, /if \(weaponSprite && !hasExactSourcePlane\) plane\.scale\.y = pendingAspect/, 'Torch height is calculated once from the PNG aspect rather than hard-coded or double applied.');
 assert.match(rangedWeaponsSource, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/, 'Torch retains its hand origin but strips the oversized held transform.');
 assert.match(rangedWeaponsSource, /const dir = aim.direction; \/\/ The shared reticle solver converges/, 'Torch uses the reticle solver to converge the camera ray on the held release point.');
 assert.match(rangedWeaponsSource, /visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true/, 'Torch sprite faces its flight instead of inheriting the held world-facing quaternion.');
@@ -561,7 +561,7 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
       shots.push(args);
       return {
         mesh: { position: { x: 3, y: 1.2, z: 4 },
-          userData: { projectilePlane: { geometry: { parameters: { width: .17, height: .38 } } } } },
+          userData: { projectilePlane: { geometry: { parameters: { width: .5, height: .5 * 1204 / 450 } } } } },
         visual: { scale: { x: args[8].visualScale } }, launchTransformMode: 'flight-frame',
       };
     },
@@ -580,6 +580,7 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   assert.strictEqual(vm.runInContext('lastTorchThrow.targetPoint.x', torchContext), 4.5, 'reticle target is retained for on-device debugging');
   assert.strictEqual(shots[0][8].preserveSourceOrientation, false, 'torch flight does not retain world-facing held quaternion');
   assert.strictEqual(shots[0][8].visualScale, .68, 'torch projectile uses the idle Neutral multiplier');
+  assert.strictEqual(vm.runInContext('lastTorchThrow.planeWidth', torchContext), .5, 'throw debug records the same base width as game.js held tool art');
   assert.strictEqual(shots[0][8].sourceTransform.position.x, 3, 'launch still begins at the held strike position');
   assert.strictEqual(Object.keys(shots[0][8].sourceTransform).join(','), 'position', 'held scale/rotation/plane dimensions never leak into projectile art');
   assert.strictEqual(shots[0][8].textureSource, held.textureSource, 'colored held torch texture is reused');
