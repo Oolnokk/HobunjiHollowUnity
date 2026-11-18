@@ -6,6 +6,7 @@ const vm = require('node:vm'); // Executes the small camera bridge against injec
 
 const lyre = fs.readFileSync('docs/assets/minigames/lyre-performance.html', 'utf8'); // Real hosted Kurraya engine.
 const music = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Real host controls and controller ownership.
+const instrumentLoadoutUI = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Actual pattern selector now lives in Loadout → Instrument.
 const cameraSource = fs.readFileSync('docs/js/camera-look-clamp.js', 'utf8'); // Shared camera clamp + Kurraya gameplay-camera bridge.
 
 for (const patternId of ['strum-down-4', 'strum-alternating-8', 'strum-pop-8']) {
