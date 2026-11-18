@@ -149,4 +149,21 @@ function buildRig(poseScale) {
   assert.equal(canvases.length, prev, 'unavailable pants do not allocate a canvas');
 }
 
+// Mirroring is an authored canvas mapping rule, not an arbitrary change to the
+// corpse's cloth UVs. The pants projection must reverse along with the texture.
+{
+  const source = buildRig(0.8);
+  const output = testCanvas();
+  delete environment.window.PNGPlaneAvatar;
+  assert.equal(painter.capture(output, source.rig).ok, true);
+  const normal = canvases.at(-1).drawing.transforms[0][0];
+  environment.window.PNGPlaneAvatar = { getPortraitsFlipped: () => true };
+  const mirrored = buildRig(0.8);
+  assert.equal(painter.capture(testCanvas(), mirrored.rig).ok, true);
+  const flipped = canvases.at(-1).drawing.transforms[0][0];
+  assert(Math.abs(normal + flipped) < 1e-7, 'posed fabric projection reverses horizontally before corpse texture UV mirroring');
+  assert.equal(mirrored.pants.gpuSkinOption, true, 'mirrored capture also restores the live garment GPU mode');
+  delete environment.window.PNGPlaneAvatar;
+}
+
 console.log('corpse posed pants snapshot: ok');
