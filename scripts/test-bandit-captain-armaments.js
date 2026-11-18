@@ -215,6 +215,20 @@ for (const [tier, expected] of [[4,2],[5,3],[6,4],[7,5]]) {
   assert(nativeAttacker.furiousStamina > 0, 'real Combo finisher triggers the captain\'s Fury Flourish');
   assert.equal(Object.keys(enemyGear.weaponEnchantments).length, 0, 'unlooted hostile enchantments never become player-owned gear');
 
+  const gameEntry = fs.readFileSync('docs/index.html', 'utf8'); // Authoring tools must execute the same held-action bootstrap that owns bandit hands.
+  const handRuntimeVersion = /js\/held-action-animations\.js\?v=([A-Za-z0-9_-]+)/.exec(gameEntry)?.[1];
+  assert(handRuntimeVersion, 'gameplay must load a versioned hand runtime');
+  for (const entry of [
+    'docs/tools/animation-author/index.html',
+    'docs/tools/attack-animation-editor/index.html',
+    'docs/tools/enemy-loadout-editor/preview.js',
+    'docs/tools/omgurku-calibration/index.html',
+  ]) {
+    const text = fs.readFileSync(entry, 'utf8');
+    assert(text.includes('held-action-animations.js?v=' + handRuntimeVersion),
+      entry + ' must use the gameplay hand runtime rather than cached old hand attachment rules');
+  }
+
   const handSource = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8');
   const actorIndex = handSource.indexOf('const actorHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder === toolHolder');
   const playerSnapshotIndex = handSource.indexOf('const snapshot = editor ? null : (global.WeaponToolStances');
