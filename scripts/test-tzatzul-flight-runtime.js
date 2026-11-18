@@ -223,6 +223,12 @@ for(let i=0;i<8&&blockedMother._tzFlight.phase!=='orbit';i++)
   w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
 assert.equal(blockedMother._tzFlight.phase,'orbit','indoor mother retries after obstructions clear instead of idling permanently');
 assert(blockedMother._tzFlight.segment,'retry creates a real elevated flight leg');
+blockedMother._tzFlight.orbitLegs=3; // This accepted orbit is the final evasive chord before the next normal attack.
+for(let i=0;i<20&&blockedMother._tzFlight.phase==='orbit';i++)
+  w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'swoop',
+  'the nest mother resumes a real body-first attack between no-perch circles');
+assert(blockedMother._tzFlight.segment?.mode==='swoop','orbit combat reuses the existing flight/collision attack leg');
 delete w.TzatzulNestEncounter;
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
