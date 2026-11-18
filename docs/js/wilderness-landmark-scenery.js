@@ -40,20 +40,29 @@ function identity(){return String(deps?.tothalWorldId?.()||'world')+':'+String(d
 function landmarksFor(zoneId,layout){return planForLayout(zoneId,layout,identity());}
 function elevation(site){const n=Number(deps?.TILE)||64,p=site.point,y=root.ClimbSystem?.groundYAt?.((p.col+.5)*n,(p.row+.5)*n);return y==null||!Number.isFinite(y)?0:y;}
 function ignoreHits(node,shared=false){node.traverse?.(part=>{if(part.isMesh||part.isInstancedMesh)part.raycast=()=>{};if(shared&&part.geometry)part.userData.festivalSharedFoliage=true;});}
+// Width, height and depth of the four stones, from the broad footing to the cap.
+const CAIRN_STONES=[[.86,.28,.74],[.66,.25,.59],[.48,.22,.43],[.29,.17,.28]];
 function cairns(T,host,sites){
  const list=sites.filter(s=>s.kind==='stoneCairn');if(!list.length)return;
- const mesh=new T.InstancedMesh(new T.DodecahedronGeometry(.22,0),new T.MeshLambertMaterial({color:0x929a91,flatShading:true}),list.length*7);
- const dummy=new T.Object3D(),tint=new T.Color();let index=0;
- for(const site of list){const rand=rng(hash(site.id)),base=elevation(site);
-  for(let i=0;i<7;i++){const tier=i<4?0:i<6?1:2,orbit=tier===0?.27:tier===1?.15:0,angle=site.yaw+i*2.4,scale=site.size*(.8+rand()*.4);
-   dummy.position.set(site.point.col+.5+Math.cos(angle)*orbit,base+.19+tier*.31,site.point.row+.5+Math.sin(angle)*orbit);
-   dummy.rotation.set(rand()*.4,rand()*Math.PI*2,rand()*.4);
-   dummy.scale.set(scale*(.8+rand()*.3),scale*(.65+rand()*.3),scale*(.8+rand()*.3));dummy.updateMatrix();
-   mesh.setMatrixAt(index,dummy.matrix);mesh.setColorAt?.(index,tint.setHex([0x777f79,0xa3aaa1,0x868d88][Math.floor(rand()*3)]));index++;
+ const art=root.OreRockTextures.smallStoneArt(T); // Match the closed rock shape and texture used by interactible rubble.
+ const mesh=new T.InstancedMesh(art.geometry,art.material,list.length*CAIRN_STONES.length);
+ const dummy=new T.Object3D();let index=0; // Reuse one transform across the entire wilderness batch.
+ for(const site of list){
+  const rand=rng(hash(site.id)),size=site.size;
+  let bottom=elevation(site)-.055*size; // Embed the footing and overlap each tier by the same scaled amount.
+  for(const [width,height,depth] of CAIRN_STONES){
+   const offset=(rand()-.5)*.08*size; // Keep every cap over the broad bearing face below it.
+   dummy.position.set(site.point.col+.5+Math.cos(site.yaw)*offset,bottom+height*size/2,site.point.row+.5+Math.sin(site.yaw)*offset);
+   dummy.rotation.y=site.yaw+(rand()-.5)*1.5;
+   dummy.scale.set(width*size,height*size,depth*size);
+   dummy.updateMatrix();
+   mesh.setMatrixAt(index++,dummy.matrix);
+   bottom+=(height-.055)*size;
   }
  }
- mesh.count=index;mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
- mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};mesh.userData.wildernessLandmarkScenery=true;mesh.userData.ownsWildernessCairnBuffers=true;host.add(mesh);
+ mesh.instanceMatrix.needsUpdate=true;
+ mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};
+ mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
 }
 function deadwood(host,sites){
  for(const site of sites.filter(s=>s.kind==='deadTree')){
@@ -79,14 +88,14 @@ async function debris(host,sites,ticket,zoneId){
 }
 function clear(){
  serial++;
- group?.traverse?.(node=>{if(node.userData?.ownsWildernessCairnBuffers){node.geometry?.dispose?.();node.material?.dispose?.();}}); // Per-zone instanced cairn buffers are owned; shared foliage and authored-furniture buffers are not.
+ group?.children?.find(node=>node.name==='wilderness-stone-cairns')?.dispose?.(); // Release only the instance buffer; the stone art is shared.
  group?.parent?.remove?.(group);group=null;scene=null;area='';
 }
 function update(){
  const zone=deps?.getCurrentArea?.(),layout=deps?._zoneLayouts?.get?.(zone),active=root.GridTileAccessors?.getActiveScene?.();
  if(!layout||!active||!String(zone).startsWith('map_')){if(group)clear();return;}
  if(scene===active&&area===zone&&group?.parent===active)return;
- clear();const T=root.THREE;if(!T?.Group||!T?.InstancedMesh||!T?.DodecahedronGeometry)return;
+ clear();const T=root.THREE;if(!T?.Group||!T?.InstancedMesh)return;
  const sites=landmarksFor(zone,layout),host=new T.Group();host.name='wilderness-year-round-landmarks';
  host.userData.wildernessLandmarkScenery=true;active.add(host);scene=active;group=host;area=zone;
  report={zone,count:sites.length,stoneCairns:sites.filter(s=>s.kind==='stoneCairn').length,brokenPillars:sites.filter(s=>s.kind==='brokenPillar').length,deadTrees:sites.filter(s=>s.kind==='deadTree').length};
