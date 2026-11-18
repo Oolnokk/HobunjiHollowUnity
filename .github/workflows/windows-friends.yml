@@ -34,6 +34,7 @@ jobs:
         run: |
           node scripts/test-windows-desktop.js
           node scripts/test-windows-updates.js
+          node scripts/test-windows-friends.js
           node --check scripts/desktop-friends-build.js
           node --check desktop/main.cjs
           node --check desktop/update-controller.cjs
