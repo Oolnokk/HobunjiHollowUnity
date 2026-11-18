@@ -339,13 +339,30 @@ for (const portraitFlip of [false, true]) {
   body.avatarRef.modelWidth = 1;
   body.avatarRef.modelHeight = 1.5;
   body.avatarRef.group.scale.y = 1.6;
+  body.avatarRef.group.scale.z = 1.35; // Width of the sideways front card before death.
+  body.avatarRef.group.scale.x = 2.5; // Depth-only scaling must not enlarge the flattened portrait.
   assert.equal(w.mod.tick(NOW), 1);
   const flat = body.avatarRef.group.children[0];
   assert.equal(flat.rotation.y, Math.PI / 2, 'fallen portrait matches the original +90-degree death root');
   assert.equal(flat.scale.z, 1.6, 'the authored species vertical scale follows the laid-down body axis');
+  assert.equal(flat.scale.x, 1.35, 'width uses the original card-normal axis correctly, not the root depth axis');
   assert.equal(flat.material.map.repeat.x, portraitFlip ? -1 : 1, 'corpse image keeps the live front UV orientation');
   assert.equal(flat.material.map.offset.x, portraitFlip ? 1 : 0, 'mirroring samples the same source canvas');
   if (portraitFlip) assert.equal(flat.material.map.wrapS, THREE.RepeatWrapping);
+}
+
+// 15. Unloaded animal art is not irreversibly replaced with an anonymous
+// silhouette. The real rig survives while its source texture loads.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const body = w.corpse('patterned-animal', { isBandit: false });
+  body.avatarRef.frontPlane = new Obj(); // Present card, missing material/map.image.
+  const originalRig = body.avatarRef;
+  assert.equal(w.mod.tick(NOW), 0, 'missing image defers animal retirement');
+  assert.equal(body.avatarRef, originalRig, 'appearance stays on its old rig');
+  assert.equal(body.rigDisposed.n, 0, 'no texture or genotype materials are disposed');
+  assert.equal(w.mod.stats.imagesDeferred, 1);
+  assert.equal(w.mod.isRetirable(body, w.area), false, 'retry is throttled');
 }
 
 console.log('bandit corpse retirement: ok');
