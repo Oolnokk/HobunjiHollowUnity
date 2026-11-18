@@ -45,20 +45,34 @@ assert.match(
   /isPlayerCombatExpressionApplied: \(\) => !playerCombatFrown \|\| playerCombatExpressionApplied/,
   'afterimage code can verify that the current player texture has actually received its combat frown'
 );
-assert.match(
-  afterimages,
-  /setCombatExpression\?\.\(entity, inCombat\)[\s\S]{0,1400}spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge',/,
-  'enemy frown is on the source portrait before a dodge afterimage snapshots it'
+const hostileStart = afterimages.indexOf('function updateEnemyCombatPresentation()'); // Keeps the frown-before-trail contract scoped to the runtime frame owner.
+const hostileEnd = afterimages.indexOf('function updateMotionSmears(dt)', hostileStart); // Terminates the hostile presentation function.
+assert(hostileStart >= 0 && hostileEnd > hostileStart, 'hostile portrait and motion smear presentation remain in one update seam');
+const hostilePresentation = afterimages.slice(hostileStart, hostileEnd); // Compared below rather than pinning old frozen-snapshot syntax.
+assert(
+  hostilePresentation.indexOf('setCombatExpression?.(entity, inCombat)') <
+  hostilePresentation.indexOf('spawnAfterimageForRoot(entity.avatarRef.group'),
+  'enemy frown is applied before the shared-texture motion smear reads its source portrait'
 );
 assert.match(
   afterimages,
-  /ctx\.drawImage\(image,[\s\S]{0,900}texture\.image = canvas/,
-  'afterimages deep-copy the currently visible portrait pixels instead of sharing the live texture image'
+  /const material = sourceMaterial\.clone\(\);[\s\S]{0,950}material\.onBeforeCompile =/,
+  'the motion smear clones only presentation material state and leaves the source portrait material untouched'
 );
 assert.match(
   afterimages,
-  /for \(const texture of entry\.frozenTextures \|\| \[\]\) texture\?\.dispose\?\.\(\)/,
-  'frozen afterimage textures are disposed with the transient ghost'
+  /sourceTextures: sourceMaterials\.map\(mat => \[mat\.map, mat\.alphaMap, mat\.emissiveMap\]\)/,
+  'the smear observes the live current colored portrait maps without snapshotting stale frown pixels'
+);
+assert.doesNotMatch(
+  afterimages,
+  /document\.createElement\('canvas'\)|boneTransform\(/,
+  'frown motion smears never CPU-bake geometry or clone the face canvas'
+);
+assert.match(
+  afterimages,
+  /if \(entry\.ownsGeometry\) entry\.mesh\.geometry\.dispose\?\.\(\)/,
+  'smear cleanup releases only its own geometry, not the character portrait'
 );
 assert.match(
   afterimages,
