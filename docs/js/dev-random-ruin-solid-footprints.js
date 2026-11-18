@@ -180,7 +180,7 @@
       let added = 0;
       root.traverse(mesh => {
         if (!mesh.isMesh || (mesh.isInstancedMesh && !options.allowInstances) || (options.onlyRoot && mesh !== root)) return;
-        if (options.force ? hiddenOrGhost(mesh, root.parent) : excluded(mesh, root.parent)) return;
+        if (options.force ? (!options.deferVisibility && hiddenOrGhost(mesh, root.parent)) : excluded(mesh, root.parent)) return; // Structural V50 walls are registered before their render-visibility pass; liveness still gates each query.
         const count=mesh.isInstancedMesh?Math.min(10000,Math.max(0,Number(mesh.count)||0)):1; // Bounded at author-time; never sampled per frame.
         const instanceMatrix=mesh.isInstancedMesh?new THREE.Matrix4():null;
         const worldMatrix=mesh.isInstancedMesh?new THREE.Matrix4():null;
