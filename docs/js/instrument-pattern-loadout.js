@@ -9,13 +9,17 @@
   let loadedCharacterId = null; // Prevents carrying a previous character's choices into a newly loaded character.
 
   function validPatternIds() {
-    const ids = window.MusicMinigame?.patternOptions?.().map(entry => entry[0]) || []; // Reuses the actual gameplay pattern library rather than maintaining a second list.
-    return new Set([...DEFAULT_SLOTS, ...ids]);
+    const patterns = window.MusicMinigame?.patternOptions?.(); // Reuses the actual gameplay pattern library when its script has loaded.
+    if (!Array.isArray(patterns)) return null; // Onboarding may install the player profile before the music host is initialized; never discard saved choices during that gap.
+    return new Set([...DEFAULT_SLOTS, ...patterns.map(entry => entry[0])]);
   }
 
   function normalizeSlots(slots) {
-    const valid = validPatternIds(); // Invalid or removed library entries fall back per direction.
-    return DEFAULT_SLOTS.map((fallback, index) => typeof slots?.[index] === 'string' && valid.has(slots[index]) ? slots[index] : fallback);
+    const valid = validPatternIds(); // Invalid or removed library entries fall back only after the host has supplied its complete library.
+    return DEFAULT_SLOTS.map((fallback, index) => {
+      const candidate = Array.isArray(slots) && typeof slots[index] === 'string' ? slots[index] : null; // Preserve raw saved IDs until the music library is ready.
+      return candidate && (!valid || valid.has(candidate)) ? candidate : fallback;
+    });
   }
 
   function legacySlots() {
@@ -46,7 +50,7 @@
   function getSlots(instrumentKey) {
     ensureCharacter();
     if (typeof instrumentKey !== 'string' || !instrumentKey.trim()) return DEFAULT_SLOTS.slice();
-    return loadoutsByInstrument[instrumentKey]?.slice() || legacySlots(); // Each unconfigured instrument starts with the old player's four patterns.
+    return loadoutsByInstrument[instrumentKey] ? normalizeSlots(loadoutsByInstrument[instrumentKey]) : legacySlots(); // Validate loaded patterns at use time; every unconfigured instrument starts from legacy/default slots.
   }
 
   function serialize() {
@@ -69,7 +73,8 @@
   }
 
   function setSlot(instrumentKey, index, patternId) {
-    if (typeof instrumentKey !== 'string' || !instrumentKey.trim() || !Number.isInteger(index) || index < 0 || index >= 4 || !validPatternIds().has(patternId)) return false;
+    const valid = validPatternIds(); // Only the fully initialized game's real library authorizes new assignments.
+    if (typeof instrumentKey !== 'string' || !instrumentKey.trim() || !Number.isInteger(index) || index < 0 || index >= 4 || !valid?.has(patternId)) return false;
     const next = getSlots(instrumentKey); // Changing one direction keeps this instrument's other directions intact.
     next[index] = patternId;
     loadoutsByInstrument[instrumentKey] = next;
