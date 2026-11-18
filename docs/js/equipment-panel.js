@@ -1662,6 +1662,11 @@
     deps.refreshPlayerAvatar?.();
     return {gear,oldHat,oldHood,facewrap,crowned:false}; // The ceremony completes this transient outfit transaction or rolls it back.
   }
+  function ownsFiveBlossomCrown(civilYear) {
+    const owned = deps?.getGearInventory?.()?.clothingItems || []; // The persisted Gear collection determines whether a failed quest-save retry needs to replay the stage scene.
+    return Number.isSafeInteger(Number(civilYear)) && owned.some(item =>
+      item?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && item?.awardYear === Number(civilYear));
+  }
   function awardFiveBlossomCrown(civilYear, ceremony = null) {
     const gear = deps?.getGearInventory?.();
     if (!gear || !Number.isSafeInteger(Number(civilYear))) return null;
@@ -1730,7 +1735,7 @@
     buildPackClothingSection,
     getPackClothingForWardrobe,
     grantPackClothing, // Quest clothing uses the canonical Pack-to-Gear lifecycle.
-    beginFiveBlossomCrowning, awardFiveBlossomCrown, finishFiveBlossomCrowning, FIVE_BLOSSOM_CROWN_ART, FIVE_BLOSSOM_CROWN_ID,
+    beginFiveBlossomCrowning, awardFiveBlossomCrown, finishFiveBlossomCrowning, ownsFiveBlossomCrown, FIVE_BLOSSOM_CROWN_ART, FIVE_BLOSSOM_CROWN_ID,
     transferPackClothingToNpcWardrobe,
     previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
