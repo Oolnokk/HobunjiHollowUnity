@@ -70,6 +70,8 @@
   let _lastItemCategoryJump = null; // Shown by the mobile-friendly item selector diagnostic API.
 
   function _clearArc(keepBackdrop = false) {
+    if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; } // A canceled/changed arch cannot keep its item scroll timer alive.
+    _iScrollDir = 0; // New wheel opens with no stale edge-sentinel direction.
     _itemCategoryControls?.remove(); _itemCategoryControls = null; // Never leave category controls over a different selection arch.
     if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
     _arcEls.forEach(e => e.remove()); _arcEls = [];
