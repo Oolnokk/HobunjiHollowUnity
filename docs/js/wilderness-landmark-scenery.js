@@ -21,7 +21,7 @@ function witnessDye(seed) {
  return {...choice,hex:/^#[0-9a-f]{6}$/i.test(match?.hex||'')?match.hex:choice.hex};
 }
 const cache=new WeakMap(); // Folded zone layout + world-cycle identity -> stable physical landmark positions.
-let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null; // WildernessMap supplies live area and scene lifecycle; report/error feed mobile diagnostics.
+let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null,renderedLayout=null; // Changes to a generated layout invalidate both physical marker and riddle evidence, even within one Tothal cycle. // WildernessMap supplies live area and scene lifecycle; report/error feed mobile diagnostics.
 function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 function rng(seed){let v=seed>>>0;return()=>{v=(Math.imul(v^(v>>>15),2246822507)+0x9e3779b9)>>>0;return(v>>>8)/16777216;};}
 function tileLookup(layout){
@@ -140,15 +140,15 @@ function clear(){
   }
   rock.geometry?.dispose?.();rock.material?.dispose?.();
  }
- group?.parent?.remove?.(group);group=null;scene=null;area='';
+ group?.parent?.remove?.(group);group=null;scene=null;area='';renderedLayout=null;
 }
 function update(){
  const zone=deps?.getCurrentArea?.(),layout=deps?._zoneLayouts?.get?.(zone),active=root.GridTileAccessors?.getActiveScene?.();
  if(!layout||!active||!String(zone).startsWith('map_')){if(group)clear();return;}
- if(scene===active&&area===zone&&group?.parent===active)return;
+ if(scene===active&&area===zone&&group?.parent===active&&renderedLayout===layout)return; // A same-year forced rebuild can replace the workspace while retaining the old scene.
  clear();const T=root.THREE;if(!T?.Group||!T?.InstancedMesh||!T?.DodecahedronGeometry)return;
  const sites=landmarksFor(zone,layout),host=new T.Group();host.name='wilderness-year-round-landmarks';
- host.userData.wildernessLandmarkScenery=true;active.add(host);scene=active;group=host;area=zone;
+ host.userData.wildernessLandmarkScenery=true;active.add(host);scene=active;group=host;area=zone;renderedLayout=layout;
  report={zone,count:sites.length,stoneCairns:sites.filter(s=>s.kind==='stoneCairn').length,brokenPillars:sites.filter(s=>s.kind==='brokenPillar').length,deadTrees:sites.filter(s=>s.kind==='deadTree').length,
  witness:sites.find(s=>s.kind==='witnessStone')?.name||null}; // Mobile debug also exposes the singular color-coded starting marker.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
