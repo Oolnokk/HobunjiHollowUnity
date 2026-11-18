@@ -152,6 +152,10 @@
           continue;
         }
         if (record.type !== 'childList') continue;
+        // Header controls and the tab strip are the only things this measures. Pane content (.mp-body) is
+        // rebuilt on every inventory selection / list refresh; treating those as structural scheduled an
+        // 80 ms relayout (style writes + a scrollWidth layout read) after every controller press.
+        if (record.target?.closest?.('.mp-body')) continue;
         const changedNodes = [...record.addedNodes, ...record.removedNodes];
         if (changedNodes.some(node => node?.nodeType === 1 && !node.hasAttribute?.('data-generic-hud-icon'))) structuralChange = true;
       }
