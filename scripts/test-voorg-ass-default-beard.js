@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const WIDTH = 4; // Four synthetic pixels: coat, highlight, non-coat detail, beard position.
+const WIDTH = 5; // Coat, highlight, hoof, beard, and a partially transparent beard edge crossing the belly.
 const HEIGHT = 1; // One row makes the mask/recolor behavior deterministic.
 const frameReads = []; // Records which of the three authored beard frame URLs the compositor actually loads.
 const coatColor = '#2357bb'; // Used to compare the default beard's tint with the base allele.
@@ -15,13 +15,17 @@ function imagePixels(url) {
   if (url.includes('voorg-ass_beard1_')) {
     frameReads.push(url);
     result.set([180, 180, 180, 255], 12); // Default beard pixels use normal grayscale pattern shade-fill.
+    result.set([180, 180, 180, 100], 16); // A feathered beard edge overlays opaque coat and belly artwork.
   } else if (url.includes('voorg-ass_beard2_')) {
     frameReads.push(url);
     result.set([180, 180, 180, 255], 12); // Future unique beard occupies the exact same location, never an additional layer.
+  } else if (url.includes('voorg-ass_belly_')) {
+    result.set([200, 100, 40, 255], 16); // Belly shows through the beard's semi-transparent edge after paint.
   } else if (/voorg-ass_(idle|run1|run2)\.png/.test(url)) {
     result.set([0x99, 0xBF, 0x99, 255], 0); // Coat source-key pixel.
     result.set([0xEE, 0xEE, 0xEE, 255], 4); // Unrecolored detail.
     result.set([0xC0, 0x40, 0x40, 255], 8); // Unrelated red detail.
+    result.set([0x99, 0xBF, 0x99, 255], 16); // Coat directly behind semi-transparent beard, so its drawn alpha is opaque.
   }
   return result;
 }
@@ -36,7 +40,14 @@ class Canvas {
     return {
       drawImage: image => {
         for (let i = 0; i < this.pixels.length; i += 4) {
-          if (image?.pixels?.[i + 3]) this.pixels.set(image.pixels.slice(i, i + 4), i);
+          const alpha = (image?.pixels?.[i + 3] || 0) / 255;
+          if (!alpha) continue;
+          const oldAlpha = this.pixels[i + 3] / 255;
+          const combinedAlpha = alpha + oldAlpha * (1 - alpha); // Matches normal source-over compositing at feathered edges.
+          for (let channel = 0; channel < 3; channel++) {
+            this.pixels[i + channel] = (image.pixels[i + channel] * alpha + this.pixels[i + channel] * oldAlpha * (1 - alpha)) / combinedAlpha;
+          }
+          this.pixels[i + 3] = combinedAlpha * 255;
         }
       },
       getImageData: () => ({ data: new Uint8ClampedArray(this.pixels) }),
@@ -100,7 +111,7 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
   }
   const paintCalls = []; // Records each Color Pools region pass, including the separate beard sprite covered by base-coat paint.
   browser.window.ClothingWeavingSystem = {
-    applyPatternStackToTintedImage: async (source, patterns, dyeHex, cachePrefix) => {
+    applyPatternStackToTintedImage: async (source, patterns, dyeHex, cachePrefix, _shadeSource, _debugLabel, options) => {
       const output = new Canvas(); // Distinct simulated woven result; the renderer's actual clipping/ordering runs unmodified.
       output.pixels.set(source.pixels);
       const paintedPixels = []; // Confirms the original hoof and highlight never reach the weaving pass.
@@ -109,7 +120,7 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
         paintedPixels.push(i / 4);
         output.pixels.set([0x20, 0xd0, 0xf0, output.pixels[i + 3]], i);
       }
-      paintCalls.push({ cachePrefix, paintedPixels, patternCount: patterns.length, dyeHex });
+      paintCalls.push({ cachePrefix, paintedPixels, patternCount: patterns.length, dyeHex, continuousSurface: options?.continuousSurface });
       return output;
     },
   };
@@ -132,7 +143,10 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
     assert.deepEqual(colorAt(2), [0xc0, 0x40, 0x40], frame + ': dark hoof/non-coat detail remains unpatterned');
     assert.deepEqual(colorAt(3), [0x20, 0xd0, 0xf0], frame + ': beard inherits the base coat Color Pools paint');
     assert.equal(paintCalls.length, 1, frame + ': body and beard share one continuous Color Pools motif pass');
-    assert.deepEqual(paintCalls[0].paintedPixels, [0, 3], frame + ': single coat stencil includes beard but excludes hoof and highlights');
+    assert.deepEqual(paintCalls[0].paintedPixels, [0, 3, 4], frame + ': single coat stencil includes beard and feathered edge, but excludes hoof and highlights');
+    assert.equal(paintCalls[0].continuousSurface, true, frame + ': all coat islands use the same pattern origin');
+    assert.notDeepEqual(colorAt(4), [0x20, 0xd0, 0xf0], frame + ': transparent beard edge must not erase belly shading underneath');
+    assert(colorAt(4)[0] > 0x20, frame + ': restored beard alpha allows some warm belly color through');
     assert(paintCalls.every(call => call.patternCount === 2), frame + ': both pattern slots cover body and beard');
     assert(paintCalls.every(call => call.dyeHex === '#20d0f0'), frame + ': both share the same coat dye');
   }
