@@ -180,7 +180,10 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(visuals.snapshot().tracked, 0);
   // Player rendering uses game.js's playerMesh, whereas avatarRef.group may be an absent or different portrait child.
   function poseRoot(angle) {
-    return { parent: {}, quaternion: { angle, clone() { return { angle: this.angle }; },
+    return { parent: {}, position: { x: 2, y: 1, z: 3,
+      clone() { return { ...this, copy: this.copy, clone: this.clone }; },
+      copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; } },
+      quaternion: { angle, clone() { return { angle: this.angle }; },
       copy(value) { this.angle = value.angle; }, equals(value) { return this.angle === value.angle; } },
       scale: { x: 1, clone() { return { x: this.x }; }, copy(value) { this.x = value.x; } } };
   }
@@ -207,7 +210,8 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
     invert() { return this; }
     multiplyMatrices() { return this; }
     decompose(position, quaternion, scale) {
-      quaternion.angle = -1.55; scale.x = 2.5; // The real Three.js decomposition changes this exact player root.
+      position.x = -12; position.y = 15; position.z = 28;
+      quaternion.angle = -1.55; scale.x = 2.5; // Decomposition also changes the actual portrait root's local translation.
       return this;
     }
   }
@@ -215,7 +219,6 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   visualWorld.window.FlyingAnimalRig = { placeTalonPayload() {} };
   playerRig.parent.updateWorldMatrix = () => {}; // Native scene parent used for the world-to-local talon matrix.
   playerRig.parent.matrixWorld = {};
-  playerRig.position = {};
   playerRig.updateWorldMatrix = () => {};
   const carrier = { id: 'player-grip-carrier', creatureKey: 'tzatzul', health: 40,
     areaId: 'map_northern_cliffs', avatarRef: avatar(), def: { modelWidth: 2.2 },
@@ -234,11 +237,16 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert(visuals.rememberCaptive(capturedPlayer), 'capture snapshots the actual playerMesh before talon tilt');
   assert(visuals.alignCaptive(capturedPlayer, playerRig), 'the actual talon renderer aligns the original playerMesh');
   assert.equal(playerRig.quaternion.angle, -1.55, 'alignment demonstrably rotates the live player root');
+  assert.equal(playerRig.position.x, -12, 'talon pose temporarily translates the entire portrait root');
+  assert(visuals.alignCaptive(capturedPlayer, playerRig), 'another visual pass never mistakes the old talon position for native movement');
   assert.equal(playerRig.scale.x, 1, 'talon matrix decomposition cannot resize a carried player');
   capturedPlayer.tzatzulCapturedBy = null; // TzatzulFlightRuntime clears this before calling restoreCaptive.
   playerRig.scale.x = 2.5; // Simulate a scale corruption from a late non-native visual update.
   assert(visuals.restoreCaptive(capturedPlayer), 'nest delivery restores playerMesh despite the different avatarRef group');
   assert.equal(playerRig.quaternion.angle, .42, 'the carried rotation is removed from normal player animation');
+  assert.equal(playerRig.position.x, 2, 'talon-only portrait translation is removed without moving the hands or tools');
+  assert.equal(playerRig.position.y, 1, 'portrait returns to the most recent native vertical position');
+  assert.equal(playerRig.position.z, 3, 'portrait returns to the most recent native forward position');
   assert.equal(playerRig.scale.x, 1, 'talon-carry size cannot persist into walking and attacks');
   assert.equal(portraitChild.quaternion.angle, .91, 'the unrelated portrait child is not touched');
   playerRig.quaternion.angle = .64; // Combat takes over immediately in the very first post-release tick.
@@ -252,9 +260,16 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert(visuals.rememberCaptive(capturedPlayer), 'a second abduction samples the new native orientation');
   capturedPlayer.tzatzulCapturedBy = carrier.id;
   assert(visuals.alignCaptive(capturedPlayer, playerRig), 'repeated capture actually records the latest talon orientation');
+  playerRig.position.x = 6; playerRig.position.y = 3; playerRig.position.z = 7; // New simulation-frame movement takes over the previous talon position.
+  assert(visuals.alignCaptive(capturedPlayer, playerRig), 'latest clean simulation translation is captured independently of the talon pose');
   capturedPlayer.tzatzulCapturedBy = null;
   assert(visuals.restoreCaptive(capturedPlayer), 'repeated capture restores the new pre-capture rotation');
   assert.equal(playerRig.quaternion.angle, .91);
+  assert.equal(playerRig.position.x, 6, 'release preserves the most recent native movement, not the original pickup position');
+  playerRig.position.x = -12; playerRig.position.y = 15; playerRig.position.z = 28; // A delayed portrait-only talon render replays its translation.
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.position.x, 6, 'stale talon position replay is corrected while no other animation owns it');
+  assert.equal(visuals.snapshot().staleCarryPositionCorrections, 1, 'mobile diagnostics report stale portrait-only position corrections');
   playerRig.quaternion.angle = -1.55; // A delayed talon write reproduces the precise aligned orientation.
   visuals.tick(.016, 'map_northern_cliffs');
   assert.equal(playerRig.quaternion.angle, .91, 'a verified stale talon write is corrected exactly once');
@@ -270,11 +285,13 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   capturedPlayer.tzatzulCapturedBy = null;
   assert(visuals.restoreCaptive(capturedPlayer));
   assert.equal(playerRig.quaternion.angle, .2, 'fall pose already holding the rig survives the release');
+  assert.equal(playerRig.position.x, 6, 'fall orientation takeover does not prevent owned portrait translation cleanup');
   visuals.tick(.016, 'map_northern_cliffs');
   assert.equal(playerRig.quaternion.angle, .2, 'no correction persists after a prior animation takeover');
   assert(visuals.snapshot().captiveHandoffs >= 2, 'mobile diagnostics report ownership handoffs');
 
   assert(visuals.rememberCaptive(capturedPlayer));
+  assert.equal(visuals.snapshot().captivePositionRestores, 3, 'only three correctly owned alignments had their portrait offsets cleared');
   const oldPlayerRig = playerRig; // Retained only to ensure a rebuilt rig is never modified by an obsolete capture.
   oldPlayerRig.quaternion.angle = -1.1;
   playerRig = poseRoot(.18); // Character appearance/scene changes may replace the live root.
