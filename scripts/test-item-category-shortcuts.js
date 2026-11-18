@@ -140,4 +140,44 @@ assert.equal(styleNodes.length,1,'reopening does not duplicate the prompt style'
 promptContext._arcOpen = null;
 vm.runInContext('_positionItemCategoryControls()',promptContext); // A closing animation should never reposition hidden controls.
 
-console.log('item category jump, controller shortcuts, and mobile/desktop prompt tests passed');
+
+// Execute document-level mouse event capture against fake foreground/backdrop targets.
+// Preventing the original press/release is essential: otherwise category clicks also swing or throw the held item.
+const mouseHandlerSource = between(actionSource, "    document.addEventListener('pointerdown', event => {", '    window._desktopSelectionArc = {'); // The actual document capture handlers installed by _bindListeners().
+const mouseHandlers = new Map(); // Distinguishes pointerdown/up, compatibility click, and browser contextmenu events.
+const backgroundJumps = []; // Proves each mouse button jumps exactly once.
+const mouseContext = vm.createContext({
+  _arcOpen:'item', _jumpItemCategory:direction=>{backgroundJumps.push(direction);return true;},
+  document:{addEventListener(name,listener){mouseHandlers.set(name,listener);}},
+}); // The delegated handlers should not require a 3D canvas, menu, or real document.
+vm.runInContext(mouseHandlerSource,mouseContext);
+function fakeMouseEvent(type,button,targetKind='backdrop',pointerType='mouse') {
+  const target = {closest:selector=>targetKind === 'prompt' && selector.includes('#itemCategoryControls') ? {}
+    : targetKind === 'itemBtn' && selector.includes('#itemBtn') ? {}
+      : targetKind === 'backdrop' && selector.includes('.arc-backdrop') ? {} : null}; // Distinguishes exempt button gestures from the wheel backdrop.
+  const event = {target,button,pointerType,prevented:false,stopped:false,
+    preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};
+  mouseHandlers.get(type)(event);
+  return event;
+}
+const priorClick = fakeMouseEvent('pointerdown',0);
+const nextClick = fakeMouseEvent('pointerdown',2);
+assert.deepEqual(backgroundJumps,[-1,1], 'desktop left/right pointerdown navigates exactly one category in each direction');
+assert(priorClick.prevented && priorClick.stopped && nextClick.prevented && nextClick.stopped,
+  'category pointerdown cannot also reach gameplay actions');
+assert.equal(fakeMouseEvent('pointerup',0).stopped,true, 'matching pointerup is suppressed before gameplay dispatch');
+assert.equal(fakeMouseEvent('click',0,'backdrop',undefined).stopped,true,
+  'legacy MouseEvent clicks without pointerType cannot activate gameplay');
+assert.equal(fakeMouseEvent('pointerdown',0,'backdrop','touch').stopped,false,
+  'touch pointerdown cannot impersonate desktop category clicks');
+assert.equal(fakeMouseEvent('pointerdown',0,'prompt').stopped,false,
+  'direct mobile/desktop prompt clicks still reach their own click handler');
+assert.equal(fakeMouseEvent('pointerdown',0,'itemBtn').stopped,false,
+  'the original Item Select opener retains its release-to-commit behavior');
+assert.equal(fakeMouseEvent('contextmenu',2).prevented,true,
+  'right-clicking the wheel does not display a browser context menu');
+mouseContext._arcOpen = 'entries:potion-root';
+assert.equal(fakeMouseEvent('pointerdown',0).stopped,false, 'Potion Select cannot be hijacked by item-category mouse controls');
+assert.deepEqual(backgroundJumps,[-1,1], 'no unexpected group jump occurred outside Item Select');
+
+console.log('item category jump, controller shortcuts, and mobile/desktop prompt and mouse-event capture tests passed');
