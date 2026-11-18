@@ -26,6 +26,7 @@
       "gpu-diagnostics.cjs",
       "game-protocol.cjs",
       "close-save.cjs",
+      "window-close-guard.cjs",
       "update-controller.cjs",
       "update-preload.cjs",
       "update.html",
