@@ -240,7 +240,7 @@
         ].join('\n'));
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vSmearTail;\nuniform float uSmearOpacity;')
-        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.a *= uSmearOpacity * smoothstep(0.0, 0.76, vSmearTail);');
+        .replace('#include <premultiplied_alpha_fragment>', 'gl_FragColor.a *= uSmearOpacity * smoothstep(0.0, 0.76, vSmearTail);\n#include <premultiplied_alpha_fragment>');
     };
     material.customProgramCacheKey = () => (oldKey?.() || '') + '|hobunji-colored-smear-v1';
     material.needsUpdate = true;
