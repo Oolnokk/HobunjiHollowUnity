@@ -297,6 +297,25 @@ assert.equal(waterfallVerse.ok,true);
 assert.equal(waterfallVerse.evidence.uniqueStart.kind,'waterfallAnchor','the objectively tallest waterfall outranks the dyed-rock fallback');
 assert.deepEqual(waterfallVerse.evidence.uniqueStart.coordinate,{col:18,row:14},'start is the fall with the greatest actual plateau drop');
 assert.match(waterfallVerse.text,/^(?:Begin|Start|Stand) at the tallest waterfall in Northern Cliffs/,'no tie exists, so tallest waterfall is a unique true landmark');
+const cliffFallLayout=layoutFor('cyan',27,30); // The actual waterfall renderer also creates sheets across dry cliff-to-waterfall edges.
+for(let row=0;row<cliffFallLayout.rows;row++)for(let col=0;col<cliffFallLayout.cols;col++)
+  cliffFallLayout.tiles[row][col].elevTier=1;
+cliffFallLayout.tiles[12][15]={type:'waterfall',elevTier:4}; // Its lower neighbors are GRASS, not river tiles.
+cliffFallLayout.tiles[20][40]={type:'waterfall',elevTier:2}; // A visibly smaller waterfall for unique max-drop ranking.
+const dryCliffFall=Riddles.generate({zoneId:'map_northern_cliffs',layout:cliffFallLayout,
+  instance:cliffFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:Scenery.planForLayout('map_northern_cliffs',cliffFallLayout,'world:cliff-falls'),seed:'dry-fall-renderer-contract'});
+assert.equal(dryCliffFall.ok,true);
+assert.equal(dryCliffFall.evidence.uniqueStart.kind,'waterfallAnchor','real dry-cliff waterfalls qualify even with no adjacent river tile');
+assert.deepEqual(dryCliffFall.evidence.uniqueStart.coordinate,{col:15,row:12},'tallest visible dry-cliff curtain wins');
+const flatWaterfall=layoutFor('cyan',27,30); // A waterfall-labeled tile without a vertical curtain is not an actual visible waterfall.
+flatWaterfall.tiles[12][15]={type:'waterfall',elevTier:0};
+const noCurtain=Riddles.generate({zoneId:'map_northern_cliffs',layout:flatWaterfall,
+  instance:flatWaterfall.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:Scenery.planForLayout('map_northern_cliffs',flatWaterfall,'world:no-curtain'),seed:'no-curtain'});
+assert.equal(noCurtain.ok,true);
+assert.equal(noCurtain.evidence.uniqueStart.kind,'witnessStone',
+  'a flat waterfall tile without a rendered curtain cannot outrank the visible dye-marked rock');
 const edgeTerrain=layoutFor('cyan',25,20); // Without a painted marker, only one actual west-edge river opening exists.
 edgeTerrain.tiles[11][0]={type:'river',elevTier:0};
 edgeTerrain.tiles[12][0]={type:'river',elevTier:0};
