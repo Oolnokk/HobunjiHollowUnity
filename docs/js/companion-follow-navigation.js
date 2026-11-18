@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   let deps = null; // Injected once by game.js; reads the live area, camera and creature collision authority.
-  const FAR_TILES = 4.5; // Only animals meaningfully separated from their owner accrue recovery time.
+  const FAR_TILES = 2.6; // Above the normal 2.2-tile follow radius: even a nearby blocked ruin hallway can trigger recovery.
   const STALL_SECONDS = 8; // A blocked follower gets a real pathfinding/catch-up opportunity first.
   const RETRY_SECONDS = 1.5; // Failed off-screen searches do not run every animation frame.
   const COOLDOWN_SECONDS = 18; // A successful recovery cannot repeat on another frame or nearby obstacle.
