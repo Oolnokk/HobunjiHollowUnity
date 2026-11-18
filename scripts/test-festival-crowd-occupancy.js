@@ -6,7 +6,7 @@ const code = fs.readFileSync('docs/js/festival-system.js','utf8'); // Source of 
 const start = code.indexOf('  function npcTarget(rec) {'); // Start of the actual NPC destination provider.
 const end = code.indexOf('  function cancelDance()',start); // End of that provider.
 assert(start >= 0 && end > start,'festival NPC target provider remains extractable');
-const build = new Function('deps','festival','festivalHours','HOME_IDS','pendingDance','window','layout','residents','isRomanceable','eventKey','day','gatheringAssignments','stageDuty','sharedFeast',code.slice(start,end)+'\nreturn npcTarget;'); // Isolates production decision logic from WebGL.
+const build = new Function('deps','festival','festivalHours','HOME_IDS','pendingDance','dance','window','layout','residents','isRomanceable','eventKey','day','gatheringAssignments','stageDuty','sharedFeast',code.slice(start,end)+'\nreturn npcTarget;'); // Isolates production decision logic from WebGL.
 const self = {id:'main',homeId:'town'}; // NPC whose festival destination is being chosen.
 let walkers=[], stations=[],reads=0; // Dynamic crowd, stations and number of roster fetches in each decision.
 const assignments = new Map(); // Current-festival destination reservations.
@@ -14,7 +14,7 @@ const deps = {getWalkers(){reads++;return walkers;},isFestivalSuspended(){return
 const win = {CalendarSystem:{getHour(){return 17;}},FestivalLocaleActivities:{targetFor(){return null;}},
   FurnitureTableSystem:{isSeatTaken(){return false;},setSeatTarget(){}},
   NpcScheduling:{resolveNpcStationTarget(id){const s=stations.find(v=>v.id===id);return s?{area:'town',stationId:id,c:s.col,r:s.row,pose:'stand'}:null;}}}; // Existing scheduler dependencies used by target selection.
-const target = build(deps,()=>({id:'tzizkhanash',name:'Tzizkhanash'}),()=>true,new Set(['town']),null,win,()=>({npcStations:stations}),()=>[self],()=>false,()=>'1154:tzizkhanash',()=>27,assignments,()=>false,()=>false); // Real Tzizkhanash selection function.
+const target = build(deps,()=>({id:'tzizkhanash',name:'Tzizkhanash'}),()=>true,new Set(['town']),null,null,win,()=>({npcStations:stations}),()=>[self],()=>false,()=>'1154:tzizkhanash',()=>27,assignments,()=>false,()=>false); // Real Tzizkhanash selection function.
 const make = (id,x,z,stationId,area='town')=>({rec:{id},area,root:{position:{x,z}},currentScheduleTarget:stationId?{stationId}:null}); // Authentic walker fields.
 walkers=[make('main',20.5,20.5),make('other',21.5,20.5,'a')];
 stations=[{id:'a',festivalRole:'guest',col:22,row:20},{id:'b',festivalRole:'guest',col:23,row:20}];
@@ -43,7 +43,7 @@ console.log('Festival crowd occupancy: station and reservation parity plus 300 d
 
 
 // Run the same production provider against the newer Gorkunash/Five Blossoms paths.
-const feastTarget=id=>build(deps,()=>({id,name:id}),()=>true,new Set(['town']),null,win,
+const feastTarget=id=>build(deps,()=>({id,name:id}),()=>true,new Set(['town']),null,null,win,
   ()=>({npcStations:stations}),()=>[self],()=>false,()=>('1154:'+id),
   ()=>27,assignments,()=>false,()=>true); // Modern shared-feast configuration.
 const clear=()=>{assignments.clear();stations=[];walkers=[make('main',20.5,20.5)];reads=0;
@@ -108,7 +108,7 @@ for(const id of ['gorkunash','five_blossoms']){
 }
 
 // Real ritual/observance paths also reach generic stations when cached locales cannot assign a guest.
-const ceremonyTarget=id=>build(deps,()=>({id,name:id}),()=>true,new Set(['town']),null,win,
+const ceremonyTarget=id=>build(deps,()=>({id,name:id}),()=>true,new Set(['town']),null,null,win,
   ()=>({npcStations:stations}),()=>[self],()=>false,()=>('1154:'+id),
   ()=>27,assignments,()=>false,()=>false); // Non-feast scheduler with no meal adapter.
 for(const id of ['hachutukara','mountaindawn']){
