@@ -1,5 +1,31 @@
 # Performance investigation log
 
+## 18 Nov 2026: combat afterimages now opt-in, off by default
+
+A follow-up to the colored motion-smear experiment prioritizes runtime smoothness over an
+effect that was difficult to see. Reverted the experimental GPU smear and retained the
+original pooled/decimated portrait ghosts behind **Settings > Visual Effects > Combat
+Afterimages**, stored as `hobunjiCombatAfterimages` (`'1'` enabled, `'0'` or missing
+disabled). The checkbox is unchecked by default, including for existing players who
+never chose an effect setting.
+
+In the default-off path, `Combat.update` does not sample player dodge/lunge movement,
+build snapshots, skin ghost geometry, refresh canvases/textures, update fades, or prune
+the ghost pool. Hostile combat expression/AI and regular dodges, Blink, heavy attacks
+and quick attacks continue unchanged; only the optional ghost path is skipped.
+The direct spawn entry points also check the preference, including Blink teleport
+bursts and enemy ghosts. Disabling afterimages mid-fight disposes live and pooled
+ghost resources immediately and resets motion-history state before any subsequent
+opt-in. The existing `HobunjiDodgeFeedback` mobile diagnostics expose
+`afterimages.enabled` and the existing counters, plus an opt-in/out method.
+
+This should eliminate *afterimage-related* combat frame cost when disabled,
+not all possible combat freezes. Prior headless measurements identified ghost
+snapshotting as one source of work but did not prove it was the sole cause.
+Relevant old afterimage geometry/pooling tests now explicitly opt in, and the
+Visual Effects runtime test covers default-off, enable, persistent preference,
+resource reuse and disable/cleanup. Full device FPS still needs measurement.
+
 ## 16 Nov 2026: wilderness props drawn as merged batches; pants skinned on the GPU (headless)
 
 **What spawns in the wilderness and what it costs.** Draw census of one frame per zone (headless, outlines on, every

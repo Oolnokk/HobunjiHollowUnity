@@ -57,6 +57,8 @@ function runner(mesh) {
   const windowStub = { Combat: combat, THREE, BanditCombat: { setCombatExpression() {} }, WorldPortraitLife: { setPlayerCombatExpression() {}, isPlayerCombatExpressionApplied: () => true }, HobunjiSpritePngSurface: { alphaTest: () => 0.001 } };
   let now = 1000;
   vm.runInNewContext(source, { window: windowStub, document: { createElement: () => ({ width: 0, height: 0, getContext: () => ({ clearRect() {}, drawImage() {} }) }) }, performance: { now: () => now }, console }, { filename: 'combat-blink-dodge.js' });
+  assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.enabled, false, 'runtime defaults off');
+  windowStub.HobunjiDodgeFeedback.setAfterimagesEnabled(true); // Geometric correctness is tested with the optional legacy effect explicitly enabled.
   player.lunging = true; combat.update(0.016);
   const step = () => { player.x += 64; now += 60; combat.update(0.06); };
   const ghosts = () => scene.children.filter(child => child.name === 'combat_portrait_afterimage');
