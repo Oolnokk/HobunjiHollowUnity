@@ -44,16 +44,21 @@ function makeWorld(config, { farRule = false, productionDefaults = false, useCan
   const player = { x: 0, y: 0 };
   const flameEvents = []; // Verifies that fire presenter ownership follows a retired corpse's replacement root.
   const captures = []; // Tracks the composed portrait image copied before the expensive rig is released.
+  const pantsCaptures = []; // Confirms final cloth painting occurs while the original pose and texture still exist.
   const fakeDocument = useCanvas ? { createElement(type) {
     assert.equal(type, 'canvas');
     return { width: 0, height: 0, getContext(kind) { assert.equal(kind, '2d'); return { drawImage(source) { captures.push(source); } }; } };
   } } : null; // Opt-in canvas stub tests the actual single-plane path without a browser.
   const sandbox = { ...(fakeDocument ? { document: fakeDocument } : {}), window: { THREE, SCRATCHBONES_CONFIG: config,
     BurningAfflictionVfx: { disposeEntity: c => flameEvents.push('dispose:' + c.id), syncEntity: (c, root) => flameEvents.push('sync:' + c.id + ':' + root.name) },
+    CorpsePosedPantsSnapshot: { capture: (canvas, rig) => {
+      pantsCaptures.push({ canvas, rig, attachedWhenCaptured: !!rig.group.parent });
+      return { ok: true, triangles: 392, segments: 14 };
+    } },
   }, performance: { now: () => 0 } };
   vm.runInNewContext(moduleSource, sandbox);
   const mod = sandbox.window.BanditCorpseRetirement;
-  const ctx = { scene, corpseObjects, disposed, flameEvents, captures, player, area: 'map_a', mod };
+  const ctx = { scene, corpseObjects, disposed, flameEvents, captures, pantsCaptures, player, area: 'map_a', mod };
   mod.init({
     corpseObjects, getPlayer: () => player, getTile: () => TILE, getCurrentArea: () => ctx.area, getDefaultScene: () => scene,
     disposeCreaturePresentation: c => { disposed.push(c.id); c.scene.remove(c.avatarRef.group); c.avatarRef.dispose(); }, // Same calls as the real one.
@@ -265,6 +270,24 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   const ownedTexture = plane.material.map;
   body.avatarRef.dispose();
   assert.equal(ownedTexture.disposed, true, 'looting disposes the independent portrait texture');
+}
+
+// 11. A final-pose pants bake runs before the entire character rig is disposed.
+// The raw authoring art is not a valid replacement for already-skinned legs.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const body = w.corpse('posed-pants');
+  body.avatarRef.frontCanvas = { width: 256, height: 256 };
+  body.avatarRef.frontPlane = new Obj();
+  body.avatarRef.legs = { pants: { ready: true } };
+  const priorRig = body.avatarRef;
+  assert.equal(w.mod.tick(NOW), 1);
+  assert.equal(w.pantsCaptures.length, 1, 'finished pants are baked once per corpse');
+  assert.equal(w.pantsCaptures[0].rig, priorRig, 'the original rig is sampled, not its static replacement');
+  assert.equal(w.pantsCaptures[0].attachedWhenCaptured, true, 'the final skinned rig is still attached during capture');
+  assert.equal(w.disposed.length, 1, 'the old rig is disposed after baking');
+  assert.equal(body.avatarRef.group.children.length, 1, 'the result is still a single plane');
+  assert.equal(w.mod.stats.posedPantsBaked, 1, 'mobile diagnostics count baked pants');
 }
 
 console.log('bandit corpse retirement: ok');
