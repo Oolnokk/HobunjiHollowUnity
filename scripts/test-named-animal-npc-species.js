@@ -18,7 +18,7 @@ const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 
 const overrides = JSON.parse(fs.readFileSync('docs/config/npcs/species-overrides.json', 'utf8'));
 const game = fs.readFileSync('docs/game.js', 'utf8');
 
-assert.match(creatureRenderer, /compositor\(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern'\)/,
+assert.match(creatureRenderer, /compositor\(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern', compositorOptions \|\| \{\}\)/,
   'animal Color Pools labels the shared two-pattern compositor pass separately from clothing weaving');
 assert.match(creatureRenderer, /patterns\.length > 1 \? \{ clearanceMultiplier: Math\.max\(3, Math\.min\(12/,
   'animal surface-paint diagnostics expose the authored 3×..12× overpass path');
