@@ -27221,15 +27221,16 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
-        // Festival paired animation is a post-locomotion visual layer: both
-        // actual avatar roots are positioned together after NPC and player
-        // simulation, with no second requestAnimationFrame.
-        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
         // docs/architecture/runtime-frame-scheduler.md).
         window.RuntimeFrameScheduler.checkpoint('pre-render');
+        // A paired dance has exclusive control of both actors' live roots and IK.
+        // Run it AFTER ordinary pre-render hand, neck and stance presentation,
+        // so those other writers cannot hide the player or invalidate the next
+        // frame's pose checkpoint. The two dancers are finalized together.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
 
         // ── Render active scene ──────────────────────────────────
         // An opaque loading/introduction screen covers the whole canvas, so
