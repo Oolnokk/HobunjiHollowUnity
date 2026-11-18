@@ -45,6 +45,12 @@
     if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not available in this generated wilderness yet; check the mobile placement diagnostics.' };
     return window.LocaleRiddleGenerator?.generate?.({
       zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom',
+      landmarks: [
+        ...(window.WildernessLandmarkScenery?.landmarksFor?.(blossom.zoneId, layout) || []),
+        ...(window.CaveSiteSystem?.outdoorPuzzleSitesForZone?.(blossom.zoneId) || []).map(site => ({
+          name:'a cliff door', point:{col:Number(site.mouthAnchor?.x),row:Number(site.mouthAnchor?.y)},source:'registered-cliff-door'
+        }))
+      ],
       seed: [mapDeps?.tothalWorldId?.() || 'world', mapDeps?.currentTothalYear?.() || 'shift', blossom.id, locale.x, locale.y].join(':')
     }) || { ok: false, reason: 'LocaleRiddleGenerator is not loaded' };
   }

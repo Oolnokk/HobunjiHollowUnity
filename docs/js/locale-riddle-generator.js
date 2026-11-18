@@ -7,41 +7,41 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
 
-  const RHYMES = Object.freeze({ A: ['light', 'sight', 'night', 'bright', 'right', 'daylight', 'flight', 'tonight'], B: ['glow', 'flow', 'below', 'show', 'go', 'slow', 'blow', 'know', 'grow', 'low'] }); // Validation and stanza composition share these two exact rhyme families.
+  const RHYMES = Object.freeze({ A: ['stone', 'known', 'shown', 'alone', 'grown', 'thrown'], B: ['near', 'clear', 'here', 'appear', 'steer'] }); // Permanent terrain vocabulary: neither rhyme family implies a time of day.
   const WATER = new Set(['river', 'stream', 'water', 'lake', 'pond', 'waterfall']); // Map exports and live zones use different water tile spellings.
   const ZONES = Object.freeze({ map_northern_cliffs: 'Northern Cliffs', map_southern_cloud_forest: 'Southern Cloud Forest', map_western_slope: 'Western Slope', map_eastern_mire: 'Eastern Mire' }); // Used for the broadest first line, never inferred from requested terrain.
   const BANK = Object.freeze({
     zone: {
-      A: [f => `In ${f.value}, begin your search by the fading light`, f => `The lands of ${f.value} shall guide your sight`, f => `Seek through ${f.value} before the fall of night`],
-      B: [f => `Let ${f.value} be the first place you go`, f => `Within ${f.value}, quiet secrets grow`, f => `The land of ${f.value} has more to show`]
+      A: [f => `Begin in ${f.value}, a country well known`, f => `The map names ${f.value}, marked as its own`, f => `Go into ${f.value}; let that name be known`],
+      B: [f => `Make for ${f.value}; your search begins here`, f => `Let ${f.value} make the broad course clear`, f => `Seek ${f.value}, and draw the region near`]
     },
     sector: {
-      A: [f => `Keep to ${f.value}, and hold your bearing right`, f => `In ${f.value}, follow the morning light`, f => `Search ${f.value} with the stars in sight`],
-      B: [f => `Turn to ${f.value}, where older secrets grow`, f => `In ${f.value}, a patient seeker ought to go`, f => `Search ${f.value}, where hidden signs may show`]
+      A: [f => `In ${f.value}, seek a mark of stone`, f => `Turn to ${f.value}, where the ground is known`, f => `Keep ${f.value} as the region shown`],
+      B: [f => `Aim for ${f.value}; the bounds grow clear`, f => `Within ${f.value}, the search draws near`, f => `Find ${f.value}; let it guide where you steer`]
     },
     water: {
-      A: [f => `Search ${f.value} in the clear daylight`, f => `Look ${f.value}, and keep the banks in sight`, f => `Seek ${f.value} before the night`],
-      B: [f => `Go ${f.value}, where hidden secrets show`, f => `Look ${f.value}, and let your footsteps slow`, f => `Seek ${f.value}, where quiet waters flow`]
+      A: [f => `Seek ${f.value}, along the bank of stone`, f => `Search ${f.value}; the water's course is known`, f => `Look ${f.value}, where a mark may be shown`],
+      B: [f => `Keep ${f.value}, and the place draws near`, f => `Stand ${f.value}; the direction is clear`, f => `Look ${f.value}; your next landmark is near`]
     },
     path: {
-      A: [f => `Seek ${f.value}, beyond the fading light`, f => `Look ${f.value}, with the route in sight`, f => `Search ${f.value} before the night`],
-      B: [f => `Go ${f.value}, where hidden secrets grow`, f => `Look ${f.value}, and let your footsteps slow`, f => `Seek ${f.value}, where lost signs show`]
+      A: [f => `Search ${f.value}, where tracks press into stone`, f => `Look ${f.value}; let the direction be known`, f => `Seek ${f.value}, not the roadway alone`],
+      B: [f => `Look ${f.value}; the way becomes clear`, f => `Keep ${f.value}, and your search draws near`, f => `Go ${f.value}; let that guide where you steer`]
     },
     landmark: {
-      A: [f => `Look ${f.value}, and mark it right`, f => `Search ${f.value}, with the marker in sight`, f => `Seek ${f.value} before the night`],
-      B: [f => `Walk ${f.value}, where hidden wonders show`, f => `Search ${f.value}, then let your footsteps slow`, f => `Go ${f.value}, where older secrets grow`]
+      A: [f => `Look ${f.value}; its place is known`, f => `Seek ${f.value}, beside the older stone`, f => `Search ${f.value}; the mark is shown`],
+      B: [f => `Keep ${f.value}; the next sign is near`, f => `Stand ${f.value}, and the way grows clear`, f => `Go ${f.value}; let it guide where you steer`]
+    },
+    boulder: {
+      A: [f => `Beyond ${f.value}, the ground is stone`, f => `Search ${f.value}; the rock can be known`, f => `Look ${f.value}, where rough shapes are shown`],
+      B: [f => `Go ${f.value}; the rock stands near`, f => `Seek ${f.value}, and the bounds grow clear`, f => `Keep ${f.value}; that is where to steer`]
     },
     blossom: {
-      A: [f => `Seek ${f.value}, its petals catching light`, f => `Find ${f.value}, where colors blossom bright`, f => `Remember ${f.value} when the boughs come into sight`],
-      B: [f => `At ${f.value}, the secret petals glow`, f => `Beside ${f.value}, the final colors show`, f => `Reach ${f.value} beneath the branches low`]
+      A: [f => `Find ${f.value}, where bright leaves have grown`, f => `Seek ${f.value}, unlike the other trees known`, f => `At ${f.value}, the promised bloom is shown`],
+      B: [f => `Look for ${f.value}; its crown shall appear`, f => `Find ${f.value}, and your answer is here`, f => `Reach ${f.value}; the goal is now clear`]
     },
     target: {
-      A: [f => `Find ${f.value} beneath the fading light`, f => `Seek ${f.value} until it meets your sight`, f => `Let ${f.value} guide the search tonight`],
-      B: [f => `At ${f.value}, the answer starts to show`, f => `Reach ${f.value} before the shadows grow`, f => `Look for ${f.value}, and you will know`]
-    },
-    distance: {
-      A: [f => `Count ${f.value} beneath the light`, f => `Mark ${f.value} by the final light`, f => `Measure ${f.value} to keep your bearing right`],
-      B: [f => `Walk ${f.value} before the signs may show`, f => `Seek ${f.value} and let your footsteps slow`, f => `Go ${f.value}, where hidden secrets grow`]
+      A: [f => `Find ${f.value}; the mark is shown`, f => `Seek ${f.value}, the destination known`, f => `There waits ${f.value}, and that place alone`],
+      B: [f => `Find ${f.value}; your answer is here`, f => `Look for ${f.value}; the goal is clear`, f => `Reach ${f.value}, and the end draws near`]
     }
   }); // Each verified descriptor has several interchangeable A and B lines with matching terminal sounds.
 
@@ -97,7 +97,7 @@
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
   }
-  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, radius = 24 } = {}) {
+  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24 } = {}) {
     const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
     if (!layout || !instance || !Number.isFinite(point.col) || !Number.isFinite(point.row) ||
@@ -117,22 +117,14 @@
     const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId && !String(other.localeId || '').startsWith('locale_five_blossoms_')); // Never give away a different blossom as a landmark.
     const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale' })); // Already-stamped locale anchors are authoritative.
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem' }); // Uses the existing root-totem placement index.
-    for (const site of (layout.animalDens || [])) landmarks.push({ name: 'a wild animal den', point: { col: Number(site.mouthAnchor?.x ?? site.x), row: Number(site.mouthAnchor?.y ?? site.y) }, source: 'generated-animal-den' }); // Use the visible den doorway rather than an assumed footprint center.
+    for (const site of (layout.animalDens || [])) landmarks.push({ name: 'a wild animal den', point: { col: Number(site.mouthAnchor?.x ?? site.x), row: Number(site.mouthAnchor?.y ?? site.y) }, source: 'generated-animal-den' });
+    for (const site of suppliedLandmarks) if (site?.name && site?.point) landmarks.push({ name: String(site.name), point: site.point, source: site.source || 'generated-scenery' }); // Caller supplies only genuinely generated scenery, ruin entrances and cliff doors. // Use the visible den doorway rather than an assumed footprint center.
     const landmark = landmarks.filter(item => item.name && Number.isFinite(item.point.col) && Number.isFinite(item.point.row))
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
       .sort((a, b) => a.d - b.d)[0]; // Missing optional landmarks simply cannot enter a poem.
     if (landmark) facts.push({ kind: 'landmark', value: relationship(point, landmark.point, landmark.name), source: landmark.source, distance: landmark.d });
-    if (facts.length < 4) {
-      const horizontal = point.col < size.cols / 2
-        ? { value: `${Math.round(point.col)} map tiles east of the western boundary`, distance: point.col }
-        : { value: `${Math.round(size.cols - 1 - point.col)} map tiles west of the eastern boundary`, distance: size.cols - 1 - point.col }; // Exact final-grid offsets replace misleading "near the border" claims for central sites.
-      const vertical = point.row < size.rows / 2
-        ? { value: `${Math.round(point.row)} map tiles south of the northern boundary`, distance: point.row }
-        : { value: `${Math.round(size.rows - 1 - point.row)} map tiles north of the southern boundary`, distance: size.rows - 1 - point.row }; // The second axis allows triangulation even without rivers, trails, or landmarks.
-      facts.push({ kind: 'distance', value: horizontal.value, source: 'final-grid-distance', distance: horizontal.distance });
-      facts.push({ kind: 'distance', value: vertical.value, source: 'final-grid-distance', distance: vertical.distance });
-    }
+    // No made-up landmarks and no literal tile counts. Sparse locations simply get a shorter, broader poem.
     facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value: String(targetName || blossomName || instance.name || 'the destination'), source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
     return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, landmarkFound: !!landmark, optionalTerrainFallback: !water && !path && !landmark } };
   }

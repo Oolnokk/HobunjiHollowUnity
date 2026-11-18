@@ -43,11 +43,20 @@ for (let i = 0; i < 400; i++) {
   assert.ok(output.facts.every(fact => fact.source !== 'requested-terrain'), 'poem only states verified facts');
   poems++;
 }
+// Riddles describe real places only: never imply a sunrise, moon phase, specific hour or countable map coordinates.
+const forbiddenTiming = /\\b(?:night|tonight|daylight|morning|evening|sunrise|sunset|dusk|dawn|midnight|noon|stars|moonlight|shadows|fading light|final light)\\b/i; // The quest calendar owns the deadline; a poem never owns an hour.
+const forbiddenCounting = /\\b\\d+\\s+(?:map\\s+)?tiles?\\b|\\b(?:count|measure)\\s+\\d+\\b/i; // Walking exact map-tile distances is not a treasure riddle.
+for (let seed = 0; seed < 400; seed++) {
+  const candidate = Riddles.generate({ zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0], blossomName:'Cyan Blossom', seed:'timing-audit-'+seed });
+  assert.equal(candidate.ok, true);
+  assert.doesNotMatch(candidate.text, forbiddenTiming, 'random poems contain no false time-of-day conditions');
+  assert.doesNotMatch(candidate.text, forbiddenCounting, 'random poems contain no numeric grid-instruction clues');
+}
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);
 assert.equal(missing.evidence.waterFound, false);
-assert.equal(missing.facts.filter(f => f.kind === 'distance').length, 2, 'missing optional landmarks produce two measured map-boundary offsets');
+assert.equal(missing.facts.filter(f => f.kind === 'distance').length, 0, 'missing landmarks must not lead to numeric tile-count instructions');
 const withWater = layoutFor('cyan');
 withWater.tiles[23][26] = { type: 'stream' };
 const present = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: withWater, instance: withWater.localeInstances[0], blossomName: 'Cyan Blossom' });

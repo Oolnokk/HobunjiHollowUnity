@@ -1929,6 +1929,7 @@
     registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,exteriorPuzzleKind,
     sitesForZone,
+    outdoorPuzzleSitesForZone: zoneId => clone(outdoorPuzzleSitesByZone.get(String(zoneId || '')) || []), // Public, read-only generated cliff-door positions for terrain-grounded quests.
     profileForMapId,
     isAnimalDenSite,
     decorateCavernMapData,
