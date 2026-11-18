@@ -69,7 +69,7 @@ assert.equal(Navigation.debugSnapshot().teleports, 1, 'mobile diagnostics report
 assert(attackCancels > 0, 'combat animation cleanup runs on recovery');
 assert.equal(simulate(first, 25), false, 'recovery cooldown prevents an immediate second jump');
 
-const visible = makePet(13.5 * TILE); // Outside ordinary follow radius but still on camera.
+const visible = makePet(13.9 * TILE); // Outside ordinary follow radius but still on camera.
 assert.equal(simulate(visible), false, 'never make an animal vanish when the player can see it');
 const mounted = makePet();
 mounted.stableRole = 'mount';
