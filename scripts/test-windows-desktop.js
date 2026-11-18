@@ -7,6 +7,7 @@ const vm = require('node:vm'); // Executes the actual renderer close-save script
 const { persistBeforeClose, CLOSE_SAVE_SCRIPT } = require('../desktop/close-save.cjs'); // Same final-save operation executed by Electron.
 const { GAME_URL, isGameUrl, getGameAsset, localizeGameHtml } = require('../desktop/game-protocol.cjs');
 const { configureSaveFolderPermissions } = require('../desktop/save-folder-permissions.cjs'); // Exercised with simulated Electron session events.
+const { WEBGL_STATUS_SCRIPT, describeGraphicsStatus, showGraphicsStatus } = require('../desktop/gpu-diagnostics.cjs'); // On-demand desktop graphics status; never requires a user console.
 
 const repo = path.resolve(__dirname, '..'); // Root of the game and desktop packages.
 const roots = { gameRoot: path.join(repo, 'docs'), vendorRoot: path.join(repo, 'desktop', 'vendor') }; // File-routing fixtures for the pure protocol helper.
@@ -49,6 +50,7 @@ assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/three.min.js'
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/TransformControls.js'));
 assert.ok(manifest.build.files.includes('close-save.cjs'), 'Final-save policy ships inside the installed app');
 assert.ok(manifest.build.files.includes('save-folder-permissions.cjs'), 'Native picker policy ships inside the installed app');
+assert.ok(manifest.build.files.includes('gpu-diagnostics.cjs'), 'Graphics diagnostics ship inside the Windows installer');
 const main = fs.readFileSync(path.join(repo, 'desktop', 'main.cjs'), 'utf8');
 assert.ok(main.includes('nodeIntegration: false'));
 assert.ok(main.includes('contextIsolation: true'));
@@ -56,6 +58,74 @@ assert.ok(main.includes('sandbox: true'));
 assert.ok(main.includes("require('./close-save.cjs')"), 'Desktop main uses the independently tested save policy');
 assert.ok(main.includes('CLOSE_SAVE_SCRIPT'));
 assert.ok(main.includes('autoSyncArmed'));
+assert.ok(main.includes("label: 'Graphics Status'"), 'Game View menu exposes an accessible GPU status dialog');
+assert.ok(main.includes('showGraphicsStatus({'), 'Desktop GPU status invokes the tested diagnostic helper');
+
+async function checkGraphicsStatus() {
+  const software = describeGraphicsStatus({
+    accelerationEnabled: true,
+    features: { webgl: 'enabled', gpu_compositing: 'enabled', gpu_rasterization: 'enabled' },
+    gpuInfo: { gpuDevice: [{ vendorId: 0x10de, deviceId: 0x1b80, active: true }], auxAttributes: { softwareRendering: false } },
+    webgl: { state: 'ready', unmaskedRenderer: 'Google SwiftShader', vendor: 'Google', version: 'WebGL 1', width: 800, height: 600, pixelRatio: 1, contextLost: false },
+  });
+  assert.match(software, /Software rendering is indicated/, 'SwiftShader is reported as software rendering despite the enabled acceleration setting');
+  const hardware = describeGraphicsStatus({
+    accelerationEnabled: true, features: { webgl: 'enabled' },
+    gpuInfo: { gpuDevice: [{ vendorString: 'NVIDIA', deviceString: 'GeForce GTX', active: true }] },
+    webgl: { state: 'ready', unmaskedRenderer: 'ANGLE (NVIDIA GeForce GTX)', unmaskedVendor: 'NVIDIA',
+      version: 'WebGL 2', width: 1024, height: 768, pixelRatio: 1.5, contextLost: false },
+  });
+  assert.match(hardware, /NVIDIA GeForce GTX \[active\]/, 'Native adapter list displays the active card');
+  assert.match(hardware, /WebGL is active and Chromium reports an accelerated path/, 'Accelerated WebGL is distinguished from software and uncertain status');
+  assert.match(describeGraphicsStatus({}), /Could not confirm a hardware WebGL path/, 'Missing GPU data is explicitly uncertain');
+
+  const fakeGl = {
+    VENDOR: 1, RENDERER: 2, VERSION: 3,
+    getExtension: key => key === 'WEBGL_debug_renderer_info' ? { UNMASKED_VENDOR_WEBGL: 4, UNMASKED_RENDERER_WEBGL: 5 } : null,
+    getParameter: key => ({ 1: 'WebKit', 2: 'WebKit WebGL', 3: 'WebGL 1', 4: 'NVIDIA Corporation', 5: 'ANGLE (NVIDIA GeForce GTX)' })[key],
+    isContextLost: () => false,
+  }; // Already-created Three.js WebGL context exposed by the game canvas.
+  let contextCalls = 0; // Confirms only the game's canvas is used; no expensive frame readbacks or additional renderers.
+  const webglCanvas = { width: 1200, height: 700, getContext: () => { contextCalls++; return fakeGl; } };
+  const page = { document: { querySelector: selector => selector === '#threeContainer canvas' ? webglCanvas : null },
+    window: { devicePixelRatio: 1.25 } };
+  const diagnostics = vm.runInNewContext(WEBGL_STATUS_SCRIPT, page);
+  assert.equal(diagnostics.state, 'ready', 'Renderer diagnostics read a live WebGL context');
+  assert.equal(diagnostics.unmaskedRenderer, 'ANGLE (NVIDIA GeForce GTX)');
+  assert.equal(diagnostics.width, 1200);
+  assert.equal(contextCalls, 1, 'Already-created WebGL context is reused exactly once');
+  assert.equal(vm.runInNewContext(WEBGL_STATUS_SCRIPT, { document: { querySelector: () => null }, window: {} }).state,
+    'not-ready', 'A game still loading has an honest diagnostic status');
+
+  let copied = null; // Tests the in-app Copy Details button for users without developer tools.
+  let displayed = null; // Captures the dialog content to verify the actual graphics status reaches the screen.
+  const gameWindow = { isDestroyed: () => false, webContents: { executeJavaScript: async script => vm.runInNewContext(script, page) } };
+  const report = await showGraphicsStatus({
+    app: { isHardwareAccelerationEnabled: () => true,
+      getGPUFeatureStatus: () => ({ webgl: 'enabled', gpu_compositing: 'enabled' }),
+      getGPUInfo: async level => { assert.equal(level, 'basic'); return { gpuDevice: [{ active: true, deviceString: 'GeForce GTX' }] }; } },
+    dialog: { showMessageBox: async (_win, dialog) => { displayed = dialog; return { response: 0 }; } },
+    clipboard: { writeText: text => { copied = text; } }, getGameWindow: () => gameWindow,
+  });
+  assert.equal(displayed.title, 'Hobunji Hollow — Graphics Status');
+  assert.equal(copied, report, 'GPU status can be copied directly from the game');
+  assert.match(report, /ANGLE \(NVIDIA GeForce GTX\)/);
+
+  const missingGpu = await showGraphicsStatus({
+    app: { isHardwareAccelerationEnabled: () => true,
+      getGPUFeatureStatus: () => ({ webgl: 'unavailable_software' }),
+      getGPUInfo: async () => { throw new Error('GPU reporting unavailable'); } },
+    dialog: { showMessageBox: async (_win, details) => { displayed = details; return { response: 1 }; } },
+    getGameWindow: () => ({ isDestroyed: () => false,
+      webContents: { executeJavaScript: async () => ({ state: 'unavailable', error: 'No WebGL context yet' }) } }),
+  });
+  assert.match(missingGpu, /GPU reporting unavailable/, 'Missing native GPU info does not prevent displaying WebGL failure');
+  assert.match(missingGpu, /Software rendering is indicated/, 'Chromium software fallback appears in report without a WebGL context');
+  assert.equal(displayed.buttons[1], 'Close');
+  console.log('Windows graphics status: renderer detection, native GPU flags, fallback and Copy Details OK');
+}
+
+checkGraphicsStatus().catch(error => { console.error(error); process.exitCode = 1; });
 
 async function checkFolderPickerPermissions() {
   let requestHandler, checkHandler, restrictedHandler; // Captures the actual handlers that Electron receives.
