@@ -677,7 +677,7 @@ for(const side of ['north','east','south','west']){
     if(node.name?.startsWith('ruin-room-entry-partition-'))partitions.push(node);
     if(node.name?.startsWith('ruin-wing-corridor-ceiling-'))corridorCaps.push(node);
   });
-  const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.rooms));
+  const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.anteroom?[wing.anteroom,...wing.rooms]:wing.rooms)); // Every shaft anteroom now owns a real ceiling/partition too.
   assert.equal(caps.length,plannedRooms.length,'each wing room owns a real ceiling');
   assert.equal(partitions.length,plannedRooms.length,'each room has an entrance partition with a door aperture');
   assert(partitions.every(w=>w.material.side===THREE.DoubleSide),'entrance wall flanks render from both sides');
