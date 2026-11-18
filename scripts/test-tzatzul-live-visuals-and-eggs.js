@@ -286,7 +286,10 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert(visuals.restoreCaptive(capturedPlayer));
   assert.equal(playerRig.quaternion.angle, .2, 'fall pose already holding the rig survives the release');
   assert.equal(playerRig.position.x, 6, 'fall orientation takeover does not prevent owned portrait translation cleanup');
+  playerRig.position.x = -12; playerRig.position.y = 15; playerRig.position.z = 28; // A late talon pass races the newly owned fall angle.
   visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(playerRig.position.x, 6, 'position-only handoff corrects stale talon translation without resetting impact rotation');
+  assert.equal(visuals.snapshot().staleCarryPositionCorrections, 2, 'both ordinary and impact-handback late replays are reported');
   assert.equal(playerRig.quaternion.angle, .2, 'no correction persists after a prior animation takeover');
   assert(visuals.snapshot().captiveHandoffs >= 2, 'mobile diagnostics report ownership handoffs');
 
