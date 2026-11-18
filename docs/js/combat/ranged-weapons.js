@@ -135,7 +135,7 @@
   const CONFIG = {
     torch: { // The adventuring throw uses the ordinary swept projectile/ruin-fire route, not separate physics.
       label:'Lit Torch',rangedType:'thrown',dmgType:'blunt',
-      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.17, projectileVisualHeightWorld:.38, // Neutral torch PNG geometry, before the same authored idle multiplier used on the belt.
+      projectileSprite:'assets/toolsprites/torch.png', projectileVisualStyle:'spinningWeapon', projectileVisualWidthWorld:.5, // Same 0.5-unit held-tool plane width; the decoded PNG aspect and authored Neutral multiplier determine the full flight size.
       projectileCount:1,spreadDeg:0,damage:4,speedPxS:620,rangeTiles:7,
       heldSpin:true,heldSpinRevolutions:2.5,gripMode:'palm-parallel', // Reuse the hatchet's in-hand spin/flourish and throwing grip; flight spin is independent.
       projectileRadiusPx:8,knockbackPxS:35,projectileSpeedMultiplier:1,
@@ -715,7 +715,6 @@
     const sourcePlaneWidth = Number(sourceTransform?.planeWidth); // Used to clone the held weapon plane's authored geometry at the release frame.
     const sourcePlaneHeight = Number(sourceTransform?.planeHeight); // Used with sourcePlaneWidth so the projectile starts with the held silhouette exactly.
     const hasExactSourcePlane = weaponSprite && sourcePlaneWidth > 0 && sourcePlaneHeight > 0; // Used to bypass guessed weapon dimensions when the live held plane supplied them.
-    const hasAuthoredVisualHeight = weaponSprite && Number(def.projectileVisualHeightWorld) > 0; // The torch uses its real PNG proportions instead of the generic square thrown-weapon fallback.
     let plane = null;
     let pendingAspect = 1;
     let pendingOpaqueBounds = null; // Delayed image decode may precede the plane mesh constructor; applied as soon as it exists.
@@ -724,7 +723,7 @@
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
-      if (plane && !hasExactSourcePlane && !hasAuthoredVisualHeight) plane.scale.y = pendingAspect;
+      if (plane && !hasExactSourcePlane) plane.scale.y = pendingAspect;
       if (def.rangedType === 'thrown') {
         pendingOpaqueBounds = opaqueSpriteBounds(loadedTexture?.image);
         if (plane) {
@@ -745,12 +744,12 @@
     const longArrow = def.projectileSprite.includes('arrow_long');
     const weaponWidth = Math.max(0.08, Number(def.projectileVisualWidthWorld) || 0.5);
     const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
-    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (hasAuthoredVisualHeight ? Number(def.projectileVisualHeightWorld) : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38))); // Torch preserves real proportions; generic thrown items retain their existing aspect path.
+    const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Generic PNG aspect path now matches the stowed and held torch art without redundant scaling.
     plane = new THREE.Mesh(
       new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
-    if (weaponSprite && !hasExactSourcePlane && !hasAuthoredVisualHeight) plane.scale.y = pendingAspect;
+    if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
     plane.userData.opaqueBounds = pendingOpaqueBounds;
     if (def.rangedType === 'thrown' && pendingOpaqueBounds) thrownRadiusByDefinition.set(def, opaqueProjectileRadiusWorld(def, plane));
     // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
