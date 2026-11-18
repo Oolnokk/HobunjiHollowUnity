@@ -74,7 +74,7 @@
       if(!root.document||typeof root.fetch!=='function')return Promise.resolve(null); // Node logic tests must not fetch a relative URL.
       sourcePromise=Promise.resolve().then(()=>root.fetch(SOURCE+'?v=20261118shaftPillars1'))
         .then(response=>{if(!response.ok)throw new Error('HTTP '+response.status);return response.json();})
-        .catch(error=>{root.__farmLog?.('[ruin shaft] Square pillar source unavailable: '+error.message,'warn');return null;});
+        .catch(error=>{sourcePromise=null;root.__farmLog?.('[ruin shaft] Square pillar source unavailable: '+error.message,'warn');return null;}); // A transient offline/404 response must not poison every subsequently generated ruin.
     }
     return sourcePromise;
   }
