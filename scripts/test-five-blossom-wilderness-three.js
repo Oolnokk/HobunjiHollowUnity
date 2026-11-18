@@ -66,6 +66,9 @@ window.FurniturePatternSurfaces={
       'dyed stones use a real Harlyao ruin engraving motif');
     assert.equal(pattern.mode,'engraving','stone engravings use the existing ruin-wall pattern mode');
     assert.match(pattern.palette[1],/^#[0-9a-f]{6}$/i,'engraving ink has the authored dye hex');
+    const engraving=new THREE.Mesh(new THREE.PlaneGeometry(.2,.2),new THREE.MeshBasicMaterial());
+    engraving.userData.furniturePattern={mode:'engraving',status:'ready'}; // Real surface owner creates a separate child atlas mesh.
+    mesh.add(engraving);
     decorations++; // Counts actual runtime engraving calls, not merely planner output.
     return mesh;
   },
@@ -91,15 +94,18 @@ assert.equal(first.userData.witnessDye.unique,true);
 assert.equal(first.children.find(child=>child.userData?.ruinStoneSignalGlyph)?.position.z,.57,
   'the dyed rune is outside the irregular stone instead of buried inside its geometry');
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
+assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
+assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
 assert.equal(witnessFor(),first,'unchanged world/layout does not regenerate scenery every frame');
-const oldGeometry=first.geometry; // Tracks scene-local disposal when its Tothal cycle is replaced.
+const oldEngraving=first.children.find(child=>child.userData?.furniturePattern).geometry; // The atlas is marker-owned; quarry stone mesh/material are shared.
 let disposed=false;
-oldGeometry.addEventListener('dispose',()=>{disposed=true;});
+oldEngraving.addEventListener('dispose',()=>{disposed=true;});
 cycle='1157';
 scenery.update();
 assert.notEqual(witnessFor(),first,'a new Tothal generation rebuilds the marker even with the same zone object and scene');
-assert.ok(disposed,'the old witness geometry is disposed on Shift');
+assert.ok(disposed,'the old marker-owned engraving geometry is disposed on Shift');
+assert.equal(sharedStoneDisposed,false,'Shift must not dispose shared stone geometry');
 assert.equal(decorations,2,'the new cycle inks its newly placed marker exactly once');
 const second=witnessFor();
 zoneLayouts.set(zoneId,{...worldLayout}); // Same cycle but forced regeneration replaces the workspace object.
