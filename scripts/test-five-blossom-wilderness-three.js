@@ -43,6 +43,7 @@ for (const color of ['#00ffff','#ffffff','#ffbf00','#ff8000','#ffb3b3']) {
     color+': repeated tree instances reuse shared leaves geometry');
 }
 // Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
+async function verifyScenery(){
 const scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Built witness stones are the exact physical referents named in saved riddles.
 const worldLayout = {
   cols:70, rows:70,
@@ -58,6 +59,11 @@ let sharedStoneDisposed=false; // The real OreRockTextures.smallStoneArt resourc
 sharedStoneArt.geometry.addEventListener('dispose',()=>{sharedStoneDisposed=true;});
 window.OreRockTextures={smallStoneArt:()=>sharedStoneArt}; // Renderer-provided shared rock art is required for both cairns and the newly engraved witness.
 window.GridTileAccessors={getActiveScene:()=>scene};
+window.AuthoredFurniture={
+  async load(key){return {key};}, // Simulate the real asynchronous furniture data load.
+  buildGroup(def){const root=new THREE.Group(),shaft=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());
+    root.userData.meshById=new Map([['stump',shaft]]);root.add(shaft);return root;} // A real mesh owns the pillar's inscribed shaft.
+};
 window.ClimbSystem={groundYAt:()=>1.25};
 window.FurniturePatternSurfaces={
   applyPart(mesh,part) {
@@ -85,15 +91,24 @@ scenery.init({
   tothalWorldId:()=> 'test-world',currentTothalYear:()=>cycle,TILE:64
 });
 scenery.update();
+await new Promise(resolve=>setImmediate(resolve)); // Await debrisified pillar model assembly before counting their rendered markings.
+const decoratedFor = () => scenery.planForLayout(zoneId,zoneLayouts.get(zoneId),'test-world:'+cycle).filter(x=>x.marked);
+const originalMarked=decoratedFor().length; // The planned dye-bearing objects are exactly those the renderer engraves.
 const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
 let first=witnessFor();
 assert.ok(first?.isMesh,'the physically rendered dyed stone exists inside the live wilderness scene');
-assert.equal(decorations,1,'the unique witness stone uses one ruin engraving atlas');
-assert.equal(signals,1,'one visible colored rune exists while the atlas is preparing');
+assert.equal(decorations,originalMarked,'every distinct marked pillar and stone uses one ruin engraving atlas');
+assert.equal(signals,originalMarked,'one visible colored rune is attached to each dyed object');
 assert.equal(first.userData.witnessDye.unique,true);
 assert.equal(first.children.find(child=>child.userData?.ruinStoneSignalGlyph)?.position.z,.57,
   'the dyed rune is outside the irregular stone instead of buried inside its geometry');
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
+assert.equal(scenery.debugSnapshot().plan.marked.length,originalMarked,'mobile diagnostics enumerate every marked object');
+let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){paintedPillars++;
+  assert.ok(node.userData.meshById.get('stump').children.some(part=>part.userData?.furniturePattern),
+    'the real authored pillar shaft receives the existing ruin pattern overlay');
+}});
+assert.ok(paintedPillars>0,'even a small generated area renders colored pillar inscriptions');
 assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
 assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
@@ -103,17 +118,22 @@ let disposed=false;
 oldEngraving.addEventListener('dispose',()=>{disposed=true;});
 cycle='1157';
 scenery.update();
+await new Promise(resolve=>setImmediate(resolve));
+const nextMarked=decoratedFor().length; // The next Shift may distribute a different count among deadwood, pillars and boulders.
 assert.notEqual(witnessFor(),first,'a new Tothal generation rebuilds the marker even with the same zone object and scene');
 assert.ok(disposed,'the old marker-owned engraving geometry is disposed on Shift');
 assert.equal(sharedStoneDisposed,false,'Shift must not dispose shared stone geometry');
-assert.equal(decorations,2,'the new cycle inks its newly placed marker exactly once');
+assert.equal(decorations,originalMarked+nextMarked,'the new cycle decorates each new marked object exactly once');
 const second=witnessFor();
 zoneLayouts.set(zoneId,{...worldLayout}); // Same cycle but forced regeneration replaces the workspace object.
 scenery.update();
+await new Promise(resolve=>setImmediate(resolve));
 assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also rebuilds the physical riddle witness');
-assert.equal(decorations,3,'same-cycle regeneration reuses the canonical engraving pipeline');
+assert.equal(decorations,originalMarked+nextMarked*2,'same-cycle regeneration reuses the canonical engraving pipeline on every dyed object');
 scenery.clear();
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;
-console.log('ok - blossom tree geometry, three-tier leaves, patterned witness placement, Shift redraw and cleanup');
+console.log('ok - blossom tree geometry, three-tier leaves, uniquely dyed boulders/pillars, Shift redraw and cleanup');
+}
+verifyScenery().catch(error=>{console.error(error);process.exitCode=1;});
