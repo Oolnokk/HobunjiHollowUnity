@@ -465,8 +465,16 @@
     return ok;
   }
   function returnHome(bird) {
-    const state = bird._tzFlight;
-    return state?.roost && startLeg(bird, state.roost, 'return');
+    const state = bird?._tzFlight;
+    if (state?.roost && startLeg(bird, state.roost, 'return')) return true;
+    if (state?.captive) releaseCaptive(state.captive, 'roost lost'); // Never leave live prey trapped on a nonexistent return path.
+    if (startCombatOrbit(bird)) return true;
+    if (state) {
+      state.phase = 'await-roost'; state.segment = null; state.target = null;
+      state.orbitRetryS = .65; // Prevent blocked cave geometry from causing four collision probes every frame.
+      bird.tzatzulFlightPose = 'glide';
+    }
+    return false; // A missing perch record is not permission to continue an ended dive forever.
   }
   function orbitCombatFoe(bird) {
     const previous = bird._tzFlight?.fallbackFoe; // Last committed dive opponent remains the foe after the return leg.
@@ -498,6 +506,15 @@
       }
     }
     return false; // Never tunnel through cave rock when no circular chord is clear.
+  }
+  function retryCombatOrbit(bird, dt) {
+    const state = bird?._tzFlight; // Only a stranded, still-supported flying enemy can retry a bounded combat orbit.
+    if (!state || state.segment || (state.phase !== 'await-roost' && state.phase !== 'orbit')) return false;
+    state.orbitRetryS = Math.max(0, n(state.orbitRetryS) - Math.max(0, n(dt)));
+    if (state.orbitRetryS > 0) return false;
+    if (startCombatOrbit(bird)) return true;
+    state.orbitRetryS = .65; // Do not scan the same blocked cave chords continuously while no route exists.
+    return false;
   }
   function hit(bird, previous, current) {
     const state = bird._tzFlight;
@@ -532,7 +549,7 @@
   }
   function advance(bird, dt) {
     const state = bird._tzFlight;
-    if (!state.segment) return;
+    if (!state.segment) { retryCombatOrbit(bird, dt); return; } // An indoor mother must also recover after all orbit chords are blocked.
     state.elapsed = Math.min(state.segment.duration, state.elapsed + dt);
     const limit = state.segment.travelFraction; // Indoor dive ends at the cave rim, with its original speed and distance commitment.
     const t = Math.max(0, Math.min(limit, state.elapsed / state.segment.duration));
@@ -628,7 +645,7 @@
         continue;
       }
       if (state.phase === 'await-roost') {
-        if (bird.onPerch) startCombatOrbit(bird); // Airborne but unable to land: keep moving around a present foe.
+        retryCombatOrbit(bird, step); // No per-frame environment probes when the arena has no clear circular chord.
         continue;
       }
       if (state.phase !== 'perched') {
