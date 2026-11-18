@@ -335,7 +335,7 @@
     const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale', kind:'authoredLocale' })); // Already-stamped locale anchors are authoritative.
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem', kind:'rootTotem' }); // Uses the existing root-totem placement index.
     for (const site of (layout.animalDens || [])) landmarks.push({ name: 'a wild animal den', point: { col: Number(site.mouthAnchor?.x ?? site.x), row: Number(site.mouthAnchor?.y ?? site.y) }, source: 'generated-animal-den', kind:'animalDen' });
-    for (const site of suppliedLandmarks) if (site?.name && site?.point) landmarks.push({ name: String(site.name), point: site.point, source: site.source || 'generated-scenery', kind: site.kind || (site.source === 'registered-cliff-door' ? 'cliffDoor' : 'authoredLocale') }); // Caller supplies only genuinely generated scenery, ruin entrances and cliff doors. // Use the visible den doorway rather than an assumed footprint center.
+    for (const site of suppliedLandmarks) if (site?.name && site?.point) landmarks.push({ ...site,name: String(site.name), point: site.point, source: site.source || 'generated-scenery', kind: site.kind || (site.source === 'registered-cliff-door' ? 'cliffDoor' : 'authoredLocale') }); // Caller supplies only genuinely generated scenery, ruin entrances and cliff doors. // Use the visible den doorway rather than an assumed footprint center.
     const nearbyLandmarks = landmarks.filter(item => item.name && Number.isFinite(item.point.col) && Number.isFinite(item.point.row))
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
@@ -354,7 +354,7 @@
     const goalName=String(targetName||blossomName||instance.name||'the destination');
     facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value:goalName, source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
     const witness=(targetKind==='blossom'||blossomName)
-      ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks:[...landmarks,...suppliedLandmarks.filter(item=>item.kind==='witnessStone')]})
+      ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks})
       :null;
     return { ok:true,zoneId,point,facts:witness?.facts||facts,
       evidence:{waterFound:!!water,pathFound:!!path,boulderFound:!!boulder,landmarkFound:chosen.length>0,landmarkCount:chosen.length,
