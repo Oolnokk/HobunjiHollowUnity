@@ -1671,6 +1671,11 @@
     const gear = deps?.getGearInventory?.();
     if (!gear || !Number.isSafeInteger(Number(civilYear))) return null;
     gear.clothing ||= {}; gear.clothingItems ||= [];
+    const oldHat = gear.clothing.hat; // Quiet awards also replace a hat, so protect legacy worn-only clothing just as the stage ceremony does.
+    if (oldHat && !gear.clothingItems.some(item => item === oldHat || (oldHat.uid && item?.uid === oldHat.uid))) {
+      const savedHat = oldHat.uid ? oldHat : makeClothingGearEntry({...oldHat,slot:'hat'}); // Preserve a stable physical garment before the replacement occurs.
+      if (savedHat) gear.clothingItems.push(savedHat);
+    }
     const uid = 'five_blossom_crown:' + String(civilYear); // Stable per-character/per-year award identity prevents duplicate gear on retries.
     let item = gear.clothingItems.find(entry => entry?.uid === uid || (entry?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && entry?.awardYear === Number(civilYear)));
     if (!item) {
