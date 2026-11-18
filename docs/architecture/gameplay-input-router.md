@@ -67,7 +67,7 @@ window.GameplayInputRouter.clearClaims('my-world-object');
 **Contextual HUD rule.** New nearby-object gameplay actions must populate the
 existing five-button action arch rather than create an additional fixed-position
 HUD button. The shared router supports this using `showInArch:true` plus a
-`hudIcon` on a normal tool (Action 1/2/3) or item-action (1/2) claim:
+`hudIcon` on a normal tool (Action 1/2/3) or item-action (4/5) claim:
 
 ```js
 window.GameplayInputRouter.setClaims('tree-example', [{
