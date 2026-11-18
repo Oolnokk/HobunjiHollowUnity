@@ -260,7 +260,7 @@ assert.match(rangedWeaponsSource, /sourceTransform:\s*heldTransform/, 'Player ra
 assert.match(rangedWeaponsSource, /projectileVisualWidthWorld:\.17, projectileVisualHeightWorld:\.38/, 'Thrown torch uses the same base PNG proportions as the belt, not a giant .5-world-square sprite.');
 assert.match(rangedWeaponsSource, /hasAuthoredVisualHeight[\s\S]*new THREE\.PlaneGeometry\(projectilePlaneWidth, projectilePlaneHeight\)/, 'Torch authored height is not multiplied again by decoded texture aspect.');
 assert.match(rangedWeaponsSource, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/, 'Torch retains its hand origin but strips the oversized held transform.');
-assert.match(rangedWeaponsSource, /cameraRay = normalizedAimRay\(deps\.getPlayerAimRay\?\.\(\)\)/, 'Torch resolves live 3D aim from the camera ray.');
+assert.match(rangedWeaponsSource, /const dir = aim.direction; \/\/ The shared reticle solver converges/, 'Torch uses the reticle solver to converge the camera ray on the held release point.');
 assert.match(rangedWeaponsSource, /visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true/, 'Torch sprite faces its flight instead of inheriting the held world-facing quaternion.');
 assert.match(rangedWeaponsSource, /launchTransformMode[^\n]*'held-strike-plane'/, 'Projectile debug state must identify exact held-plane launch transforms.');
 assert.match(rangedWeaponsSource, /facingSource:[^\n]*'sampled-held-plane'/, 'Projectile debug state must report when visible facing came directly from the sampled held weapon.');
@@ -540,15 +540,23 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   const shots = []; // Exact spawn calls made by the real torch code under test.
   let rayDirection = { x: 0, y: 0, z: -1 }; // Camera forward changes independently of the held torch's pose.
   let cameraAvailable = true; // Checks the ordinary controller/camera-less fallback.
+  const cameraOrigin = { x: 4.5, y: 1.2, z: 6 }; // Camera lies off the torch's actual muzzle: parallel rays would miss the reticle.
+  const muzzle = { x: 3, y: 1.2, z: 4 }; // Shared release origin passed through the normal reticle solver.
+  const solvedAim = () => {
+    if (!cameraAvailable) return { origin: muzzle, direction: { x: 1, y: 0, z: 0 }, targetPoint: null };
+    const point = { x: cameraOrigin.x + rayDirection.x * 10, y: cameraOrigin.y + rayDirection.y * 10, z: cameraOrigin.z + rayDirection.z * 10 }; // The camera-ray reticle target in world coordinates.
+    const dx = point.x - muzzle.x, dy = point.y - muzzle.y, dz = point.z - muzzle.z;
+    const norm = Math.hypot(dx, dy, dz); // Normalizes the converged muzzle-to-reticle trajectory just as the shared solver does.
+    return { origin: muzzle, direction: { x: dx/norm, y:dy/norm, z:dz/norm }, targetPoint: point };
+  };
   const torchWorld = {
     WeaponToolStances: { poses: { torchHold: { scale: 0.68 } } },
     HobunjiRangedCameraFocus: { invalidateAimTarget() {} },
   };
   const torchContext = vm.createContext({
     window: torchWorld,
-    deps: { player: {}, TILE: 64, getPlayerAimRay: () => cameraAvailable ? { direction: rayDirection } : null },
-    playerAimSolution: () => ({ origin: { x: 3, y: 1.2, z: 4 }, direction: { x: 1, y: 0, z: 0 } }),
-    normalizedAimRay: input => input && { direction: input.direction },
+    deps: { player: {}, TILE: 64, getPlayerAimRay: () => cameraAvailable ? { origin: cameraOrigin, direction: rayDirection } : null },
+    playerAimSolution: solvedAim,
     spawnProjectile: (...args) => {
       shots.push(args);
       return {
@@ -566,7 +574,10 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
       planeWidth: 7, planeHeight: 12, scale: { x: 15, y: 15, z: 15 } } };
   torchContext.held = held;
   assert(vm.runInContext('throwAdventuringTorch(held)', torchContext), 'camera-facing throw succeeds');
-  assert(Math.abs(shots[0][3] + Math.PI / 2) < 1e-9, 'camera-facing -Z torch travels -Z, regardless of held world orientation');
+  assert(Math.abs(shots[0][3] - Math.atan2(-8, 1.5)) < 1e-9, 'torch converges on the reticle from an offset hand, rather than shooting parallel to camera -Z');
+  assert.notStrictEqual(shots[0][3], -Math.PI/2, 'parallax correction must not be lost between aiming and launch');
+  assert.strictEqual(vm.runInContext('lastTorchThrow.aimSource', torchContext), 'camera-reticle', 'mobile diagnostics identify real reticle convergence');
+  assert.strictEqual(vm.runInContext('lastTorchThrow.targetPoint.x', torchContext), 4.5, 'reticle target is retained for on-device debugging');
   assert.strictEqual(shots[0][8].preserveSourceOrientation, false, 'torch flight does not retain world-facing held quaternion');
   assert.strictEqual(shots[0][8].visualScale, .68, 'torch projectile uses the idle Neutral multiplier');
   assert.strictEqual(shots[0][8].sourceTransform.position.x, 3, 'launch still begins at the held strike position');
@@ -574,10 +585,10 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   assert.strictEqual(shots[0][8].textureSource, held.textureSource, 'colored held torch texture is reused');
   rayDirection = { x: 0, y: .6, z: .8 };
   vm.runInContext('throwAdventuringTorch(held)', torchContext);
-  assert(Math.abs(shots[1][7] - Math.atan2(.6, .8)) < 1e-9, 'aim elevation reaches the thrown torch ballistic pitch');
+  assert(Math.abs(shots[1][7] - Math.atan2(6, Math.hypot(1.5, 10))) < 1e-9, 'height and camera-to-muzzle offset both affect throw pitch');
   cameraAvailable = false;
   vm.runInContext('throwAdventuringTorch(held)', torchContext);
   assert.strictEqual(shots[2][3], 0, 'camera-less fallback uses the existing solver direction');
-  assert.strictEqual(vm.runInContext('lastTorchThrow.aimSource', torchContext), 'fallback-reticle', 'Pixel Probe records the fallback source');
-  console.log('torch camera ray, elevation, source-size isolation, fallback, and debug regression checks passed');
+  assert.strictEqual(vm.runInContext('lastTorchThrow.aimSource', torchContext), 'fallback-facing', 'Pixel Probe records the camera-less fallback source');
+  console.log('torch muzzle-to-reticle convergence, elevation, scale isolation, fallback, and mobile debug regression checks passed');
 }
