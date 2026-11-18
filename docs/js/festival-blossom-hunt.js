@@ -126,8 +126,9 @@
       if (!tree) continue;
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color: blossom.color, localeId: blossom.localeId };
-      const height = Number(window.ClimbSystem?.groundYAt?.(p.col + .5, p.row + .5)); // Surface height includes the generated plateau when available.
-      tree.position.set(p.col + .5, Number.isFinite(height) ? height : 0, p.row + .5);
+      const rawHeight = window.ClimbSystem?.groundYAt?.(p.col + .5, p.row + .5); // Undefined floor must not turn into an implicit valid zero elevation.
+      const height = Number(rawHeight); // Surface height includes the generated plateau when available.
+      tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
       tree.scale.multiplyScalar(8); // Wilderness-size blossom tree rather than the original quarter-size tabletop sapling.
       scene.add(tree);
       visibleTrees.set(blossom.localeId, tree);

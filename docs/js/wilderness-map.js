@@ -14,6 +14,7 @@
   let _unsubscribeFogTile = null;
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.FestivalBlossomHunt?.init?.(injectedDeps); // Share real zone layouts and tile transitions with the independent seasonal hunt.
     _unsubscribeFogTile?.();
     _unsubscribeFogTile = window.PlayerTileEvents?.subscribe?.(() => { _fogDirty = true; }) || null; // Tile/area change is the only time fog reveal and locale discovery can gain anything.
     _fogDirty = true;
