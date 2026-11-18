@@ -63,6 +63,8 @@
   let dodgeAfterimageWasActive = false; // Used to mark the active dodge phase in mobile diagnostics.
   let lungeAfterimageWasActive = false; // Used to mark the active lunge phase in mobile diagnostics.
   let lastSmearPruneAtS = -Infinity; // Used to avoid a resource-pruning pass on each animation frame.
+  let lastBlinkSmearSampleAtS = -Infinity; // Used to measure held Blink movement independently of its input-update cadence.
+  let sceneInverseScratch = null; // Reused for nonidentity scene-parent transforms; never allocated per frame.
   const afterimageRuntimeDebug = { // Exposed through the existing blink.afterimages diagnostic key for Pixel Probe compatibility.
     effect: 'rgba-directional-motion-smear',
     active: 0, spawned: 0, disposed: 0, entriesCreated: 0, entriesReused: 0,
@@ -86,7 +88,7 @@
   function updateAfterimageTravel(actor, dodging, lunging) {
     let travel = afterimageTravelByActor.get(actor); // Reused actor state avoids per-frame object creation.
     if (!travel) {
-      travel = { x: actor.x, y: actor.y, dxWorld: 0, dzWorld: 0, stepTiles: 0, dodgeTiles: 0, lungeTiles: 0 };
+      travel = { x: actor.x, y: actor.y, pendingDxWorld: 0, pendingDzWorld: 0, stepTiles: 0, dodgeTiles: 0, lungeTiles: 0 };
       afterimageTravelByActor.set(actor, travel);
     }
     const dx = (Number(actor.x) || 0) - (Number(travel.x) || 0);
@@ -94,9 +96,10 @@
     travel.x = actor.x;
     travel.y = actor.y;
     const tile = Math.max(1, Number(window.Combat?.deps?.TILE) || 64); // Existing pixel-to-world conversion.
-    travel.dxWorld = dx / tile;
-    travel.dzWorld = dz / tile;
-    travel.stepTiles = (dodging || lunging || defensiveHoldActive) ? Math.hypot(dx, dz) / tile : 0;
+    const active = dodging || lunging || defensiveHoldActive; // Only accumulate actual travel during an enabled combat movement.
+    travel.pendingDxWorld = active ? travel.pendingDxWorld + dx / tile : 0;
+    travel.pendingDzWorld = active ? travel.pendingDzWorld + dz / tile : 0;
+    travel.stepTiles = active ? Math.hypot(dx, dz) / tile : 0;
     travel.dodgeTiles = dodging ? travel.dodgeTiles + travel.stepTiles : 0;
     travel.lungeTiles = lunging ? travel.lungeTiles + travel.stepTiles : 0;
     return travel;
@@ -284,13 +287,13 @@
     scene.add(mesh);
     afterimageRuntimeDebug.entriesCreated++;
     return {
-      mesh, source, materials, ownsGeometry: built.owned,
+      mesh, source, sourceGeometry: source.geometry, materials, ownsGeometry: built.owned,
       sourceMaterials, sourceTextures: sourceMaterials.map(mat => [mat.map, mat.alphaMap, mat.emissiveMap]),
     };
   }
 
   function smearEntryMatches(entry, source) {
-    if (entry.source !== source || !entry.mesh || entry.source.geometry !== source.geometry) return false;
+    if (entry.source !== source || !entry.mesh || entry.sourceGeometry !== source.geometry) return false;
     const materials = afterimageMaterialsOf(source);
     return materials.length === entry.sourceMaterials.length && materials.every((material, index) =>
       material === entry.sourceMaterials[index]
@@ -314,11 +317,12 @@
     const mesh = entry.mesh;
     if (source.matrixWorld && mesh.matrix?.copy) {
       mesh.matrix.copy(source.matrixWorld);
-      // The ordinary game scene is identity; support non-identity parents without
-      // creating a fresh inverse on every combat sample.
-      if (scene.matrixWorld?.elements && mesh.matrix.premultiply) {
-        const inverse = scene.userData?.hobunjiSmearSceneInverse; // Optional cached scene-space conversion supplied by the owning scene.
-        if (inverse) mesh.matrix.premultiply(inverse);
+      // Scene transforms are identity in normal gameplay, but support transformed
+      // scene roots with one persistent scratch matrix rather than per-hit clones.
+      if (scene.matrixWorld && mesh.matrix.premultiply && window.THREE?.Matrix4) {
+        sceneInverseScratch ||= new window.THREE.Matrix4();
+        sceneInverseScratch.copy(scene.matrixWorld).invert();
+        mesh.matrix.premultiply(sceneInverseScratch);
       }
       mesh.matrixWorldNeedsUpdate = true;
     }
@@ -401,6 +405,20 @@
     lastMoveAfterimageAtS = now();
   }
 
+  function consumeTravelSample(travel) {
+    const x = travel.pendingDxWorld, z = travel.pendingDzWorld; // Aggregates real movement since the previous 55ms sample.
+    travel.pendingDxWorld = 0;
+    travel.pendingDzWorld = 0;
+    return { x, z, distance: Math.hypot(x, z) };
+  }
+
+  function smearVelocityIntensity(distance, elapsedS, blink = false) {
+    // Normalize to about 100ms of motion. A fast dash stays visible even at
+    // 120 FPS, without opacity becoming dependent on the number of game ticks.
+    const seconds = Math.max(0.016, Math.min(0.15, Number(elapsedS) || SMEAR_SAMPLE_INTERVAL_S));
+    return distanceAfterimageIntensity(distance * (0.10 / seconds), blink);
+  }
+
   function updateForcedMovementAfterimages() {
     const player = window.Combat?.deps?.player;
     if (!player) return;
@@ -409,18 +427,22 @@
     const travel = updateAfterimageTravel(player, dodging, lunging);
     const movingBlink = defensiveHoldActive && t - lastMoveAfterimageAtS <= 0.1;
     if (dodging || lunging || movingBlink) {
+      const blinkOnly = movingBlink && !dodging && !lunging; // Blink locomotion shares the same mesh, not a second effect.
       const reason = lunging ? 'lunge' : dodging ? 'dodge' : 'blink-move';
-      const recent = lunging ? lastLungeAfterimageAtS : dodging ? lastDodgeAfterimageAtS : lastMoveAfterimageAtS;
-      if (t - recent >= SMEAR_SAMPLE_INTERVAL_S || !(lunging ? lungeAfterimageWasActive : dodgeAfterimageWasActive)) {
+      const recent = lunging ? lastLungeAfterimageAtS : dodging ? lastDodgeAfterimageAtS : lastBlinkSmearSampleAtS;
+      if (t - recent >= SMEAR_SAMPLE_INTERVAL_S) {
         if (dodging) lastDodgeAfterimageAtS = t;
         if (lunging) lastLungeAfterimageAtS = t;
-        if (movingBlink && !dodging && !lunging) lastMoveAfterimageAtS = t;
-        spawnAfterimage(reason, travel.dxWorld, travel.dzWorld,
-          distanceAfterimageIntensity(travel.stepTiles, movingBlink && !dodging && !lunging));
+        if (blinkOnly) lastBlinkSmearSampleAtS = t;
+        const sample = consumeTravelSample(travel); // Never smear a stationary attack.
+        spawnAfterimage(reason, sample.x, sample.z,
+          smearVelocityIntensity(sample.distance, t - recent, blinkOnly));
       }
     }
     if (!dodging) lastDodgeAfterimageAtS = -Infinity;
     if (!lunging) lastLungeAfterimageAtS = -Infinity;
+    if (!movingBlink) lastBlinkSmearSampleAtS = -Infinity;
+    if (!dodging && !lunging && !movingBlink) { travel.pendingDxWorld = 0; travel.pendingDzWorld = 0; }
     dodgeAfterimageWasActive = dodging;
     lungeAfterimageWasActive = lunging;
   }
@@ -457,12 +479,14 @@
         if (t - recent >= SMEAR_SAMPLE_INTERVAL_S || !(lunging ? motion.lungeActive : motion.dodgeActive)) {
           if (dodging) motion.lastDodgeAtS = t;
           if (lunging) motion.lastLungeAtS = t;
+          const sample = consumeTravelSample(travel); // One GPU smear update for the observed travel interval.
           spawnAfterimageForRoot(entity.avatarRef.group, lunging ? 'enemy-lunge' : 'enemy-dodge',
-            travel.dxWorld, travel.dzWorld, distanceAfterimageIntensity(travel.stepTiles));
+            sample.x, sample.z, smearVelocityIntensity(sample.distance, t - recent));
         }
       }
       if (!dodging) motion.lastDodgeAtS = -Infinity;
       if (!lunging) motion.lastLungeAtS = -Infinity;
+      if (!dodging && !lunging) { travel.pendingDxWorld = 0; travel.pendingDzWorld = 0; }
       motion.dodgeActive = dodging;
       motion.lungeActive = lunging;
     }
@@ -473,10 +497,12 @@
 
   function updateMotionSmears(dt) {
     const safeDt = Math.max(0, Number(dt) || 0);
+    let activeCount = 0; // Counted while updating each persistent effect, without allocating an array each frame.
     for (const record of motionSmears.values()) {
       record.remainingS -= safeDt;
       const opacityFactor = Math.max(0, Math.min(1, record.remainingS / SMEAR_LIFETIME_S));
       record.active = opacityFactor > 0;
+      if (record.active) activeCount++;
       for (const entry of record.entries) {
         entry.mesh.visible = record.active && !!entry.source.parent && entry.source.visible !== false;
         for (let i = 0; i < entry.materials.length; i++) {
@@ -487,7 +513,7 @@
         }
       }
     }
-    afterimageRuntimeDebug.active = [...motionSmears.values()].filter(record => record.active).length;
+    afterimageRuntimeDebug.active = activeCount;
     afterimageRuntimeDebug.pooled = motionSmears.size - afterimageRuntimeDebug.active;
     const t = now();
     if (t - lastSmearPruneAtS < 2) return;
@@ -721,6 +747,7 @@
       blinkRuntimeDebug.passiveDrainCarry = 0;
       blinkRuntimeDebug.active = false;
       lastMoveAfterimageAtS = -Infinity;
+      lastBlinkSmearSampleAtS = -Infinity;
       window.ResourceSystem?.setStaminaRegenBlocked?.(window.Combat.deps?.player, STAMINA_REGEN_BLOCK_SOURCE, false);
       window.Combat.setMovementSpeedMul(null);
       if (wasActive && message) window.Combat.deps.showToast(message, false);
