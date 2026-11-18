@@ -40,8 +40,12 @@
   function wasClaimed(mapId, placement) {
     if (placement.ruinHole) return false;
     const record = activeChestClaims(mapId); // A chest can move when day-dependent plant/berry exclusions change during a rebuilt scatter.
-    return !!record && (record.tiles.has(chestTileKey(placement))
-      || (Number.isInteger(placement.slot) && record.slots.has(placement.slot)));
+    if (!record) return false;
+    // Slots identify the actual weekly chest. Coordinate fallback only applies to old saves
+    // that never recorded slots; a different, unclaimed slot may move onto a claimed tile.
+    return record.slots.size && Number.isInteger(placement.slot)
+      ? record.slots.has(placement.slot)
+      : record.tiles.has(chestTileKey(placement));
   }
   function rememberChestClaim(mapId, placement) {
     let record = activeChestClaims(mapId); // Shared by every rebuild of this zone during this treasure week.

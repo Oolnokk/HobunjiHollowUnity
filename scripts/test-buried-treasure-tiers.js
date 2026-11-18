@@ -33,12 +33,12 @@ class Mesh { constructor(geometry, material) { this.geometry = geometry; this.ma
 class Material { constructor({ color }) { this.color = color; } }
 class TextureLoader { load(path) { return { path }; } }
 
-function harness(roll, legacyPlacement = null, disableMetals = false) {
+function harness(roll, legacyPlacement = null, disableMetals = false, twoChests = false) {
   const mapId = 'buried_tier_test'; // Shared active zone ID used by scatter, lock targeting, and chest removal.
   const TILE = { GRASS: 'grass', TRENCH: 'trench' }; // Distinguishes a buried chest from one ready to open.
   const tile = { type: TILE.GRASS, elevTier: 0 }; // First legal treasure tile, where the original chest is opened.
   const alternateTile = { type: TILE.GRASS, elevTier: 0 }; // A distinct legal tile to simulate rescatters after changing berry/reagent exclusions.
-  let scatterCol = 0; // Controls the legal site returned by a later rebuild, without changing the weekly scatter-slot identity.
+  let scatterCols = twoChests ? [0, 1] : [0]; // Controls legal sites returned on regeneration without changing their scatter-slot identity.
   const scene = { add() {}, remove() {} }; // World mesh hooks used by production ensureZone.
   const persist = new Map(); // Mimics the normal weekly treasure persistence object.
   const objects = new Map(); // World-object registry that validates in-flight lock successes.
@@ -88,11 +88,11 @@ function harness(roll, legacyPlacement = null, disableMetals = false) {
     VERDIGRIS_METAL_KEYS: ['tin'], MYSTERY_DYE_ITEM_KEY_BY_POOL: { test: 'dyeTest' },
     metalBarItemKey: metal => metal + 'Bar', METAL_DEFS: { tin: { label: 'Tin' } },
     inventory, ITEM_DEFS: itemDefs,
-    _zoneScenes: new Map([[mapId, { grid: [[tile, alternateTile]], cols: 2, rows: 1, scene }]]),
+    _zoneScenes: new Map([[mapId, { grid: [[tile, alternateTile]], cols: twoChests ? 3200 : 2, rows: 1, scene }]]),
     _zoneTreasurePersist: persist, _zoneTreasureObjects: objects, _zoneTreasureMeshGroups: meshes,
     _zoneReagentPersist: new Map(), _zoneBerryPersist: new Map(),
     _seedFromString: text => text, _mbRng: seed => () => seed.includes(':treasure-tier:') ? roll : 0.5,
-    findZoneFlatEmptyTiles: () => [{ col: scatterCol, row: 0 }],
+    findZoneFlatEmptyTiles: () => scatterCols.map(col => ({ col, row: 0 })),
     TileType: TILE, NORMAL_TOP: 0, TRENCH_TOP: -0.5, PLATEAU_UNIT: 1,
     getCurrentArea: () => mapId, isZoneArea: id => id === mapId,
     refreshItemScroll() {}, buildInventoryGrid() {}, buildPackClothingSection() {}, showToast() {},
@@ -104,7 +104,7 @@ function harness(roll, legacyPlacement = null, disableMetals = false) {
   return {
     api, mapId, tile, objects, meshes, persist, placement, inventory, calendar, started, claimed, acquired, flushed, masteryRolls,
     dig() { tile.type = TILE.TRENCH; api.syncZoneInteractivity(mapId); return objects.get(mapId)?.get('0,0'); },
-    moveScatterToAlternateTile() { scatterCol = 1; }, // Regression for a plant or berry placement that changes the eligible chest coordinate.
+    moveScatterToAlternateTile() { scatterCols = twoChests ? [1, 0] : [1]; }, // Regression for a plant or berry placement that changes the eligible chest coordinates.
   };
 }
 
@@ -184,6 +184,20 @@ assert.equal(resumed.persist.get(resumed.mapId).placements.length, 0, 'save/relo
 assert.equal(resumed.objects.get(resumed.mapId).size, 0, 'restored chest remains unlootable');
 const freshWorld = harness(0); // A different character without these claims still gets their own loot.
 assert.equal(freshWorld.persist.get(freshWorld.mapId).placements.length, 1, 'claims never leak to another character');
+
+// Two chests may exchange locations after a berry/reagent rescatters: preserve the unclaimed slot.
+const two = harness(0, null, false, true); // A large zone normally spawns two independently claimable weekly chests.
+assert.deepEqual(two.persist.get(two.mapId).placements.map(p => p.slot), [0, 1]);
+const firstOfTwo = two.dig();
+firstOfTwo.onAction('obj_open_treasure_chest');
+two.started[0].onSuccess({ bonusDrops: 0 });
+two.persist.delete(two.mapId);
+two.moveScatterToAlternateTile(); // Slot 0 moves away; unclaimed slot 1 now occupies the old claimed coordinate.
+two.api.ensureZone(two.mapId);
+const survivor = two.persist.get(two.mapId).placements; // Should contain precisely the other chest, irrespective of reused coordinates.
+assert.deepEqual(survivor.map(p => p.slot), [1], 'only the claimed chest slot is suppressed');
+assert.equal(survivor[0].col, 0, 'an unclaimed chest remains available even when moved onto a previously claimed tile');
+assert(two.objects.get(two.mapId).get('0,0'), 'the remaining chest can still be opened after switching coordinates');
 
 visit.calendar.day = 8; // The existing weekly spawn intentionally allows fresh loot after day seven.
 visit.api.ensureZone(visit.mapId);
