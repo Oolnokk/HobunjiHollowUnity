@@ -322,6 +322,15 @@ assert.strictEqual(debug().active, 'Fire Flask · Potency 2 ×1', 'second type r
 selector.releaseSelection();
 assert.strictEqual(heldItemKey, fireFlask.itemKey, 'other flask types still equip their exact item key');
 assert.strictEqual(flasks.length, 4, 'filtering the wheel never removes weaker flasks from inventory');
+venomStrong.count = 0; // Simulates the last strongest flask being thrown while weaker copies are still owned.
+assert.deepStrictEqual(debug().flasks.map(entry => entry.itemKey), [venomWeak.itemKey, fireFlask.itemKey],
+  'when the strongest potency runs out, the next-highest owned flask becomes selectable');
+selector.openPotions();
+selector.scrollEntries(1);
+selector.scrollEntries(1);
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, venomWeak.itemKey, 'fallback flask selects its exact remaining inventory stack');
+venomStrong.count = 2; // Restore the fixture before the original no-flask scenario.
 
 
 // No-useful-medicine layouts retain centered/default Cancel and omit stale hierarchy labels.
