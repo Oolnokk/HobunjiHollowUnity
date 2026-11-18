@@ -76,8 +76,23 @@ jobs:
           if ($appFeed -notmatch 'provider:\s*generic' -or $appFeed -notmatch 'friends-update-feed') {
             throw 'Friends installer is not isolated from the main release feed'
           }
+          $blockmap = "$installer.blockmap"
+          if (-not (Test-Path $blockmap)) { throw "Missing Friends differential-update blockmap: $blockmap" }
+          $originalMetadata = Get-Content 'desktop/dist/latest.yml' -Raw
+          if ($originalMetadata -notmatch [regex]::Escape($version)) { throw 'Friends version mismatch' }
+          node scripts/desktop-friends-build.js feed $version desktop/dist/latest.yml
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to create release-pinned Friends metadata' }
           $latest = Get-Content 'desktop/dist/latest.yml' -Raw
-          if ($latest -notmatch [regex]::Escape($version)) { throw 'Friends version mismatch' }
+          $assetUrl = "https://github.com/$" + "env:GITHUB_REPOSITORY/releases/download/friends-v$version/Hobunji-Hollow-Tester-Setup-$version.exe"
+          if (-not $latest.Contains($assetUrl)) { throw 'Friends manifest does not point to approved release assets' }
+          $checksumMatch = [regex]::Match($latest, '(?m)^\s+sha512:\s*(\S+)')
+          if (-not $checksumMatch.Success) { throw 'Friends manifest does not contain a file checksum' }
+          $hash = (Get-FileHash $installer -Algorithm SHA512).Hash
+          $expectedChecksum = [Convert]::ToBase64String([Convert]::FromHexString($hash))
+          if ($checksumMatch.Groups[1].Value -ne $expectedChecksum) {
+            throw 'Friends manifest checksum does not match the packaged installer'
+          }
+          Write-Host "Verified approved-download URL and installer SHA512 for Friends version $version"
       - uses: actions/upload-artifact@v4
         with:
           name: Hobunji-Hollow-Friends-Windows-Installer
@@ -109,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/desktop-friends-build.js feed "0.2.${{ github.run_number }}" release/latest.yml
+          # Build job already rewrote and checksum-verified real metadata before upload.
           grep -F 'friends-v0.2.${{ github.run_number }}' release/latest.yml
       - name: Publish approved installer as a prerelease (never GitHub latest)
         env:
