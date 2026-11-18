@@ -17,8 +17,9 @@
   function planRooms(plan,pitForRoom){
     const rooms=[],doors=[],errors=[],ids=new Set(); // Used to validate all generated room/door identities once per ruin build.
     for(const floor of plan?.floors||[])for(const wing of floor.wings||[]){
-      for(let i=0;i<wing.rooms.length;i++){
-        const source=wing.rooms[i],name=String(source.id||'');
+      const sources=wing.anteroom?[wing.anteroom,...wing.rooms]:wing.rooms; // Reuse the same manifest for the shaft room.
+      for(let i=0;i<sources.length;i++){
+        const source=sources[i],name=String(source.id||'');
         const entry=(floor.doorways||[]).find(port=>port.to===name);
         if(!name||ids.has(name)){errors.push('Duplicate or empty room id: '+name);continue;}
         ids.add(name);
@@ -56,7 +57,7 @@
         rooms.push(room);
         doors.push({id:name+':entry',roomId:name,from:entry.from,to:name,floor:floor.floor,
           x:p.x+.5,z:p.z+.5,y:floor.y,axis:room.entry.axis,span:DOOR_SPAN,
-          initiallyLocked:i>0});
+          initiallyLocked:i>(wing.anteroom?1:0)}); // Anteroom and first puzzle are unlocked; later gates retain progression.
       }
     }
     return {rooms,doors,errors,ok:errors.length===0};
@@ -70,8 +71,8 @@
       const x=originX+Number(raw.col)*cs,z=originZ+Number(raw.row)*cs;
       const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
       if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
-      return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),theme,
-        y,wingId:null,challenge:null,x,z,w,d,
+      return [{id:prefix+':'+String(raw.id||index),kind:prefix==='v50-ground'?'entrance-chamber':'v50',floor:Math.round(y),theme,
+        y,wingId:prefix==='v50-ground'?'v50-ground':null,challenge:null,x,z,w,d,
         supportYAt:typeof supportYAt==='function'?supportYAt:null, // V50 uses the floor's exact plateau height when deciding which room is awake.
         ambient:{darknessOffset:0,color}}];
     });
