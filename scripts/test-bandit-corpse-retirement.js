@@ -343,7 +343,7 @@ for (const portraitFlip of [false, true]) {
   body.avatarRef.group.scale.x = 2.5; // Depth-only scaling must not enlarge the flattened portrait.
   assert.equal(w.mod.tick(NOW), 1);
   const flat = body.avatarRef.group.children[0];
-  assert.equal(flat.rotation.y, Math.PI / 2, 'fallen portrait matches the original +90-degree death root');
+  assert.equal(body.avatarRef.group.rotation.y, Math.PI / 2, 'fallback death heading lays the original +Y body axis along -X');
   assert.equal(flat.scale.z, 1.6, 'the authored species vertical scale follows the laid-down body axis');
   assert.equal(flat.scale.x, 1.35, 'width uses the original card-normal axis correctly, not the root depth axis');
   assert.equal(flat.material.map.repeat.x, portraitFlip ? -1 : 1, 'corpse image keeps the live front UV orientation');
@@ -363,6 +363,19 @@ for (const portraitFlip of [false, true]) {
   assert.equal(body.rigDisposed.n, 0, 'no texture or genotype materials are disposed');
   assert.equal(w.mod.stats.imagesDeferred, 1);
   assert.equal(w.mod.isRetirable(body, w.area), false, 'retry is throttled');
+}
+
+// 16. Recorded authored falls own their final impact-pivot heading instead of
+// always receiving the generic +90-degree orientation.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const body = w.corpse('recorded-throw', { deathRestRotY: 1.2, deathRecorded: true });
+  body.avatarRef.frontCanvas = { width: 256, height: 256 };
+  body.avatarRef.frontPlane = new Obj();
+  body.avatarRef.frontPlane.matrixWorld = { elements: [1, 0, 0, 0, 0.8, 0.1, 0.6, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
+  assert.equal(w.mod.tick(NOW), 1);
+  assert(Math.abs(body.avatarRef.group.rotation.y - Math.atan2(-0.8, -0.6)) < 1e-7,
+    'one-plane body follows the final recorded portrait Y axis rather than deathRestRotY + PI/2');
 }
 
 console.log('bandit corpse retirement: ok');
