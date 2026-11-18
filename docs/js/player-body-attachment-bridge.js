@@ -167,7 +167,14 @@
   }
   function bindShoulderTexture(companion, combatDeps, url, binding) {
     if (shoulderTextureIsBound(companion, url, binding)) return false;
-    if (binding.url === url && binding.avatar === companion.avatarRef) smallPetHeadDebug.overwritesRestored++;
+    if (binding.url === url && binding.avatar === companion.avatarRef) {
+      smallPetHeadDebug.overwritesRestored++;
+      if (smallPetHeadDebug.overwritesRestored <= 3) {
+        const kind = companion.creatureKey || companion.kind || 'pet'; // Limits mobile debug warnings to the first three unexpected overwrites.
+        window.__farmLog?.('[shoulder-head] restored enlarged/split portrait after competing texture write: ' + kind,
+          'warn', 'render');
+      }
+    }
     // setCreatureFrame binds a shared source texture synchronously. Its false result only means a genotype composite was not used.
     combatDeps.setCreatureFrame(companion.avatarRef, url, null, 'idle', null);
     companion.currentFrameUrl = url;
