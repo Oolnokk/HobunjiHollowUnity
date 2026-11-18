@@ -21,6 +21,26 @@ for (const name of ['docs/js/player-jump.js', 'docs/js/climb-system.js', 'docs/j
 }
 assert(integration.includes('window.PlayerJump?.init?.(injectedDeps)'));
 assert(gameSource.includes('if (window.PlayerJump?.tick?.(dt)) return;'), 'game loop must tick jump independently');
+assert(gameSource.includes('sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy)'),
+  'midair dodge must reach the native swept movement handler with real foot-height collision');
+{
+  const begin=gameSource.indexOf('      function canPlayerDodgeOccupy(wx, wy) {');
+  const end=gameSource.indexOf('      function canPlayerOccupy(wx, wy) {',begin);
+  assert(begin>0&&end>begin,'the native dodge collision bridge exists');
+  const actor={_freeJump:{phase:'air'},physicalFeetY:6};
+  const calls=[];
+  const probe=new Function('player','canPlayerOccupyAtHeight','canPlayerOccupy',
+    gameSource.slice(begin,end)+'\nreturn canPlayerDodgeOccupy;')(actor,
+      (x,z,y)=>{calls.push(['raised',x,z,y]);return true;},
+      (x,z)=>{calls.push(['ground',x,z]);return false;});
+  assert.equal(probe(4,5),true,'airborne dodge uses the height-aware collision authority');
+  assert.deepEqual(calls.pop(),['raised',4,5,6]);
+  actor._freeJump={phase:'supported'};
+  assert.equal(probe(6,5),true,'upper-gallery supported dodge also uses physical feet');
+  actor._freeJump=null;
+  assert.equal(probe(6,5),false,'ground dodges retain the ordinary movement collider');
+  assert.deepEqual(calls.pop(),['ground',6,5]);
+}
 assert(gameSource.includes('player._freeJump ? player.physicalFeetY'), 'renderer uses physical jump height');
 assert(gameSource.includes('getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE'), 'ordinary player speed drives airborne travel');
 assert(gameSource.includes('canPlayerOccupyAtHeight, // Jump uses native world collision'), 'jump uses the native height-aware collision authority');
@@ -638,6 +658,8 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   const flight=h.player._freeJump;
   assert(flight&&flight.phase==='air');
   h.player.dodging=true;
+  assert.equal(h.window.PlayerJump.tick(1/60),false,
+    'PlayerJump must not consume the real native dodge frame while gravity stays active');
   h.advance(.05);
   assert.equal(h.player._freeJump,flight,'midair dodge never cancels the ballistic jump');
   assert(h.player.physicalFeetY>0,'midair dodge retains the upper-story physical elevation');
@@ -648,6 +670,8 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     vy:0,vx:0,vz:0,elapsed:0,source:'free jump',safeX:3.5,safeZ:3.5}; // Simulates arrival on a genuine upper gallery dynamic support.
   h.player.physicalFeetY=2;
   h.player.dodging=true;
+  assert.equal(h.window.PlayerJump.tick(1/60),false,
+    'supported-gallery dodge remains in the native dash handler');
   h.advance(.12);
   assert.equal(h.player._freeJump?.phase,'supported','dodging along a raised gallery does not erase supported motion');
   assert.equal(h.player.physicalFeetY,2,'the raised gallery maintains physical elevation throughout the dodge');
