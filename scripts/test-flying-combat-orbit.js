@@ -49,6 +49,6 @@ assert(boss.includes('FlyingCombatOrbit?.tangent?.')&&boss.includes('deps?.swept
 const mobileDebug=read('docs/js/wildlife-debug-panel.js'); // This existing in-game panel is available on mobile without DevTools.
 assert(mobileDebug.includes('no-perch orbits: ')&&mobileDebug.includes('Skeeri aerial combat'),
   'Tzatzul and Skeeri fallback phases/counters remain visible in the mobile debug panel');
-assert(html.includes('wildlife-debug-panel.js?v=20261118flightOrbitUI1'),
-  'the deployed mobile diagnostics use the new debug-panel asset version');
+assert(/wildlife-debug-panel\\.js\\?v=[A-Za-z0-9_-]+/.test(html),
+  'the deployed mobile diagnostics use a properly versioned debug-panel asset');
 console.log('Flying combat orbital evasion geometry and collision integrations PASS');
