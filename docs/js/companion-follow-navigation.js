@@ -110,6 +110,24 @@
       if (DS?.blockerAt?.(x, z, { radius: 0.2, actorHeight: 1.25 })) continue;
       if (!deps.creatureCanEnter?.(c.def, px, py, NaN, NaN, probe, true)) continue;
       if (!hiddenAt(camera, x, z, ownerSurface, c.halfHeight * 2 || 1.25)) continue;
+      if (ruin) {
+        const navigator = window.TilePathfinding; // Existing tile navigator proves a floor-matched path back to the owner.
+        if (!navigator?.findPath || !navigator?.boxAround) continue; // Never teleport into an isolated locked chamber.
+        const startCol = Math.floor(px / tile), startRow = Math.floor(py / tile);
+        const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile);
+        const path = navigator.findPath(startCol, startRow, goalCol, goalRow, (col, row) => {
+          const tx = (col + 0.5) * tile, ty = (row + 0.5) * tile;
+          const surface = DS?.sampleSupport?.(tx / tile, ty / tile, {
+            minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
+          }); // A path on a different overlapping shaft story does not count.
+          return !!surface && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
+            !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25 }) &&
+            !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
+            window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
+            !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
+        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 1600 });
+        if (!path) continue;
+      }
       return { x: px, y: py, supportY: ownerSurface };
     }
     return null;
