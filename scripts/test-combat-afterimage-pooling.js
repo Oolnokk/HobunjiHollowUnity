@@ -1,187 +1,241 @@
 #!/usr/bin/env node
 'use strict';
 
-// Motion smears must reuse actor RGB textures and GPU-skinned geometry.
-// No CPU vertex baking, canvas snapshots, additional effects per strike, or
-// disposal of textures owned by the live portrait is permitted.
+// Exercise the real player/enemy portrait snapshotter with deterministic fake
+// canvases and Three resources: repeat moves should reuse GPU objects, while
+// face changes, skinned poses, and scene cleanup must remain correct.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('docs/js/combat/combat-blink-dodge.js', 'utf8'); // The live effect, not a duplicate implementation.
+const source = fs.readFileSync('docs/js/combat/combat-blink-dodge.js', 'utf8'); // Production effect under test.
 
-let nowMs = 1000; // Controlled clock for per-actor samples and the warm-cache retention period.
-const counts = { meshes: 0, materials: 0, textures: 0, canvases: 0, disposedGeometry: 0, disposedMaterial: 0, boneTransforms: 0 }; // Used to ensure each movement reuses live GPU resources.
+let nowMs = 1000; // Fake combat clock used to control sampling and idle pool expiry.
+const counts = { geometry: 0, materials: 0, textures: 0, meshes: 0, canvases: 0, geometryDisposals: 0, textureDisposals: 0 }; // Allocation counters for detecting per-dodge churn.
 class Matrix {
-  constructor() { this.elements = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0)); }
+  constructor() { this.elements = Array.from({ length: 16 }, (_, i) => i % 5 === 0 ? 1 : 0); }
+  clone() { const matrix = new Matrix(); matrix.elements = this.elements.slice(); return matrix; }
   copy(other) { this.elements = other.elements.slice(); return this; }
   invert() { return this; }
-  premultiply() { return this; }
+  multiplyMatrices(_parent, local) { return this.copy(local); }
 }
 class Group {
-  constructor() {
-    this.children = []; this.parent = null; this.userData = {}; this.isScene = false;
-    this.visible = true; this.matrixWorld = new Matrix();
-  }
+  constructor() { this.children = []; this.parent = null; this.matrixWorld = new Matrix(); this.userData = {}; this.isScene = false; }
   add(child) { child.parent?.remove?.(child); this.children.push(child); child.parent = this; }
   remove(child) {
-    const i = this.children.indexOf(child);
-    if (i >= 0) this.children.splice(i, 1);
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
     child.parent = null;
   }
-  traverse(fn) { fn(this); for (const child of this.children) child.traverse ? child.traverse(fn) : fn(child); }
+  traverse(callback) { callback(this); for (const child of this.children) child.traverse ? child.traverse(callback) : callback(child); }
   updateWorldMatrix() {}
 }
-class Attribute {
-  constructor(array, itemSize, normalized = false) { this.array = array; this.itemSize = itemSize; this.normalized = normalized; this.count = array.length / itemSize; }
+class PositionAttribute {
+  constructor() {
+    this.count = 2; this.itemSize = 3;
+    this.array = new Float32Array([1, 0, 0, 2, 0, 0]); // Mutable source buffer used to verify non-skinned in-place geometry updates.
+  }
+  setXYZ(index, x) { this.array[index * 3] = x; this.needsUpdate = true; }
 }
 class Geometry {
-  constructor() { this.attributes = {}; this.groups = []; this.userData = {}; }
-  setAttribute(name, attribute) { this.attributes[name] = attribute; }
-  getAttribute(name) { return this.attributes[name]; }
+  constructor() { this.positions = new PositionAttribute(); this.attributes = { position: this.positions }; }
+  clone() {
+    counts.geometry += 1;
+    const next = new Geometry();
+    next.positions.array.set(this.positions.array);
+    return next;
+  }
+  getAttribute(name) { return this.attributes[name] || null; }
   getIndex() { return null; }
-  addGroup(start, count, materialIndex) { this.groups.push({ start, count, materialIndex }); }
-  computeBoundingSphere() {}
-  dispose() { counts.disposedGeometry++; }
+  deleteAttribute() {}
+  dispose() { counts.geometryDisposals += 1; }
 }
-class Color {
-  constructor(value) { this.value = value; }
-  copy(other) { if (other) this.value = other.value; return this; }
+class Texture {
+  constructor(image) { this.image = image; }
+  clone() { counts.textures += 1; return new Texture(this.image); }
+  dispose() { counts.textureDisposals += 1; }
 }
 class Material {
   constructor(name, texture) {
-    this.name = name; this.map = texture; this.alphaMap = texture; this.emissiveMap = null;
-    this.opacity = 1; this.alphaTest = 0.35; this.color = new Color('red');
-    this.emissive = new Color('black');
+    this.name = name; this.map = texture; this.opacity = 1; this.alphaTest = 0.35;
   }
-  clone() {
-    counts.materials++;
-    const clone = Object.assign(new Material(this.name, this.map), this);
-    clone.color = new Color(this.color.value); clone.emissive = new Color(this.emissive.value);
-    return clone;
-  }
-  dispose() { counts.disposedMaterial++; }
+  clone() { counts.materials += 1; return Object.assign(new Material(this.name, this.map), this); }
+  dispose() {}
 }
 class Mesh extends Group {
   constructor(geometry, material) {
     super();
-    counts.meshes++;
-    this.geometry = geometry; this.material = material;
-    this.isMesh = true; this.matrix = new Matrix(); this.layers = { mask: 1 };
-    this.renderOrder = 0; this.matrixAutoUpdate = true;
+    counts.meshes += 1;
+    this.geometry = geometry; this.material = material; this.isMesh = true;
+    this.matrix = new Matrix(); this.layers = { mask: 1 }; this.renderOrder = 0;
+    this.name = ''; this.type = 'Mesh';
   }
 }
-class SkinnedMesh extends Mesh {
-  constructor(geometry, material) {
-    super(geometry, material); this.isSkinnedMesh = true;
-    this.skeleton = { update() {} }; this.bindMatrix = new Matrix();
-    this.bindMatrixInverse = new Matrix(); this.bindMode = 'attached';
+class Vertex {
+  fromBufferAttribute(attribute, index) {
+    this.x = attribute.array[index * 3]; this.y = 0; this.z = 0;
+    return this;
   }
-  bind(skeleton, matrix) { this.skeleton = skeleton; this.bindMatrix.copy(matrix); }
 }
-function portraitGeometry() {
-  const geometry = new Geometry(); // The avatar's 4x4 two-sided grid with live skin weights.
-  geometry.userData = { segmentsX: 4, segmentsY: 4 };
-  const position = [], uv = [], skinIndex = [], skinWeight = [];
-  for (let face = 0; face < 2; face++) {
-    for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
-      for (let vertex = 0; vertex < 6; vertex++) {
-        position.push(col / 4, row / 4, 0);
-        uv.push(col / 4, row / 4);
-        skinIndex.push(face, 0, 0, 0);
-        skinWeight.push(1, 0, 0, 0);
-      }
-    }
-    geometry.addGroup(face * 96, 96, face);
+const scene = new Group(); // Holds the two live portrait rigs and transient detached snapshots.
+scene.isScene = true;
+function makeActor(name, skinned) {
+  const root = new Group(); // Root passed to findPortraitMeshes for each actor.
+  scene.add(root);
+  const image = { width: 8, height: 8, name }; // Mutable live face whose pixels are frozen on each sample.
+  const material = new Material('npc_avatar_skinned_front_' + name, new Texture(image)); // Front portrait material used to validate frozen facial-expression updates.
+  const rearMaterial = new Material('npc_avatar_skinned_back_' + name, new Texture({ width: 8, height: 8, name: name + ' rear' })); // The real skinned avatar also has a separate back-facing material.
+  const portrait = new Mesh(new Geometry(), [material, rearMaterial]); // Both portrait texture slots must be frozen and refreshed together.
+  portrait.name = 'portrait_' + name;
+  portrait.isSkinnedMesh = skinned;
+  portrait.pose = 0;
+  if (skinned) {
+    portrait.skeleton = { update() {} };
+    portrait.boneTransform = (_index, vertex) => { vertex.x += portrait.pose; };
   }
-  geometry.setAttribute('position', new Attribute(new Float32Array(position), 3));
-  geometry.setAttribute('uv', new Attribute(new Float32Array(uv), 2));
-  geometry.setAttribute('skinIndex', new Attribute(new Uint16Array(skinIndex), 4));
-  geometry.setAttribute('skinWeight', new Attribute(new Float32Array(skinWeight), 4));
-  return geometry;
-}
-const scene = new Group(); scene.isScene = true; // Scene receives at most one live smear per portrait mesh.
-function actor(name, isEnemy) {
-  const root = new Group(); scene.add(root);
-  const colors = [{ id: name + '-patterned-front' }, { id: name + '-patterned-back' }]; // Shared real texture identity proves no copies.
-  const material = [new Material('npc_avatar_skinned_front_' + name, colors[0]), new Material('npc_avatar_skinned_back_' + name, colors[1])];
-  const portrait = new SkinnedMesh(portraitGeometry(), material);
-  portrait.name = name + '_portrait';
-  portrait.boneTransform = () => { counts.boneTransforms++; throw new Error('CPU skinning is forbidden'); };
   root.add(portrait);
-  const model = { x: 0, y: 0, lunging: false, dodging: false, stamina: 200, health: 100,
-    ...(isEnemy ? { isBandit: true, state: 'chase', _banditLunging: false, avatarRef: { group: root } } : {}) };
-  return { root, portrait, material, colors, model };
+  return { root, portrait, material, image };
 }
-const player = actor('player', false), enemy = actor('enemy', true);
+const playerRig = makeActor('player', true); // Skinned reuse must rebake its current vertex positions.
+const enemyRig = makeActor('enemy', false); // An independent material/mesh must not inherit the player's ghost.
+const player = { x: 0, y: 0, lunging: false, dodging: false, stamina: 200 }; // Drives player forced-motion samples.
+const enemy = { x: 0, y: 0, state: 'chase', health: 100, isBandit: true, _banditLunging: false, avatarRef: { group: enemyRig.root } }; // Drives NPC samples.
 const combat = {
   abilities: { register() {} },
-  deps: { player: player.model, playerMesh: player.root, TILE: 64, hostileObjects: [enemy.model], getCurrentArea: () => null },
+  deps: { player, playerMesh: playerRig.root, TILE: 64, hostileObjects: [enemy], getCurrentArea: () => null },
   update() {}, setMovementSpeedMul() {},
 };
-const win = {
-  Combat: combat, THREE: { Mesh, SkinnedMesh, BufferGeometry: Geometry, BufferAttribute: Attribute, Matrix4: Matrix },
+let canvasId = 0; // Distinguishes independent frozen canvas objects in the fake document.
+const preferenceStorage = new Map(); // Persists the Visual Effects choice independently of the ghost's GPU caches.
+const afterimageToggle = { checked: true, dataset: {}, listeners: {},
+  addEventListener(name, handler) { this.listeners[name] = handler; },
+}; // Synthetic mobile settings checkbox, initially forced wrong to verify startup synchronization.
+const storageStub = {
+  getItem(key) { return preferenceStorage.has(key) ? preferenceStorage.get(key) : null; },
+  setItem(key, value) { preferenceStorage.set(key, value); },
+}; // Tests default-off, opt-in persistence, and opt-out cleanup.
+const documentStub = {
+  readyState: 'complete',
+  getElementById(id) { return id === 'settingCombatAfterimages' ? afterimageToggle : null; },
+  createElement() {
+    counts.canvases += 1;
+    const canvas = { width: 0, height: 0, id: ++canvasId };
+    canvas.getContext = () => ({
+      clearRect() { canvas.cleared = true; },
+      drawImage(image) { canvas.copiedFace = image.name; },
+    });
+    return canvas;
+  },
+};
+const windowStub = {
+  Combat: combat,
+  THREE: { Mesh, Vector3: Vertex },
   BanditCombat: { setCombatExpression() {} },
   WorldPortraitLife: { setPlayerCombatExpression() {}, isPlayerCombatExpressionApplied: () => true },
+  HobunjiSpritePngSurface: { alphaTest: () => 0.001 },
 };
-vm.runInNewContext(source, {
-  window: win, performance: { now: () => nowMs }, console,
-  document: { createElement() { counts.canvases++; throw new Error('Never copy a portrait canvas'); } },
-}, { filename: 'combat-blink-dodge.js' });
-const metrics = () => win.HobunjiDodgeFeedback.getDebug().blink.afterimages;
-const smears = () => scene.children.filter(mesh => mesh.name === 'combat_portrait_motion_smear');
-player.model.lunging = true;
-enemy.model._banditLunging = true;
+vm.runInNewContext(source, { window: windowStub, document: documentStub, localStorage: storageStub, performance: { now: () => nowMs }, console }, { filename: 'combat-blink-dodge.js' });
+enemyRig.material.alphaMap = enemyRig.material.map; // Both map and alphaMap share one frozen canvas; refreshing must not double-copy it.
+const stats = () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages; // Mobile diagnostics used to check pooling without relying on internal module functions.
+const ghosts = () => scene.children.filter(object => object.name === 'combat_portrait_afterimage'); // Currently attached visual snapshots.
+assert.equal(stats().enabled, false, 'combat afterimages are disabled by default when storage is empty');
+assert.equal(afterimageToggle.checked, false, 'Visual Effects checkbox starts unchecked even when markup/default DOM differs');
+assert.equal(afterimageToggle.listeners.change instanceof Function, true, 'Visual Effects checkbox is wired for runtime changes');
+player.lunging = true;
+enemy._banditLunging = true;
 combat.update(0.016);
-player.model.x += 64; enemy.model.x += 64;
-nowMs += 60; combat.update(0.06);
-assert.equal(smears().length, 2, 'player and enemy get one colored GPU smear each');
-assert.equal(metrics().active, 2, 'mobile diagnostics track both active smears');
-assert.equal(metrics().entriesCreated, 2, 'one reusable mesh was created for each actor');
-assert.equal(counts.canvases, 0, 'no canvas snapshots');
-assert.equal(counts.textures, 0, 'no texture clones or uploads');
-assert.equal(counts.boneTransforms, 0, 'no CPU skinning');
-assert.equal(smears()[0].geometry.getAttribute('position').count, 48, '4x4 skin grid decimated once to 2x2 per face');
-assert.equal(smears()[0].geometry.getAttribute('skinIndex').count, 48, 'the reduced mesh retains live GPU skinning');
-assert.equal(smears()[0].geometry.getAttribute('skinWeight').count, 48);
-const first = smears().slice(); // Mesh identity must survive further strikes and idle fade.
-const playerSmear = first.find(mesh => mesh.material[0].map === player.colors[0]);
-assert(playerSmear, 'the visible player effect retains the original character texture');
-assert.strictEqual(playerSmear.material[1].map, player.colors[1], 'rear colors and patterns are retained too');
-assert.strictEqual(playerSmear.skeleton, player.portrait.skeleton, 'smear shares the live rig bones');
-assert.equal(playerSmear.material[0].depthWrite, false, 'soft opacity does not occlude the live portrait');
-assert.equal(playerSmear.material[0].transparent, true);
-const shaders = { uniforms: {}, vertexShader: '#include <common>\n#include <skinning_vertex>',
-  fragmentShader: '#include <common>\n#include <premultiplied_alpha_fragment>\n#include <dithering_fragment>' }; // Exercise the real r128 onBeforeCompile modification.
-playerSmear.material[0].onBeforeCompile(shaders, {});
-assert.match(shaders.vertexShader, /transformed\.xz -= uSmearDirection/);
-assert.match(shaders.fragmentShader, /gl_FragColor\.a \*= uSmearOpacity \* smoothstep/);
-assert.doesNotMatch(shaders.fragmentShader, /gl_FragColor\.rgb\s*[\*+\-=]/, 'shader may fade only alpha, never shift RGB');
-assert.equal(shaders.uniforms.uSmearOpacity.value > 0, true);
-const opacityAtImpact = shaders.uniforms.uSmearOpacity.value;
-player.model.lunging = false; enemy.model._banditLunging = false;
-nowMs += 90; combat.update(0.09);
-assert(shaders.uniforms.uSmearOpacity.value < opacityAtImpact, 'blur alpha decays after a lunge');
-nowMs += 300; combat.update(0.3);
-assert.equal(metrics().active, 0, 'finished smears are hidden, not kept drawing');
-assert.equal(smears().length, 2, 'warm actors retain their effect meshes for the next strike');
-player.model.lunging = true; enemy.model._banditLunging = true;
-player.model.x += 128; enemy.model.x += 64;
-nowMs += 60; combat.update(0.06);
-assert.deepEqual(smears(), first, 'repeated attacks reuse exactly the same GPU smear objects');
-assert.equal(metrics().entriesCreated, 2, 'no new mesh/material/texture churn in repeated fights');
-assert.equal(metrics().entriesReused >= 2, true);
-assert.equal(counts.boneTransforms, 0);
-assert.equal(counts.canvases, 0);
-const newFront = { id: 'new-face' }; // A replacement texture must cause only this actor's resources to refresh.
-player.material[0].map = newFront;
-player.model.x += 64; nowMs += 60; combat.update(0.06);
-assert.equal(metrics().entriesCreated, 3, 'a changed source texture rebuilds one actor smear, not the enemy');
-assert(smears().some(mesh => mesh.material[0].map === newFront), 'new portrait appearance is visible');
-player.model.lunging = false; enemy.model._banditLunging = false;
-nowMs += 32000; combat.update(0.3);
-assert.equal(metrics().pooled, 0, 'stale actor effects are disposed after idle retention');
-assert(counts.disposedMaterial >= 4, 'only cloned materials were disposed');
-assert.equal(counts.disposedGeometry >= 2, true, 'reduced geometries are released');
-assert(player.portrait.geometry.getAttribute('position'), 'the live character geometry remains intact');
-assert.equal(counts.textures, 0, 'live character textures were never disposed');
-console.log('OK: color-preserving GPU motion smears reuse rigs and textures, fade alpha, and keep resources bounded');
+player.x += 64;
+enemy.x += 64;
+nowMs += 60;
+combat.update(0.06);
+assert.equal(stats().active, 0, 'disabled combat never spawns player/enemy ghosts');
+assert.equal(counts.geometry, 0, 'disabled combat never allocates afterimage geometry');
+assert.equal(counts.materials, 0, 'disabled combat never clones portrait materials');
+assert.equal(counts.textures, 0, 'disabled combat never copies textures');
+assert.equal(counts.canvases, 0, 'disabled combat never creates afterimage canvases');
+
+afterimageToggle.checked = true;
+afterimageToggle.listeners.change(); // Mimics the actual on-screen setting being switched on.
+assert.equal(stats().enabled, true, 'opt-in becomes active without reloading');
+assert.equal(preferenceStorage.get('hobunjiCombatAfterimages'), '1', 'opt-in preference is persisted');
+combat.update(0.016); // Seeds movement when the effect becomes active mid-fight.
+player.x += 64;
+enemy.x += 64;
+nowMs += 60;
+combat.update(0.06);
+assert.equal(stats().active, 2, 'player and NPC lunges each produce a record');
+assert.equal(stats().entriesCreated, 2, 'one live mesh and texture created per portrait source');
+assert.equal(counts.geometry, 2);
+assert.equal(counts.materials, 4, 'front/back material clones for player and NPC');
+assert.equal(counts.textures, 4, 'front/back textures are independent');
+assert.equal(counts.canvases, 4, 'one frozen canvas per original texture');
+const firstMeshes = ghosts(); // Used to ensure both Mesh instances survive the fade/reuse cycle.
+// The front/rear material arrays are kept intact across repeated player and NPC lunges.
+assert.equal(firstMeshes.length, 2);
+player.lunging = false;
+enemy._banditLunging = false;
+nowMs += 400;
+combat.update(0.4);
+assert.equal(stats().active, 0);
+assert.equal(stats().pooled, 2);
+playerRig.portrait.pose = 5;
+playerRig.image.name = 'updated player expression';
+enemyRig.portrait.geometry.positions.array[0] = 9; // CPU-edited non-skinned geometry must be rebaked on reuse.
+player.lunging = true;
+enemy._banditLunging = true;
+player.x += 64;
+enemy.x += 64;
+nowMs += 60;
+combat.update(0.06);
+assert.equal(stats().entriesCreated, 2, 'no new ghost mesh or material after warm-up');
+assert.equal(stats().entriesReused, 2, 'both actors reuse their own pooled resources');
+assert.equal(counts.geometry, 2, 'geometry cloned once per actor');
+assert.equal(counts.materials, 4, 'front/back material arrays are reused without new clones');
+assert.equal(counts.textures, 4, 'front/back GPU textures are reused without cloning');
+assert.equal(counts.canvases, 4, 'four frozen canvases are reused');
+assert.equal(stats().textureRefreshes, 4, 'aliased map/alphaMap textures are copied only once each');
+assert(ghosts().every(mesh => firstMeshes.includes(mesh)), 'ghost mesh identities survive recycling');
+assert(ghosts().some(mesh => mesh.geometry.positions.array[0] === 6), 'a reused skinned ghost rebakes its updated pose');
+assert(ghosts().some(mesh => mesh.geometry.positions.array[0] === 9), 'a reused unskinned ghost copies its updated geometry');
+assert(ghosts().some(mesh => mesh.material[0].map.image.copiedFace === 'updated player expression'), 'recycled textures freeze the latest face instead of displaying stale pixels');
+assert(ghosts().every(mesh => mesh.material.every(material => material.opacity > 0)), 'both sides of the portrait restore opacity after previous fades');
+player.lunging = false;
+enemy._banditLunging = false;
+nowMs += 400;
+combat.update(0.4);
+assert.equal(stats().pooled, 2);
+nowMs += 4600;
+combat.update(0.01);
+assert.equal(stats().pooled, 0, 'idle pool releases transient resources after four seconds');
+assert(counts.geometryDisposals >= 2 && counts.textureDisposals >= 4, 'expired pooled GPU resources are actually disposed');
+
+// Stress a single actor past its per-actor limit (3 live ghosts; the global cap
+// is 24) without advancing simulated fade time: oldest snapshots should be reused
+// before allocating another mesh, rather than only recycled after new allocations.
+enemy.state = 'idle';
+enemy._banditLunging = false;
+player.lunging = true;
+for (let sample = 0; sample < 24; sample += 1) {
+  player.x += 64; nowMs += 60;
+  combat.update(0);
+}
+assert.equal(stats().active, 3, 'one actor keeps at most three in-flight afterimage records');
+const warmCreated = stats().entriesCreated; // Compares allocations after saturation with 3 additional snapshots.
+const warmReused = stats().entriesReused; // Checks that evicted live records become immediately available for reuse.
+for (let sample = 0; sample < 3; sample += 1) {
+  player.x += 64; nowMs += 60;
+  combat.update(0);
+}
+assert.equal(stats().active, 3, 'oldest records are removed as new ones enter at the cap');
+assert.equal(stats().entriesCreated, warmCreated, 'pool-at-cap avoids new geometry/material/texture allocations');
+assert.equal(stats().entriesReused, warmReused + 3, 'the three evicted live records are reused immediately');
+afterimageToggle.checked = false;
+afterimageToggle.listeners.change(); // Disabling during combat must dispose live and detached ghosts right away.
+assert.equal(stats().enabled, false);
+assert.equal(stats().active, 0);
+assert.equal(stats().pooled, 0);
+assert.equal(ghosts().length, 0);
+assert.equal(preferenceStorage.get('hobunjiCombatAfterimages'), '0', 'opt-out remains saved for the next launch');
+const createdBeforeOff = stats().entriesCreated;
+player.x += 64; nowMs += 60; combat.update(0.06);
+assert.equal(stats().entriesCreated, createdBeforeOff, 'subsequent attacks skip all ghost work with the setting off');
+console.log('Player/NPC afterimages are off by default, toggleable, pooled only on opt-in, and disposed on opt-out.');
