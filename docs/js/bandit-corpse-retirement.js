@@ -25,7 +25,7 @@
   let lastRunAt = -Infinity;
   let markerGeometry = null;
   let markerMaterial = null;
-  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, posedPantsBaked: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
+  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, posedPantsBaked: 0, posedPantsDeferred: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
 
   function config() {
     const override = window.SCRATCHBONES_CONFIG?.game?.banditCorpseRetire;
@@ -39,6 +39,7 @@
       && !c._banditCorpseRetired && !c.avatarRef?.isCorpseMarker && !c.corpseLooted
       && !c.keepCorpseAfterLoot && !(Number(c.lootHoldSeconds) > 0)
       && !c.isCompanion && !c.isAmphibiousFishCorpse && !c.tzatzulCapturedBy
+      && !(Number(c._corpsePantsRetryAfter) > (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0))
       && c.areaId === currentArea && !!c.avatarRef?.group;
   }
 
@@ -151,6 +152,13 @@
     group.userData.corpseNoSecondaryPasses = true; // Score-actor masks do not need a dead actor.
     group.userData.noOutline = true;
     const snapshot = spriteSnapshot(rig, width, c); // May be null for compound rigs or absent Canvas support.
+    if (rig?.legs?.pants && snapshot?.posedPants?.ok !== true) {
+      snapshot?.dispose?.(); // Preserve the final visible trousers rather than discarding an incomplete snapshot.
+      c._corpsePantsRetryAfter = (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0) + 1000; // Retry once the async cloth canvas becomes available.
+      stats.posedPantsDeferred++;
+      return false;
+    }
+    c._corpsePantsRetryAfter = null;
     const sprite = snapshot?.mesh || (() => {
       const { geometry, material } = markerParts();
       const fallback = new window.THREE.Mesh(geometry, material);
