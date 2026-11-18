@@ -5943,7 +5943,8 @@
   function setupAutoPickSlotUI() {
     normalizeAutoPickSlots();
     if (GAME_OVERWORLD_MUSIC) {
-      document.querySelector('[data-open-modal="autoPickSlotsModal"]')?.setAttribute('hidden',''); // Game players change slots in Loadout → Instrument, not the performance setup drawer.
+      const slotsShortcut = document.querySelector('[data-open-modal="autoPickSlotsModal"]'); // Standalone Music Lab keeps its original pattern editor.
+      if (slotsShortcut) { slotsShortcut.hidden = true; slotsShortcut.style.display = 'none'; } // Author CSS cannot override this hidden gameplay shortcut.
       $('[data-auto-pick-slot]').forEach(select => { select.disabled = true; select.title = 'Assign patterns in Loadout → Instrument'; });
     }
     const selectablePatterns = Object.entries(AUTO_PICK_PATTERN_LIBRARY);
@@ -7711,7 +7712,11 @@
   // during the user's trusted pointer gesture instead of forwarding synthetic DOM events.
   window.HobunjiMusicControlBridge = {
     syncGameplayTuning() {
-      if (!GAME_OVERWORLD_MUSIC || gameMusicDevMode() || state.tonicMidi === 48 && state.scaleName === 'Pentatonic Minor') return false;
+      if (!GAME_OVERWORLD_MUSIC) return false;
+      const locked = !gameMusicDevMode(); // Live Dev Mode changes must also update the embedded setup controls.
+      if (refs.tonicSelect) refs.tonicSelect.disabled = locked;
+      if (refs.scaleSelect) refs.scaleSelect.disabled = locked;
+      if (!locked || state.tonicMidi === 48 && state.scaleName === 'Pentatonic Minor') return false;
       applyPerformanceTonic(48,{persist:false}); // Restores the fixed key when Dev Mode is turned off during an already-open performance.
       applyPerformanceScale('Pentatonic Minor',{persist:false});
       return true;
