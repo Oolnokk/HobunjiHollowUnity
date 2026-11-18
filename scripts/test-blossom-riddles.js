@@ -227,18 +227,45 @@ assert.notDeepEqual(landmarks, Scenery.planForLayout('map_northern_cliffs', scen
 for (const landmark of landmarks) {
   assert.equal(sceneryWorld.tiles[landmark.point.row][landmark.point.col].type, 'grass');
   assert.ok(Math.hypot(landmark.point.col - 30, landmark.point.row - 30) >= 6, 'authored locale clearance remains intact');
-  assert.ok(['stoneCairn','brokenPillar','deadTree','witnessStone'].includes(landmark.kind));
+  assert.ok(['stoneCairn','brokenPillar','deadTree','witnessStone','markedBoulder'].includes(landmark.kind));
 }
-const witnessSites=landmarks.filter(s=>s.kind==='witnessStone'); // The only color-marked stone is physically included in the year-round scene plan.
-assert.equal(witnessSites.length,1,'the whole zone has one—and only one—uniquely dyed riddle starting rock');
+const witnessSites=landmarks.filter(s=>s.kind==='witnessStone'); // One quest start and many independently marked permanent landmarks.
+assert.equal(witnessSites.length,1,'one specifically reserved standing stone anchors the festival route');
+const coloredSites=landmarks.filter(s=>s.marked); // Each decorated pillar/boulder has a different actual CLOTH dye.
+assert.ok(coloredSites.length>=3,'far more marked landmarks exist than one verse can use');
+assert.equal(new Set(coloredSites.map(s=>s.dyeId)).size,coloredSites.length,'never reuse a dye ID in the same zone');
+assert.equal(new Set(coloredSites.map(s=>s.ink)).size,coloredSites.length,'never repeat a rendered dye swatch within a zone');
+assert.ok(coloredSites.some(s=>s.kind==='brokenPillar'),'authored pillars also receive permanent colored inscriptions');
+assert.ok(coloredSites.every(s=>s.patternUrl?.includes('motif_harlyao_glyph_')&&s.unique===true),
+  'every mark uses an existing ruin glyph and has an unambiguous per-zone dye');
+const otherZone=Scenery.planForLayout('map_western_slope',sceneryWorld,'unit-world:1156');
+assert.equal(new Set(otherZone.filter(s=>s.marked).map(s=>s.dyeId)).size,otherZone.filter(s=>s.marked).length,
+  'colors may be reused in a different zone, but never duplicated inside it');
 assert.ok(witnessSites[0].unique && witnessSites[0].dyeId?.startsWith('dye:CLOTH:'),'witness inscription uses a named game dye');
 assert.ok(/^#[0-9a-f]{6}$/i.test(witnessSites[0].ink),'marked rock has a real renderable dye hex');
+// The runtime catalog may supply two different dye names with identical pixel values; never repeat that color in one zone.
+const formerCatalog=global.SCRATCHBONES_CONFIG; // Restore the game config after the injected catalog collision.
+global.SCRATCHBONES_CONFIG={game:{dyes:{catalog:[
+  {id:'dye:CLOTH:bright_red',label:'Bright Red',hex:'#fa1234'},
+  {id:'dye:CLOTH:bright_blue',label:'Bright Blue',hex:'#fa1234'}
+]}}};
+try {
+  const collisionLayout=layoutFor('cyan',30,30);
+  const collisionSites=Scenery.planForLayout('map_northern_cliffs',collisionLayout,'catalog-collision');
+  const marked=collisionSites.filter(s=>s.marked);
+  assert.equal(new Set(marked.map(s=>s.ink)).size,marked.length,
+    'duplicate rendered colors in the live catalog cannot be assigned to different landmarks');
+} finally {
+  if(formerCatalog===undefined)delete global.SCRATCHBONES_CONFIG;
+  else global.SCRATCHBONES_CONFIG=formerCatalog;
+}
 const witnessVerse = Riddles.generate({ zoneId:'map_northern_cliffs',layout:sceneryWorld,instance:sceneryWorld.localeInstances[0],
   targetObjectKey:'blossom-tree',targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route' });
 assert.equal(witnessVerse.ok,true,'unique witness route still passes strict verse rhyme checks');
-assert.match(witnessVerse.text,/^(?:Begin|Start|Stand) at the only /,'the first line starts at the unique painted rock, not a vague zone or sector');
+assert.match(witnessVerse.text,/^In Northern Cliffs, (?:begin|start|stand) at the bright /,'the first line names the broader zone before the distinctive dyed stone');
+assert.match(witnessVerse.text,/Northern Cliffs/,'the starting stone identifies its actual zone so reused dyes across zones remain unambiguous');
 assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions contain actual cardinal bearings, including a direct first-line couplet');
-assert.ok(witnessVerse.evidence.route.every(step=>/ground|climbing|descending/.test(step.elevation)),'every walking leg states its elevation change or level ground');
+assert.ok(witnessVerse.evidence.route.every(step=>step.terrainEvent==='river-crossing'||step.terrainEvent==='elevation'),'each walking leg commits to one main terrain event');
 assert.equal(witnessVerse.evidence.uniqueStart.dyeId,witnessSites[0].dyeId,'riddle ink matches the rock painted by the scenery renderer');
 assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
   instance:sceneryWorld.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route'}).text,
@@ -259,12 +286,14 @@ assert.equal(canyonVerse.evidence.route[0].bearing,'east','the route heads east 
 assert.match(canyonVerse.evidence.route[0].elevation,/climbing/,'real higher target forces an upward instruction');
 assert.equal(canyonVerse.evidence.route[0].crossing?.type,'river','the intervening river must be identified');
 assert.equal(canyonVerse.evidence.route[0].crossing?.canyon,true,'lowered river between high banks really cuts a canyon');
-assert.match(canyonVerse.text,/crossing the river cutting a canyon/,'the actual poem calls out the river and its canyon');
+assert.match(canyonVerse.text,/crossing the river where it cuts a canyon/,'one crossing describes the actual river and canyon');
+assert.doesNotMatch(canyonVerse.evidence.route[0].description,/climbing|descending/,
+  'the river crossing does not stack separate elevation changes on the same bearing');
 canyonMap.tiles[20][25].elevTier=1; // Opposite canyon banks are at equal height; the intermediate river remains one tier below.
 const equalBankRoute=Riddles.generate(canyonOptions);
 assert.equal(equalBankRoute.ok,true);
-assert.match(equalBankRoute.evidence.route[0].elevation,/descending.*climbing/,
-  'equal start/end heights must still describe the descent into and ascent out of the canyon');
+assert.match(equalBankRoute.evidence.route[0].elevation,/descending through a hollow/,
+  'a true dip is still detected internally without narrating multiple sequential height changes');
 assert.doesNotMatch(equalBankRoute.evidence.route[0].elevation,/roughly level ground/,
   'a valley is not level ground simply because the endpoints share a plateau tier');
 assert.equal(equalBankRoute.evidence.route[0].crossing?.canyon,true);
@@ -281,62 +310,62 @@ const ridgeMap=layoutFor('cyan',25,20); // Same-height route endpoints with a re
 for(let row=0;row<ridgeMap.rows;row++)for(let col=0;col<ridgeMap.cols;col++)ridgeMap.tiles[row][col].elevTier=1;
 for(let row=0;row<ridgeMap.rows;row++)ridgeMap.tiles[row][17].elevTier=3;
 const ridgeRoute=Riddles.generate({...canyonOptions,layout:ridgeMap,instance:ridgeMap.localeInstances[0]});
-assert.match(ridgeRoute.evidence.route[0].elevation,/climbing.*descending/,
-  'a ridge on the bearing must be mentioned even when the start and destination are both lower');
-const waterfallTerrain=layoutFor('cyan',27,30); // Two separate real falls of different measured vertical drops.
+assert.match(ridgeRoute.evidence.route[0].elevation,/climbing over a ridge/,
+  'a ridge is one named elevation feature, without narrating the descent again');
+// Tallest/longest features are never guaranteed discoverable across a huge generated map.
+const repeatedRidges=layoutFor('cyan',25,20); // Several pronounced ridges cannot be described as one climb.
+for(let row=0;row<repeatedRidges.rows;row++)for(let col=0;col<repeatedRidges.cols;col++)
+  repeatedRidges.tiles[row][col].elevTier=[13,16,19,22].includes(col)?3:1;
+const repeatedRidgeClue=Riddles.generate({zoneId:'map_northern_cliffs',layout:repeatedRidges,
+  instance:repeatedRidges.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:[fixedMarker],seed:'multi-ridge-veracity'});
+assert.equal(repeatedRidgeClue.ok,true);
+assert.ok(repeatedRidgeClue.evidence.route[0].eventCount>1,'multiple real ridges are detected independently');
+assert.equal(repeatedRidgeClue.evidence.route[0].terrainEvent,'complex','multiple ridges are not mislabeled as one rise');
+assert.match(repeatedRidgeClue.evidence.route[0].description,/varied terrain/);
+const waterfallTerrain=layoutFor('cyan',27,30);
 for(let row=0;row<waterfallTerrain.rows;row++)for(let col=0;col<waterfallTerrain.cols;col++)
   waterfallTerrain.tiles[row][col].elevTier=1;
 waterfallTerrain.tiles[14][18]={type:'waterfall',elevTier:3};
-waterfallTerrain.tiles[13][18]={type:'river',elevTier:1};
 waterfallTerrain.tiles[19][39]={type:'waterfall',elevTier:2};
-waterfallTerrain.tiles[18][39]={type:'river',elevTier:1};
 const waterfallSites=Scenery.planForLayout('map_northern_cliffs',waterfallTerrain,'unit-world:waterfalls');
-const waterfallVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:waterfallTerrain,instance:waterfallTerrain.localeInstances[0],
-  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:waterfallSites,seed:'highest-verified-waterfall'});
+const waterfallVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:waterfallTerrain,
+  instance:waterfallTerrain.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:waterfallSites,seed:'no-map-wide-superlatives'});
 assert.equal(waterfallVerse.ok,true);
-assert.equal(waterfallVerse.evidence.uniqueStart.kind,'waterfallAnchor','the objectively tallest waterfall outranks the dyed-rock fallback');
-assert.deepEqual(waterfallVerse.evidence.uniqueStart.coordinate,{col:18,row:14},'start is the fall with the greatest actual plateau drop');
-assert.match(waterfallVerse.text,/^(?:Begin|Start|Stand) at the tallest waterfall in Northern Cliffs/,'no tie exists, so tallest waterfall is a unique true landmark');
-const cliffFallLayout=layoutFor('cyan',27,30); // The actual waterfall renderer also creates sheets across dry cliff-to-waterfall edges.
-for(let row=0;row<cliffFallLayout.rows;row++)for(let col=0;col<cliffFallLayout.cols;col++)
-  cliffFallLayout.tiles[row][col].elevTier=1;
-cliffFallLayout.tiles[12][15]={type:'waterfall',elevTier:4}; // Its lower neighbors are GRASS, not river tiles.
-cliffFallLayout.tiles[20][40]={type:'waterfall',elevTier:2}; // A visibly smaller waterfall for unique max-drop ranking.
-const dryCliffFall=Riddles.generate({zoneId:'map_northern_cliffs',layout:cliffFallLayout,
-  instance:cliffFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
-  landmarks:Scenery.planForLayout('map_northern_cliffs',cliffFallLayout,'world:cliff-falls'),seed:'dry-fall-renderer-contract'});
-assert.equal(dryCliffFall.ok,true);
-assert.equal(dryCliffFall.evidence.uniqueStart.kind,'waterfallAnchor','real dry-cliff waterfalls qualify even with no adjacent river tile');
-assert.deepEqual(dryCliffFall.evidence.uniqueStart.coordinate,{col:15,row:12},'tallest visible dry-cliff curtain wins');
-const flatWaterfall=layoutFor('cyan',27,30); // A waterfall-labeled tile without a vertical curtain is not an actual visible waterfall.
-flatWaterfall.tiles[12][15]={type:'waterfall',elevTier:0};
-const noCurtain=Riddles.generate({zoneId:'map_northern_cliffs',layout:flatWaterfall,
-  instance:flatWaterfall.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
-  landmarks:Scenery.planForLayout('map_northern_cliffs',flatWaterfall,'world:no-curtain'),seed:'no-curtain'});
-assert.equal(noCurtain.ok,true);
-assert.equal(noCurtain.evidence.uniqueStart.kind,'witnessStone',
-  'a flat waterfall tile without a rendered curtain cannot outrank the visible dye-marked rock');
-const reusedFallLayout=layoutFor('cyan',27,30); // A forced cycle may reuse the workspace object's identity.
-for(let row=0;row<reusedFallLayout.rows;row++)for(let col=0;col<reusedFallLayout.cols;col++)
-  reusedFallLayout.tiles[row][col].elevTier=1;
-reusedFallLayout.tiles[13][17]={type:'waterfall',elevTier:3};
-const naturalOptions={zoneId:'map_northern_cliffs',layout:reusedFallLayout,
-  instance:reusedFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom'};
-const priorCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1156'});
-assert.deepEqual(priorCycle.evidence.uniqueStart.coordinate,{col:17,row:13});
-reusedFallLayout.tiles[13][17]={type:'grass',elevTier:1};
-reusedFallLayout.tiles[21][39]={type:'waterfall',elevTier:4};
-const nextCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1157'});
-assert.deepEqual(nextCycle.evidence.uniqueStart.coordinate,{col:39,row:21},
-  'natural landmark cache detects Tothal year changes even if the same mutable layout instance was reused');
-const edgeTerrain=layoutFor('cyan',25,20); // Without a painted marker, only one actual west-edge river opening exists.
-edgeTerrain.tiles[11][0]={type:'river',elevTier:0};
-edgeTerrain.tiles[12][0]={type:'river',elevTier:0};
-const edgeVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:edgeTerrain,instance:edgeTerrain.localeInstances[0],
-  targetKind:'blossom',targetName:'Cyan Blossom',seed:'single-western-exit'});
-assert.equal(edgeVerse.ok,true);
-assert.equal(edgeVerse.evidence.uniqueStart?.kind,'riverEdgeAnchor','a single cardinal river boundary crossing is an unambiguous natural anchor');
-assert.match(edgeVerse.text,/western boundary/,'cardinal river boundary directions match the actual map edge');
+assert.equal(waterfallVerse.evidence.uniqueStart.kind,'witnessStone','only the painted starting stone is trusted, regardless of falls');
+assert.doesNotMatch(waterfallVerse.text,/tallest|longest|highest|northernmost|westernmost/i,
+  'landmark names never assume a whole map can be exhaustively surveyed');
+const boundaryTerrain=layoutFor('cyan',25,20);
+boundaryTerrain.tiles[11][0]={type:'river',elevTier:0};
+const strictBoundary=Riddles.generate({zoneId:'map_northern_cliffs',layout:boundaryTerrain,
+  instance:boundaryTerrain.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  seed:'no-edge-superlative',requireUniqueStart:true});
+assert.equal(strictBoundary.ok,false,'an isolated map-edge river cannot invent an undiscoverable start');
+const twoRivers=layoutFor('cyan',25,20); // A long direct leg with two rivers still gets at most one narrated crossing.
+for(let row=0;row<twoRivers.rows;row++)for(const col of [15,20])twoRivers.tiles[row][col]={type:'river',elevTier:0};
+const twoRiverVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:twoRivers,
+  instance:twoRivers.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:[fixedMarker],seed:'single-event-per-leg'});
+assert.equal(twoRiverVerse.ok,true);
+assert.equal(twoRiverVerse.evidence.route[0].crossing?.runs,2,'two distinct waterway bands remain distinct in the route evidence');
+assert.equal(twoRiverVerse.evidence.route[0].terrainEvent,'complex','one marker cannot claim two real crossings are just one');
+assert.doesNotMatch(twoRiverVerse.evidence.route[0].description,/crossing the river/,
+  'without an available intermediate landmark, the clue must not falsely claim only one crossing');
+const markedPillar={kind:'brokenPillar',name:'the bright orange-marked broken pillar',unique:true,marked:true,
+  dyeId:'dye:CLOTH:bright_orange',point:{col:17,row:20},source:'generated-year-round-scenery'};
+const pillarWaypoint=Riddles.generate({zoneId:'map_northern_cliffs',layout:twoRivers,
+  instance:twoRivers.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
+  landmarks:[fixedMarker,markedPillar],seed:'colored-pillar-waypoint'});
+assert.equal(pillarWaypoint.ok,true);
+assert.equal(pillarWaypoint.evidence.route.length,2,'a real permanent marked pillar splits two different river crossings');
+assert.deepEqual(pillarWaypoint.evidence.route.map(leg=>leg.crossing?.runs),[1,1],
+  'each landmark-to-landmark instruction crosses no more than one actual waterway');
+assert.ok(pillarWaypoint.evidence.route.every(leg=>leg.eventCount<=1),
+  'the route splits the terrain instead of merely concealing multiple river crossings');
+assert.match(pillarWaypoint.text,/bright orange-marked broken pillar/,
+  'zone-unique color is actually used to identify the intermediate object');
+
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
   targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
