@@ -216,9 +216,15 @@
 
     // Default fast path: no distance checks, sorting or per-body timer state.
     if (Number(cfg.keepFull) <= 0 && Number(cfg.nearTiles) <= 0 && Number(cfg.minSettledS) <= 0) {
+      let posedPantsBakes = 0; // One canvas-intensive deformed-cloth bake per retirement pass on mobile.
       for (const c of deps.corpseObjects) {
         if (retired >= budget) break;
-        if (isRetirable(c, currentArea) && retire(c)) retired++;
+        const hasPosedPants = !!c?.avatarRef?.legs?.pants; // Ordinary wildlife and pantless corpses may still use the full batch budget.
+        if (hasPosedPants && posedPantsBakes >= 1) continue;
+        if (isRetirable(c, currentArea) && retire(c)) {
+          retired++;
+          if (hasPosedPants) posedPantsBakes++;
+        }
       }
       return retired;
     }
