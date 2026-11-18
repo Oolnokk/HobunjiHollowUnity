@@ -503,22 +503,41 @@
       return true;
     }
 
-    function release() {
+    function acceptExpectedOverwrites(accept) {
+      if (released || !valid || typeof accept !== 'function') return false;
+      const changes = []; // Validated native resets can occur between the paired solver and the next simulation tick.
+      for (const entry of entries) {
+        const current = propertyState(entry.node, entry.property);
+        if (!current || absoluteClaims.get(entry.node)?.get(entry.property) !== entry
+          || (entry.node.parent || null) !== entry.parent) return false;
+        if (!equivalent(current, entry.applied, entry.property)) {
+          if (!accept(entry.node, entry.property, current, entry.base, entry.applied)) return false;
+          changes.push(entry);
+        }
+      }
+      for (const entry of changes) entry.applied.copy(entry.node[entry.property]); // Rebase the checkpoint only after every reset has passed validation.
+      return true;
+    }
+
+    function release(options = {}) {
       if (released) return { restored: 0, skipped: 0 };
       released = true;
       let restored = 0, skipped = 0;
-      const displacedNodes = new WeakSet(); // Any replaced claimed field transfers the ENTIRE node pose to the newer writer.
+      const displacedNodes = new WeakSet(); // Default release keeps all fields of externally replaced nodes under their new owner.
+      const reparentedNodes = new WeakSet(); // A moved rig generation never receives its old child's local pose.
       for (const entry of entries) {
         if (!entryStillOwned(entry, false)) displacedNodes.add(entry.node);
+        if ((entry.node.parent || null) !== entry.parent) reparentedNodes.add(entry.node);
       } // Snapshot before modifying claims so release order cannot revive sibling or descendant fields.
       for (let i = entries.length - 1; i >= 0; i--) {
         const entry = entries[i]; // Children release before parents so replaced roots also protect nested neck and leg poses.
         const claims = absoluteClaims.get(entry.node);
         if (claims?.get(entry.property) !== entry) { skipped++; continue; }
-        let owned = !displacedNodes.has(entry.node) && entryStillOwned(entry, false);
+        const restoreUnaffected = options.restoreUnaffectedProperties === true; // Opt-in for synchronized dances: restore unchanged twists after ordinary root travel resumes.
+        let owned = (restoreUnaffected || !displacedNodes.has(entry.node)) && entryStillOwned(entry, false);
         for (let parent = entry.node.parent; owned && parent; parent = parent.parent) {
-          if (displacedNodes.has(parent)) owned = false;
-        } // An external position-only takeover cannot trigger an unrelated old quaternion reset.
+          if (reparentedNodes.has(parent) || (!restoreUnaffected && displacedNodes.has(parent))) owned = false;
+        } // A reparented rig stays untouched; unchanged local rotations may be restored after a position-only reset.
         claims.delete(entry.property);
         activeAbsoluteClaims--;
         changeAbsoluteOwnerCount(owner, -1);
@@ -545,7 +564,7 @@
       return released && restoredByNode.get(node)?.has(property) === true;
     }
 
-    const session = Object.freeze({ capture, owns, stamp, release, wasRestored, owner });
+    const session = Object.freeze({ capture, owns, stamp, acceptExpectedOverwrites, release, wasRestored, owner });
     return session;
   }
 

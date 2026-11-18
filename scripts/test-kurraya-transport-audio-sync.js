@@ -240,7 +240,7 @@ assert.match(
 
 assert.match(
   hostSource,
-  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=[A-Za-z0-9_.-]+'/,
+  /MUSIC_MINIGAME_SRC = 'assets\/minigames\/lyre-performance\.html\?v=[A-Za-z0-9_.-]+&overworld=1'/,
   'gameplay must cache-bust the fixed-harmony minigame revision'
 );
 
@@ -380,13 +380,13 @@ assert.match(
 
 assert.match(
   source,
-  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
+  /async startAmbientLead\(songId, footstepSampleUrl\)[\s\S]*?state\.selectedSong === 'when-the-kininjis-bloom'\) randomizeKurrayaSongMelody\(state\.scaleName\)[\s\S]*?proceduralAmbient:state\.selectedSong === 'when-the-kininjis-bloom'/,
   'Foroji must generate a new Kurraya melody before an ambient performance begins'
 );
 
 assert.match(
   source,
-  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\('Pentatonic Minor'\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
+  /if \(state\.game\.loopDemo\)[\s\S]*?proceduralAmbient = !!state\.game\.proceduralAmbient[\s\S]*?randomizeKurrayaSongMelody\(state\.scaleName\)[\s\S]*?startSong\(state\.selectedSong, \{demoMode:state\.ambientOnly \? randomNpcAutoPickPattern\(\) : state\.game\.demoMode, loopDemo:true, proceduralAmbient\}\)/,
   'procedural ambient performance must compose another melody at every song-loop boundary instead of repeating one random result forever'
 );
 

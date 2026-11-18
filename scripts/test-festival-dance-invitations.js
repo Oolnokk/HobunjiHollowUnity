@@ -29,8 +29,12 @@ walker.currentScheduleTarget=window.NpcScheduling.provider(rec);tick();assert.eq
 walker.root.position.x=1.5;tick();assert.equal(starts,1);assert(api.pendingDance,'temporary rig readiness is retried');
 assert.equal(api.serialize().festivalFun.partner,undefined,'preparation earns no dance reward');
 rigReady=true;tick();assert.equal(active,true);assert.equal(api.pendingDance,null);assert.equal(api.dance.targetNpcId,rec.id);
+const heldTarget=window.NpcScheduling.provider(rec); // The active pair must outrank ordinary festival tables and background dancing.
+assert.equal(heldTarget.pose,'stand','festival partner stays standing throughout the paired dance');
+assert.equal(heldTarget.c,1,'the dance hold is anchored to the pre-start logical NPC tile');
+assert.equal(heldTarget.socialDance,undefined,'ordinary NPC dance overlay cannot pile onto paired choreography');
 assert(!claims.has('dance-invitation'),'preparation cancel claims release on success');
-api.cancelDance();standing=false;
+api.cancelDance();assert.notStrictEqual(window.NpcScheduling.provider(rec),heldTarget,'partner scheduler regains control after cancellation');standing=false;
 assert(api.askFestivalDance(walker).ok);const cancel=claims.get('dance-invitation').find(claim=>claim.actionId==='action2');
 cancel.onPress();const cancelledStarts=starts;standing=true;tick();assert.equal(api.pendingDance,null);assert.equal(starts,cancelledStarts,'cancel cannot start a late dance');
 rigReady=false;failure={code:'camera-busy'};assert(api.askFestivalDance(walker).ok);
