@@ -1142,7 +1142,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       return;
     }
     const original = mesh.material; // Stem material is newly allocated; leaf-card source material is preset-cached.
-    materials.naturalizeMesh(mesh, petals ? 'vines' : 'trunks', 'strand-stretch', {
+    materials.naturalizeMesh(mesh, petals ? 'vines' : 'trunks', petals ? 'strand-stretch' : 'cylindrical-stretch', {
       texture, tint, tintTreatment:'body-sprite-tint'
     });
     if (mesh.material === original) {
