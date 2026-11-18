@@ -104,7 +104,7 @@
       mesh.name=name;mesh.position.set(0,y,0);group.add(mesh);
     };
     make('foot',footprint,.16,footprint,.08);
-    make('stone-shaft',shaftWidth,Math.max(.1,height-.30),shaftWidth,.18+Math.max(.1,height-.30)/2);
+    make('stone-shaft',shaftWidth,Math.max(.1,height-.30),shaftWidth,.16+Math.max(.1,height-.30)/2);
     make('capital',topWidth,.14,topWidth,height-.07);
     markVisualOnly(group);
     return group;
