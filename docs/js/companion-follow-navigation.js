@@ -39,8 +39,12 @@
   function descentState(c, master, requestedArea = area()) {
     if (!c?.isCompanion || c.banditCompanion || (c.stableRole && c.stableRole !== 'companion') ||
         !master || (c.areaId && c.areaId !== requestedArea)) return null;
+    if (!deps?.isZoneArea?.(requestedArea) || area() !== requestedArea) return null;
     const info = groundInfo(c, master, requestedArea);
-    return info ? { above: info.fromTier > info.toTier, separatePlatforms: info.separatePlatforms } : null;
+    if (!info) return c._followOwnerDownCliff && (c._cliffClimb || c._cliffRouteTravel)
+      ? { above: false, inProgress: true, sameTier: false } : null; // Midair incline does not end retreat.
+    return { above: info.fromTier > info.toTier, sameTier: info.fromTier === info.toTier,
+      separatePlatforms: info.separatePlatforms };
   }
 
   function goal(c, master) {
@@ -118,8 +122,12 @@
     const ownerFloor = floorForOwner(master, currentArea);
     const grid = activeGrid(c);
     const petTile = tileAt(grid, c.x, c.y, tile);
-    const petFloor = ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.()) :
-      deps.surfaceYForTile?.(petTile, currentArea);
+    const modelPos = c.avatarRef?.group?.position; // A smoothed pet portrait can supply a last-known ruin feet height.
+    const rawPetFloor = c.shaftSupportY ?? c.surfaceYOverride?.();
+    const petFloor = ruin ? (Number.isFinite(Number(rawPetFloor)) && rawPetFloor != null
+      ? Number(rawPetFloor) : modelPos && Number.isFinite(modelPos.y)
+        ? modelPos.y - (c.groundLift ?? c.halfHeight ?? 0) : null)
+      : deps.surfaceYForTile?.(petTile, currentArea);
     if (ruin && (!Number.isFinite(ownerFloor) || !Number.isFinite(petFloor))) {
       debug.lastFailure = 'unknown ruin story'; return false;
     }
@@ -175,7 +183,11 @@
     state.cooldown = Math.max(0, state.cooldown - elapsed);
     const far = Number(followGoal?.distance) > tile * FAR_TILES;
     const playerFloor = ruin ? floorForOwner(master, currentArea) : null;
-    const petFloor = ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.()) : null;
+    const rawPetFloor = c.shaftSupportY ?? c.surfaceYOverride?.();
+    const modelPos = c.avatarRef?.group?.position; // Fallback only when the ruin has not yet assigned a shaft support to this pet.
+    const petFloor = ruin ? (rawPetFloor != null && Number.isFinite(Number(rawPetFloor))
+      ? Number(rawPetFloor) : modelPos && Number.isFinite(modelPos.y)
+        ? modelPos.y - (c.groundLift ?? c.halfHeight ?? 0) : null) : null;
     const differentFloor = ruin && Number.isFinite(playerFloor) && Number.isFinite(petFloor) &&
       Math.abs(playerFloor - petFloor) > 0.75;
     const unable = c.prone || c._knockbackLedgeFall || c.knockbackT > 0 || c._animalAttack ||
