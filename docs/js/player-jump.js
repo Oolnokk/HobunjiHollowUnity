@@ -465,7 +465,7 @@
     if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
-      (player.dodging && state.phase !== 'air' && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
+      (player.dodging && state.phase !== 'air' && state.phase !== 'supported' && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
       player.lunging || player.knockbackT > 0) { // Midair dodge must retain airborne feet, not snap to a lower shaft deck.
       reset(player, 'jump interrupted/area changed');
       return false; // Let the native action/movement handler proceed in this frame.
