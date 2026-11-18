@@ -7,6 +7,7 @@
   const ACCESS_KEY_ID = 'color_pools_key';
   const MAP_ID = 'map_i_color_pools';
   const PAINT_KEY = 'colorPoolPaint';
+  const MAX_FUSED_PATTERNS = 6; // Primary plus at most five same-ink motifs per genetic region.
 
   let deps = {};
   let overlay = null;
@@ -81,7 +82,7 @@
     return Number(quest?.stage) >= 3; // Stage three follows Quest 2's committed turn-in; any future Banubu quest stages retain the earned overpass.
   }
   function paintPatternStack(paint) {
-    const primary = paint?.pattern || (paint?.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
+    const primary = paint?.pattern || paint?.patterns?.[0] || (paint?.patternLibraryId ? snapshotPattern(paint.patternLibraryId) : null);
     if (!primary) return [];
     const overpass = (Array.isArray(paint?.patterns) ? paint.patterns[1] : null)
       || (paint?.overpassPatternLibraryId ? snapshotPattern(paint.overpassPatternLibraryId) : null);
@@ -106,15 +107,15 @@
       .cp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-bottom:1px solid rgba(255,255,255,.1)}
       .cp-head h2{font-size:17px;margin:0}.cp-close,.cp-btn{border:1px solid rgba(140,205,190,.32);background:rgba(140,205,190,.11);color:#eef6f4;border-radius:9px;padding:7px 10px;font-weight:750;cursor:pointer}
       .cp-close{width:32px;height:32px;padding:0}.cp-btn.secondary{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.14)}.cp-btn.good{background:rgba(95,190,130,.14);border-color:rgba(95,190,130,.38)}
-      .cp-body{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;padding:12px}.cp-body>div{min-width:0}.cp-card{border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.035);border-radius:12px;padding:10px;margin-bottom:9px}
+      .cp-body{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;padding:12px}.cp-body>div{min-width:0}.cp-preview-column{position:sticky;top:12px;align-self:start;z-index:2}.cp-card{border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.035);border-radius:12px;padding:10px;margin-bottom:9px}
       .cp-card h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.35px;color:#bcd5cf}.cp-help{font-size:11px;color:#9eb6b1;line-height:1.4}
       .cp-preview{display:grid;place-items:center;min-width:0;min-height:260px;overflow:hidden;background:#090d0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;background-image:linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(-45deg,rgba(255,255,255,.04) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,rgba(255,255,255,.04) 75%),linear-gradient(-45deg,transparent 75%,rgba(255,255,255,.04) 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
       .cp-preview canvas{position:static;inset:auto;width:min(360px,100%);height:auto;pointer-events:none;image-rendering:pixelated}.cp-region{border-top:1px solid rgba(255,255,255,.09);padding-top:9px;margin-top:9px}.cp-region:first-child{border-top:0;margin-top:0;padding-top:0}
       .cp-region-title{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:800;margin-bottom:7px}.cp-swatch{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.4)}
       .cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cp-grid label{font-size:10px;color:#9eb6b1}.cp-grid select{width:100%;margin-top:3px;background:#111b1c;color:#eef6f4;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:7px}
       .cp-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}.cp-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid rgba(255,255,255,.1)}
-      .cp-empty{padding:24px 10px;text-align:center;color:#a8bbb7}.cp-debug{white-space:pre-wrap;word-break:break-word;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;color:#8fa8a3}
-      @media(max-width:700px){.cp-body{grid-template-columns:1fr}.cp-preview{min-height:190px}.cp-grid{grid-template-columns:1fr}}
+      .cp-fused-row{padding:6px 0 6px 9px;border-left:2px solid rgba(140,205,190,.35);margin-top:7px}.cp-fused-row .cp-row{align-items:center;justify-content:space-between}.cp-fused-select{flex:1;min-width:110px;background:#111b1c;color:#eef6f4;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:7px}.cp-empty{padding:24px 10px;text-align:center;color:#a8bbb7}.cp-debug{white-space:pre-wrap;word-break:break-word;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;color:#8fa8a3}
+      @media(max-width:700px){.cp-body{display:flex;flex-direction:column}.cp-preview-column{order:-1;top:0;width:100%;padding:6px;border:1px solid rgba(140,205,190,.3);border-radius:12px;background:#111c1b;box-shadow:0 7px 18px rgba(0,0,0,.45)}.cp-preview{min-height:105px;max-height:27dvh}.cp-preview canvas{width:auto;max-width:100%;max-height:25dvh}.cp-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
   }
@@ -149,6 +150,7 @@
       delete paint.patternLibraryId;
       delete paint.pattern;
       delete paint.patterns;
+      delete paint.mergedPatterns;
       delete paint.overpassPatternLibraryId;
       if (!paint.dyeId && !paint.dyeHex) delete draftLayers[regionId];
       return;
@@ -159,6 +161,31 @@
     if (priorOverpass) paint.patterns = [paint.pattern, priorOverpass];
     else delete paint.patterns;
   }
+  function addFusedPattern(regionId, libraryId) {
+    const paint = ensurePaint(regionId);
+    const motif = snapshotPattern(libraryId);
+    if (!paintPatternStack(paint)[0] || !motif) return false;
+    const existing = Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns : []; // Individual motif placement; all use the primary ink.
+    if (existing.length >= MAX_FUSED_PATTERNS - 1) return false;
+    paint.mergedPatterns = [...existing, motif];
+    return true;
+  }
+
+  function removeFusedPattern(regionId, index) {
+    const paint = paintDescriptor(regionId);
+    if (!Array.isArray(paint?.mergedPatterns) || !Number.isInteger(index) || index < 0 || index >= paint.mergedPatterns.length) return false;
+    paint.mergedPatterns.splice(index, 1);
+    if (!paint.mergedPatterns.length) delete paint.mergedPatterns;
+    return true;
+  }
+
+  function setFusedPatternPlacement(regionId, index, pattern) {
+    const paint = paintDescriptor(regionId);
+    if (!Array.isArray(paint?.mergedPatterns) || !paint.mergedPatterns[index] || !pattern) return false;
+    paint.mergedPatterns[index] = clone(pattern);
+    return true;
+  }
+
   function setOverpassPattern(regionId, libraryId) {
     if (!overpassUnlocked()) return false; // Quest gate also guards direct UI calls.
     const paint = ensurePaint(regionId), primary = paintPatternStack(paint)[0];
@@ -195,9 +222,10 @@
       const dyeHex = paint?.dyeHex || window.DyeSystem?.getById?.(paint?.dyeId)?.hex;
       if (!pattern || !dyeHex) continue;
       const stack = paintPatternStack(paint);
+      const mergedPatterns = (Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns : []).filter(pattern => pattern && typeof pattern === 'object').slice(0, MAX_FUSED_PATTERNS - 1).map(clone); // Fused placements persist independently of overpasses.
       const secondary = overpassUnlocked() && stack[1] ? clone(stack[1]) : null;
       if (secondary) secondary.inkColorHex = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex || secondary.inkColorHex || dyeHex; // Preserve saved two-color paint even if dye catalog changes.
-      out[regionId] = { ...clone(paint), dyeHex, pattern: clone(pattern), patterns: secondary ? [clone(pattern), secondary] : [clone(pattern)] }; // Existing single paint remains the default.
+      out[regionId] = { ...clone(paint), dyeHex, pattern: clone(pattern), patterns: secondary ? [clone(pattern), secondary] : [clone(pattern)], mergedPatterns }; // Existing single paint remains the default.
 
     }
     return out;
@@ -266,6 +294,7 @@
       eligibleCount: eligibleStableAnimals().length,
       regions: entry ? regionsFor(entry).map(region => region.id) : [],
       paintedRegions: Object.keys(cleanDraft()),
+      fusedMotifCounts: Object.fromEntries(Object.entries(draftLayers).map(([id, paint]) => [id, paint?.mergedPatterns?.length || 0])), // On-page mobile debug.
       overpassUnlocked: overpassUnlocked(),
       lastError,
     };
@@ -287,6 +316,7 @@
       const overpassId = paint.overpassPatternLibraryId || '';
       const overpassKnown = overpassId && patterns.some(pattern => pattern.id === overpassId);
       const overpassDyeId = paint.overpassDyeId || paint.dyeId || '';
+      const fused = (Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns : []).slice(0, MAX_FUSED_PATTERNS - 1); // Show archived motifs even if removed from catalog.
       return `
         <div class="cp-region" data-region="${esc(region.id)}">
           <div class="cp-region-title"><span class="cp-swatch" style="background:${esc(region.color)}"></span>${esc(region.label)} <span class="cp-help">genetic ${esc(region.color)}</span></div>
@@ -311,6 +341,14 @@
               ${dyes.map(dye => `<option value="${esc(dye.id)}" ${overpassDyeId === dye.id ? 'selected' : ''}>${esc(dye.label || dye.id)}</option>`).join('')}
             </select></label>
           </div>` : '<p class="cp-help" style="margin-top:6px">Overpass painting unlocks after completing Banubu’s second request (Nine Leaf Tea).</p>'}
+          <div class="cp-help" style="margin-top:9px"><b>Fused motifs</b> · Same primary dye; intersections share one outline, never overpass.</div>
+          ${fused.map((motif, index) => `<div class="cp-fused-row" data-fused-index="${index}">
+            <div class="cp-row"><span class="cp-help">${esc(title(motif.repoPatternId || motif.label || motif.id || `Motif ${index + 2}`))}</span>
+            <button class="cp-btn secondary" type="button" data-act="remove-fused">Remove</button></div>
+          </div>`).join('')}
+          <div class="cp-row"><select class="cp-fused-select" data-field="add-fused" ${!paintPatternStack(paint)[0] || fused.length >= MAX_FUSED_PATTERNS - 1 ? 'disabled' : ''}>
+            ${patterns.map(pattern => `<option value="${esc(pattern.id)}">${esc(pattern.label || pattern.id)}</option>`).join('')}
+          </select><button class="cp-btn secondary" type="button" data-act="add-fused" ${!paintPatternStack(paint)[0] || !patterns.length || fused.length >= MAX_FUSED_PATTERNS - 1 ? 'disabled' : ''}>Add fused motif</button></div>
           <div class="cp-row">
             <button class="cp-btn secondary" type="button" data-act="edit">Author / edit pattern</button>
             <button class="cp-btn secondary" type="button" data-act="clear">Clear this region</button>
@@ -341,7 +379,23 @@
         setOverpassDye(regionId, event.target.value);
         drawPreview(); refreshDebug();
       });
-      row.querySelector('[data-act="clear"]')?.addEventListener('click', () => {
+      row.querySelector('[data-act="add-fused"]')?.addEventListener('click', () => {
+         if (addFusedPattern(regionId, row.querySelector('[data-field="add-fused"]')?.value)) { renderRegions(); drawPreview(); refreshDebug(); }
+       });
+       row.querySelectorAll('[data-fused-index]').forEach(fusedRow => {
+         const index = Number(fusedRow.dataset.fusedIndex); // Index resets after a region rerender.
+         fusedRow.querySelector('[data-act="remove-fused"]')?.addEventListener('click', () => {
+           if (removeFusedPattern(regionId, index)) { renderRegions(); drawPreview(); refreshDebug(); }
+         });
+         window.PatternQuickControls?.mount(fusedRow, {
+           title: `Fused motif ${index + 2} placement`,
+           getPattern: () => paintDescriptor(regionId)?.mergedPatterns?.[index] || null,
+           onChange: pattern => {
+             if (setFusedPatternPlacement(regionId, index, pattern)) { drawPreview(); refreshDebug(); }
+           },
+         });
+       });
+       row.querySelector('[data-act="clear"]')?.addEventListener('click', () => {
         delete draftLayers[regionId];
         renderRegions();
         drawPreview();
@@ -447,7 +501,7 @@
             </div>
             <div class="cp-card"><h3>Region paint</h3><div id="colorPoolsRegions"></div></div>
           </div>
-          <div>
+          <div class="cp-preview-column">
             <div class="cp-preview"><canvas id="colorPoolsPreviewCanvas" width="420" height="340"></canvas></div>
             <div class="cp-help" id="colorPoolsPreviewStatus" style="margin:7px 2px 10px">Select an animal.</div>
             <details class="cp-card"><summary>Debug</summary><pre id="colorPoolsDebug" class="cp-debug"></pre></details>
@@ -563,7 +617,7 @@
     makeAltarInteractable,
     decorateScene,
     debugSnapshot,
-    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, setOverpassPattern, setOverpassDye, setDye, cleanDraft, previewPrimaryPatternPaint }),
+    __test: Object.freeze({ invalidateLiveAnimal, paintPatternStack, setLibraryPattern, addFusedPattern, removeFusedPattern, setFusedPatternPlacement, setOverpassPattern, setOverpassDye, setDye, cleanDraft, previewPrimaryPatternPaint }),
   });
 
   window.ColorPoolsSystem = api;
