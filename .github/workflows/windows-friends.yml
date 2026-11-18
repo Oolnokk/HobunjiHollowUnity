@@ -159,6 +159,17 @@ jobs:
           else
             git checkout --orphan friends-update-feed
           fi
+          if test -f latest.yml; then
+            prior=$(sed -nE 's/^version: 0\\.2\\.([0-9]+)$/\\1/p' latest.yml | head -n 1)
+            if [[ ! "$prior" =~ ^[0-9]+$ ]]; then
+              echo "Refusing to replace an unknown existing Friends release version" >&2
+              exit 1
+            fi
+            if (( prior >= ${{ github.run_number }} )); then
+              echo "Refusing to roll back Friends from 0.2.$prior" >&2
+              exit 1
+            fi
+          fi
           cp ../release/latest.yml latest.yml
           git add latest.yml
           git commit -m "Approve Friends desktop version 0.2.${{ github.run_number }}"
