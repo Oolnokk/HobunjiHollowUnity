@@ -268,6 +268,7 @@
         throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         belt: window.AdventuringTorchBelt?.debug || null, // Pixel Probe includes actual belt attachment, texture and flame visibility on mobile.
+        lastProjectile: window.RangedWeapons?.lastTorchThrow || null, // Expose the actual reticle target, converged launch vector and sprite scale in the existing mobile Pixel Probe torch section.
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
         torchStance: stance ? {
