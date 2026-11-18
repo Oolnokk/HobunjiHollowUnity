@@ -107,6 +107,14 @@
         context.globalCompositeOperation = 'source-over';
       }
       texture = new THREE.CanvasTexture(canvas);
+      // Live PNGPlaneAvatar mirrors the front texture with UV repeat/offset.
+      // Mirror this finished corpse portrait too; its pants were baked into
+      // original canvas coordinates by CorpsePosedPantsSnapshot.
+      if (hasComposed && window.PNGPlaneAvatar?.getPortraitsFlipped?.() === true) {
+        texture.wrapS = THREE.RepeatWrapping;
+        if (texture.repeat) texture.repeat.x = -1;
+        if (texture.offset) texture.offset.x = 1;
+      }
       if (best.map?.colorSpace !== undefined) texture.colorSpace = best.map.colorSpace;
       else if (THREE.SRGBColorSpace !== undefined) texture.colorSpace = THREE.SRGBColorSpace;
       texture.magFilter = THREE.NearestFilter || texture.magFilter;
@@ -168,6 +176,14 @@
     sprite.userData ||= {};
     sprite.userData.noOutline = true;
     sprite.layers?.set?.(0); // Base pass only: no shell, target, PNG depth, mist or x-ray layers.
+    if (snapshot) {
+      // The live character fell with root.rotation.z = +PI/2: its original
+      // portrait Y axis therefore lies toward -X, not the new plane's -Z.
+      sprite.rotation.y = Math.PI / 2;
+      const oldScale = rig.group?.scale; // Preserve authored species proportions after the expensive rig is disposed.
+      if (Number(oldScale?.x) > 0) sprite.scale.x = oldScale.x;
+      if (Number(oldScale?.y) > 0) sprite.scale.z = oldScale.y;
+    }
     group.add(sprite);
     group.rotation.y = Number(c.deathRestRotY) || 0;
     group.position.set(c.x / tile, surfaceY + 0.03, c.y / tile);
