@@ -2887,7 +2887,7 @@
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "");
+    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "") + (options.continuousSurface === true ? ":continuous" : ""); // Continuous fur coats must not cache-collide with per-garment-cell phase offsets.
     if (options.cache !== false && patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
 
     const motifUrls = await Promise.all(renderable.map(async pattern =>
@@ -2960,7 +2960,7 @@
         if (!garmentMask[p]) continue;
         const x = p % width, y = (p / width) | 0;
         const anchored = active[patternIndex]?.pattern?.garmentFixed === true && active[patternIndex]?.pattern?.tiling === false; // One authored image should not shift by five pixels on each disconnected hood region.
-        const off = patternCellOffset(cellLabels[p], directMaskPass || anchored);
+        const off = patternCellOffset(cellLabels[p], directMaskPass || anchored || options.continuousSurface === true); // Animal body and beard share the same atlas origin rather than independent fur-island shifts.
         const mx = x + pad - off, my = y + pad - off; // Direct masks sample the exact authored (x,y); only reusable motifs receive per-cell visual variation.
         const mi = (my * maskWidth + mx) * 4;
         if (paddedMaskData[mi + 3] > 16) mask[p] = 1;

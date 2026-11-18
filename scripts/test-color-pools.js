@@ -42,6 +42,17 @@ vm.runInContext(read('docs/js/color-pools-system.js'), context, { filename: 'col
 
 const api = context.ColorPoolsSystem;
 assert(api, 'ColorPoolsSystem exports');
+vm.runInContext(read('docs/js/voorg-ass-registration.js'), context, { filename: 'voorg-ass-registration.js' });
+context.VoorgAssRegistration.ensureRendererSpecies(context.CreatureGeneticsRender.SPECIES); // Reuse the live species registration instead of duplicating its Color Pools region metadata.
+context.CreatureGenetics.SPECIES_ALIAS['voorg-ass-herd-mother'] = 'voorg-ass'; // Same canonical species mapping used for adult and mother stable portraits.
+for (const kind of ['voorg-ass', 'voorg-ass-herd-mother']) {
+  const entry = { kind, genotype: {
+    base: { color: '#4b6987', copies: 2 },
+    belly: { color: '#b9a174', copies: 2, enabled: true },
+  } }; // Coat-colored anatomical beard is not a separate inheritable or paintable region.
+  assert.deepEqual(JSON.parse(JSON.stringify(api.regionsFor(entry).map(region => region.id))),
+    ['base', 'belly'], kind + ' offers base coat and belly paint but never an independent beard/hoof selector');
+}
 assert.equal(api.stableMaxLevel(), 10, 'Color Pools reads the live refined Stable level cap');
 assert.equal(api.overpassUnlocked(), false, 'unfinished Quest 2 cannot add an overpass');
 assert.equal(api.__test.setOverpassPattern('base', 'overpass'), false, 'direct call cannot bypass quest gate');
@@ -124,8 +135,8 @@ assert.equal(liveCompanion._blinkAppliedShut, null, 'repaint invalidation clears
 assert(!colorPoolsSource.includes('actor._genotypeLogged = false;'), 'Color Pools must never replace the live companion genotype log Set with a boolean');
 
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
-assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
-assert(renderer.includes('fullBaseRecolor ? null : mask'), 'ordinary base paint is clipped by the authored genetic base mask');
+assert(renderer.includes("applyColorPoolPaint(basePaintSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
+assert(renderer.includes('fullBaseRecolor ? null : basePaintMask'), 'ordinary base paint is clipped by the authored genetic base mask');
 assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
 assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass compositor'), 'the real two-slot weaving compositor is public for Color Pools/NPC reuse');
