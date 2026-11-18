@@ -522,6 +522,7 @@
       if (!record.root.parent || !record.scene || (!record.active && t - record.lastUsedS >= SMEAR_CACHE_IDLE_S))
         disposeSmear(record);
     }
+    afterimageRuntimeDebug.pooled = motionSmears.size - activeCount; // Diagnostics reflect pruning immediately, not on the following frame.
   }
 
   function showIframeMissPopup() {
