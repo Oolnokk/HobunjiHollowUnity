@@ -13,7 +13,13 @@ const maskRequests = []; // Tracks the once-per-species idle mask prerequisite b
 const frameSwaps = [];
 const overlays = [];
 const releasedTemporarySprites = []; // Confirms shoulder-cache retirement reaches the game-owned GPU cleanup callback.
-let canvasSerial = 0; // Gives each composited/warped frame a distinct URL in the assertions.
+let canvasSerial = 0; // Identifies the raster for testing completed composites and clip layers.
+let blobSerial = 0; // Every browser canvas.toBlob result becomes a unique URL, even for identical sprite pixels.
+const revokedBlobs = []; // Ensures replacement/unequip revokes the correct temporary resource.
+const fakeURL = {
+  createObjectURL: () => 'blob:shoulder-test-' + (++blobSerial),
+  revokeObjectURL: url => revokedBlobs.push(url),
+};
 let splitFrame = false; // Test toggle between ordinary shoulder art and split left/right presentation.
 let maskUnavailable = false; // Simulates temporarily missing idle head alpha data for split poses.
 let growthDisabled = false; // Nursery slider can legitimately request 100% vertical and 0% shortening.
@@ -28,6 +34,7 @@ function canvas(extra = {}) {
       closePath() {}, clip() {}, drawImage(image) { calls.push(image); },
     }; },
     toDataURL() { return 'data:image/png;base64,head' + id; },
+    toBlob(callback) { callback({ type: 'image/png', id }); }, // Force the modern production path instead of the old-browser shared data URL.
   };
 }
 const player = { id: 'player' };
@@ -115,7 +122,7 @@ const doc = {
   querySelector: () => null,
   createElement(tag) { assert.equal(tag, 'canvas'); return canvas(); },
 };
-vm.runInNewContext(bridgeSource, { window: win, document: doc, console, Date: { now: () => fakeClock.now } },
+vm.runInNewContext(bridgeSource, { window: win, document: doc, console, URL: fakeURL, Date: { now: () => fakeClock.now } },
   { filename: 'player-body-attachment-bridge.js' });
 const provider = hooks.shoulderPets;
 assert.equal(typeof provider, 'function', 'bridge exposes the existing shoulder-pet integration provider');
@@ -128,7 +135,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(warped.length, 1);
   assert.equal(composited.length, 1);
   assert.equal(maskRequests[0]?.kind, 'grehlr', 'small pet first requests its idle opacity mask before pose composition');
-  assert(frameSwaps.at(-1).url.startsWith('data:image/png'), 'small pet displays its final enlarged canvas');
+  assert(frameSwaps.at(-1).url.startsWith('blob:shoulder-test-'), 'small pet displays its final enlarged canvas');
   assert.equal(frameSwaps.at(-1).genotypeKind, null, 'already composed frame cannot be recolored or have eyes re-applied');
   provider();
   await flush();
@@ -171,7 +178,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     'split shoulder pet uses an actual idle frame to seed its shared head mask');
   assert.deepEqual(warped.slice(-2).map(x => x.input.frame), ['idle', 'run1']);
   assert(overlays.some(x => x.visible === true && x.image), 'split foreground receives enlarged left layer');
-  assert(frameSwaps.at(-1).url.startsWith('data:image/png'), 'split back face gets the enlarged right layer');
+  assert(frameSwaps.at(-1).url.startsWith('blob:shoulder-test-'), 'split back face gets the enlarged right layer');
   const composedCount = composited.length;
   const overlayUploads = overlays.filter(event => event.image).length; // Each actual split canvas may be uploaded once, never per frame.
   for (let i = 0; i < 25; i++) provider(); // Many ordinary render passes must not provoke repeated texture swaps.
@@ -211,8 +218,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   splitPet.stableRole = 'companion';
   provider();
   assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.active, 0);
-  assert(releasedTemporarySprites.some(url => url.startsWith('data:image/png')),
-    'unequipping the pet invokes the game-owned GPU texture cleanup, even on the data-URL fallback');
+  assert(releasedTemporarySprites.some(url => url.startsWith('blob:shoulder-test-')),
+    'unequipping the pet invokes the game-owned GPU texture cleanup for unique generated sprite URLs');
+  assert(revokedBlobs.some(url => releasedTemporarySprites.includes(url)),
+    'the object URL is revoked after its cached GPU texture has been released');
   assert(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.temporaryTexturesReleased > 0,
     'mobile debug tracks successful generated texture releases');
   assert(bridgeSource.includes('smallPetHeadFrameCache.delete(companion)'), 'leaving shoulder invalidates pending textures');
@@ -295,7 +304,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   provider();
   await flush();
   await flush();
-  assert(unwarpedSimplePet.__hobunjiShoulderFrame?.startsWith('data:image/png'),
+  assert(unwarpedSimplePet.__hobunjiShoulderFrame?.startsWith('blob:shoulder-test-'),
     '100% single-frame setting also retains the original prepared sprite without a mask');
   assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed, beforeDisabledFails,
     'single-frame disabled growth cannot report a false mask failure');
