@@ -271,6 +271,12 @@
     }
     return best;
   }
+  function recordOrbitDive(bird) {
+    const map = rooms.get(bird?.areaId); // The existing nest encounter owns every mother dive, including no-perch returns.
+    if (!map || map.mother !== bird || map.completed) return false;
+    stats.dives++; map.lastEvent = 'mother dived from a no-perch combat orbit';
+    return true; // Mobile diagnostics count aerial fallback attacks alongside standard perch-launched dives.
+  }
   function clearAirPath(bird, endpoint) {
     const map = rooms.get(bird?.areaId); // Native arena collision plan, reused before committing an unperchable mother's orbit leg.
     if (!map || map.mother !== bird || !endpoint || ![endpoint.x, endpoint.y, endpoint.worldY].every(Number.isFinite)) return false;
@@ -364,6 +370,6 @@
       complete:room.completed, lastEvent:room.lastEvent,
     })) };
   }
-  window.TzatzulNestEncounter=Object.freeze({init,update,owns,ensure,resolveTerrainImpact,clearAirPath,debugSnapshot,buildNest,storeVictim,serialize,restore,
+  window.TzatzulNestEncounter=Object.freeze({init,update,owns,ensure,resolveTerrainImpact,clearAirPath,recordOrbitDive,debugSnapshot,buildNest,storeVictim,serialize,restore,
     __test:Object.freeze({nearestObstacle,impactDamage})});
 })();
