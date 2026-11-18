@@ -115,7 +115,7 @@ const nextItemCategory = vm.runInNewContext(archClassifierSource + '\n' + itemAr
 const rotatedStacks = ['seedB', 'cropA', 'cropB', 'fishA', 'seedA'].map(key => ({ key })); // Simulates preserve-active-index grouping rotation across the start/end boundary.
 assert.equal(nextItemCategory(rotatedStacks, 0, 1), 1, 'next from the rotated seed tail enters Crops');
 assert.equal(nextItemCategory(rotatedStacks, 0, -1), 3, 'previous from the rotated seed tail enters Fish');
-assert.equal(nextItemCategory(rotatedStacks, 2, -1), 1, 'previous jumps to the first item of its adjacent category');
+assert.equal(nextItemCategory(rotatedStacks, 2, -1), 4, 'previous reaches the first Seeds entry across the cyclic seam');
 assert.equal(nextItemCategory(rotatedStacks, 3, 1), 4, 'next wraps from Fish to the first Seeds entry');
 assert.equal(nextItemCategory(rotatedStacks, 4, 1), 1, 'next skips the cyclic continuation of the same Seeds group');
 assert.equal(nextItemCategory(rotatedStacks, 4, -1), 3, 'previous from Seeds reaches Fish');
