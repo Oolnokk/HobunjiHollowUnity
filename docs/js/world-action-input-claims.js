@@ -4,6 +4,9 @@
   const owners = new Map(); // ownerId -> normalized claim records currently advertised by that world-interaction system.
   const pressed = new Map(); // actionId -> claim snapshot that consumed its press; keeps release paired even if proximity/UI changes before button-up.
   let revision = 0;
+  let archRevision = 0; // Game's action-bar cache invalidates only when the winning visible contextual arch action changes.
+  let archSignature = ''; // Compared on claim registrations/withdrawals, not during the HUD's frame refresh.
+  const ARCH_INPUT_IDS = Object.freeze(['action1','action2','action3','action4','action5']); // Same five bound semantic inputs as the physical action arch.
   let combatResolver = () => false; // Injected player combat state; used to prevent beginning or resuming world hold interactions in combat.
   let contextResolver = () => false; // Injected visible action-arch override check; used to arbitrate combat even before a button is pressed.
   const interruptedHolds = new Set(); // World hold action kinds invalidated by combat until their original physical input is released.
@@ -135,7 +138,7 @@
       actionId,
       label:String(raw?.label||actionId),
       hudIcon:String(raw?.hudIcon || '✋'), // Shared action arch renders this icon for opt-in contextual world actions.
-      showInArch:raw?.showInArch === true && ['action1','action2','action3','action4','action5'].includes(actionId), // HUD claims must use real physical tool slots.
+      showInArch:raw?.showInArch === true && ARCH_INPUT_IDS.includes(actionId), // HUD claims must use real physical tool slots.
       priority:Number(raw?.priority)||0,
       order:index,
       onPress:typeof raw?.onPress==='function'?raw.onPress:null,
@@ -150,6 +153,7 @@
     if(normalized.length)owners.set(ownerId,normalized);
     else owners.delete(ownerId);
     revision++;
+    refreshArchRevision(); // Changing a claim can expose or conceal a higher-priority contextual HUD action.
     return true;
   }
 
@@ -157,7 +161,7 @@
     ownerId=String(ownerId||'').trim();
     if(!ownerId)return false;
     const changed=owners.delete(ownerId);
-    if(changed)revision++;
+    if(changed){revision++;refreshArchRevision();}
     return changed;
   }
 
@@ -171,6 +175,17 @@
       }
     }
     return best;
+  }
+
+  function refreshArchRevision() {
+    const next = ARCH_INPUT_IDS.map(actionId => {
+      const claim = claimFor(actionId);
+      return claim?.showInArch ? [actionId,claim.ownerId,claim.label,claim.hudIcon,claim.priority] : null;
+    }); // Only changes to the winning visible claims affect the rendered HUD; invisible claims do not churn its cache.
+    const signature = JSON.stringify(next);
+    if (signature === archSignature) return;
+    archSignature = signature;
+    archRevision++;
   }
 
   function isClaimed(actionId) {
@@ -232,7 +247,8 @@
     isClaimed,
     hasClaim:isClaimed, // Backward-compatible semantic used by early selector arbitration in game.js; keeps potion/ammo/item selectors from pre-empting a visible world interaction.
     claimFor,
-    getRevision: () => revision, // Zero-allocation version check lets the shared arch avoid rescanning unchanged claims every HUD refresh.
+    getRevision: () => revision, // General input claim version for diagnostics.
+    getArchRevision: () => archRevision, // HUD-specific version is stable across unrelated input-claim changes.
     dispatch,
     snapshot,
   });
