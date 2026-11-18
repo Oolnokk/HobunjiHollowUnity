@@ -29,6 +29,16 @@ assert.equal(vase.parts[0].id,'blossom-vase');
 assert.equal(vase.parts[0].kind,'cup');
 assert.equal(vase.parts[0].materialRole,'pottery');
 
+const requested=[]; // The specific changed vase JSON gets a fresh query, unlike unchanged furniture.
+const authoredContext={window:{},fetch:url=>{requested.push(url);return Promise.resolve({ok:false});}};
+vm.runInNewContext(fs.readFileSync('docs/js/authored-furniture-runtime.js','utf8'),authoredContext);
+authoredContext.window.AuthoredFurniture.load('festivalBlossoms');
+authoredContext.window.AuthoredFurniture.load('tableSmall');
+assert.deepEqual(requested,[
+  'config/furniture-authored/festivalBlossoms.json?v=20261118blossomVases1',
+  'config/furniture-authored/tableSmall.json'
+],'new vase data is fresh while ordinary furniture keeps its existing caching policy');
+
 const foliageGlobal = {THREE:{}}; // The generator presets/API are lazy; geometry is only made after THREE initializes in the game.
 vm.runInNewContext(fs.readFileSync('docs/js/foliage-generator.js','utf8'),{window:foliageGlobal,console});
 const foliage = foliageGlobal.FoliageGenerator, recipe = foliage.pottedBlossomRecipe; // Inspect the exact recipe returned by the production API.
@@ -86,4 +96,14 @@ assert.equal(disposedFoliage,0,'a removed festival cannot destroy cached shared 
 assert.equal(disposedAuthored,12,'the six vase meshes retain ordinary per-instance disposal of their geometry/material');
 const seasonal=fs.readFileSync('docs/js/seasonal-vegetation-tint.js','utf8'); // The weather system must not repaint a deliberate stained-glass accent.
 assert(seasonal.includes('material?.userData?.hobunjiFixedBlossomColor'),'seasonal recoloring skips fixed-color festival leaves');
-console.log('Five Blossoms vase geometry, five authentic temple swatches, single-rung foliage, six table placements and shared-material disposal passed.');
+let resolvePending; // Deliberately resolve a decoration load only after its table has left the scene.
+uiWindow.AuthoredFurniture.peek=()=>null;
+uiWindow.AuthoredFurniture.load=()=>new Promise(resolve=>{resolvePending=resolve;});
+const abandoned=new Group();props.decorate(abandoned,{...tables[0],id:'abandoned-table'});
+props.dispose(abandoned);
+resolvePending(vase);
+Promise.resolve().then(()=>{
+  assert.equal(abandoned.children.find(c=>c.name==='festival-dressing').children.length,0,
+    'stale async vase loads cannot resurrect flowers after the festival ends');
+  console.log('Five Blossoms vase geometry, five authentic temple swatches, single-rung foliage, six table placements, cached JSON and shared-material disposal passed.');
+});
