@@ -75,6 +75,15 @@
     }
   }
 
+  function notifyPreviewStatus(actor, record) {
+    const status = typeof document !== 'undefined' && document.getElementById?.('maaBeltStowStatus');
+    if (!status || status.dataset.actorId !== String(actor.id)) return; // An older async load may not update a newly selected NPC's panel.
+    const imageStatus = record.failed ? 'texture failed' : record.loading ? 'loading PNG…'
+      : record.display.art.material?.map ? 'torch PNG ready' : 'waiting for sprite';
+    status.textContent = 'Preview: ' + imageStatus
+      + '. Saved anchor: anchors.beltStow. Flame preview is visual only; gameplay extinguishes after 30 real seconds whether held or stowed.';
+  }
+
   function previewFor(actor, THREE, textureUrl) {
     releaseOtherPreviews(actor);
     if (!isCharacter(actor) || !THREE) return null;
@@ -107,9 +116,11 @@
         record.ownedTexture = map;
         if (previous && previous !== map) previous.dispose?.();
         record.loading = false;
+        notifyPreviewStatus(actor, record);
       }, undefined, error => {
         if (record.disposed || record.assetUrl !== requestedUrl) return;
         record.failed = true; record.loading = false;
+        notifyPreviewStatus(actor, record);
         global.__farmLog?.('[belt rig preview] Torch PNG failed: ' + String(error), 'warn');
       });
     }
@@ -165,6 +176,9 @@
         Preview: ${record?.failed ? 'texture failed' : record?.loading ? 'loading PNG…' : record?.display.art.material?.map ? 'torch PNG ready' : 'waiting for sprite'}. Saved anchor: <b>anchors.beltStow</b>. Flame preview is visual only; gameplay extinguishes after 30 real seconds whether held or stowed.
       </div>`;
     inspector.appendChild(slot);
+    const status = slot.querySelector('#maaBeltStowStatus'); // Updates from the actual async PNG success/failure, not only panel rerenders.
+    if (status) status.dataset.actorId = String(actor.id);
+    if (record) notifyPreviewStatus(actor, record);
     slot.querySelector('#maaBeltStowEdit')?.addEventListener('click', () => selectAnchor?.());
     slot.querySelector('#maaBeltStowReset')?.addEventListener('click', () => { reset?.(); render?.(); });
     slot.querySelector('#maaBeltStowScale')?.addEventListener('change', event => {
