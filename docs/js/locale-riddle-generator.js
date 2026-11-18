@@ -48,6 +48,26 @@
 
   const FAMILIES = Object.freeze(['A','B','way','ground','side','place','eyes','door','tree','flow']); // Ten deterministic phonetic families.
   const VERSE_BANK = Object.freeze({
+    routeAnchor:{
+      way:['Begin at {value}; let this be your way','Start at {value}; do not stray'],
+      ground:['Begin at {value}; mark this starting ground','Stand at {value}; there your path is found'],
+      side:['Begin at {value}; let its marking be your guide','Start at {value}; set all other marks aside'],
+      place:['Begin at {value}; this is the starting place','Stand at {value}; from here begin the chase'],
+      eyes:['Begin at {value}; fix it in your eyes','Stand at {value}; a marked stone never lies'],
+      door:['Begin at {value}; then seek something more','Stand at {value}; here the road opens its door'],
+      tree:['Begin at {value}; its dyed rune is your key','Stand at {value}; its color you shall see'],
+      flow:['Begin at {value}; then follow where to go','Start at {value}; the marked stone tells you so']
+    },
+    routeStep:{
+      way:['From there, go {value}; follow that way','Next go {value}; do not stray'],
+      ground:['From there, go {value}; reach the ground','Next go {value}; the route is found'],
+      side:['From there, go {value}; let the heights be your guide','Next go {value}; keep to that side'],
+      place:['From there, go {value}; find that place','Next go {value}; follow the trace'],
+      eyes:['From there, go {value}; trust your eyes','Next go {value}; the next marker lies'],
+      door:['From there, go {value}; look once more','Next go {value}; explore'],
+      tree:['From there, go {value}; there you shall see','Next go {value}; this is your key'],
+      flow:['From there, go {value}; let the water flow','Next go {value}; follow what you know']
+    },
     zone:{
       way:['Let {value} be the start of your way','Begin in {value}; do not stray'],
       ground:['Within {value}, the search is bound','Seek {value}; begin on this ground'],
@@ -148,6 +168,8 @@
     for (const c of String(value)) { n ^= c.charCodeAt(0); n = Math.imul(n, 16777619); }
     return n >>> 0;
   }
+  const PLATEAU_UNIT = 2.5; // Matches terrain-preview's default; route language reports tiers, not invented absolute distances.
+  const WATERWAY = new Set(['river','stream','waterfall']); // Only real flowing water makes a crossing clue.
   const FLAT_TILE_INDEX = new WeakMap(); // Actual runtime _zoneLayouts sometimes store flat {c,r,...} records, unlike merged Map and editor dictionaries.
   function tileAt(layout, col, row) {
     const map = layout?.maps?.find?.(m => m.id === 'map_generated_wilderness_root') || layout?.maps?.[0] || layout; // Authored generator workspace, or already folded runtime layout.
@@ -205,6 +227,91 @@
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
   }
+  function elevationAt(layout, point) {
+    const tile = tileAt(layout, Math.round(point.col),Math.round(point.row));
+    if(!tile)return null;
+    const tier=Number(tile.type==='ramp' ? tile.rampElevation : tile.elevTier ?? tile.elevation ?? 0);
+    if(!Number.isFinite(tier))return null;
+    const visual=layout?.visualHeights;
+    const raw=typeof visual?.get==='function'?visual.get(Math.round(point.col)+','+Math.round(point.row)):visual?.[Math.round(point.col)+','+Math.round(point.row)];
+    const subtle=Number.isFinite(Number(raw))?Number(raw)*PLATEAU_UNIT*.24:0; // Real surface height modulation; relative sign never depends on a fictional mountain.
+    return tier*PLATEAU_UNIT+subtle;
+  }
+  function compass(from,to) {
+    const dx=to.col-from.col, dy=to.row-from.row;
+    const horizontal=Math.abs(dx)>=1?dx>0?'east':'west':'';
+    const vertical=Math.abs(dy)>=1?dy>0?'south':'north':'';
+    return vertical&&horizontal?vertical+'-'+horizontal:vertical||horizontal||'locally';
+  }
+  function crossingBetween(layout,from,to) {
+    const dx=to.col-from.col,dy=to.row-from.row;
+    const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))*4)); // Super-sampled straight bearing; no imagined bridge or ford.
+    const crossed=[];
+    for(let i=1;i<steps;i++){
+      const col=Math.round(from.col+dx*i/steps),row=Math.round(from.row+dy*i/steps);
+      const tile=tileAt(layout,col,row),type=String(tile?.type||'').toLowerCase();
+      if(!WATERWAY.has(type)||crossed.some(x=>x.col===col&&x.row===row))continue;
+      crossed.push({col,row,type,tile});
+    }
+    if(!crossed.length)return null;
+    const river=crossed.some(x=>x.type==='river'||x.type==='waterfall'),name=river?'river':'stream';
+    const sideLen=Math.hypot(dx,dy)||1;
+    const perpX=-dy/sideLen,perpY=dx/sideLen;
+    let canyon=false;
+    for(const water of crossed){
+      const center=elevationAt(layout,water);
+      for(const distance of [2,3]) {
+        const left=elevationAt(layout,{col:Math.round(water.col+perpX*distance),row:Math.round(water.row+perpY*distance)});
+        const right=elevationAt(layout,{col:Math.round(water.col-perpX*distance),row:Math.round(water.row-perpY*distance)});
+        if(left!=null&&right!=null&&center!=null&&left-center>=PLATEAU_UNIT*.75&&right-center>=PLATEAU_UNIT*.75){canyon=true;break;}
+      }
+      if(canyon)break;
+    }
+    return {type:name,canyon,coordinates:crossed.map(({col,row})=>({col,row}))}; // Diagnostic evidence retains the exact stamped water tiles.
+  }
+  function routeBearing(layout,from,to,place) {
+    const bearing=compass(from,to),before=elevationAt(layout,from),after=elevationAt(layout,to);
+    const diff=before==null||after==null?null:after-before;
+    const steps=diff==null?null:Math.round(Math.abs(diff)/PLATEAU_UNIT);
+    const elevation=diff==null?'keeping to the visible ground':Math.abs(diff)<.35
+      ?'staying on roughly level ground':diff>0?steps>=2?'climbing '+steps+' plateau tiers':'climbing to higher ground'
+      :steps>=2?'descending '+steps+' plateau tiers':'descending to lower ground';
+    const crossing=crossingBetween(layout,from,to);
+    const water=crossing?(crossing.canyon?', crossing the '+crossing.type+' cutting a canyon':', crossing the '+crossing.type):'';
+    return {description:bearing+', '+elevation+water+', toward '+place,bearing,elevation,crossing,from:{...from},to:{...to}};
+  }
+  function uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks}) {
+    const candidates=landmarks.filter(x=>x.kind==='witnessStone'&&x.unique===true&&x.source==='generated-year-round-scenery'
+      &&Number.isFinite(x.point?.col)&&Number.isFinite(x.point?.row)&&tileAt(layout,x.point.col,x.point.row));
+    if(candidates.length!==1)return null; // Only one verifiable physically rendered marker can serve as an unambiguous start.
+    const marker=candidates[0],name=zoneName||ZONES[zoneId]||zoneId;
+    const midpoint={col:(marker.point.col+point.col)/2,row:(marker.point.row+point.row)/2};
+    const available=landmarks.filter(x=>x!==marker&&x.kind!=='witnessStone'&&x.kind!=='blossom'
+      &&Number.isFinite(x.point?.col)&&Number.isFinite(x.point?.row)
+      &&Math.hypot(x.point.col-point.col,x.point.row-point.row)>3
+      &&Math.hypot(x.point.col-marker.point.col,x.point.row-marker.point.row)>3
+      &&tileAt(layout,x.point.col,x.point.row));
+    available.sort((a,b)=>{
+      const da=Math.hypot(a.point.col-midpoint.col,a.point.row-midpoint.row);
+      const db=Math.hypot(b.point.col-midpoint.col,b.point.row-midpoint.row);
+      return da-db||a.point.row-b.point.row||a.point.col-b.point.col;
+    });
+    const waypoint=available.find(x=>Math.hypot(x.point.col-midpoint.col,x.point.row-midpoint.row)
+      <=Math.max(8,Math.hypot(point.col-marker.point.col,point.row-marker.point.row)*.45))||null;
+    const route=[],facts=[{kind:'routeAnchor',value:'the only '+marker.dyeName+'-inscribed witness stone in '+name,
+      source:marker.source,coordinate:{...marker.point},unique:true,dye:marker.dyeId}];
+    let current=marker.point;
+    if(waypoint) {
+      const leg=routeBearing(layout,current,waypoint.point,waypoint.name);
+      route.push(leg);facts.push({kind:'routeStep',value:leg.description,source:waypoint.source,coordinate:{...waypoint.point},...leg});
+      current=waypoint.point;
+    }
+    const final=routeBearing(layout,current,point,'the flowering tree');
+    route.push(final);facts.push({kind:'routeStep',value:final.description,source:'stamped-target-object',coordinate:{...point},...final});
+    facts.push({kind:'blossom',value:goalName,source:'stamped-target-object'});
+    return {facts,route,anchor:{name:marker.name,coordinate:{...marker.point},dyeName:marker.dyeName,dyeId:marker.dyeId,unique:true}};
+  }
+
   function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24 } = {}) {
     const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
@@ -244,8 +351,15 @@
       source:item.source, coordinate:{col:item.point.col,row:item.point.row}, distance:item.d
     });
     // No made-up landmarks and no literal tile counts. Sparse locations simply get a shorter, broader poem.
-    facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value: String(targetName || blossomName || instance.name || 'the destination'), source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
-    return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, boulderFound: !!boulder, landmarkFound: chosen.length > 0, landmarkCount: chosen.length, optionalTerrainFallback: !water && !path && !boulder && !chosen.length } };
+    const goalName=String(targetName||blossomName||instance.name||'the destination');
+    facts.push({ kind: targetKind === 'blossom' || blossomName ? 'blossom' : 'target', value:goalName, source: 'stamped-target-object' }); // Subject wording belongs to the calling quest, not a hard-coded tree.
+    const witness=(targetKind==='blossom'||blossomName)
+      ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks:[...landmarks,...suppliedLandmarks.filter(item=>item.kind==='witnessStone')]})
+      :null;
+    return { ok:true,zoneId,point,facts:witness?.facts||facts,
+      evidence:{waterFound:!!water,pathFound:!!path,boulderFound:!!boulder,landmarkFound:chosen.length>0,landmarkCount:chosen.length,
+        optionalTerrainFallback:!water&&!path&&!boulder&&!chosen.length,route:witness?.route||[],uniqueStart:witness?.anchor||null} };
+    // Unmarked worlds retain the old conservative broad-to-narrow verse rather than claim a nonexistent natural landmark.
   }
   function rhymeOf(line) {
     const terminal = String(line).trim().replace(/[.,;!?]+$/, '').split(/\s+/).pop().toLowerCase();
@@ -283,7 +397,7 @@
       return hinted[hash(seed + '|landmark') % hinted.length];
     return allowed[hash(seed + '|all') % allowed.length];
   }
-  const SCOPE_ORDER = Object.freeze({zone:0, sector:1, water:2, path:3, boulder:4, landmark:5, blossom:6, target:6}); // The poem always guides from region through terrain and visible markers to the exact goal.
+  const SCOPE_ORDER = Object.freeze({routeAnchor:-1,routeStep:1,zone:0, sector:1, water:2, path:3, boulder:4, landmark:5, blossom:6, target:6}); // The poem always guides from region through terrain and visible markers to the exact goal.
   function scopeRank(fact) { return SCOPE_ORDER[fact?.kind] ?? 5; } // Other quests' custom landmarks belong just before the target.
   function compose({ facts, seed = 'locale-riddle' } = {}) {
     if (!Array.isArray(facts) || facts.length < 2) return null;
