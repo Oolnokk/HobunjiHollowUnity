@@ -28434,6 +28434,10 @@
         // All five physical buttons and the popup hints now read from one shared arch layout.
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
+        function contextualArchBadgeIndex(button, slot) {
+          return button?.worldInteraction === true && button.inputAction === 'action' + (slot + 1)
+            ? slot : btns.indexOf(button); // Claimed world actions are deliberately not in the generic button list, but still own a real physical key.
+        }
 
         function applyAbt(elId, b, originalIdx) {
           const el = document.getElementById(elId);
@@ -28774,11 +28778,11 @@
           }
         }
 
-        applyAbt('btnAction1',    archLayout.slots[0], btns.indexOf(archLayout.slots[0]));
-        applyAbt('btnAction2',    archLayout.slots[1], btns.indexOf(archLayout.slots[1]));
-        applyAbt('btnAction3',    archLayout.slots[2], btns.indexOf(archLayout.slots[2]));
-        applyAbt('btnItemAction1', archLayout.slots[3], btns.indexOf(archLayout.slots[3]));
-        applyAbt('btnItemAction2', archLayout.slots[4], btns.indexOf(archLayout.slots[4]));
+        applyAbt('btnAction1',    archLayout.slots[0], contextualArchBadgeIndex(archLayout.slots[0], 0));
+        applyAbt('btnAction2',    archLayout.slots[1], contextualArchBadgeIndex(archLayout.slots[1], 1));
+        applyAbt('btnAction3',    archLayout.slots[2], contextualArchBadgeIndex(archLayout.slots[2], 2));
+        applyAbt('btnItemAction1', archLayout.slots[3], contextualArchBadgeIndex(archLayout.slots[3], 3));
+        applyAbt('btnItemAction2', archLayout.slots[4], contextualArchBadgeIndex(archLayout.slots[4], 4));
 
         if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }
