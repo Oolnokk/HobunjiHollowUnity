@@ -7,16 +7,17 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Production follower movement and climb integration.
 const responseSource = fs.readFileSync('docs/js/companion-combat-response.js', 'utf8'); // Existing mobile diagnostics surface.
-const helperStart = source.indexOf('function companionFollowGoal(c, master) {'); // Extracts the production helper without running the full browser game.
-const helperEnd = source.indexOf('\n\n      // Shared ground truth', helperStart); // The following comment delimits this helper in game.js.
-assert(helperStart >= 0 && helperEnd > helperStart, 'ground-follow helper is present');
-const helperSource = source.slice(helperStart, helperEnd); // Executes the actual implementation, not a copied test approximation.
+const navigationSource = fs.readFileSync('docs/js/companion-follow-navigation.js', 'utf8'); // Production goal resolver and stuck-recovery module.
 const TILE = 64; // Pixel-space tile size used by the companion's movement.
 const grid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({ elevTier: 0, incline: false }))); // Tiered wilderness fixture.
 grid[1][4].elevTier = 2;
 const context = { TILE, currentArea: 'wilderness', _isZoneArea: area => area === 'wilderness',
   window: { GridTileAccessors: { getActiveGrid: () => grid } }, Number, Math }; // Game dependencies needed by the pure helper.
-const followGoal = vm.runInNewContext('(' + helperSource + ')', context, { filename: 'game-companion-follow-helper.js' });
+vm.runInNewContext(navigationSource, context, { filename: 'companion-follow-navigation.js' });
+const navigation = context.window.CompanionFollowNavigation; // One source of truth for cliff elevation and owner destination.
+navigation.init({ TILE, getCurrentArea: () => context.currentArea,
+  isZoneArea: area => area === 'wilderness', getActiveGrid: () => grid });
+const followGoal = navigation.goal; // Live exported helper, not an inlined copy of game.js.
 
 const companion = { x: 1.5 * TILE, y: 1.5 * TILE, areaGrid: grid }; // Ground companion waiting below the climb.
 const climbingMaster = { x: 2.5 * TILE, y: 1.5 * TILE, climbing: true,
@@ -61,6 +62,11 @@ const companionLoop = source.slice(source.indexOf('function updateCompanions(dt)
 assert.doesNotMatch(companionLoop, /Teleport-and-stick|c\.avatarRef\.group\.position\.y = playerMesh\.position\.y \+ c\.halfHeight \* 0\.5/,
   'legacy owner-back climb snapping is absent');
 assert.match(companionLoop, /if \(c\.stableRole === 'mount'\) continue/, 'mounted animals remain under mount control');
+assert.match(source, /CompanionFollowNavigation\.init\(\{/, 'game.js injects the live grid, projection and collision adapters');
+assert.match(companionLoop, /CompanionFollowNavigation\.goal\(c, master\)/,
+  'the frame loop uses the extracted navigation goal');
+assert.match(companionLoop, /CompanionFollowNavigation\.tickRecovery\(c, master, followGoal, dt\)/,
+  'the real frame loop samples stuck recovery after ordinary movement');
 assert.match(companionLoop, /if \(c\.stableRole === 'shoulderPet'\)/, 'deliberate shoulder pets retain their attachment');
 assert.match(companionLoop, /master\.climbing \|\| followGoal\.routeRequired \|\| distToMaster > FOLLOW_FAR_PX/,
   'owner climbing and elevation mismatch both enter the ordinary follow navigation');
