@@ -1357,35 +1357,59 @@
     notify();
   }
 
+  // Persist a user-selected directory only after the old writer has drained.
+  // Never redirect an in-flight autosave to a different physical directory.
+  async function rememberSelectedFolder(handle) {
+    const wasArmed = _autoSyncArmed; // Restores the original autosync if IndexedDB cannot remember the new handle.
+    stopAutoSync();
+    try {
+      while (_syncPromise) await _syncPromise; // Current folder writes finish on their original handle.
+      stopAutoSync(); // An explicit writer may have rearmed autosync while finishing.
+      await idbSet(HANDLE_KEY, handle);
+    } catch (error) {
+      if (wasArmed && _state === 'ready' && _handle) startAutoSync(); // A failed switch must not disable the old folder's autosync.
+      throw error;
+    }
+    _handle = handle; // No filesystem writer is active, and the handle is durably remembered.
+    _committedFileState = null; // File fingerprints from the old directory cannot authorize no-op saves here.
+    _lastManifestStamp = null; // The new directory must verify its own manifest.
+  }
+
   // Picking/changing a folder only establishes access. If the folder is empty,
   // Save Now is still the explicit operation that initializes it.
   async function chooseFolder() {
     if (!isSupported()) return getStatus();
+    let pickerCompleted = false; // Distinguishes a canceled Windows picker from a later IndexedDB/inspection failure.
+    let switchCommitted = false; // Determines whether a failed inspection belongs to the newly remembered directory.
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      _handle = handle;
-      _committedFileState = null; // Do not reuse signatures from another save folder.
-      _lastManifestStamp = null;
-      await idbSet(HANDLE_KEY, handle);
+      pickerCompleted = true;
+      await rememberSelectedFolder(handle);
+      switchCommitted = true;
       _state = 'ready';
       _lastError = '';
       _lastDataLossRisk = null;
-      _lastKnownFolderMeta = null; // a newly picked folder has no relation to any previous baseline
+      _lastKnownFolderMeta = null; // A newly picked folder has no relation to any previous baseline.
       _lastKnownFolderProvenance = null; // A different folder has its own latest-writer history.
       _lastKnownFarmLayoutFingerprint = null; // The new folder needs its own independent layout baseline.
       _ignoredFarmLayoutBackupFiles = []; // Clear the previous folder's version-copy diagnostics.
       _recoveryHandleFresh = true;
-      stopAutoSync();
       await inspectConnectedFolder();
       _lastAction = 'folder-chosen-awaiting-choice';
       notify();
     } catch (error) {
-      if (error?.name !== 'AbortError') {
-        _state = 'error';
+      if (!pickerCompleted && error?.name === 'AbortError') {
+        // Chromium uses AbortError for both Cancel and a restricted path denial.
+        // No handle was changed and a previously armed folder remains writable.
+        _lastError = 'Folder picker canceled or blocked access: ' + String(error?.message || 'No further reason supplied.') +
+          ' If you selected a folder, choose the game-save directory itself rather than the Google Drive root.';
+        _lastAction = 'folder-picker-aborted';
+      } else {
+        if (switchCommitted) _state = 'error'; // The selected folder was remembered but could not be inspected.
         _lastError = String(error?.message || error);
-        _lastAction = 'choose-error';
-        notify();
+        _lastAction = 'choose-error'; // A failed picker or persistence attempt must never be mistaken for an old ready folder.
       }
+      notify();
     }
     return getStatus();
   }
@@ -1394,39 +1418,35 @@
 
   async function chooseRecoveryFolder() {
     if (!isSupported()) return getStatus();
-    const previousHandle = _handle; // Retained if the picker is cancelled so recovery never loses the remembered folder by accident.
-    const previousState = _state; // Restored on cancel for the same reason.
+    const previousHandle = _handle; // Retained if recovery folder re-selection fails.
+    const previousState = _state; // A canceled picker leaves the old primary folder state intact.
+    let pickerCompleted = false; // IndexedDB failures must not look like the user canceled the native picker.
     try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Use the same minimal picker invocation as the proven normal folder chooser; no stale-handle-derived options or recovery-specific picker state.
-      _handle = handle;
-      _committedFileState = null; // Recovery-only folder switches also invalidate the old primary save's file catalog.
-      _lastManifestStamp = null; // The new folder cannot inherit the previous folder's verified manifest.
-      await idbSet(HANDLE_KEY, handle);
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Same native picker invocation as normal selection.
+      pickerCompleted = true;
+      await rememberSelectedFolder(handle);
       _state = 'ready';
       _lastError = '';
       _lastDataLossRisk = null;
-      _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not trust/inspect canonical files before reading recovery history.
+      _lastKnownFolderMeta = null; // Recovery re-selection intentionally does not inspect canonical files.
       _lastKnownFolderProvenance = null;
-      _lastKnownFarmLayoutFingerprint = null; // Switching folders must not compare against a different directory.
+      _lastKnownFarmLayoutFingerprint = null; // Switching folders must not compare different directories.
       _ignoredFarmLayoutBackupFiles = []; // Recompute version-copy diagnostics for this directory.
       _recoveryHandleFresh = true;
-      stopAutoSync();
       _lastAction = 'recovery-folder-reselected';
       notify();
     } catch (error) {
-      if (error?.name === 'AbortError') {
-        _handle = previousHandle;
-        _state = previousState;
-        _recoveryHandleFresh = false;
+      _handle = previousHandle;
+      _state = previousState;
+      _recoveryHandleFresh = false;
+      if (!pickerCompleted && error?.name === 'AbortError') {
+        _lastError = 'Recovery folder selection canceled or blocked: ' + String(error?.message || error);
         _lastAction = 'recovery-folder-reselect-cancelled';
       } else {
-        _handle = previousHandle;
-        _state = previousState;
-        _recoveryHandleFresh = false;
         _lastError = String(error?.message || error);
         _lastAction = 'recovery-folder-reselect-error';
-        notify();
       }
+      notify();
     }
     return getStatus();
   }
