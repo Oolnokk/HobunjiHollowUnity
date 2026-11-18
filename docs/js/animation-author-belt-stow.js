@@ -6,7 +6,8 @@
   if (global.AnimationAuthorBeltStow) return;
 
   const KEY = 'beltStow'; // The same profile anchor consumed by AdventuringTorchBelt in gameplay.
-  const previews = new WeakMap(); // One visual per selected actor; old actors collect naturally.
+  const previews = new WeakMap(); // One GPU-backed display per active actor, explicitly disposed when selection changes.
+  let activePreviewActor = null; // Retires the previous character's canvas/texture instead of leaking it through repeated rig selections.
   let latestStatus = { state:'waiting', species:null, preview:false, texture:false }; // Mobile-readable diagnostics for rig editing.
 
   function isCharacter(actor) { return actor?.source?.type === 'npc'; }
@@ -61,8 +62,23 @@
     return true;
   }
 
+  function releaseOtherPreviews(currentActor = null) {
+    if (activePreviewActor && activePreviewActor !== currentActor) {
+      const old = previews.get(activePreviewActor);
+      if (old) {
+        old.disposed = true; // Invalidates outstanding TextureLoader callbacks before freeing GPU resources.
+        old.display.dispose();
+        old.ownedTexture?.dispose?.();
+        previews.delete(activePreviewActor);
+      }
+      activePreviewActor = null;
+    }
+  }
+
   function previewFor(actor, THREE, textureUrl) {
+    releaseOtherPreviews(actor);
     if (!isCharacter(actor) || !THREE) return null;
+    activePreviewActor = actor;
     const anchor = ensureActorAnchor(actor, THREE);
     if (!anchor) return null;
     let record = previews.get(actor);
@@ -72,24 +88,27 @@
       display.root.name = 'RigPreview_BeltStowedTorch';
       display.root.userData.nonInteractive = true;
       anchor.add(display.root);
-      record = { display, assetUrl:null, loading:false, failed:false };
+      record = { display, assetUrl:null, loading:false, failed:false, disposed:false, ownedTexture:null }; // Owns only the editor-loaded PNG, never gameplay's held map.
       previews.set(actor, record);
       actor.beltStowPreviewEnabled = actor.beltStowPreviewEnabled !== false;
       actor.beltStowPreviewLit = actor.beltStowPreviewLit !== false;
     }
     if (record.display.root.parent !== anchor) anchor.add(record.display.root);
     // A different repository/commit selection should load its own authentic torch texture.
-    if (textureUrl && record.assetUrl !== textureUrl && !record.loading) {
+    if (textureUrl && record.assetUrl !== textureUrl) {
       record.assetUrl = textureUrl;
       record.loading = true; record.failed = false;
       const requestedUrl = textureUrl; // Stale async images from a switched repository cannot override the new sprite.
       new THREE.TextureLoader().load(textureUrl, map => {
-        if (record.assetUrl !== requestedUrl) { map.dispose?.(); return; }
+        if (record.disposed || record.assetUrl !== requestedUrl) { map.dispose?.(); return; }
         global.HobunjiSpritePngSurface?.configureTexture?.(THREE, map, requestedUrl);
+        const previous = record.ownedTexture; // Release the prior repo/commit PNG only after swapping the live editor material.
         record.display.setTexture(map);
+        record.ownedTexture = map;
+        if (previous && previous !== map) previous.dispose?.();
         record.loading = false;
       }, undefined, error => {
-        if (record.assetUrl !== requestedUrl) return;
+        if (record.disposed || record.assetUrl !== requestedUrl) return;
         record.failed = true; record.loading = false;
         global.__farmLog?.('[belt rig preview] Torch PNG failed: ' + String(error), 'warn');
       });
@@ -170,7 +189,7 @@
 
   global.AnimationAuthorBeltStow = Object.freeze({
     KEY, ensureProfile, preserveNormalized, anchorNames, ensureActorAnchor,
-    resetProfile, syncPreview, mountInspector,
+    resetProfile, releaseOtherPreviews, syncPreview, mountInspector,
     get debug() { return latestStatus; }, // Accessible on mobile without DevTools.
   });
 })(window);
