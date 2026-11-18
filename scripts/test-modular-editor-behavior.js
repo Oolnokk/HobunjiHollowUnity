@@ -94,7 +94,7 @@ const expected = Object.entries(api.getConfig().shafts).flatMap(([shaft, record]
     && !api.isDisallowed(shaft, head)).map(([head]) => shaft + '|' + head));
 assert.deepEqual(placed.sort(), expected.sort(), 'Bulk sleeves only target true multi-ended hafts');
 assert(placed.includes('bshuakauitl|dagger-sword'), 'Two-ended B\'Shuakauitl is eligible');
-assert(placed.some(pair => pair.startsWith('pick-shovel|')), 'Two-ended Pick-Shovel remains eligible');
+assert(!placed.some(pair => pair.startsWith('pick-shovel|')), 'Pick-Shovel is single-headed at the scoop end now, so bulk sleeve placement skips it');
 assert(!placed.some(pair => ['kylie', 'hatchet', 'hoe', 'warhammer', 'fishing-mace', 'bgungku', 'dagger'].some(shaft => pair.startsWith(shaft + '|'))),
   'Single-ended hafts never receive mass recipe placements');
 assert(bulkApproval.questions.every(question => question.includes('Kylie') && question.includes('Undo')),
@@ -142,7 +142,7 @@ for (const shaftKey of singleEnded) {
   else assert.equal(recipes.length, 0,
     shaftKey + ': remove only the old mass-placed recipe boxes without changing mount geometry');
 }
-for (const shaftKey of ['bshuakauitl', 'pick-shovel', 'hachutuTorchStaff'])
+for (const shaftKey of ['bshuakauitl', 'hachutuTorchStaff']) // Pick-Shovel's connector recipes were removed on purpose (it is single-headed now).
   assert(Object.values(api.getConfig().shafts[shaftKey].overrides).some(pair => pair.bridges?.strokes?.some(op => op.recipe)),
     shaftKey + ': preserve potentially intentional multi-ended recipe placements');
 const originalKylie = JSON.parse(JSON.stringify(api.getConfig().shafts.kylie)); // Exact hand-adjusted Kylie mounts.

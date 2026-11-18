@@ -58,9 +58,9 @@ assert(!api.isDisallowed('warhammer', 'pickshovel-scoop'), 'Warhammer accepts ta
 assert(!api.isDisallowed('dagger', 'pickshovel-scoop'), 'Tang haft can accept the shovel scoop.');
 const shovelHaft = cfg.shafts['pick-shovel']; // Original double-ended tool has different attachment hardware on each end.
 assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'eye').length, 1);
-assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'tang').length, 2, 'Mixed haft keeps original scoop tang and gains companion at the pick eye.');
-assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pick-shovel-pick']).length, 2, 'Pick head is a tanged blade now, so it mounts on both tang ends.');
-assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pickshovel-scoop']).length, 2, 'Both original and companion tang locations accept tang heads.');
+assert.equal(shovelHaft.mounts.filter(mount => mount.type === 'tang').length, 1, 'Pick-Shovel keeps only its scoop-end tang; the pick-end companion was removed and the eye now sits opposite the pick pommel.');
+assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pick-shovel-pick']).length, 1, 'Pick head is a tanged blade, so it mounts on the single scoop-end tang.');
+assert.equal(api.matchingMounts(shovelHaft, cfg.heads['pickshovel-scoop']).length, 1, 'The single scoop-end tang accepts tang heads.');
 assert.equal(api.isDisallowed('pick-shovel', 'pickshovel-scoop'), true, 'Existing original-pair restrictions remain explicit.');
 
 const corrected = api.headTransform(tang, { ...neutral, x: 5, y: 10, scaleX: 1.5, rotation: 30 }, head); // Pair corrections layered over auto transform.
