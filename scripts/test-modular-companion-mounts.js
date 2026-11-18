@@ -58,7 +58,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       // whose tangs are independently offset by the artist rather than center-snapped.
       if (shaftKey === 'hachutuTorchStaff') {
         const donor = committed.shafts.bshuakauitl; // Donor validates copied starts while leaving authored staff tang tips independent.
-        const k = shaft.shaftArtTransform.scaleY, sy = y => 602 + k * (y - 602) + (y > 602 ? -90 : 0); // Lengthened donor copy; bottom mounts lifted 90 to clear the lower branches.
+        const k = shaft.shaftArtTransform.scaleY, sy = y => 602 + k * (y - 602) + (y > 602 ? -140 : 50); // Lengthened donor copy; both ends drawn in toward the middle (bottom -140, top +50 net).
         assert(shaft.shaftArtTransform.enabled === true && k > 1, 'Torch-Staff haft is lengthened');
         const close = (a, b) => Math.abs(a - b) < 1e-6;
         donor.mounts.forEach((m, i) => {

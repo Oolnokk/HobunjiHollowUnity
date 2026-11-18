@@ -25,8 +25,8 @@ assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
 // The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
 const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
 assert(torchShaft.shaftArtTransform.enabled === true && torchStretch > 1, 'Torch-Staff haft is lengthened');
-const BOTTOM_LIFT = -90; // Bottom-end mounts are raised so their heads clear the lower branch cluster.
-const stretchY = (y, lift = 0) => 602 + torchStretch * (y - 602) + (y > 602 ? lift : 0);
+const BOTTOM_LIFT = -140, TOP_DROP = 50; // Both ends are drawn in toward the middle so their heads clear the branch clusters.
+const stretchY = (y, lift = 0) => 602 + torchStretch * (y - 602) + (y > 602 ? lift : TOP_DROP);
 const stretched = mounts => plain(mounts.map(m => ({ type: m.type, start: { x: m.start.x, y: stretchY(m.start.y, BOTTOM_LIFT) } })));
 const near = (a, b, msg) => { assert.equal(a.length, b.length, msg); a.forEach((m, i) => { assert.equal(m.type, b[i].type, msg); assert(Math.abs(m.start.x - b[i].start.x) < 1e-6 && Math.abs(m.start.y - b[i].start.y) < 1e-6, msg); }); };
 near(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts),
