@@ -185,6 +185,19 @@ assert.equal(resumed.objects.get(resumed.mapId).size, 0, 'restored chest remains
 const freshWorld = harness(0); // A different character without these claims still gets their own loot.
 assert.equal(freshWorld.persist.get(freshWorld.mapId).placements.length, 1, 'claims never leak to another character');
 
+// A quick load may reuse the same existing THREE.Scene rather than starting with a blank cache.
+const reusedScene = harness(0); // Original live scene contains a chest at tile 0,0.
+reusedScene.dig(); // Leave a real stale Open action object registered when another saved state loads.
+assert.equal(reusedScene.objects.get(reusedScene.mapId).size, 1);
+reusedScene.api.restoreState({ [reusedScene.mapId]: {
+  week: 0, placements: [{ col: 1, row: 0, slot: 0, found: false, tier: 1, loot: { metalKeys: ['tin'] } }],
+} }); // The new save has an unclaimed chest at a different tile in the same treasure week.
+assert.equal(reusedScene.objects.has(reusedScene.mapId), false, 'restoring a save invalidates the prior scene chest action registry');
+assert.equal(reusedScene.meshes.has(reusedScene.mapId), false, 'restoring a save invalidates cached chest meshes');
+reusedScene.api.ensureZone(reusedScene.mapId);
+assert.deepEqual(reusedScene.persist.get(reusedScene.mapId).placements.map(p => p.col), [1], 'the restored chest is built at the saved tile, not the previous character tile');
+assert.equal(reusedScene.objects.get(reusedScene.mapId).size, 0, 'the previous Open prompt does not persist into the newly loaded character');
+
 // Two chests may exchange locations after a berry/reagent rescatters: preserve the unclaimed slot.
 const two = harness(0, null, false, true); // A large zone normally spawns two independently claimable weekly chests.
 assert.deepEqual(two.persist.get(two.mapId).placements.map(p => p.slot), [0, 1]);

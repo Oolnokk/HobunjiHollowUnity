@@ -643,6 +643,7 @@
     return out;
   }
   function restoreState(saved) {
+    for (const mapId of [...deps._zoneTreasureMeshGroups.keys()]) _clearZoneTreasureMeshes(mapId); // Quick loads and character changes must not keep an old world's mesh/action cache.
     deps._zoneTreasurePersist.clear();
     claimedChestTilesByZone.clear(); // Changing character/world must not inherit the previous character's opened chests.
     Object.entries(saved || {}).forEach(([mapId, v]) => {
