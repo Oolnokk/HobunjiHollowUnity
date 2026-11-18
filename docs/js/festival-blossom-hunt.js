@@ -269,7 +269,8 @@
       const claim=window.WorldMetaStore?.claimFiveBlossomsFinder?.(profile.worldId,nowYear,profile.characterId,profile.nickname);
       if(!claim?.ok)throw Error('Could not record this year’s first Finder: '+(claim?.reason || 'world save unavailable'));
       first = claim.first; firstFinder = claim.winner;
-      if(first) {
+      const alreadyCrowned = window.EquipmentPanel.ownsFiveBlossomCrown?.(nowYear) === true; // Completion-save retries must not repeat a ceremony after the crown was already granted.
+      if(first && !alreadyCrowned) {
         const ceremony=window.FestivalBlossomCeremony;
         if(!ceremony?.play) throw Error('The festival crowning cinematic is not loaded');
         headwear=window.EquipmentPanel.beginFiveBlossomCrowning?.();
