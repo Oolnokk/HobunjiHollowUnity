@@ -563,10 +563,16 @@
     return value%997;
   }
   function platformPillarVisual(kit,height,id) {
-    let source=null; // Reuse the actual tapered V50 support geometry instead of the temporary untextured box.
-    world.context?.root?.traverse?.(node=>{
-      if(!source&&node.isMesh&&/square tapered shaft/i.test(String(node.name||''))&&node.geometry)source=node;
-    });
+    // Shaft layout can contain many pillars; resolve the authored support ONCE instead of traversing the entire V50 scene for every platform.
+    if(!world.platformShaftTemplateResolved){
+      world.platformShaftTemplateResolved=true;
+      world.platformShaftTemplate=null;
+      world.context?.root?.traverse?.(node=>{
+        if(!world.platformShaftTemplate&&node.isMesh&&/square tapered shaft/i.test(String(node.name||''))&&node.geometry)
+          world.platformShaftTemplate=node;
+      });
+    }
+    const source=world.platformShaftTemplate; // Each platform owns a geometry/material clone, not the reusable source mesh.
     let geometry=source?.geometry?.clone?.()||null;
     if(geometry){
       geometry.computeBoundingBox?.();
