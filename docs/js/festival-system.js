@@ -803,13 +803,16 @@
     const taken=station=>{
       const target=window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
       if(target?.pose==='sit' && window.FurnitureTableSystem?.isSeatTaken?.(target.area||'town',target,rec.id))return true;
-      if(!occupiedStations){
-        occupiedStations=new Set();
-        for(const other of snapshotWalkers())if(other?.rec?.id!==rec.id)occupiedStations.add(other?.currentScheduleTarget?.stationId);
+      if(!reservedStations){
         reservedStations=new Set();
         for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope)reservedStations.add(assignment.stationId);
       }
-      return reservedStations.has(station.id)||occupiedStations.has(station.id);
+      if(reservedStations.has(station.id))return true; // Preserve the original reservation-first short circuit.
+      if(!occupiedStations){
+        occupiedStations=new Set();
+        for(const other of snapshotWalkers())if(other?.rec?.id!==rec.id)occupiedStations.add(other?.currentScheduleTarget?.stationId);
+      }
+      return occupiedStations.has(station.id);
     };
     let selected=null;
     if(sharedFeast()){
