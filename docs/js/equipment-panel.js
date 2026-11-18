@@ -230,9 +230,11 @@
   }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
-    if (slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull) window.MusicMinigame?.close?.();
+    const instrumentChanged = slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull; // Signals the loadout picker when its authoritative equipped instrument changes.
+    if (instrumentChanged) window.MusicMinigame?.close?.();
     deps.equipmentSlots[slot] = itemKeyOrNull;
     deps.saveEquipmentSlots();
+    if (instrumentChanged && typeof window.dispatchEvent === 'function' && typeof Event === 'function') window.dispatchEvent(new Event('hobunji-instrument-equipped')); // Browser-only notification; headless equipment tests still persist normally.
   }
 
   function isToolArchived(key, gear = deps?.getGearInventory?.()) {

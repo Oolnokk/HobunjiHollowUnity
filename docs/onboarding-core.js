@@ -1466,6 +1466,7 @@
       appliedDyes:       { ...(char.appliedDyes || {}) },
       gearInventory:     { ...(char.gearInventory  || makeDefaultGear()) },
       combatLoadout:     { ...(char.combatLoadout  || {}) },
+      instrumentPatternLoadout: { ...(char.instrumentPatternLoadout || {}) }, // Restore character-owned pattern slots just like combat weapon loadouts.
       abilityProgression: { ...(char.abilityProgression || {}) },
       combatTechniqueUnlocks: [...(char.combatTechniqueUnlocks || [])],
       equipmentSlots:    { ...(char.equipmentSlots || {}) },
@@ -1842,6 +1843,7 @@
           return gear;
         })(),
         equipmentSlots:  { instrument: 'flute' }, // A fresh character starts with the owned flute already assigned.
+        instrumentPatternLoadout: {}, // This character starts with independent instrument slots, filled lazily from legacy/default patterns.
         skillLevels:      makeDefaultSkills(),
         skillExperience:  {},
         combatTechniqueUnlocks: [],
@@ -1868,6 +1870,7 @@
       playerData.farmhandPermissions = getFarmhandPermissions(newWorld, charId);
       playerData.gearInventory  = newChar.gearInventory;
       playerData.equipmentSlots = { ...newChar.equipmentSlots }; // Carry starter instrument assignment into the just-created live player.
+      playerData.instrumentPatternLoadout = { ...newChar.instrumentPatternLoadout }; // Match returning-character load state before the player-ready event.
       playerData.combatTechniqueUnlocks = [...(newChar.combatTechniqueUnlocks || [])];
       playerData.skillLevels    = newChar.skillLevels;
       playerData.skillExperience = newChar.skillExperience;

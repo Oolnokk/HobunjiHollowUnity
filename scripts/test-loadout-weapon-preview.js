@@ -30,6 +30,7 @@ assert(html.indexOf('weapon-enchantment-vfx.js') < html.indexOf('loadout-weapon-
 
 let menuOpen = true; // Test visibility transitions without replacing the actual menu module.
 let loadoutActive = true; // Tracks which menu tab owns the viewport.
+let instrumentSubtab = false; // Hides and pauses the weapon viewport while instrument patterns are configured.
 let equippedKey = 'crafted_sword'; // The weapon is equipped but never attached to a held-tool parent.
 let texture = { id: 'verdigris-texture' }; // Serves as the live, already-recolored gameplay texture.
 let creationCount = 0; // Independent particle emitters created by the preview.
@@ -50,7 +51,7 @@ function element(id) {
     classList: {
       contains(value) {
         if (id === 'menuPanel') return value === 'open' && menuOpen;
-        if (id === 'mpLoadout') return value === 'active' && loadoutActive;
+        if (id === 'mpLoadout') return value === 'active' ? loadoutActive : value === 'instrument-subtab' && instrumentSubtab;
         return false;
       },
     },
@@ -184,6 +185,13 @@ assert.equal(frames.size, 0, 'closing the loadout suspends the independent rende
 loadoutActive = true;
 for (const notify of observers) notify();
 assert.equal(frames.size, 1, 'reopening the loadout resumes the independent renderer');
+instrumentSubtab = true;
+for (const notify of observers) notify();
+assert.equal(frames.size, 0, 'Instrument sub-tab suspends hidden weapon WebGL animation frames');
+assert.equal(api.debugSnapshot().visible, false, 'instrument sub-tab is not a visible weapon preview');
+instrumentSubtab = false;
+for (const notify of observers) notify();
+assert.equal(frames.size, 1, 'returning to Weapon sub-tab resumes the existing preview');
 tick(2500);
 const canvas = nodes.combatLoadoutPreviewStage.children[0]; // The actual renderer canvas owns the WebGL lifecycle listeners.
 canvas.listeners.webglcontextlost({ preventDefault() {} });

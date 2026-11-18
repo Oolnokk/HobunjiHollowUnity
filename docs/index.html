@@ -159,7 +159,7 @@
   <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261117hbab24cc"></script>
-  <link rel="stylesheet" href="style.css?v=20261115vitalsNames3">
+  <link rel="stylesheet" href="style.css?v=20261118instrumentLoadout1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -317,7 +317,7 @@
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261116starter075grade1"></script>
+  <script src="onboarding.js?v=20261118instrumentSave1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261117hypedCreature6"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -776,7 +776,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261118h5209ea6"></script>
+  <script src="js/equipment-panel.js?v=20261118instrumentLoadout2"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2181,15 +2181,8 @@
           </div>
           <div class="settings-row settings-row--stacked">
             <div class="settings-label">
-              <div class="settings-name">Lyre Pattern Loadout</div>
-              <div class="settings-desc">Which automatic picking/strumming pattern each Auto Pick direction plays while you hold a melody note.</div>
-            </div>
-            <div class="input-bindings-grid" id="lyrePatternLoadoutSettings"></div>
-          </div>
-          <div class="settings-row settings-row--stacked">
-            <div class="settings-label">
-              <div class="settings-name">Lyre Freeplay Key</div>
-              <div class="settings-desc">The root note and scale free play starts in. Changes take effect next time you start playing.</div>
+              <div class="settings-name">Music Key</div>
+              <div class="settings-desc">Gameplay is locked to C pentatonic minor. Turn on Dev Mode to edit the shared player/NPC key and scale.</div>
             </div>
             <div class="input-bindings-grid" id="lyreFreeplayKeySettings"></div>
           </div>
@@ -2843,7 +2836,8 @@
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
   <script src="js/kurraya-puzzle.js?v=20261110releaseGrid1"></script>
-  <script src="js/music-minigame.js?v=20261118festival1954x1955c"></script>
+  <script src="js/instrument-pattern-loadout.js?v=20261118instrumentLoadout2"></script>
+  <script src="js/music-minigame.js?v=20261118instrumentLoadout2"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
