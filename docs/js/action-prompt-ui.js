@@ -70,7 +70,7 @@
   function claimedArchButton(event) {
     const button = event?.target?.closest?.('button.abt'); // Existing touch/desktop arch, not a second floating overlay.
     const action = String(button?.dataset?.action || '');
-    const match = /^context_arch_(action[123])$/.exec(action);
+    const match = /^context_arch_(action[123]|itemAction[12])$/.exec(action);
     if (!match) return null;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
     return router?.claimFor?.(match[1])?.showInArch ? { actionId:match[1], router } : null;
@@ -110,7 +110,7 @@
       ? [nonClimbBtns[0], nonClimbBtns[1], nonClimbBtns[2], nonClimbBtns[3], nonClimbBtns[4]]
       : [toolBtns[0], toolBtns[1], toolBtns[2], itemBtns[0], itemBtns[1]]; // One layout supplies both the buttons and their floating hints.
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
-    for (const [i, actionId] of ARCH_ACTIONS.slice(0,3).entries()) {
+    for (const [i, actionId] of ARCH_ACTIONS.entries()) {
       const claim = router?.claimFor?.(actionId);
       if (!claim?.showInArch) continue;
       slots[i] = { action:'context_arch_' + actionId, inputAction:actionId,
