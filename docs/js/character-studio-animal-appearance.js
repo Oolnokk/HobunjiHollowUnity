@@ -335,6 +335,27 @@
     }, repoPatternId ? `${regionId} surface pattern → ${repoPatternId}` : `cleared ${regionId} surface pattern`);
   }
 
+  function updateFusedSurfacePattern(regionId, patternId = null, removeIndex = -1) {
+    const validId = patternId && repoPatternEntries().some(entry => entry.id === patternId); // Only repo-authored motifs can be added from the Studio picker.
+    if (removeIndex < 0 && !validId) return false;
+    const appearance = parseAppearance();
+    const previous = surfacePaintFor(appearance.creatureGenotype || appearance.genotype, regionId);
+    if (!previous?.pattern && !previous?.repoPatternId) return false; // Fused motifs never create an invisible primary region.
+    const merged = (Array.isArray(previous.mergedPatterns) ? previous.mergedPatterns : []).slice(0, 5); // Stored same-ink motif references, separate from overpass slot 2.
+    if (removeIndex >= 0) {
+      if (!Number.isInteger(removeIndex) || removeIndex >= merged.length) return false;
+      merged.splice(removeIndex, 1);
+    } else {
+      if (merged.length >= 5) return false;
+      merged.push({ repoPatternId: patternId }); // Renderer resolves the repository pattern lazily, preserving the same gene-layer dye.
+    }
+    updateGenotype(genotypeDraft => {
+      const root = genotypeDraft.colorPoolPaint; // Existing Color Pools schema; never create a parallel Studio-only paint store.
+      if (root?.layers?.[regionId]) root.layers[regionId].mergedPatterns = merged;
+    }, removeIndex >= 0 ? `removed fused ${regionId} motif` : `fused ${patternId} into ${regionId}`);
+    return true;
+  }
+
   function loadRepoPatterns() {
     const loader = window.RepoPatternLibrary?.load?.();
     if (!loader?.then) return Promise.resolve(false);
@@ -393,6 +414,7 @@
         const paint = surfacePaintFor(genotype, region.id) || {};
         const selectedPattern = paint.repoPatternId || paint.pattern?.repoPatternId || '';
         const selectedOverpass = paint.overpassPatternId || paint.patterns?.[1]?.repoPatternId || ''; // Existing Studio data and Color Pools use the same second slot.
+        const fused = (Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns : []).slice(0, 5); // Same-ink additive pattern references.
         const ink = paint.dyeHex || '#ffffff';
         const overpassInk = paint.overpassDyeHex || ink;
         const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7));
@@ -416,6 +438,17 @@
                 ${repoPatterns.map(pattern => `<option value="${esc(pattern.id)}" ${selectedOverpass === pattern.id ? 'selected' : ''}>${esc(pattern.label || pattern.id)}</option>`).join('')}
               </select></div>
               <div class="col"><label>Overpass ink</label><input class="animalNpcRepoOverpassInk" data-region="${esc(region.id)}" type="color" value="${esc(overpassInk)}" ${selectedOverpass ? '' : 'disabled'}></div>
+            </div>
+            <div class="help" style="margin-top:9px">Fused motifs · same primary ink; intersections join without overpass clearance (up to 5 additions).</div>
+            ${fused.map((pattern, index) => `<div class="row" style="margin-top:5px;align-items:center;gap:6px">
+              <span class="help" style="flex:1">${esc(repoPatterns.find(entry => entry.id === pattern.repoPatternId)?.label || pattern.repoPatternId || `Motif ${index + 2}`)}</span>
+              <button type="button" class="secondary animalNpcFusedRemove" data-region="${esc(region.id)}" data-index="${index}">Remove</button>
+            </div>`).join('')}
+            <div class="row" style="gap:6px;margin-top:6px">
+              <select class="animalNpcFusedPicker" data-region="${esc(region.id)}" ${!selectedPattern || fused.length >= 5 ? 'disabled' : ''} style="flex:1;min-width:90px">
+                ${repoPatterns.map(pattern => `<option value="${esc(pattern.id)}">${esc(pattern.label || pattern.id)}</option>`).join('')}
+              </select>
+              <button type="button" class="secondary animalNpcFusedAdd" data-region="${esc(region.id)}" ${!selectedPattern || fused.length >= 5 ? 'disabled' : ''}>Add fused motif</button>
             </div>
             <div class="row" style="gap:7px;align-items:center;margin-top:7px">
               <label style="margin:0;white-space:nowrap">Animal scale</label>
@@ -507,6 +540,16 @@
         const scale = controls.querySelector(`.animalNpcRepoPatternScaleNumber[data-region="${CSS.escape(regionId)}"]`);
         if (primary?.value && overpass?.value) updateRepoSurfacePaint(regionId, primary.value, ink?.value || '#ffffff', scale?.value, overpass.value, input.value);
       });
+    });
+    controls.querySelectorAll('.animalNpcFusedAdd').forEach(button => {
+      button.addEventListener('click', () => {
+        const regionId = button.dataset.region; // Current genotype paint region receiving a same-ink motif.
+        const picker = controls.querySelector(`.animalNpcFusedPicker[data-region="${CSS.escape(regionId)}"]`);
+        updateFusedSurfacePattern(regionId, picker?.value || '');
+      });
+    });
+    controls.querySelectorAll('.animalNpcFusedRemove').forEach(button => {
+      button.addEventListener('click', () => updateFusedSurfacePattern(button.dataset.region, null, Number(button.dataset.index)));
     });
     controls.querySelectorAll('.animalNpcRepoPatternScale').forEach(input => {
       input.addEventListener('input', () => {
