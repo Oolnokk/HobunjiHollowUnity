@@ -301,7 +301,7 @@
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
           if(shell.meshes[1]){shell.meshes[1].material=wallMaterial;owner.wallMeshCount++;} // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
           owner.geometryCount+=shell.meshes.length;
-          const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ); // Verify actual exposed wall faces before accepting the generated room.
+          const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ,room.kind==='shaft-antechamber'?portalMouth:null); // Verify actual exposed wall faces before accepting the generated room.
           if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');
           roomAudits.push({...shell.audit,...walls});
           const doorPlan=plannedDoors.get(room.id);
