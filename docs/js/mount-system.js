@@ -959,6 +959,9 @@
     if (result.onSupport || mount._mountedTownRenderOnSupport) {
       const rootHeight = (mount.groundLift ?? mount.halfHeight ?? 0) * (mount.scaleY ?? 1); // Mirrors creature renderer root height above physical feet.
       position.y = result.y + rootHeight + (mount._banditLungeHopCurrent || 0); // Avoid Y smoothing through an actual stair top; keep hop lift.
+      if (mount.groundShadow?.position) {
+        mount.groundShadow.position.y = result.y + deps.characterGroundShadowSurfaceOffset(); // Ground shadow belongs to the visual bridge tread, not an ahead-of-render logical tile.
+      }
     }
     mount._mountedTownRenderOnSupport = result.onSupport;
     mount._mountedTownRenderPrevious = { x: position.x, z: position.z, y: result.y }; // Separate from the potentially ahead-of-render physics position.
