@@ -716,7 +716,7 @@
         }
         basePaintSource = combined;
       }
-      const paintedBase = await applyColorPoolPaint(basePaintSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
+      const paintedBase = await applyColorPoolPaint(basePaintSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}:coat:${defaultCoatOverlays.map(overlay => overlay.id).join('+') || 'body'}`);
       if (coatPaint && !paintedBase) incompleteLayers.push('paint:base');
       if (paintedBase) {
         ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
