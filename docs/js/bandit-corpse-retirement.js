@@ -25,7 +25,7 @@
   let lastRunAt = -Infinity;
   let markerGeometry = null;
   let markerMaterial = null;
-  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, posedPantsBaked: 0, posedPantsDeferred: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
+  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, posedPantsBaked: 0, posedPantsDeferred: 0, imagesDeferred: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
 
   function config() {
     const override = window.SCRATCHBONES_CONFIG?.game?.banditCorpseRetire;
@@ -39,7 +39,7 @@
       && !c._banditCorpseRetired && !c.avatarRef?.isCorpseMarker && !c.corpseLooted
       && !c.keepCorpseAfterLoot && !(Number(c.lootHoldSeconds) > 0)
       && !c.isCompanion && !c.isAmphibiousFishCorpse && !c.tzatzulCapturedBy
-      && !(Number(c._corpsePantsRetryAfter) > (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0))
+      && !(Number(c._corpseSnapshotRetryAfter) > (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0))
       && c.areaId === currentArea && !!c.avatarRef?.group;
   }
 
@@ -160,13 +160,21 @@
     group.userData.corpseNoSecondaryPasses = true; // Score-actor masks do not need a dead actor.
     group.userData.noOutline = true;
     const snapshot = spriteSnapshot(rig, width, c); // May be null for compound rigs or absent Canvas support.
+    // A failed image/pants capture must never permanently replace an animal's
+    // patterned body or a humanoid's final fitted garment with a brown disc.
+    // Keep the old rig until its source art can actually be frozen.
+    if (!snapshot && typeof document !== 'undefined' && rig.frontPlane) {
+      c._corpseSnapshotRetryAfter = (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0) + 1000;
+      stats.imagesDeferred++;
+      return false;
+    }
     if (rig?.legs?.pants && snapshot?.posedPants?.ok !== true) {
       snapshot?.dispose?.(); // Preserve the final visible trousers rather than discarding an incomplete snapshot.
-      c._corpsePantsRetryAfter = (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0) + 1000; // Retry once the async cloth canvas becomes available.
+      c._corpseSnapshotRetryAfter = (typeof performance !== 'undefined' ? Number(performance.now()) || 0 : 0) + 1000; // Retry once the async cloth canvas becomes available.
       stats.posedPantsDeferred++;
       return false;
     }
-    c._corpsePantsRetryAfter = null;
+    c._corpseSnapshotRetryAfter = null;
     const sprite = snapshot?.mesh || (() => {
       const { geometry, material } = markerParts();
       const fallback = new window.THREE.Mesh(geometry, material);
@@ -181,7 +189,9 @@
       // portrait Y axis therefore lies toward -X, not the new plane's -Z.
       sprite.rotation.y = Math.PI / 2;
       const oldScale = rig.group?.scale; // Preserve authored species proportions after the expensive rig is disposed.
-      if (Number(oldScale?.x) > 0) sprite.scale.x = oldScale.x;
+      // Each front card rotates +90 degrees about Y: its horizontal
+      // width belongs to the old group's Z axis, not its X/normal axis.
+      if (Number(oldScale?.z) > 0) sprite.scale.x = oldScale.z;
       if (Number(oldScale?.y) > 0) sprite.scale.z = oldScale.y;
     }
     group.add(sprite);
