@@ -334,8 +334,12 @@
   // the established CliffRouteNetwork paths, never a blind vertical snap.
   function tryCompanionLedgeDrop(c, goalX, goalY, network) {
     if (!c.isCompanion || c.banditCompanion || (c.stableRole && c.stableRole !== 'companion') ||
-        !network || !window.CliffRouteNetwork?.componentAt) return false;
+        !c._followOwnerDownCliff || !network || !window.CliffRouteNetwork?.componentAt) return false;
+    const follow = c._companionGroundFollow; // Only the current *owner-follow* destination may trigger a direct drop.
+    if (!follow || Math.abs(Number(follow.destinationX) - goalX) > 1 ||
+        Math.abs(Number(follow.destinationY) - goalY) > 1) return false;
     const active = grid(), tile = deps.TILE; // Reuses the current exterior terrain and pixel tile size.
+    if (!Number.isFinite(tile) || tile <= 0) return false;
     const originCol = Math.floor(c.x / tile), originRow = Math.floor(c.y / tile);
     const ownerCol = Math.floor(goalX / tile), ownerRow = Math.floor(goalY / tile);
     const origin = active?.[originRow]?.[originCol], ownerGround = active?.[ownerRow]?.[ownerCol];
@@ -343,8 +347,9 @@
         Math.hypot(goalX - c.x, goalY - c.y) > tile * FOLLOW_DROP_NEAR_TILES) return false;
     const startTier = Number(origin.elevTier) || 0, goalTier = Number(ownerGround.elevTier) || 0;
     if (startTier <= goalTier) return false;
+    const sourceComponent = window.CliffRouteNetwork.componentAt(network, originCol, originRow); // Only valid walkable upper shelves can launch a leap.
     const goalComponent = window.CliffRouteNetwork.componentAt(network, ownerCol, ownerRow);
-    if (goalComponent < 0) return false;
+    if (sourceComponent < 0 || goalComponent < 0 || sourceComponent === goalComponent) return false;
     const towardX = goalX - c.x, towardY = goalY - c.y;
     const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
       .sort((a, b) => b.x * towardX + b.y * towardY - a.x * towardX - a.y * towardY);
@@ -357,7 +362,8 @@
         const endTier = Number(landing.elevTier) || 0;
         const x = (col + 0.5) * tile, y = (row + 0.5) * tile;
         if (endTier >= startTier || endTier < goalTier ||
-            deps.isSolid(landing.type) || UNSAFE_DROP_TILES.has(String(landing.type).toLowerCase())) break;
+            deps.isSolid(landing.type) || UNSAFE_DROP_TILES.has(String(landing.type).toLowerCase()) ||
+            (Number(landing.water) || 0) >= 0.003) break; // Dynamic flooded landings are hazards too.
         if (window.CliffRouteNetwork.componentAt(network, col, row) !== goalComponent ||
             Math.hypot(goalX - x, goalY - y) > tile * FOLLOW_DROP_LANDING_TILES ||
             Math.hypot(goalX - x, goalY - y) >= Math.hypot(goalX - c.x, goalY - c.y) ||
