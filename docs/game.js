@@ -8833,8 +8833,8 @@
           }
 
           const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
-          const rescueActive = !!rescueHost && rescueHost.health > 0
-            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle');
+          const rescueActive = !c._followOwnerDownCliff && !!rescueHost && rescueHost.health > 0
+            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle'); // Retreating behind the owner takes priority over an old swarm-rescue order.
           if (!rescueActive && rescueHost) c._honeyfuzzleRescueTarget = null; // Detachment and interrupted rescue cannot leave a stale friendly-fire focus.
           if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
             target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
@@ -8848,6 +8848,11 @@
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
+          if (!isBanditCompanion && c._followOwnerDownCliff) {
+            target = null; // Owner escaped below: Sicced, downed focus and committed attacks must not resurrect combat after the chooser disengaged.
+            if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'following owner below cliff');
+            if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'following owner below cliff');
+          }
           if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target && !rescueActive) c._stage = null;
@@ -8857,14 +8862,14 @@
           if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
-          if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+          if (!isBanditCompanion && !target && !c._followOwnerDownCliff && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
             window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
           const playerIdle = !isBanditCompanion && _isPlayerGenuinelyIdle();
           if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
-          if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
+          if (!target && !c._followOwnerDownCliff && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
             const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
             if (rnd() < startChance) _startCompanionWatchIdle(c);
           }
