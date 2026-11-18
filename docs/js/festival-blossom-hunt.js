@@ -129,7 +129,7 @@
       const rawHeight = window.ClimbSystem?.groundYAt?.(p.col + .5, p.row + .5); // Undefined floor must not turn into an implicit valid zero elevation.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
       tree.position.set(p.col + .5, rawHeight != null && Number.isFinite(height) ? height : 0, p.row + .5);
-      tree.scale.multiplyScalar(8); // Wilderness-size blossom tree rather than the original quarter-size tabletop sapling.
+      tree.scale.multiplyScalar(18); // A ~3-unit-tall landmark after the tabletop preset's 0.25 base scale, with a canopy visible from the surrounding locale.
       scene.add(tree);
       visibleTrees.set(blossom.localeId, tree);
     }
