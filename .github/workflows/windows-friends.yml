@@ -160,7 +160,7 @@ jobs:
             git checkout --orphan friends-update-feed
           fi
           if test -f latest.yml; then
-            prior=$(sed -nE 's/^version: 0\\.2\\.([0-9]+)$/\\1/p' latest.yml | head -n 1)
+            prior=$(sed -nE 's/^version: 0\.2\.([0-9]+)$/\1/p' latest.yml | head -n 1)
             if [[ ! "$prior" =~ ^[0-9]+$ ]]; then
               echo "Refusing to replace an unknown existing Friends release version" >&2
               exit 1
