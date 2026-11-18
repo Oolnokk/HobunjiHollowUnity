@@ -67,6 +67,7 @@ const world = {
     ],
   },
   CharacterMetaSave: { update() {} },
+  WeaponToolStances: { poses:{ torchHold:{ scale:.68 } } }, // Simulates the same idle stance consumed by the game and editor.
 };
 const context = vm.createContext({ window:world, performance:{now:() => now}, document, Date });
 vm.runInContext(fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8'), context);
@@ -80,6 +81,13 @@ torch.init({
 });
 const sync = subscribers.get('adventuring-torch-belt');
 assert.equal(typeof sync, 'function', 'presenter registers on the existing scheduler, not its own RAF');
+sync({timestamp:now});
+const unlitBelt = player.children.find(node => node.name === 'adventuring_torch_belt'); // Hidden cached art before a flame is lit.
+assert.equal(unlitBelt.visible, false, 'unlit torch is not placed visibly on the belt');
+heldMode = 'none'; torch.stow(); sync({timestamp:now});
+assert.equal(unlitBelt.visible, false, 'stowing an unlit torch does not display belt art');
+assert.equal(torch.debug.onBelt, false, 'mobile debug reports no unlit belt torch');
+heldMode = 'tool';
 assert.equal(torch.light(), true);
 sync({timestamp:now});
 const belt = player.children.find(node => node.name === 'adventuring_torch_belt');
@@ -93,6 +101,14 @@ sync({timestamp:now});
 assert.equal(belt.visible, true, 'the stowed torch appears on the actual player');
 assert.equal(belt.children[0].material.map, handMap, 'belt shares the already-colored held PNG');
 assert.equal(belt.children[0].rotation.z, Math.PI, 'authored -Y torch tip is upright on the belt');
+assert.equal(belt.children[0].scale.x, .68, 'belt torch reads the authored idle scale, not its raw size');
+assert(Math.abs(belt.children[0].position.y - (-.38 / 2 * .32)) < 1e-8, 'idle scaling keeps the grip end anchored');
+assert.equal(torch.debug.belt.idleScale, .68, 'Pixel Probe exposes the actual belt multiplier');
+assert.equal(torch.debug.onBelt, true, 'only a lit, stowed torch is reported on the belt');
+world.WeaponToolStances.poses.torchHold.scale = .81; sync({timestamp:now});
+assert.equal(belt.children[0].scale.x, .81, 'editing Neutral scale changes the stowed sprite without rebuilding it');
+assert(Math.abs(belt.children[1].position.y - (belt.children[0].position.y + .24 * .81)) < 1e-8, 'flame follows the resized tip');
+world.WeaponToolStances.poses.torchHold.scale = .68; sync({timestamp:now});
 assert.equal(belt.children[1].visible, true, 'belt flame continues burning after stow');
 assert.equal(world.AdventuringTorchBelt.debug.placement, 'animated pants-belt spline');
 assert(belt.position.x > .21, 'belt attaches to the rightmost live waist anchor');
@@ -102,8 +118,9 @@ assert.equal(player.children.length, displayCount, 'the belt artwork is cached, 
 now = 30000;
 sync({timestamp:now});
 assert.equal(torch.isLit(), false, 'exact expiry operates even when stowed');
-assert.equal(belt.visible, true, 'the unlit torch still hangs at the waist');
+assert.equal(belt.visible, false, 'a burned-out torch and its belt sprite disappear together');
 assert.equal(belt.children[1].visible, false, 'the stowed flame visibly goes out');
+assert.equal(torch.debug.onBelt, false, 'mobile debug reports the hidden expired torch');
 heldMode = 'tool';
 sync({timestamp:now});
 assert.equal(belt.visible, false, 'drawing hides belt geometry even when the torch is unlit');
