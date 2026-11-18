@@ -258,6 +258,13 @@
       resolve(URL.createObjectURL(blob)); // Async encoding avoids synchronous giant base64 PNG writes on equip.
     }, 'image/png'));
   }
+  function recordSingleShoulderFrame(companion, url, frameName) {
+    companion.__hobunjiShoulderFrame = url; // Exposes the completed grown texture to companion debug and single-frame presentation.
+    companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? url : null;
+    companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? url : null;
+    companion.__hobunjiShoulderSplitFrame = null;
+  }
+
   function ensureSmallPetHeadFrame(companion, combatDeps, frameName) {
     if (!needsSmallPetHead(companion, combatDeps)) return false;
     const kind = genotypeKindFor(companion, combatDeps);
@@ -268,10 +275,7 @@
     if (existing?.key === key) {
       if (existing.url) {
         bindShoulderTexture(companion, combatDeps, existing.url, existing); // Recovers if animation or a rig rebuild replaced the actual GPU map.
-        companion.__hobunjiShoulderFrame = existing.url;
-        companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? existing.url : null;
-        companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? existing.url : null;
-        companion.__hobunjiShoulderSplitFrame = null;
+        recordSingleShoulderFrame(companion, existing.url, frameName); // Cache hits and fresh async completion publish the same presentation metadata.
         return true;
       }
       if (existing.pending) return true; // One in-flight composition per selected appearance.
@@ -319,6 +323,7 @@
       if (companion.health > 0 && companion.stableRole === 'shoulderPet'
         && (companion.master || owner) === owner && !effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
         bindShoulderTexture(companion, combatDeps, url, entry); // Keep a reference to the maps actually bound, not just their URL.
+        recordSingleShoulderFrame(companion, url, frameName); // Newly completed sprites are observable immediately, without a second render/provider tick.
       }
       if (existing?.url && existing.url !== url) releasePetSpriteUrl(existing.url); // A genotype/proportions change replaces the prior encoded portrait.
     }).catch(error => {
