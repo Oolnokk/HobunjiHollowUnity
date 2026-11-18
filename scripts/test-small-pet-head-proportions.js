@@ -34,6 +34,8 @@ function companion(kind, size) {
     def: { sprites: { idle: 'base-idle.png', run: ['base-run1.png'] } },
     avatarRef: {
       group: { kind }, setShoulderRestEnabled() {},
+      frontPlane: { material: { map: null } }, // The actual GPU map may be changed without updating the actor's frame URL.
+      backPlane: { material: { map: null } }, // Mirror of the current bound portrait for overwrite recovery tests.
       setShoulderSplitOverlayCanvas(image, visible) { overlays.push({ image, visible }); },
       setShoulderSplitOverlayEnabled(visible) { overlays.push({ visible }); },
     },
@@ -46,6 +48,9 @@ const deps = {
   genotypeKindFor: pet => pet.creatureKey,
   setCreatureFrame(avatarRef, url, genotypeKind, frame, genotype) {
     frameSwaps.push({ avatarRef, url, genotypeKind, frame, genotype });
+    const texture = { url, isCanvasTexture: !!genotypeKind }; // Simulates the synchronous game-owned material assignment.
+    avatarRef.frontPlane.material.map = texture;
+    avatarRef.backPlane.material.map = texture;
   },
 };
 const renderer = {
@@ -120,6 +125,17 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   assert.equal(composited.length, 1, 'repeated render ticks reuse the cached final frame');
   assert.equal(warped.length, 1);
+  const grownUrl = mediumSpeciesPet.currentFrameUrl; // Remember the intended image even if an animation silently replaces its GPU map.
+  const swapCount = frameSwaps.length;
+  mediumSpeciesPet.avatarRef.frontPlane.material.map = { url: 'unwarped-idle' }; // A blink/animation update can leave currentFrameUrl untouched.
+  mediumSpeciesPet.avatarRef.backPlane.material.map = { url: 'unwarped-idle' };
+  provider();
+  await flush();
+  assert.equal(frameSwaps.length, swapCount + 1, 'underlying texture overwrite is recovered despite the unchanged currentFrameUrl');
+  assert.equal(mediumSpeciesPet.avatarRef.frontPlane.material.map.url, grownUrl, 'correct enlarged head is actually rebound to the GPU');
+  assert.equal(warped.length, 1, 'repair reuses the completed head warp rather than regenerating the sprite');
+  provider();
+  assert.equal(frameSwaps.length, swapCount + 1, 'stable map ownership avoids per-frame texture churn');
 
   // The naturally Small adult Pingdort does not get the juvenile-looking head.
   const naturallySmall = companion('pingdort', 'small');
@@ -128,6 +144,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   assert.equal(warped.length, 1, 'naturally small adult is exempt');
   assert.equal(frameSwaps.at(-1).url, 'base-idle.png', 'naturally small adult keeps original sprite');
+  const naturalSwaps = frameSwaps.length;
+  naturallySmall.avatarRef.frontPlane.material.map = { url: 'wrong-run-frame' };
+  provider();
+  assert.equal(frameSwaps.length, naturalSwaps + 1, 'ordinary shoulder pets also recover from a same-URL texture overwrite');
 
   // When the owner re-equips a rare Small pet with a split-frame shoulder pose,
   // both already-composited idle and run1 images must be enlarged BEFORE clipping.
@@ -152,6 +172,16 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     'unchanged shoulder split canvas is not re-uploaded as a new GPU texture each render');
   assert(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.reusedOverlays >= 25,
     'mobile debug counter verifies that duplicate overlay writes were suppressed');
+  const splitUrl = splitPet.currentFrameUrl;
+  const splitSwaps = frameSwaps.length;
+  splitPet.avatarRef.frontPlane.material.map = { url: 'normal-animated-frame' };
+  splitPet.avatarRef.backPlane.material.map = { url: 'normal-animated-frame' };
+  provider();
+  assert.equal(frameSwaps.length, splitSwaps + 1, 'split-frame shoulder keeps control of the displayed texture');
+  assert.equal(splitPet.avatarRef.frontPlane.material.map.url, splitUrl, 'split shoulder map is restored without re-encoding the pose');
+  assert.equal(overlays.filter(event => event.image).length, overlayUploads, 'split overlay is retained during underlying texture repair');
+  assert(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.overwritesRestored >= 2,
+    'the in-game debug snapshot records texture recovery rather than only head-warps completed');
 
   // The existing head-paint and genotype key must invalidate when coat patterns change.
   splitPet.genotype = { ...splitPet.genotype, pattern: 'spectacles' };
@@ -160,6 +190,13 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   await flush();
   assert.equal(warped.length, 5, 'new genotype regenerates both enlarged shoulder layers');
+  const swapBeforeRigRebuild = frameSwaps.length;
+  splitPet.avatarRef = companion('grehlr', 'small').avatarRef; // Runtime LOD/equip can replace the avatar without changing animal identity.
+  const overlaysBeforeRigRebuild = overlays.filter(event => event.image).length;
+  provider();
+  assert.equal(frameSwaps.length, swapBeforeRigRebuild + 1, 'recreated avatar receives the already-enlarged split frame');
+  assert.equal(overlays.filter(event => event.image).length, overlaysBeforeRigRebuild + 1,
+    'recreated avatar receives the split foreground once, even with unchanged URLs');
 
   // Never carry juvenile enlargement into non-shoulder or unsized adult presentation.
   splitPet.stableRole = 'companion';
