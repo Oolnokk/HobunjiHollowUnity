@@ -1213,7 +1213,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script>
 <script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script>
 <script src="../../js/belt-stow-rig.js?v=20261118BeltRig1"></script> <!-- Shared belt-stow coordinates and torch art with gameplay. -->
-<script src="../../js/animation-author-belt-stow.js?v=20261118BeltAuthor1"></script> <!-- Reusable Rig Coordinates belt slot, preview and mobile controls. --> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
+<script src="../../js/animation-author-belt-stow.js?v=20261118BeltAuthor2"></script> <!-- Reusable Rig Coordinates belt slot, preview and mobile controls. --> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
 
 <script>
 (() => {
@@ -4159,7 +4159,7 @@ function animationUiTemplate() {
           </section>
           <section class="maaSection maaRigOnly" id="maaRigLibrarySection">
             <div class="maaSectionTitle"><b>Reusable attachment coordinates</b><span class="maaSmall maaMuted">Species profiles</span></div>
-            <div class="maaSmall maaMuted">Characters store a posterior and shoulder-perch origin by species + gender. Posterior X is centered and posterior Y is an editable percentage of rendered character height above the gameplay floor. Creatures store saddle and shoulder-grip origins by species.</div>
+            <div class="maaSmall maaMuted">Characters store posterior, hand/shoulder, and belt-stow origins by species + gender. Posterior X is centered and posterior Y is an editable percentage of rendered character height above the gameplay floor. Creatures store saddle and shoulder-grip origins by species.</div>
             <div class="maaSmall maaMuted" style="margin-top:7px">Mounting aligns posterior → saddle. Shoulder pets align shoulder grip → shoulder perch. Animation keys belong to the invisible intermediate parent between those two fixed pivots.</div>
             <button type="button" class="secondary" id="maaOmgurkuLowerRigBtn" style="width:100%;margin-top:9px">Edit Omgurku lower-half ground offset</button>
           </section>
@@ -15632,7 +15632,10 @@ function syncAllMaaPanelBodies() {
   renderAttachmentRigInspector = function(...args) {
     const result = originalInspector(...args);
     const actor = selectedAnimationActor();
-    if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'npc') return result;
+    if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'npc') {
+      beltEditor.releaseOtherPreviews(null); // Switching to a creature or another authoring tab releases the old torch GPU assets.
+      return result;
+    }
     const docsRoot = normalizePath(state.settings?.docsRoot || 'docs/');
     const spriteUrl = state.rawBase ? rawUrl(docsRoot + 'assets/toolsprites/torch.png')
       : '../../assets/toolsprites/torch.png'; // Repo-pinned texture; no stale main-branch preview when editing another commit.
