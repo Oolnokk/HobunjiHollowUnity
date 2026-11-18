@@ -55,14 +55,15 @@
   }
 
   const corner = new THREE.Vector3();
-  function orientedFootprint(mesh) {
+  function orientedFootprint(mesh, overrideMatrix = null) {
     const geometry = mesh.geometry;
     if (!geometry) return null;
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const lb = geometry.boundingBox;
     if (!lb || lb.isEmpty()) return null;
     mesh.updateWorldMatrix(true, false);
-    const e = mesh.matrixWorld.elements;
+    const matrix = overrideMatrix || mesh.matrixWorld; // Instanced V50 stones use their actual per-instance world transform.
+    const e = matrix.elements;
     // Yaw from whichever local horizontal axis still lies mostly in XZ.
     let ux = e[0], uz = e[2];
     if (Math.hypot(ux, uz) < 1e-4) { ux = e[8]; uz = e[10]; }
@@ -71,7 +72,7 @@
     const vx = -uz, vz = ux;
     let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let i = 0; i < 8; i++) {
-      corner.set(i & 1 ? lb.max.x : lb.min.x, i & 2 ? lb.max.y : lb.min.y, i & 4 ? lb.max.z : lb.min.z).applyMatrix4(mesh.matrixWorld);
+      corner.set(i & 1 ? lb.max.x : lb.min.x, i & 2 ? lb.max.y : lb.min.y, i & 4 ? lb.max.z : lb.min.z).applyMatrix4(matrix);
       const u = corner.x * ux + corner.z * uz, v = corner.x * vx + corner.z * vz;
       if (u < minU) minU = u; if (u > maxU) maxU = u;
       if (v < minV) minV = v; if (v > maxV) maxV = v;
@@ -178,23 +179,29 @@
       root.updateMatrixWorld?.(true);
       let added = 0;
       root.traverse(mesh => {
-        if (!mesh.isMesh || mesh.isInstancedMesh || (options.onlyRoot && mesh !== root)) return;
+        if (!mesh.isMesh || (mesh.isInstancedMesh && !options.allowInstances) || (options.onlyRoot && mesh !== root)) return;
         if (options.force ? hiddenOrGhost(mesh, root.parent) : excluded(mesh, root.parent)) return;
-        const fp = orientedFootprint(mesh);
-        if (!fp) return;
-        const longest = Math.max(fp.halfU, fp.halfV), thinnest = Math.min(fp.halfU, fp.halfV); // Long narrow V50 walls need collision; broad slabs must not become blockers.
-        if (longest < MIN_HALF || (longest > MAX_HALF && !(options.allowLongWalls && thinnest <= .6))) return;
-        const ground = Number(floorY(fp.cx, fp.cz)) || 0;
-        if (fp.maxY < ground + BODY_MIN || fp.minY > ground + BODY_MAX) return;
-        fp.tag = tag;
-        fp.source = sourceLabel(mesh, root.parent);
-        fp.meshId = mesh.id;
-        fp.mesh = mesh; // Runtime liveness check prevents a hidden/removed/replaced scanned mesh from leaving an accurate-but-ghost footprint.
-        fp.scanRoot = root; // Used to prove the mesh still belongs to the root that originally authored this footprint.
-        fp.scanRootHadParent = !!root.parent; // Whole scanned roots detached from the ruin become inactive immediately even if their child hierarchy remains intact.
-        if (options.enabled) fp.enabled = options.enabled;
-        add(fp);
-        added++;
+        const count=mesh.isInstancedMesh?Math.min(10000,Math.max(0,Number(mesh.count)||0)):1; // Bounded at author-time; never sampled per frame.
+        const instanceMatrix=mesh.isInstancedMesh?new THREE.Matrix4():null;
+        const worldMatrix=mesh.isInstancedMesh?new THREE.Matrix4():null;
+        for(let index=0;index<count;index++){
+          if(instanceMatrix){mesh.getMatrixAt(index,instanceMatrix);worldMatrix.multiplyMatrices(mesh.matrixWorld,instanceMatrix);}
+          const fp = orientedFootprint(mesh,worldMatrix);
+          if (!fp) continue;
+          const longest = Math.max(fp.halfU, fp.halfV), thinnest = Math.min(fp.halfU, fp.halfV); // Long narrow V50 walls need collision; broad slabs must not become blockers.
+          if (longest < MIN_HALF || (longest > MAX_HALF && !(options.allowLongWalls && thinnest <= .6))) continue;
+          const ground = Number(floorY(fp.cx, fp.cz)) || 0;
+          if (fp.maxY < ground + BODY_MIN || fp.minY > ground + BODY_MAX) continue;
+          fp.tag = tag;
+          fp.source = sourceLabel(mesh, root.parent)+(instanceMatrix?' #'+index:'');
+          fp.meshId = mesh.id;
+          fp.mesh = mesh; // Runtime liveness check prevents a hidden/removed/replaced scanned mesh from leaving ghost collision.
+          fp.scanRoot = root;
+          fp.scanRootHadParent = !!root.parent;
+          if (options.enabled) fp.enabled = options.enabled;
+          add(fp);
+          added++;
+        }
       });
       return added;
     }
