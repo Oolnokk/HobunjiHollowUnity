@@ -156,10 +156,11 @@
     const frame = window.AnimalChatheadFrame?.frameForKind?.(creatureKind)?.frame
       || { x: .32, y: .12, width: .36, height: .36 }; // Sprite-normalized top-left fallback for species without a loaded chathead profile.
     const headCenterY = frame.y + frame.height * .5; // Places the reaction at the head's vertical center in the centered animal card.
-    const headLeftX = (frame.x - .5) * modelWidth; // Finds the visible head crop's left edge in the animal card.
+    const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space center, shared by both mirrored animal faces.
     const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the chathead's left edge.
     return { height: (.5 - headCenterY) * modelHeight + modelHeight * .045,
-      offsetX: headLeftX - gap, headOffset: { left: frame.x - .5, width: modelWidth, gap }, side: 'animal-left' }; // The renderer projects the crop width as the animal turns.
+      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap },
+      side: 'animal-left' }; // The renderer projects the actual visible left edge as the animal turns.
   }
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
