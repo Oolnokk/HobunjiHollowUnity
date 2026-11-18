@@ -97,7 +97,9 @@ for(const table of tables){
   const group=root.children.find(child=>child.name==='festival-dressing');
   const tree=group?.children.find(child=>child.name==='festival-blossom-sapling');
   assert(tree,'a generator-built tree actually appears above the authored pottery vase');
-  assert.equal(tree.position.y,0.665,'green stem starts inside lowered vase, not on tabletop');
+  const pot=vase.parts[0]; // Match the live authored cup's interior bottom, not a hardcoded decorative transform.
+  const rootedY=pot.transform.y+pot.transform.sy*(pot.basinDepth-0.5); // This is the same physical basin-floor formula as createAuthoredVesselGeometry.
+  assert.equal(tree.position.y,rootedY,'green stem emerges from the true inside floor of the pottery vase');
   assert(tree.children[0].userData.festivalSharedFoliage,'shared generator meshes have a nondisposal tag');
 }
 assert.deepEqual(calls.map(call=>call.color),['#00ffff','#ff8000','#ffffff','#ffbf00','#ffb3b3','#00ffff']);
