@@ -28,13 +28,13 @@ class Obj {
 const THREE = { Group: class extends Obj {}, Mesh: class extends Obj { constructor(g, m) { super(); this.geometry = g; this.material = m; } },
   CircleGeometry: class { constructor() { THREE.created.geometry++; } rotateX() {} },
   PlaneGeometry: class { constructor(width, height) { this.parameters = { width, height }; THREE.created.geometry++; } rotateX() {} dispose() { this.disposed = true; } },
-  CanvasTexture: class { constructor(image) { this.image = image; } dispose() { this.disposed = true; } },
+  CanvasTexture: class { constructor(image) { this.image = image; this.repeat = { x: 1, y: 1 }; this.offset = { x: 0, y: 0 }; } dispose() { this.disposed = true; } },
   MeshBasicMaterial: class { constructor(options = {}) { Object.assign(this, options); THREE.created.material++; } dispose() { this.disposed = true; } },
-  SRGBColorSpace: 'srgb', DoubleSide: 2, NearestFilter: 'nearest', LinearFilter: 'linear',
+  SRGBColorSpace: 'srgb', RepeatWrapping: 'repeat', DoubleSide: 2, NearestFilter: 'nearest', LinearFilter: 'linear',
   created: { geometry: 0, material: 0 } };
 
 const TILE = 32;
-function makeWorld(config, { farRule = false, productionDefaults = false, useCanvas = false, failPantsCapture = false } = {}) {
+function makeWorld(config, { farRule = false, productionDefaults = false, useCanvas = false, failPantsCapture = false, portraitFlip = false } = {}) {
   const legacyPolicy = { keepFull: 6, nearTiles: 5, farTiles: farRule ? 24 : 0, minSettledS: 12, perTick: 3, intervalMs: 1000 }; // Exercises unchanged backwards-compatible overrides in tests 1-7.
   if (!productionDefaults) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { ...legacyPolicy, ...(config?.game?.banditCorpseRetire || {}) } } };
   THREE.created.geometry = 0; THREE.created.material = 0;
@@ -50,6 +50,7 @@ function makeWorld(config, { farRule = false, productionDefaults = false, useCan
     return { width: 0, height: 0, getContext(kind) { assert.equal(kind, '2d'); return { drawImage(source) { captures.push(source); } }; } };
   } } : null; // Opt-in canvas stub tests the actual single-plane path without a browser.
   const sandbox = { ...(fakeDocument ? { document: fakeDocument } : {}), window: { THREE, SCRATCHBONES_CONFIG: config,
+    PNGPlaneAvatar: { getPortraitsFlipped: () => portraitFlip }, // Tests both persisted portrait orientation settings.
     BurningAfflictionVfx: { disposeEntity: c => flameEvents.push('dispose:' + c.id), syncEntity: (c, root) => flameEvents.push('sync:' + c.id + ':' + root.name) },
     CorpsePosedPantsSnapshot: { capture: (canvas, rig) => {
       pantsCaptures.push({ canvas, rig, attachedWhenCaptured: !!rig.group.parent });
@@ -326,6 +327,25 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.equal(w.mod.tick(NOW + 100), 1, 'second heavy pants bake runs on the following pass');
   assert.equal(w.pantsCaptures.length, 2);
   assert.equal(w.disposed.length, 3);
+}
+
+// 14. The normal portrait-mirror setting must survive flattening, and a
+// lying sprite must follow the old rig's body axis and species height.
+for (const portraitFlip of [false, true]) {
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true, portraitFlip });
+  const body = w.corpse('mirrored-bandit');
+  body.avatarRef.frontCanvas = { width: 256, height: 256 };
+  body.avatarRef.frontPlane = new Obj();
+  body.avatarRef.modelWidth = 1;
+  body.avatarRef.modelHeight = 1.5;
+  body.avatarRef.group.scale.y = 1.6;
+  assert.equal(w.mod.tick(NOW), 1);
+  const flat = body.avatarRef.group.children[0];
+  assert.equal(flat.rotation.y, Math.PI / 2, 'fallen portrait matches the original +90-degree death root');
+  assert.equal(flat.scale.z, 1.6, 'the authored species vertical scale follows the laid-down body axis');
+  assert.equal(flat.material.map.repeat.x, portraitFlip ? -1 : 1, 'corpse image keeps the live front UV orientation');
+  assert.equal(flat.material.map.offset.x, portraitFlip ? 1 : 0, 'mirroring samples the same source canvas');
+  if (portraitFlip) assert.equal(flat.material.map.wrapS, THREE.RepeatWrapping);
 }
 
 console.log('bandit corpse retirement: ok');
