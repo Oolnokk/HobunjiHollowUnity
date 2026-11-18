@@ -240,6 +240,23 @@ async function main(){
   assert.equal(legacyCrown.sprite,art.defaultMale);
   assert.equal(legacyCrown.artCandidates,undefined,'obsolete non-existent image paths are removed');
   assert.equal(legacyCrown.fallbackSprite,undefined);
+  const ownerGear=W.__hobunjiPlayerProfile.gearInventory; // Old saves may deserialize worn/owned Gear records as separate objects.
+  const ownedCrownCopy=JSON.parse(JSON.stringify(legacyCrown));
+  const ownedIndex=ownerGear.clothingItems.findIndex(item=>item.uid===legacyCrown.uid);
+  assert(ownedIndex>=0);
+  ownerGear.clothingItems[ownedIndex]=ownedCrownCopy;
+  for(const item of [legacyCrown,ownedCrownCopy]) {
+    item.baseCosmeticId='appearance::hat::basic_headband';
+    item.sprite='assets/cosmetics/clothes/hat/headband.png';
+  }
+  const beforeFirstPortraitMigration=gearSaves;
+  const firstPortrait=equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
+  assert(firstPortrait.equippedCosmetics.includes(crownId),'old save gets the correct crown immediately on first avatar rebuild');
+  assert.equal(legacyCrown.baseCosmeticId,crownId);
+  assert.equal(ownedCrownCopy.baseCosmeticId,crownId,'the owned article copy is migrated together with the worn one');
+  assert.equal(gearSaves,beforeFirstPortraitMigration+1,'first avatar migration persists once');
+  equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
+  assert.equal(gearSaves,beforeFirstPortraitMigration+1,'subsequent portrait refreshes never resave the already migrated crown');
   login('farmhand');readyHunt();
   const second=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
   assert(second.ok&&!second.first,'later farmhand receives crown without fanfare');

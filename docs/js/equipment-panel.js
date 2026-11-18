@@ -702,6 +702,12 @@
 
   function applyGearClothingToPlayerData(playerData) {
     const gearInventory = deps.getGearInventory();
+    const wornHat = gearInventory?.clothing?.hat; // First avatar rebuild can precede opening Gear; old earned crowns must resolve now.
+    if (normalizeFiveBlossomCrownArt(wornHat)) {
+      const ownedCrown = gearInventory?.clothingItems?.find(item => wornHat.uid && item?.uid === wornHat.uid); // Saves can deserialize worn and owned snapshots into different objects.
+      if (ownedCrown && ownedCrown !== wornHat) normalizeFiveBlossomCrownArt(ownedCrown);
+      deps.saveGearInventory?.(); // One migration write, never on subsequent portrait refreshes.
+    }
     const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
     const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
     const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
