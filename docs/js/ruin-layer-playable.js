@@ -19,6 +19,7 @@
   function collect(wing){
     const tiles=new Set(); // Full physical footprint of this one wing, used by collision, floors and wall edges.
     const add=(x,z)=>tiles.add(key(x,z));
+    if(wing.anteroom)rectangleTiles(wing.anteroom,add); // Shaft-side rooms have real floors, walls and identities.
     wing.rooms.forEach(room=>rectangleTiles(room,add));
     wing.corridors.forEach(hall=>hall.rects.forEach(rect=>rectangleTiles(rect,add)));
     return tiles;
@@ -291,7 +292,8 @@
           instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
         }
         const supportedSet=new Set(supportedCells.map(([x,z])=>key(x,z))); // One floor-support authority for per-room audits, including intentional rope pits.
-        for(const source of wing.rooms){
+        const roomSources=wing.anteroom?[wing.anteroom,...wing.rooms]:wing.rooms; // Shared enclosure and ceiling footprint.
+        for(const source of roomSources){
           const room=descriptors.get(source.id);
           if(!room)throw new Error('Missing generated room descriptor: '+source.id);
           const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
@@ -345,7 +347,7 @@
           stampDoor(true);
         }
         const corridorRoofCells=[...tiles].map(k=>k.split(',').map(Number)).filter(([x,z])=>
-          !wing.rooms.some(room=>x>=room.x&&x<room.x+room.w&&z>=room.z&&z<room.z+room.d)); // Passage ceilings join room caps without double faces at their shared boundary.
+          !roomSources.some(room=>x>=room.x&&x<room.x+room.w&&z>=room.z&&z<room.z+room.d)); // Passage ceilings join room caps without double faces at their shared boundary.
         if(corridorRoofCells.length&&root.RuinWallFaces){
           const Faces=root.RuinWallFaces,bounds=corridorRoofCells.reduce((out,[x,z])=>({
             x0:Math.min(out.x0,x),z0:Math.min(out.z0,z),x1:Math.max(out.x1,x+1),z1:Math.max(out.z1,z+1),
