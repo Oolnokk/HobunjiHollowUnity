@@ -64,6 +64,27 @@ window.GameplayInputRouter.setClaims('my-world-object', [{
 window.GameplayInputRouter.clearClaims('my-world-object');
 ```
 
+**Contextual HUD rule.** New nearby-object gameplay actions must populate the
+existing five-button action arch rather than create an additional fixed-position
+HUD button. The shared router supports this using `showInArch:true` plus a
+`hudIcon` on a normal Action 1/2/3 claim:
+
+```js
+window.GameplayInputRouter.setClaims('tree-example', [{
+  actionId: 'action3', label: 'Pick blossom', hudIcon: '🌸',
+  showInArch: true, priority: 65, onPress: () => pickBlossom()
+}]);
+// Clear on moving away, quest completion and world/character switch.
+window.GameplayInputRouter.clearClaims('tree-example');
+```
+
+`ActionPromptUI.createActionArchLayout` puts the current winning opt-in
+claim into its actual action slot, and the shared pointer bridge routes that
+slot back through `GameplayInputRouter` for touch and desktop. Keyboard and
+controller use the same semantic input. Do **not** add a parallel touch-only
+button, click handler or input loop for such gameplay actions. Dialogue,
+debugging controls and dedicated modal menus are separate surfaces.
+
 Call `route` for physical press/release/cancel pairs; do not synthesize a
 second weapon press after the action was claimed. For ordinary touch-arch
 contextual actions, retain the **press-time meaning** through pointer release.
