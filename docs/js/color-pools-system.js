@@ -13,7 +13,11 @@
   let overlay = null;
   let selectedStableId = null;
   let draftLayers = {};
-  let previewToken = 0;
+  let previewToken = 0; // Invalidates superseded async previews when a user edits or changes animals.
+  let previewWork = null; // Serializes expensive animal compositing so sliding controls cannot launch overlapping renders.
+  let previewNeedsAnotherPass = false; // Records the latest draft requested while an earlier raster is still running.
+  let previewCoalesced = 0; // Mobile debug counter for avoided redundant render requests.
+  let previewComposed = 0; // Mobile debug counter for the actual number of composed previews.
   let stylesInjected = false;
   let lastError = null;
 
@@ -122,6 +126,7 @@
 
   function close() {
     if (!overlay) return;
+    previewToken++; // Close invalidates an in-flight preview before its result can touch another overlay.
     overlay.remove();
     overlay = null;
     selectedStableId = null;
@@ -254,16 +259,33 @@
     window.dispatchEvent(new CustomEvent('hobunji:stable-animal-appearance-changed', { detail: { stableId: entry.id } }));
   }
 
-  async function drawPreview() {
+  function drawPreview() {
+    previewToken++;
+    if (previewWork) {
+      previewNeedsAnotherPass = true;
+      previewCoalesced++;
+      return previewWork; // Only one render at a time; any number of rapid edits collapse into one latest-draft refresh.
+    }
+    previewWork = (async () => {
+      do {
+        previewNeedsAnotherPass = false;
+        await drawPreviewFrame();
+      } while (previewNeedsAnotherPass && overlay?.isConnected);
+    })().finally(() => { previewWork = null; });
+    return previewWork;
+  }
+
+  async function drawPreviewFrame() {
     const canvas = overlay?.querySelector('#colorPoolsPreviewCanvas');
     const status = overlay?.querySelector('#colorPoolsPreviewStatus');
     const entry = selectedEntry();
     if (!canvas || !entry) return;
-    const token = ++previewToken;
+    const token = previewToken; // Captured at the start of the currently serialized preview pass.
     try {
       const genotype = clone(entry.genotype);
       genotype[PAINT_KEY] = { version: 1, layers: cleanDraft() };
       const kind = canonicalKind(entry);
+      previewComposed++;
       const source = await window.CreatureGeneticsRender?.composeFrame?.(kind, 'idle', genotype, false);
       if (token !== previewToken || !overlay?.isConnected || !source) return;
       const ctx = canvas.getContext('2d');
@@ -277,6 +299,7 @@
       lastError = null;
       refreshDebug();
     } catch (error) {
+      if (token !== previewToken || !overlay?.isConnected) return; // A superseded/closed panel must not show stale render errors.
       lastError = String(error?.message || error);
       if (status) status.textContent = 'Preview failed: ' + lastError;
       refreshDebug();
@@ -296,6 +319,9 @@
       paintedRegions: Object.keys(cleanDraft()),
       fusedMotifCounts: Object.fromEntries(Object.entries(draftLayers).map(([id, paint]) => [id, paint?.mergedPatterns?.length || 0])), // On-page mobile debug.
       overpassUnlocked: overpassUnlocked(),
+      previewComposed,
+      previewCoalesced,
+      previewRunning: !!previewWork, // All visible in the panel's existing mobile debug section.
       lastError,
     };
     if (el) el.textContent = JSON.stringify(snapshot, null, 2);
