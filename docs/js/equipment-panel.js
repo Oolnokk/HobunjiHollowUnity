@@ -234,7 +234,7 @@
     if (instrumentChanged) window.MusicMinigame?.close?.();
     deps.equipmentSlots[slot] = itemKeyOrNull;
     deps.saveEquipmentSlots();
-    if (instrumentChanged) window.dispatchEvent(new Event('hobunji-instrument-equipped'));
+    if (instrumentChanged && typeof window.dispatchEvent === 'function' && typeof Event === 'function') window.dispatchEvent(new Event('hobunji-instrument-equipped')); // Browser-only notification; headless equipment tests still persist normally.
   }
 
   function isToolArchived(key, gear = deps?.getGearInventory?.()) {
