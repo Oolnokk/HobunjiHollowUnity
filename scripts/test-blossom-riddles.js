@@ -287,7 +287,8 @@ for (let i = 0; i < ids.length; i++) {
   if (!zones.has(zone)) zones.set(zone, layoutFor(id, 15 + 14 * (i % 2), 16 + 14 * (i % 2)));
   else zones.get(zone).localeInstances.push(layoutFor(id, 48, 44).localeInstances[0]);
 }
-const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
+const plantedTrees = []; // Tracks final scene positions to catch accidental loss of the foliage builder's local planting offset.
+const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); plantedTrees.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const world = {
   FestivalProps: { blossomWindowSwatches: [{ color:'#00ffff' }, { color:'#ff8000' }, { color:'#ffffff' }, { color:'#ffbf00' }, { color:'#ffb3b3' }] },
   LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
@@ -302,7 +303,7 @@ const world = {
   GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
-  FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
+  FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
   ClimbSystem: { groundYAt: (x,y) => { sampledHeights.push({x,y}); return 0; } }
 };
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/festival-blossom-hunt.js'), 'utf8'), vm.createContext({ window: world, console }));
@@ -410,6 +411,7 @@ currentZone = 'map_northern_cliffs';
 hunt.update();
 assert.ok(hunt.debugSnapshot().displayedTrees.includes('locale_five_blossoms_cyan'), 'the tree remains a physical wilderness locale outside the festival');
 assert.equal(treeBuilds, 6, 'a revisited zone receives a fresh tree instance while shared source geometry remains cached by FoliageGenerator');
+assert.ok(plantedTrees.every(tree => tree.position.y === .25), 'scene placement retains the builder\'s root-level offset above the sampled floor');
 const northTree = Riddles.positionOf(zones.get('map_northern_cliffs').localeInstances[0], 'blossom-tree');
 assert.ok(sampledHeights.some(p => p.x === (northTree.col + .5) * deps.TILE && p.y === (northTree.row + .5) * deps.TILE), 'tree floor is sampled in pixel-space, not map-tile coordinates');
 assert.equal(protectedMeshCount, treeBuilds, 'every scene-local blossom clone protects shared GPU buffers during zone disposal');
