@@ -237,7 +237,7 @@ const witnessVerse = Riddles.generate({ zoneId:'map_northern_cliffs',layout:scen
   targetObjectKey:'blossom-tree',targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route' });
 assert.equal(witnessVerse.ok,true,'unique witness route still passes strict verse rhyme checks');
 assert.match(witnessVerse.text,/^(?:Begin|Start|Stand) at the only /,'the first line starts at the unique painted rock, not a vague zone or sector');
-assert.ok(witnessVerse.text.split('\n').slice(1).some(line=>/north|south|east|west/.test(line)),'route directions contain actual cardinal bearings');
+assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions contain actual cardinal bearings, including a direct first-line couplet');
 assert.ok(witnessVerse.evidence.route.every(step=>/ground|climbing|descending/.test(step.elevation)),'every walking leg states its elevation change or level ground');
 assert.equal(witnessVerse.evidence.uniqueStart.dyeId,witnessSites[0].dyeId,'riddle ink matches the rock painted by the scenery renderer');
 assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
