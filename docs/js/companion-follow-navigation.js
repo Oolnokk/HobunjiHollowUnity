@@ -119,6 +119,10 @@
         const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile);
         const path = navigator.findPath(startCol, startRow, goalCol, goalRow, (col, row) => {
           const tx = (col + 0.5) * tile, ty = (row + 0.5) * tile;
+          const cell = tileAt(grid, tx, ty, tile); // A tile occupancy wall is impassable even if an underlying floor surface remains.
+          if (!cell || cell.incline || UNSAFE_TYPES.has(String(cell.type).toLowerCase()) ||
+              (Number(cell.water) || 0) >= 0.003 ||
+              window.MapBoundaryGuard?.isBoundaryTile?.(cell)) return false;
           const surface = DS?.sampleSupport?.(tx / tile, ty / tile, {
             minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
           }); // A path on a different overlapping shaft story does not count.
