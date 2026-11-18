@@ -49,6 +49,7 @@ const workflow = fs.readFileSync(path.join(root, '.github/workflows/windows-frie
 assert.match(workflow, /workflow_dispatch:/);
 assert.ok(!/^\s{2}push:/m.test(workflow));
 assert.match(workflow, /github.ref == 'refs\/heads\/main' && inputs.approval == 'PUBLISH'/);
+assert.match(workflow, /publish-friends-release:\s*\n\s*if: github.event_name == 'workflow_dispatch'/, 'PR artifacts must never publish');
 assert.match(workflow, /--prerelease/);
 assert.match(workflow, /friends-update-feed/);
 assert.match(workflow, /desktop-friends-build.js feed/);
