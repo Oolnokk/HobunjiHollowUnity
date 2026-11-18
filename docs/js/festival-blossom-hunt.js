@@ -26,6 +26,9 @@
   let advertisedPick = ''; // Avoid reinstalling GameplayInputRouter claims on each 200ms festival tick.
   let turnInRunning = false; // Disallows double-awards while a cutscene awaits dialogue input.
   let lastTurnIn = null; // Developer mobile snapshot reports first/later awards and failed saves.
+  let clueTarget = null; // Tracks the next blossom whose saved clue was last reconciled.
+  let clueLayout = null; // Tracks that target's workspace object, so same-cycle forced regeneration invalidates the saved clue.
+  let clueSynced = false; // Recheck saved clues on member/world load and while generated terrain is incomplete.
 
   function year() { return Number(window.CalendarSystem?.aotYearNumber?.()); }
   function active() { return window.FestivalCalendar?.current?.()?.id === 'five_blossoms'; }
@@ -94,6 +97,13 @@
       window.__farmLog?.('[blossom-hunt] ' + lastStatus, 'warn');
       return false;
     }
+    if (status === 'active') {
+      clueTarget = targetFor(Array.isArray(progress?.found) ? progress.found : []);
+      clueLayout = clueTarget ? zoneLayout(clueTarget.zoneId) : null;
+      clueSynced = !clueTarget || lastGenerated?.ok === true; // A fallback clue must be retried when its stamped layout becomes available.
+    } else {
+      clueTarget = null; clueLayout = null; clueSynced = true;
+    }
     return true;
   }
   function start() {
@@ -124,15 +134,39 @@
     const civilYear = year(); // Used as a readiness gate so an unloaded calendar cannot accidentally expire a saved annual quest.
     if (!Number.isSafeInteger(civilYear) || window.CalendarSystem?.isInitialized?.() === false) return;
     const shift = mapDeps.currentTothalYear?.() ?? 'unknown';
-    const newKey = [civilYear, active() ? 'festival' : 'ordinary', shift].join(':');
-    if (newKey === calendarKey || Date.now() < retrySaveAfter) return;
-    retrySaveAfter = 0;
-    calendarKey = newKey;
-    expireOutdated();
-    if (active()) start();
+    const isFestival = active(); // Keeps all quest expiry and clue checks on the existing festival tick.
+    const newKey = [civilYear, isFestival ? 'festival' : 'ordinary', shift].join(':');
+    const calendarChanged = newKey !== calendarKey; // Full quest scans still happen only at calendar boundaries.
+    const layoutChanged = !!clueTarget && zoneLayout(clueTarget.zoneId) !== clueLayout; // O(1) workspace identity check catches forced same-cycle regeneration.
+    if ((!calendarChanged && clueSynced && !layoutChanged) || Date.now() < retrySaveAfter) return;
+    if (calendarChanged) {
+      retrySaveAfter = 0;
+      calendarKey = newKey;
+      expireOutdated();
+      if (isFestival) start();
+    }
     const live = state();
-    if (active() && live?.status === 'active' && String(live.progress?.shiftYear ?? '') !== String(shift ?? '')) {
-      write('active', descriptor(Array.isArray(live.progress.found) ? live.progress.found : [], shift)); // Re-roll a clue after a Shift: old terrain facts cannot survive reshuffling.
+    if (!isFestival || live?.status !== 'active') {
+      clueTarget = null; clueLayout = null; clueSynced = true;
+      return;
+    }
+    const found = Array.isArray(live.progress?.found) ? live.progress.found : [];
+    const target = targetFor(found);
+    const targetLayout = target ? zoneLayout(target.zoneId) : null;
+    if (target && (!targetLayout || !localeFor(target))) {
+      clueSynced = false; // A partially rebuilt wilderness must not overwrite a real saved riddle with a missing-locale fallback.
+      return;
+    }
+    const updated = descriptor(found, shift); // Generate once from the newly stamped terrain, not from cached pre-Shift evidence.
+    if (target && !lastGenerated?.ok) {
+      clueSynced = false; // Keep the previous saved verse until terrain evidence and the generator are ready.
+      return;
+    }
+    const shiftChanged = String(live.progress?.shiftYear ?? '') !== String(shift ?? '');
+    if (shiftChanged || updated.detail !== live.progress?.detail) {
+      write('active', updated); // Preserves found blossoms and real Pack items while replacing only stale quest fields.
+    } else {
+      clueTarget = target; clueLayout = targetLayout; clueSynced = true; // Identical rerolls need no new member save.
     }
   }
   function clearTrees() {
@@ -235,13 +269,14 @@
   }
   function init(deps) {
     mapDeps = deps;calendarKey = '';retrySaveAfter = 0;registeredYear = null;turnInRunning = false;lastTurnIn = null;
+    clueTarget = null; clueLayout = null; clueSynced = false; // Do not inherit the previous member/world's saved-clue state.
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
     advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
     clearTrees(); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
   }
-  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;registerItems(); }
+  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;clueTarget = null;clueLayout = null;clueSynced = false;registerItems(); }
   function update() {
     syncCalendar();buildVisibleTrees();syncPickPrompt(); // Uses the existing festival low-frequency tick; never scans other zones per frame.
   }
@@ -312,6 +347,7 @@
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
       displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
+      savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
       nearbyPick:nearbyTree()?.id || null,advertisedPick,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
