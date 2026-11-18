@@ -1211,7 +1211,9 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
 <script src="rig-preview-species.js?v=20261117mootMother1"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script>
-<script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
+<script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script>
+<script src="../../js/belt-stow-rig.js?v=20261118BeltRig1"></script> <!-- Shared belt-stow coordinates and torch art with gameplay. -->
+<script src="../../js/animation-author-belt-stow.js?v=20261118BeltAuthor1"></script> <!-- Reusable Rig Coordinates belt slot, preview and mobile controls. --> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
 
 <script>
 (() => {
@@ -15595,6 +15597,80 @@ function syncAllMaaPanelBodies() {
     if (panel && panel.open) syncMaaPanelBodyHeight(panel);
   });
 }
+// Belt-stowed equipment: integrate the external authoring module with the final V15.53
+// rig functions. This late wrapper deliberately preserves every existing species,
+// hand-shoulder, creature and shoulder-carrier override rather than replacing them.
+(() => {
+  const beltEditor = window.AnimationAuthorBeltStow;
+  if (!beltEditor || !window.HobunjiBeltStowRig) {
+    log('Belt-stow Rig Coordinates module missing; leaving existing rig controls unchanged.', 'warn');
+    return;
+  }
+  const originalNormalize = normalizedRigProfileLibrary; // Includes all previous 15.xx character and creature schema migrations.
+  normalizedRigProfileLibrary = function(value = {}) {
+    return beltEditor.preserveNormalized(originalNormalize(value), value);
+  };
+  const originalNames = rigAnchorNamesForActor; // Keeps existing posterior, hand, and shoulder anchors and adds the belt only to NPCs.
+  rigAnchorNamesForActor = actor => beltEditor.anchorNames(originalNames(actor), actor);
+  const originalProfile = attachmentRigProfileForActor; // Configured/built-in species profiles remain the sole data store.
+  attachmentRigProfileForActor = function(actor, options = {}) {
+    return beltEditor.ensureProfile(originalProfile(actor, options), actor);
+  };
+  const originalCreate = createAnimationActorShell; // Native attachment coordinates supply the transform carrier and axes helper.
+  createAnimationActorShell = function(args) {
+    const actor = originalCreate(args);
+    beltEditor.ensureActorAnchor(actor, state.three.THREE);
+    return actor;
+  };
+  const originalReset = resetAttachmentRigAnchorToRepositoryDefault; // Use the same Reset selected coordinate action already wired in the inspector.
+  resetAttachmentRigAnchorToRepositoryDefault = function(actor, name) {
+    if (name === beltEditor.KEY && actor?.source?.type === 'npc')
+      return beltEditor.resetProfile(attachmentRigProfileForActor(actor), actor);
+    return originalReset(actor, name);
+  };
+  const originalInspector = renderAttachmentRigInspector; // Retains every existing rig card and shoulder-carrier diagnostic.
+  renderAttachmentRigInspector = function(...args) {
+    const result = originalInspector(...args);
+    const actor = selectedAnimationActor();
+    if (animationAuthor.mode !== 'rig' || actor?.source?.type !== 'npc') return result;
+    const docsRoot = normalizePath(state.settings?.docsRoot || 'docs/');
+    const spriteUrl = state.rawBase ? rawUrl(docsRoot + 'assets/toolsprites/torch.png')
+      : '../../assets/toolsprites/torch.png'; // Repo-pinned texture; no stale main-branch preview when editing another commit.
+    beltEditor.mountInspector({
+      actor, THREE:state.three.THREE, textureUrl:spriteUrl,
+      selectAnchor() {
+        animationAuthor.rig.selectedAnchor = beltEditor.KEY;
+        animationAuthor.editTarget = 'rigAnchor';
+        renderAttachmentRigInspector();
+        attachAnimationGizmo();
+      },
+      applyChange(reason) {
+        const group = actor.rigAnchors?.[beltEditor.KEY];
+        const profile = attachmentRigProfileForActor(actor);
+        if (!group || !profile) return;
+        profile.anchors[beltEditor.KEY] = window.HobunjiBeltStowRig.normalizedSnapshot(transformSnapshot(group), Number(actor.model?.userData?.portraitModelHeight)||.9);
+        for (const candidate of animationAuthor.actors) if (candidate !== actor && candidate.source.type === 'npc'
+            && characterRigProfileKey(candidate.source) === characterRigProfileKey(actor.source))
+          applyAttachmentRigProfileToActor(candidate);
+        scheduleAnimationProjectSave();
+        setAnimationRecentChange('Updated ' + characterRigProfileKey(actor.source) + ' belt-stow scale via ' + reason + '.');
+      },
+      reset() {
+        resetAttachmentRigAnchorToRepositoryDefault(actor, beltEditor.KEY);
+        applyAttachmentRigProfileToActor(actor);
+        scheduleAnimationProjectSave();
+        setAnimationRecentChange('Reset belt-stowed equipment for ' + characterRigProfileKey(actor.source) + '.');
+      },
+      render() { renderAttachmentRigInspector(); attachAnimationGizmo(); },
+    });
+    return result;
+  };
+  const author = window.MultiAvatarAnimationAuthor;
+  if (author) Object.defineProperty(author, 'beltStowDebug', {
+    configurable:true, enumerable:true, get:() => beltEditor.debug,
+  }); // Inspector diagnostics are readable directly from mobile without a browser console.
+  log('Belt-stowed Rig Coordinates installed: species/gender save and export, move/rotate gizmo, scale, torch preview.');
+})();
 syncAllMaaPanelBodies();
 document.getElementById('maaLeftPanel').addEventListener('toggle', function () { if (this.open) syncMaaPanelBodyHeight(this); });
 document.getElementById('maaRightPanel').addEventListener('toggle', function () { if (this.open) syncMaaPanelBodyHeight(this); });
