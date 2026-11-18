@@ -32,7 +32,8 @@
         left:calc(1 * var(--inv-col)) !important;
         top:calc(4 * var(--inv-row)) !important;
         width:calc(40 * var(--inv-col)) !important;
-        height:calc(23 * var(--inv-row)) !important;
+        height:auto !important; /* The designed 23 rows are a cap: a pane shorter than the 28-row model must clip INSIDE the section, not below #mpInventory's overflow edge. */
+        bottom:0 !important;
         max-height:calc(23 * var(--inv-row)) !important;
         display:grid !important;
         grid-template-columns:minmax(0,.82fr) minmax(0,1.68fr) !important;

@@ -75,7 +75,7 @@
 
       /* Pack clothing now participates in the normal grid. The old dedicated clothing strip stays as a hidden data/event source. */
       #mpInventory .inv-pack-clothing { display:none !important; }
-      #mpInventory.inv-mode-pack .inv-grid-area--short { height:calc(14 * var(--inv-row)); }
+      #mpInventory.inv-mode-pack .inv-grid-area--short { max-height:calc(14 * var(--inv-row)); }
       #mpInventory .inv-grid-area { border:1px solid #ffffff12; border-radius:var(--inv-radius); background:#0000001a; }
       #mpInventory .inv-item-box { border-color:#ffffff24; background:linear-gradient(#ffffff11,#ffffff08); box-shadow:inset 0 1px #ffffff09,0 1px 3px #0003; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease,box-shadow 100ms ease; }
       #mpInventory .inv-item-box:not(.empty):hover { transform:translateY(-1px); border-color:#ffffff4d; background:linear-gradient(#ffffff1c,#ffffff0e); box-shadow:inset 0 1px #ffffff0f,0 3px 8px #0004; }
