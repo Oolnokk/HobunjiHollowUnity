@@ -126,17 +126,48 @@
   // each, walk the ancestor chain checking the actual rendered result, the
   // same technique ui-element-editor.js already uses to see through a
   // closed-but-still-laid-out modal.
-  function isVisible(el) {
-    if (!el || !el.isConnected || el.closest('.ctrl-nav-subtab-hidden')) return false;
-    const rect = el.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    let node = el;
-    while (node && node.nodeType === 1) {
+  // Visibility is read hundreds of times per press (every candidate, every ancestor, again for each
+  // group/target projection). Within one synchronous run with no DOM writes in between the answers
+  // cannot change, so they are memoised and the memo is dropped at every write this module makes, at
+  // every external entry point, and at the end of the current microtask checkpoint.
+  const visMemo = new Map(); // element -> final isVisible answer
+  const ancMemo = new Map(); // element -> does this node (not its ancestors) hide its subtree?
+  let visMemoClearQueued = false;
+  function invalidateVisibility() {
+    if (visMemo.size) visMemo.clear();
+    if (ancMemo.size) ancMemo.clear();
+  }
+  function navClassAdd(node, name) { node.classList.add(name); invalidateVisibility(); } // Every class this module toggles can change layout/visibility of what the memo holds.
+  function navClassRemove(node, name) { node.classList.remove(name); invalidateVisibility(); }
+  function noteVisibilityMemoUse() {
+    if (visMemoClearQueued) return;
+    visMemoClearQueued = true;
+    queueMicrotask(() => { visMemoClearQueued = false; invalidateVisibility(); });
+  }
+  function nodeHidesSubtree(node) {
+    let hides = ancMemo.get(node);
+    if (hides === undefined) {
       const cs = getComputedStyle(node);
-      if (node.hidden || node.getAttribute('aria-hidden') === 'true' || cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
-      node = node.parentElement;
+      hides = !!(node.hidden || node.getAttribute('aria-hidden') === 'true' || cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0');
+      ancMemo.set(node, hides);
     }
-    return true;
+    return hides;
+  }
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    const known = visMemo.get(el);
+    if (known !== undefined) return known;
+    noteVisibilityMemoUse();
+    if (el.closest('.ctrl-nav-subtab-hidden')) { visMemo.set(el, false); return false; }
+    const rect = el.getBoundingClientRect();
+    let visible = rect.width > 0 && rect.height > 0;
+    if (visible) {
+      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+        if (nodeHidesSubtree(node)) { visible = false; break; }
+      }
+    }
+    visMemo.set(el, visible);
+    return visible;
   }
 
   function isDisabled(el) {
@@ -199,7 +230,7 @@
     return stack.length > 0;
   }
 
-  function reconcileStack() {
+  function reconcileStack() { invalidateVisibility();
     const current = visiblePanels();
     const currentSet = new Set(current);
     const prevTop = activePanel();
@@ -276,11 +307,11 @@
   }
 
 
-  function clearGroups(panel) {
+  function clearGroups(panel) { invalidateVisibility();
     releasedAutoGroup.delete(panel);
     for (const entry of groupsByPanel.get(panel) || []) {
       restoreSubtabs(entry.node);
-      entry.node.classList.remove('ctrl-nav-group-active');
+      navClassRemove(entry.node, 'ctrl-nav-group-active');
     }
     groupsByPanel.delete(panel);
   }
@@ -294,17 +325,17 @@
       const origin = entry.returnPath ? resolveFocusPath(entry.returnPath).container : null; // Associated siblings belong logically to the source item's current nest.
       const associated = origin && parent.contains(origin) && panel.contains(node) && node?.hasAttribute('data-ctrl-detail-panel');
       if (!node || node === parent || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
-        for (const removed of entries.splice(index)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
+        for (const removed of entries.splice(index)) { restoreSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
         break;
       }
       if (entry.node !== node) {
         const selectedState = subtabsByGroup.get(entry.node); // Retains section identity or sibling index when its whole owner is rebuilt.
         restoreSubtabs(entry.node);
         if (selectedState) prepareSubtabsWithMemory(node, panel, selectedState.selected.id || null, selectedState.selected.id ? 0 : selectedState.sections.indexOf(selectedState.selected), false);
-        entry.node.classList.remove('ctrl-nav-group-active');
+        navClassRemove(entry.node, 'ctrl-nav-group-active');
         entry.node = node;
       }
-      if (!node.classList.contains('ctrl-nav-group-active')) node.classList.add('ctrl-nav-group-active');
+      if (!node.classList.contains('ctrl-nav-group-active')) navClassAdd(node, 'ctrl-nav-group-active');
       parent = node;
     }
     groupsByPanel.set(panel, entries);
@@ -341,7 +372,7 @@
       if (automatic) {
         rememberFocusPath(automatic);
         groupsByPanel.set(panel, [{ node: automatic, path: focusPath, explicit: true }]);
-        automatic.classList.add('ctrl-nav-group-active');
+        navClassAdd(automatic, 'ctrl-nav-group-active');
         prepareSubtabs(automatic, panel, automatic.getAttribute('data-ctrl-initial-subtab'));
         targets = directTargets(automatic, panel).map(target => projectSingleChild(target, panel));
       }
@@ -349,12 +380,12 @@
     return targets;
   }
 
-  function restoreSubtabs(group) {
+  function restoreSubtabs(group) { invalidateVisibility();
     const state = subtabsByGroup.get(group); // All presentation changes are reversible, including detached/rebuilt nodes.
     if (!state) return;
-    for (const section of state.sections) section.classList.remove('ctrl-nav-subtab-hidden');
-    group.classList.remove('ctrl-nav-subtabs');
-    state.selected.classList.remove('ctrl-nav-subtab-selected');
+    for (const section of state.sections) navClassRemove(section, 'ctrl-nav-subtab-hidden');
+    navClassRemove(group, 'ctrl-nav-subtabs');
+    navClassRemove(state.selected, 'ctrl-nav-subtab-selected');
     subtabsByGroup.delete(group);
   }
 
@@ -372,10 +403,10 @@
     return sections.slice().sort((a, b) => (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
   }
 
-  function prepareSubtabs(group, panel, selectedId = null, offset = 0) {
+  function prepareSubtabs(group, panel, selectedId = null, offset = 0) { invalidateVisibility();
     return prepareSubtabsWithMemory(group, panel, selectedId, offset, true); // Retain the existing entry point and regression-test extraction boundary.
   }
-  function prepareSubtabsWithMemory(group, panel, selectedId = null, offset = 0, restoreLast = true) {
+  function prepareSubtabsWithMemory(group, panel, selectedId = null, offset = 0, restoreLast = true) { invalidateVisibility();
     restoreSubtabs(group);
     const sections = prioritizeMenuSubtabs(group, directTargets(group, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR))); // UI keeps its authored layout, while controller LB/RB use the frequency-first sequence.
     if (sections.length < 2) return false;
@@ -390,9 +421,9 @@
     const transparent = !nestedState && directTargets(selected, panel).filter(target => isGroup(target) && target.matches(SUBTAB_SELECTOR)).length < 2; // Nested multi-section pages remain enterable and can borrow the tab actions in turn.
     subtabsByGroup.set(group, { sections, selected, transparent });
     if (memoryKey) lastSubtabByGroupKey.set(memoryKey, { id: selected.id || null, index: sections.indexOf(selected) }); // Remember the actual selected section, not the opening default.
-    group.classList.add('ctrl-nav-subtabs');
-    selected.classList.add('ctrl-nav-subtab-selected');
-    for (const section of sections) if (section !== selected) section.classList.add('ctrl-nav-subtab-hidden');
+    navClassAdd(group, 'ctrl-nav-subtabs');
+    navClassAdd(selected, 'ctrl-nav-subtab-selected');
+    for (const section of sections) if (section !== selected) navClassAdd(section, 'ctrl-nav-subtab-hidden');
     const opener = Array.from(selected.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, selected, panel) === control && control.getAttribute('aria-expanded') === 'false'); // Open a collapsed baby inventory on selection without requiring another Confirm.
     if (opener) clickOnScreen(opener, 'auto-open');
     return true;
@@ -402,13 +433,13 @@
     return [...enteredGroups(panel)].reverse().find(entry => subtabsByGroup.has(entry.node));
   }
 
-  function enterGroup(group, panel, returnPath = null, requestedSection = null) {
+  function enterGroup(group, panel, returnPath = null, requestedSection = null) { invalidateVisibility();
     releasedAutoGroup.delete(panel);
     const entries = enteredGroups(panel); // Nested groups unwind one level per Back press.
     rememberFocusPath(group);
     entries.push({ node: group, path: focusPath, returnPath, explicit: true }); // Entered by Confirm; focus-adopted scopes are not, so keyboard Escape/Tab keep closing/switching the menu.
     groupsByPanel.set(panel, entries);
-    group.classList.add('ctrl-nav-group-active');
+    navClassAdd(group, 'ctrl-nav-group-active');
     const opener = Array.from(group.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, group, panel) === control); // Only this group's own toggle may open it; entering a tree list must not open its first child tree.
     if (opener?.getAttribute('aria-expanded') === 'false') clickOnScreen(opener, 'auto-open');
     prepareSubtabsWithMemory(group, panel, requestedSection || group.getAttribute('data-ctrl-initial-subtab'), 0, !requestedSection); // Direct page jumps skip remembered-page opener side effects.
@@ -419,14 +450,14 @@
     setFocus(targets.includes(remembered) ? remembered : pickDefaultTarget(panel, contents.length ? contents : targets) || navigationRoot(panel), { scroll: false });
   }
 
-  function leaveGroup(panel) {
+  function leaveGroup(panel) { invalidateVisibility();
     const entries = enteredGroups(panel); // Recovers rebuilt groups before choosing the parent selection.
     const entry = entries.pop(); // Consumes Back before the panel's close button can run.
     if (!entry) return false;
     if (entry.node.hasAttribute('data-ctrl-auto-enter') || entry.node.matches('.mp-pane')) releasedAutoGroup.set(panel, entry.node);
     lastFocusedByGroup.set(entry.node, currentTarget);
     restoreSubtabs(entry.node);
-    entry.node.classList.remove('ctrl-nav-group-active');
+    navClassRemove(entry.node, 'ctrl-nav-group-active');
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Return to the original item or its nearest surviving neighbor after a consume/equip rebuild.
     const origin = entry.returnPath ? recoverFocusTarget(panel, targets, entry.returnPath) : projectSingleChild(entry.node, panel);
@@ -444,7 +475,7 @@
     const previousPath = focusPath; // Scope paths must not overwrite the selected control's recovery path.
     const entries = ancestors.map(node => {
       rememberFocusPath(node);
-      node.classList.add('ctrl-nav-group-active');
+      navClassAdd(node, 'ctrl-nav-group-active');
       return { node, path: focusPath };
     });
     focusPath = previousPath;
@@ -523,12 +554,12 @@
   }
 
   // ── focus application ───────────────────────────────────────────────
-  function setFocus(el, opts = {}) {
-    if (currentTarget && currentTarget !== el) currentTarget.classList.remove('ctrl-nav-focus');
+  function setFocus(el, opts = {}) { invalidateVisibility();
+    if (currentTarget && currentTarget !== el) navClassRemove(currentTarget, 'ctrl-nav-focus');
     currentTarget = el || null;
     if (!currentTarget) { focusPath = null; return; }
     rememberFocusPath(currentTarget);
-    if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
+    if (!currentTarget.classList.contains('ctrl-nav-focus')) navClassAdd(currentTarget, 'ctrl-nav-focus');
     if (!currentTarget.hasAttribute('tabindex') && currentTarget.tabIndex < 0) currentTarget.tabIndex = -1;
     try { currentTarget.focus({ preventScroll: true }); } catch { /* not every candidate supports real focus */ }
     if (typeof CustomEvent === 'function' && typeof currentTarget.dispatchEvent === 'function') {
@@ -540,12 +571,12 @@
     updateHintBar(activePanel());
   }
 
-  function refreshFocusIfStale(availableTargets = null) {
+  function refreshFocusIfStale(availableTargets = null) { invalidateVisibility();
     const panel = activePanel();
     if (!panel) return;
     const targets = availableTargets || navigationTargets(panel); // Reconcile scope before accepting a stale control.
     if (currentTarget && (targets.includes(currentTarget) || (!targets.length && currentTarget === navigationRoot(panel)))) {
-      if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
+      if (!currentTarget.classList.contains('ctrl-nav-focus')) navClassAdd(currentTarget, 'ctrl-nav-focus');
       return;
     }
     setFocus(recoverFocusTarget(panel, targets) || pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: !scrolledSelection });
@@ -655,7 +686,7 @@
     return best;
   }
 
-  function moveVector(x, y) {
+  function moveVector(x, y) { invalidateVisibility();
     const panel = activePanel();
     if (!panel) return false;
     const direction = normalizedDirection(x, y); // Reanchor before stale-focus recovery can scroll to a rebuilt/offscreen control.
@@ -682,7 +713,7 @@
     return true;
   }
 
-  function move(dir) {
+  function move(dir) { invalidateVisibility();
     switch (dir) {
       case 'left': return moveVector(-1, 0);
       case 'right': return moveVector(1, 0);
@@ -694,7 +725,7 @@
 
 
 
-  function moveOrAdjust(dir) {
+  function moveOrAdjust(dir) { invalidateVisibility();
     // Focused range controls consume horizontal input, so gamepad D-pad and stick can adjust pattern/size sliders without moving focus away.
     if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && (dir === 'left' || dir === 'right')) {
       if (!controlOnScreen(currentTarget)) return true; // A scrolled-out selected slider must not change value either.
@@ -713,7 +744,7 @@
     return move(dir);
   }
 
-  function moveVectorOrAdjust(x, y) {
+  function moveVectorOrAdjust(x, y) { invalidateVisibility();
     // Horizontal stick movement adjusts a focused slider; vertical movement continues spatial navigation.
     if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && Math.abs(x) > Math.abs(y) * 1.2) {
       return moveOrAdjust(x < 0 ? 'left' : 'right');
@@ -728,7 +759,7 @@
     return !panel.dispatchEvent(new CustomEvent('hobunji-controller-panel-action', { detail: { action }, cancelable: true }));
   }
 
-  function activate() {
+  function activate() { invalidateVisibility();
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, 'confirm')) return; // Opt-in reader panels own semantic Confirm; they do not click the focused DOM button.
     const intendedTarget = currentTarget; // Captures the user's selected button before dynamic panel updates can recover focus elsewhere.
@@ -769,7 +800,7 @@
     if (detail && isGroup(detail) && isNavTarget(detail) && belongsToNavigation(detail, panel)) enterGroup(detail, panel, returnPath);
   }
 
-  function cancel() {
+  function cancel() { invalidateVisibility();
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, 'cancel')) return;
     if (leaveGroup(panel)) return;
@@ -816,7 +847,7 @@
     const state = subtabsByGroup.get(group); // Retains index even for authored sections without ids.
     const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
     if (!next || !entries.some(entry => entry.node === group)) return;
-    for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1)) { restoreSubtabs(removed.node); removed.node.classList.remove('ctrl-nav-group-active'); }
+    for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1)) { restoreSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
     saveSectionScroll(state.selected, panel);
     prepareSubtabsWithMemory(group, panel, next.id || null, next.id ? 0 : nextIndex, false);
     restoreSectionScroll(next, panel);
@@ -828,7 +859,7 @@
     updateHintBar(panel);
   }
 
-  function cycleTabs(delta) {
+  function cycleTabs(delta) { invalidateVisibility();
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
     const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]') && !!currentTarget?.closest?.('#mpStable'); // Only focus inside Stable borrows bumpers; focus on the top tab bar still switches main destinations.
@@ -952,7 +983,7 @@
   }
 
   function hideHintBar() {
-    if (hintEl) hintEl.classList.remove('ctrl-nav-hint-bar-visible');
+    if (hintEl) navClassRemove(hintEl, 'ctrl-nav-hint-bar-visible');
   }
 
   // ── gamepad polling (shared authority; cheap when idle) ─────────────
@@ -1036,7 +1067,7 @@
 
   let lastGamepadPollAt = 0; // Used to keep analog right-stick menu scrolling independent of display refresh rate.
 
-  function pollGamepad(frame) {
+  function pollGamepad(frame) { invalidateVisibility();
     const now = frame.now;
     if (!frame.focused) return;
     const pad = frame.pad; // Resolved once per frame by the shared polling authority.
@@ -1120,7 +1151,7 @@
   // — the same technique cooking-system.js already uses for its Escape
   // handling. Escape itself is deliberately left untouched: every panel in
   // this game already closes correctly on Escape via its own handler.
-  window.addEventListener('keydown', (event) => {
+  window.addEventListener('keydown', (event) => { invalidateVisibility();
     if (!isActive()) return;
     // The baby-name popup is a true form, not a game tab strip: allow native Tab/Shift+Tab
     // to move among its text field and buttons. Its own focus trap keeps focus inside.
@@ -1158,10 +1189,10 @@
     const panel = activePanel();
     if (panel && isNavTarget(event.target) && belongsToNavigation(event.target, panel)) {
       adoptFocusedGroups(event.target, panel);
-      if (currentTarget && currentTarget !== event.target) currentTarget.classList.remove('ctrl-nav-focus');
+      if (currentTarget && currentTarget !== event.target) navClassRemove(currentTarget, 'ctrl-nav-focus');
       currentTarget = event.target;
       rememberFocusPath(currentTarget);
-      if (!currentTarget.classList.contains('ctrl-nav-focus')) currentTarget.classList.add('ctrl-nav-focus');
+      if (!currentTarget.classList.contains('ctrl-nav-focus')) navClassAdd(currentTarget, 'ctrl-nav-focus');
     }
   }, true);
 
@@ -1277,7 +1308,7 @@
   window.ControllerUI = {
     isActive,
     activePanel,
-    focusPanel(panel) {
+    focusPanel(panel) { invalidateVisibility();
       registerPanel(panel);
       reconcileStack();
       if (!stack.includes(panel)) return false;
@@ -1290,10 +1321,10 @@
       return true;
     }, // Modal owners can synchronously claim focus before staged controls become visible.
     focusedElement: () => currentTarget,
-    navigateVector: (x, y) => moveVectorOrAdjust(Number(x) || 0, Number(y) || 0), // Mobile/headless diagnostic seam for reproducing exact diagonal intent without a physical pad.
+    navigateVector: (x, y) => { invalidateVisibility(); return moveVectorOrAdjust(Number(x) || 0, Number(y) || 0); }, // Mobile/headless diagnostic seam for reproducing exact diagonal intent without a physical pad.
     // Test/debug seams — let headless verification drive navigation without
     // faking the full Gamepad API.
-    press(action) {
+    press(action) { invalidateVisibility();
       automaticEntryEnabled = true;
       reconcileStack();
       switch (action) {
@@ -1305,7 +1336,7 @@
         case 'tabNext': cycleTabs(1); break;
       }
     },
-    showSection(groupId, sectionId) {
+    showSection(groupId, sectionId) { invalidateVisibility();
       const panel = activePanel(); // Explicit page jumps support legacy map-placement actions without leaving controls on the overview.
       const group = document.getElementById(groupId); // Existing pause-pane scope retains normal Back behavior.
       if (!panel || !group || !panel.contains(group)) return false;

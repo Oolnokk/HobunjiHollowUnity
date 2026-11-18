@@ -119,7 +119,8 @@ assert.deepEqual(ordered('mpTasks', ['tasksSectionWanted', 'tasksSectionRumors',
 assert.deepEqual(ordered('mpSettings', ['settingsSection0', 'settingsSection7', 'settingsSectionAudio']), ['settingsSectionAudio', 'settingsSection7', 'settingsSection0']);
 assert.deepEqual(ordered('unknown', ['first', 'second']), ['first', 'second'], 'Unconfigured/dynamic pane orders remain untouched');
 
-const restoreSource = between(navSource, '  function restoreSubtabs(group) {', '  function subtabMemoryKey(group, panel) {'); // Exercise real section cleanup when a pane closes.
+const NAV_VISIBILITY_SHIM = 'function invalidateVisibility() {}\nfunction navClassAdd(node, name) { node.classList.add(name); }\nfunction navClassRemove(node, name) { node.classList.remove(name); }\n'; // Production helpers (visibility memo + class writers) that the sliced nav functions call.
+const restoreSource = NAV_VISIBILITY_SHIM + between(navSource, '  function restoreSubtabs(group) {', '  function subtabMemoryKey(group, panel) {'); // Exercise real section cleanup when a pane closes.
 const memorySource = between(navSource, '  function subtabMemoryKey(group, panel) {', '  function localSubtabs(panel) {'); // Real controller remembered-section selector and entry code.
 const navigation = vm.runInNewContext(`
   const subtabsByGroup = new Map(); // Live group state is discarded on closing a menu.
@@ -181,7 +182,7 @@ const stableControllerContext = vm.createContext({
   clearGroups() {},
   setFocus: node => { stablePageFocused = node.dataset.stableRole; },
 });
-vm.runInContext(stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
+vm.runInContext(NAV_VISIBILITY_SHIM + stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
 stableControllerContext.cycleStablePage(1);
 assert.equal(activeStableRole, 'mount', 'controller Next selects the Mounts page through its actual button');
 assert.equal(stablePageFocused, 'mount', 'focus returns to the newly rendered role-page button');
