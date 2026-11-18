@@ -53,6 +53,7 @@
   const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
   const MOUNT_COAST_DECEL_RATIO = 0.25; // Passive slowdown after wheat/combat acceleration, without weakening deliberate braking or collision stops.
   const MOUNT_COAST_SOFT_BAND_RATIO = 0.3; // Fade passive drag as excess speed approaches ordinary cruise, avoiding a hard-feeling final slowdown.
+  const MOUNT_TOWN_MAX_STEP_UP = 0.25; // Limits the carrier to the same reachable town stair/porch supports as an on-foot player; never snaps up to an overhead deck.
   const MOUNT_HOP_MAX_ROCK_RISE = 1.05; // Normal wilderness rocks can be ~0.75 world units tall; only modest finite covers are jumped.
   let wheatRemaining = WHEAT_MAX; // Spent by mounted dodge presses, restored over time in updateMountedMovement.
   let wheatRecoveryS = 0; // Single-chunk regeneration clock, not an additional stamina resource.
@@ -629,6 +630,11 @@
     if (!mount) return;
     deps.companionObjects.add(mount);
     mountRideEntity = mount;
+    const priorSurfaceOverride = mount.surfaceYOverride; // Preserves any authored dynamic height override outside town.
+    mount.surfaceYOverride = () => {
+      const townY = mountedTownSurfaceY(mount); // The creature mesh samples this on each pose update, before rider pinning.
+      return Number.isFinite(townY) ? townY : priorSurfaceOverride?.call?.(mount);
+    };
     resetMountRidingResource();
     whistleMount('sfx_whistle2.m4a');
     window.GroundObstacleAvoidance?.reset('mounted'); // A summoned animal starts with no steering history from a prior ride.
@@ -878,6 +884,41 @@
     }
   }
 
+  // Town's bridge and porch tops are *physical* floor heights for the mount,
+  // just as they already are for an on-foot player. Ordinary animals receive a
+  // temporary terrain/support lift only after the rider is pinned, which used
+  // to raise the mount without its rider (and could double the town offset).
+  // The creature renderer already accepts surfaceYOverride, so keep this
+  // calculation in the mount module instead of adding a second render offset.
+  function mountedTownSurfaceY(mount) {
+    const area = mount?.areaId || deps?.getCurrentArea?.();
+    const elevation = window.HobunjiWalkableElevation;
+    const terrain = window.HobunjiTownSubtleElevation;
+    mount._mountedTownSurfaceActive = false;
+    if (area !== 'town' || !elevation?.worldSurfaceTopAt || !terrain?.sampleHeightAt
+        || !Number.isFinite(mount.x) || !Number.isFinite(mount.y)) {
+      mount._mountedTownSurfaceArea = null; // Re-entering town must not inherit the last town deck height from another area.
+      return NaN;
+    }
+    const worldX = mount.x / deps.TILE, worldZ = mount.y / deps.TILE; // Current carrier feet, in the walkable-surface registry's tile units.
+    const col = Math.floor(worldX), row = Math.floor(worldZ); // Finds the same underlying tile that updateCreatureMesh uses.
+    const tile = mount.areaGrid?.[row]?.[col] || deps.getActiveGrid?.()?.[row]?.[col]; // Supports a newly relocated mount as well as an established town companion.
+    const tileY = Number(deps.tileSurfaceYInArea?.(tile, area));
+    if (!tile || !Number.isFinite(tileY)) return NaN;
+    const subtleY = Number(terrain.sampleHeightAt(worldX, worldZ)); // Continuous town terrain offset is already part of an on-foot actor's physical floor.
+    const groundY = tileY + (Number.isFinite(subtleY) ? subtleY : 0); // Actual ground under the next stair; never add terrain to an already absolute deck top.
+    const previousY = mount._mountedTownSurfaceArea === area && Number.isFinite(mount._mountedTownSurfaceY)
+      ? mount._mountedTownSurfaceY
+      : (Math.hypot(mount.x - deps.player.x, mount.y - deps.player.y) <= deps.TILE
+          && Number.isFinite(deps.player.physicalFeetY) ? deps.player.physicalFeetY : groundY); // Mounting beside a rider already on a deck begins at their real height.
+    const ceiling = Math.max(groundY, previousY) + MOUNT_TOWN_MAX_STEP_UP; // Prevents a bridge overhead from becoming a floor for a carrier walking beneath it.
+    const supportedY = Number(elevation.worldSurfaceTopAt(worldX, worldZ, groundY, area, ceiling)); // Shares the on-foot bridge/stair absolute-height authority.
+    mount._mountedTownSurfaceY = Number.isFinite(supportedY) ? supportedY : groundY;
+    mount._mountedTownSurfaceArea = area; // Invalidates the previous-feet cache on an area change.
+    mount._mountedTownSurfaceActive = true; // Animal render hook must not lift this already-physically-grounded carrier again.
+    return mount._mountedTownSurfaceY;
+  }
+
   // Steady mounted movement gives the mount ownership of the rendered world
   // transform. Both entities keep their existing logical coordinates, but the
   // rider uses the carrier's FINAL smoothed mesh position.
@@ -893,7 +934,18 @@
     }
 
     const riderSeatOffsetY = (Number(seatLift) || 0) - (Number(m.groundLift ?? m.halfHeight) || 0);
-    const targetY = carrierPosition.y + riderSeatOffsetY;
+    // Non-town animals still receive their terrain lift in the render hook,
+    // *after* this pin. Mirror that single visual delta on the rider there;
+    // in town the carrier already stands on the absolute deck top instead.
+    const laterAnimalLift = m._mountedTownSurfaceActive ? 0
+      : Number(window.HobunjiAnimalSubtleElevation?.totalLiftAt?.(carrierPosition.x, carrierPosition.z, m.areaId));
+    const visualLiftY = Number.isFinite(laterAnimalLift) ? laterAnimalLift : 0; // Preserve alignment when crossing farm hills without double-lifting the town bridge.
+    const targetY = carrierPosition.y + riderSeatOffsetY + visualLiftY;
+    if (m._mountedTownSurfaceActive && Number.isFinite(m._mountedTownSurfaceY)) {
+      deps.player.physicalFeetY = m._mountedTownSurfaceY; // Dismount, jumping, and reachable stair probes inherit the mount's actual floor.
+    }
+    mountRenderSync.visualLiftY = visualLiftY; // Pixel Probe can distinguish renderer-time animal lift from physical bridge footing.
+    mountRenderSync.surfaceGroundY = m._mountedTownSurfaceActive ? m._mountedTownSurfaceY : null; // Mobile ground diagnostic, no console required.
     mountRenderSync.active = true;
     mountRenderSync.beforeXzDriftTiles = Math.hypot(riderMesh.position.x - carrierPosition.x, riderMesh.position.z - carrierPosition.z);
     mountRenderSync.verticalCorrectionTiles = targetY - riderMesh.position.y;
