@@ -570,6 +570,8 @@
       wrapper.userData.npcKurrayaHolder = true;
       parent.add(wrapper);
       wrapper.add(holder);
+      holder.position.set(0, 0, 0); // The former station offset belongs to the new authored holder, not to its baked-tilt visual child.
+      holder.scale.setScalar(1); // The game previously applied 0.85 to the naked assembly; retaining it would double-scale the authored holder.
       walker.stationToolMesh = holder = wrapper; // Existing per-NPC sound-note relay keeps working.
     }
     const pose = instrument.npcNotePose(walker.stationKurrayaTwitch); // Same Neutral/Windup/Strike interpolation as the player.

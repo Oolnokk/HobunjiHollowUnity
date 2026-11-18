@@ -18,4 +18,6 @@ assert.match(held,/function updateKurrayaStation[\s\S]*?instrument\.npcNotePose\
 assert.match(held,/proceduralHandFreeRightPose = grips\(\)\?\.sampleFreeRightHand/,'NPC plucking hand interpolates the same authored free hand as the player');
 assert.match(handDriver,/function freeRightHandFor[\s\S]*?npcAuthored[\s\S]*?return npcAuthored/,'NPC-specific hand target takes effect at the real render-time hand driver');
 assert.match(held,/releaseKurrayaStation\(state\)/,'station cleanup relinquishes animation ownership');
+assert.match(held,/holder\.position\.set\(0, 0, 0\)[\s\S]*?holder\.scale\.setScalar\(1\)/,'NPC assembly must not double-offset or double-scale the authored holder');
+assert.match(host,/function sharedPerformanceTuningSignature[\s\S]*?function tick\(dt\)[\s\S]*?stopAmbientForNpc\(npcId\)/,'a root/scale settings change restarts stale NPC audio without a second timer');
 console.log('Shared festival key, NPC authored Kurraya hand/holder/body, cleanup and mobile diagnostics contract passed.');

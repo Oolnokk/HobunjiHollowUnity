@@ -125,6 +125,12 @@
     try { localStorage.setItem(LYRE_APP_SETTINGS_KEY, JSON.stringify({ ...loadLyreAppSettings(), ...patch })); }
     catch {}
   }
+  function sharedPerformanceTuningSignature() {
+    const saved = loadLyreAppSettings(); // One persisted Root note / Scale pair is authoritative for musicians and player.
+    const tonic = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : 48; // Same C3 default as the performance engine.
+    const scale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Pentatonic Minor'; // Single shared default.
+    return `${tonic}|${scale}`;
+  }
   const AUTO_PICK_PATTERNS = [
     ['direct', 'Single Note'],
     ['arp-forward-8', 'Forward Roll · eighths'],
@@ -1504,12 +1510,20 @@
     frame.src = MUSIC_MINIGAME_SRC;
   }
 
+  let lastSharedTuningSignature = sharedPerformanceTuningSignature(); // The existing one-second ambient scheduler watches in-game tuning changes without extra timers.
   let _tickAccum = 0;
   function tick(dt) {
     _tickAccum += dt;
     if (_tickAccum < AMBIENT_RECHECK_S) return;
     _tickAccum = 0;
     if (!deps) return;
+    const nextTuningSignature = sharedPerformanceTuningSignature(); // Do not restart NPC audio when unrelated Auto Pick preferences change.
+    if (nextTuningSignature !== lastSharedTuningSignature) {
+      lastSharedTuningSignature = nextTuningSignature;
+      for (const npcId of [...ambientFrames.keys()]) stopAmbientForNpc(npcId); // Hidden NPC iframes hold their original note set; relaunch them in the new key.
+      for (const [area, leader] of leaderByArea) if (leader.type === 'npc') leaderByArea.delete(area); // Never discard the player's own solo leader.
+      window.__farmLog?.(`[music] Shared player/NPC tuning changed to ${nextTuningSignature}; restarting ambient performers`, 'info');
+    }
     const performers = deps.listInstrumentPerformers();
     const performerById = new Map(performers.map(performer => [performer.npcId,performer])); // One linear lookup table replaces an O(N²) schedule scan when multiple hidden NPC frames exist.
     if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
@@ -1563,6 +1577,7 @@
     diagnostics: () => ({latestChange:'Independent instrument audio with NPC-tempo/chord transport follow, mobile drift diagnostics and exclusive action input.',
       controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
       jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
+      sharedTuning:sharedPerformanceTuningSignature(), // On-mobile diagnostics compare persisted key with each musician's actual audible state.
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,puzzleBeatClock,lastPuzzleInputTiming, // Mobile diagnostics show the actual physical note timing and audio transport.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
