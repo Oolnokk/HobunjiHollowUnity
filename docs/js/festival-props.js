@@ -51,7 +51,7 @@
           const tree=window.FoliageGenerator?.buildPottedBlossomTreeMesh?.(record.id || 'blossom-vase',swatch.color);
           if (tree) {
             tree.name='festival-blossom-sapling';
-            tree.position.y=0.735; // The stem begins INSIDE the authored vase (top lip at y≈0.8); not on the table surface.
+            tree.position.y=0.665; // Inside the vase at y=.63 (lip=.73, base=.53): its base is seated on the table top (y≈.52).
             tree.traverse?.(child=>{
               if (child.geometry) child.userData.festivalSharedFoliage=true; // Skip shared foliage-cache GPU disposal when this festival prop is removed.
             });
