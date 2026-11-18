@@ -151,7 +151,7 @@ assert.strictEqual(playerSmear.skeleton, player.portrait.skeleton, 'smear shares
 assert.equal(playerSmear.material[0].depthWrite, false, 'soft opacity does not occlude the live portrait');
 assert.equal(playerSmear.material[0].transparent, true);
 const shaders = { uniforms: {}, vertexShader: '#include <common>\n#include <skinning_vertex>',
-  fragmentShader: '#include <common>\n#include <dithering_fragment>' }; // Exercise the real r128 onBeforeCompile modification.
+  fragmentShader: '#include <common>\n#include <premultiplied_alpha_fragment>\n#include <dithering_fragment>' }; // Exercise the real r128 onBeforeCompile modification.
 playerSmear.material[0].onBeforeCompile(shaders, {});
 assert.match(shaders.vertexShader, /transformed\.xz -= uSmearDirection/);
 assert.match(shaders.fragmentShader, /gl_FragColor\.a \*= uSmearOpacity \* smoothstep/);
