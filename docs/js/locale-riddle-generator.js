@@ -49,6 +49,8 @@
   const FAMILIES = Object.freeze(['A','B','way','ground','side','place','eyes','door','tree','flow']); // Ten deterministic phonetic families.
   const VERSE_BANK = Object.freeze({
     routeAnchor:{
+      A:['Begin at {value}; the one stone known','Stand at {value}; a place alone'],
+      B:['Begin at {value}; your way starts here','Stand at {value}; the marker stands clear'],
       way:['Begin at {value}; let this be your way','Start at {value}; do not stray'],
       ground:['Begin at {value}; mark this starting ground','Stand at {value}; there your path is found'],
       side:['Begin at {value}; let its marking be your guide','Start at {value}; set all other marks aside'],
@@ -59,6 +61,8 @@
       flow:['Begin at {value}; then follow where to go','Start at {value}; the marked stone tells you so']
     },
     routeStep:{
+      A:['From there go {value}; let the way be known','Next go {value}; let that step be shown'],
+      B:['From there go {value}; the next sign is near','Next go {value}; the way becomes clear'],
       way:['From there, go {value}; follow that way','Next go {value}; do not stray'],
       ground:['From there, go {value}; reach the ground','Next go {value}; the route is found'],
       side:['From there, go {value}; let the heights be your guide','Next go {value}; keep to that side'],
@@ -368,7 +372,7 @@
   function descriptorKey(fact) { return fact.kind === 'landmark' ? fact.flavor || 'authoredLocale' : fact.kind; }
   function linesFor(fact, family) {
     const old = BANK[fact.kind]?.[family] || []; // Preserve legacy A/B descriptor choices.
-    const basic = old.length ? old : VERSE_BANK[fact.kind === 'zone' || fact.kind === 'blossom' || fact.kind === 'target' ? fact.kind : 'bearing']?.[family] || [];
+    const basic = old.length ? old : VERSE_BANK[['zone','blossom','target','routeAnchor','routeStep'].includes(fact.kind) ? fact.kind : 'bearing']?.[family] || [];
     const extra = LANDMARK_BANK[descriptorKey(fact)]?.[family] || [];
     if (fact.kind === 'water' && fact.waterType === 'open water' && family === 'flow') return basic; // Ponds and lakes need not flow.
     return extra.length ? [...extra,...extra,...basic] : basic;
