@@ -9,6 +9,11 @@ const WITNESS_DYES = Object.freeze([
  {id:'dye:CLOTH:bright_blue',name:'bright blue',hex:'#6666ff'},
  {id:'dye:CLOTH:bright_yellow',name:'bright yellow',hex:'#ffff66'}
 ]); // The actual authored CLOTH dyes, not invented hues; exactly one patterned marker is placed per generated zone.
+const WITNESS_MOTIFS = Object.freeze([
+ 'assets/patterns/motif_harlyao_glyph_entropy.png',
+ 'assets/patterns/motif_harlyao_glyph_ignorance.png',
+ 'assets/patterns/motif_harlyao_glyph_servitude.png'
+]); // Three existing ruin engraving motifs, deterministically shuffled per Tothal zone; never invent a pattern filename.
 function witnessDye(seed) {
  const choice=WITNESS_DYES[hash(seed+'|witness-ink')%WITNESS_DYES.length];
  const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
@@ -53,7 +58,7 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   const dye=witnessDye(key); // One unique dye-inscribed witness stone per actual zone and Tothal generation.
   const oldSite=sites[index];
   sites[index]={...oldSite,kind:'witnessStone',name:'the only '+dye.name+'-inscribed witness stone in '+zoneId,
-   dyeName:dye.name,dyeId:dye.id,ink:dye.hex,unique:true,source:'generated-year-round-scenery'};
+   dyeName:dye.name,dyeId:dye.id,ink:dye.hex,patternUrl:WITNESS_MOTIFS[hash(key+'|witness-motif')%WITNESS_MOTIFS.length],unique:true,source:'generated-year-round-scenery'};
  }
  cache.set(layout,{key,sites});return sites;
 }
@@ -83,13 +88,13 @@ function witnessStone(T,host,sites){
   rock.position.set(site.point.col+.5,elevation(site)+.47,site.point.row+.5);
   rock.rotation.y=site.yaw;
   rock.userData.wildernessLandmarkScenery=true;
-  rock.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,unique:true}; // Mobile debugger can confirm the rendered color against the actual riddle.
+  rock.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true}; // Mobile debugger can confirm the rendered color against the actual riddle.
   rock.raycast=()=>{}; // This permanent riddle marker is not a harvestable or combat target.
   host.add(rock);
   const surface=root.FurniturePatternSurfaces; // Use exactly the same engraved PNG/surface atlas stack as ruin walls.
   surface?.applyPart?.(rock,{patternSurfaces:[{
    slot:'sides',selector:'sides',mode:'engraving',scale:.9,opacity:.9,glowIntensity:.15,
-   pattern:{motifUrl:'assets/textures/decals/ruin_glyph_rune.png',motifScale:.75,tiling:false},
+   pattern:{motifUrl:site.patternUrl,motifScale:.75,tiling:false},
    palette:['#e6e0d1',site.ink],glowColor:site.ink,maxAtlasPx:256,tilePx:128
   }]});
   surface?.attachStoneSignal?.(rock,{face:'front',width:.45,height:.5,idleColor:site.ink});
