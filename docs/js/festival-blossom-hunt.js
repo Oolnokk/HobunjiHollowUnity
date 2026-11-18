@@ -293,6 +293,10 @@
       syncPickPrompt();
       return {ok:true,first,winner:firstFinder?.name};
     }catch(error){
+      if (first && !window.EquipmentPanel?.ownsFiveBlossomCrown?.(nowYear)) {
+        const released = window.WorldMetaStore?.releaseFiveBlossomsFinder?.(profile.worldId,nowYear,profile.characterId); // A staging failure must not block the next human finisher from becoming the actual first Finder.
+        if (!released) window.__farmLog?.('[blossom-hunt] Could not release unawarded first-Finder reservation','warn');
+      }
       lastStatus = 'Crowning failed: '+String(error?.message||error);window.__farmLog?.('[blossom-hunt] '+lastStatus,'error');
       mapDeps?.showToast?.(lastStatus,false);
       return {ok:false,message:lastStatus};
