@@ -34,7 +34,7 @@ const THREE = { Group: class extends Obj {}, Mesh: class extends Obj { construct
   created: { geometry: 0, material: 0 } };
 
 const TILE = 32;
-function makeWorld(config, { farRule = false, productionDefaults = false, useCanvas = false } = {}) {
+function makeWorld(config, { farRule = false, productionDefaults = false, useCanvas = false, failPantsCapture = false } = {}) {
   const legacyPolicy = { keepFull: 6, nearTiles: 5, farTiles: farRule ? 24 : 0, minSettledS: 12, perTick: 3, intervalMs: 1000 }; // Exercises unchanged backwards-compatible overrides in tests 1-7.
   if (!productionDefaults) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { ...legacyPolicy, ...(config?.game?.banditCorpseRetire || {}) } } };
   THREE.created.geometry = 0; THREE.created.material = 0;
@@ -53,7 +53,7 @@ function makeWorld(config, { farRule = false, productionDefaults = false, useCan
     BurningAfflictionVfx: { disposeEntity: c => flameEvents.push('dispose:' + c.id), syncEntity: (c, root) => flameEvents.push('sync:' + c.id + ':' + root.name) },
     CorpsePosedPantsSnapshot: { capture: (canvas, rig) => {
       pantsCaptures.push({ canvas, rig, attachedWhenCaptured: !!rig.group.parent });
-      return { ok: true, triangles: 392, segments: 14 };
+      return failPantsCapture ? { ok: false, reason: 'texture-pending' } : { ok: true, triangles: 392, segments: 14 };
     } },
   }, performance: { now: () => 0 } };
   vm.runInNewContext(moduleSource, sandbox);
@@ -290,34 +290,23 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.equal(w.mod.stats.posedPantsBaked, 1, 'mobile diagnostics count baked pants');
 }
 
-// 12. An unavailable final pants pose must not silently discard trousers.
-// The original corpse stays lootable, and the retry throttle prevents a busy loop.
+// 12. When the final pants canvas is unavailable, keep the actual rig and
+// throttle retries rather than silently flattening a trouserless corpse.
 {
-  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true, failPantsCapture: true });
   const body = w.corpse('not-ready-pants');
   body.avatarRef.frontCanvas = { width: 256, height: 256 };
   body.avatarRef.frontPlane = new Obj();
   body.avatarRef.legs = { pants: { ready: false } };
-  // This test's compositor stub deliberately denies an incomplete source.
-  w.mod.isRetirable(body, w.area);
-  const original = body.avatarRef;
-  const world = w.mod;
-  const previous = w.pantsCaptures.length;
-  // A missing capture API must defer rather than show the pants' spread pose.
-  const sandboxSource = moduleSource.replace(
-    "window.CorpsePosedPantsSnapshot?.capture?.(canvas, rig) || null",
-    "null"
-  );
-  assert(sandboxSource.includes("null : null;"), 'the deny-capture case is representable by the real optional hook');
-  // The first corpse preview can be generated but the painter's result is
-  // ignored for a failed capture; guard is validated directly through the
-  // canonical module source to avoid mocking death-state internals.
-  assert.match(moduleSource, /if \(rig\?\.legs\?\.pants && snapshot\?\.posedPants\?\.ok !== true\)/);
-  assert.match(moduleSource, /_corpsePantsRetryAfter/);
-  assert.match(moduleSource, /posedPantsDeferred/);
-  assert.equal(body.avatarRef, original);
-  assert.equal(w.pantsCaptures.length, previous);
-  assert.equal(world.config().minSettledS, 0);
+  const originalRig = body.avatarRef;
+  assert.equal(w.mod.tick(NOW), 0, 'failed pants bake does not retire an incomplete humanoid');
+  assert.equal(body.avatarRef, originalRig, 'the original fully rigged corpse remains visible');
+  assert.equal(w.disposed.length, 0, 'failed capture never destroys cloth textures');
+  assert.equal(w.mod.stats.posedPantsDeferred, 1, 'mobile diagnostics expose delayed baking');
+  assert.equal(w.pantsCaptures.length, 1);
+  assert.equal(w.mod.isRetirable(body, w.area), false, 'an unsuccessful cloth bake is throttled');
+  assert.equal(w.mod.tick(NOW + 200), 0);
+  assert.equal(w.pantsCaptures.length, 1, 'no expensive repeated capture before retry');
 }
 
 console.log('bandit corpse retirement: ok');
