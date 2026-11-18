@@ -72,6 +72,7 @@ assert.equal(Riddles.positionOf(generic).col, 2, 'generic fallback does not depe
 const genericPoem = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: layoutFor('cyan'), instance: layoutFor('cyan').localeInstances[0], targetName: 'the ancient obelisk', targetKind: 'target' });
 assert.equal(genericPoem.ok, true, 'a completely unrelated quest can reuse the composer');
 assert.match(genericPoem.text, /the ancient obelisk/);
+assert.ok(genericPoem.stanzas.length <= 2, 'nonfestival quests use the same concise stanza grouping');
 assert.doesNotMatch(genericPoem.text, /blossom|petals|flower|tree/i, 'unrelated quests do not inherit festival flavor text');
 
 let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0; // Test calendar and movement are controlled without real-time timers.
@@ -139,4 +140,13 @@ civilYear = 1158;
 hunt.update();
 assert.match(hunt.menuStatus().detail, /Northern Cliffs/, 'when a zone is not generated, the quest still names the zone to search');
 zones.set('map_northern_cliffs', missingZone);
+
+// The parser must not import a second unversioned terrain matcher after its versioned script has already installed.
+const temporarySource = fs.readFileSync(path.join(ROOT, 'docs/js/temporary-locales.js'), 'utf8');
+const writes = []; // Captures the actual browser parser-time loader output without a DOM.
+const loaderContext = { window: { LocaleTerrainPlacement: {} }, document: { currentScript: { src: 'https://example.test/js/temporary-locales.js' }, write: html => writes.push(html) }, URL };
+vm.runInNewContext(temporarySource, loaderContext);
+assert.equal(writes.join('').includes('locale-terrain-placement.js'), false, 'existing terrain matcher is never overwritten by an unversioned duplicate');
+assert.ok(writes.join('').includes('cloud-forest-runtime.js'), 'other parser-time locale dependencies still load');
+
 console.log('Five Blossoms hunt: ' + poems + ' seeded riddles; five stamped locales; saved progress, reward lockout and expiry checked.');
