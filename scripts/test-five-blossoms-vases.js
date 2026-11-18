@@ -30,7 +30,7 @@ assert.equal(vase.parts[0].kind,'cup');
 assert.equal(vase.parts[0].materialRole,'pottery');
 
 const requested=[]; // The specific changed vase JSON gets a fresh query, unlike unchanged furniture.
-const authoredContext={window:{},fetch:url=>{requested.push(url);return Promise.resolve({ok:false});}};
+const authoredContext={window:{},THREE:{Matrix4:class {},Vector3:class {},Quaternion:class {}},fetch:url=>{requested.push(url);return Promise.resolve({ok:false});}}; // Loader allocates reusable transform scratch objects at module initialization.
 vm.runInNewContext(fs.readFileSync('docs/js/authored-furniture-runtime.js','utf8'),authoredContext);
 authoredContext.window.AuthoredFurniture.load('festivalBlossoms');
 authoredContext.window.AuthoredFurniture.load('tableSmall');
