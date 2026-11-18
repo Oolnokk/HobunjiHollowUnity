@@ -69,6 +69,7 @@ const world = {
   CharacterMetaSave: { update() {} },
 };
 const context = vm.createContext({ window:world, performance:{now:() => now}, document, Date });
+vm.runInContext(fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/adventuring-tools.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8'), context);
 const torch = world.AdventuringTools;
@@ -117,6 +118,19 @@ assert.equal(belt.parent, player, 'player rebuild moves the single cached belt r
 assert.equal(formerPlayer.children.includes(belt), false, 'old character scene no longer owns the belt mesh');
 assert.equal(belt.children[1].visible, true, 'respawn/reparent does not reset an unexpired flame');
 assert.equal(torch.debug.belt.attachedToPlayer, true, 'status reports actual new player attachment');
+world.HOBUNJI_ATTACHMENT_RIG_PROFILES = { characters:{
+  'mao-ao::male': { anchors:{ beltStow:{
+    position:{x:-.31,y:.44,z:.15}, rotationDeg:{x:0,y:0,z:24}, scale:{x:1.5,y:1.5,z:1.5},
+  } } },
+} }; // The saved Rig Coordinates species profile must override the generic pants-spline placement.
+now = 32000;
+sync({timestamp:now});
+assert.equal(Number(belt.position.x.toFixed(2)), -.31, 'authored left/right hip placement wins');
+assert.equal(Number(belt.position.y.toFixed(2)), .44);
+assert.equal(Number(belt.scale.x.toFixed(2)), 1.5, 'authored item scale affects the actual belt mesh');
+assert(Math.abs(belt.rotation.z - (24 * Math.PI / 180)) < 1e-6, 'authored 3D rotation is used in gameplay');
+assert.equal(world.AdventuringTorchBelt.debug.placement, 'authored species/gender belt-stow rig');
+
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
 assert.match(manifest, /js\/adventuring-torch-belt\.js/, 'gameplay parser loads this presenter before game.js');
 console.log('torch belt: real state, colored PNG, visible flame, 30s expiry, draw, avatar-rebuild and mobile debug PASS');
