@@ -76,4 +76,30 @@ animal.master = { id: 'different-owner' };
 animal.currentFrameUrl = 'data:image/png;base64,enlarged-head';
 sandbox.animateCreatureForTest(animal, 0.2, false);
 assert.equal(swaps.at(-1).url, 'adult-idle.png', 'another owner cannot suppress this client\'s normal creature rendering');
-console.log('PASS shoulder texture ownership prevents idle/run/blink overwrites and restores ordinary animation afterward');
+// The wilderness sleep presenter also owns an alternative eye-closed texture pass; that must defer to the perch.
+const sleepSource = fs.readFileSync('docs/js/animal-sleep-presentation.js', 'utf8'); // Shipped pre-render sleeper pass.
+const sleepStart = sleepSource.indexOf('  function applyWildernessSleepers() {');
+const sleepEnd = sleepSource.indexOf('\n  function prepareRenderFrame(', sleepStart);
+assert(sleepStart >= 0 && sleepEnd > sleepStart, 'the live wilderness sleeper pass is extractable');
+const sleeper = { ...animal, stableRole: 'shoulderPet', master: player, _animalSleeping: true,
+  avatarRef: { group: { parent: {}, visible: true } } }; // Perch is active even if a stale sleep flag remains on the animal.
+const sleepFrames = []; // True means the sleep presenter would overwrite the grown shoulder portrait.
+const sleepSandbox = { window: windowStub, sleeper, sleepFrames, Symbol };
+vm.createContext(sleepSandbox);
+vm.runInContext(`
+  let liveSleepFrames = 0;
+  const SLEEP_SCALE_Y = 0.5;
+  function wildernessSets() { return [[sleeper]]; }
+  function setLiveFrame(_animal, _group, _kind, _genotype, _def, sleeping) { sleepFrames.push(sleeping); }
+  function forceHeadDown() { throw new Error('A worn pet cannot inherit the ground-sleeper neck pose'); }
+  function applyTemporaryScale() { return true; }
+  ${sleepSource.slice(sleepStart, sleepEnd)}
+  globalThis.updateSleeperForTest = applyWildernessSleepers;
+`, sleepSandbox, { filename: 'animal-sleep-presentation.js:applyWildernessSleepers' });
+sleepSandbox.updateSleeperForTest();
+assert.deepEqual(sleepFrames, [false], 'sleep renderer releases rather than overwrites an actively perched portrait');
+sleeper.stableRole = 'companion';
+sleepSandbox.updateSleeperForTest();
+assert.equal(sleepFrames.at(-1), true, 'sleep textures resume once the pet leaves its shoulder perch');
+
+console.log('PASS shoulder texture ownership blocks ordinary animation and sleep writers, then releases both on unperch');
