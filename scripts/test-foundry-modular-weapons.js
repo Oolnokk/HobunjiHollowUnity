@@ -22,16 +22,16 @@ assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
 assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
-// Preserve the imported source lines while allowing the explicitly reauthored staff tang tips.
-assert.deepEqual(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
-  plain(blowgunShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
-  'Torch-Staff retains all donor mount types and starts');
-assert.deepEqual(plain(torchShaft.mounts.slice(0, 2)), plain(blowgunShaft.mounts.slice(0, 2)),
-  'Both inherited eye mounts retain their complete donor geometry');
-assert.deepEqual(plain(torchShaft.mounts.slice(2).map(m => m.end)), [
-  { x: 221.7599119115615, y: 941.6863824754939 },
-  { x: 158.12411992422858, y: 303.16373428761597 },
-], 'Independently calibrated Torch-Staff tang tips survive authored import');
+// The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
+const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
+assert(torchShaft.shaftArtTransform.enabled === true && torchStretch > 1, 'Torch-Staff haft is lengthened');
+const stretchY = y => 602 + torchStretch * (y - 602);
+const stretched = mounts => plain(mounts.map(m => ({ type: m.type, start: { x: m.start.x, y: stretchY(m.start.y) } })));
+const near = (a, b, msg) => { assert.equal(a.length, b.length, msg); a.forEach((m, i) => { assert.equal(m.type, b[i].type, msg); assert(Math.abs(m.start.x - b[i].start.x) < 1e-6 && Math.abs(m.start.y - b[i].start.y) < 1e-6, msg); }); };
+near(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts),
+  'Torch-Staff retains all donor mount types and (stretched) starts');
+near(plain(torchShaft.mounts.slice(0, 2).map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts.slice(0, 2)),
+  'Both inherited eye mounts retain their donor geometry, stretched with the haft');
 assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
 assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
@@ -47,7 +47,7 @@ api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
 const originalMount = blowgunShaft.mounts[0];
 assert(Math.abs(shiftedMounts[0].start.x - ((originalMount.start.x - 225) * 1.5 + 250)) < 1e-6);
-assert(Math.abs(shiftedMounts[0].start.y - ((originalMount.start.y - 602) * 0.75 + 562)) < 1e-6);
+assert(Math.abs(shiftedMounts[0].start.y - ((stretchY(originalMount.start.y) - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
 assert.equal(api.matchingMounts(api.getConfig().shafts.hachutuTorchStaff, api.getConfig().heads.warhammer).length, 2,
   'both sleeve mounts remain usable after shaft duplication transform');
 const extraCopy = plain(api.getConfig());

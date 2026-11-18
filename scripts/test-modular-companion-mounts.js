@@ -58,15 +58,19 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       // whose tangs are independently offset by the artist rather than center-snapped.
       if (shaftKey === 'hachutuTorchStaff') {
         const donor = committed.shafts.bshuakauitl; // Donor validates copied starts while leaving authored staff tang tips independent.
-        assert.deepEqual(plain(shaft.mounts.slice(0, 2)), plain(donor.mounts.slice(0, 2)),
-          'Torch-Staff retains both source eye mounts');
-        assert.deepEqual(plain(shaft.mounts.slice(2).map(m => ({ type: m.type, start: m.start }))),
-          plain(donor.mounts.slice(2).map(m => ({ type: m.type, start: m.start }))),
-          'Torch-Staff retains both source tang starts');
-        assert.deepEqual(plain(shaft.mounts.slice(2).map(m => m.end)), [
-          { x: 221.7599119115615, y: 941.6863824754939 },
-          { x: 158.12411992422858, y: 303.16373428761597 },
-        ], 'Reauthored staff tang tips are preserved');
+        const k = shaft.shaftArtTransform.scaleY, sy = y => 602 + k * (y - 602); // The staff haft is a deliberately lengthened donor copy.
+        assert(shaft.shaftArtTransform.enabled === true && k > 1, 'Torch-Staff haft is lengthened');
+        const close = (a, b) => Math.abs(a - b) < 1e-6;
+        donor.mounts.forEach((m, i) => {
+          const t = shaft.mounts[i];
+          assert.equal(t.type, m.type, 'Torch-Staff retains donor mount types');
+          assert(close(t.start.x, m.start.x) && close(t.start.y, sy(m.start.y)), 'Torch-Staff retains donor mount starts, stretched with the haft');
+          if (i < 2) assert(close(t.end.x, m.end.x) && close(t.end.y, sy(m.end.y)), 'Torch-Staff retains both source eye mounts');
+        });
+        [[941.6863824754939, 221.7599119115615], [303.16373428761597, 158.12411992422858]].forEach(([y, x], i) => {
+          const e = shaft.mounts[2 + i].end;
+          assert(close(e.x, x) && close(e.y, sy(y)), 'Reauthored staff tang tips are preserved (stretched)');
+        });
       }
       continue;
     }

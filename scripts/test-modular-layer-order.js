@@ -147,7 +147,8 @@ async function run() {
   assert.notDeepEqual(actualTransforms[0], initialHeadTransforms[0],
     'the rig transform is a separate parent, not an additional child-primitive adjustment');
   const globalFrameTransformCount = transformed.operations.filter(op => op.startsWith('scale:') || op.startsWith('translate:')).length;
-  assert.equal(globalFrameTransformCount, 2,
+  const staffArt = api.getConfig().shafts.hachutuTorchStaff.shaftArtTransform; // A lengthened haft adds the shaft-only art translate/scale/translate.
+  assert.equal(globalFrameTransformCount, 2 + (staffArt?.enabled ? 3 : 0),
     'shaft rendering only uses output-frame scale/translation, with no duplicate-rig transform on the shaft PNG');
   assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
@@ -209,7 +210,7 @@ async function run() {
   api.replace(areaBase);
   const baseTwoHead=await api.compose('hachutuTorchStaff','warhammer');
   const areaDraft=JSON.parse(JSON.stringify(api.getConfig()));
-  const topArea={id:'topCap',label:'Top cap',box:{x0:130,y0:185,x1:280,y1:348},
+  const topArea={id:'topCap',label:'Top cap',box:{x0:130,y0:105,x1:280,y1:300},
     transform:{scaleX:1.4,scaleY:.7,x:63,y:-36}};
   areaDraft.shafts.hachutuTorchStaff.rigRegions=[topArea];
   api.replace(areaDraft);
@@ -255,14 +256,14 @@ async function run() {
   const partialRecipeDraft=JSON.parse(JSON.stringify(api.getConfig()));
   partialRecipeDraft.shafts.hachutuTorchStaff.rigRegions=[{
     id:'partialStep',label:'Not recipe center',
-    box:{x0:175,y0:276,x1:205,y1:310},
+    box:{x0:175,y0:178,x1:205,y1:223},
     transform:{scaleX:2,scaleY:.5,x:120,y:30}
   }];
   api.replace(partialRecipeDraft);
   const partialShaft=api.getConfig().shafts.hachutuTorchStaff;
   const partialStrokes=partialShaft.overrides.dagger.bridges.strokes;
   const firstRecipeExpanded=api.expandOps([partialStrokes[0]]);
-  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=276 && op.y<=310),
+  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=178 && op.y<=223),
     'the source recipe really has an internal junction inside this small region');
   const unselectedRecipeOps=api.rigBridgeOperations(partialShaft,partialStrokes);
   assert(unselectedRecipeOps.every(op=>op._rigRegionId !== 'partialStep'),
