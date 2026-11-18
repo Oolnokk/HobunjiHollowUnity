@@ -124,8 +124,8 @@ assert.equal(liveCompanion._blinkAppliedShut, null, 'repaint invalidation clears
 assert(!colorPoolsSource.includes('actor._genotypeLogged = false;'), 'Color Pools must never replace the live companion genotype log Set with a boolean');
 
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
-assert(renderer.includes("applyColorPoolPaint(baseSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
-assert(renderer.includes('fullBaseRecolor ? null : mask'), 'ordinary base paint is clipped by the authored genetic base mask');
+assert(renderer.includes("applyColorPoolPaint(basePaintSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
+assert(renderer.includes('fullBaseRecolor ? null : basePaintMask'), 'ordinary base paint is clipped by the authored genetic base mask');
 assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
 assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass compositor'), 'the real two-slot weaving compositor is public for Color Pools/NPC reuse');
