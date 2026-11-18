@@ -200,9 +200,16 @@ farBird._tzFlight.roost=null;farBird._tzFlight.fallbackFoe=player;
 assert(w.TzatzulFlightRuntime.__test.returnHome(farBird),'a missing roost record starts combat circling immediately');
 assert.equal(farBird._tzFlight.phase,'orbit','null perch cannot leave the old swoop state running with no segment');
 assert(farBird._tzFlight.segment,'no-perch orbit still owns an ordinary flight support');
-farBird._tzFlight.roost=recoveredPoint;assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
-for(let i=0;i<80&&farBird._tzFlight.phase==='return';i++)w.TzatzulFlightRuntime.update(.1);
-assert.equal(farBird._tzFlight.phase,'perched','recovering the physical perch ends the missing-roost fallback');
+farBird._tzFlight.roost=recoveredPoint;
+let landedOnRealRoost=false; // Arrival must use the real point even if the healthy mother immediately starts another hunt.
+supports.attach=function(actor,point,t) {
+  if(actor===farBird&&point.dimension===0)landedOnRealRoost=true;
+  return originalAttach(actor,point,t);
+};
+assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
+for(let i=0;i<80&&!landedOnRealRoost;i++)w.TzatzulFlightRuntime.update(.1);
+assert(landedOnRealRoost,'recovering a physical perch safely ends the missing-roost fallback');
+supports.attach=originalAttach;
 const blockedMother={x:320,y:128,branchSurfaceY:5,onPerch:{dimension:1},health:100,areaId:zone,
   _tzNestMother:true,def:{modelWidth:1.3},_tzFlight:{identity:{id:'blocked-mother'},roost:null,
     phase:'return',segment:null,fallbackFoe:player,orbitDirection:1,orbitLegs:0}};
