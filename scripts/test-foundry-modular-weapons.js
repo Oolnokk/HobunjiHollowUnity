@@ -25,8 +25,9 @@ assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
 // The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
 const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
 assert(torchShaft.shaftArtTransform.enabled === true && torchStretch > 1, 'Torch-Staff haft is lengthened');
-const stretchY = y => 602 + torchStretch * (y - 602);
-const stretched = mounts => plain(mounts.map(m => ({ type: m.type, start: { x: m.start.x, y: stretchY(m.start.y) } })));
+const BOTTOM_LIFT = -90; // Bottom-end mounts are raised so their heads clear the lower branch cluster.
+const stretchY = (y, lift = 0) => 602 + torchStretch * (y - 602) + (y > 602 ? lift : 0);
+const stretched = mounts => plain(mounts.map(m => ({ type: m.type, start: { x: m.start.x, y: stretchY(m.start.y, BOTTOM_LIFT) } })));
 const near = (a, b, msg) => { assert.equal(a.length, b.length, msg); a.forEach((m, i) => { assert.equal(m.type, b[i].type, msg); assert(Math.abs(m.start.x - b[i].start.x) < 1e-6 && Math.abs(m.start.y - b[i].start.y) < 1e-6, msg); }); };
 near(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))), stretched(blowgunShaft.mounts),
   'Torch-Staff retains all donor mount types and (stretched) starts');
@@ -37,17 +38,15 @@ assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunSh
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
 const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
-assert.deepEqual(staffCompatible, originalCompatible.filter(key => key !== 'pick-shovel-pick'),
-  'Torch-Staff retains the donor head choices except its authored pick-shovel-pick exclusion');
-assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), true,
-  'The committed Torch-Staff override intentionally excludes pick-shovel-pick');
+assert.deepEqual(staffCompatible, originalCompatible, 'Torch-Staff mirrors every donor B\'shuakauitl head choice');
+assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), false, 'Torch-Staff copies the donor pick-shovel-pick pairing');
 const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
 copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
 const originalMount = blowgunShaft.mounts[0];
 assert(Math.abs(shiftedMounts[0].start.x - ((originalMount.start.x - 225) * 1.5 + 250)) < 1e-6);
-assert(Math.abs(shiftedMounts[0].start.y - ((stretchY(originalMount.start.y) - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
+assert(Math.abs(shiftedMounts[0].start.y - ((stretchY(originalMount.start.y, BOTTOM_LIFT) - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
 assert.equal(api.matchingMounts(api.getConfig().shafts.hachutuTorchStaff, api.getConfig().heads.warhammer).length, 2,
   'both sleeve mounts remain usable after shaft duplication transform');
 const extraCopy = plain(api.getConfig());
