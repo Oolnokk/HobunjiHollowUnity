@@ -430,6 +430,12 @@
       button.type = 'button'; button.className = 'item-category-control ' + className;
       button.setAttribute('aria-label', accessibleLabel);
       button.innerHTML = '<span class="item-category-desktop-label">' + desktopLabel + '</span><span class="item-category-mobile-arrow" aria-hidden="true">' + mobileArrow + '</span>';
+      button.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'mouse' || event.button !== 2) return;
+        event.preventDefault(); event.stopPropagation();
+        _jumpItemCategory(1); // Right-click advances even when the pointer is directly over a category prompt.
+      });
+      button.addEventListener('contextmenu', event => event.preventDefault()); // The desktop shortcut must not open a browser menu over its own prompt.
       button.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); _jumpItemCategory(direction); });
       controls.appendChild(button);
     }
