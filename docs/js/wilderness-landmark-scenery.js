@@ -3,23 +3,92 @@
 'use strict';
 const PILLARS=['ruinPillarBroken','ruinPillarStump','ruinRubblePile']; // Existing Debris-ifier-authored masonry, never substitute intact procedural pillars.
 const WITNESS_DYES = Object.freeze([
- {id:'dye:CLOTH:bright_violet',name:'bright violet',hex:'#cc66ff'},
- {id:'dye:CLOTH:bright_green_blue',name:'bright turquoise',hex:'#66ffdc'},
- {id:'dye:CLOTH:bright_red',name:'bright red',hex:'#ff6666'},
- {id:'dye:CLOTH:bright_blue',name:'bright blue',hex:'#6666ff'},
- {id:'dye:CLOTH:bright_yellow',name:'bright yellow',hex:'#ffff66'}
-]); // The actual authored CLOTH dyes, not invented hues; exactly one patterned marker is placed per generated zone.
+ {
+  "id": "dye:CLOTH:bright_red",
+  "name": "bright red",
+  "hex": "#ff6666"
+ },
+ {
+  "id": "dye:CLOTH:bright_red_orange",
+  "name": "bright red-orange",
+  "hex": "#ff8c66"
+ },
+ {
+  "id": "dye:CLOTH:bright_orange",
+  "name": "bright orange",
+  "hex": "#ffb366"
+ },
+ {
+  "id": "dye:CLOTH:bright_yellow_orange",
+  "name": "bright yellow-orange",
+  "hex": "#ffd966"
+ },
+ {
+  "id": "dye:CLOTH:bright_yellow",
+  "name": "bright yellow",
+  "hex": "#ffff66"
+ },
+ {
+  "id": "dye:CLOTH:bright_yellow_green",
+  "name": "bright yellow-green",
+  "hex": "#b3ff66"
+ },
+ {
+  "id": "dye:CLOTH:bright_green",
+  "name": "bright green",
+  "hex": "#66ff66"
+ },
+ {
+  "id": "dye:CLOTH:bright_green_blue",
+  "name": "bright green-blue",
+  "hex": "#66ffff"
+ },
+ {
+  "id": "dye:CLOTH:bright_blue",
+  "name": "bright blue",
+  "hex": "#66ccff"
+ },
+ {
+  "id": "dye:CLOTH:bright_blue_indigo",
+  "name": "bright blue-indigo",
+  "hex": "#8c66ff"
+ },
+ {
+  "id": "dye:CLOTH:bright_indigo",
+  "name": "bright indigo",
+  "hex": "#b366ff"
+ },
+ {
+  "id": "dye:CLOTH:bright_indigo_violet",
+  "name": "bright indigo-violet",
+  "hex": "#d966ff"
+ },
+ {
+  "id": "dye:CLOTH:bright_violet",
+  "name": "bright violet",
+  "hex": "#ff66ff"
+ }
+]); // Thirteen real bright cloth dye swatches; each can occur at most once per zone.
 const WITNESS_MOTIFS = Object.freeze([
  'assets/patterns/motif_harlyao_glyph_entropy.png',
  'assets/patterns/motif_harlyao_glyph_ignorance.png',
  'assets/patterns/motif_harlyao_glyph_servitude.png'
 ]); // Three existing ruin engraving motifs, deterministically shuffled per Tothal zone; never invent a pattern filename.
-function witnessDye(seed) {
- const choice=WITNESS_DYES[hash(seed+'|witness-ink')%WITNESS_DYES.length];
- const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
- const match=catalog.find?.(entry=>entry.id===choice.id);
- return {...choice,name:typeof match?.label==='string'?match.label.toLowerCase():choice.name,
-  hex:/^#[0-9a-f]{6}$/i.test(match?.hex||'')?match.hex:choice.hex}; // Spoken color follows the exact item catalog's current dye label and pixel swatch.
+function witnessDyes(seed) {
+ const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []; // The authored in-game dye catalog is the color/name authority.
+ const dyes=WITNESS_DYES.map(choice=>{
+  const match=catalog.find?.(entry=>entry.id===choice.id);
+  return {...choice,name:typeof match?.label==='string'?match.label.toLowerCase():choice.name,
+   hex:/^#[0-9a-f]{6}$/i.test(match?.hex||'')?match.hex:choice.hex};
+ }); // Spoken dye and render swatch agree, including when the runtime catalog differs.
+ const random=rng(hash(seed+'|distinct-markings'));
+ for(let i=dyes.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[dyes[i],dyes[j]]=[dyes[j],dyes[i]];}
+ const seen=new Set(); // Two differently named dyes must not share a rendered swatch within the same zone.
+ return dyes.filter(dye=>{
+  const color=dye.hex.toLowerCase();
+  if(seen.has(color))return false;
+  seen.add(color);return true;
+ }); // Reuse is allowed across zones, never between marked objects in one zone.
 }
 const cache=new WeakMap(); // Folded zone layout + world-cycle identity -> stable physical landmark positions.
 let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null,renderedLayout=null,renderedIdentity=''; // Used by update() to invalidate the physical marker when either the layout or the Tothal generation changes.
@@ -54,12 +123,29 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   sites.push({id:zoneId+':'+sites.length,kind,name,point:{col,row},yaw:next()*Math.PI*2,size:.75+next()*.5,source:'generated-year-round-scenery'});
  }
  if(sites.length){
-  const markerIndex=sites.findIndex(site=>site.kind==='stoneCairn'); // Reuse an already validated, separated grass landmark instead of reserving another wilderness tile.
-  const index=markerIndex>=0?markerIndex:0;
-  const dye=witnessDye(key); // One unique dye-inscribed witness stone per actual zone and Tothal generation.
-  const oldSite=sites[index];
-  sites[index]={...oldSite,kind:'witnessStone',name:'the only '+dye.name+'-inscribed witness stone in '+zoneId,
-   dyeName:dye.name,dyeId:dye.id,ink:dye.hex,patternUrl:WITNESS_MOTIFS[hash(key+'|witness-motif')%WITNESS_MOTIFS.length],unique:true,source:'generated-year-round-scenery'};
+  if(!sites.some(site=>site.kind==='brokenPillar')&&sites.length>1){
+   const replacement=sites.find(site=>site.kind==='deadTree')||sites[1];
+   replacement.kind='brokenPillar';replacement.name='a broken stone pillar'; // Every substantial zone has a possible painted pillar.
+  }
+  const dyes=witnessDyes(key);
+  let firstIndex=sites.findIndex(site=>site.kind==='stoneCairn'); // Keep a masonry pillar available even in rare zones without any cairns.
+  if(firstIndex<0)firstIndex=sites.findIndex(site=>site.kind==='deadTree');
+  if(firstIndex<0)firstIndex=sites.length>1?1:0; // With several pillars, sacrifice only one for the unique standing-stone start.
+  const marked=(index,dye,starting=false)=>{
+   const original=sites[index],pillar=original.kind==='brokenPillar';
+   const kind=starting?'witnessStone':pillar?'brokenPillar':'markedBoulder';
+   const object=starting?'standing stone':pillar?'broken pillar':'boulder';
+   sites[index]={...original,kind,name:'the '+dye.name+'-marked '+object,
+    dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
+    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length],
+    unique:true,marked:true,source:'generated-year-round-scenery'}; // Color remains unambiguous among all marked objects in this zone.
+  };
+  marked(firstIndex,dyes[0],true); // Exactly one quest start, though many permanent surfaces have distinctive markings.
+  const candidates=sites.map((site,index)=>({site,index})).filter(({site,index})=>index!==firstIndex
+   &&(site.kind==='brokenPillar'||site.kind==='stoneCairn'));
+  candidates.sort((a,b)=>Number(b.site.kind==='brokenPillar')-Number(a.site.kind==='brokenPillar')
+   ||hash(key+'|'+a.site.id)-hash(key+'|'+b.site.id)); // Prioritize immovable masonry, then convert select cairns to marked boulders.
+  for(let i=0;i<Math.min(dyes.length-1,candidates.length);i++)marked(candidates[i].index,dyes[i+1]);
  }
  cache.set(layout,{key,sites});return sites;
 }
@@ -91,29 +177,30 @@ function cairns(T,host,sites){
  mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};
  mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
 }
+function engrave(mesh,site,stone=false) {
+ const surface=root.FurniturePatternSurfaces; // Reuse ruin surface projection and its cached GPU atlas.
+ mesh.userData.ownsWildernessWitnessBuffers=true; // Cleanup owns just the marker's decal buffers, not the original geometry.
+ mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true};
+ surface?.applyPart?.(mesh,{patternSurfaces:[{
+  slot:'sides',selector:'sides',mode:'engraving',scale:.9,opacity:.9,glowIntensity:.15,
+  pattern:{motifUrl:site.patternUrl,motifScale:.75,tiling:false},
+  palette:['#e6e0d1',site.ink],glowColor:site.ink,maxAtlasPx:256,tilePx:128
+ }]});
+ const rune=surface?.attachStoneSignal?.(mesh,{face:'front',width:.45,height:.5,idleColor:site.ink});
+ if(stone&&rune?.glyph?.position)rune.glyph.position.z=.57; // Natural irregular rock requires clearance beyond its facets.
+}
 function witnessStone(T,host,sites){
- for(const site of sites.filter(s=>s.kind==='witnessStone')){
-  const art=root.OreRockTextures?.smallStoneArt?.(T); // Match main's latest natural rubble/stone geometry and authored PNG, not a feature-specific rectangular placeholder.
-  if(!art){error='OreRockTextures.smallStoneArt unavailable for witness stone';continue;}
-  const rock=new T.Mesh(art.geometry,art.material); // Share the very same quarry PNG material and carved mesh as rubble/cairns; only the engraving child is instance-owned.
-  rock.name='wilderness-dye-inscribed-witness-stone'; // A single unmistakable standing rock, not one motif applied to a thousand identical boulders.
-  rock.position.set(site.point.col+.5,elevation(site)+.52,site.point.row+.5); // Shared loose-stone art is approximately one tile tall; lower face intersects the ground.
+ for(const site of sites.filter(s=>s.kind==='witnessStone'||s.kind==='markedBoulder')){
+  const art=root.OreRockTextures?.smallStoneArt?.(T); // Use the same permanent quarry PNG mesh as wilderness rubble.
+  if(!art){error='OreRockTextures.smallStoneArt unavailable for patterned stone';continue;}
+  const rock=new T.Mesh(art.geometry,art.material);
+  rock.name=site.kind==='witnessStone'?'wilderness-dye-inscribed-witness-stone':'wilderness-dye-inscribed-boulder';
+  rock.position.set(site.point.col+.5,elevation(site)+.52,site.point.row+.5);
   rock.rotation.y=site.yaw;
   rock.userData.wildernessLandmarkScenery=true;
   rock.userData.terrainJigsawIgnore=true;
-  rock.userData.ownsWildernessWitnessBuffers=true; // Separates this scene-local engraved rock from cached shared foliage and furniture geometry.
-  rock.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true}; // Mobile debugger can confirm the rendered color against the actual riddle.
-  rock.raycast=()=>{}; // This permanent riddle marker is not a harvestable or combat target.
-  host.add(rock);
-  const surface=root.FurniturePatternSurfaces; // Use exactly the same engraved PNG/surface atlas stack as ruin walls.
-  surface?.applyPart?.(rock,{patternSurfaces:[{
-   slot:'sides',selector:'sides',mode:'engraving',scale:.9,opacity:.9,glowIntensity:.15,
-   pattern:{motifUrl:site.patternUrl,motifScale:.75,tiling:false},
-   palette:['#e6e0d1',site.ink],glowColor:site.ink,maxAtlasPx:256,tilePx:128
-  }]});
-  const rune=surface?.attachStoneSignal?.(rock,{face:'front',width:.45,height:.5,idleColor:site.ink});
-  if(rune?.glyph?.position)rune.glyph.position.z=.57; // The irregular stone has no BoxGeometry depth parameter; move the generic rune outside its front facets.
-  // The rune PNG is also the immediate dye-coloured fallback while the ruin-style engraving atlas loads asynchronously.
+  rock.raycast=()=>{}; // This permanent marking is unbreakable and does not steal player input.
+  host.add(rock);engrave(rock,site,true);
  }
 }
 function deadwood(host,sites){
@@ -131,18 +218,25 @@ async function debris(host,sites,ticket,zoneId){
   const pieces=await Promise.all(PILLARS.map(key=>author.load(key)));
   if(ticket!==serial||host.parent!==scene||zoneId!==area)return;
   for(const site of sites.filter(s=>s.kind==='brokenPillar')){
-   const built=author.buildGroup(pieces[hash(site.id)%PILLARS.length]);if(!built)continue;
+   const variant=site.marked?hash(site.id)%2:hash(site.id)%PILLARS.length; // Marked pillars must not resolve to a loose rubble pile.
+   const built=author.buildGroup(pieces[variant]);if(!built)continue;
    built.name='wilderness-broken-stone-pillar';built.position.set(site.point.col+.5,elevation(site),site.point.row+.5);
    built.rotation.y=site.yaw;built.scale.multiplyScalar(site.size);built.userData.wildernessLandmarkScenery=true;
+   if(site.marked){
+    const parts=built.userData?.meshById;
+    const shaft=parts?.get?.('stump')||parts?.get?.('stub')||parts?.get?.('base'); // Actual authored pillar shaft receives the engraving.
+    if(shaft)engrave(shaft,site,false);
+    built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can name the color on a given pillar.
+   }
    ignoreHits(built);host.add(built);
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
 }
 function clear(){
  serial++;
- const witness=[]; // Scene-local marked-rock buffers and their asynchronously generated engraving atlases must not survive a zone transition.
+ const witness=[]; // Every scene-local painted rock and pillar owns disposable engraving atlas children.
  group?.traverse?.(node=>{
-  if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Only the carved witness owns its cloned stone buffers.
+  if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
  });
  group?.children?.find(node=>node.name==='wilderness-stone-cairns')?.dispose?.(); // Main's loose stone geometry/material are shared by all cairns and must never be destroyed here.
  for(const rock of witness){
@@ -152,7 +246,7 @@ function clear(){
     child.geometry?.dispose?.();
    }
   }
-  // Base stone art is shared by every cairn and rubble rock. Only per-marker engraving children are owned here.
+  // Only scene-local engravings are disposed; the base stone and authored pillar geometry remain shared.
  }
  group?.parent?.remove?.(group);group=null;scene=null;area='';renderedLayout=null;renderedIdentity='';
 }
@@ -165,7 +259,8 @@ function update(){
  const sites=landmarksFor(zone,layout),host=new T.Group();host.name='wilderness-year-round-landmarks';
  host.userData.wildernessLandmarkScenery=true;active.add(host);scene=active;group=host;area=zone;renderedLayout=layout;renderedIdentity=currentIdentity;
  report={zone,count:sites.length,stoneCairns:sites.filter(s=>s.kind==='stoneCairn').length,brokenPillars:sites.filter(s=>s.kind==='brokenPillar').length,deadTrees:sites.filter(s=>s.kind==='deadTree').length,
- witness:sites.find(s=>s.kind==='witnessStone')?.name||null}; // Mobile debug also exposes the singular color-coded starting marker.
+ witness:sites.find(s=>s.kind==='witnessStone')?.name||null,
+ marked:sites.filter(s=>s.marked).map(s=>({kind:s.kind,dyeId:s.dyeId,at:s.point}))}; // Diagnostics verify distinct dyes per generated zone.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
 }
 function debugSnapshot(){
