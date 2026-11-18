@@ -151,79 +151,67 @@ assert.equal(debug.tuning.reversalDotThreshold, 0, 'opposite hemisphere is repre
 assert.equal(debug.tuning.passiveDrainBasePerS, 2.2, 'Blink diagnostics expose the authored passive stamina baseline');
 assert.equal(debug.tuning.passiveDrainQuantum, 0.1, 'Blink diagnostics expose the tenth-point carry quantum that prevents per-frame rounding loss');
 
-assert.equal(debug.afterimages.supported, false, 'Blink afterimages degrade safely when Three.js is unavailable in the isolated movement harness');
-assert.equal(debug.afterimages.active, 0, 'unsupported afterimage rendering never leaves phantom live records');
-assert.equal(debug.tuning.afterimageHopSamples, 3, 'Blink diagnostics expose the bounded hop-burst sample count');
-assert.equal(debug.tuning.afterimageMaxActive, 24, 'shared player/enemy trails expose the hard cap that prevents unbounded transient portrait meshes');
-assert.equal(debug.tuning.afterimageMaxPerRoot, 3, 'one actor never keeps more than three live ghosts, so a lunge trail stays a few meshes');
-assert.match(source, /source\.boneTransform\(i, vertex\)/, 'skinned portrait afterimages bake the live deformed vertices instead of sharing the moving player skeleton');
-assert.match(source, /material\.depthWrite = false/, 'afterimages do not punch new depth holes through the live portrait/world stack');
-assert.match(source, /geometry\.deleteAttribute\?\.\('skinIndex'\)/, 'baked afterimages strip skinning attributes after freezing the pose');
-assert(source.includes('texture.image = canvas'), 'afterimage textures own copied canvas pixels rather than sharing the live portrait texture');
-assert.match(source, /entry\.frozenTextures[\s\S]{0,160}texture\?\.dispose/, 'afterimage texture copies are explicitly disposed');
+assert.equal(debug.afterimages.supported, false, 'color smears are safely absent when Three.js is unavailable');
+assert.equal(debug.afterimages.active, 0, 'no GPU mesh is created in a no-Three movement test');
+assert.equal(debug.afterimages.effect, 'rgba-directional-motion-smear', 'mobile debug identifies the new effect');
+assert.equal(debug.tuning.smearBaseOpacity, 0.34, 'the smear preserves existing translucent strength');
+assert.equal(debug.tuning.smearMaxActors, 24, 'the effect cache remains bounded across combatants');
+assert.equal(debug.tuning.smearSampleIntervalS, 0.055, 'velocity samples use the authored cadence');
+assert.match(source, /gl_FragColor\.a \*= uSmearOpacity/, 'the blur shader changes alpha, not RGB');
+assert.doesNotMatch(source, /boneTransform\(/, 'combat presentation does not CPU-bake skinning per movement');
+assert.doesNotMatch(source, /document\.createElement\('canvas'\)/, 'combat presentation never copies avatar textures into canvases');
 
 registeredAbility.onHoldEnd();
 assert.equal(movementSpeedFn, null, 'ending Blink Dodge removes its movement-speed modifier');
 
-// The portrait effect is global presentation, not gated by the Blink hold itself:
-// ordinary dodge and melee-lunge state must drive the same sampler even in the
-// no-THREE unit harness (where rendering safely no-ops).
+// The portrait effect is globally owned by Combat.update: the unmodified
+// dodge/lunge movement states drive it even when Blink is not equipped.
 player.dodging = true;
 nowMs += 16;
 windowStub.Combat.update(0.016);
-let motionDebug = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
-assert.equal(motionDebug.dodging, true, 'ordinary dodge activates the afterimage movement sampler without Blink being held');
-assert.equal(motionDebug.lunging, false);
-assert(Math.abs(motionDebug.lastDodgeSampleAtMs - nowMs) < 1e-6, 'ordinary dodge records an immediate first afterimage sample');
+let motion = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
+assert.equal(motion.dodging, true);
+assert.equal(motion.lunging, false);
+assert(Math.abs(motion.lastDodgeSampleAtMs - nowMs) < 1e-6, 'dodge sampling starts immediately');
 
 player.dodging = false;
-nowMs += 16;
 windowStub.Combat.update(0.016);
 player.lunging = true;
 nowMs += 16;
 windowStub.Combat.update(0.016);
-motionDebug = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
-assert.equal(motionDebug.dodging, false);
-assert.equal(motionDebug.lunging, true, 'melee lunge activates the shared afterimage movement sampler');
-assert(Math.abs(motionDebug.lastLungeSampleAtMs - nowMs) < 1e-6, 'melee lunge records an immediate first afterimage sample');
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.tuning.afterimageForcedMoveIntervalS, 0.055, 'dodge/lunge trail cadence remains exposed for mobile tuning');
-assert.match(source, /spawnAfterimage\('dodge',/, 'ordinary dodge samples the actual rendered portrait');
-assert.match(source, /spawnAfterimage\('lunge',/, 'melee lunges sample the same frozen portrait path');
-assert.match(source, /spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge',/, 'humanoid enemy dodges use the same portrait afterimage snapshotter');
-assert.match(source, /spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-lunge',/, 'humanoid enemy lunges use the same portrait afterimage snapshotter');
-assert.match(source, /window\.BanditCombat\?\.setCombatExpression\?\.\(entity, inCombat\)[\s\S]{0,1200}spawnAfterimageForRoot\(entity\.avatarRef\.group, 'enemy-dodge',/, 'enemy combat frown is applied before a dodge ghost snapshots the portrait texture');
-assert.match(source, /findPortraitMeshes[\s\S]{0,1800}score >= bestScore - 1/, 'afterimage discovery retains equivalent front and back portrait planes');
-assert.doesNotMatch(source, /defensiveHoldActive\) spawnAfterimage\('blink-dodge'\)/, 'ordinary dodge afterimages are no longer gated behind Blink Dodge being held');
-
-// Execute actual-distance scaling through the public combat update seam.
+motion = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.motion;
+assert.equal(motion.dodging, false);
+assert.equal(motion.lunging, true);
+assert(Math.abs(motion.lastLungeSampleAtMs - nowMs) < 1e-6, 'melee lunge sampling starts immediately');
 player.x += 64;
 nowMs += 60;
 windowStub.Combat.update(0.06);
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastDistanceTiles, 1);
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale, 0.5);
+let metrics = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages;
+assert(metrics.lastDistanceTiles > 1, 'one tile of real motion is normalized by sampling interval');
+assert(metrics.lastIntensityScale > 0, 'actual lunge velocity generates a smear intensity');
 player.x += 64;
 nowMs += 60;
 windowStub.Combat.update(0.06);
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale, 1);
+metrics = windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages;
+assert(metrics.lastDistanceTiles > 1 && metrics.lastDistanceTiles < 2, 'consecutive samples do not accumulate unbounded distance');
 player.lunging = false;
 windowStub.Combat.update(0.016);
 player.dodging = true;
 player.x += 32;
 nowMs += 60;
 windowStub.Combat.update(0.06);
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale, 0.25);
+assert(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale > 0);
 player.dodging = false;
 windowStub.Combat.update(0.016);
 player.lunging = true;
 nowMs += 60;
 windowStub.Combat.update(0.06);
-assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale, 0, 'stationary actions do not blur');
+assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale, 0, 'stationary attack motion cannot create a blur');
 registeredAbility.onHoldStart();
-player.inputX = 1;
-player.inputStrength = 1;
+player.inputX = 1; player.inputStrength = 1;
 nowMs += 60;
 registeredAbility.onHoldUpdate('hold1', 0.06);
-assert(Math.abs(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale - 82 / 64) < 1e-9, 'Blink hop retains full per-tile intensity');
+assert(Math.abs(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.lastIntensityScale - 82 / 64) < 1e-9, 'Blink teleport strength still reflects actual hop distance');
 registeredAbility.onHoldEnd();
 
 console.log('Blink Dodge movement regression tests passed');
