@@ -220,7 +220,7 @@ Promise.all([firstBake, secondBake]).then(frames => {
 
 
 const fuseStart = weaving.indexOf('  function fuseSampledPatternMasks(');
-const fuseEnd = weaving.indexOf('\n  async function applyPatternStackToTintedImage(', fuseStart);
+const fuseEnd = weaving.indexOf('\n  function patternStackRenderKey(', fuseStart);
 const fuse = vm.runInNewContext('(' + weaving.slice(fuseStart, fuseEnd).trim() + ')'); // Exercise pure intersection behavior without browser canvas.
 const merged = fuse([Uint8Array.from([1,1,0,0]), Uint8Array.from([0,1,1,0])],
   [Uint8Array.from([0,1,0,0]), Uint8Array.from([0,0,1,0])], 2);
