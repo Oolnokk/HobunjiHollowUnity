@@ -18,7 +18,8 @@ function witnessDye(seed) {
  const choice=WITNESS_DYES[hash(seed+'|witness-ink')%WITNESS_DYES.length];
  const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
  const match=catalog.find?.(entry=>entry.id===choice.id);
- return {...choice,hex:/^#[0-9a-f]{6}$/i.test(match?.hex||'')?match.hex:choice.hex};
+ return {...choice,name:typeof match?.label==='string'?match.label.toLowerCase():choice.name,
+  hex:/^#[0-9a-f]{6}$/i.test(match?.hex||'')?match.hex:choice.hex}; // Spoken color follows the exact item catalog's current dye label and pixel swatch.
 }
 const cache=new WeakMap(); // Folded zone layout + world-cycle identity -> stable physical landmark positions.
 let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null,renderedLayout=null; // Changes to a generated layout invalidate both physical marker and riddle evidence, even within one Tothal cycle. // WildernessMap supplies live area and scene lifecycle; report/error feed mobile diagnostics.
