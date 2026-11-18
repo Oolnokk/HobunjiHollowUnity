@@ -21,12 +21,26 @@
   let retrySaveAfter = 0; // A failed member write retries on a later calendar tick, rather than disabling the quest for the whole festival.
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
   let lastGenerated = null; // Debug snapshot describes which final terrain evidence made it into the clue.
+  let registeredYear = null; // Registers real character-owned blossom inventory items once per civil year.
+  let pickPromptEl = null; // Mobile/touch button is the same explicit pick action as the controller Action 3 claim.
+  let advertisedPick = ''; // Avoid reinstalling GameplayInputRouter claims on each 200ms festival tick.
+  let turnInRunning = false; // Disallows double-awards while a cutscene awaits dialogue input.
+  let lastTurnIn = null; // Developer mobile snapshot reports first/later awards and failed saves.
 
   function year() { return Number(window.CalendarSystem?.aotYearNumber?.()); }
   function active() { return window.FestivalCalendar?.current?.()?.id === 'five_blossoms'; }
   function key(y = year()) { return PREFIX + y; }
   function records() { return questDeps?.getQuestProgress?.() || window.QuestProgressStore?.snapshot?.() || {}; }
   function state() { return records()[key()]; }
+  function itemKey(blossomId, civilYear = year()) { return 'five_blossom_' + blossomId + '_' + String(civilYear); } // Each year's five real items are independent of last year's unsubmitted flowers.
+  function registerItems() {
+    const civilYear = year();
+    if (!Number.isSafeInteger(civilYear) || registeredYear === civilYear || !window.KeyItemSystem?.defineMany) return false;
+    window.KeyItemSystem.defineMany(BLOSSOMS.map(b => ({id:itemKey(b.id,civilYear),label:b.name,icon:'🌸',scope:'character',
+      desc:'A hand-picked blossom from the Feast of the Five Blossoms, to be presented to Father Hunundi Hodu.'}))); // Canonical Pack Key Items are real, persistent, character-owned items.
+    registeredYear = civilYear;
+    return true;
+  }
   function targetFor(found = []) { return BLOSSOMS.find(blossom => !found.includes(blossom.id)) || null; } // The primary riddle is ordered, but opportunistic discoveries are credited in any order.
   function zoneLayout(id) { return mapDeps?._zoneLayouts?.get?.(id) || null; }
   function localeFor(blossom) {
@@ -56,9 +70,10 @@
   }
   function descriptor(founds = [], shift = null) {
     const remaining = targetFor(founds); // The first undiscovered blossom supplies the active clue without invalidating other discoveries.
-    if (!remaining) return { kind: 'story', provider: 'blossomHunt', icon: '🌸', title: TITLE,
-      objective: 'All five blossoms were found before the feast ended!', detail: 'The wilderness remembers your footsteps.',
-      found: founds.slice(0, 5), year: year(), shiftYear: shift };
+    if (!remaining) return { kind:'story', provider:'blossomHunt', icon:'🌸', title:TITLE, npcName:'Father Hunundi Hodu',
+      objective:'Present all five hand-picked blossoms to Father Hunundi Hodu in town.',
+      detail:'All five blossoms are in your Pack. Speak with Father Hunundi before the Feast ends to claim the Five Blossom Crown.',
+      found:founds.slice(0,5), ready:true, year:year(), shiftYear:shift };
     const clue = clueFor(remaining);
     lastGenerated = clue;
     lastStatus = clue.ok ? `Generated clue for ${remaining.id} from ${clue.facts.length} verified descriptors` : clue.reason;
@@ -82,6 +97,7 @@
     return true;
   }
   function start() {
+    registerItems();
     if (!questDeps || !mapDeps || !active() || !Number.isInteger(year()) || year() < 0) return;
     if (state()) return; // Completion and expiry records are annual; never restart the same festival year.
     const shift = mapDeps.currentTothalYear?.() ?? null;
@@ -104,6 +120,7 @@
   }
   function syncCalendar() {
     if (!questDeps || !mapDeps) return;
+    registerItems();
     const civilYear = year(); // Used as a readiness gate so an unloaded calendar cannot accidentally expire a saved annual quest.
     if (!Number.isSafeInteger(civilYear) || window.CalendarSystem?.isInitialized?.() === false) return;
     const shift = mapDeps.currentTothalYear?.() ?? 'unknown';
@@ -153,50 +170,133 @@
       visibleTrees.set(blossom.localeId, tree);
     }
   }
-  function collect(event) {
-    if (!active()) return;
-    const live = state();
-    if (live?.status !== 'active' || !event?.to) return;
-    const found = Array.isArray(live.progress?.found) ? live.progress.found : [];
-    const target = BLOSSOMS.find(blossom => {
-      if (blossom.zoneId !== event.to.area || found.includes(blossom.id)) return false;
-      const locale = localeFor(blossom); // Every physical tree can be discovered once even if its riddle is not currently selected.
-      const p = locale && window.LocaleRiddleGenerator?.positionOf?.(locale, 'blossom-tree');
-      return Number.isFinite(p?.col) && Number.isFinite(p?.row)
-        && Math.hypot(event.to.col - p.col, event.to.row - p.row) <= 3;
-    });
-    if (!target) return;
-    const next = [...found, target.id];
-    const isDone = next.length === BLOSSOMS.length;
-    if (!write(isDone ? 'completed' : 'active', descriptor(next, mapDeps.currentTothalYear?.() ?? null))) return;
-    mapDeps.showToast?.(isDone ? 'All five blossoms found! You completed the festival riddle hunt.' : `${target.name} found! Your next riddle awaits in the Quest Log (${next.length}/5).`, true);
-    lastStatus = isDone ? 'Completed all five trees during the feast' : `Found ${target.id}: ${next.length}/5`;
+  function nearbyTree(tile = window.PlayerTileEvents?.current?.()) {
+    if (!active() || !tile || state()?.status !== 'active') return null;
+    const found = Array.isArray(state()?.progress?.found) ? state().progress.found : []; // A visible tree is not necessarily still pickable this year.
+    let best = null, distance = Infinity;
+    for (const blossom of BLOSSOMS) {
+      if (blossom.zoneId !== tile.area || found.includes(blossom.id)) continue;
+      const locale = localeFor(blossom), point = locale && window.LocaleRiddleGenerator?.positionOf?.(locale,'blossom-tree');
+      if (!Number.isFinite(point?.col) || !Number.isFinite(point?.row)) continue;
+      const d = Math.hypot(tile.col - point.col,tile.row - point.row);
+      if (d <= 3 && d < distance) {best=blossom;distance=d;} // Actual reachable tree, not its displayed riddle or an invented landmark.
+    }
+    return best;
   }
-  function onTile(event) {
+  function pickBlossom(blossomId, tile = window.PlayerTileEvents?.current?.()) {
+    syncCalendar(); registerItems();
+    const blossom = nearbyTree(tile), live = state();
+    if (!blossom || blossom.id !== blossomId || !active() || live?.status !== 'active') return false;
+    const item = window.KeyItemSystem?.grant?.(itemKey(blossom.id));
+    if (!item?.ok) { lastStatus = 'Could not store the blossom item: '+(item?.message||'Pack not available'); return false; }
+    const previous = Array.isArray(live.progress?.found) ? live.progress.found : [];
+    const next = [...previous,blossom.id]; // Only a real interaction with the physical tree advances the next riddle.
+    if (!write('active',descriptor(next,mapDeps.currentTothalYear?.() ?? null))) {
+      if (item.granted) window.KeyItemSystem?.revoke?.(itemKey(blossom.id)); // Roll back the newly picked item if quest progress cannot save.
+      return false;
+    }
+    mapDeps.showToast?.(next.length === BLOSSOMS.length
+      ? 'Five blossoms picked! Return to Father Hunundi Hodu in town to present them.'
+      : blossom.name+' picked and added to Pack. Your next riddle awaits ('+next.length+'/5).',true);
+    lastStatus = 'Picked '+blossom.id+' by interaction ('+next.length+'/5)'; syncPickPrompt();
+    return true;
+  }
+  function createPickPrompt() {
+    if (typeof document === 'undefined' || !document.body?.appendChild) return null;
+    let button = document.getElementById?.('fiveBlossomsPick');
+    if (button) return button;
+    button = document.createElement('button'); // A tangible tap target for mobile; Action 3 remains the controller/keyboard route.
+    button.id = 'fiveBlossomsPick';button.type = 'button';button.hidden = true;
+    button.setAttribute('aria-label','Pick blossom from tree');
+    button.style.cssText = 'position:fixed;bottom:calc(13vh + 70px);left:14px;z-index:1100;min-height:48px;min-width:150px;padding:10px 14px;border-radius:10px;background:#355d40;color:#fff;border:2px solid #e0bb66;font:700 14px system-ui;box-shadow:0 3px 12px #0008;touch-action:manipulation;';
+    button.addEventListener('click',() => {const target=nearbyTree();if(target)pickBlossom(target.id);}); // Rechecks actual player distance on tap.
+    document.body.appendChild(button);
+    return button;
+  }
+  function syncPickPrompt() {
+    const target = nearbyTree();
+    const next = target?.id || '';
+    if (!pickPromptEl) pickPromptEl = createPickPrompt();
+    if (pickPromptEl) {
+      pickPromptEl.hidden = !target;
+      if (target) pickPromptEl.textContent = '🌸 Pick '+target.name;
+    }
+    if (next === advertisedPick) return; // Reusing one prompt/claim eliminates frame- or tick-level input registration churn.
+    advertisedPick = next;
+    const router = window.GameplayInputRouter || window.WorldActionInputClaims;
+    if (!target) router?.clearClaims?.('five-blossoms-tree');
+    else router?.setClaims?.('five-blossoms-tree',[{actionId:'action3',priority:65,label:'Pick '+target.name,
+      onPress:() => pickBlossom(target.id)}]); // Action 3 avoids commandeering weapon swings near the tree.
+  }
+  function onTile() {
     syncCalendar();
     buildVisibleTrees();
-    collect(event); // Run only on a changed player tile/area; no per-frame distance scans.
+    syncPickPrompt(); // Moving near a blossom only makes Pick available: never automatically collects a flower.
   }
   function init(deps) {
-    mapDeps = deps; calendarKey = ''; retrySaveAfter = 0;
+    mapDeps = deps;calendarKey = '';retrySaveAfter = 0;registeredYear = null;turnInRunning = false;lastTurnIn = null;
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
-    clearTrees();
-    window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt', debugSnapshot);
+    advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
+    clearTrees(); registerItems(); syncPickPrompt();
+    window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
   }
-  function bindQuestDeps(deps) { questDeps = deps; calendarKey = ''; retrySaveAfter = 0; } // TasksPanel's save/getQuestProgress callbacks provide the canonical persistence.
+  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;registerItems(); }
   function update() {
-    syncCalendar();
-    buildVisibleTrees(); // Persistent authored tree landmarks remain visible when their annual hunt is inactive.
+    syncCalendar();buildVisibleTrees();syncPickPrompt(); // Uses the existing festival low-frequency tick; never scans other zones per frame.
   }
   function menuStatus() {
     const live = state();
     const inProgress = live?.status === 'active' && active();
-    const upcoming = targetFor(Array.isArray(live?.progress?.found) ? live.progress.found : []); // Already-found out-of-order trees never reappear as pending riddles.
+    const found = Array.isArray(live?.progress?.found) ? live.progress.found : [];
+    const upcoming = targetFor(found); // The final step is a physical NPC turn-in, not a sixth location.
+    const ready = inProgress && !upcoming && BLOSSOMS.every(b=>window.KeyItemSystem?.has?.(itemKey(b.id)));
     const liveClue = inProgress && upcoming ? clueFor(upcoming) : null;
-    return { active: inProgress, ready: false, objective: live?.progress?.objective || '',
-      statusText: inProgress ? `${live.progress?.found?.length || 0} of 5 discovered — festival time is limited.` : null,
-      detail: inProgress && upcoming ? (liveClue?.ok ? liveClue.text : `Seek ${upcoming.name} in ${window.LocaleRiddleGenerator?.ZONES?.[upcoming.zoneId] || upcoming.zoneId}. ${liveClue?.reason || 'Clue unavailable.'}`) : live?.progress?.detail || '' }; // Never show last Shift's obsolete terrain clue after regeneration.
+    return { active: inProgress,ready,objective:live?.progress?.objective || '',
+      statusText: inProgress ? (ready?'All 5 collected — return to Father Hunundi in town.' : found.length+' of 5 picked — festival time is limited.') : null,
+      detail: inProgress && upcoming ? (liveClue?.ok ? liveClue.text : 'Seek '+upcoming.name+' in '+(window.LocaleRiddleGenerator?.ZONES?.[upcoming.zoneId] || upcoming.zoneId)+'. '+(liveClue?.reason || 'Clue unavailable.')) : live?.progress?.detail || '' };
+  }
+  async function turnInAtHunundi(walker) {
+    const live=state(),profile=window.__hobunjiPlayerProfile,nowYear=year();
+    if(turnInRunning || !active() || !Number.isSafeInteger(nowYear) || live?.status!=='active'
+      || walker?.rec?.id!=='father_hunundi_hodu' || !menuStatus().ready)
+      return {ok:false,message:'Pick all five blossoms and speak to Father Hunundi during the Feast.'};
+    if(!profile?.worldId || !profile?.characterId || !window.EquipmentPanel?.awardFiveBlossomCrown)
+      return {ok:false,message:'Your character or clothing gear is not ready for the award.'};
+    turnInRunning = true;
+    let headwear = null, first = false, firstFinder = null;
+    try {
+      const claim=window.WorldMetaStore?.claimFiveBlossomsFinder?.(profile.worldId,nowYear,profile.characterId,profile.nickname);
+      if(!claim?.ok)throw Error('Could not record this year’s first Finder: '+(claim?.reason || 'world save unavailable'));
+      first = claim.first; firstFinder = claim.winner;
+      if(first) {
+        const ceremony=window.FestivalBlossomCeremony;
+        if(!ceremony?.play) throw Error('The festival crowning cinematic is not loaded');
+        headwear=window.EquipmentPanel.beginFiveBlossomCrowning?.();
+        if(!headwear)throw Error('Could not prepare the player’s festival outfit');
+        const played=await ceremony.play({profile,civilYear:nowYear,onProclaim:() =>
+          !!window.EquipmentPanel.awardFiveBlossomCrown(nowYear,headwear)});
+        if(!played?.ok)throw Error(played?.reason || 'Could not complete the announcement on stage');
+      } else if(!window.EquipmentPanel.awardFiveBlossomCrown(nowYear)) throw Error('Could not award the crown');
+      const completed={...descriptor(BLOSSOMS.map(b=>b.id),mapDeps?.currentTothalYear?.() ?? null),
+        objective:'Five Blossom Crown received from Father Hunundi Hodu.',
+        detail:first?'You were proclaimed this year’s first Finder of the Five Blossoms before the village.'
+          :'You completed the challenge after the first Finder and received your own crown.',
+        ready:false,crowned:true,firstFinder:first,firstFinderName:firstFinder?.name || null};
+      if(!write('completed',completed))throw Error('Could not persist the completed hunt. The award is saved; turn in again to retry.');
+      for(const blossom of BLOSSOMS)window.KeyItemSystem?.revoke?.(itemKey(blossom.id)); // Hand in physical flower items only after crown and completion save succeed.
+      lastTurnIn={year:nowYear,first,winner:firstFinder?.name,characterId:profile.characterId};lastStatus='Awarded Five Blossom Crown ('+(first?'first finder':'later finder')+')';
+      mapDeps?.showToast?.(first?'You are this year’s Finder of the Five Blossoms!':'Five Blossom Crown awarded — congratulations!',true);
+      syncPickPrompt();
+      return {ok:true,first,winner:firstFinder?.name};
+    }catch(error){
+      lastStatus = 'Crowning failed: '+String(error?.message||error);window.__farmLog?.('[blossom-hunt] '+lastStatus,'error');
+      mapDeps?.showToast?.(lastStatus,false);
+      return {ok:false,message:lastStatus};
+    } finally {
+      if(headwear)window.EquipmentPanel?.finishFiveBlossomCrowning?.(headwear,headwear.crowned);
+      turnInRunning=false;
+    }
   }
   function debugSnapshot() {
     const live = state();
@@ -205,8 +305,11 @@
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
       displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
+      nearbyPick:nearbyTree()?.id || null,advertisedPick,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
     };
   }
-  window.FestivalBlossomHunt = Object.freeze({ init, bindQuestDeps, update, menuStatus, debugSnapshot, BLOSSOMS, __test: { descriptor, clueFor, collect, syncCalendar } });
+  window.FestivalBlossomHunt = Object.freeze({ init,bindQuestDeps,update,menuStatus,debugSnapshot,BLOSSOMS,
+    pickBlossom,nearbyTree,turnInAtHunundi,itemKey,
+    __test:{descriptor,clueFor,pickBlossom,syncCalendar,registerItems,syncPickPrompt} });
 })();

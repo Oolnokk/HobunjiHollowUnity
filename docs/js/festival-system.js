@@ -502,6 +502,9 @@
     if (!walker?.rec?.id || deps?.isBlocked?.()) return null;
     // Reuse the existing secondary NPC festival action route; game.js already
     // dispatches festival_npc_gift to receiveNpcReward on every input platform.
+    if (festival()?.id === 'five_blossoms' && walker.rec.id === 'father_hunundi_hodu'
+      && window.FestivalBlossomHunt?.menuStatus?.().ready)
+      return {icon:'👑',label:'Present Five Blossoms to Father Hunundi',action:'festival_npc_gift',style:'secondary',allowed:true};
     if(sharedFeast())return null;
     const id = walker.rec.id; // Same annual claims as the gift table, so the two routes cannot duplicate rewards.
     if (festival()?.id === 'mountaindawn' && favorHearts(id) >= 3 && !claimed(`gift:${id}`)) return { icon: '🎁', label: 'Receive Mountaindawn gift', action: 'festival_npc_gift', style: 'secondary', allowed: true };
@@ -512,6 +515,8 @@
     const offer = npcRewardAction(walker); // Do not trust an old action-bar button after a date, NPC, or favor change.
     const position = deps?.getPlayerTile?.();
     if (!offer || offer.action !== action || walker.area !== deps.getArea() || !walker.root?.position || Math.hypot(position.c - walker.root.position.x, position.r - walker.root.position.z) > 3) return fail('Move closer to your friend to receive their gift.');
+    if(festival()?.id==='five_blossoms' && walker.rec.id==='father_hunundi_hodu' && action==='festival_npc_gift')
+      return window.FestivalBlossomHunt?.turnInAtHunundi?.(walker); // Same Action 3/secondary NPC path as the established NPC festival reward.
     if(festival()?.id==='gorkunash'&&action==='festival_npc_gift')return askFestivalDance(walker);
     return handlers.get(action === 'festival_npc_gift' ? 'gifts' : 'sweets')({ npcId: walker.rec.id });
   }
@@ -1044,6 +1049,7 @@
     lastMissingGuestCheckAt = -Infinity;
     guestRecoveryInFlight.clear(); guestRecoveryCursor = 0; // Reset the resident recovery worker during world switches.
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
+    window.FestivalBlossomCeremony?.init?.({getLayout:layout,getWalkers:deps.getWalkers,getArea:deps.getArea}); // Reuses the authored movable festival stage and real NPC walkers.
     window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>{
       recoverPotluckEntries(); // Farmhouse exits recover overdue donations even after the feast has closed.
       return state.potluckContests;
