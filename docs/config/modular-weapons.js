@@ -2124,6 +2124,20 @@ window.MODULAR_WEAPON_CONFIG = {
                   "x1": 349,
                   "y1": 1136.5
                 }
+              },
+              {
+                "junction": "band",
+                "x": 143,
+                "y": 1003.3,
+                "rotation": 52,
+                "scale": 0.77
+              },
+              {
+                "junction": "band",
+                "x": 237.5,
+                "y": 242.3,
+                "rotation": 232.5,
+                "scale": 0.77
               }
             ],
             "outline": 10,
@@ -3344,7 +3358,25 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleY": 1.75,
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 667,
+                "rotation": 0,
+                "scale": 0.9
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -3488,7 +3520,25 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 1.25,
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 273,
+                "y": 805,
+                "rotation": 270,
+                "scale": 1.13
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "y": 10,
@@ -3804,7 +3854,25 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.5,
           "y": 45,
           "layerOrder": "haft-over-head",
-          "scaleX": 0.5
+          "scaleX": 0.5,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 737,
+                "rotation": 0,
+                "scale": 0.45
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -3928,7 +3996,25 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.63,
           "scaleY": 2,
           "y": 10,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 695,
+                "rotation": 0,
+                "scale": 0.57
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "scaleX": 0.9,
@@ -9461,7 +9547,25 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "fishing-spear": {
           "y": 25,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 281,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.9
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "y": 15,
@@ -11317,7 +11421,25 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "fishing-spear": {
           "flipX": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 413.4,
+                "y": 955.3,
+                "rotation": 265.8,
+                "scale": 0.9
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "layerOrder": "head-over-haft"
@@ -11425,7 +11547,25 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "fishing-spear": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 195,
+                "y": 886,
+                "rotation": 0,
+                "scale": 0.9
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -13302,6 +13442,20 @@ window.MODULAR_WEAPON_CONFIG = {
                   "x1": 349,
                   "y1": 1206.85
                 }
+              },
+              {
+                "junction": "band",
+                "x": 148.1,
+                "y": 1028.4,
+                "rotation": 44.6,
+                "scale": 0.77
+              },
+              {
+                "junction": "band",
+                "x": 232.4,
+                "y": 139.5,
+                "rotation": 225.1,
+                "scale": 0.77
               }
             ],
             "outline": 10,
