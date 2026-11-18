@@ -24,7 +24,7 @@ const toolBtn = {
   addEventListener(name, callback) { buttonListeners[name] = callback; },
 }; // Minimal tool button to exercise an actual pointer tap.
 const win = {
-  AdventuringTools: { stow() { lit = false; stows++; } },
+  AdventuringTools: { stow() { stows++; } }, // Stowing cancels the held pose but preserves the shared flame clock.
   Spyglass: { stow() {} },
   HudUpdate: { refreshItemScroll() {} },
   SCRATCHBONES_CONFIG: { game: { mobileControls: {} } },
@@ -72,19 +72,19 @@ const tapTool = () => {
 setActiveTool('adventuring', { silent: true }); // Selecting Torch in the adventuring gateway sets the recall target.
 assert.equal(gameContext.lastHeldFarmTool, 'adventuring');
 lit = true;
-setActiveTool('weapon', { silent: true }); // Quick weapon draw must extinguish the torch, not replace tool recall.
-assert.equal(lit, false);
+setActiveTool('weapon', { silent: true }); // Quick weapon draw stows a still-burning torch without replacing tool recall.
+assert.equal(lit, true, 'switching to a weapon leaves the portable flame burning');
 assert.equal(gameContext.lastHeldFarmTool, 'adventuring');
-const stowsBeforeRecall = stows; // Re-equipping an unlit torch must not trigger another stow.
+const stowsBeforeRecall = stows; // Re-equipping an already-burning torch must not trigger another stow.
 tapTool();
 assert.equal(gameContext.activeTool, 'adventuring', 'tap while holding a temporary sword draws the selected torch');
 assert.equal(gameContext.heldMode, 'tool');
 assert.equal(stows, stowsBeforeRecall);
-assert.equal(lit, false, 'restored torch is unlit');
+assert.equal(lit, true, 'restored torch retains the same flame');
 lit = true;
 tapTool();
 assert.equal(gameContext.heldMode, 'none', 'tapping the selected torch again holsters it');
-assert.equal(lit, false, 'holstering extinguishes the flame');
+assert.equal(lit, true, 'holstering leaves a burning torch on the belt');
 assert.equal(holsters, 1);
 setActiveTool('adventuring', { silent: true });
 lit = true;
@@ -93,7 +93,7 @@ gameContext.heldMode = 'item'; // Mirrors ActionArcUI's real setHeldMode('item')
 tapTool();
 assert.equal(gameContext.activeTool, 'adventuring');
 assert.equal(gameContext.heldMode, 'tool', 'tool tap recalls after an inventory item was held');
-assert.equal(lit, false);
+assert.equal(lit, true, 'item-to-tool recall keeps the same flame');
 setActiveTool('shovel', { silent: true });
 assert.equal(gameContext.lastHeldFarmTool, 'shovel', 'explicitly changing the selected farm tool replaces torch recall');
 setActiveTool('weapon', { silent: true });
@@ -206,5 +206,5 @@ assert.equal(opens, 3);
 assert.equal(refreshes, 2);
 assert.match(game, /act\.startsWith\('dev_ruin_world_'\)/, 'touch door buttons bypass torch swing cooldown');
 assert.match(ruin, /torchHeld && PROXIMITY_DOOR_KINDS\.has\(row\.kind\)/, 'native door claim cannot steal Torch Swing on Action 1');
-assert.match(game, /window\.AdventuringTools\?\.stow\?\.\(\)/, 'holster/weapon/item paths retain torch extinguish callback');
+assert.match(game, /window\.AdventuringTools\?\.stow\?\.\(\)/, 'holster/weapon/item paths retain torch stow callback');
 console.log('torch recall and door use: tool, weapon/item, wooden door, native transit door, touch, world-action dispatch PASS');
