@@ -309,4 +309,23 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.equal(w.pantsCaptures.length, 1, 'no expensive repeated capture before retry');
 }
 
+// 13. Rendering four complicated pants rigs in a single 80ms batch would
+// create a new spike. Budget one heavy corpse bake and keep pantless wildlife fast.
+{
+  const w = makeWorld(undefined, { productionDefaults: true, useCanvas: true });
+  for (const id of ['pants-a', 'pants-b']) {
+    const c = w.corpse(id);
+    c.avatarRef.frontCanvas = { width: 200, height: 200 };
+    c.avatarRef.frontPlane = new Obj();
+    c.avatarRef.legs = { pants: { ready: true } };
+  }
+  w.corpse('ordinary-animal', { isBandit: false });
+  assert.equal(w.mod.tick(NOW), 2, 'one posed humanoid and one ordinary wildlife corpse retire together');
+  assert.equal(w.mod.stats.posedPantsBaked, 1);
+  assert.equal(w.pantsCaptures.length, 1);
+  assert.equal(w.mod.tick(NOW + 100), 1, 'second heavy pants bake runs on the following pass');
+  assert.equal(w.pantsCaptures.length, 2);
+  assert.equal(w.disposed.length, 3);
+}
+
 console.log('bandit corpse retirement: ok');
