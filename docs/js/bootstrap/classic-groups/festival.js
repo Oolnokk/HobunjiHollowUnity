@@ -10,7 +10,7 @@
     "js/festival-potluck-contest.js?v=20261109festRarityMerge2",
     "js/festival-locale-activities.js?v=20261118fiveBlossomsLocale1",
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
-    "js/festival-system.js?v=20261118fiveBlossomsSystem1",
+    "js/festival-system.js?v=20261118fiveBlossomsSystem2",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"
 ]; // Independently versioned modules loaded before game.js.
