@@ -211,6 +211,15 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
 // Execute the actual game wiring: paired controls take priority over an aimed chair.
 {
  const game=fs.readFileSync('docs/game.js','utf8'); // Covers the mobile arch entry point rather than only exported runtime methods.
+ // Verify the player avatar and feet share the world root used by the festival system.
+ assert(game.includes('playerMesh.add(avatarGroup);'),'the rendered player portrait is a child of the real world root');
+ assert(game.includes('getPlayerMesh: () => playerMesh, // Passes the real player avatar root'),'festival injection supplies that same world root');
+ assert(game.includes("window.CharacterActionLocks?.isLocked?.('player', 'pose') === true"),'ordinary player mesh update respects paired pose ownership');
+ assert(game.includes('window.FestivalWheelDanceRuntime?.isPartner?.(w)'),'ordinary NPC walker update skips the paired partner');
+ const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);'; // The sole paired pose commit point before rendering.
+ const choreographyOffset=game.indexOf(choreographyUpdate); // Prevent an update-order regression that could hide only the player's dance.
+ assert(choreographyOffset>game.indexOf('function updatePlayerMesh(dt)'), 'paired pose runs after the player mesh update function is defined');
+ assert(game.indexOf("window.RuntimeFrameScheduler.checkpoint('pre-render');",choreographyOffset)>choreographyOffset,'the composed pair reaches the normal pre-render checkpoint');
  const a=game.indexOf('      function computeActionButtonsImpl() {'),b=game.indexOf('\n      // Fallback anchor',a);
  const context=vm.createContext({window:{FestivalWheelDanceRuntime:{isActive:()=>true,cameraButton:()=>({action:'festival_dance_view',inputAction:'action2'})},FestivalSystem:{actionButton:()=>({action:'festival_stop_dance'})}}});
  vm.runInContext(game.slice(a,b),context);
