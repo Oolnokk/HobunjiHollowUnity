@@ -465,8 +465,8 @@
     if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
-      (player.dodging && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
-      player.lunging || player.knockbackT > 0) { // Dodge is the rope-release input, not a reason to erase its ballistic flight.
+      (player.dodging && state.phase !== 'air' && state.phase !== 'supported' && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
+      player.lunging || player.knockbackT > 0) { // Midair dodge must retain airborne feet, not snap to a lower shaft deck.
       reset(player, 'jump interrupted/area changed');
       return false; // Let the native action/movement handler proceed in this frame.
     }
@@ -482,21 +482,22 @@
       setElevation(player, state);
       return true; // Ruin rope flight shares state but keeps its special layered sweep and deadly pit checks.
     }
+    const nativeDodge=!!player.dodging && (state.phase==='air'||state.phase==='supported'); // Gravity/support remain here, but game.js must advance the real dodge timer and swept dash after this tick.
     let remaining = clamp(number(dt, 0), 0, CONFIG.maxFrameSeconds);
     if (state.phase === 'supported') {
       const support = highestSupport(player.x / deps.TILE, player.y / deps.TILE,
         state.feetY + CONFIG.maxStepUp);
       if (support && support.y >= state.feetY - CONFIG.maxStepUp) {
         state.feetY = support.y;
-        stepMovement(state, remaining, CONFIG.groundTilesPerSecond);
+        if (!nativeDodge) stepMovement(state, remaining, CONFIG.groundTilesPerSecond); // The native dodge sweeps X/Z at authored speed with elevation-aware collision.
         const after = highestSupport(player.x / deps.TILE, player.y / deps.TILE,
           state.feetY + CONFIG.maxStepUp);
         if (after && after.y >= state.feetY - CONFIG.maxStepUp) {
           state.feetY = after.y;
-          if (after.kind === 'ground') { reset(player, 'walked onto ground'); return true; }
+          if (after.kind === 'ground') { reset(player, 'walked onto ground'); return !nativeDodge; }
           setElevation(player, state);
           player.vx = 0; player.vy = 0;
-          return true;
+          return !nativeDodge; // Do not swallow the game's ordinary dodge update.
         }
       }
       state.phase = 'air';
@@ -509,7 +510,7 @@
       state.vy -= CONFIG.gravity * (Motion?.gravityMultiplier?.() ?? 1) * step; // Future slow-fall never modifies baseline puzzle generation.
       state.feetY += state.vy * step;
       state.elapsed += step;
-      stepMovement(state, step, CONFIG.airTilesPerSecond, previous);
+      if (!nativeDodge) stepMovement(state, step, CONFIG.airTilesPerSecond, previous);
       if (player._freeJump !== state) break; // A wall grab transferred movement ownership and physical elevation.
       slideOffTerrain(state, previous, step);
       if (groundAt(player.x / deps.TILE, player.y / deps.TILE) != null) {
@@ -548,7 +549,7 @@
       setElevation(player, state);
       player.vx = 0; player.vy = 0;
     }
-    return true;
+    return !nativeDodge; // A jump never cancels a dodge or freezes its 220 ms action timeline.
   }
 
   // Does the imminent blocked tile offer a real reachable upper surface?

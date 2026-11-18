@@ -19114,7 +19114,7 @@
           const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
-          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
           player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
             const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
@@ -19552,6 +19552,13 @@
         // projectile's underside. Offset by that same radius so the player's
         // actual feet, not a point below them, clear the top of a low rock.
         return canOccupyAt(wx, wy, radius, footprintY); // canOccupyAt offsets by radius when checking cover; the resulting underside stays above the deck.
+      }
+
+      function canPlayerDodgeOccupy(wx, wy) {
+        const feetY = Number(player.physicalFeetY); // Native dodge sweeps use this foot height while PlayerJump owns an airborne or elevated support.
+        return player._freeJump && Number.isFinite(feetY)
+          ? canPlayerOccupyAtHeight(wx, wy, feetY)
+          : canPlayerOccupy(wx, wy);
       }
 
       function canPlayerOccupy(wx, wy) {

@@ -558,13 +558,55 @@
     }
     return converted;
   }
+  function hashPillar(id) { // Stable crack-path seed makes neighbouring shaft pillars visibly distinct.
+    let value=0;for(const ch of String(id))value=(Math.imul(value,31)+ch.charCodeAt(0))>>>0;
+    return value%997;
+  }
+  function platformPillarVisual(kit,height,id) {
+    // Shaft layout can contain many pillars; resolve the authored support ONCE instead of traversing the entire V50 scene for every platform.
+    if(!world.platformShaftTemplateResolved){
+      world.platformShaftTemplateResolved=true;
+      world.platformShaftTemplate=null;
+      world.context?.root?.traverse?.(node=>{
+        if(!world.platformShaftTemplate&&node.isMesh&&/square tapered shaft/i.test(String(node.name||''))&&node.geometry)
+          world.platformShaftTemplate=node;
+      });
+    }
+    const source=world.platformShaftTemplate; // Each platform owns a geometry/material clone, not the reusable source mesh.
+    let geometry=source?.geometry?.clone?.()||null;
+    if(geometry){
+      geometry.computeBoundingBox?.();
+      const bounds=geometry.boundingBox,size=bounds?.getSize?.(new THREE.Vector3()); // Normalize the original shaft to the unchanged platform hazard footprint.
+      if(!size||!(size.x>.01&&size.y>.1&&size.z>.01)){geometry.dispose?.();geometry=null;}
+      else{
+        geometry.translate?.(-.5*(bounds.min.x+bounds.max.x),-bounds.min.y,-.5*(bounds.min.z+bounds.max.z));
+        geometry.scale?.(.62/size.x,height/size.y,.62/size.z);
+      }
+    }
+    if(!geometry){ // If this seed contains no V50 square support, build a correctly centered carved tapered square, not an untextured box.
+      geometry=new THREE.CylinderGeometry(.39,.44,height,4);
+      geometry.rotateY(Math.PI/4); // The four corners form a 0.62-wide square, matching the authored hazard footprint.
+      geometry.translate(0,height/2,0); // CylinderGeometry is centre-origin; its base must rest on the platform.
+    }
+    const original=source?.material; // The platform owns its own disposable material; native V50 walls keep theirs.
+    const material=Array.isArray(original)?original.map(m=>m.clone?.()||m):original?.clone?.()
+      ||window.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})
+      ||kit.makeBasic(0x726d63);
+    const shaft=new THREE.Mesh(geometry,material);
+    shaft.name='hronal_authored_platform_pillar_'+id;
+    shaft.userData.devRuinFootprintIgnore=true;
+    const profile=crackSurfaceProfile(shaft),cracks=[];
+    if(profile)for(let stage=1;stage<=3;stage++)cracks.push(crackRibbon(shaft,profile,stage,hashPillar(id))); // The same staged, four-sided glowing cracks as exploding room pillars.
+    return {shaft,cracks};
+  }
   function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null,options={}) {
     const group=new THREE.Group();
     group.position.set(x,y,z);group.name='hronal_exploding_pillar';
-    const shaft=new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b)); // Existing 0.62×0.62 preset footprint is immutable during growth.
-    shaft.position.y=height/2;group.add(shaft);
-    const cracks=[];
-    for(let face=0;face<4;face++) {
+    const authored=options.external===true?platformPillarVisual(kit,height,id):null; // Platforms share the original V50 silhouette; boss summons retain their authored combat geometry.
+    const shaft=authored?.shaft||new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b));
+    shaft.position.y=authored?0:height/2;group.add(shaft);
+    const cracks=authored?.cracks||[];
+    if(!authored)for(let face=0;face<4;face++) {
       const crack=new THREE.Mesh(new THREE.PlaneGeometry(.045,height*.68),
         new THREE.MeshBasicMaterial({color:0xff8a21,transparent:true,opacity:.14,depthWrite:false,side:THREE.DoubleSide}));
       crack.position.set(0,height*.5,.319);crack.rotation.y=face*Math.PI/2;

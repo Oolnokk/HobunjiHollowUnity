@@ -8,14 +8,14 @@
     "js/ruin-melody-glyph-decal.js?v=20261114ruinCaveParity1",
     "js/ruin-layer-challenges.js?v=20261117revisitFire3",
     "js/ruin-hidden-secrets.js?v=20261116straightNetCage1",
-    "js/ruin-room-system.js?v=20261116lichVisibility1",
-    "js/ruin-layer-playable.js?v=20261117lowBowlFire2",
+    "js/ruin-room-system.js?v=20261117shaftAnte1",
+    "js/ruin-layer-playable.js?v=20261117shaftAnte1",
     "js/ruin-v50-native-mechanisms.js?v=20261115dormantCubeComplete1",
     "js/ruin-v50-native-floors.js?v=20261116ruinFloorXray2",
-    "js/ruin-shaft-connector.js?v=20261116kanthicCollisionReview2",
+    "js/ruin-shaft-connector.js?v=20261117entranceCollider1",
     "js/ruin-v50-vestibule.js?v=20261108h61ad699",
-    "js/ruin-wall-coffins.js?v=20261115coffinWake1",
-    "js/ruin-multifloor-v50-style.js?v=20261114shaftTravel1",
+    "js/ruin-wall-coffins.js?v=20261117coffinRecess1",
+    "js/ruin-multifloor-v50-style.js?v=20261117coffinRecess1",
     "js/ruin-checkpoint-travel.js?v=20261116torchsourceTapHold1"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
