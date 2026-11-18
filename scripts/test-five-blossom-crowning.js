@@ -18,7 +18,7 @@ const festivalScript=read('docs/js/festival-system.js'); // Regression for the e
 assert.match(festivalScript,/father_hunundi_hodu'[\s\S]{0,200}festival_npc_gift/,'Father Hunundi offers the canonical festival NPC action');
 assert.match(festivalScript,/FestivalBlossomHunt\?\.turnInAtHunundi/,'Father Hunundi action executes the real hunt submission');
 
-let civilYear=1156,area='town',tile=null,listener=null,cutscenes=0,gearSaves=0,avatarRefresh=0,questsSaved=0;
+let civilYear=1156,area='town',tile=null,listener=null,cutscenes=0,gearSaves=0,avatarRefresh=0,questsSaved=0,scheduleInvalidations=0;
 let failNextCompletionSave=false; // Simulates a transient quest-persistence failure after the ceremony has already saved its physical reward.
 const initial={characters:[
   {id:'owner',nickname:'Naku',gearInventory:{keyItems:[],clothingItems:[],
@@ -74,7 +74,7 @@ const W={
     userData:{},position:{set(){}},scale:{multiplyScalar(){}},
     traverse(callback){callback({geometry:{},userData:{}});}
   };}},
-  NpcScheduling:{registerTargetOverride(id,fn){audienceShots.push({owner:id,fn});}},
+  NpcScheduling:{registerTargetOverride(id,fn,priority){audienceShots.push({owner:id,fn,priority});},invalidateTargetDecisions(){scheduleInvalidations++;}},
   LocalDBOverrides:{async loadDatabase(){return {npcs:walkers.map(w=>({id:w.rec.id,name:w.rec.name}))};}},
   CharacterActionLocks:{acquire(){return {release(){}};}},
   AmbientDialogue:{cheer(){}},
@@ -210,6 +210,8 @@ async function main(){
   assert.equal(equipment.devWornClothing().hat?.baseCosmeticId,'appearance::hat::basic_headband',
     'new prize id retains the real headband portrait fallback');
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
+  assert(audienceShots.some(item=>item.owner==='five-blossoms-crowning' && item.priority>0),'crowning audience outranks ordinary town plans');
+  assert(scheduleInvalidations>=7,'crowd gathering and release both invalidate cached NPC destinations');
   console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real hat gear/fallback, later awards, persistence, duplicate lockout passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
