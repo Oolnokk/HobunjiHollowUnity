@@ -1142,8 +1142,8 @@
     window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Read the current aim immediately before the projectile spawns.
     const aim = playerAimSolution('torch',sourceTransform?.position); // Reuses the normal reticle/launch solver for fallback and valid muzzle coordinates.
     if (!aim?.origin || !aim?.direction) return null;
-    const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.()); // A torch is aimed along the player's actual 3D camera/reticle ray, not the animated holder's world-facing orientation.
-    const dir = cameraRay?.direction || aim.direction; // Legacy camera-less/controller previews still use the existing solved direction.
+    const dir = aim.direction; // The shared reticle solver converges the camera ray on the held hand's release position, including close-up parallax.
+    const aimSource = aim.targetPoint ? (aim.reticleTarget ? 'camera-hitbox' : 'camera-reticle') : 'fallback-facing'; // Reports whether a valid camera ray or the ordinary facing fallback solved the shot.
     const angle = Math.atan2(dir.z, dir.x);
     const pitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
     const authoredScale = Number(window.WeaponToolStances?.poses?.torchHold?.scale ?? window.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same bounded neutral multiplier as the visible belt torch.
@@ -1158,7 +1158,8 @@
         visualScale: projectile.visual.scale.x, launchTransformMode: projectile.launchTransformMode,
         planeWidth: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.width || 0,
         planeHeight: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.height || 0,
-        aimSource: cameraRay ? 'camera-ray' : 'fallback-reticle',
+        aimSource,
+        targetPoint: aim.targetPoint ? { x: aim.targetPoint.x, y: aim.targetPoint.y, z: aim.targetPoint.z } : null, // Grounded reticle convergence point for the mobile projectile diagnostic.
       }; // Inspect trajectory and scale from Pixel Probe without a desktop console.
       playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike.
     }
