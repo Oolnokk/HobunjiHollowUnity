@@ -26,6 +26,9 @@
   const ENTRY_PATH_RETRY_MS = 1200; // Delay before wildlife repeats a failed search for the same climb entry.
   const HOP_BOUNCE_UNITS = 0.35;
   const DESCEND_ACTIVE_S = 0.42; // Going down is one leap, like the player's jump-down.
+  const FOLLOW_DROP_NEAR_TILES = 5; // Only mirror a nearby owner's descent, not a distant cliff shortcut.
+  const FOLLOW_DROP_LANDING_TILES = 3.5; // The landing must be on the owner's reachable lower shelf.
+  const UNSAFE_DROP_TILES = new Set(['river', 'stream', 'trench', 'water', 'lava', 'void', 'pit', 'chasm', 'abyss']); // Never auto-jump into a hazard.
   const FALL_S = 0.38;
   const MAX_WALL_TILES = 4;
   const TRIGGER_PROBE_TILES = 0.6; // How close to the wall's foot the creature must be.
@@ -246,7 +249,8 @@
     const startY = Number(start.y), endY = Number(end.y);
     c._cliffClimb = {
       phase: 'climb', t: 0, hops: 1,
-      activeS: HOP_ACTIVE_S, pauseS: HOP_PAUSE_S,
+      activeS: endY < startY ? DESCEND_ACTIVE_S : HOP_ACTIVE_S,
+      pauseS: endY < startY ? 0 : HOP_PAUSE_S, // Downhill route hops use the same one-leap timing as direct drops.
       startX: c.x, startY: c.y,
       endX: end.x * deps.TILE, endY: end.z * deps.TILE,
       surfaceStartY: startY, surfaceEndY: endY, surfaceY: startY,
@@ -324,6 +328,55 @@
     return true;
   }
 
+  // A companion whose master *jumped* down can leave by the adjacent real ledge
+  // instead of first circling back to the network's designated climb handhold.
+  // This is an optional short descent only: distant/blocked landings still use
+  // the established CliffRouteNetwork paths, never a blind vertical snap.
+  function tryCompanionLedgeDrop(c, goalX, goalY, network) {
+    if (!c.isCompanion || c.banditCompanion || (c.stableRole && c.stableRole !== 'companion') ||
+        !c._followOwnerDownCliff || !network || !window.CliffRouteNetwork?.componentAt) return false;
+    const follow = c._companionGroundFollow; // Only the current *owner-follow* destination may trigger a direct drop.
+    if (!follow || Math.abs(Number(follow.destinationX) - goalX) > 1 ||
+        Math.abs(Number(follow.destinationY) - goalY) > 1) return false;
+    const active = grid(), tile = deps.TILE; // Reuses the current exterior terrain and pixel tile size.
+    if (!Number.isFinite(tile) || tile <= 0) return false;
+    const originCol = Math.floor(c.x / tile), originRow = Math.floor(c.y / tile);
+    const ownerCol = Math.floor(goalX / tile), ownerRow = Math.floor(goalY / tile);
+    const origin = active?.[originRow]?.[originCol], ownerGround = active?.[ownerRow]?.[ownerCol];
+    if (!origin || !ownerGround || origin.incline || ownerGround.incline ||
+        Math.hypot(goalX - c.x, goalY - c.y) > tile * FOLLOW_DROP_NEAR_TILES) return false;
+    const startTier = Number(origin.elevTier) || 0, goalTier = Number(ownerGround.elevTier) || 0;
+    if (startTier <= goalTier) return false;
+    const sourceComponent = window.CliffRouteNetwork.componentAt(network, originCol, originRow); // Only valid walkable upper shelves can launch a leap.
+    const goalComponent = window.CliffRouteNetwork.componentAt(network, ownerCol, ownerRow);
+    if (sourceComponent < 0 || goalComponent < 0 || sourceComponent === goalComponent) return false;
+    const towardX = goalX - c.x, towardY = goalY - c.y;
+    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+      .sort((a, b) => b.x * towardX + b.y * towardY - a.x * towardX - a.y * towardY);
+    for (const dir of dirs) {
+      for (let step = 1; step <= MAX_WALL_TILES; step++) {
+        const col = originCol + dir.x * step, row = originRow + dir.y * step;
+        const landing = active?.[row]?.[col];
+        if (!landing || isBoundary(landing)) break;
+        if (landing.incline) continue; // Terrain may paint multiple cliff-face wall tiles.
+        const endTier = Number(landing.elevTier) || 0;
+        const x = (col + 0.5) * tile, y = (row + 0.5) * tile;
+        if (endTier >= startTier || endTier < goalTier ||
+            deps.isSolid(landing.type) || UNSAFE_DROP_TILES.has(String(landing.type).toLowerCase()) ||
+            (Number(landing.water) || 0) >= 0.003) break; // Dynamic flooded landings are hazards too.
+        if (window.CliffRouteNetwork.componentAt(network, col, row) !== goalComponent ||
+            Math.hypot(goalX - x, goalY - y) > tile * FOLLOW_DROP_LANDING_TILES ||
+            Math.hypot(goalX - x, goalY - y) >= Math.hypot(goalX - c.x, goalY - c.y) ||
+            !deps.creatureCanEnterTile(c.def, x, y, NaN, NaN, c, true)) break;
+        beginClimb(c, { dir, landCol: col, landRow: row, startTier, landTier: endTier,
+          wallTiles: step - 1, startTile: origin, landTile: landing });
+        advance(c, 0); // The existing animated drop owns position and sprite height until landing.
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Used both by chasing enemies and the shared moveCreatureToward choke
   // point (herds, prey, companions, returning animals). A higher/lower goal
   // is routed to a *selected* cliff path instead of teleporting in height.
@@ -340,6 +393,7 @@
     if (c.health <= 0 || c.prone || c.knockbackT > 0 || c.onBranch) return false;
     const net = networkForCurrentArea();
     if (!net) return false;
+    if (tryCompanionLedgeDrop(c, goalX, goalY, net)) return true; // Mirrored falls outrank the longer return-to-climb route.
     const fromC = Math.floor(c.x / deps.TILE), fromR = Math.floor(c.y / deps.TILE);
     const goalC = Math.floor(goalX / deps.TILE), goalR = Math.floor(goalY / deps.TILE);
     const edge = window.CliffRouteNetwork.toward(net, fromC, fromR, goalC, goalR);
@@ -357,6 +411,7 @@
     navigate,
     knockOff,
     isClimbing: c => !!c?._cliffClimb,
+    tryCompanionLedgeDrop, // Exposed for deterministic regression tests and mobile diagnostics.
     get debug() { return { ...debug, ...entryDebug }; },
   };
 })();
