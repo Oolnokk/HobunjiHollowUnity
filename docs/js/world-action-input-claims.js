@@ -5,7 +5,7 @@
   const pressed = new Map(); // actionId -> claim snapshot that consumed its press; keeps release paired even if proximity/UI changes before button-up.
   let revision = 0;
   let archRevision = 0; // Game's action-bar cache invalidates only when the winning visible contextual arch action changes.
-  let archSignature = ''; // Compared on claim registrations/withdrawals, not during the HUD's frame refresh.
+  let archSignature = '[null,null,null,null,null]'; // Empty five-slot baseline; unrelated first claim must not invalidate HUD.
   const ARCH_INPUT_IDS = Object.freeze(['action1','action2','action3','action4','action5']); // Same five bound semantic inputs as the physical action arch.
   let combatResolver = () => false; // Injected player combat state; used to prevent beginning or resuming world hold interactions in combat.
   let contextResolver = () => false; // Injected visible action-arch override check; used to arbitrate combat even before a button is pressed.
