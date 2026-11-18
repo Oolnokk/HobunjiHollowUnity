@@ -78,6 +78,21 @@ api.__test.setLibraryPattern('base', 'new-primary');
 assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'replacing primary retains its independent overpass dye');
 api.__test.setOverpassPattern('base', '');
 assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'clearing only overpass leaves first paint intact');
+assert.equal(api.__test.addFusedPattern('base', 'fuse-a'), true, 'first fused motif can share the base genetic region');
+assert.equal(api.__test.addFusedPattern('base', 'fuse-b'), true, 'a third motif shares primary ink rather than occupying the overpass slot');
+assert.equal(api.__test.setFusedPatternPlacement('base', 0, { repoPatternId:'fuse-a', usageOffsetX:12 }), true, 'individual fused motifs have independent placement settings');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns[0].usageOffsetX, 12, 'fused placement persists through Apply data normalization');
+assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'fused motifs do not masquerade as an overpass in the legacy pattern stack');
+api.__test.setOverpassPattern('base', 'overpass');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 2, 'an overpass coexists with the merged primary pattern group');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'the distinct overpass still receives its own dye');
+api.__test.setLibraryPattern('base', 'new-primary');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 2, 'changing primary preserves the additive fused motifs');
+assert.equal(api.__test.removeFusedPattern('base', 0), true, 'a single fused motif can be removed without clearing the genetic region');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 1, 'only the selected fused motif was removed');
+assert.equal(api.__test.removeFusedPattern('base', 0), true, 'last fused motif can be removed');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'removing fused motifs retains the original overpass');
+api.__test.setOverpassPattern('base', '');
 const previewSource = { dyeHex:'#225588', pattern:{ repoPatternId:'old' }, patterns:[
   { repoPatternId:'old' }, { repoPatternId:'overpass', inkColorHex:'#cc7722' }
 ] }; // Simulates Color Pools' saved two-color paint before opening PatternAuthoring.
@@ -139,10 +154,23 @@ assert(renderer.includes("applyColorPoolPaint(basePaintSource, genotype, 'base'"
 assert(renderer.includes('fullBaseRecolor ? null : basePaintMask'), 'ordinary base paint is clipped by the authored genetic base mask');
 assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
-assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass compositor'), 'the real two-slot weaving compositor is public for Color Pools/NPC reuse');
+assert(renderer.includes('fusedPrimaryCount'), 'animal renderer tells the compositor to union the same-color group before its separate overpass');
+assert(renderer.includes('paint.mergedPatterns'), 'saved fused motifs survive into the runtime species renderer');
+assert(weaving.includes('function fuseSampledPatternMasks('), 'shared mask combinator draws one perimeter around overlapping motifs');
+const fuseStart = weaving.indexOf('  function fuseSampledPatternMasks(');
+const fuseEnd = weaving.indexOf('\n  async function applyPatternStackToTintedImage(', fuseStart);
+const fuse = vm.runInNewContext('(' + weaving.slice(fuseStart, fuseEnd).trim() + ')'); // Exercise pure intersection behavior without browser canvas.
+const merged = fuse([Uint8Array.from([1,1,0,0]), Uint8Array.from([0,1,1,0])],
+  [Uint8Array.from([0,1,0,0]), Uint8Array.from([0,0,1,0])], 2);
+assert.deepEqual(Array.from(merged.combinedMask), [1,1,1,0], 'overlapping same-ink motifs combine into one continuous alpha silhouette');
+assert.deepEqual(Array.from(merged.combinedSeparator), [0,0,1,0], 'fusion removes the internal overlap seam but retains outer motif separators');
+assert(colorPoolsSource.includes('.cp-preview-column{position:sticky'), 'Color Pools preview remains pinned while scrolling many regions');
+assert(colorPoolsSource.includes('data-act="add-fused"'), 'Color Pools exposes additive pattern picker and per-entry remove controls');
+assert(weaving.includes('.loomcraft-preview-column{position:sticky'), 'loom pattern editing keeps the shared preview in sight');
+assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass and opt-in fused-primary compositor'), 'the shared compositor remains public for Color Pools/NPC reuse');
 assert(weaving.includes('pattern.motifDataUrl || pattern.motifUrl'), 'shared stack compositor also accepts repo-authored motif URLs');
 assert(renderer.includes('applyPatternStackToTintedImage'), 'Color Pools routes animal surface paint through the primary+overpass compositor');
-assert(renderer.includes('patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'animal paint diagnostics expose the actual authored/clamped knot-style overpass gap');
+assert(renderer.includes('overpass: overpass ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'only the distinct overpass can expose knot-style clearance; fused motifs cannot');
 assert(stableSource.includes('stableEntries, // Shared live Stable collection'), 'Stable progression exposes its existing live collection instead of a duplicate store');
 assert(stableSource.includes('saveStable,'), 'Color Pools persists through the Stable owner');
 assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a fallback matching the authored asset');
