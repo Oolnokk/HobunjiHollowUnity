@@ -28,6 +28,16 @@ assert.equal(vase.parts.length,1,'retired rigid petal discs are removed, not hid
 assert.equal(vase.parts[0].id,'blossom-vase');
 assert.equal(vase.parts[0].kind,'cup');
 assert.equal(vase.parts[0].materialRole,'pottery');
+const smallTable = readJson('docs/config/furniture-authored/tableSmall.json'); // Pottery bottom and table top must coincide.
+const tabletop = Math.max(...smallTable.parts.filter(p=>p.kind==='box' && p.transform.sy < 0.2).map(p=>p.transform.y+p.transform.sy/2)); // Use actual authored slab, not a guessed tile height.
+assert(Math.abs((vase.parts[0].transform.y-vase.parts[0].transform.sy/2)-tabletop)<0.03,
+  'vase base rests flush on the small table surface, not hovering');
+const tintableCard=fs.readFileSync('docs/assets/leaves/leaf_festival_blossom.svg','utf8'); // One neutral texture multiplies to all five exact window hues.
+assert(tintableCard.includes('fill="#f5f5f5"') && tintableCard.includes('xmlns="http://www.w3.org/2000/svg"'),
+  'neutral alpha-cutout leaf art is white, not the green wilderness card');
+const foliageSource=fs.readFileSync('docs/js/foliage-generator.js','utf8');
+assert(foliageSource.includes("leafTexture:'assets/leaves/leaf_festival_blossom.svg'"),
+  'tabletop preset uses the neutral blossom card');
 
 const requested=[]; // The specific changed vase JSON gets a fresh query, unlike unchanged furniture.
 const authoredContext={window:{},THREE:{Matrix4:class {},Vector3:class {},Quaternion:class {}},fetch:url=>{requested.push(url);return Promise.resolve({ok:false});}}; // Loader allocates reusable transform scratch objects at module initialization.
@@ -87,7 +97,7 @@ for(const table of tables){
   const group=root.children.find(child=>child.name==='festival-dressing');
   const tree=group?.children.find(child=>child.name==='festival-blossom-sapling');
   assert(tree,'a generator-built tree actually appears above the authored pottery vase');
-  assert.equal(tree.position.y,0.735,'green stem starts inside vase, not on tabletop');
+  assert.equal(tree.position.y,0.665,'green stem starts inside lowered vase, not on tabletop');
   assert(tree.children[0].userData.festivalSharedFoliage,'shared generator meshes have a nondisposal tag');
 }
 assert.deepEqual(calls.map(call=>call.color),['#00ffff','#ff8000','#ffffff','#ffbf00','#ffb3b3','#00ffff']);
@@ -96,6 +106,21 @@ assert.equal(disposedFoliage,0,'a removed festival cannot destroy cached shared 
 assert.equal(disposedAuthored,12,'the six vase meshes retain ordinary per-instance disposal of their geometry/material');
 const seasonal=fs.readFileSync('docs/js/seasonal-vegetation-tint.js','utf8'); // The weather system must not repaint a deliberate stained-glass accent.
 assert(seasonal.includes('material?.userData?.hobunjiFixedBlossomColor'),'seasonal recoloring skips fixed-color festival leaves');
+const townScript=fs.readFileSync('docs/js/town-zone-buildings.js','utf8'); // Exercise the exact disposal loop used when town decor respawns.
+const cleanupStart=townScript.indexOf('for (const mesh of _townDecorFurnitureGroups) {');
+const cleanupEnd=townScript.indexOf('    _townDecorFurnitureGroups = [];',cleanupStart);
+assert(cleanupStart!==-1 && cleanupEnd>cleanupStart,'town decor cleanup loop remains discoverable');
+const extraRoot=new Group(); // A new town prop can be removed independently of FestivalProps.dispose.
+extraRoot.add(new GeometryGroup('authored'));
+const sharedTree=new GeometryGroup('foliage');sharedTree.userData.festivalSharedFoliage=true;extraRoot.add(sharedTree);
+const beforeAuthored=disposedAuthored, beforeFoliage=disposedFoliage;
+vm.runInNewContext(townScript.slice(cleanupStart,cleanupEnd),{
+  _townDecorFurnitureGroups:[extraRoot],townScene:{remove(){}},
+  window:{HobunjiWalkableElevation:{unregisterFurnitureRails(){}},FestivalProps:{dispose(){}}}
+});
+assert.equal(disposedAuthored,beforeAuthored+1,'town teardown releases table-local geometry');
+assert.equal(disposedFoliage,beforeFoliage,'town teardown does not destroy reusable foliage geometry');
+
 let resolvePending; // Deliberately resolve a decoration load only after its table has left the scene.
 uiWindow.AuthoredFurniture.peek=()=>null;
 uiWindow.AuthoredFurniture.load=()=>new Promise(resolve=>{resolvePending=resolve;});
