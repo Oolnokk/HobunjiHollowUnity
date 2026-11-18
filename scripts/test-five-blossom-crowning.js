@@ -183,6 +183,25 @@ async function main(){
     ['mashtzarr_male',art.mashtzarr],['mammakhbuur_female',art.mashtzarr]
   ]; // Missing gender-specific sprites deliberately reuse the closest existing authored head shape.
   for(const [speciesKey,asset] of variants) assert.equal(crownConfig.speciesVariants[speciesKey].parts.head.layers.front.image.url,'./'+asset);
+  const speciesIndex=JSON.parse(fs.readFileSync(path.join(ROOT,'docs/config/species/index.json'),'utf8')); // Every shipping fighter species has explicit male/female crown art.
+  const specialSprites={kenkari:art.kenkari,rakakoan:art.kenkari,mashtzarr:art.mashtzarr,
+    mammakhbuur:art.mashtzarr,tletingan:art.tletingan}; // Only these groups have a different authored head shape.
+  const portraitCtx=vm.createContext({window:{},console,Image:class {},URL,document:{baseURI:'https://test.invalid/docs/index.html'}}); // Evaluate the production portrait resolver against the actual crown config.
+  vm.runInContext(read('docs/js/portrait-utils.js'),portraitCtx,{filename:'docs/js/portrait-utils.js'});
+  const portraitOption=vm.runInContext('portraitOptionFromJson',portraitCtx)({id:crownId},crownConfig);
+  const portraitResolve=vm.runInContext('resolveOptionLayers',portraitCtx);
+  const portraitTintSlot=vm.runInContext('resolveLayerTintSlot',portraitCtx);
+  for(const {speciesId} of speciesIndex.entries) for(const gender of ['male','female']) {
+    const expected=(specialSprites[speciesId] || (gender==='female'?art.defaultFemale:art.defaultMale)).split('/').pop();
+    const route=crownConfig.speciesVariants[speciesId+'_'+gender]?.parts?.head?.layers?.front?.image?.url;
+    assert(route && route.endsWith(expected),speciesId+' '+gender+' has its own authored crown route');
+    const layers=portraitResolve(portraitOption,{speciesId,gender}); // The actual resolver prefers opposite-gender variants when one is absent.
+    assert.equal(layers.length,1,speciesId+' '+gender+' has exactly one crown layer');
+    assert(layers[0].url.endsWith(expected),speciesId+' '+gender+' renders '+expected+' rather than a fallback gender');
+    assert.equal(layers[0].paletteColorKey,'NONE',speciesId+' '+gender+' preserves full flower colours');
+    assert.equal(portraitTintSlot(layers[0].paletteColorKey,portraitOption.tintSlot),null,'no costume dye on '+speciesId+' '+gender);
+  }
+  assert.equal(Object.keys(crownConfig.speciesVariants).length,speciesIndex.entries.length*2,'complete runtime variant coverage');
   for(const asset of Object.values(art)) assert(fs.existsSync(path.join(ROOT,'docs',asset)),asset+' is an actual shipped PNG');
   const legacyCrown=equipment.devWornClothing().hat; // Simulates a crown earned before the new sprites were uploaded.
   legacyCrown.baseCosmeticId='appearance::hat::basic_headband';
