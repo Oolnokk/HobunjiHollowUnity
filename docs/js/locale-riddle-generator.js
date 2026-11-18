@@ -93,18 +93,51 @@
     water:{flow:['Search {value}; follow where the waters flow','Look {value}; follow what the waters show'],side:['Look {value}; let the water be your guide']},
     path:{way:['Search {value}; the trodden track defines the way','Look {value}; let the trail have its say'],side:['Seek {value}; let the footpath be your guide']},
     boulder:{A:['Search {value}; the earth holds fast to stone','Look {value}; the unyielding rock is shown'],ground:['Seek {value}; the stubborn stone marks the ground'],eyes:['Search {value}; the boulder rises before your eyes']},
-    stoneCairn:{A:['Look {value}; a cairn has gathered stone','Search {value}; the piled stones make their mark known'],ground:['Seek {value}; stacked stones rise from the ground'],eyes:['Seek {value}; let stacked stones guide your eyes']},
-    brokenPillar:{A:['Look {value}; a fractured pillar speaks in stone','Seek {value}; the broken masonry is shown'],ground:['Search {value}; scarred masonry marks the ground'],place:['Look {value}; shattered masonry marks the place']},
+    stoneCairn:{A:['Look {value}; its stacked shape is stone','Search {value}; the piled stones make their mark known'],ground:['Seek {value}; stacked stones rise from the ground'],eyes:['Seek {value}; let stacked stones guide your eyes']},
+    brokenPillar:{A:['Look {value}; its fracture speaks in stone','Seek {value}; the broken masonry is shown'],ground:['Search {value}; scarred masonry marks the ground'],place:['Look {value}; shattered masonry marks the place']},
     deadTree:{tree:['Look {value}; bare branches hold the key','Seek {value}; the leafless tree is yours to see'],eyes:['Search {value}; bare branches sketch the skies'],side:['Seek {value}; let the leafless tree be your guide']},
-    cliffDoor:{door:['Look {value}; the cliffside keeps a door','Seek {value}; stone guards a way to explore'],place:['Search {value}; the cliff door marks the place'],side:['Look {value}; let the cliffside door be your guide']},
+    cliffDoor:{door:['Look {value}; stone keeps watch upon the door','Seek {value}; stone guards a way to explore'],place:['Search {value}; the cliff door marks the place'],side:['Look {value}; let the cliffside door be your guide']},
     rootTotem:{ground:['Look {value}; the carved sign marks the ground'],side:['Seek {value}; let the root totem be your guide']},
-    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place'],ground:["Look {value}; a creature's refuge marks the ground"]}
+    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place'],ground:["Look {value}; that refuge marks the ground"]}
   }); // Witness-specific language only appears for measured and typed structures.
   const SIGNATURE = Object.freeze({
     water:['flow','side'],path:['way','side'],boulder:['A','ground','eyes'],
     stoneCairn:['A','ground','eyes'],brokenPillar:['A','ground','place'],deadTree:['tree','eyes','side'],
     cliffDoor:['door','place','side'],rootTotem:['ground','side'],animalDen:['B','place','ground']
   }); // Favor signature rhymes but leave variety available.
+
+  // Countable noun phrases are seeded per physical referent, rather than per line.
+  // This makes an indefinite first mention, a definite repeat, and "another" for a different site of the same type.
+  const METAPHOR_NOUNS = Object.freeze({
+    stoneCairn:['stone cairn','crown of stacked stones','little tower of stones','pile of weathered stones'],
+    brokenPillar:['broken stone pillar','giant’s broken stone finger','shattered stone column','fractured pillar stump'],
+    deadTree:['dead tree','leafless sentinel','bare-limbed tree','tree with no leaves'],
+    cliffDoor:['cliff door','doorway cut into the cliff','stone-framed entrance','door in the rock face'],
+    rootTotem:['root totem','carved root marker','root-shaped sentinel'],
+    animalDen:['wild animal den','beast’s hollow','creature’s refuge','animal shelter'],
+    boulder:['undiggable boulder','unyielding boulder','immovable rock','stone that no pick can break'],
+    path:['trail','footpath','ribbon of a path','track across the ground'],
+    river:['river','flowing river','ribbon of running water'],
+    stream:['stream','narrow watercourse','ribbon of running water'],
+    waterfall:['waterfall','falling water','cascade of water'],
+    'open water':['open water','stretch of water','pool of water']
+  }); // All forms remain true of their measured terrain, never hint at unobserved features.
+  function referentType(fact) {
+    if (fact.kind === 'landmark') return fact.flavor;
+    return fact.kind === 'water' ? fact.waterType : fact.kind;
+  }
+  function referentPhrase(fact, seed, mentioned, mentionedTypes) {
+    const type = referentType(fact), nouns = METAPHOR_NOUNS[type];
+    const col = fact.coordinate?.col, row = fact.coordinate?.row;
+    if (!nouns || !fact.referenceName || !Number.isFinite(col) || !Number.isFinite(row)) return fact;
+    const id = type + ':' + col + ',' + row; // Same physical site retains its identifier across stanzas and saves.
+    const noun = nouns[hash(seed + '|metaphor|' + id) % nouns.length];
+    const repeated = mentioned.has(id), another = !repeated && mentionedTypes.has(type);
+    const firstArticle = /^an? /i.test(fact.referenceName) ? (/^[aeiou]/i.test(noun) ? 'an' : 'a') : 'the';
+    const article = repeated ? (hash(seed + '|repeat|' + id) % 2 ? 'that' : 'the') : another ? 'another' : firstArticle;
+    mentioned.add(id); mentionedTypes.add(type); // Recorded only when a line actually mentions this site.
+    return { ...fact, value:fact.value.replace(fact.referenceName, article + ' ' + noun) };
+  }
 
   function hash(value) {
     let n = 2166136261; // Stable choices make a saved riddle reproducible across browsers and devices.
@@ -181,12 +214,12 @@
     const water = samples.find(s => s.type === 'water');
     if (water) {
       const kind = ['river', 'stream', 'waterfall'].includes(water.waterType) ? water.waterType : 'open water';
-      facts.push({ kind: 'water', waterType:kind, value: relationship(point, water, 'the ' + kind), source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
+      facts.push({ kind: 'water', waterType:kind, referenceName:'the ' + kind, value: relationship(point, water, 'the ' + kind), source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
     }
     const path = samples.find(s => s.type === 'path');
-    if (path && path.d <= 16) facts.push({ kind: 'path', value: relationship(point, path, 'the trail'), source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
+    if (path && path.d <= 16) facts.push({ kind: 'path', referenceName:'the trail', value: relationship(point, path, 'the trail'), source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
     const boulder = samples.find(s => s.type === 'boulder');
-    if (boulder) facts.push({ kind:'boulder', value:relationship(point,boulder,'the undiggable boulder'), source:'post-generation-boulder-tile', coordinate:{col:boulder.col,row:boulder.row}, distance:boulder.d });
+    if (boulder) facts.push({ kind:'boulder', referenceName:'the undiggable boulder', value:relationship(point,boulder,'the undiggable boulder'), source:'post-generation-boulder-tile', coordinate:{col:boulder.col,row:boulder.row}, distance:boulder.d });
     const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId && !String(other.localeId || '').startsWith('locale_five_blossoms_')); // Never give away a different blossom as a landmark.
     const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale', kind:'authoredLocale' })); // Already-stamped locale anchors are authoritative.
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem', kind:'rootTotem' }); // Uses the existing root-totem placement index.
@@ -196,14 +229,14 @@
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
       .sort((a,b) => a.d - b.d || a.point.row - b.point.row || a.point.col - b.point.col);
-    const chosen = []; // Two different nearby feature types can triangulate the target in two stanzas.
+    const chosen = []; // Two separate physical sites can triangulate a target, even when both have the same kind.
     for (const item of nearbyLandmarks) {
-      if (chosen.some(prev => prev.kind === item.kind || (prev.point.col === item.point.col && prev.point.row === item.point.row))) continue;
+      if (chosen.some(prev => prev.point.col === item.point.col && prev.point.row === item.point.row)) continue; // Distinct cairns, dens, etc. are eligible even if their type matches.
       chosen.push(item);
       if (chosen.length === 2) break;
     }
     for (const item of chosen) facts.push({
-      kind:'landmark', flavor:item.kind, value:relationship(point,item.point,item.name),
+      kind:'landmark', flavor:item.kind, referenceName:item.name, value:relationship(point,item.point,item.name),
       source:item.source, coordinate:{col:item.point.col,row:item.point.row}, distance:item.d
     });
     // No made-up landmarks and no literal tile counts. Sparse locations simply get a shorter, broader poem.
@@ -254,6 +287,7 @@
       const prior = groups[groups.length - 2];
       groups[groups.length - 1].unshift(prior[prior.length - 1]);
     }
+    const mentioned = new Set(), mentionedTypes = new Set(); // Per-poem referents prevent indefinite articles from reintroducing the same object.
     return groups.map((group, stanzaIndex) => {
       const lines = group.length >= 4 ? group
         : group.length === 3 ? [group[0], group[1], group[0], group[2]]
@@ -261,9 +295,9 @@
       const stanzaSeed = seed + ':' + stanzaIndex;
       if (lines.length === 2) {
         const family = chooseFamily([lines[0], lines[1], lines[1], lines[0]], 0, null, stanzaSeed + '|couplet');
-        const first = lineFor(lines[0], family, stanzaSeed, 0);
+        const first = lineFor(referentPhrase(lines[0], seed, mentioned, mentionedTypes), family, stanzaSeed, 0);
         const firstEnding = first.trim().split(/\s+/).pop().toLowerCase();
-        const last = lineFor(lines[1], family, stanzaSeed, 1, firstEnding);
+        const last = lineFor(referentPhrase(lines[1], seed, mentioned, mentionedTypes), family, stanzaSeed, 1, firstEnding);
         return [first + ',', last + '.']; // One final rhyme instead of repeating the target and landmark.
       }
       const a = chooseFamily(lines, 0, null, stanzaSeed + '|A');
@@ -271,7 +305,7 @@
       const endings = ['', ''];
       return lines.map((fact, i) => {
         const family = i % 2 ? b : a, parity = i % 2;
-        const line = lineFor(fact, family, stanzaSeed, i >= 2 ? 1 : 0, endings[parity]);
+        const line = lineFor(referentPhrase(fact, seed, mentioned, mentionedTypes), family, stanzaSeed, i >= 2 ? 1 : 0, endings[parity]);
         endings[parity] = line.trim().split(/\s+/).pop().toLowerCase();
         return line + (i === 3 ? '.' : i === 1 ? ';' : i === 0 || i === 2 ? ',':',');
       });

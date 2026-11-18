@@ -98,6 +98,47 @@ for (let seed = 0; seed < 1200; seed++) {
 }
 assert.equal(coveredFamilies.size,10,'all ten phonetic families exercised');
 assert.ok(['stoneCairn','brokenPillar','deadTree','cliffDoor','rootTotem','animalDen'].every(kind=>coveredLandmarks.has(kind)),'all registered landmark types represented');
+// Anaphora is based on physical site identity, not merely on its noun or stanza position.
+const twoCairns = layoutFor('cyan', 23, 22); // Two distinct locations of one landmark type expose article ambiguity.
+const cairnSites = [
+  {kind:'stoneCairn',name:'a stone cairn',point:{col:15,row:20},source:'generated-year-round-scenery'},
+  {kind:'stoneCairn',name:'a stone cairn',point:{col:31,row:27},source:'generated-year-round-scenery'}
+]; // Both are within the genuine nearby-scene search range.
+for(let seed = 0; seed < 300; seed++){
+  const options={zoneId:'map_northern_cliffs',layout:twoCairns,instance:twoCairns.localeInstances[0],
+    targetKind:'blossom',targetName:'Cyan Blossom',landmarks:cairnSites,seed:'cairn-articles-'+seed};
+  const output=Riddles.generate(options);
+  assert.equal(output.ok,true,'same-type landmarks remain rhymable');
+  const references=output.facts.filter(f=>f.kind==='landmark');
+  assert.equal(references.length,2,'two distinct cairns are eligible as references');
+  assert.equal(references[0].flavor,'stoneCairn');
+  assert.equal(references[1].flavor,'stoneCairn');
+  assert.notEqual(references[0].coordinate.col,references[1].coordinate.col,'distinct sites retain distinct coordinates');
+  assert.match(output.stanzas[0][2],/\b(?:a|an) (?:stone cairn|crown of stacked stones|little tower of stones|pile of weathered stones)\b/,'first cairn gets an indefinite mention');
+  assert.match(output.stanzas[0][3],/\banother (?:stone cairn|crown of stacked stones|little tower of stones|pile of weathered stones)\b/,'second separate cairn uses another');
+  assert.match(output.stanzas[1][0],/\b(?:the|that) (?:stone cairn|crown of stacked stones|little tower of stones|pile of weathered stones)\b/,'return to the same first or second cairn uses a definite reference');
+  assert.equal(output.text,Riddles.generate(options).text,'metaphors and articles remain deterministic across reloading');
+  assert.equal(Riddles.validate(output),true,'anaphora does not disturb terminal rhyme words');
+}
+const mixedTypes = layoutFor('cyan', 23, 22); // A second kind should not be misidentified as another of the first.
+const mixedVerse = Riddles.generate({zoneId:'map_northern_cliffs',layout:mixedTypes,instance:mixedTypes.localeInstances[0],
+  targetName:'Cyan Blossom',targetKind:'blossom',landmarks:[
+    {kind:'stoneCairn',name:'a stone cairn',point:{col:15,row:20},source:'generated-year-round-scenery'},
+    {kind:'deadTree',name:'a dead tree',point:{col:31,row:27},source:'generated-year-round-scenery'}
+  ],seed:'two-distinct-types'});
+assert.equal(mixedVerse.ok,true);
+assert.doesNotMatch(mixedVerse.stanzas[0][3],/\banother\b/,'a different landmark category starts its own first mention');
+const oneDen = layoutFor('cyan', 23, 22); // Previously duplicated "a wild animal den" incorrectly implied two dens.
+const denPoem = Riddles.generate({zoneId:'map_northern_cliffs',layout:oneDen,instance:oneDen.localeInstances[0],
+  targetName:'Cyan Blossom',targetKind:'blossom',landmarks:[
+    {kind:'animalDen',name:'a wild animal den',point:{col:30,row:28},source:'generated-animal-den'},
+    {kind:'deadTree',name:'a dead tree',point:{col:14,row:25},source:'generated-year-round-scenery'}
+  ],seed:'single-den-anaphora'});
+assert.equal(denPoem.ok,true);
+const denLine=denPoem.stanzas[0].find(line=>/\b(?:den|hollow|refuge|shelter)\b/i.test(line));
+assert.ok(denLine,'animal den is present in the generated clue');
+assert.match(denPoem.stanzas[1][0],/\b(?:the|that) (?:wild animal den|beast’s hollow|creature’s refuge|animal shelter)\b/,'revisiting a previously identified den never implies a second den');
+
 // Empty landscapes must never borrow a physical landmark simply to finish a rhyme.
 for (let seed = 0; seed < 400; seed++) {
   const zone = layoutFor('cyan');
