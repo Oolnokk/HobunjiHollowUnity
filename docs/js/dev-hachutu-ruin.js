@@ -849,6 +849,7 @@
       const x=b.minX+3+i*2.6,z=b.minZ+3;
       const chest=window.DevRandomRuinDungeonChests?.create?.({
         id:'hachutu-heart-'+i,x,y,z,tier:4,boss:i===0,culture:'hachutu',parent:session.group,
+        persistenceScope:'hachutuTemple:'+String(session.context.seed), // The vault's generated identity is reused on entry; each claimed chest stays looted in this world.
       });
       if(chest)session.chests.push(chest);
       roots(session.group,x,y,z+1.4,2.4,.06);
@@ -1091,6 +1092,7 @@
       trial:session.trial?{wave:session.trial.wave,cleared:session.trial.cleared,resonance:session.trial.resonance}:null,
       seeds:(session.seeds||[]).map(seed=>({index:seed.index,taken:seed.taken})),bulbs:(session.bulbs||[]).map(bulb=>({index:bulb.index,lit:bulb.lit})),
       heart:{open:session.door?.open,boss:session.heart?.boss?.maskboundTroop||null,bossHp:session.heart?.boss?.health||0,defeated:session.heart?.defeated},
+      vaultChests:session.chests.map(chest=>({id:chest.id,opened:chest.opened,scope:chest.persistenceScope})), // Mobile dev debug reveals which rebuilt vault chests are already claimed.
       errors:session.errors.slice(-6)};
   }
   function debugPreviewSnare(){

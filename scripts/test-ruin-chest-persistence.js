@@ -51,4 +51,45 @@ savePossible=false;
 const blocked=chests.create({...opts,id:'vault-chest-2'});
 assert.equal(chests.open(blocked),false,'unwritable world save cannot mint repeatable loot');
 assert.equal(grantCount,1);
-console.log('Dungeon chest progress persists and blocks duplicate loot: PASS');
+// Standalone Hachutu vaults aren't RuinSites visits: their world-scoped claims
+// must survive destruction and regeneration of the same generated room.
+const metadata = { worlds:[{id:'world-a'},{id:'world-b'}] }; // Canonical world save used to verify independent vault claims.
+let storedMetadata = JSON.stringify(metadata); // Simulates the browser's persisted metadata across room reconstructions.
+let metadataWritable = true; // Simulates a storage-quota/permission failure while claiming an unopened chest.
+context.localStorage = {
+  getItem:key=>key==='hobunjiSaveMeta'?storedMetadata:null,
+  setItem(key,value){assert.equal(key,'hobunjiSaveMeta');if(!metadataWritable)throw new Error('QuotaExceededError');storedMetadata=value;},
+};
+vm.runInNewContext(fs.readFileSync('docs/js/world-meta-store.js','utf8'),context);
+window.__hobunjiPlayerProfile={worldId:'world-a'};
+const independentOpts={...opts,id:'hachutu-heart-0',culture:'hachutu',persistenceScope:'hachutuTemple:71'}; // Same chest location rebuilt whenever this vault is revisited.
+const grantsBeforeVault=grantCount; // Detects any accidental duplicate inventory credit.
+const originalVault=chests.create(independentOpts);
+assert.equal(originalVault.opened,false);
+assert.equal(chests.open(originalVault),true);
+assert.equal(window.WorldMetaStore.hasChestClaim('world-a','hachutuTemple:71','hachutu-heart-0'),true);
+assert.equal(JSON.parse(storedMetadata).worlds[0].claimedDungeonChests['hachutuTemple:71'][0],'hachutu-heart-0');
+const reenteredVault=chests.create(independentOpts);
+assert.equal(reenteredVault.opened,true,'re-entering the same temple restores its claimed chest as opened');
+assert.equal(reenteredVault.hinge.rotation.x,-1.95,'the claimed chest lid is visibly open after regeneration');
+assert.equal(chests.open(reenteredVault),false,'recreated chest cannot credit the player twice');
+assert.equal(chests.controlsFor([reenteredVault]).length,0,'claimed standalone chest no longer offers Open');
+assert.equal(grantCount,grantsBeforeVault+1,'a zone re-entry cannot duplicate Hachutu loot');
+
+window.__hobunjiPlayerProfile={worldId:'world-b'};
+const otherWorldVault=chests.create(independentOpts);
+assert.equal(otherWorldVault.opened,false,'a different world may independently claim its own temple chest');
+assert.equal(chests.open(otherWorldVault),true);
+assert.equal(window.WorldMetaStore.hasChestClaim('world-b','hachutuTemple:71','hachutu-heart-0'),true);
+window.__hobunjiPlayerProfile={worldId:'world-a'};
+const otherGeneration=chests.create({...independentOpts,persistenceScope:'hachutuTemple:72'});
+assert.equal(otherGeneration.opened,false,'a newly generated temple seed is a distinct chest generation');
+metadataWritable=false;
+const inaccessibleSave=chests.create({...independentOpts,id:'hachutu-heart-1'});
+assert.equal(chests.open(inaccessibleSave),false,'an unwritable canonical save cannot allow repeated loot');
+assert.equal(inaccessibleSave.opened,false);
+assert.equal(grantCount,grantsBeforeVault+2,'failed persistence grants nothing');
+metadataWritable=true;
+
+assert(fs.readFileSync('docs/js/dev-hachutu-ruin.js','utf8').includes("persistenceScope:'hachutuTemple:'+String(session.context.seed)"),'vault generator supplies the stable saved identity');
+console.log('Dungeon and standalone vault chest progress persists and blocks duplicate loot: PASS');

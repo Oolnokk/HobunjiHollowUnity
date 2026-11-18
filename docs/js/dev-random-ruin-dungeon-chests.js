@@ -100,6 +100,8 @@
     group.rotation.y = Number(options.yaw) || 0;
     (options.parent || null)?.add?.(group);
 
+    const persistenceScope = typeof options.persistenceScope === 'string' && options.persistenceScope.trim() || null; // Stable generated-vault identity, used only for chests outside RuinSites' site ledger.
+    const persistenceWorldId = persistenceScope ? window.__hobunjiPlayerProfile?.worldId || null : null; // Capture the owning world so an asynchronous lock cannot claim another world's chest.
     const chest = {
       id:String(options.id || group.name),
       tier,
@@ -115,8 +117,12 @@
       lidAngle:0,
       loot:null,
       ruinSeed:window.DevRandomRuin?.getSeed?.()??null, // Captures the active generated ruin identity before leaving or rerolling its scene.
+      persistenceScope, persistenceWorldId, // Standalone vault chests are owned by a saved world+generator scope, not an active RuinSites visit.
     };
-    if(chest.ruinSeed!==null&&window.RuinSites?.isActiveRuinChestOpened?.(chest.id,chest.ruinSeed)===true){
+    const previouslyOpened = chest.persistenceScope
+      ? window.WorldMetaStore?.hasChestClaim?.(chest.persistenceWorldId,chest.persistenceScope,chest.id)===true
+      : chest.ruinSeed!==null&&window.RuinSites?.isActiveRuinChestOpened?.(chest.id,chest.ruinSeed)===true; // Site chests keep their existing checkpoint authority.
+    if(previouslyOpened){
       chest.opened=true;chest.lidAngle=LID_OPEN_ANGLE;
       if(chest.hinge)chest.hinge.rotation.x=LID_OPEN_ANGLE;
       if(chest.glow?.material)chest.glow.material.opacity=0; // Re-entered ruins show the opened lid and cannot grant rewards twice.
@@ -133,8 +139,9 @@
   function pickLock(chest) {
     if (!chest || chest.opened) return false;
     const started = window.ChestLockpicking?.open?.({
-      id: chest.id + ':ruin:' + String(chest.ruinSeed ?? 'local'), title: chest.tierName + ' Dungeon Chest', tier: chest.tier,
-      valid: () => !chest.opened && inScene(chest.group), // Avoid granting loot after a generated chest is removed.
+      id: chest.id + ':ruin:' + String(chest.persistenceScope || chest.ruinSeed || 'local'), title: chest.tierName + ' Dungeon Chest', tier: chest.tier,
+      valid: () => !chest.opened && inScene(chest.group)
+        && (!chest.persistenceScope || window.__hobunjiPlayerProfile?.worldId === chest.persistenceWorldId), // Reject an old world's lock when changing characters/worlds.
       onSuccess: award => open(chest, award), // Reuse existing reward authority and pass through the earned clean-streak bonus.
     });
     if (!started && !window.ChestLockpicking?.isActive?.()) deps?.showToast?.('Lockpicking unavailable.', false);
@@ -143,10 +150,16 @@
 
   function open(chest, lockAward = null) {
     if (!chest || chest.opened) return false;
-    if(chest.ruinSeed!=null&&window.RuinSites?.isInSite?.()
+    if(chest.persistenceScope){
+      if(!chest.persistenceWorldId || window.__hobunjiPlayerProfile?.worldId!==chest.persistenceWorldId
+        || window.WorldMetaStore?.recordChestClaim?.(chest.persistenceWorldId,chest.persistenceScope,chest.id)!==true){
+        deps?.showToast?.('Cannot save this vault chest. Check Save Diagnostics before opening.',false);
+        return false; // Claim is written to the canonical world before loot is rolled; stale/duplicate chests fail closed.
+      }
+    }else if(chest.ruinSeed!=null&&window.RuinSites?.isInSite?.()
       &&window.RuinSites?.markActiveRuinChestOpened?.(chest.id,Number(chest.ruinSeed))===false){
       deps?.showToast?.('Cannot save this dungeon chest. Check save storage before opening.',false);
-      return false; // Prevent generating untracked repeatable loot when the canonical world save is unavailable.
+      return false; // Ordinary generated ruins keep using their existing site-specific progression.
     }
     chest.opened = true;
     window.GameFeel?.treasureFanfare?.(chest.tier, !!chest.boss); // Chests were silent; the lid swing now lands on a treasure motif.
@@ -217,6 +230,6 @@
     // Controls for chests still unopened; the owning puzzle module merges
     // these into its own interaction list.
     controlsFor:list => (list || []).filter(chest => chest && !chest.opened).map(chest => chest.control),
-    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
+    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, persistenceScope:chest.persistenceScope, secret:chest.secret, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
   });
 })();

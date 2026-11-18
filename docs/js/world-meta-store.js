@@ -167,6 +167,27 @@
       try { return readWorldField(worldId, 'ruinProgress') || null; } catch { return null; }
     },
     saveRuinProgress: (worldId, value) => writeField(worldId, 'ruinProgress', value),
+    hasChestClaim(worldId, scope, chestId) {
+      if (!worldId || !scope || !chestId) return false;
+      try {
+        const claims = readWorldField(worldId, 'claimedDungeonChests'); // Shared world ledger read when a standalone vault chest is reconstructed.
+        return Array.isArray(claims?.[scope]) && claims[scope].includes(chestId);
+      } catch { return false; }
+    },
+    recordChestClaim(worldId, scope, chestId) {
+      if (!worldId || !scope || !chestId) return false;
+      try {
+        const { meta, world } = readWorld(worldId); // Read the latest canonical world before any reward can be granted.
+        if (!world) return false;
+        const claims = Object.assign(Object.create(null), world.claimedDungeonChests || {}); // Copy-on-write ledger shared by every character in this world.
+        const opened = Array.isArray(claims[scope]) ? claims[scope] : []; // Chest IDs already claimed for this exact generated vault.
+        if (opened.includes(chestId)) return false; // A second live chest or stale callback cannot grant the reward twice.
+        claims[scope] = [...opened, chestId];
+        world.claimedDungeonChests = claims;
+        localStorage.setItem(META_KEY, JSON.stringify(meta)); // Commit the claim before granting loot; storage failure leaves the chest unopened.
+        return true;
+      } catch { return false; }
+    },
     loadCropProvenance(worldId) { // Corrupt or partially restored world metadata must not crash crop setup or world switching.
       try { return readWorldField(worldId, 'cropProvenance') || null; } catch { return null; }
     },
