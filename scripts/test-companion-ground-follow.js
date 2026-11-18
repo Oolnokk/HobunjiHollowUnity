@@ -7,16 +7,17 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync('docs/game.js', 'utf8'); // Production follower movement and climb integration.
 const responseSource = fs.readFileSync('docs/js/companion-combat-response.js', 'utf8'); // Existing mobile diagnostics surface.
-const helperStart = source.indexOf('function companionFollowGoal(c, master) {'); // Extracts the production helper without running the full browser game.
-const helperEnd = source.indexOf('\n\n      // Shared ground truth', helperStart); // The following comment delimits this helper in game.js.
-assert(helperStart >= 0 && helperEnd > helperStart, 'ground-follow helper is present');
-const helperSource = source.slice(helperStart, helperEnd); // Executes the actual implementation, not a copied test approximation.
+const navigationSource = fs.readFileSync('docs/js/companion-follow-navigation.js', 'utf8'); // Production goal resolver and stuck-recovery module.
 const TILE = 64; // Pixel-space tile size used by the companion's movement.
 const grid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({ elevTier: 0, incline: false }))); // Tiered wilderness fixture.
 grid[1][4].elevTier = 2;
 const context = { TILE, currentArea: 'wilderness', _isZoneArea: area => area === 'wilderness',
   window: { GridTileAccessors: { getActiveGrid: () => grid } }, Number, Math }; // Game dependencies needed by the pure helper.
-const followGoal = vm.runInNewContext('(' + helperSource + ')', context, { filename: 'game-companion-follow-helper.js' });
+vm.runInNewContext(navigationSource, context, { filename: 'companion-follow-navigation.js' });
+const navigation = context.window.CompanionFollowNavigation; // One source of truth for cliff elevation and owner destination.
+navigation.init({ TILE, getCurrentArea: () => context.currentArea,
+  isZoneArea: area => area === 'wilderness', getActiveGrid: () => grid });
+const followGoal = navigation.goal; // Live exported helper, not an inlined copy of game.js.
 
 const companion = { x: 1.5 * TILE, y: 1.5 * TILE, areaGrid: grid }; // Ground companion waiting below the climb.
 const climbingMaster = { x: 2.5 * TILE, y: 1.5 * TILE, climbing: true,
@@ -61,6 +62,11 @@ const companionLoop = source.slice(source.indexOf('function updateCompanions(dt)
 assert.doesNotMatch(companionLoop, /Teleport-and-stick|c\.avatarRef\.group\.position\.y = playerMesh\.position\.y \+ c\.halfHeight \* 0\.5/,
   'legacy owner-back climb snapping is absent');
 assert.match(companionLoop, /if \(c\.stableRole === 'mount'\) continue/, 'mounted animals remain under mount control');
+assert.match(source, /CompanionFollowNavigation\.init\(\{/, 'game.js injects the live grid, projection and collision adapters');
+assert.match(companionLoop, /CompanionFollowNavigation\.goal\(c, master\)/,
+  'the frame loop uses the extracted navigation goal');
+assert.match(companionLoop, /CompanionFollowNavigation\.tickRecovery\(c, master, followGoal, dt\)/,
+  'the real frame loop samples stuck recovery after ordinary movement');
 assert.match(companionLoop, /if \(c\.stableRole === 'shoulderPet'\)/, 'deliberate shoulder pets retain their attachment');
 assert.match(companionLoop, /master\.climbing \|\| followGoal\.routeRequired \|\| distToMaster > FOLLOW_FAR_PX/,
   'owner climbing and elevation mismatch both enter the ordinary follow navigation');
@@ -111,5 +117,58 @@ for (let i = 0; i < 35; i++) climbApi.navigate(routedPet, routeNodes[1].x * TILE
 assert(Math.abs(routedPet.x - routeNodes[1].x * TILE) < 0.5,
   'the actual creature cliff animation reaches the destination without a back-attachment');
 assert.equal(routedPet._cliffClimb, null, 'the scripted climb releases movement ownership when it lands');
+
+// Adjacent safe ledge drops should work immediately, without sending a pet
+// back across the zone to the chosen uphill handhold (even if a fight was left behind).
+const descendingGrid = Array.from({ length: 6 }, () => Array.from({ length: 6 }, () => ({
+  elevTier: 0, incline: false, type: 'grass',
+}))); // Single upper ledge with real lower landing tiles.
+descendingGrid[1][1].elevTier = 2;
+const descendingNet = { cols: 6, rows: 6, component: Array(36).fill(0) }; // Separate upper/lower components.
+descendingNet.component[1 * 6 + 1] = 1;
+climbWindow.CliffRouteNetwork.forGrid = () => descendingNet; // Production module still uses the live route-network interface.
+climbApi.init({
+  TILE, getCurrentArea: () => 'wilderness', isZoneArea: () => true, getActiveGrid: () => descendingGrid,
+  getActiveCols: () => 6, getActiveRows: () => 6,
+  tileSurfaceYInArea: t => t.elevTier || 0,
+  isSolid: t => t === 'rock', creatureCanEnterTile: () => true,
+});
+const droppingPet = { id: 'ledge-follower', creatureKey: 'dabinggi-hound', isCompanion: true,
+  stableRole: 'companion', x: 1.5 * TILE, y: 1.5 * TILE, areaId: 'wilderness',
+  health: 100, def: { moveSpeed: TILE * 3 }, _followOwnerDownCliff: true,
+  _companionGroundFollow: { destinationX: 3.5 * TILE, destinationY: 1.5 * TILE } }; // The live companion AI marked this as owner-follow navigation.
+assert.equal(climbApi.navigate(droppingPet, 3.5 * TILE, 1.5 * TILE, TILE * 3, 0.05), true,
+  'a nearby owner drop starts the shared creature movement');
+assert.equal(droppingPet._cliffClimb?.descending, true, 'companion leaps down instead of climbing up');
+assert.equal(droppingPet._cliffClimb?.endX, 2.5 * TILE, 'landing is on the connected lower ground');
+for (let i = 0; i < 16 && droppingPet._cliffClimb; i++)
+  climbApi.navigate(droppingPet, 3.5 * TILE, 1.5 * TILE, TILE * 3, 0.05);
+assert.equal(droppingPet._cliffClimb, null, 'real downward-leap animation completes and releases navigation');
+assert.equal(droppingPet.x, 2.5 * TILE, 'creature actually lands on the lower shelf');
+
+// An enemy chase or treasure wander must not trigger a direct leap via the shared navigator.
+const unrelatedTargetPet = { ...droppingPet, x: 1.5 * TILE, y: 1.5 * TILE, _followOwnerDownCliff: false }; // Same animal but no owner-retreat order.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'direct cliff shortcut never fires during ordinary combat or wandering');
+unrelatedTargetPet._followOwnerDownCliff = true;
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 4.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'the shortcut cannot target a non-owner waypoint');
+descendingGrid[1][2].elevTier = 2; // One upper flat tile lies between the pet and the edge.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'a creature cannot leap over walkable upper terrain before reaching the lip');
+descendingGrid[1][2].elevTier = 0;
+descendingGrid[1][2].water = 0.1; // Dynamic flooding is not always represented by the tile type.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'flooded lower ledges do not count as safe drop destinations');
+descendingGrid[1][2].water = 0;
+descendingGrid[1][2].type = 'pit'; // The first available drop is no longer safe, even if the owner is below.
+const hazardPet = { ...droppingPet, x: 1.5 * TILE, y: 1.5 * TILE, _cliffClimb: null };
+assert.equal(climbApi.tryCompanionLedgeDrop(hazardPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'no automatic leap into pit terrain');
+assert.equal(hazardPet._cliffClimb, null, 'unsafe downward landing leaves the pet on its current shelf');
+const ownedByMount = { ...hazardPet, stableRole: 'mount' };
+descendingGrid[1][2].type = 'grass';
+assert.equal(climbApi.tryCompanionLedgeDrop(ownedByMount, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'mount movement remains under its dedicated riding controller');
 
 console.log('companion ground-follow and cliff-route regressions passed');
