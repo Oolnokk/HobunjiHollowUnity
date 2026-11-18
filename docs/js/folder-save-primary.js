@@ -297,6 +297,12 @@
     else if (mode === 'change') status = await localSave.changeFolder();
     else if (mode === 'reconnect') status = await localSave.reconnect();
 
+    // A canceled/blocked picker can leave the *previous* folder in ready state.
+    // Never treat that old connection as the newly selected folder.
+    if ((mode === 'choose' || mode === 'change') &&
+        (status.lastAction === 'folder-picker-aborted' || status.lastAction === 'choose-error')) {
+      return { ok: false, changed: false, message: status.lastError || 'Folder selection was canceled or failed.' };
+    }
     if (status.state !== 'ready') return { ok: false, changed: false, message: status.lastError || 'Folder access was not completed.' };
 
     const result = await localSave.loadFromFolder();
