@@ -60,6 +60,8 @@ const window={THREE,WorldActionInputClaims:{setClaims:(id,claims)=>inputClaims.s
 vm.runInNewContext(fs.readFileSync('docs/js/rig-transform-layers.js','utf8'),{window,console}); // Standalone workshop and game share the scoped absolute rig owner.
 vm.runInNewContext(fs.readFileSync('docs/js/festival-wheel-dance-runtime.js','utf8'),{window,console});
 const api=window.FestivalWheelDanceRuntime,scene=new Node(); // Real public lifecycle under test.
+window.NpcSocialInhibition={getDebug:()=>({poseOwnedSkips:7})}; // Existing mobile Pixel Probe should expose the actual late-render suppression count.
+assert.equal(api.diagnostics().suppressedNpcSocialRenderFrames,7,'paired dance debug reports skipped legacy NPC social render frames');
 function actor(height,x){
  const root=new Node(),model=new Node(),neck=new Node(),handGroup=new Node(),legGroup=new Node(); // Per-instance anatomy and cached procedural owners.
  root.position.x=x;scene.add(root);root.add(model,handGroup,legGroup);model.add(neck);neck.position.y=height*.8;
