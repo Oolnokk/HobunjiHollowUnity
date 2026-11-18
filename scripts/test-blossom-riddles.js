@@ -80,8 +80,13 @@ for (let seed = 0; seed < 1200; seed++) {
   assert.ok(poem.stanzas.length<=2);
   for(const stanza of poem.stanzas){
     const endings=stanza.map(line=>line.replace(/[.,;!?]+$/,'').trim().split(/\s+/).pop().toLowerCase());
-    assert.notEqual(endings[0],endings[2],'A rhyme changes its ending word');
-    assert.notEqual(endings[1],endings[3],'B rhyme changes its ending word');
+    if(stanza.length===2){
+      assert.notEqual(endings[0],endings[1],'closing couplet changes its ending word');
+      assert.ok(Object.values(Riddles.RHYMES).some(bank=>bank.includes(endings[0])&&bank.includes(endings[1])),'closing couplet rhymes');
+    } else {
+      assert.notEqual(endings[0],endings[2],'A rhyme changes its ending word');
+      assert.notEqual(endings[1],endings[3],'B rhyme changes its ending word');
+    }
     for(const word of endings){
       const family=Object.keys(Riddles.RHYMES).find(name=>Riddles.RHYMES[name].includes(word));
       assert.ok(family,'every terminal must be in the sound bank');
@@ -102,6 +107,16 @@ for (let seed = 0; seed < 400; seed++) {
   assert.doesNotMatch(verse.text,/\b(?:cairn|pillar|cliff door|landmark|boulder|river|trail|animal den|root totem)\b/i,
     'no terrain-specific nouns may appear when no such feature was inspected');
 }
+const conciseLayout = layoutFor('cyan'); // Verified landmark-only poems should end without duplicated filler.
+const concisePoem = Riddles.generate({zoneId:'map_northern_cliffs',layout:conciseLayout,instance:conciseLayout.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',landmarks:[
+    {name:'a dead tree',kind:'deadTree',point:{col:30,row:28}},
+    {name:'a stone cairn',kind:'stoneCairn',point:{col:15,row:26}}
+  ],seed:'short-tail-regression'});
+assert.equal(concisePoem.ok,true);
+assert.equal(concisePoem.stanzas.length,2);
+assert.equal(concisePoem.stanzas[1].length,2,'the short ending is a rhymed couplet');
+assert.equal((concisePoem.text.match(/Cyan Blossom/g)||[]).length,1,'do not repeat the target in a sparse ending');
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);

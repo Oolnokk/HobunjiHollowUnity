@@ -60,8 +60,8 @@
     },
     bearing:{
       way:['Look {value}; let this bearing point the way','Seek {value}; do not let your steps stray','Search {value}; let that clue have its say'],
-      ground:['Search {value}; a clue waits to be found','Look {value}; the bearing marks this ground','Go {value}; let that hint define your bound'],
-      side:['Look {value}; let the clue be your guide','Seek {value}; set other hints aside','Search {value}; let this bearing abide'],
+      ground:['Search {value}; a clue waits to be found','Look {value}; the bearing marks this ground','Go {value}; to this bearing you are bound'],
+      side:['Look {value}; let the clue be your guide','Seek {value}; set other hints aside','Search {value}; put idle doubts aside'],
       place:['Search {value}; it helps to fix the place',"Look {value}; pursue the riddle's trace",'Seek {value}; explore the nearby space'],
       eyes:['Look {value}; let the clue direct your eyes','Search {value}; the hidden answer lies','Seek {value}; there waits the sought-for prize'],
       door:['Look {value}; then search a little more',"Seek {value}; there's ground left to explore",'Go {value}; find what the land holds in store'],
@@ -98,7 +98,7 @@
     deadTree:{tree:['Look {value}; bare branches hold the key','Seek {value}; the leafless tree is yours to see'],eyes:['Search {value}; bare branches sketch the skies'],side:['Seek {value}; let the leafless tree be your guide']},
     cliffDoor:{door:['Look {value}; the cliffside keeps a door','Seek {value}; stone guards a way to explore'],place:['Search {value}; the cliff door marks the place'],side:['Look {value}; let the cliffside door be your guide']},
     rootTotem:{ground:['Look {value}; the carved sign marks the ground'],side:['Seek {value}; let the root totem be your guide']},
-    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place'],ground:['Look {value}; a creature refuge marks the ground']}
+    animalDen:{B:["Look {value}; the creature's lair is near"],place:['Search {value}; the animal den marks the place'],ground:["Look {value}; a creature's refuge marks the ground"]}
   }); // Witness-specific language only appears for measured and typed structures.
   const SIGNATURE = Object.freeze({
     water:['flow','side'],path:['way','side'],boulder:['A','ground','eyes'],
@@ -229,7 +229,7 @@
     let fallback = '';
     for (let i = 0; i < lines.length; i++) {
       const phrase = lines[(index + offset + i) % lines.length];
-      const line = typeof phrase === 'function' ? phrase(fact) : phrase.replaceAll('{value}', fact.value);
+      const line = typeof phrase === 'function' ? phrase(fact) : phrase.replaceAll('{value}', fact.kind === 'sector' && /^(?:Look|Search|Seek|Go) \{value\}/.test(phrase) ? 'within ' + fact.value : fact.value);
       const word = line.trim().split(/\s+/).pop().toLowerCase();
       if (!fallback) fallback = line;
       if (word !== previousEnding) return line;
@@ -257,8 +257,15 @@
     return groups.map((group, stanzaIndex) => {
       const lines = group.length >= 4 ? group
         : group.length === 3 ? [group[0], group[1], group[0], group[2]]
-        : [group[0], group[1], group[0], group[1]];
+        : group; // Two remaining different facts become a real couplet.
       const stanzaSeed = seed + ':' + stanzaIndex;
+      if (lines.length === 2) {
+        const family = chooseFamily([lines[0], lines[1], lines[1], lines[0]], 0, null, stanzaSeed + '|couplet');
+        const first = lineFor(lines[0], family, stanzaSeed, 0);
+        const firstEnding = first.trim().split(/\s+/).pop().toLowerCase();
+        const last = lineFor(lines[1], family, stanzaSeed, 1, firstEnding);
+        return [first + ',', last + '.']; // One final rhyme instead of repeating the target and landmark.
+      }
       const a = chooseFamily(lines, 0, null, stanzaSeed + '|A');
       const b = chooseFamily(lines, 1, a, stanzaSeed + '|B');
       const endings = ['', ''];
@@ -273,11 +280,11 @@
   function validate(result) {
     if (!result?.stanzas?.length) return false;
     return result.stanzas.every(stanza => {
-      if (stanza.length !== 4) return false;
+      if (stanza.length !== 4 && stanza.length !== 2) return false;
       const families = stanza.map(rhymeOf);
       const endings = stanza.map(line => line.trim().replace(/[.,;!?]+$/, '').split(/\s+/).pop().toLowerCase());
-      return families.every(Boolean) && families[0] === families[2] && families[1] === families[3] &&
-        families[0] !== families[1] && endings[0] !== endings[2] && endings[1] !== endings[3];
+      return families.every(Boolean) && (stanza.length === 2 ? families[0] === families[1] && endings[0] !== endings[1] :
+        families[0] === families[2] && families[1] === families[3] && families[0] !== families[1] && endings[0] !== endings[2] && endings[1] !== endings[3]);
     });
   }
   function generate(options = {}) {
