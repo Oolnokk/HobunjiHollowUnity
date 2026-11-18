@@ -2102,11 +2102,9 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "fishing-mace": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
@@ -2134,7 +2132,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-broadsword": {
           "scaleX": 0.6,
@@ -2159,7 +2157,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-longsword": {
           "scaleX": 0.8,
@@ -2184,20 +2182,16 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "hatchet": {
-          "scaleX": 0.6,
-          "scaleY": 0.9,
-          "x": -5,
-          "y": 30,
           "layerOrder": "head-over-haft"
         },
         "hoe": {
           "scaleX": 0.5,
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
-          "disallow": true
+          "disallow": false
         },
         "kylie": {
           "scaleX": 0.5,
@@ -2267,7 +2261,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "plains-blade": {
           "scaleX": 0.75,
@@ -2293,7 +2287,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "porakaneki-greatclub": {
           "scaleX": 0.8,
@@ -2338,17 +2332,9 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         },
         "warhammer": {
-          "scaleX": 0.55,
-          "scaleY": 1.9,
-          "x": 7,
-          "y": 15,
           "layerOrder": "head-over-haft"
         },
         "work-hammer": {
-          "scaleX": 0.375,
-          "scaleY": 2,
-          "y": -35,
-          "rotation": 1,
           "layerOrder": "head-over-haft"
         },
         "bshuakauitl": {
@@ -3640,9 +3626,6 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "thrust"
         },
         "fishing-mace": {
-          "scaleX": 0.95,
-          "scaleY": 1.55,
-          "y": 170,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
@@ -3840,9 +3823,6 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "scaleY": 2,
-          "x": 30,
-          "y": 45,
           "layerOrder": "haft-over-head"
         },
         "warhammer": {
@@ -3978,9 +3958,6 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "scaleY": 2.5,
-          "x": 20,
-          "y": 70,
           "layerOrder": "haft-over-head"
         },
         "warhammer": {
@@ -13481,11 +13458,9 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "fishing-mace": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
@@ -13512,7 +13487,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-broadsword": {
           "scaleX": 0.6,
@@ -13537,7 +13512,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-longsword": {
           "scaleX": 0.8,
@@ -13562,20 +13537,16 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "hatchet": {
-          "scaleX": 0.6,
-          "scaleY": 0.9,
-          "x": -5,
-          "y": 30,
           "layerOrder": "head-over-haft"
         },
         "hoe": {
           "scaleX": 0.5,
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
-          "disallow": true
+          "disallow": false
         },
         "kylie": {
           "scaleX": 0.5,
@@ -13644,7 +13615,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "plains-blade": {
           "scaleX": 0.75,
@@ -13670,7 +13641,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "porakaneki-greatclub": {
           "scaleX": 0.8,
@@ -13715,17 +13686,9 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         },
         "warhammer": {
-          "scaleX": 0.55,
-          "scaleY": 1.9,
-          "x": 7,
-          "y": 15,
           "layerOrder": "head-over-haft"
         },
         "work-hammer": {
-          "scaleX": 0.375,
-          "scaleY": 2,
-          "y": -35,
-          "rotation": 1,
           "layerOrder": "head-over-haft"
         },
         "bshuakauitl": {

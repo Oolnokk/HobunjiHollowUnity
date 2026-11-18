@@ -107,7 +107,8 @@ for (const head of ['hatchet', 'warhammer', 'work-hammer']) {
   assert.equal(api.settings('fishing-spear', head).animation, 'sweep', 'Older pair animation survives even when newly incompatible.');
 }
 assert.equal(api.isDisallowed('fishing-spear', 'war-cleaver'), false, 'A tang on the haft accepts another blade.');
-for (const head of ['dagger', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) assert.equal(api.isDisallowed('bshuakauitl', head), true);
+// These blade pairs were reauthored with fitted bridges after being excluded, so they are forgeable on both double-ended staffs.
+for (const head of ['dagger', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) for (const shaft of ['bshuakauitl', 'hachutuTorchStaff']) assert.equal(api.isDisallowed(shaft, head), false, `${shaft}/${head} has an authored fit and must be forgeable`);
 assert.equal(api.isDisallowed('bshuakauitl', 'dagger-sword'), false, 'Its authored tang mounts accept the dagger-sword (dressed by recipe boxes).');
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 const spearHammer = api.itemKey('fishing-spear', 'warhammer', 'nativeCopper'); // A sweeping head exception retains the spear's two-hand grip authority.
@@ -171,7 +172,7 @@ window.FoundryShop.init({ inventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES:
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
 unlocked.push('warhammer', 'bshuakauitl', 'kylie');
 assert.equal(window.FoundryShop.craft('warhammer', 'kylie', 'nativeCopper').ok, false, 'direct crafting cannot bypass the retired Kylie head');
-assert.equal(window.FoundryShop.craft('bshuakauitl', 'dagger', 'nativeCopper').ok, false);
+assert.equal(window.FoundryShop.craft('bshuakauitl', 'bshuakauitl', 'nativeCopper').ok, false); // Its own matching head stays excluded.
 const blockedInventory = plain(inventory); // A direct call with both parts unlocked still must enforce the pair policy.
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
 assert.deepEqual(inventory, blockedInventory);

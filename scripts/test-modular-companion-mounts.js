@@ -126,8 +126,9 @@ assert.deepEqual(plain(committed.heads['work-hammer'].mount),
   'Work Hammer head repositioning must survive GitHub import.');
 assert.equal(committed.heads['war-cleaver'].editorOnly, false, 'Keep War Cleaver explicitly enabled.');
 assert.equal(committed.shafts.kylie.editorOnly, false, 'Keep calibrated Kylie shaft enabled for gameplay.');
-assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleX, 0.375);
-assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleY, 2);
+// The old 0.375 x 2 squash compensated for the pre-recalibration mount placement; the fitted mount now needs no pair scale.
+assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleX, undefined);
+assert.equal(committed.shafts.bshuakauitl.overrides['work-hammer'].scaleY, undefined);
 assert.equal(committed.shafts.kylie.overrides['work-hammer'].scaleX, 0.5);
 assert.equal(committed.shafts.kylie.overrides['work-hammer'].scaleY, 2.5);
 assert.equal(committed.shafts.kylie.overrides['fishing-mace'].scaleX, 0.75);
