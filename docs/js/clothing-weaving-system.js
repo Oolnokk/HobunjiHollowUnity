@@ -2658,10 +2658,20 @@
     });
   }
 
+  function compactPatternCacheKey(value) {
+    const source = String(value); // Never hold full user-authored PNG data URLs as map keys.
+    let a = 2166136261, b = 0x9e3779b9; // Two independent hashes plus source length identify the raster recipe.
+    for (let i = 0; i < source.length; i++) {
+      const code = source.charCodeAt(i);
+      a = Math.imul(a ^ code, 16777619);
+      b = Math.imul(b ^ code, 2246822519);
+    }
+    return source.length.toString(36) + ':' + (a >>> 0).toString(36) + ':' + (b >>> 0).toString(36);
+  }
   function patternStackCanvasKey(imageOrCanvas, patterns, colorHex, cachePrefix = '') {
-    const width = imageOrCanvas?.naturalWidth || imageOrCanvas?.width || 1; // Used to keep species/gender sprite-size variants from sharing a composite.
-    const height = imageOrCanvas?.naturalHeight || imageOrCanvas?.height || 1; // Used with width in the deterministic pattern cache key.
-    return `${cachePrefix}|${width}x${height}|${colorHex}|${JSON.stringify(normalizePatternStack(patterns))}`;
+    const width = imageOrCanvas?.naturalWidth || imageOrCanvas?.width || 1; // Species/frame raster dimensions distinguish bake entries.
+    const height = imageOrCanvas?.naturalHeight || imageOrCanvas?.height || 1;
+    return `${cachePrefix}|${width}x${height}|${colorHex}|${compactPatternCacheKey(JSON.stringify(normalizePatternStack(patterns)))}`;
   }
 
   function patternCanvasKey(imageOrCanvas, pattern, colorHex, cachePrefix = '') {
@@ -2936,7 +2946,31 @@
     return { combinedMask, combinedSeparator };
   }
 
+  function patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount) {
+    return patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix)
+      + (options.inkOnly ? ':ink' : '')
+      + (options.continuousSurface === true ? ':continuous' : '')
+      + (requestedFusedCount > 1 ? `:fused:${requestedFusedCount}:${compactPatternCacheKey(JSON.stringify(renderable))}` : ''); // Every fused motif changes the baked-image signature.
+  }
+
   async function applyPatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
+    if (!imageOrCanvas || options.cache === false) return composePatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix, shadingSource, debugLabel, options);
+    const fusedCount = Math.max(1, Math.min(6, Math.floor(Number(options.fusedPrimaryCount) || 1))); // Preserves the actual raster compositor's primary/overpass boundary.
+    const patterns = normalizePatternStack(rawPatterns, fusedCount > 1 ? fusedCount + 1 : 2);
+    const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
+    if (!renderable.length) return imageOrCanvas;
+    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, fusedCount); // Same key for cache, concurrent bake, and final canvas.
+    const cached = cachedPatternedCanvas(key);
+    if (cached) return cached;
+    const pending = pendingPatternStackCanvases.get(key);
+    if (pending) { patternStackJoinCount++; return pending; } // A second preview/render reuses the first frame's asynchronous raster work.
+    const task = composePatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix, shadingSource, debugLabel, options);
+    pendingPatternStackCanvases.set(key, task);
+    try { return await task; }
+    finally { if (pendingPatternStackCanvases.get(key) === task) pendingPatternStackCanvases.delete(key); }
+  }
+
+  async function composePatternStackToTintedImage(imageOrCanvas, rawPatterns, colorHex, cachePrefix = '', shadingSource = null, debugLabel = 'woven-motif', options = {}) {
     const requestedFusedCount = Math.max(1, Math.min(6, Math.floor(Number(options.fusedPrimaryCount) || 1))); // Only animal painting opts into six fused primary masks; clothes retain the existing two-slot behavior.
     const maxEntries = requestedFusedCount > 1 ? requestedFusedCount + 1 : 2;
     const patterns = normalizePatternStack(rawPatterns, maxEntries);
@@ -2944,8 +2978,11 @@
     const renderable = patterns.filter(pattern => !!(pattern?.motifDataUrl || pattern?.motifUrl || pattern?.customMotifId));
     if (!renderable.length) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 1, height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 1;
-    const key = patternStackCanvasKey(imageOrCanvas, renderable, colorHex, cachePrefix) + (options.inkOnly ? ":ink" : "") + (options.continuousSurface === true ? ":continuous" : "") + (requestedFusedCount > 1 ? `:fused:${requestedFusedCount}:${JSON.stringify(renderable)}` : ''); // Include all same-layer motifs so edited third+ motifs cannot hit a stale two-slot cache.
-    if (options.cache !== false && patternedCanvasCache.has(key)) return patternedCanvasCache.get(key);
+    const key = patternStackRenderKey(imageOrCanvas, renderable, colorHex, cachePrefix, options, requestedFusedCount); // A short stable signature avoids retaining large motif PNG strings.
+    if (options.cache !== false) {
+      const cached = cachedPatternedCanvas(key);
+      if (cached) return cached;
+    }
 
     const motifUrls = await Promise.all(renderable.map(async pattern =>
       pattern.motifDataUrl || pattern.motifUrl || await window.MotifStore?.loadMotif?.(pattern.customMotifId)
@@ -3427,7 +3464,7 @@
     reweaveMaterialCost,
     woolCostForSlot: slot => WOOL_COST_BY_SLOT[slot] || 1, // Commission quotes reuse the loom's actual wool cost per garment slot.
     debugSnapshot,
-    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, spriteLayerPaletteKey, paletteKeysForCosmeticSprites, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, fuseSampledPatternMasks, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
+    __test: Object.freeze({ weavingUsesCrossDyePatterns, patternInkHexForLayer, dyeRoutedPatterns, spriteLayerPaletteKey, paletteKeysForCosmeticSprites, isReweavableClothComponent, clothingColorHex, resolvePatternHex, baseCosmeticId, uniqueCraftCosmeticId, thirdTintKey, buildPatternMask, applyPatternToTintedImage, applyPatternStackToTintedImage, labelPatternCells, behindViewUrlsFor, behindViewResultFor, buildPortraitPatternMap, collectPatternImageUrls, resolveIconLayerUrls, patternRolesForLayers, layersUseSecondaryDye, iconLayersForView, cosmeticConfig, summarizeWeavingLabel, weavingPatternForRole, weavingPatternsForRole, normalizePatternStack, fuseSampledPatternMasks, compactPatternCacheKey, cachedPatternedCanvas, rememberPatternedCanvas, clearPatternedCanvases, forcedOverpassPatternForWeaving, withForcedOverpass, weavingSwapsPatternColorsForRole, weavingHasAnyPattern, weavingHasOptionalTrim, weavingHasAnyDecoration, normalizeTrimDyeSlot, clothingTrimConfig, authoredTrimPatternFromManifest, authoredTrimPatternForCosmetic, variantKeyForSourceUrl, trimColorHexForDescriptor, weavingCarriesSavedPattern, gearHasEquippedWovenClothing, requestSessionReadyPlayerAvatarRefresh, decorateAvatarDataWithWovenItems, materializeWeavingLibrarySnapshots, docsRelativeUrl, standaloneAssetUrl, frameShapeFor, wovenIconVisualKey, reweaveMaterialCost, consumeWoolWithQuality, craftFromLoom, resolvedPatternMeshScale, buildMotifClusterSeparatorMask, adjustMaskThickness, buildPatternOutlineMask, scaledOutlineWidth, overpassClearanceMultiplier, exactDirectMaskPass, patternWorkPad, patternGarmentPixelEligible, directTrimOutlineSurfacePixelEligible, directTrimAuthoredOutlinePixel, suppressGeneratedOutlineAgainstAuthoredOutline, patternCellOffset }),
   });
   window.__clothingWeavingDebug = debugSnapshot;
 
