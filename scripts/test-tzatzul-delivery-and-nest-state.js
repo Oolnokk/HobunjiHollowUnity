@@ -80,6 +80,7 @@ for(let i=0;i<90&&bird._tzFlight.phase==='return';i++)W.TzatzulFlightRuntime.upd
 assert.equal(bird._tzFlight.phase,'in-nest','successful player delivery sends the parent into its cave');
 assert.equal(bird.tzatzulInNest,true,'the provisioning parent is hidden from exterior rendering');
 assert.equal(bird._denHidden,true,'other combat systems cannot target a bird inside its nest');
+W.TzatzulFlightRuntime.update(.1); // Record the same interior visit the normal wildlife tick sees before a cave exit.
 area=zone; // Simulate exiting the native cave so the exterior hunt AI is active again.
 clock.time01+=29/60/24;
 W.TzatzulFlightRuntime.update(.1);
@@ -88,6 +89,20 @@ clock.time01+=2/60/24;
 W.TzatzulFlightRuntime.update(.1);
 assert.notEqual(bird._tzFlight.phase,'in-nest','the parent emerges once thirty game minutes pass');
 assert.equal(bird._denHidden,false,'an emerged parent returns to normal rendering and targeting');
+assert(W.TzatzulFlightRuntime.debugSnapshot().nestExitProtected,'escape protection lasts while the player is still near the return point');
+W.PerchSupport.attach(bird,perch);
+assert.equal(W.TzatzulFlightRuntime.__test.choosePrey(bird),null,'an outdoor Tzatzul cannot select the player near the nest exit');
+assert.equal(W.TzatzulFlightRuntime.__test.capture(bird,player),false,'a direct grab cannot bypass exit protection');
+W.Combat.deps.damagePlayer=amount=>{player.health-=amount;};
+assert(W.TzatzulFlightRuntime.__test.swoop(bird,player)); // Exercise contact from a dive already committed to this player.
+for(let i=0;i<60&&bird._tzFlight.phase==='swoop';i++)W.TzatzulFlightRuntime.update(.1);
+assert.equal(player.health,500,'a committed outdoor dive does not hit the returning player');
+assert.equal(entries.length,2,'leaving the cave cannot immediately start another abduction');
+player.x+=13*64;
+W.TzatzulFlightRuntime.update(.1);
+W.PerchSupport.attach(bird,perch);
+assert.equal(W.TzatzulFlightRuntime.debugSnapshot().nestExitProtected,false,'moving away clears exit protection');
+assert.equal(W.TzatzulFlightRuntime.__test.choosePrey(bird,40),player,'ordinary outdoor hunting resumes after the player clears the exit');
 area=nestId; // Subsequent assertions exercise the original interior egg/victim state.
 
 W.TzatzulNestEncounter.buildNest(nestId,{cavernFeatures:{tzatzulNest:plan},floorSurfaceY:0},scene);
@@ -106,6 +121,27 @@ W.TzatzulNestEncounter.update(.1);
   W.TzatzulNestEncounter.restore(save);
   assert.equal(W.TzatzulNestEncounter.serialize().nests[0].victims.length,1,'restore cannot duplicate delivered victims');
   const room=W.TzatzulNestEncounter.ensure(nestId);
+  player.x=(plan.arenaCenter.col+.5)*64; player.y=(plan.arenaCenter.row+.5)*64;
+  player.onBranch={}; player.branchSurfaceY=5; // A high dive that misses also bypasses the low cave-wall impact check.
+  const previousScouts=W.TzatzulFlightRuntime.debugSnapshot().scouts;
+  for(let i=0;i<30&&room.mother._tzFlight.phase==='perched';i++)W.TzatzulNestEncounter.update(.1);
+  assert.equal(room.mother._tzFlight.phase,'swoop','the cave encounter starts the real shared dive');
+  player.x+=8*64; // Dodge across the committed flight path.
+  const phases=new Set(); // Capture the live state sequence and position on each step of a missed dive.
+  for(let i=0;i<100;i++){
+    W.TzatzulNestEncounter.update(.1);
+    phases.add(room.mother._tzFlight.phase);
+    const radius=Math.hypot(room.mother.x/64-plan.arenaCenter.col-.5,room.mother.y/64-plan.arenaCenter.row-.5);
+    assert(radius<=plan.arenaRadiusTiles+.1,'every movement step stays in the authored arena');
+    if(room.mother._tzFlight.phase==='perched')break;
+  }
+  assert.deepEqual([...phases],['swoop','return','perched'],'a miss leads back to a perch');
+  assert.equal(W.TzatzulFlightRuntime.debugSnapshot().scouts,previousScouts,'a cave mother never starts a scouting leg');
+  assert.equal(player.health,500,'a successful dodge avoids the dive');
+  W.TzatzulNestEncounter.update(.1);
+  assert.equal(room.mother._tzFlight.phase,'perched','the next dive waits for the perch pause');
+  for(let i=0;i<30&&room.mother._tzFlight.phase==='perched';i++)W.TzatzulNestEncounter.update(.1);
+  assert.equal(room.mother._tzFlight.phase,'swoop','the mother continues fighting in the cave');
   room.mother.health=0;room.hatchlings[0].health=0;
   W.TzatzulNestEncounter.update(.1);
   const cleared=JSON.parse(JSON.stringify(W.TzatzulNestEncounter.serialize()));

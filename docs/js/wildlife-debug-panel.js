@@ -158,6 +158,7 @@
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
       + '<div>Scout legs: ' + (flight.scouts || 0) + ' · nest stays: ' + (flight.nestStays || 0)
       + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
+      + (flight.nestExitProtected ? '<div>Tzatzul nest exit protection active</div>' : '')
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
       + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
       + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
