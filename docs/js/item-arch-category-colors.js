@@ -407,6 +407,33 @@
       || String(aDef.label || a?.label || a?.key || '').localeCompare(String(bDef.label || b?.label || b?.key || ''));
   }
 
+  // Returns the first selectable item of the adjacent category in grouped, cyclic inventory order.
+  // Going backward lands at the beginning of the previous group, rather than on its final item.
+  function nextCategoryIndex(stacks, activeIndex, direction) {
+    const count = Array.isArray(stacks) ? stacks.length : 0; // Bounds category jumps to currently owned, wheel-eligible stacks only.
+    const step = Math.sign(Number(direction) || 0); // Selects the requested previous/next group without changing ordinary item scrolling.
+    const start = Number(activeIndex); // Used to reject stale indices when an inventory stack was just consumed.
+    if (count < 2 || !Number.isInteger(start) || start < 0 || start >= count || !step) return -1;
+    const defs = itemDeps.ITEM_DEFS || {}; // Uses the same live classifier as item grouping and halo colors.
+    const categoryAt = index => categoryForDefinition(stacks[index]?.key, defs[stacks[index]?.key] || {}); // Looks up real item keys, not potentially duplicated display labels.
+    const currentCategory = categoryAt(start); // Prevents moving within the current group when the shortcut is pressed.
+    let index = start; // Scans across category boundaries in either direction, including the cyclic seam.
+    for (let scanned = 0; scanned < count - 1; scanned++) {
+      index = (index + step + count) % count;
+      if (categoryAt(index) === currentCategory) continue;
+      if (step < 0) {
+        const targetCategory = categoryAt(index); // Used to land on the previous group's first item.
+        let previous = (index - 1 + count) % count; // Advances backward through that entire group's contiguous segment.
+        while (previous !== start && categoryAt(previous) === targetCategory) {
+          index = previous;
+          previous = (index - 1 + count) % count;
+        }
+      }
+      return index;
+    }
+    return -1; // One category or no other eligible item: keep the current selection unchanged.
+  }
+
   function currentRuntimeOwnedKeys() {
     const defs = itemDeps.ITEM_DEFS || {};
     const inventory = itemDeps.inventory || {};
@@ -576,6 +603,7 @@
     installed: true,
     colors: CATEGORY_STYLES,
     categoryFor: key => categoryForDefinition(key, itemDeps.ITEM_DEFS?.[key] || {}),
+    nextCategoryIndex, // Used by the shared item wheel's desktop, controller, and touch category shortcuts.
     regroup: groupInventoryItems,
     refresh: queueRefresh,
     debugSnapshot: () => {

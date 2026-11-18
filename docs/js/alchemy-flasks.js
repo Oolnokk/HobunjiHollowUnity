@@ -602,7 +602,7 @@ addEventListener('load', () => {
   }
   if (!document.querySelector('script[data-mobile-potion-category-drag]')) {
     const mobileTap = document.createElement('script'); // Loads the shared contextual Potion Select adapter once the base action arc exists.
-    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20260925bandagemove1';
+    mobileTap.src = 'js/mobile-potion-category-drag.js?v=20261118flaskTier1';
     mobileTap.dataset.mobilePotionCategoryDrag = '1';
     mobileTap.async = false;
     document.head.appendChild(mobileTap);
