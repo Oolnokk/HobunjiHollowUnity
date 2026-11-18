@@ -51,7 +51,11 @@
           const tree=window.FoliageGenerator?.buildPottedBlossomTreeMesh?.(record.id || 'blossom-vase',swatch.color);
           if (tree) {
             tree.name='festival-blossom-sapling';
-            tree.position.y=0.665; // Inside the vase at y=.63 (lip=.73, base=.53): its base is seated on the table top (y≈.52).
+            const vasePart=data.parts?.find(part=>part.id==='blossom-vase'); // Authored cup's interior floor, so the living stem roots in its bottom even when the vase editor changes its size.
+            const cupHeight=Number(vasePart?.transform?.sy)||0.2; // Used to place the trunk base flush on the inside floor rather than hovering halfway up the cup.
+            const cupMidY=Number(vasePart?.transform?.y)||0.63; // Used with the cup height and basin depth in the foliage attachment.
+            const cupDepth=Math.max(0.03,Math.min(0.8,Number(vasePart?.basinDepth)||0.18)); // Matches ProceduralFurniture.createAuthoredVesselGeometry's cup interior.
+            tree.position.y=cupMidY+cupHeight*(cupDepth-0.5); // Root at the actual cup basin floor, with only branches/leaves visible above the rim.
             tree.traverse?.(child=>{
               if (child.geometry) child.userData.festivalSharedFoliage=true; // Skip shared foliage-cache GPU disposal when this festival prop is removed.
             });
