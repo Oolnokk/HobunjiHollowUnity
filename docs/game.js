@@ -28386,7 +28386,7 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}|${window.GameplayInputRouter?.getArchRevision?.() ?? 0}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
