@@ -16,6 +16,7 @@ const releasedTemporarySprites = []; // Confirms shoulder-cache retirement reach
 let canvasSerial = 0; // Gives each composited/warped frame a distinct URL in the assertions.
 let splitFrame = false; // Test toggle between ordinary shoulder art and split left/right presentation.
 let maskUnavailable = false; // Simulates temporarily missing idle head alpha data for split poses.
+let growthDisabled = false; // Nursery slider can legitimately request 100% vertical and 0% shortening.
 const fakeClock = { now: 10000 }; // Advances cache retry deadlines without waiting in CI.
 function canvas(extra = {}) {
   const id = ++canvasSerial;
@@ -77,7 +78,8 @@ const warp = {
     return role === 'shoulderPet' && genes?.sizeClass === 'small' && kind !== 'pingdort';
   },
   frameForKind: () => headBox,
-  scaleForKind: () => 1.23,
+  scaleForKind: () => growthDisabled ? 1 : 1.23,
+  shorteningForKind: () => 0,
   async ensureIdleMask(kind, idleCanvas = null) {
     maskRequests.push({ kind, sourcePose: idleCanvas?.frame || null });
     if (maskUnavailable) return null; // Force the production split compositor's retry path, not an unwarped fallback.
@@ -86,6 +88,7 @@ const warp = {
   applyToCanvas(input, kind) {
     assert.equal(input.eyes, 'painted-after-patterns', 'head warp receives the already composed eye overlay');
     assert.equal(input.pattern, 'spectacles', 'head warp receives the existing expressed pattern');
+    if (growthDisabled) return input; // Shipped BabyAnimalHeadWarp returns the original canvas at 100%/0%.
     warped.push({ input, kind });
     return canvas({ composedFrom: input });
   },
@@ -273,5 +276,29 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert(maskPendingPet.__hobunjiShoulderSplitUrl, 'split portrait retries and installs when the idle head mask becomes readable');
   assert.equal(warped.length, beforeRetryWarp + 2, 'both split layers receive the enlarged head on retry');
 
-  console.log('Rare Small pets, normal Small genotype changes, split mask recovery, and Moot paint pass.');
+  // User-set 100%/0% heads must not fail merely because there is no need to read an idle mask.
+  growthDisabled = true;
+  maskUnavailable = true;
+  const beforeDisabledFails = win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed;
+  const unwarpedSplitPet = companion('grehlr', 'small');
+  deps.companionObjects = [unwarpedSplitPet];
+  provider();
+  await flush();
+  await flush();
+  assert(unwarpedSplitPet.__hobunjiShoulderSplitUrl, '100% split setting deliberately retains the composited original pixels');
+  assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed, beforeDisabledFails,
+    'disabled growth cannot report an unavailable head mask');
+
+  splitFrame = false;
+  const unwarpedSimplePet = companion('grehlr', 'small');
+  deps.companionObjects = [unwarpedSimplePet];
+  provider();
+  await flush();
+  await flush();
+  assert(unwarpedSimplePet.__hobunjiShoulderFrame?.startsWith('data:image/png'),
+    '100% single-frame setting also retains the original prepared sprite without a mask');
+  assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.failed, beforeDisabledFails,
+    'single-frame disabled growth cannot report a false mask failure');
+
+  console.log('Rare Small pets, split genotype/mask recovery, 100% slider, GPU cleanup, and Moot paint pass.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
