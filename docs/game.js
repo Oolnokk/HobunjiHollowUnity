@@ -7837,28 +7837,15 @@
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
 
-      // Resolve a moving owner's *walkable landing*, not their midair position.
-      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
-      function companionFollowGoal(c, master) {
-        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
-        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
-        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
-        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
-        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
-        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
-        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
-          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
-        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
-        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
-        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
-        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
-          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
-        return {
-          x, y,
-          distance: Math.hypot(x - c.x, y - c.y),
-          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
-        };
-      }
+      // Companion destinations, tier checks and off-screen stuck recovery share one module.
+      // This is an adapter only; game.js remains the sole movement and animation frame owner.
+      window.CompanionFollowNavigation.init({
+        TILE, player, getCurrentArea: () => currentArea, isZoneArea: _isZoneArea,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        surfaceYForTile: tileSurfaceYInArea, creatureCanEnter: creatureCanEnterTile,
+        getCamera: () => camera,
+      });
+
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -8801,7 +8788,7 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
-          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          const followGoal = window.CompanionFollowNavigation.goal(c, master); // Shared navigation/escape state, independent of the frame executor.
           c._companionGroundFollow = {
             mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
             distancePx: Math.round(followGoal.distance),
@@ -8847,8 +8834,7 @@
           }
 
           const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
-          const rescueActive = !!rescueHost && rescueHost.health > 0
-            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle');
+          const rescueActive = window.CompanionCombatResponse.isRescuing(c, rescueHost); // Combat response owns the rescue-vs-retreat priority.
           if (!rescueActive && rescueHost) c._honeyfuzzleRescueTarget = null; // Detachment and interrupted rescue cannot leave a stale friendly-fire focus.
           if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
             target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
@@ -8862,6 +8848,9 @@
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
+          target = window.CompanionCombatResponse.prioritizeOwnerRetreat(
+            c, target, dt, _clearCompanionTreasureCue, _clearCompanionWatchIdle
+          ); // The chooser's retreat priority also wins after Sicced, special attacks and treasure overrides.
           if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target && !rescueActive) c._stage = null;
@@ -8871,14 +8860,14 @@
           if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
-          if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+          if (!isBanditCompanion && !target && !c._followOwnerDownCliff && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
             window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
           const playerIdle = !isBanditCompanion && _isPlayerGenuinelyIdle();
           if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
-          if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
+          if (!target && !c._followOwnerDownCliff && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
             const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
             if (rnd() < startChance) _startCompanionWatchIdle(c);
           }
@@ -9053,6 +9042,9 @@
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          if (window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+            moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
+          }
 
           if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
@@ -27229,15 +27221,16 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
-        // Festival paired animation is a post-locomotion visual layer: both
-        // actual avatar roots are positioned together after NPC and player
-        // simulation, with no second requestAnimationFrame.
-        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
         // docs/architecture/runtime-frame-scheduler.md).
         window.RuntimeFrameScheduler.checkpoint('pre-render');
+        // A paired dance has exclusive control of both actors' live roots and IK.
+        // Run it AFTER ordinary pre-render hand, neck and stance presentation,
+        // so those other writers cannot hide the player or invalidate the next
+        // frame's pose checkpoint. The two dancers are finalized together.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
 
         // ── Render active scene ──────────────────────────────────
         // An opaque loading/introduction screen covers the whole canvas, so

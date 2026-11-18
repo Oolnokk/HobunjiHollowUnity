@@ -51,6 +51,7 @@
     { id: 'hold2', name: 'Mounted Special', desc: 'Action 2 hold: reserved for future mount-only unlockable abilities.', readOnly: true, note: 'No mounted specials have been introduced yet.' },
   ];
   let displayedMode = null; // User-chosen loadout preview; null follows actual riding state on first opening.
+  let activeSubtab = 'weapon'; // Switches between existing weapon abilities and instrument-specific pattern slots.
 
   // Which level (if any) currently has its options picker expanded — an
   // abilityId+level pair (toolKey is implicitly whatever's equipped right
@@ -117,6 +118,8 @@
       weaponKey: window.Combat.deps?.currentWeaponKey?.() || 'none',
       loadout: window.Combat.loadout.get?.(displayedMode || 'auto') || null,
       loadoutMode: displayedMode || 'auto',
+      loadoutSubtab: activeSubtab,
+      instrumentPatterns:window.InstrumentPatternLoadout?.debugState?.() || null, // Included in the existing mobile-copyable diagnostics.
       mountedLoadout: window.Combat.loadout.get?.('mounted') || null,
       mountedCombat: window.Combat.mountedCombat?.debug || null,
       mountRiding: window.Mounts?.ridingDebug || null,
@@ -294,6 +297,92 @@
     }
   }
 
+  function renderInstrumentLoadout(pane) {
+    const instrumentKey = window.MusicMinigame?.getEquippedInstrument?.() || null; // The equipped gear item key is authoritative, just like Combat.loadout's weapon key.
+    const title = document.createElement('div');
+    title.className = 'settings-section-title';
+    title.textContent = 'Instrument Pattern Loadout';
+    pane.appendChild(title);
+
+    const note = document.createElement('div');
+    note.className = 'loadout-slot-combo-note';
+    note.textContent = instrumentKey
+      ? `${instrumentKey === 'kurraya' ? 'Kurraya' : instrumentKey === 'flute' ? 'Flute' : instrumentKey} · Four patterns are saved for this instrument on this character. Select a direction while playing to use its assigned pattern.`
+      : 'Equip an instrument in Gear before assigning patterns. Each instrument remembers its own four directions.';
+    pane.appendChild(note);
+    const model = window.InstrumentPatternLoadout; // The profile-backed instrument loadout persists choices across equipment swaps, saves and reloads.
+    if (!instrumentKey || !model) return;
+    const patterns = window.MusicMinigame?.patternOptions?.() || []; // Uses the same IDs and names as the performance engine.
+    const slots = model.getSlots(instrumentKey); // A detached four-direction snapshot; never edit another instrument.
+    const choose = (index, id, focusId) => {
+      if (!model.setSlot(instrumentKey,index,id)) return;
+      render(focusId);
+    };
+
+    for (let index = 0; index < model.SLOT_LABELS.length; index++) {
+      const card = document.createElement('div');
+      card.className = 'loadout-slot';
+      const label = document.createElement('label');
+      label.className = 'settings-label';
+      const title = document.createElement('div');
+      title.className = 'settings-name';
+      title.textContent = model.SLOT_LABELS[index] + ' Pattern';
+      const description = document.createElement('div');
+      description.className = 'settings-desc';
+      description.textContent = 'Choose a picking or strumming figure for this instrument’s ' + model.SLOT_LABELS[index].toLowerCase() + ' direction.';
+      label.append(title, description);
+      card.appendChild(label);
+
+      const controls = document.createElement('div');
+      controls.className = 'ranged-loadout-dev-row';
+      controls.style.alignItems = 'center';
+      const select = document.createElement('select');
+      select.id = 'instrumentPattern_' + index;
+      select.className = 'settings-select';
+      select.style.flex = '1 1 170px';
+      select.style.minWidth = '0';
+      select.dataset.ctrlSkip = ''; // Controller navigation uses the adjacent accessible previous/next buttons.
+      select.dataset.noSelectStepper = ''; // Avoids double controller arrows from global native-select steppers.
+      for (const [id, text] of patterns) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = text;
+        option.selected = id === slots[index];
+        select.appendChild(option);
+      }
+      select.addEventListener('change', () => choose(index,select.value,select.id));
+      const cycle = (direction, focusId) => {
+        const current = patterns.findIndex(([id]) => id === model.getSlots(instrumentKey)[index]); // Always cycles the most recently saved value.
+        const next = (current + direction + patterns.length) % patterns.length;
+        if (patterns.length) choose(index,patterns[next][0],focusId);
+      };
+      const prev = document.createElement('button');
+      prev.type = 'button'; prev.className = 'ii-btn'; prev.id = 'instrumentPatternPrev_' + index;
+      prev.textContent = '◀'; prev.setAttribute('aria-label','Previous ' + model.SLOT_LABELS[index] + ' pattern');
+      prev.disabled = patterns.length < 2;
+      prev.addEventListener('click', () => cycle(-1,prev.id));
+      const next = document.createElement('button');
+      next.type = 'button'; next.className = 'ii-btn'; next.id = 'instrumentPatternNext_' + index;
+      next.textContent = '▶'; next.setAttribute('aria-label','Next ' + model.SLOT_LABELS[index] + ' pattern');
+      next.disabled = patterns.length < 2;
+      next.addEventListener('click', () => cycle(1,next.id));
+      controls.append(prev,select,next);
+      card.appendChild(controls);
+      pane.appendChild(card);
+    }
+    if (document.getElementById('settingDevMode')?.checked) {
+      const debug = document.createElement('button'); // Mobile developer diagnostic uses the existing copy action; no console required.
+      debug.type = 'button';
+      debug.className = 'ii-btn';
+      debug.textContent = '[Dev] Copy Instrument Loadout Debug';
+      debug.addEventListener('click', async () => {
+        const copied = await copyLoadoutDebug();
+        debug.textContent = copied ? '[Dev] Instrument Debug Copied' : '[Dev] Copy Failed';
+      });
+      pane.appendChild(debug);
+    }
+  }
+
   function render(preferredFocusId = null) {
     const pane = document.getElementById('combatLoadoutPane');
     if (!pane) return;
@@ -301,6 +390,28 @@
     const restoreFocusId = requestedFocusId || focusedLoadoutControlId(pane); // Used to keep repeated controller swaps on the same slot instead of snapping focus back to the menu header.
     const previousScroll = pane.scrollTop; // Only the left loadout list scrolls; rerenders retain its scroll position while the right preview remains fixed.
     pane.innerHTML = '';
+    const loadoutRoot = document.getElementById('mpLoadout'); // CSS expands the list and hides the weapon 3D preview on the Instrument sub-tab.
+    loadoutRoot?.classList.toggle('instrument-subtab',activeSubtab === 'instrument');
+    const subtabs = document.createElement('div');
+    subtabs.className = 'ranged-loadout-dev-row';
+    subtabs.setAttribute('role','group');
+    subtabs.setAttribute('aria-label','Loadout category');
+    for (const [id,label] of [['weapon','Weapon'],['instrument','Instrument']]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ii-btn';
+      button.id = 'loadoutSubtab_' + id;
+      button.textContent = label;
+      button.setAttribute('aria-pressed',String(activeSubtab === id));
+      button.addEventListener('click', () => { activeSubtab = id; pane.scrollTop = 0; render(button.id); });
+      subtabs.appendChild(button);
+    }
+    pane.appendChild(subtabs);
+    if (activeSubtab === 'instrument') {
+      renderInstrumentLoadout(pane);
+      restoreLoadoutControlFocus(pane,restoreFocusId);
+      return;
+    }
 
     const title = document.createElement('div');
     title.className = 'settings-section-title';
@@ -497,12 +608,13 @@
     restoreLoadoutControlFocus(pane, restoreFocusId);
   }
 
-  window.CombatLoadoutUI = { render, getMode: () => displayedMode || 'auto', debugState: loadoutDebugState, copyDebug: copyLoadoutDebug };
+  window.CombatLoadoutUI = { render, getMode: () => displayedMode || 'auto', getSubtab: () => activeSubtab, debugState: loadoutDebugState, copyDebug: copyLoadoutDebug };
 
   document.addEventListener('DOMContentLoaded', () => {
     render();
     const tab = document.querySelector('.mp-tab[data-mpanel="loadout"]');
-    if (tab) tab.addEventListener('click', () => { expandedFor = null; displayedMode = null; render(); });
+    if (tab) tab.addEventListener('click', () => { expandedFor = null; displayedMode = null; activeSubtab = 'weapon'; render(); });
+    window.addEventListener('hobunji-instrument-equipped', () => { if (activeSubtab === 'instrument') render(); }); // Equipment slot swaps immediately refresh the Instrument sub-tab.
     document.addEventListener('hobunji-ranged-ammo-change', render);
     window.addEventListener('hobunji-mastery-unlocks-change', render);
   });
