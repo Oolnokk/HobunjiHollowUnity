@@ -635,7 +635,7 @@
       const legacy = (Array.isArray(v.placements) ? v.placements : [])
         .filter(placement => placement?.found && !placement.ruinHole).map(chestTileKey); // Legacy found=true placements remain valid claim tombstones.
       const claimedTiles = [...(Array.isArray(v.claimedTiles) ? v.claimedTiles : []), ...legacy]
-        .filter(key => typeof key === 'string' && /^\\d+,\\d+$/.test(key)); // Reject malformed coordinates in a damaged save.
+        .filter(key => typeof key === 'string' && /^\d+,\d+$/.test(key)); // Reject malformed coordinates in a damaged save.
       if (claimedTiles.length) claimedChestTilesByZone.set(mapId, { week: v.week, tiles: new Set(claimedTiles) });
     });
   }
