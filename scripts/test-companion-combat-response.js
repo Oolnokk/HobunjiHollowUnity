@@ -107,6 +107,11 @@ assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), n
 assert.equal(cancelledCliffAttack, 1, 'committed named attack is cancelled via its existing lifecycle');
 assert.equal(cliffPet._stage, null, 'old attack phase cannot reclaim movement during the drop');
 assert.equal(cliffPet._travelPath, null, 'an old attack navigation path cannot steer back up the cliff');
+cliffPet._travelPath = [{ col: 2, row: 1 }]; // A new safe detour may be computed while the owner is still below.
+assert.equal(R.shouldReevaluate(cliffPet, escapedOwner, 'forest', 150), false,
+  'an unchanged retreat should keep its cached target decision');
+assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), null);
+assert.equal(cliffPet._travelPath.length, 1, 'repeated combat checks must not erase the new safe detour');
 assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, true, 'mobile diagnostics report descent priority');
 cliffGrid[0][0].incline = true; // A descending creature can briefly cross a cliff-face tile.
 cliffPet._cliffClimb = { phase: 'climb', descending: true };
