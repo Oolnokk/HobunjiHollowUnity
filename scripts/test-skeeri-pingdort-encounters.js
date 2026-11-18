@@ -210,6 +210,10 @@ async function check(){
   assert(w.SkeeriRuins.debugSnapshot().orbits>beforeOrbits,'mobile diagnostics count completed fallback plans');
   assert(Math.hypot(circlingBird.segment.to.x-(home.x+1),circlingBird.segment.to.z-home.z)<=4.81,
     'fallback arc encircles the foe instead of fleeing to a distant nest');
+  circlingBird.orbitLegs=3; // This completed arc must lead into a genuine body-sweep attack.
+  for(let i=0;i<20&&circlingBird.phase==='orbit';i++)w.SkeeriRuins.update(.1);
+  assert.equal(circlingBird.phase,'dive','a circling Skeeri still resumes its ordinary combat attacks');
+  assert(circlingBird.segment,'dive from the orbit uses a native flight support');
   w.DevRandomRuin.flightClear=oldClear;
   circlingBird.phase='rest';circlingBird.segment=null;circlingBird.cooldown=99;
   PerchSupport.attach(circlingBird.actor,PerchSupport.point('test:roost',home.x*64,home.z*64,home.y));
