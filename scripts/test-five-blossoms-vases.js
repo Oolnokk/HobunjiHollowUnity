@@ -60,6 +60,26 @@ assert.equal(recipe.barkColorHex,0x4b9a62,'branches/trunk are bright green wood'
 assert(recipe.trunkLength<=0.75 && recipe.knotLength<=0.4,'canopy is miniature, not a scaled-down forest giant');
 assert(recipe.variantCount<=2,'one or two reusable generated silhouettes per color is inexpensive');
 
+const foliageMaterialStart=foliageSource.indexOf('  const _leafTexCache = new Map();'); // Isolate the real foliage card material factory, not a reimplementation of its color math.
+const foliageMaterialEnd=foliageSource.indexOf('  // ─── Needle placement',foliageMaterialStart); // Keep preview-specific geometry outside this lightweight check.
+assert(foliageMaterialStart>0 && foliageMaterialEnd>foliageMaterialStart,'generator leaf material helpers remain identifiable');
+const leafWindow={}; // Receives the live material helpers through the VM context.
+class TintColor {constructor(value){this.value=value;}setHSL(h,s,l){this.value=[h,s,l];return this;}} // Verifies exact literal tint versus the wilderness's HSL conversion.
+class TestTextureLoader {load(path){return {path};}} // Preserves source asset identity without needing DOM ImageLoader.
+class TestLeafMaterial {constructor(options){Object.assign(this,options);}} // Inspects exactly what Three.js receives at construction.
+const leafTHREE={Color:TintColor,TextureLoader:TestTextureLoader,MeshBasicMaterial:TestLeafMaterial,SRGBColorSpace:'srgb',NearestFilter:1,DoubleSide:2};
+vm.runInNewContext(foliageSource.slice(foliageMaterialStart,foliageMaterialEnd)
+  +'\nwindow.leafMaterialForTest=getLeafCardMaterial;',{
+  T:leafTHREE,window:leafWindow,console:{log(){},error(){}}
+});
+const flowerMat=leafWindow.leafMaterialForTest({...recipe,leafColorHex:'#00ffff'});
+assert.equal(flowerMat.color.value,'#00ffff','a bright cyan vase actually gets cyan material, not greenish HSL');
+assert.equal(flowerMat.map.path,'assets/leaves/leaf_festival_blossom.svg','vase leaves use white tintable cards');
+assert.equal(flowerMat.userData.hobunjiFixedBlossomColor,true,'seasonal code can recognize the fixed flower pigment');
+const wildMat=leafWindow.leafMaterialForTest({...recipe,leafTexture:'assets/leaves/leaf_1.png'});
+assert(!wildMat.userData?.hobunjiFixedBlossomColor,'normal wilderness leaves remain seasonally tinted');
+
+
 let disposedAuthored=0,disposedFoliage=0; // Count ownership boundaries when a festival scene is torn down.
 class Group {
   constructor(){this.children=[];this.userData={};this.position={x:0,y:0,z:0};this.name='';}
