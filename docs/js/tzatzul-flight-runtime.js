@@ -585,7 +585,11 @@
         continue;
       }
       if (state.phase === 'await-roost') continue;
-      if (state.phase !== 'perched') { advance(bird, step); continue; }
+      if (state.phase !== 'perched') {
+        advance(bird, step);
+        if (deps.getCurrentArea?.() !== area) break; // A successful delivery moves the player before the remaining outdoor birds can tick.
+        continue;
+      }
       state.elapsed += step;
       if (state.elapsed < state.rest) continue;
       if (wounded) { enterNest(bird); continue; } // Flee to shelter instead of renewing the attack.
