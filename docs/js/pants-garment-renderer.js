@@ -16,10 +16,10 @@
   if (global.PantsGarmentRenderer) return;
 
   const HOOP_CORE = 0.03, HOOP_FADE = 0.07; // Distance (garment units) around an ankle spline that is fully rigid, and where that fades out.
-  const DEFAULT_SEGMENTS = 29; // Full-detail pants use ~20% of the old 64x64 triangle count; authored UV/weights still cover the whole garment.
+  const DEFAULT_SEGMENTS = 64; // Vertices per side of the garment grid: fine enough that weight transitions deform smoothly instead of faceting.
   const PANTS_REST_PLANE_Z = 0; // Garment rest art shares the portrait plane, rather than protruding through its front pixels.
-  const NPC_SEGMENTS = 14; // NPC/enemy pants use ~20% of the old 32x32 triangles; fallback when the shared budget is absent.
-  const segmentsForBudget = mode => (mode === 'npc' ? (global.PNGPlaneAvatar?.meshBudget?.table?.npc?.pantsSegments || NPC_SEGMENTS) : (global.PNGPlaneAvatar?.meshBudget?.table?.full?.pantsSegments || DEFAULT_SEGMENTS));
+  const NPC_SEGMENTS = 32; // Fallback for meshBudget:'npc' when PNGPlaneAvatar.meshBudget is absent; its table is the one place to tune this.
+  const segmentsForBudget = mode => (mode === 'npc' ? (global.PNGPlaneAvatar?.meshBudget?.table?.npc?.pantsSegments || NPC_SEGMENTS) : DEFAULT_SEGMENTS);
   const NPC_DEFAULT_PANTS_DYE = 'dye:CLOTH:brown'; // Same dye-reference format as the NPC overwear dye (appliedDyes.CLOTH).
   const PANTLESS_SPECIES = new Set(['omgurku']); // The hybrid lower body has no humanoid leg/pants rig.
   const DEFAULT_GARMENT_ID = 'pants_basic';
