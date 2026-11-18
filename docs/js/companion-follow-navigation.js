@@ -88,6 +88,7 @@
     const probe = { x: master.x, y: master.y, areaId: currentArea, areaGrid: grid,
       def: c.def, shaftSupportY: ownerSurface }; // Test creature volume against the owner's story, not the pet's abandoned floor.
     const DS = window.DynamicSurfaces; // Reuses the actual generated ruin floors, pitfalls and blockers.
+    let pathAttempts = 0; // Caps expensive ruin path validations to a few hidden candidates per retry.
     for (const radius of RADII) for (let i = 0; i < ANGLES; i++) {
       const angle = (i + (Math.floor(radius) % 2) * 0.5) * Math.PI * 2 / ANGLES;
       const px = master.x + Math.cos(angle) * radius * tile;
@@ -113,6 +114,7 @@
       if (ruin) {
         const navigator = window.TilePathfinding; // Existing tile navigator proves a floor-matched path back to the owner.
         if (!navigator?.findPath || !navigator?.boxAround) continue; // Never teleport into an isolated locked chamber.
+        if (++pathAttempts > 4) return null; // Avoid dozens of dungeon-wide A* probes on an already slow frame.
         const startCol = Math.floor(px / tile), startRow = Math.floor(py / tile);
         const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile);
         const path = navigator.findPath(startCol, startRow, goalCol, goalRow, (col, row) => {
@@ -125,7 +127,7 @@
             !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
             window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
             !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
-        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 1600 });
+        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550 });
         if (!path) continue;
       }
       return { x: px, y: py, supportY: ownerSurface };
@@ -208,7 +210,8 @@
         ? modelPos.y - (c.groundLift ?? c.halfHeight ?? 0) : null) : null;
     const differentFloor = ruin && Number.isFinite(playerFloor) && Number.isFinite(petFloor) &&
       Math.abs(playerFloor - petFloor) > 0.75;
-    const unable = c.prone || c._knockbackLedgeFall || c.knockbackT > 0 || c._animalAttack ||
+    const unable = c.prone || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel ||
+      c.knockbackT > 0 || c._animalAttack ||
       window.Combat?.telegraph?.isBusy?.(c) || c._honeyfuzzleRescueTarget ||
       c._companionCombatTarget || c.treasureCue || master.climbing || master._freeJump;
     if ((!far && !differentFloor) || unable) {
