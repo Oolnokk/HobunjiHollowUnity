@@ -195,6 +195,28 @@ w.TzatzulFlightRuntime.ensureZone(zone);
 for(let i=0;i<100&&!recoveredRoost;i++)w.TzatzulFlightRuntime.update(.1);
 assert(recoveredRoost,'the physical perch takes precedence again as soon as it can be reached');
 supports.attach=originalAttach;
+const recoveredPoint=farBird._tzFlight.roost; // Keep the real spire intact while testing a genuinely removed perch record.
+farBird._tzFlight.roost=null;farBird._tzFlight.fallbackFoe=player;
+assert(w.TzatzulFlightRuntime.__test.returnHome(farBird),'a missing roost record starts combat circling immediately');
+assert.equal(farBird._tzFlight.phase,'orbit','null perch cannot leave the old swoop state running with no segment');
+assert(farBird._tzFlight.segment,'no-perch orbit still owns an ordinary flight support');
+farBird._tzFlight.roost=recoveredPoint;assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
+for(let i=0;i<80&&farBird._tzFlight.phase==='return';i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(farBird._tzFlight.phase,'perched','recovering the physical perch ends the missing-roost fallback');
+const blockedMother={x:320,y:128,branchSurfaceY:5,onPerch:{dimension:1},health:100,areaId:zone,
+  _tzNestMother:true,def:{modelWidth:1.3},_tzFlight:{identity:{id:'blocked-mother'},roost:null,
+    phase:'return',segment:null,fallbackFoe:player,orbitDirection:1,orbitLegs:0}};
+w.TzatzulNestEncounter={clearAirPath:()=>false}; // Mimic a fully obstructed nest flight ring; no wall tunnelling is acceptable.
+assert.equal(w.TzatzulFlightRuntime.__test.returnHome(blockedMother),false);
+assert.equal(blockedMother._tzFlight.phase,'await-roost','fully blocked orbit waits instead of repeatedly spawning illegal paths');
+for(let i=0;i<8;i++)w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'await-roost','blocked circular geometry cannot force an unsafe route');
+w.TzatzulNestEncounter.clearAirPath=()=>true; // A later opening must eventually permit normal combat circling.
+for(let i=0;i<8&&blockedMother._tzFlight.phase!=='orbit';i++)
+  w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'orbit','indoor mother retries after obstructions clear instead of idling permanently');
+assert(blockedMother._tzFlight.segment,'retry creates a real elevated flight leg');
+delete w.TzatzulNestEncounter;
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
 assert(supports.attach(farBird,farBird._tzFlight.roost));
