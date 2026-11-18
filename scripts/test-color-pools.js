@@ -157,6 +157,42 @@ assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participat
 assert(renderer.includes('fusedPrimaryCount'), 'animal renderer tells the compositor to union the same-color group before its separate overpass');
 assert(renderer.includes('paint.mergedPatterns'), 'saved fused motifs survive into the runtime species renderer');
 assert(weaving.includes('function fuseSampledPatternMasks('), 'shared mask combinator draws one perimeter around overlapping motifs');
+
+assert.match(weaving, /PATTERNED_CANVAS_CACHE_LIMIT = 96/, 'raster cache has an entry bound');
+assert.match(weaving, /PATTERNED_CANVAS_CACHE_BYTES = 48 \* 1024 \* 1024/, 'raster cache caps retained RGBA memory at 48 MiB');
+assert.match(weaving, /pendingPatternStackCanvases\.set\(key, task\)/, 'identical concurrent frame requests share one in-flight bake');
+assert.match(weaving, /finally \{ if \(pendingPatternStackCanvases\.get\(key\) === task\) pendingPatternStackCanvases\.delete\(key\); \}/, 'completed and failed bakes release their pending cache entries');
+assert.match(weaving, /compactPatternCacheKey\(JSON\.stringify\(renderable\)\)/, 'long embedded motif data URLs are hashed instead of retained as cache keys');
+assert.match(colorPoolsSource, /previewNeedsAnotherPass = true/, 'slider edits are coalesced behind the currently composing preview');
+assert.match(colorPoolsSource, /previewCoalesced\+\+/, 'mobile diagnostics count prevented redundant preview renders');
+const bakeCacheStart = weaving.indexOf('  function forgetPatternedCanvas(');
+const bakeCacheEnd = weaving.indexOf('  const wovenIconDataUrlPromises =', bakeCacheStart);
+assert(bakeCacheStart > 0 && bakeCacheEnd > bakeCacheStart, 'isolated LRU implementation found for direct testing');
+const bakeCache = vm.runInNewContext(`
+  const patternedCanvasCache = new Map();
+  const patternedCanvasBytesByKey = new Map();
+  const PATTERNED_CANVAS_CACHE_LIMIT = 96;
+  const PATTERNED_CANVAS_CACHE_BYTES = 48 * 1024 * 1024;
+  let patternedCanvasBytes = 0, patternedCanvasEvictions = 0;
+  ${weaving.slice(bakeCacheStart, bakeCacheEnd)}
+  ({ cachedPatternedCanvas, rememberPatternedCanvas, clearPatternedCanvases,
+    status: () => ({ count: patternedCanvasCache.size, bytes: patternedCanvasBytes, evictions: patternedCanvasEvictions }) });
+`);
+for (let i = 0; i < 110; i++) bakeCache.rememberPatternedCanvas('small:' + i, { width: 10, height: 10 });
+assert.equal(bakeCache.status().count, 96, 'baked image cache evicts oldest entries after 96 images');
+assert.equal(bakeCache.cachedPatternedCanvas('small:0'), null, 'evicted sprites are recomposed on later request');
+assert(bakeCache.cachedPatternedCanvas('small:109'), 'newly painted sprites stay hot');
+bakeCache.clearPatternedCanvases();
+for (let i = 0; i < 20; i++) bakeCache.rememberPatternedCanvas('large:' + i, { width: 1024, height: 1024 });
+assert.equal(bakeCache.status().bytes, 48 * 1024 * 1024, 'baked animal images cannot exceed their 48 MiB cache budget');
+assert.equal(bakeCache.status().count, 12, 'the byte budget evicts large images well below the 96-entry cap');
+const hashStart = weaving.indexOf('  function compactPatternCacheKey(');
+const hashEnd = weaving.indexOf('  function patternStackCanvasKey(', hashStart);
+const compact = vm.runInNewContext('(' + weaving.slice(hashStart, hashEnd).trim() + ')');
+assert.equal(compact('same'), compact('same'), 'bake cache key is stable');
+assert.notEqual(compact('same'), compact('different'), 'different patterns cannot reuse stale baked pixels');
+assert(compact('data:image/png;base64,' + 'A'.repeat(100000)).length < 50, 'large pattern PNG is represented by a short cache key');
+
 const fuseStart = weaving.indexOf('  function fuseSampledPatternMasks(');
 const fuseEnd = weaving.indexOf('\n  async function applyPatternStackToTintedImage(', fuseStart);
 const fuse = vm.runInNewContext('(' + weaving.slice(fuseStart, fuseEnd).trim() + ')'); // Exercise pure intersection behavior without browser canvas.
