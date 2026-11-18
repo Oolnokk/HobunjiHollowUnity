@@ -348,13 +348,15 @@
     }
 
     if (needsSmallPetHead(companion, combatDeps)) {
-      const mask = headRequiresIdleMask(kind) ? await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource) : true; // Legacy source selection does not need alpha.
-      if (!mask) {
-        smallPetHeadDebug.failed++;
-        smallPetHeadDebug.lastError = String(window.BabyAnimalHeadWarp?.debugSnapshot?.()?.lastMaskError || 'No readable idle-head opacity mask for shoulder split');
+      const warp = window.BabyAnimalHeadWarp; // The same committed baby-head settings used by the nursery and single-frame pet portrait.
+      const mask = headRequiresIdleMask(kind) ? await warp?.ensureIdleMask?.(kind, idleSource) : true; // Legacy painted selection needs no alpha readback.
+      if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No readable idle-head opacity mask for shoulder split');
+      const left = warpSmallPetSource(idleSource, kind); // Grow already-composited eyes, coat and pattern pixels before seam clipping.
+      const right = rightUsesIdle ? left : warpSmallPetSource(rightSource, kind);
+      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0;
+      if (wantsGrowth && (left === idleSource || right === rightSource)) {
+        throw new Error('Shoulder split head enlargement unavailable for ' + kind);
       }
-      const left = mask ? warpSmallPetSource(idleSource, kind) : idleSource; // All genotype pattern and eye pixels already exist; warp before seam clipping.
-      const right = rightUsesIdle ? left : mask ? warpSmallPetSource(rightSource, kind) : rightSource;
       idleSource = left;
       rightSource = right;
     }
@@ -400,8 +402,12 @@
     const authoredSplit = Number(rest?.frameShiftX);
     const split = Math.round((Number.isFinite(authoredSplit) ? Math.max(0, Math.min(1, authoredSplit)) : 0.5) * 1000);
     const rotation = Math.round((Number(rest?.separatorRotationDeg) || 0) * 10);
+    const kind = genotypeKindFor(companion, combatDeps);
     const smallHead = needsSmallPetHead(companion, combatDeps) ? smallPetVisualKey(companion, combatDeps, 'split') : 'normal-head';
-    return `${genotypeKindFor(companion, combatDeps) || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}|${smallHead}`;
+    const genotypeKey = companion.genotype
+      ? window.CreatureGeneticsRender?.genotypeSignature?.(kind, companion.genotype) ?? JSON.stringify(companion.genotype)
+      : 'no-genotype'; // A naturally Small adult's split frame still needs recoloring when its genes change.
+    return `${kind || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}|${genotypeKey}|${smallHead}`;
   }
 
   function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
@@ -443,7 +449,8 @@
     companion.__hobunjiShoulderSplitBinding = null; // A newly authored split must not accept the previous split's GPU map as current.
     companion.__hobunjiShoulderSplitKey = key;
     companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(async layers => {
-      if (!layers || companion.__hobunjiShoulderSplitKey !== key) return null;
+      if (companion.__hobunjiShoulderSplitKey !== key) return null;
+      if (!layers) throw new Error('Shoulder split pose sources unavailable; retrying after asset recovery');
       const rightUrl = await canvasAsSpriteUrl(layers.rightCanvas);
       const layered = typeof companion.avatarRef?.setShoulderSplitOverlayCanvas === 'function';
       const fallbackCanvas = layered ? null : combinedSplitFallbackCanvas(layers); // Don't render/encode an unused second giant PNG.
