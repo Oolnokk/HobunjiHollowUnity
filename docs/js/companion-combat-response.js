@@ -38,7 +38,10 @@
         ![companion.x, companion.y, master.x, master.y].every(Number.isFinite)) return false;
     const petTile = grid[Math.floor(companion.y / tileSize)]?.[Math.floor(companion.x / tileSize)];
     const ownerTile = grid[Math.floor(master.y / tileSize)]?.[Math.floor(master.x / tileSize)];
-    if (!petTile || !ownerTile || petTile.incline || ownerTile.incline) return false;
+    if (!petTile || !ownerTile || ownerTile.incline) return false;
+    if (companion._followOwnerDownCliff && (companion._cliffClimb || companion._cliffRouteTravel))
+      return true; // Crossing an incline must not reacquire its old enemy mid-leap.
+    if (petTile.incline) return false;
     return (Number(petTile.elevTier) || 0) > (Number(ownerTile.elevTier) || 0);
   }
 
