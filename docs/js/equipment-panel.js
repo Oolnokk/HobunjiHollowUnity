@@ -1635,6 +1635,56 @@
     return mesh?.userData?.itemKey === itemKey ? mesh.userData.toolPlane || null : null;
   }
 
+  const FIVE_BLOSSOM_CROWN_ID = 'appearance::hat::five_blossom_crown'; // Non-shop quest cosmetic distinct from any purchased headband.
+  const FIVE_BLOSSOM_CROWN_ART = Object.freeze({
+    front:'assets/cosmetics/clothes/hat/fiveblossomcrown-front.png',
+    back:'assets/cosmetics/clothes/hat/fiveblossomcrown-back.png',
+    fallback:'assets/cosmetics/clothes/hat/headband.png',
+    fallbackCosmeticId:'appearance::hat::basic_headband'
+  }); // Artist-supplied front/back PNGs do not exist yet; the basic headband's known portrait art is the live fallback.
+  function beginFiveBlossomCrowning() {
+    const gear = deps?.getGearInventory?.();
+    if (!gear) return null;
+    gear.clothing ||= {};
+    const oldHat = gear.clothing.hat || null, oldHood = gear.clothing.hood || null;
+    const facewrap = /(?:^|::|_)facewrap(?:$|_)/i.test(String(oldHood?.baseCosmeticId || oldHood?.cosmeticId || ''));
+    gear.clothing.hat = null; // Cosmetic visibility only; the old physical hat remains in the character's gear collection.
+    if (!facewrap) gear.clothing.hood = null; // A facewrap is part of the character's face and stays on.
+    deps.refreshPlayerAvatar?.();
+    return {gear,oldHat,oldHood,facewrap,crowned:false}; // The ceremony completes this transient outfit transaction or rolls it back.
+  }
+  function awardFiveBlossomCrown(civilYear, ceremony = null) {
+    const gear = deps?.getGearInventory?.();
+    if (!gear || !Number.isSafeInteger(Number(civilYear))) return null;
+    gear.clothing ||= {}; gear.clothingItems ||= [];
+    const uid = 'five_blossom_crown:' + String(civilYear); // Stable per-character/per-year award identity prevents duplicate gear on retries.
+    let item = gear.clothingItems.find(entry => entry?.uid === uid || (entry?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && entry?.awardYear === Number(civilYear)));
+    if (!item) {
+      item = {
+        uid,slot:'hat',cosmeticId:FIVE_BLOSSOM_CROWN_ID,baseCosmeticId:FIVE_BLOSSOM_CROWN_ART.fallbackCosmeticId,
+        prizeCosmeticId:FIVE_BLOSSOM_CROWN_ID,awardYear:Number(civilYear),label:'Five Blossom Crown',
+        description:'The crown bestowed by Father Hunundi upon a Finder of the Five Blossoms.',
+        sprite:FIVE_BLOSSOM_CROWN_ART.fallback,artCandidates:[FIVE_BLOSSOM_CROWN_ART.front,FIVE_BLOSSOM_CROWN_ART.back],
+        fallbackSprite:FIVE_BLOSSOM_CROWN_ART.fallback,dyeable:false,sellPrice:0
+      }; // Both absent art paths are reserved; the actual current avatar draws the basic headband portrait.
+      gear.clothingItems.push(item);
+    }
+    gear.clothing.hat = item; // Instant on-stage replacement; the previous hat remains owned in the wardrobe.
+    if (ceremony) ceremony.crowned = true;
+    deps.saveGearInventory?.();
+    deps.refreshPlayerAvatar?.();
+    buildEquipmentSlots();
+    return item;
+  }
+  function finishFiveBlossomCrowning(ceremony, crowned = false) {
+    if (!ceremony?.gear) return;
+    if (!crowned && !ceremony.crowned) ceremony.gear.clothing.hat = ceremony.oldHat; // Failed/skipped scenes cannot steal the original hat.
+    if (!ceremony.facewrap) ceremony.gear.clothing.hood = ceremony.oldHood; // Original non-facewrap hood returns after the announcement.
+    deps.refreshPlayerAvatar?.();
+    if (crowned || ceremony.crowned) deps.saveGearInventory?.(); // Persist the crown and normal hood once, never a temporary bare-headed wardrobe.
+    buildEquipmentSlots();
+  }
+
   window.EquipmentPanel = {
     init,
     ensureStarterFlute,
@@ -1671,6 +1721,7 @@
     buildPackClothingSection,
     getPackClothingForWardrobe,
     grantPackClothing, // Quest clothing uses the canonical Pack-to-Gear lifecycle.
+    beginFiveBlossomCrowning, awardFiveBlossomCrown, finishFiveBlossomCrowning, FIVE_BLOSSOM_CROWN_ART, FIVE_BLOSSOM_CROWN_ID,
     transferPackClothingToNpcWardrobe,
     previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,

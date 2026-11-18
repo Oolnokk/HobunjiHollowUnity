@@ -136,6 +136,28 @@
     } catch { return false; }
   }
 
+  function fiveBlossomsFinder(worldId, civilYear) {
+    const yearKey = String(civilYear); // Normalizes the festival year shared by all farmhands of one world.
+    if (!worldId || !Number.isSafeInteger(Number(civilYear))) return null;
+    const record = readWorldField(worldId, 'fiveBlossomsFinders')?.[yearKey];
+    return record && typeof record.characterId === 'string' ? record : null;
+  }
+  function claimFiveBlossomsFinder(worldId, civilYear, characterId, characterName) {
+    if (!worldId || !characterId || !Number.isSafeInteger(Number(civilYear))) return {ok:false,reason:'Missing world, character, or festival year'};
+    const yearKey = String(civilYear); // The shared annual award is first-writer-wins and never guessed from an NPC's schedule.
+    try {
+      const {meta,world} = readWorld(worldId);
+      if (!meta || !world) return {ok:false,reason:'World save unavailable'};
+      const saved = world.fiveBlossomsFinders?.[yearKey]; // A later farmhand can never displace the first submitted player.
+      if (saved) return {ok:true,first:String(saved.characterId)===String(characterId),winner:cloneValue(saved),claimed:false};
+      const winner = {characterId:String(characterId),name:String(characterName || 'Farmer'),year:Number(civilYear)};
+      world.fiveBlossomsFinders ||= {};
+      world.fiveBlossomsFinders[yearKey] = winner;
+      localStorage.setItem(META_KEY, JSON.stringify(meta)); // One synchronous world transaction prevents two same-device submissions from both winning.
+      return {ok:true,first:true,winner:cloneValue(winner),claimed:true};
+    } catch (error) { return {ok:false,reason:String(error?.message || error)}; }
+  }
+
   window.WorldMetaStore = Object.freeze({
     loadLivestock,
     saveLivestock: (worldId, list) => writeField(worldId, 'livestock', list),
@@ -171,6 +193,7 @@
       try { return readWorldField(worldId, 'cropProvenance') || null; } catch { return null; }
     },
     saveCropProvenance: (worldId, ledger) => writeField(worldId, 'cropProvenance', ledger), // Same atomic world-field save path used by barn breeding and incubators.
+    fiveBlossomsFinder, claimFiveBlossomsFinder,
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
     loadPendingSupplyOrders,
