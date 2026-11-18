@@ -385,7 +385,7 @@
     return {facts,route,anchor:{name:marker.name,coordinate:{...marker.point},dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
   }
 
-  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24 } = {}) {
+  function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false } = {}) {
     const point = positionOf(instance, targetObjectKey);
     const size = dimensions(layout);
     if (!layout || !instance || !Number.isFinite(point.col) || !Number.isFinite(point.row) ||
@@ -429,6 +429,7 @@
     const witness=(targetKind==='blossom'||blossomName)
       ?uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks})
       :null;
+    if(requireUniqueStart&&!witness)return {ok:false,reason:'No uniquely verified starting landmark exists in the generated wilderness',zoneId,point};
     return { ok:true,zoneId,point,facts:witness?.facts||facts,
       evidence:{waterFound:!!water,pathFound:!!path,boulderFound:!!boulder,landmarkFound:chosen.length>0,landmarkCount:chosen.length,
         optionalTerrainFallback:!water&&!path&&!boulder&&!chosen.length,route:witness?.route||[],uniqueStart:witness?.anchor||null} };
