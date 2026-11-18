@@ -1505,6 +1505,7 @@
     if (_tickAccum < AMBIENT_RECHECK_S) return;
     _tickAccum = 0;
     if (!deps) return;
+    if (playerSession?.instrumentMode === 'performance') bridgeOf(frameEl)?.syncGameplayTuning?.(); // Dev Mode toggling off relocks an already-open player's iframe without another timer.
     const nextTuningSignature = sharedPerformanceTuningSignature(); // Do not restart NPC audio when unrelated Auto Pick preferences change.
     if (nextTuningSignature !== lastSharedTuningSignature) {
       lastSharedTuningSignature = nextTuningSignature;
@@ -1569,6 +1570,7 @@
       sharedTuning:sharedPerformanceTuningSignature(), // On-mobile diagnostics compare the effective key with each musician's actual audible state.
       musicDevTuning:gameMusicDevMode(),
       instrumentSlots:window.InstrumentPatternLoadout?.getSlots?.(deps?.getEquippedInstrument?.()) || null,
+      playerTuning:playerSession?.instrumentMode === 'performance' ? (() => { const state = bridgeOf(frameEl)?.getState?.(); return {tonicMidi:state?.tonicMidi,scaleName:state?.scaleName}; })() : null, // On-device key readout without the console.
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,puzzleBeatClock,lastPuzzleInputTiming, // Mobile diagnostics show the actual physical note timing and audio transport.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
