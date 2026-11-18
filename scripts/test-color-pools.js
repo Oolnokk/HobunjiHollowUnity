@@ -42,6 +42,17 @@ vm.runInContext(read('docs/js/color-pools-system.js'), context, { filename: 'col
 
 const api = context.ColorPoolsSystem;
 assert(api, 'ColorPoolsSystem exports');
+vm.runInContext(read('docs/js/voorg-ass-registration.js'), context, { filename: 'voorg-ass-registration.js' });
+context.VoorgAssRegistration.ensureRendererSpecies(context.CreatureGeneticsRender.SPECIES); // Reuse the live species registration instead of duplicating its Color Pools region metadata.
+context.CreatureGenetics.SPECIES_ALIAS['voorg-ass-herd-mother'] = 'voorg-ass'; // Same canonical species mapping used for adult and mother stable portraits.
+for (const kind of ['voorg-ass', 'voorg-ass-herd-mother']) {
+  const entry = { kind, genotype: {
+    base: { color: '#4b6987', copies: 2 },
+    belly: { color: '#b9a174', copies: 2, enabled: true },
+  } }; // Coat-colored anatomical beard is not a separate inheritable or paintable region.
+  assert.deepEqual(JSON.parse(JSON.stringify(api.regionsFor(entry).map(region => region.id))),
+    ['base', 'belly'], kind + ' offers base coat and belly paint but never an independent beard/hoof selector');
+}
 assert.equal(api.stableMaxLevel(), 10, 'Color Pools reads the live refined Stable level cap');
 assert.equal(api.overpassUnlocked(), false, 'unfinished Quest 2 cannot add an overpass');
 assert.equal(api.__test.setOverpassPattern('base', 'overpass'), false, 'direct call cannot bypass quest gate');
