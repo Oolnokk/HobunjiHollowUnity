@@ -94,15 +94,18 @@
       for(const material of materials)if(material&&!seen.has(material)){seen.add(material);material.dispose?.();}
     });
   }
-  function placeholder(THREE,footprint,height,material){
+  function placeholder(THREE,placement,material){
+    const {footprintTiles:footprint,height,slabWidth,slabDepth}=placement; // Both the final geometry and loading fallback share the same platform constraints.
+    const topWidth=Math.min(footprint*.96,Math.max(.1,Math.min(slabWidth,slabDepth))*.92); // The capital must never project through a narrower slab.
+    const shaftWidth=Math.min(footprint*.64,topWidth*.76); // Match the authored pillar's tapered cross-section.
     const group=new THREE.Group();group.name='shaft-support-loading-placeholder';
     const make=(name,w,h,d,y)=>{
       const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
       mesh.name=name;mesh.position.set(0,y,0);group.add(mesh);
     };
     make('foot',footprint,.16,footprint,.08);
-    make('stone-shaft',footprint*.60,Math.max(.1,height-.16),footprint*.60,.16+Math.max(.1,height-.16)/2);
-    make('capital',footprint*.96,.14,footprint*.96,height-.07);
+    make('stone-shaft',shaftWidth,Math.max(.1,height-.30),shaftWidth,.18+Math.max(.1,height-.30)/2);
+    make('capital',topWidth,.14,topWidth,height-.07);
     markVisualOnly(group);
     return group;
   }
@@ -117,7 +120,7 @@
       const holder=new THREE.Group();holder.name='shaft-structural-pillar-'+platform.id;
       holder.position.set(geometry.x,geometry.bottomY,geometry.z);
       holder.userData.devRuinFootprintIgnore=true;
-      const visual=placeholder(THREE,geometry.footprintTiles,geometry.height,material);
+      const visual=placeholder(THREE,geometry,material);
       holder.add(visual);parent.add(holder);
       placements.push({holder,visual,geometry,authored:false}); // Each pillar can be replaced independently when its authored data arrives.
     }
