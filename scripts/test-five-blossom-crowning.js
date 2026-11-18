@@ -168,11 +168,102 @@ async function main(){
   for(const id of names)assert.equal(W.KeyItemSystem.has(W.FestivalBlossomHunt.itemKey(id)),false,'blossom is handed in after the reward');
   assert.equal((await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0])).ok,false,'repeat turn-in is rejected');
   const art=equipment.FIVE_BLOSSOM_CROWN_ART;
-  assert.equal(art.fallback,'assets/cosmetics/clothes/hat/headband.png');
-  assert.match(art.front,/fiveblossomcrown-front\.png$/);
-  assert.match(art.back,/fiveblossomcrown-back\.png$/);
-  assert(!fs.existsSync(path.join(ROOT,'docs',art.front)),'future front sprite is deliberately uncreated');
-  assert(!fs.existsSync(path.join(ROOT,'docs',art.back)),'future back sprite is deliberately uncreated');
+  const crownId='appearance::hat::five_blossom_crown'; // Prize identifier shared by catalog, physical Gear and portrait configuration.
+  const crownConfig=JSON.parse(fs.readFileSync(path.join(ROOT,'docs/config/cosmetics/five_blossom_crown.json'),'utf8')); // Test the shipping config, not an invented variant resolver.
+  const crownIndex=JSON.parse(fs.readFileSync(path.join(ROOT,'docs/config/cosmetics/index.json'),'utf8'));
+  assert(crownIndex.entries.some(entry=>entry.id===crownId && entry.path==='./five_blossom_crown.json'),'the portrait registry loads the actual crown');
+  assert.equal(crownConfig.slot,'hat');
+  assert.equal(crownConfig.hoodLayering,'under');
+  assert.equal(crownConfig.palette.layers.base,'NONE','multicolour flower art must never inherit the previous hat dye');
+  assert.equal(crownConfig.parts.head.layers.front.layerRole,'base','the bypass palette applies to the authored crown layer');
+  assert.equal(crownConfig.parts.head.layers.front.image.url,'./'+art.defaultMale);
+  const variants=[
+    ['mao-ao_female',art.defaultFemale],['kenkari_male',art.kenkari],['kenkari_female',art.kenkari],
+    ['rakakoan_female',art.kenkari],['tletingan_male',art.tletingan],['tletingan_female',art.tletingan],
+    ['mashtzarr_male',art.mashtzarr],['mammakhbuur_female',art.mashtzarr]
+  ]; // Missing gender-specific sprites deliberately reuse the closest existing authored head shape.
+  for(const [speciesKey,asset] of variants) assert.equal(crownConfig.speciesVariants[speciesKey].parts.head.layers.front.image.url,'./'+asset);
+  const speciesIndex=JSON.parse(fs.readFileSync(path.join(ROOT,'docs/config/species/index.json'),'utf8')); // Every shipping fighter species has explicit male/female crown art.
+  const specialSprites={kenkari:art.kenkari,rakakoan:art.kenkari,mashtzarr:art.mashtzarr,
+    mammakhbuur:art.mashtzarr,tletingan:art.tletingan}; // Only these groups have a different authored head shape.
+  const portraitCtx=vm.createContext({window:{},console,Image:class {},URL,document:{baseURI:'https://test.invalid/docs/index.html'}}); // Evaluate the production portrait resolver against the actual crown config.
+  vm.runInContext(read('docs/js/portrait-utils.js'),portraitCtx,{filename:'docs/js/portrait-utils.js'});
+  const portraitOption=vm.runInContext('portraitOptionFromJson',portraitCtx)({id:crownId},crownConfig);
+  assert.equal(portraitOption.rewardOnly,true,'the crown is equippable but excluded from randomly generated outfits');
+  const portraitRandom=vm.runInContext('randomProfileSeeded',portraitCtx);
+  const noHat={id:'none',layers:[]},randomFighter={id:'N',speciesId:'nuhongan',gender:'male'}; // Nuhongan lacks an explicit species cosmetic allowlist.
+  const generated=portraitRandom(()=>.25,[randomFighter],[noHat],[noHat],[noHat],[noHat],[noHat],[noHat],[noHat],
+    {},{},[noHat,portraitOption],[noHat],{N:{hat:{none:0,five_blossom_crown:1}}},
+    [noHat],[noHat],{},{},{},{},{});
+  assert.notEqual(generated.hat?.id,'five_blossom_crown','even weighted random outfits cannot award the quest crown');
+  const portraitResolve=vm.runInContext('resolveOptionLayers',portraitCtx);
+  const portraitTintSlot=vm.runInContext('resolveLayerTintSlot',portraitCtx);
+  for(const {speciesId} of speciesIndex.entries) for(const gender of ['male','female']) {
+    const expected=(specialSprites[speciesId] || (gender==='female'?art.defaultFemale:art.defaultMale)).split('/').pop();
+    const route=crownConfig.speciesVariants[speciesId+'_'+gender]?.parts?.head?.layers?.front?.image?.url;
+    assert(route && route.endsWith(expected),speciesId+' '+gender+' has its own authored crown route');
+    const layers=portraitResolve(portraitOption,{speciesId,gender}); // The actual resolver prefers opposite-gender variants when one is absent.
+    assert.equal(layers.length,1,speciesId+' '+gender+' has exactly one crown layer');
+    assert(layers[0].url.endsWith(expected),speciesId+' '+gender+' renders '+expected+' rather than a fallback gender');
+    assert.equal(layers[0].paletteColorKey,'NONE',speciesId+' '+gender+' preserves full flower colours');
+    assert.equal(portraitTintSlot(layers[0].paletteColorKey,portraitOption.tintSlot),null,'no costume dye on '+speciesId+' '+gender);
+  }
+  assert.equal(Object.keys(crownConfig.speciesVariants).length,speciesIndex.entries.length*2,'complete runtime variant coverage');
+  const onboardingSource=read('docs/onboarding-core.js'); // Exercise the shipping save-select resolver without loading UI or a GPU.
+  const onboardingHook='  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, cancelCreator, creatorSessionInfo };';
+  assert(onboardingSource.includes(onboardingHook),'save-select preview test hooks the existing live module');
+  const onboardingWindow={
+    FarmWorldSettings:{normalize:()=>({})},
+    SCRATCHBONES_CONFIG:{game:{account:{shopCatalog:[{id:'appearance::hat::basic_headband',category:'hat'}]},
+      portrait:{},dyes:{catalog:[]}}},
+    getPortraitFighters:()=>[{speciesId:'mao-ao',gender:'male',id:'M'}],
+    randomPortraitProfileSeeded:()=>({bodyColors:{},facialHair:null})
+  }; // The renderer's shop-only lookup previously replaced earned crowns with the original headband.
+  const onboardingCtx=vm.createContext({window:onboardingWindow,document:{},localStorage:{},
+    console,URL,Image:class {},setTimeout(){}});
+  vm.runInContext(onboardingSource.replace(onboardingHook,
+    '  window.__previewCrownTest={setCosmetics(value){_cosmetics=value;},buildPreviewProfileFromAppearance};\n'+onboardingHook),
+    onboardingCtx,{filename:'docs/onboarding-core.js'});
+  const previewOption=id=>({id,slot:'hat',layers:[{url:id}]});
+  onboardingWindow.__previewCrownTest.setCosmetics({optionCache:new Map([
+    ['appearance::hat::basic_headband',previewOption('appearance::hat::basic_headband')],
+    [crownId,previewOption(crownId)]]),hatOptions:[{id:'none'}],hoodOptions:[{id:'none'}]});
+  const previewAppearance={speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:{}};
+  const preview=(equippedHat)=>onboardingWindow.__previewCrownTest.buildPreviewProfileFromAppearance(
+    previewAppearance,['appearance::hat::basic_headband'],{}, {clothing:{hat:equippedHat}});
+  assert.equal(preview({cosmeticId:crownId,prizeCosmeticId:crownId}).hat?.id,crownId,
+    'saved character portrait shows the crowned hat even if original shop headband is also selected');
+  assert.equal(preview({cosmeticId:'appearance::hat::basic_headband'}).hat?.id,'appearance::hat::basic_headband',
+    'switching away from the crown removes it from the save-select portrait');
+  assert.equal(preview(null).hat?.id,'appearance::hat::basic_headband','an unawarded character preview is unchanged');
+  for(const asset of Object.values(art)) assert(fs.existsSync(path.join(ROOT,'docs',asset)),asset+' is an actual shipped PNG');
+  const legacyCrown=equipment.devWornClothing().hat; // Simulates a crown earned before the new sprites were uploaded.
+  legacyCrown.baseCosmeticId='appearance::hat::basic_headband';
+  legacyCrown.sprite='assets/cosmetics/clothes/hat/headband.png';
+  legacyCrown.artCandidates=['assets/cosmetics/clothes/hat/fiveblossomcrown-front.png'];
+  legacyCrown.fallbackSprite=legacyCrown.sprite;
+  assert(equipment.__test.normalizeGearClothingItems(W.__hobunjiPlayerProfile.gearInventory),'old crown art is migrated with the normal Gear save migration');
+  assert.equal(legacyCrown.baseCosmeticId,crownId,'old awards now select the crown instead of the headband');
+  assert.equal(legacyCrown.sprite,art.defaultMale);
+  assert.equal(legacyCrown.artCandidates,undefined,'obsolete non-existent image paths are removed');
+  assert.equal(legacyCrown.fallbackSprite,undefined);
+  const ownerGear=W.__hobunjiPlayerProfile.gearInventory; // Old saves may deserialize worn/owned Gear records as separate objects.
+  const ownedCrownCopy=JSON.parse(JSON.stringify(legacyCrown));
+  const ownedIndex=ownerGear.clothingItems.findIndex(item=>item.uid===legacyCrown.uid);
+  assert(ownedIndex>=0);
+  ownerGear.clothingItems[ownedIndex]=ownedCrownCopy;
+  for(const item of [legacyCrown,ownedCrownCopy]) {
+    item.baseCosmeticId='appearance::hat::basic_headband';
+    item.sprite='assets/cosmetics/clothes/hat/headband.png';
+  }
+  const beforeFirstPortraitMigration=gearSaves;
+  const firstPortrait=equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
+  assert(firstPortrait.equippedCosmetics.includes(crownId),'old save gets the correct crown immediately on first avatar rebuild');
+  assert.equal(legacyCrown.baseCosmeticId,crownId);
+  assert.equal(ownedCrownCopy.baseCosmeticId,crownId,'the owned article copy is migrated together with the worn one');
+  assert.equal(gearSaves,beforeFirstPortraitMigration+1,'first avatar migration persists once');
+  equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
+  assert.equal(gearSaves,beforeFirstPortraitMigration+1,'subsequent portrait refreshes never resave the already migrated crown');
   login('farmhand');readyHunt();
   const second=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
   assert(second.ok&&!second.first,'later farmhand receives crown without fanfare');
@@ -208,8 +299,15 @@ async function main(){
   assert(nextFirst.ok&&nextFirst.first,'another character can become the first Finder after an interrupted attempt');
   assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1158'].characterId,'owner');
   assert.equal(cutscenes,3,'no cinematic for the failed attempt, one for each successful first-Finder year');
-  assert.equal(equipment.devWornClothing().hat?.baseCosmeticId,'appearance::hat::basic_headband',
-    'new prize id retains the real headband portrait fallback');
+  assert.equal(equipment.devWornClothing().hat?.baseCosmeticId,'appearance::hat::five_blossom_crown',
+    'new and resumed prize awards use the authored crown portrait config');
+  const equippedInPortrait=equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
+  assert(equippedInPortrait.equippedCosmetics.includes(crownId),'the actual crown is routed into the avatar renderer');
+  const crownHat=W.__hobunjiPlayerProfile.gearInventory.clothing.hat;
+  W.__hobunjiPlayerProfile.gearInventory.clothing.hat=null;
+  const unEquippedPortrait=equipment.applyGearClothingToPlayerData({equippedCosmetics:[crownId],appearance:{bodyColors:{}}});
+  assert(!unEquippedPortrait.equippedCosmetics.includes(crownId),'switching away from a quest-only hat clears its previously rendered portrait layer');
+  W.__hobunjiPlayerProfile.gearInventory.clothing.hat=crownHat;
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
   assert(audienceShots.some(item=>item.owner==='five-blossoms-crowning' && item.priority>0),'crowning audience outranks ordinary town plans');
   assert(scheduleInvalidations>=7,'crowd gathering and release both invalidate cached NPC destinations');
@@ -219,6 +317,6 @@ async function main(){
   assert(audience.every(target=>target.r>=0 && target.r<49.5),'even a 100-person audience stays inside the town south edge');
   const frontRow = audience.filter(target=>target.r === Math.min(...audience.map(entry=>entry.r))); // NPC ids are alphabetically sorted before slot assignment, not in their generated numeric order.
   assert(Math.abs((Math.min(...frontRow.map(target=>target.c))+Math.max(...frontRow.map(target=>target.c)))/2-(Number(stage.col)+1.5))<0.01,'the large front audience rank centers on the stage');
-  console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real hat gear/fallback, later awards, persistence, duplicate lockout passed.');
+  console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real species-aware hat art and saved-crown migration, later awards, persistence, duplicate lockout passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

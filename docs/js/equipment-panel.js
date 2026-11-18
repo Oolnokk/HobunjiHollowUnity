@@ -626,6 +626,7 @@
     const wornUidByCollectionKey = new Map(); // Keeps each retained article's equipped copy when migrating saves.
 
     for (const item of sourceItems) {
+      if (normalizeFiveBlossomCrownArt(item)) changed = true; // Migrate saved headband placeholders before grouping by cosmetic identity.
       if (migrateGearClothingQuality(item)) changed = true;
       if (window.MetalArmorSystem?.normalizeItem?.(item)) changed = true;
       const articleLabel = clothingArticleLabel(item); // Used to clean stale dye prefixes from legacy baseLabel fields while migrating.
@@ -701,10 +702,17 @@
 
   function applyGearClothingToPlayerData(playerData) {
     const gearInventory = deps.getGearInventory();
+    const wornHat = gearInventory?.clothing?.hat; // First avatar rebuild can precede opening Gear; old earned crowns must resolve now.
+    if (normalizeFiveBlossomCrownArt(wornHat)) {
+      const ownedCrown = gearInventory?.clothingItems?.find(item => wornHat.uid && item?.uid === wornHat.uid); // Saves can deserialize worn and owned snapshots into different objects.
+      if (ownedCrown && ownedCrown !== wornHat) normalizeFiveBlossomCrownArt(ownedCrown);
+      deps.saveGearInventory?.(); // One migration write, never on subsequent portrait refreshes.
+    }
     const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
     const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
     const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
     for (const slot of CLOTHING_SLOTS) {
+      if (slot === 'hat') equippedCosmetics.delete(FIVE_BLOSSOM_CROWN_ID); // Quest-only hats aren't in the shop catalog; remove an old equipped crown on hat swaps.
       // Clear out whatever cosmetic previously occupied this category
       // (character-creation's own pick, or a since-unequipped item)
       // before considering the current gearInventory item — this used to
@@ -882,6 +890,7 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing[slot];
       if (!worn) continue;
+      if (normalizeFiveBlossomCrownArt(worn)) changed = true; // Worn-only legacy crown saves also need the actual crown cosmetic.
       if (migrateGearClothingQuality(worn)) changed = true;
       const wornEntry = makeClothingGearEntry({ ...worn, slot });
       if (!worn.uid) {
@@ -1640,11 +1649,27 @@
 
   const FIVE_BLOSSOM_CROWN_ID = 'appearance::hat::five_blossom_crown'; // Non-shop quest cosmetic distinct from any purchased headband.
   const FIVE_BLOSSOM_CROWN_ART = Object.freeze({
-    front:'assets/cosmetics/clothes/hat/fiveblossomcrown-front.png',
-    back:'assets/cosmetics/clothes/hat/fiveblossomcrown-back.png',
-    fallback:'assets/cosmetics/clothes/hat/headband.png',
-    fallbackCosmeticId:'appearance::hat::basic_headband'
-  }); // Artist-supplied front/back PNGs do not exist yet; the basic headband's known portrait art is the live fallback.
+    defaultMale:'assets/cosmetics/clothes/hat/flowercrown_m.png',
+    defaultFemale:'assets/cosmetics/clothes/hat/flowercrown_f.png',
+    kenkari:'assets/cosmetics/clothes/hat/kenk_flowercrown_m.png',
+    mashtzarr:'assets/cosmetics/clothes/hat/mashtz_flowercrown_m.png',
+    tletingan:'assets/cosmetics/clothes/hat/tl_flowercrown_m.png'
+  }); // Canonical authored assets; config/cosmetics/five_blossom_crown.json chooses the appropriate head shape.
+  function normalizeFiveBlossomCrownArt(item) {
+    if (!item || (item.prizeCosmeticId !== FIVE_BLOSSOM_CROWN_ID && item.cosmeticId !== FIVE_BLOSSOM_CROWN_ID)) return false;
+    let changed = false; // Persist migration only when an older saved crown still points to headband/unfinished art.
+    for (const [key,value] of [['cosmeticId',FIVE_BLOSSOM_CROWN_ID],['baseCosmeticId',FIVE_BLOSSOM_CROWN_ID],
+      ['slot','hat'],['sprite',FIVE_BLOSSOM_CROWN_ART.defaultMale],['dyeable',false]]) {
+      if (item[key] !== value) { item[key] = value; changed = true; }
+    }
+    for (const oldKey of ['artCandidates','fallbackSprite']) {
+      if (Object.prototype.hasOwnProperty.call(item,oldKey)) {
+        delete item[oldKey]; // These obsolete paths never drove portrait rendering and needn't bloat saved rewards.
+        changed = true;
+      }
+    }
+    return changed;
+  }
   function beginFiveBlossomCrowning() {
     const gear = deps?.getGearInventory?.();
     if (!gear) return null;
@@ -1680,14 +1705,14 @@
     let item = gear.clothingItems.find(entry => entry?.uid === uid || (entry?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && entry?.awardYear === Number(civilYear)));
     if (!item) {
       item = {
-        uid,slot:'hat',cosmeticId:FIVE_BLOSSOM_CROWN_ID,baseCosmeticId:FIVE_BLOSSOM_CROWN_ART.fallbackCosmeticId,
+        uid,slot:'hat',cosmeticId:FIVE_BLOSSOM_CROWN_ID,baseCosmeticId:FIVE_BLOSSOM_CROWN_ID,
         prizeCosmeticId:FIVE_BLOSSOM_CROWN_ID,awardYear:Number(civilYear),label:'Five Blossom Crown',
         description:'The crown bestowed by Father Hunundi upon a Finder of the Five Blossoms.',
-        sprite:FIVE_BLOSSOM_CROWN_ART.fallback,artCandidates:[FIVE_BLOSSOM_CROWN_ART.front,FIVE_BLOSSOM_CROWN_ART.back],
-        fallbackSprite:FIVE_BLOSSOM_CROWN_ART.fallback,dyeable:false,sellPrice:0
-      }; // Both absent art paths are reserved; the actual current avatar draws the basic headband portrait.
+        sprite:FIVE_BLOSSOM_CROWN_ART.defaultMale,dyeable:false,sellPrice:0
+      }; // The portrait and species-aware Gear icon resolve the five authored variants from the crown's cosmetic config.
       gear.clothingItems.push(item);
     }
+    normalizeFiveBlossomCrownArt(item); // A resumed/previously saved award must use the new crown sprites too.
     gear.clothing.hat = item; // Instant on-stage replacement; the previous hat remains owned in the wardrobe.
     if (ceremony) ceremony.crowned = true;
     else deps.saveGearInventory?.(); // During the ceremony, finishFiveBlossomCrowning first restores the temporarily hidden hood before saving.

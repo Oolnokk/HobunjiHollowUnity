@@ -359,6 +359,7 @@ const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
+const stoneArt={geometry:new Geometry(),material:new Material({})}; // Verify rock piles request the shared textured stone asset.
 const storage = new Map();
 const localStorage = {getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)};
 const area='map_i_den_shattercask_test';
@@ -378,6 +379,7 @@ async function scenario(reloading=false) {
     damagePlayer:(...args)=>damage.push(args),showToast(){},
   };
   const game={
+    OreRockTextures:{smallStoneArt:()=>stoneArt},
     console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'regression'},
     Combat:{deps,init(){},update(){},beginStagedAction(options){return options;},
       spawnMeleeTrail(){},meleeColliderVolume(){return null;}},
@@ -435,6 +437,9 @@ async function scenario(reloading=false) {
   assert.equal(tiles[3][5].type,'grass','blast opens the mineable wall');
   assert.equal(tiles[3][6].type,'grass','blast cuts down the tree');
   assert.equal(game.Shattercasks.debugSnapshot().rubble.length,2,'rock and tree each create one loot pile');
+  const rockBatch=scene.children.find(node=>node.name==='shattercask_rock_piles_instanced'); // Real blast path must build the textured instance batch.
+  assert.equal(rockBatch.geometry,stoneArt.geometry);
+  assert.equal(rockBatch.material,stoneArt.material);
   const drawBudget=game.Shattercasks.debugSnapshot().performance;
   assert.equal(drawBudget.activePileDrawCalls,2,'all debris uses only two instanced draw calls');
   assert.equal(drawBudget.activeDebrisInstances,8,'two piles each contain four GPU instances');
@@ -503,6 +508,7 @@ async function arenaScenario() {
     worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
   const blasts=[]; // Captures the canonical WorldEvents blast origin to check carrier-centered detonation.
   const game={console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'arena-regression'},
+    OreRockTextures:{smallStoneArt:()=>stoneArt},
     WorldEvents:{emit:(type,detail)=>{if(type==='blast')blasts.push(detail);}},
     EnvironmentSurfaceMicroPlateau:{bindGroundProjection(mesh){groundProjectionBinds++;mesh.userData.environmentGroundProjection=true;}},
     Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},

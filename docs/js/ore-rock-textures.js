@@ -6,6 +6,7 @@
   const states = new Map(); // Copyable mobile debug information by ore type.
   const uvStats = { originalUvs: 0 }; // Tracks meshes retaining their authored continuous UVs.
   let stoneMap = null; // Shared map for stone rocks and pending recolors.
+  let smallStone = null; // Shared closed rock geometry and material for cairns and blast rubble.
 
   function setOriginalTextureOptions(texture, THREE) {
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -75,6 +76,25 @@
     return material;
   }
 
+  function smallStoneArt(THREE) {
+    if (smallStone) return smallStone;
+    // A closed, broad-faced blank lets stacked stones overlap through their faces.
+    const blank = new THREE.CylinderGeometry(.46, .5, 1, 6);
+    try {
+      const geometry = window.ProceduralFurniture.createRockGeometry(blank, {
+        seed: 'small-loose-stone', roughness: .55, contactArea: 1,
+        contactFaces: [-1, 1].map(direction => ({
+          source: 'body', normal: [0, direction, 0], offset: .5,
+          min: [-.26, direction * .5, -.26], max: [.26, direction * .5, .26],
+        })), // Keep a small bearing face on top and bottom while roughening the edges.
+      });
+      smallStone = { geometry, material: materialFor(THREE) };
+      return smallStone;
+    } finally {
+      blank.dispose();
+    }
+  }
+
   // Modern callers still invoke this helper. Do not run the rejected per-face
   // cliff nine-slice mapping: the pre-redesign rock kept continuous world UVs.
   function fitRockMesh(mesh) {
@@ -90,7 +110,7 @@
   }
 
   window.OreRockTextures = {
-    materialFor, fitRockMesh,
+    materialFor, fitRockMesh, smallStoneArt,
     debugSnapshot: () => ({ ...Object.fromEntries(states), _surfaceMapping: { mode: 'legacy continuous UV', ...uvStats } }),
   };
 })();

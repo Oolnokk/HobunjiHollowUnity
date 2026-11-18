@@ -23,6 +23,7 @@
     retreats: 0, captures: 0, releases: 0, scouts: 0, nestStays: 0, fleeDrops: 0, nestEntries: 0, failedNestEntries: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
+  let nestExit = null; // Exterior landing point for the current escape, cleared once the player moves away.
 
   const n = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const tile = () => Math.max(1, n(deps?.TILE, 64));
@@ -70,6 +71,7 @@
   function init(injected) {
     deps = injected; // No second creature factory, map store, camera loop, or independent timers.
     lastArea = null;
+    nestExit = null;
     for (const prey of [...captured.keys()]) releaseCaptive(prey, 'reset');
     actors.clear();
     spawnedThisDay.clear();
@@ -200,6 +202,7 @@
     const mapId = bird?.tzatzulNestMapId;
     return !!mapId && typeof deps?.enterBuilding === 'function'
       && window.TzatzulNestInterior?.isNestMap?.(mapId) === true
+      && nestExit?.area !== bird.areaId
       && deps.getCurrentArea?.() === bird.areaId; // Never abduct the player into a missing cave or via a dev-spawned bird.
   }
   function safeExteriorReturn(prey, record) {
@@ -415,7 +418,8 @@
     state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))),
       half, heading, from: start, to: end, mode: phase,
       terrain: bird._tzNestMother ? null : terrainFlightProfile(start, end, half),
-      diveAimFraction: endpoint.diveAimFraction || 1, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
+      diveAimFraction: endpoint.diveAimFraction || 1,
+      travelFraction: endpoint.travelFraction ?? 1, lastBody: null }; // Retain the full intended leg for cave wall impact damage.
     state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
     bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
@@ -437,8 +441,16 @@
       const dx = n(target.x) - n(bird.x), dy = n(target.y) - n(bird.y);
       const length = Math.hypot(dx, dy); // A zero-distance target keeps the ordinary safe endpoint.
       if (plan && length > 1) {
-        const travel = (Math.max(3, n(plan.arenaRadiusTiles, 10)) * 2 + 4) * tile();
-        endpoint.x = bird.x + dx / length * travel; endpoint.y = bird.y + dy / length * travel;
+        const radius = Math.max(3, n(plan.arenaRadiusTiles, 10)); // Same authored arena radius as the existing radial wall collision.
+        const travel = (radius * 2 + 4) * tile(); // The full dive commitment includes surplus travel for impact damage.
+        const ux = dx / length, uy = dy / length; // Unit direction from the departure perch through the target.
+        const ox = bird.x / tile() - (n(plan.arenaCenter?.col) + .5);
+        const oy = bird.y / tile() - (n(plan.arenaCenter?.row) + .5);
+        const projection = ox * ux + oy * uy; // Ray projection onto the circle around the arena center.
+        const rim = Math.max(radius, Math.hypot(ox, oy)) + .05; // Include authored perches right on the rim.
+        const wallDistance = -projection + Math.sqrt(Math.max(0, projection ** 2 + rim ** 2 - ox ** 2 - oy ** 2));
+        endpoint.x = bird.x + ux * travel; endpoint.y = bird.y + uy * travel;
+        endpoint.travelFraction = Math.min(1, wallDistance * tile() / travel); // A missed dive turns back even if too high to trigger wall damage.
         // The descent reaches prey height at the committed target, then levels off.
         endpoint.diveAimFraction = Math.min(1, length / travel);
       }
@@ -458,6 +470,7 @@
     if (!(target?.health > 0) || target.areaId && target.areaId !== bird.areaId
       || target.creatureKey === 'tzatzul' || target.creatureKey === 'tzatzul-hatchling'
       || target._denHidden || target.state === 'dying') return false;
+    if (!bird._tzNestMother && target === deps.player && nestExit?.area === bird.areaId) return false; // Also reject dives already committed before the player went inside.
     const entry = sweptBodyHit(previous, current, state.segment.half, targetBox(target));
     if (entry === null) return false; // No pre-timed hit: only actual 3D torso/body overlap can deal damage.
     state.struck = true; // One collision/attack per committed swoop, even across long frames.
@@ -485,7 +498,8 @@
     const state = bird._tzFlight;
     if (!state.segment) return;
     state.elapsed = Math.min(state.segment.duration, state.elapsed + dt);
-    const t = Math.max(0, Math.min(1, state.elapsed / state.segment.duration));
+    const limit = state.segment.travelFraction; // Indoor dive ends at the cave rim, with its original speed and distance commitment.
+    const t = Math.max(0, Math.min(limit, state.elapsed / state.segment.duration));
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
     if (!bird._tzNestMother) bird.branchSurfaceY = flightHeightAt(state.segment, t); // Avoid straight-line tunnelling through plateau rock.
@@ -508,21 +522,23 @@
         returnHome(bird); return; // Follow through to the opposite rock perch with genuine injury.
       }
     }
-    if (t < 1) return;
+    if (t < limit) return;
     if (state.phase === 'swoop' && !state.struck) {
       state.struck = true; stats.misses++; mark(bird, 'body missed committed dive');
     }
     state.segment = null;
-    if (state.phase === 'swoop') { if (state.captive) returnHome(bird); else seekFood(bird); return; }
+    if (state.phase === 'swoop') { if (bird._tzNestMother || state.captive) returnHome(bird); else seekFood(bird); return; }
     if (state.phase === 'search') { seekFood(bird); return; }
     if (state.phase === 'return') {
       const arrived = !!window.PerchSupport?.attach?.(bird, state.roost);
       if (state.captive) releaseCaptive(state.captive, arrived ? 'returned to roost' : 'roost lost');
       state.phase = arrived ? 'perched' : 'await-roost';
-      state.elapsed = 0; state.rest = 0; state.target = null;
+      state.elapsed = 0; state.target = null;
+      if (!bird._tzNestMother) state.rest = 0;
       bird.tzatzulFlightPose = arrived ? 'perched' : 'glide';
       if (arrived) {
         bird.tzatzulDivePitchRad = 0;
+        if (bird._tzNestMother) return; // The cave encounter owns the perch pause and next dive.
         if (state.delivered || state.retreating) { state.delivered = false; enterNest(bird); }
         else seekFood(bird); // An unseen/rejected victim doesn't feed the hatchlings.
       } else mark(bird, 'lost roost; released prey and awaiting replacement');
@@ -534,9 +550,12 @@
     const step = Math.max(0, Math.min(.1, n(dt))); // Mobile tab resume cannot skip several seconds of flight.
     const area = deps.getCurrentArea?.();
     if (area !== lastArea) {
+      nestExit = deps.player && ALLOWED_AREAS.has(area) && window.TzatzulNestInterior?.isNestMap?.(lastArea)
+        ? { area, x: deps.player.x, y: deps.player.y } : null; // The native exit already restored the player's walkable exterior position.
       window.TzatzulCliffSites?.releaseInactive?.(area);
       lastArea = area;
     }
+    if (nestExit && distance(deps.player, nestExit) >= HUNT_RANGE_TILES * tile()) nestExit = null; // Give the player one swoop range to get clear.
     for (const bird of actors) {
       if (!deps.hostileObjects.has(bird) || !(bird.health > 0)) {
         if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive,
@@ -566,7 +585,11 @@
         continue;
       }
       if (state.phase === 'await-roost') continue;
-      if (state.phase !== 'perched') { advance(bird, step); continue; }
+      if (state.phase !== 'perched') {
+        advance(bird, step);
+        if (deps.getCurrentArea?.() !== area) break; // A successful delivery moves the player before the remaining outdoor birds can tick.
+        continue;
+      }
       state.elapsed += step;
       if (state.elapsed < state.rest) continue;
       if (wounded) { enterNest(bird); continue; } // Flee to shelter instead of renewing the attack.
@@ -580,7 +603,7 @@
   }
   function debugSnapshot() {
     const now = clockHours(); // Mobile diagnostics show the real remaining cave time, not a frame-count estimate.
-    return { ...stats, active: actors.size, populationKeys: spawnedThisDay.size,
+    return { ...stats, active: actors.size, populationKeys: spawnedThisDay.size, nestExitProtected: !!nestExit,
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,

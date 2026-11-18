@@ -172,7 +172,7 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/portrait-utils.js?v=20261112imagePrune1"></script>
+  <script src="js/portrait-utils.js?v=20261118flowerCrownRewardOnly1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
@@ -317,7 +317,7 @@
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261118instrumentSave1"></script>
+  <script src="onboarding.js?v=20261118flowerCrownPreview1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261117hypedCreature6"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -586,7 +586,7 @@
   <script src="js/skeeri-ruins.js?v=20261116shaftBodyCollision1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261118hTzPortrait4"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261108tzflightnest2"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261118hc9e677f"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261108tzflightnest2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
@@ -748,7 +748,7 @@
   <script src="js/tasks-panel.js?v=20261118fiveBlossomsHunt2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261118hWildPose3"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261118h298307b"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -776,7 +776,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261118crownGear2"></script>
+  <script src="js/equipment-panel.js?v=20261118flowerCrownArt1"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -817,7 +817,7 @@
   <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
   <script src="js/cavern-generator.js?v=20261117deepAuditMainMerge1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
-  <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
+  <script src="js/ore-rock-textures.js?v=20261118ha836fd0"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
@@ -855,7 +855,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261117promptDecouple1"></script>
+  <script src="js/shattercasks.js?v=20261118h8f63ed1"></script>
   <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
   <script src="js/pingdort-flocks.js?v=20261117hypedCreatureBoulder6"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
