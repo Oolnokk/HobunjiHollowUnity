@@ -333,6 +333,23 @@
     return mask;
   }
 
+  const _artworkAlphaMasks = new WeakMap(); // Original overlay image -> opacity stencil, shared across all inherited coat colors and paint jobs.
+  async function artworkAlphaMask(url) {
+    const image = await loadImage(url);
+    if (_artworkAlphaMasks.has(image)) return _artworkAlphaMasks.get(image);
+    await window.PixelWorkYield?.maybeYield();
+    const width = image.naturalWidth, height = image.naturalHeight;
+    const canvas = makeCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const data = new Uint8Array(width * height);
+    for (let p = 0; p < data.length; p++) data[p] = pixels[p * 4 + 3] > 0 ? 1 : 0;
+    const mask = { width, height, data }; // Keeps the original beard silhouette available for the final foreground pass.
+    _artworkAlphaMasks.set(image, mask);
+    return mask;
+  }
+
   // Shared keyed shade-fill for animal coats and matching attached PNG surfaces.
   function recolorKeyedPixels(px, targetRgb, sourceKey, sourceReferenceHex = null, debugLabel = null) {
     recolorPixels(px, targetRgb, sourceKeyPredicate(px, sourceKey), sourceReferenceHex, debugLabel);
@@ -658,13 +675,53 @@
         incompleteLayers.push('underlay:' + patternId);
       }
     }
+    const defaultCoatOverlays = []; // Anatomical (non-genetic) coat additions are prepared now so a single Color Pools motif spans body and beard.
+    for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
+      const url = patternUrl(kind, defaultPattern.id, frame, genotype);
+      try {
+        const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99';
+        defaultCoatOverlays.push({ id: defaultPattern.id, url, image: await recoloredPattern(url, coatColor) });
+      } catch (error) {
+        window.__farmLog?.(`[genotype-render] default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
+        incompleteLayers.push('default:' + defaultPattern.id);
+      }
+    }
+    const paintedDefaultCoats = new Map(); // Foreground copies retain the shared pattern after belly/other genetic layers are drawn.
     ctx.drawImage(baseSource, 0, 0);
     try {
-      const basePaintMask = colorPoolPaintFor(genotype, 'base') && sourceKey && !mask
-        ? await sourceKeyPaintMask(baseUrl, sourceKey) : mask; // The same authored coat pixels used for tinting exclude Voorg-Ass hooves from paint.
-      const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
-      if (colorPoolPaintFor(genotype, 'base') && !paintedBase) incompleteLayers.push('paint:base');
-      if (paintedBase) ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
+      const coatPaint = colorPoolPaintFor(genotype, 'base'); // Avoid extra mask/overlay work on ordinary non-painted animals.
+      let basePaintMask = coatPaint && sourceKey && !mask
+        ? await sourceKeyPaintMask(baseUrl, sourceKey) : mask; // Excludes dark Voorg-Ass hooves and unrelated authored sprite details.
+      let basePaintSource = baseSource;
+      const defaultCoatMasks = []; // Alpha masks isolate the beard when it is restored above inherited belly patterns.
+      if (coatPaint && defaultCoatOverlays.length) {
+        const combined = makeCanvas(bw, bh);
+        const combinedContext = combined.getContext('2d');
+        combinedContext.drawImage(baseSource, 0, 0);
+        for (const overlay of defaultCoatOverlays) {
+          combinedContext.drawImage(overlay.image, 0, 0);
+          defaultCoatMasks.push({ id: overlay.id, mask: await artworkAlphaMask(overlay.url) });
+        }
+        if (basePaintMask) {
+          const fitted = fitMaskToImage(basePaintMask, bw, bh);
+          if (fitted.width === bw && fitted.height === bh) {
+            const data = new Uint8Array(fitted.data);
+            for (const overlay of defaultCoatMasks) {
+              const alpha = fitMaskToImage(overlay.mask, bw, bh);
+              if (alpha.width !== bw || alpha.height !== bh) continue;
+              for (let p = 0; p < data.length; p++) if (alpha.data[p]) data[p] = 1;
+            }
+            basePaintMask = { width: bw, height: bh, data }; // One coat selection spans the beard and body; excluded hooves remain unpatterned.
+          }
+        }
+        basePaintSource = combined;
+      }
+      const paintedBase = await applyColorPoolPaint(basePaintSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
+      if (coatPaint && !paintedBase) incompleteLayers.push('paint:base');
+      if (paintedBase) {
+        ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
+        for (const overlay of defaultCoatMasks) paintedDefaultCoats.set(overlay.id, maskedRegionCanvas(paintedBase, overlay.mask));
+      }
     } catch (error) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — retryable: ${error.message}`, 'warn');
       incompleteLayers.push('paint:base');
@@ -701,26 +758,9 @@
         incompleteLayers.push('pattern:' + patternId);
       }
     }
-    for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
-      const url = patternUrl(kind, defaultPattern.id, frame, genotype); // Uses the already-uploaded idle/run1/run2 beard sprites.
-      try {
-        const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99'; // Reuses the base-coat allele; never invents a secondary beard color.
-        const recolored = await recoloredPattern(url, coatColor);
-        let painted = null;
-        try {
-          painted = await applyColorPoolPaint(recolored, genotype, 'base', null,
-            `animal:${kind}:${frame}:base:${coatColor}:${defaultPattern.id}`); // Reuse base-coat paint on the matching beard overlay, not a second genetic region.
-          if (colorPoolPaintFor(genotype, 'base') && !painted) incompleteLayers.push('paint:' + defaultPattern.id);
-        } catch (paintError) {
-          window.__farmLog?.(`[genotype-render] default coat paint for "${defaultPattern.id}" failed: ${paintError.message}`, 'warn');
-          incompleteLayers.push('paint:' + defaultPattern.id);
-        }
-        ctx.drawImage(painted || recolored, 0, 0, c.width, c.height);
-        drawnPatterns.push(defaultPattern.id + '(default)'); // Debug only; it is not added to genotype traits or breeding.
-      } catch (error) {
-        window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
-        incompleteLayers.push('default:' + defaultPattern.id);
-      }
+    for (const overlay of defaultCoatOverlays) {
+      ctx.drawImage(paintedDefaultCoats.get(overlay.id) || overlay.image, 0, 0, c.width, c.height); // Reapply beard on top of belly without shifting its shared coat pattern.
+      drawnPatterns.push(overlay.id + '(default)'); // Anatomical overlay remains non-genetic and unselectable in Color Pools.
     }
     const eyeSkinColor = eyeSkinTintColor(kind, genotype, baseColor); // Nelk spectacles color overrides its base coat only when the pattern is expressed.
     if (spec.eyes) {
