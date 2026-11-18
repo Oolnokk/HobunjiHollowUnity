@@ -8,11 +8,14 @@ const mountSource = fs.readFileSync('docs/js/mount-system.js', 'utf8'); // Uses 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Uses the real shared ground/cliff creature mover.
 const companionSource = fs.readFileSync('docs/js/companion-movement-speed.js', 'utf8'); // Confirms the run baseline is exported to mounted movement.
 const stableSource = fs.readFileSync('docs/js/stable-animal-perk-adjustments.js', 'utf8'); // Guards against double-counting Fleet Stride.
+const pixelProbeSource = fs.readFileSync('docs/js/pixel-probe.js', 'utf8'); // Mobile report must expose the inherited run and actual enemy chase speed.
 
 assert.match(mountSource, /CRUISE_SPEED_RATIO\s*=\s*1\s*;/, 'ordinary riding uses the full inherited baseline rather than 66% cruise');
 assert.match(mountSource, /MOUNT_PLAYER_RUN_RATIO\s*=\s*1\.1\s*;/, 'riding baseline is exactly +10%');
 assert.match(companionSource, /playerRunningSpeed,\s*__test:/, 'player-running baseline is exported for the mounted system');
 assert.doesNotMatch(stableSource, /ride\.def\s*=\s*\{\s*\.\.\.oldDef/, 'Fleet Stride must not modify an authored mount species definition');
+assert.match(pixelProbeSource, /Mount speed sources: playerRun=/, 'Pixel Probe exposes live inherited run speed on phones');
+assert.match(pixelProbeSource, /Enemy pursuit: last=/, 'Pixel Probe exposes resolved enemy pursuit speed on phones');
 
 const mountStart = mountSource.indexOf('function currentPlayerRunningSpeedPxS()');
 const mountEnd = mountSource.indexOf('function mountedMeleeStaminaMultiplier()', mountStart);
