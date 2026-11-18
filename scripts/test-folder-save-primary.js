@@ -280,6 +280,14 @@ function runQuitGuardRelayoutBehaviorRegression() {
   runPendingTimer();
   flushObserverMutations();
   assert(timers.size === 0, 'structural relayout also settles without observer feedback');
+
+  observerCallback([{ // Pane content (inventory detail rebuilds on every selection) is not header structure.
+    type: 'childList',
+    target: { closest: selector => (selector === '.mp-body' ? {} : null) },
+    addedNodes: [{ nodeType: 1 }],
+    removedNodes: [{ nodeType: 1 }],
+  }]);
+  assert(timers.size === 0, 'pane-body rebuilds never schedule a header relayout');
 }
 
 runQuitGuardRelayoutBehaviorRegression();
