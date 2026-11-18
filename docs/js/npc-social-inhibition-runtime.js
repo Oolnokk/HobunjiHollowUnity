@@ -69,6 +69,7 @@
     renderCount: 0,
     facingApplications: 0,
     danceApplications: 0,
+    poseOwnedSkips: 0, // Counts stale social dance/facing poses suppressed while a paired or other scripted body action owns the NPC.
     frameApplied: false, // True while this frame's presentation is applied and awaiting its deferred revert.
     frameSnapshots: [],
   };
@@ -739,6 +740,13 @@
     for (const walker of walkers) {
       const target = walker?.currentScheduleTarget;
       if (!target?.socialLookAt && !target?.socialDance) continue;
+      const participant = global.NpcCharacterState?.participantId?.(walker.rec?.id)
+        || (walker.rec?.id ? `npc:${walker.rec.id}` : null); // Uses the shared lock owner, never an unrelated dance-specific boolean.
+      if ((participant && global.CharacterActionLocks?.isLocked?.(participant, 'pose'))
+        || global.FestivalWheelDanceRuntime?.isPartner?.(walker)) {
+        state.poseOwnedSkips++;
+        continue; // Render-time social sway, legs and facing must not overwrite the paired solver's final authored pose.
+      }
       const stimulus = activeStimulusFor(target, walker.area);
       if (stimulus) {
         if (target.socialLookAt) { target.socialLookAt.x = stimulus.x; target.socialLookAt.z = stimulus.z; }
@@ -805,6 +813,7 @@
         renderCount: state.renderCount,
         facingApplications: state.facingApplications,
         danceApplications: state.danceApplications,
+        poseOwnedSkips: state.poseOwnedSkips,
         activeEvaluations: [...state.evaluations.values()],
       };
     },
