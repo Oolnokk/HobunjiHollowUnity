@@ -34,15 +34,16 @@
     if(!THREE||!Array.isArray(sites)||!sites.length)return null;
     const chosen=pick(sites.filter(s=>s.panel?.isMesh),{seed,tier});
     if(!chosen.length)return null;
-    const wallGeo=new THREE.PlaneGeometry(.89,1.64),floorGeo=new THREE.PlaneGeometry(1,1);
-    const makeBlack=(opacity=1)=>{const m=new THREE.MeshBasicMaterial({color:0x000000,transparent:opacity<1,opacity,depthWrite:false});m.polygonOffset=true;m.polygonOffsetFactor=-2;m.polygonOffsetUnits=-2;return m;};
+    const wallGeo=new THREE.PlaneGeometry(1.07,1.9),floorGeo=new THREE.PlaneGeometry(1,1); // The opening covers underlying wall engraving, including its border.
+    const makeBlack=(opacity=1)=>{const m=new THREE.MeshBasicMaterial({color:0x000000,transparent:opacity<1,opacity,depthWrite:opacity>=1});m.polygonOffset=true;m.polygonOffsetFactor=-2;m.polygonOffsetUnits=-2;return m;};
     const up=new THREE.Vector3(0,1,0),axis=new THREE.Vector3(),q0=new THREE.Quaternion(),qa=new THREE.Quaternion();
     const coffins=chosen.map((site,index)=>{
       const lid=site.panel; // The REAL wall panel (engraving included) is the lid: until woken it is indistinguishable from its neighbours.
       const rest={x:lid.position.x,y:lid.position.y,z:lid.position.z,q:lid.quaternion.clone()};
       const parent=lid.parent;
       const wallMat=makeBlack(),wall=new THREE.Mesh(wallGeo,wallMat);
-      wall.position.set(rest.x-site.dx*.02,rest.y,rest.z-site.dz*.02);wall.rotation.y=Math.atan2(site.dx,site.dz);wall.visible=false;wall.name='ruin-wall-coffin-darkness';
+      wall.position.set(rest.x+site.dx*.10,rest.y,rest.z+site.dz*.10);wall.rotation.y=Math.atan2(site.dx,site.dz);wall.visible=false;wall.name='ruin-wall-coffin-darkness';
+      wall.userData.ruinNoPattern=true; // Opaque depth-writing recess in front of the patterned wall.
       const floorMat=makeBlack(0),floor=new THREE.Mesh(floorGeo,floorMat);
       floor.rotation.x=-Math.PI/2;floor.position.set(site.x+site.dx*.45,site.floorY+.07,site.z+site.dz*.45);floor.visible=false;floor.name='ruin-wall-coffin-spawn-tile';
       parent.add(wall,floor);
