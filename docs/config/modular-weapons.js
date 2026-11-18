@@ -2112,7 +2112,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleX": 0.85,
           "scaleY": 1.25,
-          "y": 30,
+          "y": 60,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
@@ -2127,51 +2127,104 @@ window.MODULAR_WEAPON_CONFIG = {
               },
               {
                 "junction": "band",
-                "x": 113.1,
-                "y": 1026.6,
+                "x": 209.9,
+                "y": 950.9,
                 "rotation": 52,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 139,
-                "y": 1006.3,
+                "x": 184.1,
+                "y": 971.1,
                 "rotation": 52,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 164.9,
-                "y": 986.1,
+                "x": 158.2,
+                "y": 991.4,
                 "rotation": 52,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 267.5,
-                "y": 219.3,
+                "x": 132.3,
+                "y": 1011.6,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 106.4,
+                "y": 1031.8,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 80.5,
+                "y": 1052,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 170,
+                "y": 294,
                 "rotation": 232.5,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 241.5,
-                "y": 239.3,
+                "x": 196.1,
+                "y": 274.1,
                 "rotation": 232.5,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 215.4,
-                "y": 259.3,
+                "x": 222.2,
+                "y": 254.1,
                 "rotation": 232.5,
                 "scale": 0.51,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 248.2,
+                "y": 234.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 274.3,
+                "y": 214.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 300.4,
+                "y": 194.2,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -3398,7 +3451,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 211.5,
-                "y": 710.6,
+                "y": 612,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
@@ -3406,7 +3459,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 211.5,
-                "y": 672,
+                "y": 650.6,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
@@ -3414,10 +3467,31 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 211.5,
-                "y": 633.4,
+                "y": 689.3,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 727.9,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 766.6,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -3427,7 +3501,8 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          }
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -3570,33 +3645,46 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleX": 1.25,
           "x": 5,
-          "y": 30,
+          "y": 60,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
               {
                 "junction": "band",
-                "x": 326.3,
-                "y": 805,
+                "x": 188,
+                "y": 810,
                 "rotation": 270,
                 "scale": 0.75,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 278,
-                "y": 805,
+                "x": 236.3,
+                "y": 810,
                 "rotation": 270,
                 "scale": 0.75,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 229.7,
-                "y": 805,
+                "x": 284.6,
+                "y": 810,
                 "rotation": 270,
                 "scale": 0.75,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 332.9,
+                "y": 810,
+                "rotation": 270,
+                "scale": 0.75,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -3915,12 +4003,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.5
         },
         "fishing-mace": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "fishing-spear": {
           "scaleY": 1.5,
-          "y": 45,
+          "y": 75,
           "layerOrder": "haft-over-head",
           "scaleX": 0.5,
           "bridges": {
@@ -3928,7 +4016,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 193.5,
-                "y": 764.5,
+                "y": 637,
                 "rotation": 0,
                 "scale": 0.35,
                 "behind": true
@@ -3936,7 +4024,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 193.5,
-                "y": 742,
+                "y": 659.5,
                 "rotation": 0,
                 "scale": 0.35,
                 "behind": true
@@ -3944,10 +4032,71 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 193.5,
-                "y": 719.5,
+                "y": 682.1,
                 "rotation": 0,
                 "scale": 0.35,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 704.6,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 727.2,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 749.7,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 772.2,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 794.8,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 817.3,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 839.9,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -3964,11 +4113,11 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "hatchet": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "hoe": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "kylie": {
@@ -3976,7 +4125,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.5,
           "x": -5,
           "y": 40,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pick-shovel-pick": {
           "flipX": true,
@@ -3999,22 +4148,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.875,
           "x": -5,
           "y": 270,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "war-cleaver": {
           "layerOrder": "haft-over-head",
           "disallow": true
         },
         "warhammer": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "work-hammer": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "bshuakauitl": {
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleY": 0.85,
@@ -4074,20 +4223,20 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-mace": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "fishing-spear": {
           "scaleX": 0.8,
           "scaleY": 1.7,
-          "y": 30,
+          "y": 60,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
               {
                 "junction": "band",
                 "x": 200.5,
-                "y": 750.9,
+                "y": 630,
                 "rotation": 0,
                 "scale": 0.48,
                 "behind": true
@@ -4095,7 +4244,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 200.5,
-                "y": 720,
+                "y": 660.9,
                 "rotation": 0,
                 "scale": 0.48,
                 "behind": true
@@ -4103,10 +4252,47 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 200.5,
-                "y": 689.1,
+                "y": 691.8,
                 "rotation": 0,
                 "scale": 0.48,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 722.7,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 753.6,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 784.6,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 815.5,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -4133,13 +4319,13 @@ window.MODULAR_WEAPON_CONFIG = {
         "hatchet": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "hoe": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "kylie": {
@@ -4147,14 +4333,14 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.6,
           "x": -7,
           "y": 55,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pick-shovel-pick": {
           "scaleX": 0.63,
           "scaleY": 2.2,
           "flipY": true,
           "y": 20,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pickshovel-scoop": {
           "scaleX": 0.9,
@@ -4173,7 +4359,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.8,
           "x": -7,
           "y": 330,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "war-cleaver": {
           "layerOrder": "haft-over-head",
@@ -4182,19 +4368,19 @@ window.MODULAR_WEAPON_CONFIG = {
         "warhammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "work-hammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "bshuakauitl": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "grapple-flail": {
           "disallow": true,
@@ -29419,13 +29605,13 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "y": 25,
+          "y": 55,
           "layerOrder": "head-over-haft",
           "bridges": {
             "strokes": [
               {
                 "junction": "band",
-                "x": 324.6,
+                "x": 201,
                 "y": 956,
                 "rotation": 270,
                 "scale": 0.6,
@@ -29433,7 +29619,7 @@ window.MODULAR_WEAPON_CONFIG = {
               },
               {
                 "junction": "band",
-                "x": 286,
+                "x": 239.6,
                 "y": 956,
                 "rotation": 270,
                 "scale": 0.6,
@@ -29441,11 +29627,32 @@ window.MODULAR_WEAPON_CONFIG = {
               },
               {
                 "junction": "band",
-                "x": 247.4,
+                "x": 278.3,
                 "y": 956,
                 "rotation": 270,
                 "scale": 0.6,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 316.9,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 355.6,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -31316,27 +31523,40 @@ window.MODULAR_WEAPON_CONFIG = {
             "strokes": [
               {
                 "junction": "band",
-                "x": 457,
-                "y": 952.1,
+                "x": 358.6,
+                "y": 959.3,
                 "rotation": 265.8,
                 "scale": 0.6,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 418.4,
-                "y": 954.9,
+                "x": 397.1,
+                "y": 956.5,
                 "rotation": 265.8,
                 "scale": 0.6,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 379.9,
-                "y": 957.7,
+                "x": 435.7,
+                "y": 953.7,
                 "rotation": 265.8,
                 "scale": 0.6,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 474.2,
+                "y": 950.9,
+                "rotation": 265.8,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -31346,7 +31566,8 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          }
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "head-over-haft"
@@ -31460,7 +31681,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 195,
-                "y": 929.6,
+                "y": 831,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
@@ -31468,7 +31689,7 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 195,
-                "y": 891,
+                "y": 869.6,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
@@ -31476,10 +31697,23 @@ window.MODULAR_WEAPON_CONFIG = {
               {
                 "junction": "band",
                 "x": 195,
-                "y": 852.4,
+                "y": 908.3,
                 "rotation": 0,
                 "scale": 0.6,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 195,
+                "y": 946.9,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -31489,7 +31723,8 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          }
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -33353,7 +33588,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleX": 0.85,
           "scaleY": 1.25,
-          "y": 30,
+          "y": 60,
           "layerOrder": "haft-over-head",
           "disallow": false,
           "bridges": {
@@ -33369,51 +33604,120 @@ window.MODULAR_WEAPON_CONFIG = {
               },
               {
                 "junction": "band",
-                "x": 121.6,
-                "y": 1055.3,
+                "x": 207.8,
+                "y": 967.8,
                 "rotation": 44.6,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 144.6,
-                "y": 1031.9,
+                "x": 184.7,
+                "y": 991.2,
                 "rotation": 44.6,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 167.7,
-                "y": 1008.5,
+                "x": 161.7,
+                "y": 1014.6,
                 "rotation": 44.6,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 259.2,
-                "y": 112.8,
+                "x": 138.7,
+                "y": 1038,
+                "rotation": 44.6,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 115.6,
+                "y": 1061.4,
+                "rotation": 44.6,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 92.6,
+                "y": 1084.8,
+                "rotation": 44.6,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 151.8,
+                "y": 990.5,
+                "rotation": 44.6,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 172.2,
+                "y": 199.5,
                 "rotation": 225.1,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 235.9,
-                "y": 136,
+                "x": 195.4,
+                "y": 176.4,
                 "rotation": 225.1,
                 "scale": 0.51,
                 "behind": true
               },
               {
                 "junction": "band",
-                "x": 212.7,
-                "y": 159.2,
+                "x": 218.7,
+                "y": 153.2,
                 "rotation": 225.1,
                 "scale": 0.51,
                 "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 242,
+                "y": 130,
+                "rotation": 225.1,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 265.2,
+                "y": 106.8,
+                "rotation": 225.1,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 288.5,
+                "y": 83.6,
+                "rotation": 225.1,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 151.8,
+                "y": 990.5,
+                "rotation": 44.6,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -33709,9 +34013,9 @@ window.MODULAR_WEAPON_CONFIG = {
       "fireAssembly": "hachutuTorchStaff",
       "rigRegions": [],
       "shaftArtTransform": {
-        "scaleX": 1,
+        "scaleX": 0.85,
         "scaleY": 1.3,
-        "x": 0,
+        "x": -5,
         "y": 0,
         "enabled": true
       },
