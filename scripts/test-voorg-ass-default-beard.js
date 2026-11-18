@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const WIDTH = 5; // Coat, highlight, hoof, beard, and a partially transparent beard edge crossing the belly.
+const WIDTH = 6; // Coat, highlight, hoof, beard, a belly-overlap fringe, and an exposed translucent beard tip.
 const HEIGHT = 1; // One row makes the mask/recolor behavior deterministic.
 const frameReads = []; // Records which of the three authored beard frame URLs the compositor actually loads.
 const coatColor = '#2357bb'; // Used to compare the default beard's tint with the base allele.
@@ -16,6 +16,7 @@ function imagePixels(url) {
     frameReads.push(url);
     result.set([180, 180, 180, 255], 12); // Default beard pixels use normal grayscale pattern shade-fill.
     result.set([180, 180, 180, 100], 16); // A feathered beard edge overlays opaque coat and belly artwork.
+    result.set([180, 180, 180, 100], 20); // Exposed beard tip has no backing coat or belly; repeated alpha blending must not thicken it.
   } else if (url.includes('voorg-ass_beard2_')) {
     frameReads.push(url);
     result.set([180, 180, 180, 255], 12); // Future unique beard occupies the exact same location, never an additional layer.
@@ -143,7 +144,8 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
     assert.deepEqual(colorAt(2), [0xc0, 0x40, 0x40], frame + ': dark hoof/non-coat detail remains unpatterned');
     assert.deepEqual(colorAt(3), [0x20, 0xd0, 0xf0], frame + ': beard inherits the base coat Color Pools paint');
     assert.equal(paintCalls.length, 1, frame + ': body and beard share one continuous Color Pools motif pass');
-    assert.deepEqual(paintCalls[0].paintedPixels, [0, 3, 4], frame + ': single coat stencil includes beard and feathered edge, but excludes hoof and highlights');
+    assert.deepEqual(paintCalls[0].paintedPixels, [0, 3, 4, 5], frame + ': single coat stencil includes beard and both feathered edges, but excludes hoof and highlights');
+    assert.equal(result.pixels[5 * 4 + 3], 100, frame + ': exposed translucent beard must be drawn only once, without doubled alpha');
     assert.equal(paintCalls[0].continuousSurface, true, frame + ': all coat islands use the same pattern origin');
     assert.notDeepEqual(colorAt(4), [0x20, 0xd0, 0xf0], frame + ': transparent beard edge must not erase belly shading underneath');
     assert(colorAt(4)[0] > 0x20, frame + ': restored beard alpha allows some warm belly color through');
