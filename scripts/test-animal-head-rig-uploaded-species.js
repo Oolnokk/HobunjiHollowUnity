@@ -73,7 +73,9 @@ for(const [id,width,height,abdomenEnabled] of [['gar-wolf',128,56,true],['grehlr
   }
   const original={width,height,data:pixels,getContext:()=>({getImageData:()=>({data:pixels})})};
   assert.equal(warp.abdomenForKind(id).enabled,abdomenEnabled,id+': abdomen growth toggle survives');
-  assert.deepEqual(plain(warp.frameForKind(id)),plain(api.get(id).babyHeadFrame),id+': latest head rectangle is active');
+  const rig=api.get(id); // Prefer the explicitly enabled custom growth rectangle; retain the authored fallback frame.
+  const expectedFrame=rig.babyHeadUseCustomFrame===true ? rig.babyHeadCustomFrame : rig.babyHeadFrame;
+  assert.deepEqual(plain(warp.frameForKind(id)),plain(expectedFrame),id+': selected authored head rectangle is active');
   assert(warp.primeIdleMask(id,original)?.opaquePixels>0,id+': valid idle-head opacity mask');
   const grown=warp.applyToCanvas(original,id);
   assert(grown!==original&&grown.data.some((v,i)=>v!==pixels[i]),id+': output head pixels grow');

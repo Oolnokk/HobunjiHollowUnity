@@ -44,8 +44,8 @@ assert.equal(rest.afterPoints.length, 7);
 assert.equal(sharedRig.babyHeadScale, 1.28);
 assert.equal(sharedRig.babyHeadShortening, .06);
 assert.equal(sharedRig.babyHeadUsePaintedFrame, false);
-assert.equal(sharedRig.babyHeadUseCustomFrame, false);
-assert.equal(sharedRig.babyAbdomenEnabled, false);
+assert.equal(sharedRig.babyHeadUseCustomFrame, true);
+assert.equal(sharedRig.babyAbdomenEnabled, true);
 
 const bestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json', 'utf8'));
 const currentGrehlr = bestiary.creatures.find(creature => creature.id === 'grehlr')?.headRig; // Bestiary is the source imported by the painter.
