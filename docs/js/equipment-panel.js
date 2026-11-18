@@ -1673,7 +1673,7 @@
     if (ceremony) ceremony.crowned = true;
     deps.saveGearInventory?.();
     deps.refreshPlayerAvatar?.();
-    buildEquipmentSlots();
+    if (typeof document !== 'undefined') buildEquipmentSlots();
     return item;
   }
   function finishFiveBlossomCrowning(ceremony, crowned = false) {
@@ -1682,7 +1682,7 @@
     if (!ceremony.facewrap) ceremony.gear.clothing.hood = ceremony.oldHood; // Original non-facewrap hood returns after the announcement.
     deps.refreshPlayerAvatar?.();
     if (crowned || ceremony.crowned) deps.saveGearInventory?.(); // Persist the crown and normal hood once, never a temporary bare-headed wardrobe.
-    buildEquipmentSlots();
+    if (typeof document !== 'undefined') buildEquipmentSlots();
   }
 
   window.EquipmentPanel = {
@@ -1730,6 +1730,7 @@
       const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
       return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
     },
-    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids, hasIndividualClothingPattern, clothingGearCollectionKey },
+    __test: { clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,
+      setCrownTestDeps: value => { deps = value; } }, // Headless annual award tests use the actual equipment owner without installing a second UI runtime.
   };
 })();

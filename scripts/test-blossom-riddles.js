@@ -274,9 +274,11 @@ assert.match(genericPoem.text, /the ancient obelisk/);
 assert.ok(genericPoem.stanzas.length <= 2, 'nonfestival quests use the same concise stanza grouping');
 assert.doesNotMatch(genericPoem.text, /blossom|petals|flower|tree/i, 'unrelated quests do not inherit festival flavor text');
 
-let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, currentZone = 'town', tileListener = null, saveCalls = 0, treeBuilds = 0, protectedMeshCount = 0;
+let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, currentZone = 'town', currentTile = null, tileListener = null, saveCalls = 0, treeBuilds = 0, protectedMeshCount = 0;
 const sampledHeights = []; // Checks the live tree altitude sampler's pixel-space contract, including plateau elevation. // Integration tracks world-scene foliage's shared-geometry protection. // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
+const pickedItems = new Set(); // Simulates the persistent character-scoped Pack Key Items until the dedicated crown test exercises the real service.
+const itemDefs = new Map(); // Verifies each picked blossom was registered as an inventory item with a year-specific key.
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
 const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_western_slope', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
 for (let i = 0; i < ids.length; i++) {
@@ -291,7 +293,12 @@ const world = {
   CalendarSystem: { aotYearNumber: () => civilYear, isInitialized: () => calendarReady },
   FestivalCalendar: { current: () => festival ? { id: 'five_blossoms' } : null },
   QuestProgressStore: { snapshot: () => progress, setStatus(id, status, fields) { saveCalls++; progress[id] = { status, progress: { ...progress[id]?.progress, ...fields } }; return true; } },
-  PlayerTileEvents: { subscribe(listener) { tileListener = listener; return () => { if (tileListener === listener) tileListener = null; }; } },
+  PlayerTileEvents: { current: () => currentTile, subscribe(listener) { tileListener = listener; return () => { if (tileListener === listener) tileListener = null; }; } },
+  KeyItemSystem: { defineMany(defs) {defs.forEach(def=>itemDefs.set(def.id,def));},
+    has: id => pickedItems.has(id),
+    grant(id) {if(!itemDefs.has(id))return {ok:false};const granted=!pickedItems.has(id);pickedItems.add(id);return {ok:true,granted};},
+    revoke(id) {const removed=pickedItems.delete(id);return {ok:true,removed};} },
+  GameplayInputRouter: {setClaims(){},clearClaims(){}},
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
   FoliageGenerator: { buildPottedBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
@@ -313,13 +320,22 @@ for (const id of ids) {
   const instance = zones.get(currentZone).localeInstances.find(x => x.localeId.endsWith(id));
   const target = Riddles.positionOf(instance);
   assert.ok(tileListener, 'quest subscribes to player tile changes');
-  tileListener({ to: { area: currentZone, col: target.col, row: target.row } });
-  assert.ok(progress[questId].progress.found.includes(id), id + ' is found by walking to the actual locale tree');
+  currentTile={ area:currentZone,col:target.col,row:target.row };
+  tileListener({to:currentTile});
+  assert.ok(!progress[questId].progress.found.includes(id),id+' must NOT be picked merely by entering its tile');
+  assert.equal(hunt.nearbyTree()?.id,id,'the real tree becomes interactable inside reach');
+  assert.equal(hunt.pickBlossom(id),true,id+' is picked only by interacting');
+  assert.ok(progress[questId].progress.found.includes(id),id+' is recorded after interaction');
+  assert.equal(world.KeyItemSystem.has(hunt.itemKey(id)),true,id+' is carried as a real Pack item');
 }
-assert.equal(progress[questId].status, 'completed');
-assert.equal(progress[questId].progress.found.length, 5);
+assert.equal(progress[questId].status,'active','all five physical blossoms still require Father Hunundi turn-in');
+assert.equal(progress[questId].progress.found.length,5);
+assert.equal(hunt.menuStatus().ready,true,'five carried items unlock Father Hunundi turn-in');
 hunt.update();
-assert.equal(progress[questId].status, 'completed', 'cannot claim the same annual five trees twice');
+assert.equal(hunt.pickBlossom('cyan'),false,'cannot pick a sixth copy of a collected tree');
+world.QuestProgressStore.setStatus(questId,'completed',{crowned:true}); // Dedicated ceremony test validates the real asynchronous crown transaction.
+hunt.update();
+assert.equal(progress[questId].status,'completed','the crowned year does not restart its hunt');
 civilYear = 1157;
 festival = true;
 hunt.update();
@@ -327,11 +343,15 @@ assert.equal(progress['five_blossoms_wilderness_hunt:1157']?.status, 'active');
 currentZone = 'map_southern_cloud_forest';
 const roseInstance = zones.get(currentZone).localeInstances.find(item => item.localeId.endsWith('rose'));
 const rosePoint = Riddles.positionOf(roseInstance, 'blossom-tree');
-tileListener({ to: { area: currentZone, col: rosePoint.col, row: rosePoint.row } });
-assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.found.join(','), 'rose', 'a tree found out of riddle order still counts');
+currentTile={area:currentZone,col:rosePoint.col,row:rosePoint.row};
+tileListener({to:currentTile});
+assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.found.length,0,'standing at a second-year blossom only exposes interaction');
+assert.equal(hunt.pickBlossom('rose'),true);
+assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.found.join(','),'rose','a tree picked out of riddle order still counts');
 assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.target, 'cyan', 'the active riddle remains the first still-unfound blossom');
-tileListener({ to: { area: currentZone, col: rosePoint.col, row: rosePoint.row } });
-assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.found.length, 1, 'the same tree cannot be awarded twice');
+tileListener({to:currentTile});
+assert.equal(hunt.pickBlossom('rose'),false,'the same tree cannot be picked twice');
+assert.equal(progress['five_blossoms_wilderness_hunt:1157'].progress.found.length,1);
 festival = false;
 hunt.update();
 assert.equal(progress['five_blossoms_wilderness_hunt:1157'].status, 'expired', 'unfinished hunt ends after festival week');
@@ -342,7 +362,7 @@ assert.equal(treeBuilds, 6, 'a revisited zone receives a fresh tree instance whi
 const northTree = Riddles.positionOf(zones.get('map_northern_cliffs').localeInstances[0], 'blossom-tree');
 assert.ok(sampledHeights.some(p => p.x === (northTree.col + .5) * deps.TILE && p.y === (northTree.row + .5) * deps.TILE), 'tree floor is sampled in pixel-space, not map-tile coordinates');
 assert.equal(protectedMeshCount, treeBuilds, 'every scene-local blossom clone protects shared GPU buffers during zone disposal');
-assert.ok(saveCalls >= 8, 'every discovery and calendar transition saved progress');
+assert.ok(saveCalls >= 8, 'every explicit pick and calendar transition saved progress');
 assert.ok(hunt.debugSnapshot().present.every(item => item.stamped), 'all five quest locales are visible to runtime diagnostics');
 const missingZone = zones.get('map_northern_cliffs');
 zones.delete('map_northern_cliffs');
