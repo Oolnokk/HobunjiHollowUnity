@@ -157,8 +157,9 @@
       || { x: .32, y: .12, width: .36, height: .36 }; // Sprite-normalized top-left fallback for species without a loaded chathead profile.
     const headCenterY = frame.y + frame.height * .5; // Places the reaction at the head's vertical center in the centered animal card.
     const headLeftX = (frame.x - .5) * modelWidth; // Finds the visible head crop's left edge in the animal card.
+    const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the chathead's left edge.
     return { height: (.5 - headCenterY) * modelHeight + modelHeight * .045,
-      offsetX: headLeftX - Math.max(size * .9, modelWidth * .045), side: 'animal-left' }; // Small gutter keeps the symbol beside, not over, the head.
+      offsetX: headLeftX - gap, headOffset: { left: frame.x - .5, width: modelWidth, gap }, side: 'animal-left' }; // The renderer projects the crop width as the animal turns.
   }
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
@@ -175,6 +176,7 @@
       duration: TYPES[type].duration,
       height: anchor.height,
       offsetX: anchor.offsetX,
+      headOffset: anchor.headOffset,
       size,
       loadParts: () => Promise.all(partsFor(type).map(async item => {
         const widthScale = item.part === 'cloud' ? 2 : item.part === 'coin' ? .72 : item.part === 'ray' ? .8 : 1; // Preserve the source cloud, coin and ray proportions.
