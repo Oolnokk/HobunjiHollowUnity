@@ -42,5 +42,65 @@ for (const color of ['#00ffff','#ffffff','#ffbf00','#ff8000','#ffb3b3']) {
   assert.equal(leaves.geometry,b.children.find(child=>child.isMesh&&child.userData.noOutline&&child!==petalsB).geometry,
     color+': repeated tree instances reuse shared leaves geometry');
 }
+// Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
+const scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Built witness stones are the exact physical referents named in saved riddles.
+const worldLayout = {
+  cols:70, rows:70,
+  tiles:Array.from({length:70},()=>Array.from({length:70},()=>({type:'grass',elevTier:1}))),
+  localeInstances:[{localeId:'locale_five_blossoms_cyan',x:28,y:28}]
+}; // A flat generated wilderness still needs one deterministic, uniquely dyed route anchor.
+const zoneId='map_northern_cliffs';
+const zoneLayouts=new Map([[zoneId,worldLayout]]);
+const scene=new THREE.Group(); // Same active scene persists when the Tothal cycle is forcibly advanced.
+let cycle='1156',decorations=0,signals=0;
+window.GridTileAccessors={getActiveScene:()=>scene};
+window.ClimbSystem={groundYAt:()=>1.25};
+window.FurniturePatternSurfaces={
+  applyPart(mesh,part) {
+    const pattern=part.patternSurfaces?.[0];
+    assert.ok(pattern?.pattern?.motifUrl?.startsWith('assets/patterns/motif_harlyao_glyph_'),
+      'dyed stones use a real Harlyao ruin engraving motif');
+    assert.equal(pattern.mode,'engraving','stone engravings use the existing ruin-wall pattern mode');
+    assert.match(pattern.palette[1],/^#[0-9a-f]{6}$/i,'engraving ink has the authored dye hex');
+    decorations++; // Counts actual runtime engraving calls, not merely planner output.
+    return mesh;
+  },
+  attachStoneSignal(mesh,options) {
+    assert.equal(options.face,'front','immediate visible glyph sits on the standing rock front');
+    const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.1,.1),new THREE.MeshBasicMaterial());
+    glyph.userData.ruinStoneSignalGlyph=true;
+    mesh.add(glyph);signals++;
+    return {glyph};
+  }
+};
+scenery.init({
+  _zoneLayouts:zoneLayouts,getCurrentArea:()=>zoneId,
+  tothalWorldId:()=> 'test-world',currentTothalYear:()=>cycle,TILE:64
+});
+scenery.update();
+const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
+let first=witnessFor();
+assert.ok(first?.isMesh,'the physically rendered dyed stone exists inside the live wilderness scene');
+assert.equal(decorations,1,'the unique witness stone uses one ruin engraving atlas');
+assert.equal(signals,1,'one visible colored rune exists while the atlas is preparing');
+assert.equal(first.userData.witnessDye.unique,true);
+assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
+scenery.update();
+assert.equal(witnessFor(),first,'unchanged world/layout does not regenerate scenery every frame');
+const oldGeometry=first.geometry; // Tracks scene-local disposal when its Tothal cycle is replaced.
+let disposed=false;
+oldGeometry.addEventListener('dispose',()=>{disposed=true;});
+cycle='1157';
+scenery.update();
+assert.notEqual(witnessFor(),first,'a new Tothal generation rebuilds the marker even with the same zone object and scene');
+assert.ok(disposed,'the old witness geometry is disposed on Shift');
+assert.equal(decorations,2,'the new cycle inks its newly placed marker exactly once');
+const second=witnessFor();
+zoneLayouts.set(zoneId,{...worldLayout}); // Same cycle but forced regeneration replaces the workspace object.
+scenery.update();
+assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also rebuilds the physical riddle witness');
+assert.equal(decorations,3,'same-cycle regeneration reuses the canonical engraving pipeline');
+scenery.clear();
+assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 THREE.TextureLoader.prototype.load = previousTextureLoad;
-console.log('ok - blossom wilderness trees are 2×2×2 tiles, 3-tier leafy shadewood-like silhouettes with many tiny shared flower sprigs');
+console.log('ok - blossom tree geometry, three-tier leaves, patterned witness placement, Shift redraw and cleanup');
