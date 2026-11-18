@@ -344,7 +344,7 @@
     ctx.drawImage(image, 0, 0);
     const pixels = ctx.getImageData(0, 0, width, height).data;
     const data = new Uint8Array(width * height);
-    for (let p = 0; p < data.length; p++) data[p] = pixels[p * 4 + 3] > 0 ? 1 : 0;
+    for (let p = 0; p < data.length; p++) data[p] = pixels[p * 4 + 3]; // Preserve real alpha, not just a binary silhouette, for the beard's foreground restoration.
     const mask = { width, height, data }; // Keeps the original beard silhouette available for the final foreground pass.
     _artworkAlphaMasks.set(image, mask);
     return mask;
@@ -500,19 +500,20 @@
     return compactHashText(compact);
   }
 
-  function maskedRegionCanvas(imageOrCanvas, mask) {
+  function maskedRegionCanvas(imageOrCanvas, mask, preserveMaskAlpha = false) {
     if (!imageOrCanvas || !mask) return imageOrCanvas;
     const width = imageOrCanvas.naturalWidth || imageOrCanvas.width || 0;
     const height = imageOrCanvas.naturalHeight || imageOrCanvas.height || 0;
     if (!width || !height) return imageOrCanvas;
     mask = fitMaskToImage(mask, width, height); // Cached sprite and mask may have been authored at different resolutions.
-    if (mask.width !== width || mask.height !== height) return imageOrCanvas;
+    if (mask.width !== width || mask.height !== height) throw new Error('Animal surface-paint mask dimensions differ from sprite'); // Never fall back to unmasked paint that could mark protected hoof pixels.
     const canvas = makeCanvas(width, height);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(imageOrCanvas, 0, 0, width, height);
     const image = ctx.getImageData(0, 0, width, height);
     for (let p = 0, i = 0; p < mask.data.length; p++, i += 4) {
       if (!mask.data[p]) image.data[i + 3] = 0;
+      else if (preserveMaskAlpha) image.data[i + 3] = Math.min(image.data[i + 3], mask.data[p]); // Restoring beard above belly must retain the original partially transparent fur edges.
     }
     ctx.putImageData(image, 0, 0);
     return canvas;
@@ -530,7 +531,7 @@
     return JSON.parse(JSON.stringify(lastPatternPaintDebug));
   }
 
-  async function applyColorPoolPaint(imageOrCanvas, genotype, regionId, regionMask, cachePrefix) {
+  async function applyColorPoolPaint(imageOrCanvas, genotype, regionId, regionMask, cachePrefix, compositorOptions = null) {
     const paint = colorPoolPaintFor(genotype, regionId);
     if (!paint) return null;
     const dyeHex = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || null;
@@ -572,7 +573,7 @@
       }
       if (regionMask) await window.PixelWorkYield?.maybeYield();
       const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
-      const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern');
+      const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern', compositorOptions || {}); // Optional shared fur-surface alignment; ordinary patterns keep their existing per-cell offsets.
       const applied = !!rendered && rendered !== clippedSource;
       setPatternPaintDebug(regionId, {
         ...debugBase,
@@ -716,11 +717,12 @@
         }
         basePaintSource = combined;
       }
-      const paintedBase = await applyColorPoolPaint(basePaintSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}:coat:${defaultCoatOverlays.map(overlay => overlay.id).join('+') || 'body'}`);
+      const paintedBase = await applyColorPoolPaint(basePaintSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}:coat:${defaultCoatOverlays.map(overlay => overlay.id).join('+') || 'body'}`,
+        defaultCoatOverlays.length ? { continuousSurface: true } : null); // Only anatomical coat extensions require matching motif phase across separate silhouette islands.
       if (coatPaint && !paintedBase) incompleteLayers.push('paint:base');
       if (paintedBase) {
         ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
-        for (const overlay of defaultCoatMasks) paintedDefaultCoats.set(overlay.id, maskedRegionCanvas(paintedBase, overlay.mask));
+        for (const overlay of defaultCoatMasks) paintedDefaultCoats.set(overlay.id, maskedRegionCanvas(paintedBase, overlay.mask, true)); // Retain the beard's translucent feathered edges above the belly.
       }
     } catch (error) {
       window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools base paint failed — retryable: ${error.message}`, 'warn');
