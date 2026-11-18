@@ -120,11 +120,11 @@ assert.match(devExporter, /MotifStore\.loadMotif/, 'Settings exporter can resolv
 const sourceThicknessIndex = weaving.indexOf('const adjustedSrcMask = adjustMaskThickness(srcMask, sourceAllowedMask'); // Signed contour work belongs in motif-source pixels, before scaling/stamping.
 const meshScaleIndex = weaving.indexOf('ctx.scale(meshScale', sourceThicknessIndex);
 const repeatMaskIndex = weaving.indexOf('const sampledMasks = []'); // Repeated motif instances still flatten into one final sampled mask per primary/overpass slot.
-const stackCombineIndex = weaving.indexOf('const combinedMask = new Uint8Array(sampledMasks[0])', repeatMaskIndex); // Slot masks are combined only after their source-pixel contour work and garment-cell sampling are complete.
+const stackCombineIndex = weaving.indexOf('const fused = fuseSampledPatternMasks(sampledMasks, sampledSeparators, fusedCount)', repeatMaskIndex); // All same-color motifs unite once before the optional overpass and final outline.
 const sharedOutlineIndex = weaving.indexOf('let outlineMask = buildPatternOutlineMask(', stackCombineIndex); // The one visible black-outline pass still happens after overpass recombination; direct trim may substitute stricter outline masks before this call.
 const directOutlineSuppressionIndex = weaving.indexOf('suppressGeneratedOutlineAgainstAuthoredOutline(outlineMask', sharedOutlineIndex); // Direct trim may filter that one final outline against existing sprite line art, but never generates a second outline pass.
 assert(sourceThicknessIndex >= 0 && meshScaleIndex > sourceThicknessIndex, 'woven motif thinning/thickening must happen before whole-pattern mesh scaling');
-assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'repeated instances union into the two-slot stack before the shared final outline, with no second output-pixel thickness pass');
+assert(repeatMaskIndex > meshScaleIndex && stackCombineIndex > repeatMaskIndex && sharedOutlineIndex > stackCombineIndex, 'all motif instances union before the optional overpass and shared final outline, with no second thickness pass');
 assert(directOutlineSuppressionIndex > sharedOutlineIndex, 'direct trim suppresses duplicate edge pixels only after the shared final outline is built; it does not introduce a second outline generator');
 
 
