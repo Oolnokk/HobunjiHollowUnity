@@ -62,6 +62,7 @@ for (let i = 0; i < ids.length; i++) {
 }
 const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const world = {
+  LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
   CalendarSystem: { aotYearNumber: () => civilYear },
   FestivalCalendar: { current: () => festival ? { id: 'five_blossoms' } : null },
   QuestProgressStore: { snapshot: () => progress, setStatus(id, status, fields) { saveCalls++; progress[id] = { status, progress: { ...progress[id]?.progress, ...fields } }; return true; } },
