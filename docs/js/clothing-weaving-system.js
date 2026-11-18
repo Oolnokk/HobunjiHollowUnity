@@ -59,7 +59,43 @@
   let clothingTrimConfigPromise = null; // Loads the repo-authored garment-trim manifest shared by the loom, runtime portrait renderer, and dev editor.
   const cosmeticConfigPromises = new Map(); // Reuses per-article cosmetic JSON fetches for pattern layer lookup.
   const spritePaletteKeysCache = new WeakMap(); // Reuses each loaded cosmetic's resolved A/B sprite metadata across recurring player/NPC portrait renders.
-  const patternedCanvasCache = new Map(); // Reuses expensive pattern composites across repeated portrait renders.
+  const patternedCanvasCache = new Map(); // LRU of baked pattern composites shared by animal frames, garment previews and portraits.
+  const PATTERNED_CANVAS_CACHE_LIMIT = 96; // Maximum baked surfaces retained across long sessions.
+  const PATTERNED_CANVAS_CACHE_BYTES = 48 * 1024 * 1024; // Approximate RGBA budget for mobile memory.
+  const patternedCanvasBytesByKey = new Map(); // Tracks the size of each retained baked canvas.
+  let patternedCanvasBytes = 0; // Updated on insert/eviction and shown in the mobile diagnostics.
+  let patternedCanvasEvictions = 0; // Counts evictions to reveal cache thrashing.
+  const pendingPatternStackCanvases = new Map(); // Joins identical simultaneous raster bakes.
+  let patternStackJoinCount = 0; // Counts duplicate builds avoided for mobile diagnostics.
+  function forgetPatternedCanvas(key) {
+    patternedCanvasBytes -= patternedCanvasBytesByKey.get(key) || 0;
+    patternedCanvasBytesByKey.delete(key);
+    patternedCanvasCache.delete(key);
+  }
+  function clearPatternedCanvases() {
+    patternedCanvasCache.clear();
+    patternedCanvasBytesByKey.clear();
+    patternedCanvasBytes = 0;
+  }
+  function cachedPatternedCanvas(key) {
+    const canvas = patternedCanvasCache.get(key);
+    if (canvas) { patternedCanvasCache.delete(key); patternedCanvasCache.set(key, canvas); } // LRU keeps recently displayed frames hot.
+    return canvas || null;
+  }
+  function rememberPatternedCanvas(key, canvas) {
+    if (!canvas) return canvas;
+    if (patternedCanvasCache.has(key)) forgetPatternedCanvas(key);
+    const bytes = Math.max(0, Number(canvas.width) || 0) * Math.max(0, Number(canvas.height) || 0) * 4;
+    if (bytes > PATTERNED_CANVAS_CACHE_BYTES) return canvas; // Large temporary canvases are not retained.
+    patternedCanvasCache.set(key, canvas);
+    patternedCanvasBytesByKey.set(key, bytes);
+    patternedCanvasBytes += bytes;
+    while (patternedCanvasCache.size > PATTERNED_CANVAS_CACHE_LIMIT || patternedCanvasBytes > PATTERNED_CANVAS_CACHE_BYTES) {
+      forgetPatternedCanvas(patternedCanvasCache.keys().next().value);
+      patternedCanvasEvictions++;
+    }
+    return canvas;
+  }
   const wovenIconDataUrlPromises = new Map(); // Caches fully dyed + patterned inventory sprites by their visual state; rebuilt only when dyes/weaving/species/gender change.
   const pendingPatternCanvasPromises = new Map(); // Cache key -> in-flight compositor promise; lets overlapping portrait renders wait on the same build instead of each committing a plain fallback frame.
   const portraitPatternStats = { renderScopes: 0, patternedTintCalls: 0, compatibilityTintCalls: 0, serializedRenders: 0, cacheHits: 0, cacheMisses: 0, retryRenders: 0, hookRepairAttempts: 0, hookRepairs: 0, gearPreparePasses: 0, sessionReadyEvents: 0, sessionRefreshAttempts: 0, sessionRefreshes: 0 }; // Exposed by debugSnapshot so woven portrait ownership/cache behavior is diagnosable without a console.
@@ -786,7 +822,7 @@
       item.colorB = original.colorB;
       item.colorC = original.colorC;
       item.label = original.label;
-      patternedCanvasCache.clear();
+      clearPatternedCanvases();
       if (worn()) equipmentDeps?.refreshPlayerAvatar?.();
     }
 
@@ -878,7 +914,7 @@
   }
 
   function invalidateClothingVisualCaches() {
-    patternedCanvasCache.clear();
+    clearPatternedCanvases();
     wovenIconDataUrlPromises.clear();
   }
 
@@ -3032,7 +3068,7 @@
         base.data[i + 3] = combinedMask[p] && !combinedSeparator?.[p] ? 255 : 0;
       }
       ctx.putImageData(base, 0, 0);
-      if (options.cache !== false) patternedCanvasCache.set(key, out);
+      if (options.cache !== false) rememberPatternedCanvas(key, out);
       return out;
     }
 
@@ -3074,7 +3110,7 @@
     }
 
     ctx.putImageData(base, 0, 0);
-    if (options.cache !== false) patternedCanvasCache.set(key, out);
+    if (options.cache !== false) rememberPatternedCanvas(key, out);
     return out;
   }
 
@@ -3126,7 +3162,7 @@
     const fullKey = `${basePatternKey}|natural-markings:${JSON.stringify(naturalMarkings)}` + (trimPattern
       ? `|garment-trim:${trimSlot}:${trimColorHex}:${JSON.stringify(trimPattern)}`
       : ''); // Final-cache key includes both passes so trim-only and woven+trim sprites never alias plain woven output.
-    const cached = patternedCanvasCache.get(fullKey);
+    const cached = cachedPatternedCanvas(fullKey);
     if (cached) {
       portraitPatternStats.cacheHits++;
       return cached;
@@ -3151,7 +3187,7 @@
           ); // Trim goes last so it overlaps reusable motifs and receives its own independent black outline.
         }
         if (descriptor?.furHood) decorated = furApi?.preserveProtectedColors?.(img,decorated,descriptor.furHood,descriptor.role) || decorated; // Last pass protects the immutable source swatches even from optional motifs.
-        patternedCanvasCache.set(fullKey, decorated); // Cached natural+player passes are reused by the portrait's synchronous second render.
+        rememberPatternedCanvas(fullKey, decorated); // Cached natural+player passes are reused by the portrait's synchronous second render.
         return decorated;
       })()
         .catch(error => { lastError = String(error?.message || error); throw error; })
@@ -3345,7 +3381,7 @@
       equipped: equippedOutfitItems().map(item => ({ uid: item.uid, article: articleLabel(item), slot: item.slot, material: item.weaveMaterial || 'standard', weightUnits: itemWeightUnits(item), woven: weavingHasAnyPattern(item.weaving), addedTrim: weavingHasOptionalTrim(item.weaving) ? normalizeTrimDyeSlot(item.weaving.trim.dyeSlot) : null, crossDyePatterns: weavingUsesCrossDyePatterns(item.weaving) })),
       blueprints: currentBlueprints().map(bp => ({ id: bp.baseCosmeticId, slot: bp.slot, label: bp.label })),
       wool: { light: Number(equipmentDeps?.inventory?.[LIGHT_WOOL_KEY]) || 0, heavy: Number(equipmentDeps?.inventory?.[HEAVY_WOOL_KEY]) || 0 },
-      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
+      portraitPatterns: { ...portraitPatternStats, cacheSize: patternedCanvasCache.size, cacheEstimatedBytes: patternedCanvasBytes, cacheBudgetBytes: PATTERNED_CANVAS_CACHE_BYTES, cacheEvictions: patternedCanvasEvictions, pendingStackBakes: pendingPatternStackCanvases.size, joinedStackBakes: patternStackJoinCount, pending: pendingPatternCanvasPromises.size, gateReaders: portraitGateReaders, gateWriterActive: portraitGateWriterActive, gateWaitingWriters: portraitGateWaitingWriters, gatePreferReaders: portraitGatePreferReaders }, // Mobile-visible counters expose cache behavior plus ordinary-vs-woven gate ownership without a console.
       lastCraftQuality: clone(lastCraftQuality),
       furHoods: window.FurHoodLeatherworking?.debugSnapshot?.() || null, // Read through the same mobile debug panel as cloth and loom failures. // Mobile-visible proof of the input quality groups and averaged star result used by the latest loom craft.
       lastError,
