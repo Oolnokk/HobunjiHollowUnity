@@ -95,7 +95,7 @@
     ['js/mastery-policy.js?v=20261112h0880222', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20261114foreignSeedLifecycle2', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20261114perfumesAudit3', () => !!window.InventoryHeldOverride],
-    ['js/clothing-weaving-system.js?v=20261114crossdyeMerge2', () => Number(window.ClothingWeavingSystem?.version) >= 1],
+    ['js/clothing-weaving-system.js?v=20261118voorgCoatSeam2', () => Number(window.ClothingWeavingSystem?.version) >= 1],
     ['js/fur-hood-leatherworking.js?v=20261107furPreview1', () => !!window.FurHoodLeatherworking],
     ['js/clothing-weight-dodge-policy.js?v=20260913a', () => Number(window.ClothingWeightDodgePolicy?.version) >= 1],
     ['js/inventory-character-effects.js?v=20261118hee4dd2c', () => Number(window.InventoryCharacterEffects?.version) >= 1],
