@@ -23,7 +23,7 @@ vm.runInContext(splineSource, context, { filename: 'animal-shoulder-spline.js' }
 
 const api = context.window.HobunjiGrehlrHeadRigCorrection;
 assert(api, 'Grehlr correction module should expose a debug-visible API');
-assert.equal(api.version, 8);
+assert.equal(api.version, 9);
 assert.equal(context.window.CreatureGeneticsRender.ANIMAL_HEAD_RIGS.grehlr, sharedRig,
   'correction mutates the shared rig object in place');
 assert.equal(sharedRig.legacy, undefined, 'obsolete shared-rig keys are cleared before applying the authored correction');
@@ -41,7 +41,7 @@ assert.equal(rest.separatorRotationDeg, 0);
 assert.equal(rest.separatorAspect, 1.3333333333333333);
 assert.equal(rest.beforePoints.length, 7);
 assert.equal(rest.afterPoints.length, 7);
-assert.equal(sharedRig.babyHeadScale, 1.15);
+assert.equal(sharedRig.babyHeadScale, 1.28);
 assert.equal(sharedRig.babyHeadShortening, .06);
 assert.equal(sharedRig.babyHeadUsePaintedFrame, false);
 assert.equal(sharedRig.babyHeadUseCustomFrame, false);
@@ -54,7 +54,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(api.authored)), currentGrehlr,
   'the compatibility correction must never drift from the current Grehlr export');
 const runtimeLoader = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8'); // Game load version must invalidate stale browser scripts.
 const painterHtml = fs.readFileSync('docs/tools/animal-head-rig/index.html', 'utf8'); // Mobile author reload must use the same corrected export.
-assert.match(runtimeLoader, /GrehlrHeadRigCorrection\.version\) < 8/);
+assert.match(runtimeLoader, /GrehlrHeadRigCorrection\.version\) < 9/);
 assert.match(runtimeLoader, /grehlr-head-rig-correction\.js\?v=[A-Za-z0-9_-]+/, 'runtime Grehlr correction stays cache-busted');
 assert.match(painterHtml, /grehlr-head-rig-correction\.js\?v=[A-Za-z0-9_-]+/, 'mobile painter Grehlr correction stays cache-busted');
 assert.equal(rest.followFrameShiftX, true);

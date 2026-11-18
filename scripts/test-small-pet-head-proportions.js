@@ -102,8 +102,8 @@ const warp = {
   debugSnapshot: () => ({ lastError: null }),
 };
 const win = {
-  HobunjiGrehlrHeadRigCorrection: { version: 8 },
-  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-17-gar-wolf-grehlr-rigs1' },
+  HobunjiGrehlrHeadRigCorrection: { version: 9 },
+  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-18-nine-authored-rigs1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => true },
   AnimalShoulderSpline: {
     version: 10,
@@ -244,9 +244,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moot.weightMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.compressibilityMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.pivot.x, 0.37400034701593793);
-  assert.equal(moot.babyHeadScale, undefined, 'Moot must inherit the new 123% default instead of freezing a species override');
+  assert.equal(moot.babyHeadScale, 1.35, 'Moot keeps its newly uploaded 135% baby-head override');
   assert.equal(moot.babyHeadFrame.width, 0.46468750000000003);
-  assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2729887486531961);
+  assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2450764506711192, 'new Moot shoulder curve is active');
 
   // A naturally Small adult in a split perch also has genotype art, even though its head is not enlarged.
   const naturallySmallSplitPet = companion('pingdort', 'small');

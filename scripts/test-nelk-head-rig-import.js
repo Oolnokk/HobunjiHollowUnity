@@ -66,8 +66,8 @@ for (const [mapName, expectedRuns, firstCount] of [
   assert.equal(decodedPixels, 128 * 84, `${mapName} must decode without gaps or overflow`);
 }
 
-assert.deepEqual(active.nelk, nelk.headRig, 'actual game renderer must use the authored Nelk rig');
-assert.deepEqual(authored.nelk, nelk.headRig, 'painter-export table must match the bestiary');
+assert.deepEqual(active.nelk.pivot, nelk.headRig.pivot, 'genetics renderer keeps Nelk fallback UV coordinates'); // Authored layer installs the complete new rig at runtime.
+assert.deepEqual(authored.nelk, nelk.headRig, 'new painter-export table must match the bestiary');
 assert.match(index, /js\/creature-genetics-render\.js\?v=[A-Za-z0-9_-]+/,
   'the published game must load the refreshed renderer rather than a cached version');
 assert(index.indexOf('js/creature-genetics-render.js') < index.indexOf('game.js?v='),
