@@ -106,7 +106,7 @@ W.AuthoredCutsceneRuntime={
     cutscenes++;activeScene=scene;
     const crowning=scene.stages.find(step=>step.id==='blossom_crown_proclaim');
     assert(crowning && scene.stages.some(step=>step.id==='blossom_crown_reveal'));
-    assert.equal(scene.mapId,'town');
+    assert.equal(scene.mapId,'map_hobunji_town','Director uses the authored town map, not the runtime town area alias');
     assert.equal(scene.actors[0].name,W.__hobunjiPlayerProfile.nickname);
     assert.equal(scene.actors[1].npcId,'father_hunundi_hodu');
     assert.equal(scene.actors[0].worldR,Number(stage.row)+1.05);

@@ -67,7 +67,7 @@
       target:{x:pos.c+.5,y:1.4,z:pos.r},fovDeg:54,blendSeconds:1.1,trackSpeaker:false,stagePlayer:false};
     const crowd = {id:'five_blossoms_crowd',position:{x:pos.c+.5,y:4.8,z:pos.r-3.8},
       target:{x:pos.c+.5,y:.4,z:pos.r+4},fovDeg:57,blendSeconds:1.1,trackSpeaker:false,stagePlayer:false};
-    return {version:6,title:'The Finder of the Five Blossoms',mapId:'town',year:Number(civilYear),
+    return {version:6,title:'The Finder of the Five Blossoms',mapId:'map_hobunji_town',year:Number(civilYear),
       actors:[
         {id:'player',name,isPlayer:true,worldC:pos.c,worldR:pos.r,rotation:0,pose:'standing'},
         {id:'hunundi',name:'Father Hunundi Hodu',npcId:HOST_ID,npcRecord:npcRecords?.get?.(HOST_ID),
