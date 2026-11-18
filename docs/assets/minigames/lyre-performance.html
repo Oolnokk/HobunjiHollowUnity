@@ -5945,7 +5945,7 @@
     if (GAME_OVERWORLD_MUSIC) {
       const slotsShortcut = document.querySelector('[data-open-modal="autoPickSlotsModal"]'); // Standalone Music Lab keeps its original pattern editor.
       if (slotsShortcut) { slotsShortcut.hidden = true; slotsShortcut.style.display = 'none'; } // Author CSS cannot override this hidden gameplay shortcut.
-      $('[data-auto-pick-slot]').forEach(select => { select.disabled = true; select.title = 'Assign patterns in Loadout → Instrument'; });
+      $$('[data-auto-pick-slot]').forEach(select => { select.disabled = true; select.title = 'Assign patterns in Loadout → Instrument'; });
     }
     const selectablePatterns = Object.entries(AUTO_PICK_PATTERN_LIBRARY);
     const selects = $$('[data-auto-pick-slot]');
