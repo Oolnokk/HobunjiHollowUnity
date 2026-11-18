@@ -1,34 +1,30 @@
 # Performance investigation log
 
-## 18 Nov 2026: replace CPU-baked lunge/dodge afterimages with live-color GPU smears (device benchmark pending)
+## 18 Nov 2026: combat afterimages now opt-in, off by default
 
-Quick Attacks and Charged Breakers both drive combat lunges. The old combat-blink-dodge.js
-generated up to three frozen ghost portraits per moving actor. Each sampled skinned
-vertices on the CPU, copied its source texture maps into canvases and owned new GPU
-textures. The earlier 15 Nov measurement documented costs on this path, but did not
-prove that afterimages alone caused the user's newest combat freezes.
+A follow-up to the colored motion-smear experiment prioritizes runtime smoothness over an
+effect that was difficult to see. Reverted the experimental GPU smear and retained the
+original pooled/decimated portrait ghosts behind **Settings > Visual Effects > Combat
+Afterimages**, stored as `hobunjiCombatAfterimages` (`'1'` enabled, `'0'` or missing
+disabled). The checkbox is unchecked by default, including for existing players who
+never chose an effect setting.
 
-The new path renders a single reusable soft, stretched silhouette per portrait surface.
-It shares the actor's live front/back textures, color-filled patterns, tint and GPU
-skeleton. The optional one-time GPU grid reduction takes 28x36 cells to 14x18 cells;
-subsequent motion samples update in-place velocity, length and opacity uniforms.
-The fragment shader modifies alpha before premultiplication and never modifies RGB.
-The real animated character remains sharp and untouched.
+In the default-off path, `Combat.update` does not sample player dodge/lunge movement,
+build snapshots, skin ghost geometry, refresh canvases/textures, update fades, or prune
+the ghost pool. Hostile combat expression/AI and regular dodges, Blink, heavy attacks
+and quick attacks continue unchanged; only the optional ghost path is skipped.
+The direct spawn entry points also check the preference, including Blink teleport
+bursts and enemy ghosts. Disabling afterimages mid-fight disposes live and pooled
+ghost resources immediately and resets motion-history state before any subsequent
+opt-in. The existing `HobunjiDodgeFeedback` mobile diagnostics expose
+`afterimages.enabled` and the existing counters, plus an opt-in/out method.
 
-Travel is observed after collision, accumulated between 55ms samples and normalized
-by the sample interval. Smears fade over 0.19s, while reusable resources are kept
-warm during combat, capped at 24 actor roots and pruned after 30 seconds idle.
-The presentation path no longer performs CPU pose baking, canvas snapshots or
-per-strike texture uploads. The existing mobile diagnostic
- 'HobunjiDodgeFeedback.getDebug().blink.afterimages' reports
- 'rgba-directional-motion-smear', active/cached records and measured travel.
-
-Executable fake-Three regressions check player/hostile color texture identity,
-GPU skin weights, shader alpha-only changes, mesh reuse, safe cleanup and
-the no-Three Blink fallback. The real-Three reduced-grid regression was updated.
-Device WebGL timing and visual review are still necessary to prove performance
-improvement and assess the blur's presentation. Strike callbacks, hit-stop and
-the separate empty tap2 recursive fallback remain unchanged.
+This should eliminate *afterimage-related* combat frame cost when disabled,
+not all possible combat freezes. Prior headless measurements identified ghost
+snapshotting as one source of work but did not prove it was the sole cause.
+Relevant old afterimage geometry/pooling tests now explicitly opt in, and the
+Visual Effects runtime test covers default-off, enable, persistent preference,
+resource reuse and disable/cleanup. Full device FPS still needs measurement.
 
 ## 16 Nov 2026: wilderness props drawn as merged batches; pants skinned on the GPU (headless)
 
