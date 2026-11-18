@@ -52,6 +52,7 @@ assert.match(workflow, /github.ref == 'refs\/heads\/main' && inputs.approval == 
 assert.match(workflow, /publish-friends-release:\s*\n\s*if: github.event_name == 'workflow_dispatch'/, 'PR artifacts must never publish');
 assert.match(workflow, /--prerelease/);
 assert.match(workflow, /friends-update-feed/);
+assert.match(workflow, /Refusing to roll back Friends/, 'Stale publishing runs must not replace newer approved feeds');
 assert.match(workflow, /desktop-friends-build.js feed/);
 assert.notEqual(RELEASES_URL, FRIENDS_RELEASES_URL);
 
