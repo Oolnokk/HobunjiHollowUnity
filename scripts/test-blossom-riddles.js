@@ -279,6 +279,7 @@ const sampledHeights = []; // Checks the live tree altitude sampler's pixel-spac
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
 const pickedItems = new Set(); // Simulates the persistent character-scoped Pack Key Items until the dedicated crown test exercises the real service.
 const itemDefs = new Map(); // Verifies each picked blossom was registered as an inventory item with a year-specific key.
+const actionClaims = new Map(); // Verifies the real hunt advertises native Action 3 without creating a floating button.
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
 const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_western_slope', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
 for (let i = 0; i < ids.length; i++) {
@@ -298,7 +299,7 @@ const world = {
     has: id => pickedItems.has(id),
     grant(id) {if(!itemDefs.has(id))return {ok:false};const granted=!pickedItems.has(id);pickedItems.add(id);return {ok:true,granted};},
     revoke(id) {const removed=pickedItems.delete(id);return {ok:true,removed};} },
-  GameplayInputRouter: {setClaims(){},clearClaims(){}},
+  GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
   FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
@@ -357,8 +358,13 @@ for (const id of ids) {
   tileListener({to:currentTile});
   assert.ok(!progress[questId].progress.found.includes(id),id+' must NOT be picked merely by entering its tile');
   assert.equal(hunt.nearbyTree()?.id,id,'the real tree becomes interactable inside reach');
+  const pickClaim=actionClaims.get('five-blossoms-tree')?.[0];
+  assert.equal(pickClaim?.actionId,'action3',id+': pick action is assigned to the real third arch button');
+  assert.equal(pickClaim?.showInArch,true,id+': pickup uses shared action-arch presentation');
+  assert.equal(pickClaim?.hudIcon,'🌸',id+': the arch displays the blossom icon');
   assert.equal(hunt.pickBlossom(id),true,id+' is picked only by interacting');
   assert.ok(progress[questId].progress.found.includes(id),id+' is recorded after interaction');
+  assert.equal(actionClaims.has('five-blossoms-tree'),false,id+': claiming a tree removes its native arch action until a new tree is nearby');
   assert.equal(world.KeyItemSystem.has(hunt.itemKey(id)),true,id+' is carried as a real Pack item');
   if (id === 'cyan') {
     const originalWest = zones.get('map_western_slope'); // Preserve the fixture after checking the next active riddle.
