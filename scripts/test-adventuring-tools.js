@@ -254,7 +254,7 @@ assert.match(arc, /\['adventuringGateway',\.\.\.deps\.WHEEL_SLOTS/);
 assert.match(arc, /_openAdventuringArc\(\)/);
 assert.match(ranged, /function throwAdventuringTorch\(visual = null\)/, 'torch accepts the held sprite snapshot for the hatchet launch path');
 assert.match(ranged, /projectileSprite:'assets\/toolsprites\/torch\.png', projectileVisualStyle:'spinningWeapon'/, 'torch uses the hatchet projectile tumble');
-assert.match(ranged, /dungeonFire:true/);
+assert.match(ranged, /dungeonFire:\s*true/, 'torch remains a permanent burning projectile independent of its aim/visual transform');
 assert.match(ranged, /DevRandomRuinHitPuzzles\?\.contactAdventuringTorchSegment/);
 assert.match(bandits, /igniteTorchSegment\(/);
 assert.match(bandits, /igniteAimedTentWithTorch\(/);
