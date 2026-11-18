@@ -60,7 +60,7 @@ assert.equal(recipe.barkColorHex,0x4b9a62,'branches/trunk are bright green wood'
 assert(recipe.trunkLength<=0.75 && recipe.knotLength<=0.4,'canopy is miniature, not a scaled-down forest giant');
 assert(recipe.variantCount<=2,'one or two reusable generated silhouettes per color is inexpensive');
 
-const foliageMaterialStart=foliageSource.indexOf('  const _leafTexCache = new Map();'); // Isolate the real foliage card material factory, not a reimplementation of its color math.
+const foliageMaterialStart=foliageSource.indexOf('  function _leafDebugLog('); // Isolate the real foliage card material factory, not a reimplementation of its color math.
 const foliageMaterialEnd=foliageSource.indexOf('  // ─── Needle placement',foliageMaterialStart); // Keep preview-specific geometry outside this lightweight check.
 assert(foliageMaterialStart>0 && foliageMaterialEnd>foliageMaterialStart,'generator leaf material helpers remain identifiable');
 const leafWindow={}; // Receives the live material helpers through the VM context.
