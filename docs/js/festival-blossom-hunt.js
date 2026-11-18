@@ -110,7 +110,7 @@
   }
   function buildVisibleTrees() {
     const area = mapDeps?.getCurrentArea?.();
-    if (!active() || !BLOSSOMS.some(item => item.zoneId === area)) { if (visibleTrees.size) clearTrees(); return; }
+    if (!BLOSSOMS.some(item => item.zoneId === area)) { if (visibleTrees.size) clearTrees(); return; } // Blossom locales exist all year; only collecting them is festival-limited.
     const scene = window.GridTileAccessors?.getActiveScene?.();
     if (!scene) return;
     if (visibleScene !== scene || visibleZone !== area) clearTrees();
@@ -166,8 +166,7 @@
   function bindQuestDeps(deps) { questDeps = deps; calendarKey = ''; } // TasksPanel's save/getQuestProgress callbacks provide the canonical persistence.
   function update() {
     syncCalendar();
-    if (active()) buildVisibleTrees();
-    else if (visibleTrees.size) clearTrees();
+    buildVisibleTrees(); // Persistent authored tree landmarks remain visible when their annual hunt is inactive.
   }
   function menuStatus() {
     const live = state();
