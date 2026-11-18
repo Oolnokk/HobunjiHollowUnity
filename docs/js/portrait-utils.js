@@ -2407,10 +2407,11 @@ function portraitOptionFromJson(entry, json) {
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
   const onlyExactSpeciesVariant = json.onlyExactSpeciesVariant === true; // Used by incomplete-variant equipment such as Bzabag's prize helm.
+  const rewardOnly = json.rewardOnly === true; // Authored quest prizes may be equipped explicitly but must not be randomly assigned.
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
@@ -3084,7 +3085,7 @@ function randomProfileSeeded(rng, fighters, hairFrontOptions, hairBackOptions, h
   const filteredEyes       = applySlotRules(filterArr(eyesOptions), 'eyes')       ?? [];
   const filteredUpperFace  = applySlotRules(filterArr(upperFaceOptions), 'upperFace')  ?? [];
   const filteredFacialHair = applySlotRules(filterArr(facialHairOptions), 'facialHair') ?? [];
-  const filteredHat        = applySlotRules(filterArr(hatOptions), 'hat') ?? [{ id: 'none', label: 'No Hat', tintSlot: null, layers: [] }];
+  const filteredHat        = applySlotRules(filterArr(hatOptions?.filter(option => !option.rewardOnly)), 'hat') ?? [{ id: 'none', label: 'No Hat', tintSlot: null, layers: [] }]; // Reward-only hats remain loadable and equippable, never random NPC/character-creation options.
   const filteredHood       = applySlotRules(filterArr(hoodOptions), 'hood') ?? [{ id: 'none', label: 'No Hood', tintSlot: null, layers: [] }];
 
   let hairFront  = weightedPickRng(filteredHairFront.length  ? filteredHairFront  : [{ id: 'none', label: 'No Front Hair', tintSlot: null, layers: [] }], weights?.hairFront,  rng);

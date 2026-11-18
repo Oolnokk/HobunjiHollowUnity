@@ -189,6 +189,13 @@ async function main(){
   const portraitCtx=vm.createContext({window:{},console,Image:class {},URL,document:{baseURI:'https://test.invalid/docs/index.html'}}); // Evaluate the production portrait resolver against the actual crown config.
   vm.runInContext(read('docs/js/portrait-utils.js'),portraitCtx,{filename:'docs/js/portrait-utils.js'});
   const portraitOption=vm.runInContext('portraitOptionFromJson',portraitCtx)({id:crownId},crownConfig);
+  assert.equal(portraitOption.rewardOnly,true,'the crown is equippable but excluded from randomly generated outfits');
+  const portraitRandom=vm.runInContext('randomProfileSeeded',portraitCtx);
+  const noHat={id:'none',layers:[]},randomFighter={id:'N',speciesId:'nuhongan',gender:'male'}; // Nuhongan lacks an explicit species cosmetic allowlist.
+  const generated=portraitRandom(()=>.25,[randomFighter],[noHat],[noHat],[noHat],[noHat],[noHat],[noHat],[noHat],
+    {},{},[noHat,portraitOption],[noHat],{N:{hat:{none:0,five_blossom_crown:1}}},
+    [noHat],[noHat],{},{},{},{},{});
+  assert.notEqual(generated.hat?.id,'five_blossom_crown','even weighted random outfits cannot award the quest crown');
   const portraitResolve=vm.runInContext('resolveOptionLayers',portraitCtx);
   const portraitTintSlot=vm.runInContext('resolveLayerTintSlot',portraitCtx);
   for(const {speciesId} of speciesIndex.entries) for(const gender of ['male','female']) {
