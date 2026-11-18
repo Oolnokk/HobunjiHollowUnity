@@ -133,6 +133,11 @@ const clickEvent = {preventDefault(){},stopPropagation(){}};
 controls.children[0].listeners.click(clickEvent);
 controls.children[1].listeners.click(clickEvent);
 assert.deepEqual(clicks,[-1,1], 'mouse/touch prompts call the real category-jump seam');
+controls.children[0].listeners.pointerdown({pointerType:'mouse',button:2,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(clicks,[-1,1,1], 'right-click over either prompt advances rather than silently doing nothing');
+let preventedPromptMenu = false; // Confirms right-click cannot open the browser menu over our own UI.
+controls.children[0].listeners.contextmenu({preventDefault(){preventedPromptMenu=true;}});
+assert.equal(preventedPromptMenu, true, 'right-click prompt browser menu is suppressed');
 assert.match(controls.children[0].style.left,/px$/, 'desktop previous prompt receives an arch-relative location');
 assert.match(controls.children[1].style.left,/px$/, 'desktop next prompt receives an arch-relative location');
 vm.runInContext('_showItemCategoryControls()', promptContext);
