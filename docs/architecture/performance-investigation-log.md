@@ -1302,3 +1302,7 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - **Not done / not expected to help:** the remaining per-press recalcs come from other modules' observers reacting to the detail-panel rebuild, not from nav reads.
 
 - **Quit-guard header relayout fired on every inventory selection:** `folder-save-quit-guard.js` observes the whole `#menuPanel` subtree and treated any element add/remove as "header controls changed", scheduling an 80 ms `labelMenuControls()` (button style/label writes + a `scrollWidth` layout read) after every controller press. Records whose target is inside `.mp-body` are now ignored (header/tab-strip changes and panel class changes still relayout). `scripts/test-folder-save-primary.js` covers it and fails on the old code. Not yet measured end to end.
+
+## 18 Nov 2026: action prompt innerHTML write skip
+
+- `ActionPromptUI.setPromptText` compared `element.innerHTML` to the source string. The getter re-serializes the subtree and returns browser-normalised markup, so any prompt containing an `<img>` (the touch icon) never matched and the button subtree was rewritten on every per-frame refresh (fishing, moving ruin puzzles), feeding the HUD MutationObservers. It now compares against the last string it wrote (`scripts/test-action-prompt-write-cache.js`, which fails on the old code). Not yet measured on a device.
