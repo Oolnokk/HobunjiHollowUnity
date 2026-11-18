@@ -12,6 +12,10 @@ const { showGraphicsStatus } = require('./gpu-diagnostics.cjs'); // On-demand na
 const { createWindowCloseGuard } = require('./window-close-guard.cjs'); // Tested native shutdown guard for a renderer that cannot finish saving.
 const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
 
+// Prefer discrete GPU for the game WebGL context when Windows allows it.
+// Actual selection is still confirmed through View → Graphics Status.
+app.commandLine.appendSwitch('force_high_performance_gpu');
+
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
 protocol.registerSchemesAsPrivileged([{ scheme: GAME_SCHEME, privileges: {
   standard: true, secure: true, supportFetchAPI: true, stream: true,
