@@ -106,5 +106,5 @@ assert.match(ui,/model\.setSlot\(instrumentKey,index,id\)/);
 assert.match(ui,/loadoutSubtab_.*id/);
 assert.match(css,/#mpLoadout\.instrument-subtab #combatLoadoutPreview\s*\{\s*display:\s*none/);
 assert.match(equipment,/hobunji-instrument-equipped/);
-assert.match(loader,/combat-loadout-ui\.js\?v=20261118instrumentLoadout1/);
+assert.match(loader,/combat-loadout-ui\.js\?v=[A-Za-z0-9_-]+/,'combat Loadout UI remains versioned without pinning a specific token');
 console.log('C pentatonic minor lock, Dev override, per-instrument/character patterns, legacy migration and menu wiring: passed.');
