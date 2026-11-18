@@ -210,7 +210,9 @@ assert(game.includes("typeof blinkShut === 'string' ? ':eye-'"),
 assert(game.includes('window.CreatureGeneticsRender.eyeStatesForKind(kind)'),
   'cutscene preloader enumerates every supported eye state');
 
-// The bestiary/editor and synchronous renderer must share the same authored Nazgraku rig.
+// The real game parser loads this authored layer after the renderer; reproduce that step in this VM.
+vm.runInContext(read('docs/js/animal-head-rig-authored.js'), context, { filename: 'animal-head-rig-authored.js' });
+// The bestiary/editor and active composed renderer must share the same Nazgraku rig.
 const nazgrakuRig = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json'))
   .creatures.find(creature => creature.id === 'nazgraku')?.headRig; // Authored head rig shared by gameplay and editor.
 assert(nazgrakuRig?.enabled, 'Nazgraku must have its authored head rig enabled');
