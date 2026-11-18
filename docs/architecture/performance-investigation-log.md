@@ -1303,7 +1303,7 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - **Not yet measured:** none of these merges recorded a before/after number. Distance cull (#1912) counts hidden meshes, not GPU draw-call savings; capture `WildernessChunks` debug panel `non-veg distance` + `Distance Cull: ON/OFF` frame times on a mobile device before claiming a speedup. Same for the 40% portrait density (#1928), the sense landmark cache (#1912), Pack batching (#1883), rain row pooling (#1874) and the locale cache (#1907).
 - **Fixed in review:** `WildernessDistanceCull` rescanned the whole scene every 750 ms with one allocated record per node, and kept the candidate list (and so unloaded chunk meshes) after leaving the zone. It now rescans when `WildernessChunks.residencyVersion()` changes (min 250 ms apart, 5 s idle safety net), walks with parallel stacks, reuses its per-frame hidden list/release closure, and drops its record outside zones (`scripts/test-wilderness-distance-cull-rescan.js`).
 - **Fixed in review:** `grehlr`'s saddle `sourcePixel` in `config/attachment-rig-profiles.js` was still in the pre-downscale 3000×2250 space; rescaled to the 1024×768 sprite. Metadata only (the saddle `position` is model-space and the rule is `authoredFixed`).
-- **Lead, not fixed:** `WildernessMap._loadDiscoveredLocales` still reads `localStorage['hobunjiSaveMeta']` on every compass tick (the parse is cached, the read is not).
+- **Fixed 18 Nov:** hidden-locale waypoints use the storage guard’s save-metadata revision to avoid polling unchanged metadata. See the compass entry below.
 - **Needs eyes:** the 40% default shrinks the flying-animal perched plane from 32×20 to 13×8 segments, which is deformed by the 7-point shoulder spline; check it for faceting on a device.
 
 ## 17 Nov 2026: more consumers of PlayerTileEvents
@@ -1332,3 +1332,9 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 ## 18 Nov 2026: action prompt innerHTML write skip
 
 - `ActionPromptUI.setPromptText` compared `element.innerHTML` to the source string. The getter re-serializes the subtree and returns browser-normalised markup, so any prompt containing an `<img>` (the touch icon) never matched and the button subtree was rewritten on every per-frame refresh (fishing, moving ruin puzzles), feeding the HUD MutationObservers. It now compares against the last string it wrote (`scripts/test-action-prompt-write-cache.js`, which fails on the old code). Not yet measured on a device.
+
+## 18 Nov 2026: compass storage reads and wildlife visibility
+
+- Secret locale waypoints reuse the parsed discoveries while the active world and save-metadata revision match. The existing storage quota guard advances the revision on native writes, quota retries, folder-staged writes, removal, clearing and browser storage events. Discovery operations and Map-panel reads still consult current metadata directly. Compass visibility still evaluates the current Tothal cycle each time. Live camp and den waypoints stop scanning at the first matching marker without copying the whole threat list.
+- The executable waypoint fixture checks that 60 unchanged polls require zero metadata reads. It also covers immediate same-tab updates, cross-tab invalidation, unrelated writes, world changes and cycle changes. Pixel Probe reports cumulative compass storage reads and cache hits.
+- Wildlife visibility checks active attack guards once per fighting animal per LOD update, down from twice. Wake and release decisions share the resolved calm radius, and the executable streaming test confirms the previous release and return thresholds. Real-device frame time has yet to be measured.

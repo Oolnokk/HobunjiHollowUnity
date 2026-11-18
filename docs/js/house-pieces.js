@@ -39,7 +39,7 @@
     ['NpcViewFrustumCull', 'npc-view-frustum-cull.js?v=20261110npcReplayCull2'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261109tribeAiSleepPerf1'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261117hcorpse2'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261118hb4f3905'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.

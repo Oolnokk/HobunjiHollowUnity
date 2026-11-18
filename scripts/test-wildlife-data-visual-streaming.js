@@ -55,7 +55,16 @@ assert.equal(builds, 3);
 const fighter = animals[2]; fighter.state = 'chase';
 assert.equal(lod.combatReleaseRadius(), 32, 'fighting animals have their own, wider release distance');
 assert.equal(lod.update(fighter, 28), false, 'a fight inside the combat distance wakes immediately even after the frame promotion budget is spent');
+let attackBusyChecks = 0; // Counts the combat eligibility checks made inside one streamed visibility update.
+let wakeRadiusReads = 0; // Counts redundant reads of the authored distance across the two thresholds.
+context.window.Combat = { animalAttacks: { isBusy() { attackBusyChecks++; return false; } } };
+Object.defineProperty(context.window.SCRATCHBONES_CONFIG.game.wildlifeStreaming, 'wakeRadiusTiles', {
+  configurable: true,
+  get() { wakeRadiusReads++; return 14; },
+});
 assert.equal(lod.update(fighter, 31), false, 'combat hysteresis keeps a visible fighter stable just inside the release distance');
+assert.equal(attackBusyChecks, 1, 'combat visibility should check for an active attack only once');
+assert.equal(wakeRadiusReads, 1, 'combat wake and release thresholds must share the resolved calm radius');
 assert.equal(lod.update(fighter, 60), true, 'a fight far beyond the combat distance returns to data instead of staying visible at any distance');
 assert.equal(lod.update(fighter, 30), true, 'a fighter that went data-only stays so until it is back inside the wake side of the hysteresis band');
 assert.equal(lod.update(fighter, 27), false, 'and wakes at once when it returns, bypassing the calm promotion budget');
