@@ -12,7 +12,7 @@ document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/s
 document.write('<script src="js/folder-save-device-provenance.js?v=20261115provenance2"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20261115delta1"><\/script>');
 document.write('<script src="js/save-checkpoint-manager.js?v=20261113idle1"><\/script>');
-document.write('<script src="js/folder-save-quit-guard.js?v=20261022he68b2ba"><\/script>');
+document.write('<script src="js/folder-save-quit-guard.js?v=20261118hf0115e7"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20261115diskFarmCompare2"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20261117androidLocalOrigin2"><\/script>');
 document.write('<script src="js/local-save-flow.js?v=20260812a"><\/script>');

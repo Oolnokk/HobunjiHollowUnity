@@ -106,8 +106,17 @@
   let pressAction = null; // Used by the retained pointer handler so frame updates don't create new closures.
   let cancelAction = null; // Used by the retained cancel handler while the prompt is visible.
   const styleDebug = { refreshes: 0, appliedWrites: 0, skippedWrites: 0 }; // Used by the mobile Pixel Probe HUD style report.
+  const lastWrittenHtml = new WeakMap(); // element -> last source string written to innerHTML
   function setPromptText(element, property, value) {
-    if (element[property] !== value) { element[property] = value; styleDebug.appliedWrites++; }
+    // innerHTML reads re-serialize the subtree and come back browser-normalised (<img> attribute
+    // quoting, entities), so they never equal the source string for icon markup: compare against what
+    // this module last wrote instead, which makes the identical-value skip actually hit.
+    const current = property === 'innerHTML' ? lastWrittenHtml.get(element) : element[property];
+    if (current !== value) {
+      element[property] = value;
+      if (property === 'innerHTML') lastWrittenHtml.set(element, value);
+      styleDebug.appliedWrites++;
+    }
     else styleDebug.skippedWrites++;
   }
   function setPromptDisplay(element, display) {

@@ -7,7 +7,7 @@
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
     { globalKey: 'LivestockNurseryObserverScope', src: 'js/livestock-nursery-observer-scope.js?v=20260916scope1' },
     { globalKey: 'LivestockNurseryOutdoorGrowth', src: 'js/livestock-nursery-outdoor-growth.js?v=20260916outdoor1' },
-    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261117boundSleeper1' },
+    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261118shoulderTextureOwner1' },
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },

@@ -20,34 +20,39 @@ const torchShaft = api.getConfig().shafts.hachutuTorchStaff; // Entire live staf
 const blowgunShaft = api.getConfig().shafts.bshuakauitl; // Approved donor controls mount types, heads, exclusions and fitting.
 assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
-assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
+assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff_compact.png'); // Dedicated art with half-length, slightly thinner branch clusters (the non-modular Torch-Staff keeps the original sprite).
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
-// Preserve the imported source lines while allowing the explicitly reauthored staff tang tips.
-assert.deepEqual(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
-  plain(blowgunShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
-  'Torch-Staff retains all donor mount types and starts');
-assert.deepEqual(plain(torchShaft.mounts.slice(0, 2)), plain(blowgunShaft.mounts.slice(0, 2)),
-  'Both inherited eye mounts retain their complete donor geometry');
-assert.deepEqual(plain(torchShaft.mounts.slice(2).map(m => m.end)), [
-  { x: 221.7599119115615, y: 941.6863824754939 },
-  { x: 158.12411992422858, y: 303.16373428761597 },
-], 'Independently calibrated Torch-Staff tang tips survive authored import');
+// The Torch-Staff haft is a deliberately lengthened copy of its donor: art and every mount stretch vertically about the sprite centre.
+const torchStretch = torchShaft.shaftArtTransform.scaleY; // Authored haft length multiplier.
+assert(torchShaft.shaftArtTransform.enabled === true && torchStretch > 1, 'Torch-Staff haft is lengthened');
+// Torch-Staff mounts keep the donor's types, x positions and arrow vectors (stretched with the haft) but are laid out
+// symmetrically about the sprite centre, just inside its shortened branch clusters.
+const stretchY = y => 602 + torchStretch * (y - 602);
+const near = (a, b, msg) => assert(Math.abs(a - b) < 1e-6, msg + ` (${a} vs ${b})`);
+blowgunShaft.mounts.forEach((m, i) => {
+  const t = torchShaft.mounts[i];
+  assert.equal(t.type, m.type, 'Torch-Staff retains donor mount types');
+  near(t.start.x, m.start.x, 'Torch-Staff retains donor mount x');
+  near(t.end.x - t.start.x, m.end.x - m.start.x, 'Torch-Staff retains donor arrow x');
+  near(t.end.y - t.start.y, torchStretch * (m.end.y - m.start.y), 'Torch-Staff retains donor arrow lengths, stretched with the haft');
+});
+const tm = type => torchShaft.mounts.filter(m => m.type === type);
+for (const type of ['eye', 'tang']) near(tm(type)[0].start.y + tm(type)[1].start.y, 1204, `${type} mounts mirror about the sprite centre`);
+const stretchedBottomEyeStart = torchShaft.mounts[0].start.y; // Donor index 0 is the lower eye.
 assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
 assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
 const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
-assert.deepEqual(staffCompatible, originalCompatible.filter(key => key !== 'pick-shovel-pick'),
-  'Torch-Staff retains the donor head choices except its authored pick-shovel-pick exclusion');
-assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), true,
-  'The committed Torch-Staff override intentionally excludes pick-shovel-pick');
+assert.deepEqual(staffCompatible, originalCompatible, 'Torch-Staff mirrors every donor B\'shuakauitl head choice');
+assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), false, 'Torch-Staff copies the donor pick-shovel-pick pairing');
 const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
 copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
 const shiftedMounts = api.shaftMounts(api.getConfig().shafts.hachutuTorchStaff);
 const originalMount = blowgunShaft.mounts[0];
 assert(Math.abs(shiftedMounts[0].start.x - ((originalMount.start.x - 225) * 1.5 + 250)) < 1e-6);
-assert(Math.abs(shiftedMounts[0].start.y - ((originalMount.start.y - 602) * 0.75 + 562)) < 1e-6);
+assert(Math.abs(shiftedMounts[0].start.y - ((stretchedBottomEyeStart - 602) * 0.75 + 562)) < 1e-6); // Donor mount, first stretched with the Torch-Staff haft.
 assert.equal(api.matchingMounts(api.getConfig().shafts.hachutuTorchStaff, api.getConfig().heads.warhammer).length, 2,
   'both sleeve mounts remain usable after shaft duplication transform');
 const extraCopy = plain(api.getConfig());
@@ -107,7 +112,8 @@ for (const head of ['hatchet', 'warhammer', 'work-hammer']) {
   assert.equal(api.settings('fishing-spear', head).animation, 'sweep', 'Older pair animation survives even when newly incompatible.');
 }
 assert.equal(api.isDisallowed('fishing-spear', 'war-cleaver'), false, 'A tang on the haft accepts another blade.');
-for (const head of ['dagger', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) assert.equal(api.isDisallowed('bshuakauitl', head), true);
+// These blade pairs were reauthored with fitted bridges after being excluded, so they are forgeable on both double-ended staffs.
+for (const head of ['dagger', 'harlyao-broadsword', 'harlyao-longsword', 'plains-blade']) for (const shaft of ['bshuakauitl', 'hachutuTorchStaff']) assert.equal(api.isDisallowed(shaft, head), false, `${shaft}/${head} has an authored fit and must be forgeable`);
 assert.equal(api.isDisallowed('bshuakauitl', 'dagger-sword'), false, 'Its authored tang mounts accept the dagger-sword (dressed by recipe boxes).');
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 const spearHammer = api.itemKey('fishing-spear', 'warhammer', 'nativeCopper'); // A sweeping head exception retains the spear's two-hand grip authority.
@@ -128,7 +134,7 @@ assert.deepEqual(plain(broadShaft.mounts), [
 assert.deepEqual(plain(longShaft.mounts), [
   { type: 'tang', start: { x: 200.5, y: 655 }, end: { x: 200.5, y: 575 } },
 ], 'Longsword retains its separately imported tang instead of inheriting broadsword geometry');
-assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.9);
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.63); // Thinned toward a rapier (0.9 x 0.7).
 assert.equal(api.settings('harlyao-longsword', 'dagger').scaleY, 1.1);
 assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
@@ -171,7 +177,7 @@ window.FoundryShop.init({ inventory, TOOL_ITEM_DEFS: defs, UNLOCKED_TOOL_SHAPES:
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
 unlocked.push('warhammer', 'bshuakauitl', 'kylie');
 assert.equal(window.FoundryShop.craft('warhammer', 'kylie', 'nativeCopper').ok, false, 'direct crafting cannot bypass the retired Kylie head');
-assert.equal(window.FoundryShop.craft('bshuakauitl', 'dagger', 'nativeCopper').ok, false);
+assert.equal(window.FoundryShop.craft('bshuakauitl', 'bshuakauitl', 'nativeCopper').ok, false); // Its own matching head stays excluded.
 const blockedInventory = plain(inventory); // A direct call with both parts unlocked still must enforce the pair policy.
 assert.equal(window.FoundryShop.craft('dagger', 'warhammer', 'nativeCopper').ok, false);
 assert.deepEqual(inventory, blockedInventory);

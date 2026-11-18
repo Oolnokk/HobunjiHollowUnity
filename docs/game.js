@@ -4997,6 +4997,17 @@
         }
         return _creatureTexCache.back.get(url);
       }
+      function releaseCreatureTemporaryFrameTexture(url) {
+        // Generated pet portraits are unique to an equip/appearance, unlike permanent species PNG URLs.
+        if (typeof url !== 'string' || !url.startsWith('blob:')) return false; // Data URLs can match between pets on older browsers, so they are not uniquely owned.
+        const front = _creatureTexCache.front.get(url); // Disposed when a shoulder frame is replaced or unequipped.
+        const back = _creatureTexCache.back.get(url); // Distinct only on renderers without shared front/back mirroring.
+        _creatureTexCache.front.delete(url);
+        _creatureTexCache.back.delete(url);
+        front?.dispose?.();
+        if (back && back !== front) back.dispose?.();
+        return !!(front || back);
+      }
       // Genotype-composited textures for pattern-layer livestock (gar-wolf,
       // dabinggi-hound) — mirrors _creatureTexCache's URL-keyed pattern but
       // keyed by (kind, frame, genotype signature) instead, since the actual
@@ -6697,6 +6708,10 @@
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
         if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
+        if (c.stableRole === 'shoulderPet' && window.PlayerBodyAttachmentBridge?.ownsCreatureFrame?.(c)) {
+          c._animLastX = c.x; c._animLastY = c.y; // Do not accumulate a false run-distance jump when the pet leaves the perch.
+          return; // The shoulder renderer owns this sprite; ordinary run/blink frames must not overwrite its grown head or split layers.
+        }
         c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
@@ -31097,6 +31112,7 @@
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
+        releaseCreatureTemporaryFrameTexture, // Lets the shoulder presenter release each generated PNG's GPU pair when it releases the URL.
         genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,

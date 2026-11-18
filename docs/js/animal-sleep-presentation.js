@@ -590,8 +590,12 @@
         const avatarRef = creature?.avatarRef;
         const group = avatarRef?.group;
         if (!group?.parent || group.visible === false) continue;
-        const sleeping = creature?._cfDrenkirra?.mode === 'sleeping' || creature?._animalSleeping === true;
         const kind = creature.creatureKey || creature.animalKey || null;
+        if (creature.stableRole === 'shoulderPet' && window.PlayerBodyAttachmentBridge?.ownsCreatureFrame?.(creature)) {
+          setLiveFrame(creature, group, kind, creature.genotype, creature.def, false); // Release any pre-perch sleeper texture without reviving it.
+          continue; // A perched animal's head-warped/split portrait belongs to the shoulder presenter, not the wild sleeper pass.
+        }
+        const sleeping = creature?._cfDrenkirra?.mode === 'sleeping' || creature?._animalSleeping === true;
         setLiveFrame(creature, group, kind, creature.genotype, creature.def, sleeping);
         if (!sleeping) continue;
         forceHeadDown(avatarRef, creature);
