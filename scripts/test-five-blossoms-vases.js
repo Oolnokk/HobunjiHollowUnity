@@ -44,10 +44,11 @@ const authoredContext={window:{},THREE:{Matrix4:class {},Vector3:class {},Quater
 vm.runInNewContext(fs.readFileSync('docs/js/authored-furniture-runtime.js','utf8'),authoredContext);
 authoredContext.window.AuthoredFurniture.load('festivalBlossoms');
 authoredContext.window.AuthoredFurniture.load('tableSmall');
-assert.deepEqual(requested,[
-  'config/furniture-authored/festivalBlossoms.json?v=20261118blossomVases1',
-  'config/furniture-authored/tableSmall.json'
-],'new vase data is fresh while ordinary furniture keeps its existing caching policy');
+assert.equal(requested.length,2,'one fetch per requested furniture type');
+assert.match(requested[0],/^config\/furniture-authored\/festivalBlossoms\.json\?v=[A-Za-z0-9_-]+$/,
+  'new vase data has an asset revision without pinning a particular version');
+assert.equal(requested[1],'config/furniture-authored/tableSmall.json',
+  'ordinary furniture keeps the existing unversioned caching policy');
 
 const foliageGlobal = {THREE:{}}; // The generator presets/API are lazy; geometry is only made after THREE initializes in the game.
 vm.runInNewContext(fs.readFileSync('docs/js/foliage-generator.js','utf8'),{window:foliageGlobal,console});
