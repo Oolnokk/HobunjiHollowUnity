@@ -1,0 +1,100 @@
+{
+  "schema": "hobunji_locale.v1",
+  "id": "locale_five_blossoms_white",
+  "name": "White Blossom Tree",
+  "category": "story_poi",
+  "singleton": true,
+  "description": "An ancient tree bearing the white blossom. The Feast of the Five Blossoms' timed wilderness riddle hunt reveals its location.",
+  "tags": [
+    "festival",
+    "blossom",
+    "riddle",
+    "tree"
+  ],
+  "cols": 3,
+  "rows": 3,
+  "tiles": {
+    "0,0": {
+      "type": "grass"
+    },
+    "1,0": {
+      "type": "grass"
+    },
+    "2,0": {
+      "type": "grass"
+    },
+    "0,1": {
+      "type": "grass"
+    },
+    "1,1": {
+      "type": "grass"
+    },
+    "2,1": {
+      "type": "grass"
+    },
+    "0,2": {
+      "type": "grass"
+    },
+    "1,2": {
+      "type": "grass"
+    },
+    "2,2": {
+      "type": "grass"
+    }
+  },
+  "objects": [
+    {
+      "id": "obj_blossom_tree",
+      "kind": "prop",
+      "key": "blossom-tree",
+      "label": "White Blossom Tree",
+      "col": 1,
+      "row": 1,
+      "w": 1,
+      "h": 1,
+      "rot": 0,
+      "collision": {
+        "mode": "none"
+      }
+    }
+  ],
+  "npcAnchors": [],
+  "connectors": [],
+  "terrainAnchors": {
+    "7,1": {
+      "terrain": "water",
+      "strength": "preferred",
+      "weight": 2
+    },
+    "-5,1": {
+      "terrain": "water",
+      "strength": "preferred",
+      "weight": 2
+    },
+    "1,7": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 1
+    },
+    "1,-5": {
+      "terrain": "plateauCliff",
+      "strength": "preferred",
+      "weight": 1
+    }
+  },
+  "placement": {
+    "allowedZones": [
+      "map_western_slope"
+    ],
+    "clearanceTiles": 1,
+    "requiresFlatGround": true,
+    "minDistanceFromEntry": 8,
+    "preferSeclusion": false,
+    "alwaysVisibleOnMap": false,
+    "notes": "Optional terrain probes bias the site toward real water/cliffs without requiring them. The reusable riddle generator inspects the final stamped surroundings and never promises an unmet probe."
+  },
+  "festivalBlossom": {
+    "id": "white",
+    "color": "#ffffff"
+  }
+}
