@@ -1,5 +1,18 @@
 # Performance investigation log
 
+## 18 Nov 2026: dense Cloud Forest steady rendering
+
+- The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
+  mist's geometry, materials, world transforms and fog, and blends against the current world target's
+  depth. It no longer submits the whole forest scene for this pass.
+- Trees whose fade has settled leave the animation set, including those that remain partially faded.
+  At full opacity the tree draws with its original materials again. Fade copies are reused until
+  their tree unloads. The mobile lighting snapshot includes `outlineMistRedrawLayers` and
+  `treeFade.animating`.
+- The Three.js regression verifies the mist pass's inputs, render state restoration and three-mesh
+  scene. The fade test verifies zero opacity writes across 60 settled frames, material restoration
+  and chunk teardown's cleanup method. No physical-device frame-time measurement yet.
+
 ## 18 Nov 2026: combat afterimages now opt-in, off by default
 
 A follow-up to the colored motion-smear experiment prioritizes runtime smoothness over an
