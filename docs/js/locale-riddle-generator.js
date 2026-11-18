@@ -17,15 +17,15 @@
     },
     sector: {
       A: [f => `Keep to ${f.value}, and hold your bearing right`, f => `In ${f.value}, follow the morning light`, f => `Search ${f.value} with the stars in sight`],
-      B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `The ${f.value} is the place to know`]
+      B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `${f.value} is the place to know`]
     },
     water: {
-      A: [f => `With ${f.value}, you are drawing right`, f => `Look for ${f.value} in the daylight`, f => `Where ${f.value}, hold your course in sight`],
+      A: [f => `With ${f.value}, you are drawing right`, f => `Look for ${f.value} in the daylight`, f => `When ${f.value} shines, hold your course in sight`],
       B: [f => `By ${f.value}, still waters shine and glow`, f => `Find ${f.value}, then let the search go slow`, f => `Beyond ${f.value}, new secrets show`]
     },
     path: {
-      A: [f => `Where ${f.value}, keep the path in sight`, f => `Along ${f.value}, the stones catch light`, f => `Find ${f.value} before the night`],
-      B: [f => `Where ${f.value}, the wandering footsteps go`, f => `At ${f.value}, let your pace grow slow`, f => `Past ${f.value}, the wind will blow`]
+      A: [f => `Where ${f.value} bends, keep the path in sight`, f => `Along ${f.value}, the stones catch light`, f => `Find ${f.value} before the night`],
+      B: [f => `Follow ${f.value}, where the footsteps go`, f => `Beside ${f.value}, let your pace grow slow`, f => `Past ${f.value}, the wind will blow`]
     },
     landmark: {
       A: [f => `Near ${f.value}, your search comes right`, f => `Keep ${f.value} within your sight`, f => `Beside ${f.value}, watch for colored light`],
@@ -33,7 +33,7 @@
     },
     tree: {
       A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} blossom tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
-      B: [f => `The tree of ${f.value} is what you ought to know`, f => `At ${f.value} boughs, the final colors glow`, f => `Seek ${f.value} blossoms, not the grass below`]
+      B: [f => `The tree of ${f.value} is what you ought to know`, f => `At ${f.value} boughs, the final colors glow`, f => `Seek ${f.value} petals, not the grass below`]
     },
     edge: {
       A: [f => `Not far from ${f.value}, seek the light`, f => `Keep ${f.value} within your sight`, f => `Toward ${f.value}, go before the night`],
@@ -83,8 +83,8 @@
         const t = tileAt(layout, x, y);
         if (!t) continue;
         const type = String(t.type || '').toLowerCase();
-        if (WATER.has(type) || t.water === true || t.path === true || type === 'path')
-          samples.push({ col: x, row: y, d, type: WATER.has(type) || t.water === true ? 'water' : 'path', waterType: type });
+        if (WATER.has(type) || (Number(t.water) > 0) || t.path === true || type === 'path')
+          samples.push({ col: x, row: y, d, type: WATER.has(type) || Number(t.water) > 0 ? 'water' : 'path', waterType: type });
       }
     samples.sort((a, b) => a.d - b.d || a.row - b.row || a.col - b.col);
     return samples;
@@ -102,17 +102,19 @@
     const water = samples.find(s => s.type === 'water');
     if (water) {
       const kind = ['river', 'stream', 'waterfall'].includes(water.waterType) ? 'running water' : 'open water';
-      facts.push({ kind: 'water', value: `${kind} ${bearing(water.col - point.col, water.row - point.row)}`, source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
+      facts.push({ kind: 'water', value: `the ${kind} ${bearing(water.col - point.col, water.row - point.row)}`, source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
     }
     const path = samples.find(s => s.type === 'path');
     if (path && path.d <= 16) facts.push({ kind: 'path', value: `a trail ${bearing(path.col - point.col, path.row - point.row)}`, source: 'post-generation-path-tile', coordinate: { col: path.col, row: path.row }, distance: path.d });
-    const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId);
-    const landmark = others.map(other => ({ name: other.name, point: positionOf(other) }))
-      .filter(item => item.name && Number.isFinite(item.point.col) && Number.isFinite(item.point.row))
+    const others = (layout.localeInstances || []).filter(other => other !== instance && other.localeId !== instance.localeId && !String(other.localeId || '').startsWith('locale_five_blossoms_')); // Never give away a different blossom as a landmark.
+    const landmarks = others.map(other => ({ name: other.name, point: positionOf(other), source: 'stamped-neighbor-locale' })); // Already-stamped locale anchors are authoritative.
+    for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem' }); // Uses the existing root-totem placement index.
+    for (const site of (layout.animalDens || [])) landmarks.push({ name: 'a wild animal den', point: { col: Number(site.mouthAnchor?.x ?? site.x), row: Number(site.mouthAnchor?.y ?? site.y) }, source: 'generated-animal-den' }); // Use the visible den doorway rather than an assumed footprint center.
+    const landmark = landmarks.filter(item => item.name && Number.isFinite(item.point.col) && Number.isFinite(item.point.row))
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
-      .sort((a, b) => a.d - b.d)[0]; // No synthetic landmarks: only another real, already-placed locale.
-    if (landmark) facts.push({ kind: 'landmark', value: landmark.name, source: 'stamped-neighbor-locale', distance: landmark.d });
+      .sort((a, b) => a.d - b.d)[0]; // Missing optional landmarks simply cannot enter a poem.
+    if (landmark) facts.push({ kind: 'landmark', value: `${landmark.name} ${bearing(landmark.point.col - point.col, landmark.point.row - point.row)}`, source: landmark.source, distance: landmark.d });
     if (facts.length < 4) {
       const edge = [
         { value: 'the northern boundary', distance: point.row },

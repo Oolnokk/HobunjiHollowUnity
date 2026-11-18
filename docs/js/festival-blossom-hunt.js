@@ -172,9 +172,11 @@
   function menuStatus() {
     const live = state();
     const inProgress = live?.status === 'active' && active();
+    const upcoming = targetFor(Array.isArray(live?.progress?.found) ? live.progress.found.length : 0); // On opening the Quest Log, refresh clues from any newly generated zone; no extra autosave.
+    const liveClue = inProgress && upcoming ? clueFor(upcoming) : null;
     return { active: inProgress, ready: false, objective: live?.progress?.objective || '',
       statusText: inProgress ? `${live.progress?.found?.length || 0} of 5 discovered — festival time is limited.` : null,
-      detail: live?.progress?.detail || '' };
+      detail: liveClue?.ok ? liveClue.text : live?.progress?.detail || '' };
   }
   function debugSnapshot() {
     const live = state();
