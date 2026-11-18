@@ -2,7 +2,8 @@
 
 const path = require('node:path');
 
-const RELEASES_URL = 'https://github.com/Oolnokk/HobunjiHollowUnity/releases/latest'; // Public update page exposed by the View menu.
+const RELEASES_URL = 'https://github.com/Oolnokk/HobunjiHollowUnity/releases/latest'; // Stable development release page.
+const FRIENDS_RELEASES_URL = 'https://github.com/Oolnokk/HobunjiHollowUnity/releases'; // Friends prereleases are never GitHub's latest stable release.
 const CHANNELS = Object.freeze({
   status: 'desktop-updates:status',
   check: 'desktop-updates:check',
@@ -18,6 +19,9 @@ function clampPercent(value) {
 
 // Keep update state in the main process; the sandboxed screen receives only plain data.
 function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater, getGameWindow, prepareRestart, logger = console, cancelPreparedRestart = () => {} }) {
+  const isFriendsEdition = app.getName?.() === 'Hobunji Hollow Tester'; // Packaged product name determines the approved-release track.
+  const releasesUrl = isFriendsEdition ? FRIENDS_RELEASES_URL : RELEASES_URL; // View menu opens the appropriate release list.
+  const releaseLabel = isFriendsEdition ? 'approved Friends' : 'main'; // Used in update-window status text.
   let updateWindow = null; // Sole update screen, not a second game instance.
   let checkActive = false; // Deduplicates launch, timer and menu update checks.
   let installActive = false; // Disallows multiple updater restart requests.
@@ -87,7 +91,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
       return Promise.resolve();
     }
     checkActive = true;
-    publish({ phase: 'checking', message: 'Checking GitHub Releases for a newer build from main…', error: null });
+    publish({ phase: 'checking', message: 'Checking GitHub Releases for a newer ' + releaseLabel + ' build…', error: null });
     return Promise.resolve().then(() => autoUpdater.checkForUpdates()).catch(error => {
       logger.error('[Hobunji desktop] Update check failed', error);
       publish({ phase: 'error', message: 'Could not check for updates.', error: String(error.message || error) });
@@ -137,7 +141,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
       const version = String(info?.version || 'newer build');
       publish({
         phase: 'downloading', targetVersion: version, percent: 0,
-        message: 'New main build ' + version + ' found. Downloading automatically…', error: null,
+        message: 'New ' + releaseLabel + ' build ' + version + ' found. Downloading automatically…', error: null,
       }, true);
     });
     autoUpdater.on('download-progress', progress => publish({
@@ -152,7 +156,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     });
     autoUpdater.on('update-not-available', () => publish({
       phase: 'current', targetVersion: null, percent: 0,
-      message: 'This installation is up to date with the latest published Windows build.', error: null,
+      message: 'This installation is up to date with the latest ' + releaseLabel + ' Windows build.', error: null,
     }));
     autoUpdater.on('error', error => {
       if (state.phase === 'installing') cancelPreparedRestart();
@@ -174,7 +178,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     });
     ipcMain.handle(CHANNELS.releases, event => {
       requireUpdateWindow(event);
-      return shell.openExternal(RELEASES_URL);
+      return shell.openExternal(releasesUrl);
     });
 
     if (autoCheck) {
@@ -188,4 +192,4 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
   return { start, open, checkNow, snapshot, install };
 }
 
-module.exports = { createDesktopUpdates, CHANNELS, RELEASES_URL, clampPercent };
+module.exports = { createDesktopUpdates, CHANNELS, RELEASES_URL, FRIENDS_RELEASES_URL, clampPercent };
