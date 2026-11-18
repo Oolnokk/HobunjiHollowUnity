@@ -134,6 +134,8 @@
       ownerId,
       actionId,
       label:String(raw?.label||actionId),
+      hudIcon:String(raw?.hudIcon || '✋'), // Shared action arch renders this icon for opt-in contextual world actions.
+      showInArch:raw?.showInArch === true && ['action1','action2','action3'].includes(actionId), // HUD claims must use real physical tool slots.
       priority:Number(raw?.priority)||0,
       order:index,
       onPress:typeof raw?.onPress==='function'?raw.onPress:null,
@@ -202,7 +204,7 @@
 
   function snapshot() {
     const claims=[];
-    for(const [ownerId,list] of owners)for(const claim of list)claims.push({ownerId,actionId:claim.actionId,label:claim.label,priority:claim.priority});
+    for(const [ownerId,list] of owners)for(const claim of list)claims.push({ownerId,actionId:claim.actionId,label:claim.label,priority:claim.priority,showInArch:claim.showInArch});
     return {
       revision,
       claims,
