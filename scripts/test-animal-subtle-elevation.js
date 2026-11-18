@@ -120,6 +120,21 @@ assert.equal(debug.reason, 'temporary-render-lift');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'town'), 0.35, 'public sampler matches player terrain + support composition');
 assert.equal(context.window.HobunjiAnimalSubtleElevation.totalLiftAt(4.5, 7.5, 'farm'), 0.1, 'non-town areas do not incorrectly reuse town terrain map');
 
+// A physically grounded ridden mount already received its absolute bridge
+// height in updateCreatureMesh. Reproduce the renderer's late lift pass and
+// ensure it does not put that carrier ABOVE the seated rider a second time.
+context.window.Mounts = { rideEntity: mount }; // Exact live mount identity, not every ordinary stable companion.
+mount._mountedTownSurfaceActive = true; // Set by Mounts' production town support sampler before renderer.render.
+renderer.render();
+assert.equal(observed.mount, 2, 'ridden town mount keeps its physically grounded Y during final render');
+assert.equal(observed.companion, 1.35, 'ordinary town companions continue receiving terrain/support lift');
+assert.equal(mount.avatarRef.group.position.y, 2, 'physically grounded mount remains unchanged after render restoration');
+debug = context.window.HobunjiAnimalSubtleElevation.getDebug();
+assert.equal(debug.skippedMountedPhysicalGround, 1, 'mobile animal diagnostics report the mounted physical-ground skip');
+mount._mountedTownSurfaceActive = false; // Restore ordinary non-mounted animal behavior for the remaining test.
+delete context.window.Mounts;
+
+
 // Centroid diagnostics: visible held equipment must not influence the player's
 // body-rig centroid. The helper remains available for diagnostics even though
 // water no longer applies a centroid-based Y correction.
