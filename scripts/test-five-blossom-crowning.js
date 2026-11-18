@@ -70,7 +70,7 @@ const W={
   DevCompanion:{registerStateProvider(){}},
   GridTileAccessors:{getActiveScene:()=>sceneGraph},
   ClimbSystem:{groundYAt:()=>0},
-  FoliageGenerator:{buildPottedBlossomTreeMesh(){return {
+  FoliageGenerator:{buildWildernessBlossomTreeMesh(){return {
     userData:{},position:{set(){}},scale:{multiplyScalar(){}},
     traverse(callback){callback({geometry:{},userData:{}});}
   };}},
