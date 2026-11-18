@@ -70,7 +70,7 @@
   function claimedArchButton(event) {
     const button = event?.target?.closest?.('button.abt'); // Existing touch/desktop arch, not a second floating overlay.
     const action = String(button?.dataset?.action || '');
-    const match = /^context_arch_(action[123]|itemAction[12])$/.exec(action);
+    const match = /^context_arch_(action[1-5])$/.exec(action);
     if (!match) return null;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
     return router?.claimFor?.(match[1])?.showInArch ? { actionId:match[1], router } : null;
@@ -103,7 +103,7 @@
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
     const revision = router?.getRevision?.(); // No allocation: input router increments this only on advertised-claim changes.
     if (revision !== undefined && archClaimsCache.router === router && archClaimsCache.revision === revision) return archClaimsCache.buttons;
-    const buttons = ARCH_ACTIONS.map(actionId => {
+    const buttons = ['action1','action2','action3','action4','action5'].map(actionId => { // InputBindings owns these five real semantic inputs; itemAction1/2 are only layout/prompt aliases.
       const claim = router?.claimFor?.(actionId);
       return claim?.showInArch ? {action:'context_arch_' + actionId,inputAction:actionId,
         label:claim.label,icon:claim.hudIcon,style:'secondary',allowed:true,worldInteraction:true} : null;
