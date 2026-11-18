@@ -315,6 +315,24 @@
     return predicate;
   }
 
+  const _sourceKeyPaintMasks = new WeakMap(); // Original sprite -> keyed coat masks, reused by Color Pools without scanning each repainted frame.
+  async function sourceKeyPaintMask(url, sourceKey) {
+    const image = await loadImage(url); // The original authored colors identify the coat; the recolored pixels cannot reliably do so.
+    let masks = _sourceKeyPaintMasks.get(image);
+    if (!masks) _sourceKeyPaintMasks.set(image, masks = new Map());
+    const key = [sourceKey.hex, sourceKey.hueTolerance, sourceKey.minSaturationRatio, sourceKey.minValue].join('|'); // Distinguishes source-key rules for cached sprites.
+    if (masks.has(key)) return masks.get(key);
+    await window.PixelWorkYield?.maybeYield();
+    const width = image.naturalWidth, height = image.naturalHeight;
+    const canvas = makeCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const flags = sourceKeyPredicate(ctx.getImageData(0, 0, width, height).data, sourceKey).mask;
+    const mask = { width, height, data: flags }; // Shared by all Color Pools base patterns; dark hooves and other non-coat details stay excluded.
+    masks.set(key, mask);
+    return mask;
+  }
+
   // Shared keyed shade-fill for animal coats and matching attached PNG surfaces.
   function recolorKeyedPixels(px, targetRgb, sourceKey, sourceReferenceHex = null, debugLabel = null) {
     recolorPixels(px, targetRgb, sourceKeyPredicate(px, sourceKey), sourceReferenceHex, debugLabel);
@@ -642,7 +660,9 @@
     }
     ctx.drawImage(baseSource, 0, 0);
     try {
-      const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : mask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
+      const basePaintMask = colorPoolPaintFor(genotype, 'base') && sourceKey && !mask
+        ? await sourceKeyPaintMask(baseUrl, sourceKey) : mask; // The same authored coat pixels used for tinting exclude Voorg-Ass hooves from paint.
+      const paintedBase = await applyColorPoolPaint(baseSource, genotype, 'base', fullBaseRecolor ? null : basePaintMask, `animal:${kind}:${frame}:base:${baseColor || 'native'}`);
       if (colorPoolPaintFor(genotype, 'base') && !paintedBase) incompleteLayers.push('paint:base');
       if (paintedBase) ctx.drawImage(paintedBase, 0, 0, c.width, c.height);
     } catch (error) {
@@ -686,7 +706,16 @@
       try {
         const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99'; // Reuses the base-coat allele; never invents a secondary beard color.
         const recolored = await recoloredPattern(url, coatColor);
-        ctx.drawImage(recolored, 0, 0, c.width, c.height);
+        let painted = null;
+        try {
+          painted = await applyColorPoolPaint(recolored, genotype, 'base', null,
+            `animal:${kind}:${frame}:base:${coatColor}:${defaultPattern.id}`); // Reuse base-coat paint on the matching beard overlay, not a second genetic region.
+          if (colorPoolPaintFor(genotype, 'base') && !painted) incompleteLayers.push('paint:' + defaultPattern.id);
+        } catch (paintError) {
+          window.__farmLog?.(`[genotype-render] default coat paint for "${defaultPattern.id}" failed: ${paintError.message}`, 'warn');
+          incompleteLayers.push('paint:' + defaultPattern.id);
+        }
+        ctx.drawImage(painted || recolored, 0, 0, c.width, c.height);
         drawnPatterns.push(defaultPattern.id + '(default)'); // Debug only; it is not added to genotype traits or breeding.
       } catch (error) {
         window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): default coat pattern "${defaultPattern.id}" missing (${url}): ${error.message}`, 'warn');
