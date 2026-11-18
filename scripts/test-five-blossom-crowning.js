@@ -19,6 +19,7 @@ assert.match(festivalScript,/father_hunundi_hodu'[\s\S]{0,200}festival_npc_gift/
 assert.match(festivalScript,/FestivalBlossomHunt\?\.turnInAtHunundi/,'Father Hunundi action executes the real hunt submission');
 
 let civilYear=1156,area='town',tile=null,listener=null,cutscenes=0,gearSaves=0,avatarRefresh=0,questsSaved=0;
+let failNextCompletionSave=false; // Simulates a transient quest-persistence failure after the ceremony has already saved its physical reward.
 const initial={characters:[
   {id:'owner',nickname:'Naku',gearInventory:{keyItems:[],clothingItems:[],
     clothing:{hat:{uid:'old-hat',cosmeticId:'appearance::hat::old_highlands_kasa',slot:'hat'},
@@ -60,6 +61,7 @@ const W={
   QuestProgressStore:{
     snapshot(){const id=W.__hobunjiPlayerProfile?.characterId||'anonymous';return byChar.get(id)||{};},
     setStatus(id,status,progress){
+      if (status==='completed' && failNextCompletionSave) { failNextCompletionSave=false; return false; }
       const who=W.__hobunjiPlayerProfile?.characterId||'anonymous',records=byChar.get(who)||{};
       records[id]={status,progress:{...(records[id]?.progress||{}),...progress}};byChar.set(who,records);
       questsSaved++;return true;
@@ -148,9 +150,14 @@ async function main(){
   login('owner');readyHunt();
   const ownerBefore=equipment.devWornClothing().hat;
   const ownerHood=equipment.devWornClothing().hood;
+  failNextCompletionSave=true;
+  const failedCompletion=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  assert(!failedCompletion.ok,'a failed completion save reports failure without eating flowers');
+  assert.equal(cutscenes,1,'one stage ceremony played before the failed quest save');
+  assert.equal(equipment.ownsFiveBlossomCrown(1156),true,'the crown was saved even if the later quest write failed');
   const first=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
-  assert(first.ok&&first.first,'first human finisher receives a cinematic');
-  assert.equal(cutscenes,1);assert.match(announcements[0],/first to complete our challenge this year/);
+  assert(first.ok&&first.first,'retry finishes the first Finder reward');
+  assert.equal(cutscenes,1,'retry does not replay the ceremony after a real crown was already saved');assert.match(announcements[0],/first to complete our challenge this year/);
   assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1156'].characterId,'owner');
   assert.equal(W.QuestProgressStore.snapshot()['five_blossoms_wilderness_hunt:1156'].status,'completed');
   assert.equal(equipment.devWornClothing().hat?.label,'Five Blossom Crown');
