@@ -83,7 +83,7 @@ jobs:
           node scripts/desktop-friends-build.js feed $version desktop/dist/latest.yml
           if ($LASTEXITCODE -ne 0) { throw 'Failed to create release-pinned Friends metadata' }
           $latest = Get-Content 'desktop/dist/latest.yml' -Raw
-          $assetUrl = "https://github.com/$" + "env:GITHUB_REPOSITORY/releases/download/friends-v$version/Hobunji-Hollow-Tester-Setup-$version.exe"
+          $assetUrl = "https://github.com/Oolnokk/HobunjiHollowUnity/releases/download/friends-v$version/Hobunji-Hollow-Tester-Setup-$version.exe"
           if (-not $latest.Contains($assetUrl)) { throw 'Friends manifest does not point to approved release assets' }
           $checksumMatch = [regex]::Match($latest, '(?m)^\s+sha512:\s*(\S+)')
           if (-not $checksumMatch.Success) { throw 'Friends manifest does not contain a file checksum' }
