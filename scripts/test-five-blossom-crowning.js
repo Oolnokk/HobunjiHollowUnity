@@ -195,6 +195,18 @@ async function main(){
   equipment.__test.normalizeGearClothingItems(farmhandGear);
   assert.equal(annualCrowns().length,2,'character loading/migration preserves both earned crown years');
   assert.equal(farmhandGear.clothing.hat?.awardYear,1157,'normalization leaves the most recent crown equipped');
+  civilYear=1158;W.FestivalBlossomHunt.update();readyHunt();
+  const savedCutsceneRuntime=W.AuthoredCutsceneRuntime; // Temporarily missing renderer proves a failed ceremony does not lock out the next first finisher.
+  W.AuthoredCutsceneRuntime=null;
+  const interrupted=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  assert(!interrupted.ok,'an unavailable stage cutscene fails without a crown');
+  assert.equal(getMeta().worlds[0].fiveBlossomsFinders?.['1158'],undefined,'unawarded year claim was rolled back');
+  W.AuthoredCutsceneRuntime=savedCutsceneRuntime;
+  login('owner');readyHunt();
+  const nextFirst=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  assert(nextFirst.ok&&nextFirst.first,'another character can become the first Finder after an interrupted attempt');
+  assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1158'].characterId,'owner');
+  assert.equal(cutscenes,3,'no cinematic for the failed attempt, one for each successful first-Finder year');
   assert.equal(equipment.devWornClothing().hat?.baseCosmeticId,'appearance::hat::basic_headband',
     'new prize id retains the real headband portrait fallback');
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
