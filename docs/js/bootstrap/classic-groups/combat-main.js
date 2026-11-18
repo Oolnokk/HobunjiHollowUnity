@@ -17,7 +17,7 @@
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261104scent1439c",
-    "js/companion-combat-response.js?v=20261118petDrop2",
+    "js/companion-combat-response.js?v=20261118followArbiter1",
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
     "js/combat/combat-input.js?v=20261117hypedInput2",
