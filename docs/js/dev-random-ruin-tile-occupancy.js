@@ -586,7 +586,7 @@
       for (const tileKey of wallTiles(wall, model)) addSource(model.staticSources, tileKey, `wall:${wall.id}`);
       // A wall separating two walkable V50 tiles has no non-floor tile to stamp.
       // Height-aware wall-plane collision is independent of the coarse tile map.
-      model.footprints.scan(wall, 'v50-structural-wall', {force:true,onlyRoot:true,allowLongWalls:true});
+      model.footprints.scan(wall, 'v50-structural-wall', {force:true,onlyRoot:true,allowLongWalls:true,allowInstances:true});
     }
     for (const root of config.solidRoots || []) model.footprints.scan(root, 'static');
     // Door panels collide exactly while closed; the rest of the door assembly
