@@ -25,7 +25,7 @@
   let lastRunAt = -Infinity;
   let markerGeometry = null;
   let markerMaterial = null;
-  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
+  const stats = { retired: 0, wildlifeRetired: 0, portraitPlanes: 0, fallbackMarkers: 0, posedPantsBaked: 0, runs: 0, lastRetired: null }; // Counts actual static portrait replacements versus fallback markers in mobile diagnostics.
 
   function config() {
     const override = window.SCRATCHBONES_CONFIG?.game?.banditCorpseRetire;
@@ -54,11 +54,11 @@
     return { geometry: markerGeometry, material: markerMaterial };
   }
 
-  // Freeze the composed humanoid frontCanvas (appearance, dyed clothing,
-  // hair and face) into ONE static portrait plane. Ordinary animal rigs use
-  // their already-composited front-plane map. The 256px copy owns its texture
-  // independently of the animated rig's eventual disposal. Procedural 3D
-  // legs, pants and accessories are not included in the humanoid canvas.
+  // Freeze the composed humanoid frontCanvas (appearance, dyed clothing, hair
+  // and face) into one static portrait. The corpse-only compositor then paints
+  // the final posed pants through a compact grid rather than copying their
+  // jumping-jack source texture. Living avatars and their rigs are untouched.
+  // Ordinary animals use their finished front-plane map.
   function spriteSnapshot(rig, width, c) {
     const THREE = window.THREE;
     if (typeof document === 'undefined' || !THREE?.CanvasTexture || !THREE?.PlaneGeometry) return null;
@@ -95,6 +95,8 @@
       const context = canvas.getContext('2d');
       if (!context) return null;
       context.drawImage(best.image, 0, 0, canvas.width, canvas.height);
+      const posedPants = hasComposed && rig?.legs?.pants
+        ? window.CorpsePosedPantsSnapshot?.capture?.(canvas, rig) || null : null; // One-time, corpse-only painting of final deformed cloth.
       // The fall's fire-scorch effect darkens rig materials instead of the
       // authored portrait canvas. Bake the same settled tint before disposal.
       if (c.deathCause === 'fire' && typeof context.fillRect === 'function') {
@@ -120,7 +122,7 @@
         transparent: true, alphaTest: 0.15, side: THREE.DoubleSide,
         depthTest: true, depthWrite: true,
       });
-      return { mesh: new THREE.Mesh(geometry, material), dispose() {
+      return { mesh: new THREE.Mesh(geometry, material), posedPants, dispose() {
         geometry.dispose?.();
         material.dispose?.();
         texture.dispose?.();
@@ -186,6 +188,7 @@
     window.BurningAfflictionVfx?.syncEntity?.(c, group); // Keep finite corpse flames alive above the new body.
     stats.retired++;
     if (snapshot) stats.portraitPlanes++; else stats.fallbackMarkers++;
+    if (snapshot?.posedPants?.ok) stats.posedPantsBaked++;
     if (!c.isBandit) stats.wildlifeRetired++;
     stats.lastRetired = c.id || c.creatureKey || c.def?.label || 'corpse';
     return true;
