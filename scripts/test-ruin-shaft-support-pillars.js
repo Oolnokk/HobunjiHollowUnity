@@ -154,6 +154,30 @@ async function run(){
     assert.equal(missing.getState().authored,0,'missing source retains temporary stone structure');
     assert.equal(missing.getState().fallback,plan.platforms.length,'missing source is visible in mobile diagnostics');
     missing.dispose();
+
+    // A temporary network error must be retried on the next ruin, not cached as permanent missing furniture.
+    const previousDocument=globalThis.document,previousFetch=globalThis.fetch;
+    try{
+      globalThis.document={};
+      let requests=0;
+      globalThis.fetch=async()=>++requests===1
+        ? {ok:false,status:503}
+        : {ok:true,json:async()=>source};
+      const offline=Supports.mount(plan,{THREE,parent:new Node()});
+      await offline.ready;
+      assert.equal(offline.getState().authored,0,'first network failure leaves the safe placeholder');
+      offline.dispose();
+      const recovered=Supports.mount(plan,{THREE,parent:new Node()});
+      await recovered.ready;
+      assert.equal(requests,2,'second ruin must retry the original authored asset');
+      assert.equal(recovered.getState().authored,plan.platforms.length,'recovered asset upgrades every pillar');
+      recovered.dispose();
+    }finally{
+      if(previousDocument===undefined)delete globalThis.document;
+      else globalThis.document=previousDocument;
+      if(previousFetch===undefined)delete globalThis.fetch;
+      else globalThis.fetch=previousFetch;
+    }
   }finally{
     if(previous===undefined)delete globalThis.AuthoredFurniture;
     else globalThis.AuthoredFurniture=previous;
