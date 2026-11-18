@@ -559,7 +559,11 @@
     const corruptFiles = []; // Canonical character/world parse failures must block folder import instead of masquerading as deleted save slots.
     const seenIds = new Set(); // Duplicate canonical IDs are ambiguous after interrupted rename/cleanup writes and must not be imported silently.
     let dirHandle;
-    try { dirHandle = await _handle.getDirectoryHandle(dirName); } catch { return { entities, corruptFiles }; }
+    try { dirHandle = await _handle.getDirectoryHandle(dirName); }
+    catch (error) {
+      if (error?.name === 'NotFoundError') return { entities, corruptFiles }; // Truly absent legacy save directories are allowed.
+      throw new Error('Could not access ' + dirName + ' save directory: ' + String(error?.message || error)); // Never mistake denied/offline storage for an empty save.
+    }
     for await (const [name, entry] of dirHandle.entries()) {
       if (entry.kind !== 'file' || !name.toLowerCase().endsWith('.json')) continue; // OS metadata and user notes are not canonical save entities.
       try {
@@ -684,7 +688,10 @@
     const missingCanonicalBackups = []; // Prevent a folder with only version copies from silently yielding an empty farm.
     let dirHandle;
     try { dirHandle = await _handle.getDirectoryHandle(FARM_LAYOUTS_DIR); }
-    catch { return { layouts, corruptFiles, backupFiles, missingCanonicalBackups }; }
+    catch (error) {
+      if (error?.name === 'NotFoundError') return { layouts, corruptFiles, backupFiles, missingCanonicalBackups }; // Older saves legitimately lack this directory.
+      throw new Error('Could not access farm-layouts save directory: ' + String(error?.message || error)); // A Google Drive access failure must never turn an existing farm into an empty one.
+    }
 
     const backupsByWorld = new Map(); // Used after enumeration to tell harmless backups from missing canonical files.
     const canonicalNames = canonicalOnly && validWorldIds
