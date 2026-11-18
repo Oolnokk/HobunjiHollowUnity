@@ -22,6 +22,7 @@
     "asar": true,
     "files": [
       "main.cjs",
+      "save-folder-permissions.cjs",
       "game-protocol.cjs",
       "close-save.cjs",
       "update-controller.cjs",
