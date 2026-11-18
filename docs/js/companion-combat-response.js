@@ -7,6 +7,7 @@
   const MASTER_WEIGHT = 0.65; // Protecting the master matters more than the pet's personal convenience.
   const ACTIVE_THREAT_MULTIPLIER = 0.67; // Enemies currently attacking the owner outrank passive enemies nearby.
   const APPROACH_RESTART_RATIO = 1.05; // Leave backup early once the target has escaped beyond ordinary reach.
+  const DESCENT_ESCAPE_GRACE_MS = 2000; // After landing, keep following the fleeing owner long enough to leave nearby enemies behind.
 
   function validEnemy(enemy, areaId) {
     return !!enemy && Number(enemy.health) > 0 && !enemy._downed &&
@@ -39,10 +40,16 @@
     const petTile = grid[Math.floor(companion.y / tileSize)]?.[Math.floor(companion.x / tileSize)];
     const ownerTile = grid[Math.floor(master.y / tileSize)]?.[Math.floor(master.x / tileSize)];
     if (!petTile || !ownerTile || ownerTile.incline) return false;
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Shares the live target-decision clock.
     if (companion._followOwnerDownCliff && (companion._cliffClimb || companion._cliffRouteTravel))
       return true; // Crossing an incline must not reacquire its old enemy mid-leap.
     if (petTile.incline) return false;
-    return (Number(petTile.elevTier) || 0) > (Number(ownerTile.elevTier) || 0);
+    if ((Number(petTile.elevTier) || 0) > (Number(ownerTile.elevTier) || 0)) {
+      companion._companionRetreatUntilMs = nowMs + DESCENT_ESCAPE_GRACE_MS; // Owner still below; refresh until the pet lands.
+      return true;
+    }
+    return companion._followOwnerDownCliff && nowMs < (companion._companionRetreatUntilMs || 0)
+      && (Number(petTile.elevTier) || 0) === (Number(ownerTile.elevTier) || 0); // Stop after the owner escapes or the grace expires.
   }
 
   const TARGET_DECISION_INTERVAL_MS = 140; // Full enemy prioritization runs at ~7Hz; a committed target still fights and moves each frame.
@@ -80,6 +87,9 @@
       }
       companion._companionCombatTarget = null;
       companion._companionCombatPriority = null;
+      companion._travelPath = null; // An old combat/treasure waypoint must not steer the retreat back uphill.
+      companion._travelPathTarget = null;
+      companion._travelStuckT = 0;
       return null;
     }
     const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
@@ -135,6 +145,8 @@
       backingUp: companion?._stage?.mode === 'backingUp',
       groundFollow: companion?._companionGroundFollow || null, // Exposes the current ground/route destination to mobile Companion Combat diagnostics.
       followingDownCliff: !!companion?._followOwnerDownCliff, // Explains immediate combat disengagement on mobile.
+      escapeGraceRemainingMs: Math.max(0, (companion?._companionRetreatUntilMs || 0) -
+        (typeof performance !== 'undefined' ? performance.now() : Date.now())), // Mobile-readable post-landing combat suppression.
       cooldown: companion?.attackCooldownT ?? null };
   }
 
