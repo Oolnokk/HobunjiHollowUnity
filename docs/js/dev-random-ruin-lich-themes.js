@@ -577,7 +577,11 @@
         geometry.scale?.(.62/size.x,height/size.y,.62/size.z);
       }
     }
-    if(!geometry)geometry=new THREE.CylinderGeometry(.43,.5,height,4); // An authentic tapered four-sided silhouette even on a seed with no native V50 square pillar.
+    if(!geometry){ // If this seed contains no V50 square support, build a correctly centered carved tapered square, not an untextured box.
+      geometry=new THREE.CylinderGeometry(.39,.44,height,4);
+      geometry.rotateY(Math.PI/4); // The four corners form a 0.62-wide square, matching the authored hazard footprint.
+      geometry.translate(0,height/2,0); // CylinderGeometry is centre-origin; its base must rest on the platform.
+    }
     const original=source?.material; // The platform owns its own disposable material; native V50 walls keep theirs.
     const material=Array.isArray(original)?original.map(m=>m.clone?.()||m):original?.clone?.()
       ||window.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})
