@@ -60,7 +60,8 @@
     const { layout, locale } = statusFor(blossom);
     if (!locale || !layout) return { ok: false, reason: 'The blossom locale is not available in this generated wilderness yet; check the mobile placement diagnostics.' };
     return window.LocaleRiddleGenerator?.generate?.({
-      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom', requireUniqueStart: true, // A festival clue must never fall back to a vague, non-unique starting location.
+      zoneId: blossom.zoneId, layout, instance: locale, targetObjectKey: 'blossom-tree', targetName: blossom.name, targetKind: 'blossom', requireUniqueStart: true,
+      terrainGenerationKey: String(mapDeps?.tothalWorldId?.() || 'world') + ':' + String(mapDeps?.currentTothalYear?.() || 'shift'), // Natural-landmark cache follows the same cycle as the physical witness stones.
       landmarks: [
         ...(window.WildernessLandmarkScenery?.landmarksFor?.(blossom.zoneId, layout) || []),
         ...(window.CaveSiteSystem?.outdoorPuzzleSitesForZone?.(blossom.zoneId) || []).map(site => ({
