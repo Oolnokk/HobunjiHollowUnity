@@ -340,7 +340,8 @@
     deps.hostileObjects.add(actor);
     const state={id:'skeeri:'+session.seed+':'+index,actor,spec,size,tier,
       phase:'rest',home:{x,z,y},serial:0,segment:null,cooldown:1+index*.4,
-      dead:false,struck:false,orbitDirection:index%2?-1:1,orbitRetryS:0}; // One actor owns one flight phase; no extra navigation/physics loop.
+      dead:false,struck:false,orbitDirection:index%2?-1:1,orbitRetryS:0,
+      orbitLegs:0,orbitAttackCooldown:0}; // One actor owns one flight phase; no extra navigation/physics loop.
     session.actors.add(state);snapshot.spawned++;
     return state;
   }
@@ -520,7 +521,7 @@
         if(!point)continue;
         const to={x:point.x,z:point.y,y:Math.max(here.y,playerY+1.7)}; // Stay airborne, above the target's melee reach.
         if(!flightTo(session,state,to,'orbit',state.spec.speed))continue; // Authoritative ruin voxel check rejects walls and ceilings.
-        state.orbitDirection=side;state.orbitRetryS=0;snapshot.orbits++;
+        state.orbitDirection=side;state.orbitRetryS=0;state.orbitLegs++;snapshot.orbits++;
         return true;
       }
     }
@@ -541,8 +542,15 @@
       }else if(finished && (state.phase==='retreat'||state.phase==='orbit')){
         if(state.phase==='retreat'&&isAtRoost(session,state)){
           state.phase='rest';state.cooldown=2.6+(hash(state.id+snapshot.dives)%5)*.35;
-          state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
-        }else returnOrOrbit(session,state,player,playerY,'retreat');
+          state.orbitLegs=0;state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        }else{
+          const canDive=state.phase==='orbit' && (state.orbitLegs||0)%3===0 &&
+            deps?.player?.health>0 && player && distance(player,actorLocation(state.actor,session))<9;
+          if(canDive && flightTo(session,state,{x:player.x,z:player.z,y:playerY+.48},'dive',state.spec.speed)){
+            snapshot.dives++;return; // Evasion without a perch still leads into the ordinary swept-body attack.
+          }
+          returnOrOrbit(session,state,player,playerY,'retreat');
+        }
       }
       return;
     }
@@ -559,17 +567,29 @@
     else state.cooldown=.8; // No clear line through the walls yet: try again shortly.
   }
   function updateBomber(session,state,dt,player,playerY) {
+    state.orbitAttackCooldown=Math.max(0,(state.orbitAttackCooldown||0)-dt); // The original bomber rest still applies during no-perch flight.
     if(state.segment){
       const finished=advance(session,state,dt);
       if(finished && state.phase==='approach'){
         dropBomb(session,state);
         snapshot.bombRuns++;
+        state.orbitAttackCooldown=7+hash(state.id+snapshot.bombRuns)%6; // Never machine-gun bombs from a circle.
         returnOrOrbit(session,state,player,playerY,'return');
       }else if(finished && (state.phase==='return'||state.phase==='orbit')){
         if(state.phase==='return'&&isAtRoost(session,state)){
           state.phase='nest';state.cooldown=7+hash(state.id+snapshot.bombRuns)%6;
-          state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
-        }else returnOrOrbit(session,state,player,playerY,'return');
+          state.orbitLegs=0;state.actor.skeeriFlightPose='perched';state.actor.skeeriDivePitchRad=0;
+        }else{
+          const canBomb=state.phase==='orbit' && state.orbitAttackCooldown===0 &&
+            deps?.player?.health>0 && player &&
+            distance(player,{x:session.nest.x,z:session.nest.z+session.nestSetback})<=session.shaftRadius;
+          if(canBomb){
+            const to={x:player.x+(state.home.x-session.nest.x)*.15,z:player.z,y:playerY+5};
+            if(!overheadBlocked(to.x,to.z,playerY,to.y+.5) &&
+                flightTo(session,state,to,'approach',state.spec.speed))return; // The real bomber run still drops the burden, not the evasive orbit itself.
+          }
+          returnOrOrbit(session,state,player,playerY,'return');
+        }
       }
       return;
     }
