@@ -16,7 +16,8 @@ for (const icon of ['love', 'disgust', 'alarmed', 'curious', 'gloat_cloud', 'glo
 let now = 0; // Simulated monotonic animation frame clock.
 class Vector3 {
   set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
-  setFromMatrixColumn(matrix, index) { return this.set(index === 0 ? 1 : 0, 0, index === 2 ? 1 : 0); }
+  setFromMatrixColumn(matrix, index) { const elements = matrix.elements; return this.set(elements[index * 4], elements[index * 4 + 1], elements[index * 4 + 2]); }
+  addScaledVector(vector, scale) { this.x += vector.x * scale; this.y += vector.y * scale; this.z += vector.z * scale; return this; }
   normalize() { return this; }
 }
 class Group {
@@ -66,6 +67,7 @@ const win = {
     makeMaterial(THREE, map, name, options) { return Object.assign(new Disposable(), { map, name }, options); },
   },
   RewardReadout: { enqueue() { assert.fail('Reactions must not enter the reward queue'); } },
+  AnimalChatheadFrame: { frameForKind: () => ({ frame: { x: .25, y: .18, width: .30, height: .30 } }) }, // Representative left-offset head crop for the animal card.
 };
 const context = { // Runs both production modules with the minimal Three/canvas interface.
   window: win, Image: FakeImage, URL, URLSearchParams,
@@ -112,11 +114,12 @@ function billboard() { return scene.children.find(group => !group.name); }
 (async () => {
   const livestock = actor(); // Livestock exercises the shared happy-reaction path.
   failNextImage = true;
-  assert.equal(api.trigger(livestock, 'love'), true);
+  const animalOptions = { creatureKind: 'nelk', height: 1.2, width: 1.8 }; // Supplies real farm-animal metadata for the same shared reaction hook.
+  assert.equal(api.trigger(livestock, 'love', animalOptions), true);
   await settle();
   assert.equal(billboard(), undefined, 'missing PNG never creates a blank quad');
   assert.equal(api.debugSnapshot().failedAssets, 1);
-  assert.equal(api.trigger(livestock, 'love', { force: true }), true);
+  assert.equal(api.trigger(livestock, 'love', { ...animalOptions, force: true }), true);
   assert.equal(api.trigger(livestock, 'disgust'), false, 'per-creature cooldown');
   await settle();
   const love = billboard(); // The same render flags as ordinary popup text qualify it for the final overlay.
@@ -132,8 +135,11 @@ function billboard() { return scene.children.find(group => !group.name); }
   now = 300;
   livestock.position.set(7, 2, 3);
   step();
-  assert.equal(love.position.x, 7, 'billboard follows the live actor');
-  assert.ok(love.position.y > 3.9, 'anchor remains above the actor');
+  const headLeft = 7 + (.25 - .5) * animalOptions.width; // Exact frame left edge in actor-relative screen space.
+  assert.ok(love.position.x < headLeft, 'animal emoji sits to the left of its chathead crop');
+  assert.ok(love.position.y > 2 && love.position.y < 2.5, 'animal emoji sits at chathead level, not above the full actor');
+  assert.equal(love.position.z, 3, 'side anchoring must not move the popup toward or away from the camera');
+  assert.equal(api.debugSnapshot().last.side, 'animal-left');
   assert.equal(love.quaternion.source, camera.quaternion);
   assert.ok(icon.visible && icon.material.opacity > 0);
   const expectedSize = Math.max(.25, Math.min(.62, 1.7 * .38)) / 3; // Actor bounds are 1.7 high in this mock; the reaction is a third of its former size.
@@ -149,6 +155,17 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(api.reactToDialogue(npc, { tone: 'shock' }), true);
   await settle();
   assert.equal(billboard().children.length, 5);
+  now += 300;
+  step();
+  const npcReaction = billboard(); // NPC popups anchor beside the head, not above the character.
+  assert.equal(api.debugSnapshot().last.side, 'npc-right');
+  assert.ok(npcReaction.position.x > npc.position.x, 'NPC emoji is to the right of the head');
+  assert.ok(npcReaction.position.y > .9 && npcReaction.position.y < 1.7, 'NPC emoji is near the head rather than high above it');
+  camera.matrixWorld.elements[0] = 0; camera.matrixWorld.elements[2] = 1; // Turn the camera's right vector onto world Z without rotating the actor.
+  step();
+  assert.equal(npcReaction.position.x, npc.position.x, 'side offset follows camera right, not fixed world X');
+  assert.ok(npcReaction.position.z > npc.position.z, 'NPC emoji remains on the visible right after camera turns');
+  camera.matrixWorld.elements[0] = 1; camera.matrixWorld.elements[2] = 0;
   now += 1600;
   step();
   assert.equal(billboard(), undefined);
