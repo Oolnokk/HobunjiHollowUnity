@@ -45,6 +45,7 @@ for (const [row, cells] of grid.entries()) for (const [col, tile] of cells.entri
   assert(Math.abs(tile.projectileCoverHeightTiles + (tile.elevTier || 0) * 0.5 - Math.max(...tops)) < 1e-6, 'projectile cover height matches the generated shell');
 }
 assert(Math.max(...shell.pos.filter((_, index) => index % 3 === 1)) > 0.5, 'the combined surface should rise into a visible summit');
+assert(Math.max(...shell.pos.filter((_, index) => index % 3 === 1)) <= 1.75 + 1e-9, 'varied heights never exceed the authored outdoor rock ceiling');
 assert.deepEqual(repeated, shell, 'cached reconstruction should remain deterministic');
 assert.equal(afterFirst.indexBuilds - before.indexBuilds, 1, 'the first request should index its grid exactly once');
 assert.equal(afterRepeat.indexBuilds, afterFirst.indexBuilds, 'later chunk requests must not rescan the whole grid');

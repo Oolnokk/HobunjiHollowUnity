@@ -916,6 +916,7 @@
     if (now - lastTick < 200) return;
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
+    window.FestivalBlossomHunt?.update?.(); // Share this existing 200ms tick; expiry/trees never add a second frame loop.
     settlePotluckWinnings(); // A finished contest is paid once, after the final festival day, even if no doorstep visit occurs.
     updateDanceInvitation(elapsed);
     registerCupProvider();

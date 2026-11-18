@@ -146,6 +146,41 @@
       "category": "cave_interior",
       "singleton": true,
       "mapId": "map_i_den_tzatzul_map_western_slope_1"
+    },
+    {
+      "id": "locale_five_blossoms_cyan",
+      "file": "config/locales/locale_five_blossoms_cyan.json",
+      "name": "Cyan Blossom Tree",
+      "category": "story_poi",
+      "singleton": true
+    },
+    {
+      "id": "locale_five_blossoms_amber",
+      "file": "config/locales/locale_five_blossoms_amber.json",
+      "name": "Amber Blossom Tree",
+      "category": "story_poi",
+      "singleton": true
+    },
+    {
+      "id": "locale_five_blossoms_white",
+      "file": "config/locales/locale_five_blossoms_white.json",
+      "name": "White Blossom Tree",
+      "category": "story_poi",
+      "singleton": true
+    },
+    {
+      "id": "locale_five_blossoms_gold",
+      "file": "config/locales/locale_five_blossoms_gold.json",
+      "name": "Golden Blossom Tree",
+      "category": "story_poi",
+      "singleton": true
+    },
+    {
+      "id": "locale_five_blossoms_rose",
+      "file": "config/locales/locale_five_blossoms_rose.json",
+      "name": "Rose Blossom Tree",
+      "category": "story_poi",
+      "singleton": true
     }
   ]
 }

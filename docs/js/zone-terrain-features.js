@@ -284,7 +284,10 @@
         Math.hypot(edge.x0 - peakX, edge.z0 - peakZ),
         Math.hypot(edge.x1 - peakX, edge.z1 - peakZ),
       ])); // Radial normalization lets elongated clusters still flow toward the one summit.
-      const peakHeight = Math.min(1.45, 0.58 + Math.sqrt(cells.length) * 0.14); // Combined footprint size controls summit height without becoming a cliff.
+      const variation = hashNoise(peakX * .43 + 13.1, peakZ * .43 + 9.7) + .5; // Different rock objects receive stable silhouette rolls, unchanged across chunk boundaries.
+      const peakHeight = options?.floorProfile === true ? Math.min(1.45, 0.58 + Math.sqrt(cells.length) * .14) : Math.max(.6, Math.min(1.75, (0.58 + Math.sqrt(cells.length) * .14) * (.75 + variation * .75))); // Flat-profile ruin floors retain the old relief; wilderness rocks keep varied stable heights.
+      const xStretch = options?.floorProfile === true ? 1 : .77 + (hashNoise(peakX * .58 + 7.9, peakZ) + .5) * .58; // Reuse the original floor silhouette when asked explicitly. // Per-object asymmetric crown width; the actual solid tile footprint never changes.
+      const zStretch = options?.floorProfile === true ? 1 : .77 + (hashNoise(peakX, peakZ * .58 + 3.7) + .5) * .58;
       const pointSegmentDistance = (x, z, edge) => {
         const dx = edge.x1 - edge.x0, dz = edge.z1 - edge.z0; // Segment direction used to project a surface sample onto the perimeter.
         const lengthSq = dx * dx + dz * dz; // Squared edge length avoids a square root during projection.
@@ -309,7 +312,7 @@
       const topYAt = (x, z, fallbackTile) => {
         const edgeDistance = Math.min(...boundaryEdges.map(edge => pointSegmentDistance(x, z, edge))); // Nearest outer edge makes every silhouette vertex meet the ground.
         const edgeBlend = smooth01(edgeDistance * 2); // Half a tile of inward travel reaches full shell height.
-        const radial = Math.max(0, 1 - Math.hypot(x - peakX, z - peakZ) / farthest); // Monotonic rise toward the one selected peak.
+        const radial = Math.max(0, 1 - Math.hypot((x - peakX) / xStretch, (z - peakZ) / zStretch) / farthest); // Taller/wider variants still taper into identical true collision boundaries.
         const crown = 0.18 + 0.82 * Math.pow(radial, 0.72); // Broad lower shoulders blend all source boulders into one mass.
         const roughness = hashNoise(x, z) * 0.04 * edgeBlend * radial * (1 - radial); // Roughness vanishes at the summit so no secondary point can overtake the one peak.
         return baseYAt(x, z, fallbackTile) + peakHeight * edgeBlend * crown + roughness;

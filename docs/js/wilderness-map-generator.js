@@ -5836,7 +5836,8 @@
 
     placeRepeated('undiggableBoulder', settings.boulders, {
       dims: () => {
-        const wide = chance(0.48);
+        const wide = chance(0.48), broad = chance(0.15); // Occasional larger rock footprints add distinct distant silhouettes without changing rock collision rules.
+        if (broad) return wide ? { w: randInt(3, 4), h: randInt(2, 3) } : { w: randInt(2, 3), h: randInt(3, 4) };
         return wide ? { w: randInt(1, 3), h: randInt(1, 2) } : { w: randInt(1, 2), h: randInt(1, 3) };
       },
       areaOptions: { filter: (x, y, w, h) => areaElevationSpread(x, y, w, h) <= 2 },
