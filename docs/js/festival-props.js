@@ -15,9 +15,27 @@
   ]); // Five distinct real temple colors; the Balance motif appears with cyan and pale-pink accents.
   const structureDressings = Object.freeze({festivalArch:'road-arch',festivalStage:'bandstand',festivalDanceFloor:'dancefloor'}); // Fresh editor placements have no explicit event dressing field.
   function refreshFeast() { window.FurnitureTableSystem?.refreshServices?.(); }
+  function alignBlossomVaseToTable(root) {
+    const placement = root?.userData?.festivalBlossomPlacement; // A host may start as a full-height fallback then acquire the real authored table.
+    if (!placement || placement.group.userData.festivalDisposed || root.userData.authoredFurnitureDisposed) return;
+    const table = root.userData.authoredFurnitureData; // The ACTUAL transformed runtime recipe; FurnitureVesselRuntime halves tableSmall's height.
+    const slabs = (table?.parts || []).filter(part => part.kind === 'box' && Math.abs(Number(part.transform?.sx) || 0) >= 0.4
+      && Math.abs(Number(part.transform?.sz) || 0) >= 0.4 && Math.abs(Number(part.transform?.sy) || 0) <= 0.2); // Exclude legs/accessories.
+    if (!slabs.length) return; // Procedural fallback remains aligned to its own full-height surface until authored upgrade.
+    const tabletopY = Math.max(...slabs.map(part => Number(part.transform.y) + Math.abs(Number(part.transform.sy)) * 0.5)); // Height used by rendered table.
+    const cup = placement.vasePart.transform; // Independent pot size from the authored furniture file.
+    const vaseBottomY = Number(cup.y) - Math.abs(Number(cup.sy)) * 0.5;
+    if (!Number.isFinite(tabletopY) || !Number.isFinite(vaseBottomY)) return;
+    placement.group.position.y = tabletopY - vaseBottomY; // Move pot and flower TOGETHER to make actual contact.
+    if (root.userData.festivalBlossomVase) Object.assign(root.userData.festivalBlossomVase, {
+      tabletopY, vaseBottomY: vaseBottomY + placement.group.position.y, tabletopGap: 0, alignment: 'runtime-tabletop'
+    }); // In-game diagnostics for mobile players and regression testing.
+  }
   function onAuthoredFurnitureReady(root) {
-    const span = root?.userData?.festivalArchSpan; // Set by decorate; the shared furniture builder notifies us after a cold upgrade installs meshById.
-    if (!span || root.userData.authoredFurnitureDisposed) return;
+    if (!root || root.userData?.authoredFurnitureDisposed) return;
+    alignBlossomVaseToTable(root); // Re-align after asynchronous temporary-table replacement.
+    const span = root.userData?.festivalArchSpan; // The arch still reparents its meshes after cold upgrade.
+    if (!span) return;
     for (const mesh of root.userData.meshById?.values?.() || []) if (mesh.parent !== span) span.add(mesh);
     root.updateMatrixWorld?.(true);
   }
@@ -52,15 +70,16 @@
           if (tree) {
             tree.name='festival-blossom-sapling';
             const vasePart=data.parts?.find(part=>part.id==='blossom-vase'); // Authored cup's interior floor, so the living stem roots in its bottom even when the vase editor changes its size.
-            const cupHeight=Number(vasePart?.transform?.sy)||0.2; // Used to place the trunk base flush on the inside floor rather than hovering halfway up the cup.
-            const cupMidY=Number(vasePart?.transform?.y)||0.63; // Used with the cup height and basin depth in the foliage attachment.
-            const cupDepth=Math.max(0.03,Math.min(0.8,Number(vasePart?.basinDepth)||0.18)); // Matches ProceduralFurniture.createAuthoredVesselGeometry's cup interior.
-            tree.position.y=cupMidY+cupHeight*(cupDepth-0.5); // Root at the actual cup basin floor, with only branches/leaves visible above the rim.
+            const cupHeight=Math.abs(Number(vasePart?.transform?.sy)||0.2); // Quarter-sized stalk's planting depth follows the full-size pottery height.
+            const cupMidY=Number(vasePart?.transform?.y)||0.63; // Plant the smaller bloom just inside the vase rim, not entirely below it.
+            tree.position.y=cupMidY+cupHeight*0.32; // Stem is anchored inside the upper cup so a quarter-size bloom still rises above the rim.
             tree.traverse?.(child=>{
               if (child.geometry) child.userData.festivalSharedFoliage=true; // Skip shared foliage-cache GPU disposal when this festival prop is removed.
             });
             group.add(tree);
-            root.userData.festivalBlossomVase={variant:index,color:swatch.color,templePattern:swatch.pattern,source:'temple-window-overpass'};
+            root.userData.festivalBlossomVase={variant:index,color:swatch.color,templePattern:swatch.pattern,source:'temple-window-overpass',flowerScale:0.25};
+            root.userData.festivalBlossomPlacement={group,vasePart}; // Retain the live dressing only until this table is disposed.
+            alignBlossomVaseToTable(root);
           } else {
             window.__farmLog?.('Five Blossoms vase is missing FoliageGenerator.buildPottedBlossomTreeMesh.', 'warn'); // Visible in-game diagnostics on mobile.
           }
@@ -108,6 +127,7 @@
     root.add(group);
   }
   function dispose(root) {
+    if (root?.userData) root.userData.festivalBlossomPlacement=null; // Prevent stale table upgrade callbacks from moving a removed vase.
     window.FestivalAncestorFigures?.dispose?.(root); // Cancel pending statue bakes and clean up owned NPC rigs.
     const materials = new Set(), textures = new Set(), geometries = new Set(); // Prevents duplicate disposal when structural roots also contain a dressing/sign group.
     root?.traverse?.(object => {

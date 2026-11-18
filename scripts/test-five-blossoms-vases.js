@@ -31,13 +31,16 @@ assert.equal(vase.parts[0].materialRole,'pottery');
 const smallTable = readJson('docs/config/furniture-authored/tableSmall.json'); // Pottery bottom and table top must coincide.
 const tabletop = Math.max(...smallTable.parts.filter(p=>p.kind==='box' && p.transform.sy < 0.2).map(p=>p.transform.y+p.transform.sy/2)); // Use actual authored slab, not a guessed tile height.
 assert(Math.abs((vase.parts[0].transform.y-vase.parts[0].transform.sy/2)-tabletop)<0.03,
-  'vase base rests flush on the small table surface, not hovering');
-const tintableCard=fs.readFileSync('docs/assets/leaves/leaf_festival_blossom.svg','utf8'); // One neutral texture multiplies to all five exact window hues.
-assert(tintableCard.includes('fill="#f5f5f5"') && tintableCard.includes('xmlns="http://www.w3.org/2000/svg"'),
-  'neutral alpha-cutout leaf art is white, not the green wilderness card');
+  'unaltered vase sits on the full-height procedural fallback tabletop');
+const proportionSource=fs.readFileSync('docs/js/furniture-vessel-runtime.js','utf8'); // Original test missed this production height override.
+const tableScale=Number(proportionSource.match(/const SURFACE_FURNITURE_Y_SCALE = ([0-9.]+)/)?.[1]); // Shares the engine's actual scale factor.
+assert(tableScale>0&&tableScale<1 && proportionSource.includes("'tableSmall', 'tableLong'"),'tableSmall is shortened at runtime');
+const runtimeTableParts=smallTable.parts.map(part=>({...part,transform:{...part.transform,y:part.transform.y*tableScale,sy:part.transform.sy*tableScale}})); // Same floor-rooted transform used to render the authored table.
+const runtimeTop=tabletop*tableScale; // Actual world-space contact plane in table-local coordinates.
+assert(fs.existsSync('docs/assets/leaves/leaf_1.png'),'blossoms reuse the real bush leaf PNG plane');
 const foliageSource=fs.readFileSync('docs/js/foliage-generator.js','utf8');
-assert(foliageSource.includes("leafTexture:'assets/leaves/leaf_festival_blossom.svg'"),
-  'tabletop preset uses the neutral blossom card');
+assert(foliageSource.includes("leafTexture:'assets/leaves/leaf_1.png'"),
+  'blossom preset uses bush leaf art, not a white SVG replacement');
 
 const requested=[]; // The specific changed vase JSON gets a fresh query, unlike unchanged furniture.
 const authoredContext={window:{},THREE:{Matrix4:class {},Vector3:class {},Quaternion:class {}},fetch:url=>{requested.push(url);return Promise.resolve({ok:false});}}; // Loader allocates reusable transform scratch objects at module initialization.
@@ -58,7 +61,9 @@ assert.equal(recipe.knotTiers,1,'exactly one rung of branches');
 assert.equal(recipe.knotCount,5,'five individual branch stems on that rung');
 assert.equal(recipe.rootsEnabled,false,'tiny trees do not grow roots through a table');
 assert.equal(recipe.barkColorHex,0x4b9a62,'branches/trunk are bright green wood');
-assert(recipe.trunkLength<=0.75 && recipe.knotLength<=0.4,'canopy is miniature, not a scaled-down forest giant');
+assert(recipe.trunkLength<=0.75 && recipe.knotLength<=0.4,'one-rung bloom geometry stays miniature');
+assert.equal(recipe.scaleMul,0.25,'flowers are uniformly quarter-scale');
+assert.equal(recipe.pottedBlossomFinish,true,'only festival flowers opt into the new PNG fill');
 assert(recipe.variantCount<=2,'one or two reusable generated silhouettes per color is inexpensive');
 
 const foliageMaterialStart=foliageSource.indexOf('  function _leafDebugLog('); // Isolate the real foliage card material factory, not a reimplementation of its color math.
@@ -75,9 +80,35 @@ vm.runInNewContext(foliageSource.slice(foliageMaterialStart,foliageMaterialEnd)
 });
 const flowerMat=leafWindow.leafMaterialForTest({...recipe,leafColorHex:'#00ffff'});
 assert.equal(flowerMat.color.value,'#00ffff','a bright cyan vase actually gets cyan material, not greenish HSL');
-assert.equal(flowerMat.map.path,'assets/leaves/leaf_festival_blossom.svg','vase leaves use white tintable cards');
+assert.equal(flowerMat.map.path,'assets/leaves/leaf_1.png','vase leaves keep the original bush PNG source');
 assert.equal(flowerMat.userData.hobunjiFixedBlossomColor,true,'seasonal code can recognize the fixed flower pigment');
-const wildMat=leafWindow.leafMaterialForTest({...recipe,leafTexture:'assets/leaves/leaf_1.png'});
+
+const finishStart=foliageSource.indexOf('  function applyPottedBlossomFinish('); // Run the production PNG material hook, not a parallel mock implementation.
+const finishEnd=foliageSource.indexOf('  function buildConiferTreeGroup(',finishStart);
+assert(finishStart>0&&finishEnd>finishStart,'the new finish is independent from wilderness trees');
+const finishCalls=[],finishWindow={NaturalSurfaceMaterials:{
+  naturalizeMesh(mesh,surface,mapping,overrides){
+    finishCalls.push({surface,mapping,...overrides});
+    mesh.material={userData:{},map:{path:overrides.texture},color:'#ffffff'}; // Body fill bakes exact color pixels into a PNG with a white material.
+  }
+}}; // Spy on the animal-body PNG tint path.
+vm.runInNewContext('const naturalSurfaces=null;' + String.fromCharCode(10) + foliageSource.slice(finishStart,finishEnd)
+  + String.fromCharCode(10) + 'window.applyBlossomFinish=applyPottedBlossomFinish;', {
+  window:finishWindow,_leafDebugLog(){},console
+});
+let retiredWood=0; // Temporary per-variant wood Lambert must be disposed after the material replacement.
+const stem={material:{dispose(){retiredWood++;}},userData:{}},petals={material:{},userData:{}};
+finishWindow.applyBlossomFinish(stem,{...recipe,leafColorHex:'#00ffff'},'wood');
+finishWindow.applyBlossomFinish(petals,{...recipe,leafColorHex:'#00ffff'},'petals');
+assert.deepEqual(finishCalls.map(call=>({surface:call.surface,mapping:call.mapping,texture:call.texture,tint:call.tint,tintTreatment:call.tintTreatment})),[
+  {surface:'trunks',mapping:'strand-stretch',texture:'assets/textures/carved_smooth.png',tint:'#4b9a62',tintTreatment:'body-sprite-tint'},
+  {surface:'vines',mapping:'strand-stretch',texture:'assets/leaves/leaf_1.png',tint:'#00ffff',tintTreatment:'body-sprite-tint'},
+], 'both stem and petals use the identical per-pixel body sprite fill operation');
+assert.equal(retiredWood,1,'no discarded per-variant Lambert wood is retained');
+assert.equal(petals.material.userData.hobunjiFixedBlossomColor,true,'festival hue is exempt from seasonal retinting');
+assert.equal(stem.userData.festivalBlossomFinish.texture,'assets/textures/carved_smooth.png','stem texture is inspectable without devtools');
+
+const wildMat=leafWindow.leafMaterialForTest({...recipe,leafTexture:'assets/leaves/leaf_1.png',leafColorHex:null,pottedBlossomFinish:false});
 assert(!wildMat.userData?.hobunjiFixedBlossomColor,'normal wilderness leaves remain seasonally tinted');
 
 
@@ -110,7 +141,7 @@ const props=uiWindow.FestivalProps,roots=[]; // Dispose each per-table root afte
 assert.deepEqual(Array.from(props.blossomWindowSwatches, row => ({pattern:row.pattern,color:row.color})),templeSwatches,
   'festival palette uses the exact overpass colors, not invented replacements');
 for(const table of tables){
-  const root=new Group();root.userData.fixture='dining-table';
+  const root=new Group();root.userData.fixture='dining-table';root.userData.authoredFurnitureData={parts:runtimeTableParts}; // Mimic the real halved authored table, not source JSON dimensions.
   props.decorate(root,{...table,id:dining.id+':part:'+table.id});
   roots.push(root);
   assert.equal(root.userData.festivalBlossomVase.variant,table.blossomVariant);
@@ -119,14 +150,27 @@ for(const table of tables){
   const tree=group?.children.find(child=>child.name==='festival-blossom-sapling');
   assert(tree,'a generator-built tree actually appears above the authored pottery vase');
   const pot=vase.parts[0]; // Match the live authored cup's interior bottom, not a hardcoded decorative transform.
-  const rootedY=pot.transform.y+pot.transform.sy*(pot.basinDepth-0.5); // This is the same physical basin-floor formula as createAuthoredVesselGeometry.
-  assert.equal(tree.position.y,rootedY,'green stem emerges from the true inside floor of the pottery vase');
+  const insertedY=pot.transform.y+pot.transform.sy*0.32; // A 25% bloom must project past the rim, not be hidden inside the full-size cup.
+  assert.equal(tree.position.y,insertedY,'quarter-size blossom emerges above its vase rim');
+  const bottom=pot.transform.y-pot.transform.sy/2+group.position.y;
+  assert(Math.abs(bottom-runtimeTop)<1e-9,'actual authored tabletop touches the vase bottom, with no hovering');
+  assert.equal(root.userData.festivalBlossomVase.alignment,'runtime-tabletop','mobile debug data confirms an aligned vase');
+  assert.equal(root.userData.festivalBlossomVase.tabletopGap,0,'live contact gap is zero');
   assert(tree.children[0].userData.festivalSharedFoliage,'shared generator meshes have a nondisposal tag');
 }
 assert.deepEqual(calls.map(call=>call.color),['#00ffff','#ff8000','#ffffff','#ffbf00','#ffb3b3','#00ffff']);
+const coldRoot=new Group(); // Reproduce a slow-loading host table that upgrades after its vase is already present.
+props.decorate(coldRoot,{...tables[0],id:'cold-table'});
+const coldGroup=coldRoot.children.find(child=>child.name==='festival-dressing');
+assert.equal(coldGroup.position.y,0,'keep the original full-height fallback table alignment');
+coldRoot.userData.authoredFurnitureData={parts:runtimeTableParts};
+props.onAuthoredFurnitureReady(coldRoot);
+assert(Math.abs((vase.parts[0].transform.y-vase.parts[0].transform.sy/2+coldGroup.position.y)-runtimeTop)<1e-9,
+  'the asynchronous upgrade reattaches the pot to the half-height surface');
+props.dispose(coldRoot);
 for(const root of roots)props.dispose(root);
 assert.equal(disposedFoliage,0,'a removed festival cannot destroy cached shared tree geometry/material used by other vases');
-assert.equal(disposedAuthored,12,'the six vase meshes retain ordinary per-instance disposal of their geometry/material');
+assert.equal(disposedAuthored,14,'all seven tested vase instances (including the upgrade test) dispose their local geometry/material');
 const seasonal=fs.readFileSync('docs/js/seasonal-vegetation-tint.js','utf8'); // The weather system must not repaint a deliberate stained-glass accent.
 assert(seasonal.includes('material?.userData?.hobunjiFixedBlossomColor'),'seasonal recoloring skips fixed-color festival leaves');
 const townScript=fs.readFileSync('docs/js/town-zone-buildings.js','utf8'); // Exercise the exact disposal loop used when town decor respawns.

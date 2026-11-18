@@ -346,7 +346,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if (!mat) {
       const tex = getLeafTexture(preset.leafTexture);
       const col = preset.leafColorHex
-        ? new T.Color(preset.leafColorHex) // Preserve exact bright authored flower colors; do not remap white/pink through green foliage HSL.
+        ? new T.Color(preset.leafColorHex) // Material-only fallback until the body-filled PNG finish is installed.
         : new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
       // Opaque alphaTest cutout, NOT alpha-blended — matches the source
       // tool's getLeafMaterial() exactly, comment and all: "Leaf art is a
@@ -1114,8 +1114,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     leavesPerBranch:4, leafWidth:0.24, leafLength:0.32,
     leafRandYawDeg:115, leafRandPitchDeg:35, leafRandRollDeg:20, leafRadial:0.09,
     leafSpread:0.72, leafJitterAlong:0.05, leafJitterSide:0.03, leafJitterNormal:0.035,
-    leafTexture:'assets/leaves/leaf_festival_blossom.svg', // Neutral white petal/leaf shape: exact cyan and pink survive texture multiplication.
-    barkColorHex:0x4b9a62, scaleMul:1,
+    leafTexture:'assets/leaves/leaf_1.png', // Same transparent PNG card as wilderness bushes, tinted per pixel by the animal-body fill path.
+    barkColorHex:0x4b9a62, scaleMul:0.25, pottedBlossomFinish:true, // Quarter-scale flowers, original-size pottery.
   });
   const pottedBlossomPresets = new Map(); // One stable per-color preset; its geometry/material share the existing tree-variant cache.
   function buildPottedBlossomTreeMesh(seed, leafColorHex) {
@@ -1129,6 +1129,29 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const tree = buildTreeInstance('pottedBlossom:' + hex, preset, xfnv1a('pottedBlossom:' + String(seed)));
     tree.userData.pottedBlossom = { seed:String(seed), leafColor:hex, woodColor:'#4b9a62', branchTiers:1, branchesPerTier:5 };
     return tree; // Instancing clones meshes only: variant BufferGeometries and materials remain cached.
+  }
+
+  function applyPottedBlossomFinish(mesh, preset, part) {
+    if (!preset.pottedBlossomFinish) return; // Normal trees and bushes retain their existing native finishes.
+    const materials = naturalSurfaces || window.NaturalSurfaceMaterials; // Reuses animal-body tint and the bounded natural-surface PNG cache.
+    const petals = part === 'petals'; // Differentiates foliage cutout cards from the merged trunk/branch stem.
+    const texture = petals ? 'assets/leaves/leaf_1.png' : 'assets/textures/carved_smooth.png'; // Authored source pixels retain their shading and alpha.
+    const tint = petals ? preset.leafColorHex : '#4b9a62'; // Window-palette petals; green stems.
+    if (!materials?.naturalizeMesh) {
+      _leafDebugLog('Five Blossoms PNG fill unavailable: NaturalSurfaceMaterials has not initialized.', 'error'); // Mobile game log captures missing dependencies.
+      return;
+    }
+    const original = mesh.material; // Stem material is newly allocated; leaf-card source material is preset-cached.
+    materials.naturalizeMesh(mesh, petals ? 'vines' : 'trunks', 'strand-stretch', {
+      texture, tint, tintTreatment:'body-sprite-tint'
+    });
+    if (mesh.material === original) {
+      _leafDebugLog('Five Blossoms PNG fill was not installed on ' + part + '.', 'error');
+      return;
+    }
+    if (!petals) original.dispose?.(); // Free temporary Lambert stem material after installing the shared unlit PNG fill.
+    mesh.material.userData = { ...mesh.material.userData, ...(petals ? {hobunjiFixedBlossomColor:true} : {}) };
+    mesh.userData.festivalBlossomFinish = { part, texture, tint, tintTreatment:'body-sprite-tint' }; // Live inspection describes both surfaces.
   }
 
   function buildConiferTreeGroup(preset, seedU32) {
@@ -1591,7 +1614,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if (woodGeoms.length) {
       const merged = mergeGeoms(woodGeoms);
       merged.computeVertexNormals();
-      group.add(new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)));
+      const stemMesh = new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)); // Shared variant's trunk plus single branch rung.
+      applyPottedBlossomFinish(stemMesh, preset, 'wood');
+      group.add(stemMesh);
     }
     if (climbBranchGeom) {
       // Its own mesh, not merged into the wood mesh above — buildTreeInstance
@@ -1616,6 +1641,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if (leafGeoms.length) {
       const merged = mergeGeomsWithUV(leafGeoms);
       const leafMesh = new T.Mesh(merged, getLeafCardMaterial(preset));
+      applyPottedBlossomFinish(leafMesh, preset, 'petals'); // Preserve the bush plane UVs; fill each PNG pixel like the animal genotype renderer.
       // Flat, depthWrite:false, no-computed-normals alpha-cutout cards break
       // game.js's inverted-hull outline shell (see _markOutline's comment) —
       // opt this mesh out of the outline layer entirely rather than fight an
