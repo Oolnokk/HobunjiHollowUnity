@@ -1,7 +1,13 @@
 name: Publish approved Friends Windows build
 
-# No push/PR trigger: a developer must explicitly approve each Friends release.
+# PRs can produce non-published test installers; only explicit approval publishes updates.
 on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'scripts/desktop-friends-build.js'
+      - 'scripts/test-windows-friends.js'
+      - '.github/workflows/windows-friends.yml'
   workflow_dispatch:
     inputs:
       approval:
@@ -18,7 +24,7 @@ concurrency:
 
 jobs:
   build-friends-installer:
-    if: github.ref == 'refs/heads/main' && inputs.approval == 'PUBLISH'
+    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && inputs.approval == 'PUBLISH')
     runs-on: windows-latest
     permissions:
       contents: read
@@ -77,6 +83,7 @@ jobs:
           retention-days: 14
 
   publish-friends-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.approval == 'PUBLISH'
     needs: build-friends-installer
     runs-on: ubuntu-latest
     permissions:
