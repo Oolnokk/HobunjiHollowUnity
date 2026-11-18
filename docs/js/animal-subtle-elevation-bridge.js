@@ -431,7 +431,7 @@
       appliedRoots: 0,
       skippedShoulderPets: 0,
       skippedBandits: 0,
-    skippedMountedPhysicalGround: 0, // Counts mounts whose height was resolved by the shared physical town surface, not by this later render hook.
+      skippedMountedPhysicalGround: 0, // Counts physically grounded town mounts skipped by the later animal render-lift hook.
       maxLift: 0,
       lastActor: null,
       lastLift: 0,
