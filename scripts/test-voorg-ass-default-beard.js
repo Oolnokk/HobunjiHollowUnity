@@ -98,6 +98,47 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
     assert(beard[3] > 0 && beard[2] > beard[0], frame + ' default beard uses blue base-coat tint');
     assert(frameReads.some(url => url.endsWith('voorg-ass_beard1_' + frame + '.png')), frame + ' references its authored file');
   }
+  const paintCalls = []; // Records each Color Pools region pass, including the separate beard sprite covered by base-coat paint.
+  browser.window.ClothingWeavingSystem = {
+    applyPatternStackToTintedImage: async (source, patterns, dyeHex, cachePrefix) => {
+      const output = new Canvas(); // Distinct simulated woven result; the renderer's actual clipping/ordering runs unmodified.
+      output.pixels.set(source.pixels);
+      const paintedPixels = []; // Confirms the original hoof and highlight never reach the weaving pass.
+      for (let i = 0; i < output.pixels.length; i += 4) {
+        if (!output.pixels[i + 3]) continue;
+        paintedPixels.push(i / 4);
+        output.pixels.set([0x20, 0xd0, 0xf0, output.pixels[i + 3]], i);
+      }
+      paintCalls.push({ cachePrefix, paintedPixels, patternCount: patterns.length, dyeHex });
+      return output;
+    },
+  };
+  const paintedGenotype = {
+    ...genotype,
+    colorPoolPaint: { version: 1, layers: { base: {
+      dyeHex: '#20d0f0', patterns: [
+        { motifDataUrl: 'data:image/png;base64,AA==' },
+        { motifDataUrl: 'data:image/png;base64,AQ==', inkColorHex: '#20d0f0' },
+      ],
+    } } },
+  }; // Base coat owns both pattern slots; beard remains anatomical, not a paintable allele.
+  for (const frame of ['idle', 'run1', 'run2']) {
+    paintCalls.length = 0;
+    const result = await render.composeFrame('voorg-ass', frame, paintedGenotype);
+    const colorAt = pixel => Array.from(result.pixels.slice(pixel * 4, pixel * 4 + 3));
+    assert.deepEqual(colorAt(0), [0x20, 0xd0, 0xf0], frame + ': Color Pools reaches coat pixels');
+    assert.deepEqual(colorAt(1), [0xee, 0xee, 0xee], frame + ': highlight stays authored');
+    assert.deepEqual(colorAt(2), [0xc0, 0x40, 0x40], frame + ': dark hoof/non-coat detail remains unpatterned');
+    assert.deepEqual(colorAt(3), [0x20, 0xd0, 0xf0], frame + ': beard inherits the base coat Color Pools paint');
+    assert.equal(paintCalls.length, 2, frame + ': one body and one beard paint pass');
+    assert.deepEqual(paintCalls[0].paintedPixels, [0], frame + ': body pattern is clipped to the source-key coat');
+    assert.deepEqual(paintCalls[1].paintedPixels, [3], frame + ': beard receives the same base region without touching hooves');
+    assert(paintCalls.every(call => call.patternCount === 2), frame + ': both pattern slots cover body and beard');
+    assert(paintCalls.every(call => call.dyeHex === '#20d0f0'), frame + ': both share the same coat dye');
+  }
+  assert.equal(paintedGenotype.beard1, undefined, 'Color Pools does not create beard genes');
+  assert.equal(render.genotypeSignature('voorg-ass', paintedGenotype), render.genotypeSignature('voorg-ass', paintedGenotype), 'painted genotype signature remains deterministic');
+
   assert.equal(render.genotypeSignature('voorg-ass', genotype), sig, 'default beard never mutates the inherited genotype');
   assert.equal(genotype.beard1, undefined, 'no beard1 allele is created in a saved genotype');
 
