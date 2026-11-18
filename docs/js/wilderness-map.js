@@ -19,6 +19,7 @@
     _unsubscribeFogTile?.();
     _unsubscribeFogTile = window.PlayerTileEvents?.subscribe?.(() => { _fogDirty = true; }) || null; // Tile/area change is the only time fog reveal and locale discovery can gain anything.
     _fogDirty = true;
+    _discoveredLocalesCache.revision = undefined; // A new save binding forces a fresh metadata read.
   }
 
   // ── Fixed locale landmarks (docs/tools/locale-editor/, docs/config/locales/) ──
@@ -106,21 +107,30 @@
   }
 
   // ── Discovered locales (world-scoped, persists across Tothal Shifts) ──
-  let _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Reuses parsed map discoveries across compass ticks, invalidated by any save-meta write or world switch.
-  function _loadDiscoveredLocales() {
-    const worldId = deps.tothalWorldId();
+  let _localeCompassReads = 0, _localeCompassHits = 0; // Pixel Probe counters for compass discovery lookups.
+  let _discoveredLocalesCache = { worldId: null, raw: null, locales: null, revision: undefined }; // Shares parsed discoveries between map, discovery writes and compass.
+
+  function _loadDiscoveredLocales(forCompass = false) {
+    const worldId = deps.tothalWorldId(); // Scope every read to the active save world.
     if (!worldId) return {};
+    const revision = window.HobunjiStorageQuota?.getSaveMetaRevision?.(); // Bypasses synchronous storage only when guarded writes can invalidate the cache.
+    if (forCompass && revision !== undefined && _discoveredLocalesCache.worldId === worldId &&
+        _discoveredLocalesCache.revision === revision) {
+      _localeCompassHits++;
+      return _discoveredLocalesCache.locales;
+    }
+    if (forCompass) _localeCompassReads++;
     try {
-      const raw = localStorage.getItem('hobunjiSaveMeta') || 'null'; // Compared with the last read to detect same-tab saves without reparsing unchanged metadata.
+      const raw = localStorage.getItem('hobunjiSaveMeta') || 'null'; // Explicit map and discovery operations always read current metadata.
       if (_discoveredLocalesCache.worldId !== worldId || _discoveredLocalesCache.raw !== raw) {
         const meta = JSON.parse(raw);
         _discoveredLocalesCache = {
-          worldId, raw, locales: (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {},
+          worldId, raw, locales: (meta?.worlds || []).find(w => w.id === worldId)?.discoveredLocales ?? {}, revision,
         };
-      }
+      } else _discoveredLocalesCache.revision = revision;
       return _discoveredLocalesCache.locales;
     } catch {
-      _discoveredLocalesCache = { worldId: null, raw: null, locales: null }; // Corrupt/unreadable saves must not expose stale discoveries.
+      _discoveredLocalesCache = { worldId: null, raw: null, locales: null, revision: undefined }; // Corrupt or unreadable storage cannot reveal stale discoveries.
       return {};
     }
   }
@@ -134,7 +144,9 @@
       world.discoveredLocales = discovered;
       const raw = JSON.stringify(meta); // Persisted text also seeds the reader cache after a successful write.
       localStorage.setItem('hobunjiSaveMeta', raw);
-      _discoveredLocalesCache = { worldId, raw, locales: { ...discovered } }; // Only successful writes refresh the read cache.
+      _discoveredLocalesCache = {
+        worldId, raw, locales: { ...discovered }, revision: window.HobunjiStorageQuota?.getSaveMetaRevision?.(),
+      }; // Only successful writes refresh the read cache.
     } catch {}
   }
 
@@ -404,21 +416,24 @@
     return landmarks;
   }
 
-  function _resolvedWaypoint() {
+  function _resolvedWaypoint(forCompass = false) {
     const saved = _loadWaypoint();
     if (!saved) return null;
     if (saved.source === 'locale') {
-      if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales())) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
+      if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales(forCompass))) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
       if (!live && (saved.category === 'ruin_entrance'
           || (saved.category === 'great_fey_shrine' && saved.localeId !== 'locale_banubu_shrine'))) return null; // A site that vanished in the Shift cannot keep its old waypoint.
-      if (live?.shiftSecret && !localeIsDiscovered(live, _loadDiscoveredLocales())) return null; // A waypoint cannot reveal a new year's undiscovered secret.
+      if (live?.shiftSecret && !localeIsDiscovered(live, _loadDiscoveredLocales(forCompass))) return null; // A waypoint cannot reveal a new year's undiscovered secret.
       return live ? { ...saved, zoneId: live.zoneId, col: live.col + 0.5, row: live.row + 0.5, label: live.name } : saved;
     }
-    const liveThreat = [...(window.BanditCamps?.perceivedThreats || [])]
-      .find(([runtimeKey, info]) => (info.discoveryKey || runtimeKey) === saved.threatKey)?.[1];
-    const rememberedThreat = _loadDiscoveredThreats()[saved.threatKey];
-    const resolvedThreat = liveThreat || rememberedThreat;
+    let resolvedThreat; // Prefer the first matching live marker before consulting remembered discoveries.
+    for (const [runtimeKey, info] of window.BanditCamps?.perceivedThreats || []) {
+      if ((info.discoveryKey || runtimeKey) !== saved.threatKey) continue;
+      resolvedThreat = info;
+      break;
+    }
+    resolvedThreat ||= _loadDiscoveredThreats()[saved.threatKey];
     return resolvedThreat ? { ...saved, zoneId: resolvedThreat.zoneId, col: resolvedThreat.col, row: resolvedThreat.row, label: resolvedThreat.label || saved.label } : saved;
   }
 
@@ -453,7 +468,7 @@
 
   function getCompassWaypoint() {
     if (!deps) return null; // NavigationCompass starts polling before game.js injects WildernessMap deps; no world means no valid waypoint yet.
-    const waypoint = _resolvedWaypoint();
+    const waypoint = _resolvedWaypoint(true);
     return waypoint ? { ...waypoint } : null;
   }
 
@@ -714,6 +729,6 @@
     getDiscoveredThreats: () => ({ ..._loadDiscoveredThreats() }),
     getCompassWaypoint,
     _test: Object.freeze({ visibleLandmarks:_visibleLandmarks }),
-    getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0, rememberedThreats: Object.keys(_loadDiscoveredThreats()).length }),
+    getDebug: () => ({ activeZone: _wmapActiveZone, waypoint: _resolvedWaypoint(), visibleLandmarks: _wmapActiveZone ? _visibleLandmarks(_wmapActiveZone).length : 0, rememberedThreats: Object.keys(_loadDiscoveredThreats()).length, localeCompassReads: _localeCompassReads, localeCompassHits: _localeCompassHits }),
   };
 })();

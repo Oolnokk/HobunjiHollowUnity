@@ -13,11 +13,30 @@ let savedMeta = JSON.stringify({ worlds: [
 ] }); // Simulates the canonical save blob, including writes from other modules.
 let currentWorld = 'world-a'; // Mutated to verify the cache never leaks discoveries across worlds.
 let currentYear = 7; // Advanced in place to check same-tile fog updates after Tothal Shifts.
+let metaReads = 0; // Counts reads that cross the storage boundary.
 let parseCalls = 0; // Counts full metadata parses in the running map module.
 let failMetaWrites = false; // Forces a failed persistence attempt to test copy-on-write behavior.
 const player = { x: 0, y: 0 }; // Moved into discovery range of the two test landmarks.
 const zoneId = 'zone'; // Shared test layout while the active world changes.
 const extraStorage = new Map(); // Persists the unrelated fog keys without polluting save-meta assertions.
+class Storage {
+  getItem(key) {
+    if (key !== 'hobunjiSaveMeta') return extraStorage.get(key) || null;
+    metaReads++;
+    return savedMeta;
+  }
+  setItem(key, value) {
+    if (key === 'hobunjiSaveMeta') {
+      if (failMetaWrites) throw Error('simulated storage failure');
+      savedMeta = value;
+    } else extraStorage.set(key, value);
+  }
+  removeItem(key) {
+    if (key === 'hobunjiSaveMeta') savedMeta = null;
+    else extraStorage.delete(key);
+  }
+}
+let onStorage; // Captures the browser's cross-tab change listener from the storage guard.
 const context = {
   console, Map, Set, Math, Number, Object, Array, Uint8Array,
   JSON: {
@@ -26,15 +45,9 @@ const context = {
   },
   btoa: value => Buffer.from(value, 'binary').toString('base64'),
   atob: value => Buffer.from(value, 'base64').toString('binary'),
-  localStorage: {
-    getItem(key) { return key === 'hobunjiSaveMeta' ? savedMeta : extraStorage.get(key) || null; },
-    setItem(key, value) {
-      if (key === 'hobunjiSaveMeta') {
-        if (failMetaWrites) throw Error('simulated storage failure');
-        savedMeta = value;
-      } else extraStorage.set(key, value);
-    },
-  },
+  Storage,
+  localStorage: new Storage(),
+  addEventListener(type, callback) { if (type === 'storage') onStorage = callback; },
   document: { getElementById: () => null },
   WildernessMapGenerator: { zoneMapIds: () => [zoneId] },
 };
@@ -76,18 +89,37 @@ assert(JSON.parse(savedMeta).worlds[0].discoveredLocales['locale_a:tothal:7'],
 context.WildernessMap.setWaypoint({ id: 'locale:locale_a', source: 'locale',
   localeId: 'locale_a', zoneId, col: 3.5, row: 3.5, label: 'Secret A', category: 'great_fey_shrine' });
 assert.equal(context.WildernessMap.getCompassWaypoint()?.localeId, 'locale_a');
+const guardPath = path.join(__dirname, '..', 'docs', 'js', 'storage-quota-guard.js'); // Run the actual storage guard so test mutations use the production invalidation path.
+vm.runInContext(fs.readFileSync(guardPath, 'utf8'), context, { filename: guardPath });
+assert.equal(context.WildernessMap.getCompassWaypoint()?.localeId, 'locale_a');
+const compassReadCount = metaReads; // Polling an unchanged secret should not cross the storage boundary.
 const compassParseCount = parseCalls; // Every compass poll resolves the secret's discovery status.
 for (let i = 0; i < 60; i++) context.WildernessMap.getCompassWaypoint();
 assert.equal(parseCalls, compassParseCount, 'repeated secret-waypoint polls must reuse the parsed discoveries');
+assert.equal(metaReads, compassReadCount, '60 unchanged secret-waypoint polls must perform zero save metadata reads');
+context.localStorage.setItem('unrelated', 'changed');
+assert.equal(context.WildernessMap.getCompassWaypoint()?.localeId, 'locale_a');
+assert.equal(metaReads, compassReadCount, 'unrelated storage writes do not invalidate locale discoveries');
 
 // Another module can replace the full metadata string without going through
 // WildernessMap, including a folder restore in this same browser tab.
 const externalMeta = JSON.parse(savedMeta); // Used to simulate a complete metadata replacement.
 delete externalMeta.worlds[0].discoveredLocales;
-savedMeta = JSON.stringify(externalMeta);
+const discoveredMeta = savedMeta; // Restored by a simulated cross-tab update below.
+context.localStorage.setItem('hobunjiSaveMeta', JSON.stringify(externalMeta));
 assert.equal(context.WildernessMap.getCompassWaypoint(), null,
   'external save replacement must immediately conceal an undiscovered secret');
 assert(!visibleIds().includes('locale_a'), 'a stale cached discovery must not remain visible');
+savedMeta = discoveredMeta;
+onStorage({ key: 'hobunjiSaveMeta', storageArea: context.localStorage });
+assert.equal(context.WildernessMap.getCompassWaypoint()?.localeId, 'locale_a', 'a cross-tab change refreshes discoveries');
+currentYear = 8;
+assert.equal(context.WildernessMap.getCompassWaypoint(), null, 'a year change hides a previous cycle’s cached secret');
+currentYear = 7;
+assert.equal(context.WildernessMap.getCompassWaypoint()?.localeId, 'locale_a');
+context.localStorage.removeItem('hobunjiSaveMeta');
+assert.equal(context.WildernessMap.getCompassWaypoint(), null, 'deleting metadata immediately hides the secret');
+context.localStorage.setItem('hobunjiSaveMeta', JSON.stringify(externalMeta));
 
 // Identical raw metadata is valid for different active worlds: the cache must
 // also key by world id rather than returning world A's parsed discoveries.

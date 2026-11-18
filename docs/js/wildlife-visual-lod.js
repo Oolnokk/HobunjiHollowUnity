@@ -15,13 +15,14 @@
   try { const n = Number(localStorage.getItem(COMBAT_STORAGE_KEY)); if (n >= 12 && n <= 96) combatOverride = n; } catch (_) {}
   function config() { return window.SCRATCHBONES_CONFIG?.game?.wildlifeStreaming || {}; }
   function wakeRadius() { return wakeOverride ?? Math.max(8, Math.min(64, Number(config().wakeRadiusTiles) || SHOW_TILES)); }
-  function releaseRadius() { return Math.max(wakeRadius() + 4, Number(config().releaseRadiusTiles) || HIDE_TILES); }
+  function releaseRadiusForWake(wakeTiles) { return Math.max(wakeTiles + 4, Number(config().releaseRadiusTiles) || HIDE_TILES); }
+  function releaseRadius() { return releaseRadiusForWake(wakeRadius()); }
   // Fighting animals stay visible out to this wider radius instead of at any distance.
-  function combatReleaseRadius() {
+  function combatReleaseRadiusForCalmRelease(calmReleaseTiles) {
     const configured = combatOverride ?? (Number(config().combatReleaseRadiusTiles) || COMBAT_RELEASE_TILES);
-    return Math.max(releaseRadius() + COMBAT_HYSTERESIS_TILES, Math.min(96, configured)); // Never tighter than the calm radii, so a fight can't hide sooner than idle wildlife.
+    return Math.max(calmReleaseTiles + COMBAT_HYSTERESIS_TILES, Math.min(96, configured)); // Never tighter than the calm radii, so a fight can't hide sooner than idle wildlife.
   }
-  function combatWakeRadius() { return combatReleaseRadius() - COMBAT_HYSTERESIS_TILES; }
+  function combatReleaseRadius() { return combatReleaseRadiusForCalmRelease(releaseRadius()); }
   function setCombatReleaseRadius(value) {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 12 || n > 96) return false;
@@ -69,11 +70,19 @@
     // Retired corpses keep their single static world sprite; distance streaming must
     // never reconstruct the expensive animated rig when the player comes back.
     if (c?.avatarRef?.isCorpseMarker) return false;
-    const eligible = canHide(c); // Companions, mid-attack actors, corpses, and hit reactions always retain usable visuals.
-    const fighting = !eligible && canHideWhileFighting(c); // A fight returns to data only beyond its own, wider distance.
-    let shouldHide = eligible
-      ? window.EntityDistanceLod.isFar(!!c._wildlifeVisualLodHidden, distanceTiles, wakeRadius(), releaseRadius())
-      : fighting && window.EntityDistanceLod.isFar(!!c._wildlifeVisualLodHidden, distanceTiles, combatWakeRadius(), combatReleaseRadius());
+    const defeated = c.health <= 0; // Selects settled-corpse eligibility instead of live visibility rules.
+    const unpinned = !defeated && !alwaysVisible(c); // Evaluate the attack and hit-reaction guards once per live actor.
+    const combatState = unpinned && isFighting(c); // Classify chase and retreat states once.
+    const fighting = combatState && c.health > 0; // Fighting animals use a wider pair of thresholds.
+    const eligible = defeated ? canHide(c) : unpinned && !combatState; // Calm actors share the per-frame rig promotion allowance.
+    let shouldHide = false; // Pinned actors still pass through promotion and visibility restoration below.
+    if (eligible || fighting) {
+      const calmWake = wakeRadius(); // Shared by both calm and combat distance thresholds.
+      const calmRelease = releaseRadiusForWake(calmWake); // Resolves the authored calm limit once per decision.
+      const release = fighting ? combatReleaseRadiusForCalmRelease(calmRelease) : calmRelease; // Supplies the matching release threshold.
+      const wake = fighting ? release - COMBAT_HYSTERESIS_TILES : calmWake; // Preserves the existing wake/release dead band.
+      shouldHide = window.EntityDistanceLod.isFar(!!c._wildlifeVisualLodHidden, distanceTiles, wake, release);
+    }
     if (c.streamVisuals) {
       if (!shouldHide && c._wildlifeVisualsReleased) {
         if (eligible && promotionsRemaining <= 0) shouldHide = true; // Nearby characters arrive over successive frames instead of allocating all rigs at once.

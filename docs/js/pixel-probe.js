@@ -1299,6 +1299,9 @@
     const wildernessMapDebug = window.WildernessMap?.getDebug?.(); // Exposes the saved waypoint and active Map-tab region without requiring desktop devtools.
     if (wildernessMapDebug) {
       const waypoint = wildernessMapDebug.waypoint;
+      if (wildernessMapDebug.localeCompassReads != null) {
+        lines.push(`Compass locale metadata: ${wildernessMapDebug.localeCompassReads} storage reads, ${wildernessMapDebug.localeCompassHits} cache hits`);
+      }
       lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} rememberedThreats=${wildernessMapDebug.rememberedThreats || 0} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
     }
     const chunkSnapshot = window.WildernessChunks?.snapshot?.(); // Reused for mobile chunk-rebuild budget diagnostics and residency reporting.
