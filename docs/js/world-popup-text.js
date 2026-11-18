@@ -491,9 +491,12 @@
     plane.position.y += event.height * scaleY;
     let sideOffset = event.offsetX * scaleX; // Default camera-facing displacement works for humanoids and non-animal icons.
     if (event.headOffset) {
-      const axisProjection = Math.abs(matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z); // Animal card width lives on its local Z axis, which narrows in profile.
-      const projectedWidth = Number.isFinite(axisProjection) ? axisProjection : scaleX; // Retain a safe fallback for incomplete legacy matrices.
-      sideOffset = event.headOffset.left * event.headOffset.width * projectedWidth - event.headOffset.gap * scaleX; // Use the projected head crop's LEFT edge, even after a turn.
+      const axisProjection = matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z; // Signed projected card axis: mirrored animal faces must move the head center in opposite screen directions.
+      const signedWidth = Number.isFinite(axisProjection) ? axisProjection : 0; // An invalid rotation falls back to the root with a visible left-side gutter.
+      const head = event.headOffset; // Reuses the source-space chathead center and half-width captured when the reaction started.
+      const headCenterScreenX = -head.centerX * head.width * signedWidth; // Both animal faces map source-image right to negative local Z because the reverse texture is mirrored.
+      const headHalfScreenWidth = head.halfWidth * head.width * Math.abs(signedWidth); // Head crop always extends equally left and right of its projected center.
+      sideOffset = headCenterScreenX - headHalfScreenWidth - head.gap * scaleX; // Sit left of the *visible* head after either facing reversal.
     }
     plane.position.addScaledVector(cameraRight, sideOffset); // Horizontal displacement remains in screen space rather than world X.
     plane.quaternion.copy(camera.quaternion);
