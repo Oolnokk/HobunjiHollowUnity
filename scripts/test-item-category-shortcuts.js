@@ -185,4 +185,24 @@ mouseContext._arcOpen = 'entries:potion-root';
 assert.equal(fakeMouseEvent('pointerdown',0).stopped,false, 'Potion Select cannot be hijacked by item-category mouse controls');
 assert.deepEqual(backgroundJumps,[-1,1], 'no unexpected group jump occurred outside Item Select');
 
-console.log('item category jump, controller shortcuts, and mobile/desktop prompt and mouse-event capture tests passed');
+
+// Closing an item wheel through cancellation or another selector must stop its
+// edge-sentinel timer, even when _arcUp() never receives the normal release.
+const clearSource = between(actionSource, '  function _clearArc(keepBackdrop = false) {', '  function _mkSlot('); // Actual arch cleanup, including item category prompt teardown.
+let intervalStops = 0; // Counts released scroll timers during a canceled selector.
+let overlayRemovals = 0; // Detects a lingering category prompt or pointer backdrop after cancellation.
+const clearContext = vm.createContext({
+  _iScrollT:12,_iScrollDir:1,_itemCategoryControls:{remove(){overlayRemovals++;}},
+  _arcBd:{remove(){overlayRemovals++;}},_arcEls:[],_fadingEls:[],_arcSlots:[{data:{}}],_arcActive:0,_arcOpen:'item',
+  _itemBtn:{style:{visibility:'hidden'}},deps:{toolBtn:{style:{visibility:'hidden'}}},
+  clearInterval(){intervalStops++;},
+}); // A minimal model of the exact state left by a mid-scroll item wheel.
+vm.runInContext(clearSource,clearContext);
+vm.runInContext('_clearArc()',clearContext);
+assert.equal(intervalStops,1,'closing an item arch always cancels a live edge-scroll interval');
+assert.equal(clearContext._iScrollDir,0,'closing resets the scroll direction');
+assert.equal(overlayRemovals,2,'category prompts and pointer backdrop are removed together');
+assert.equal(clearContext._arcOpen,null,'selector mode resets after close');
+assert.equal(clearContext._itemCategoryControls,null,'closed selector does not retain category prompt references');
+
+console.log('item category jump, controller shortcuts, and mobile/desktop prompt and mouse-event capture and close-cleanup tests passed');
