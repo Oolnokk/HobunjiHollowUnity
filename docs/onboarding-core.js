@@ -6,6 +6,7 @@
 
   const STORAGE_KEY    = 'hobunjiPlayerProfile';
   const SAVE_META_KEY  = 'hobunjiSaveMeta';
+  const FIVE_BLOSSOM_CROWN_ID = 'appearance::hat::five_blossom_crown'; // Save-select portraits need the quest-only Gear hat, which deliberately has no shop entry.
 
   // ── Species / cosmetic slot definitions ──────────────────────────────────
   // Adapted from ScratchbonesGame BASE_SPECIES_DATA.
@@ -813,7 +814,9 @@
       return [eqId, ...cands.map(i => i.id)].find(id => optionCache?.has(id)) ?? eqId;
     };
     const applyEquip = (cat, key, fallback) => {
-      const eqId = catalog.find(i => i.category === cat && !i.smithOnly && equipped.includes(i.id))?.id ?? null;
+      const prizeHat = cat === 'hat' && equipped.includes(FIVE_BLOSSOM_CROWN_ID) && optionCache?.has(FIVE_BLOSSOM_CROWN_ID)
+        ? FIVE_BLOSSOM_CROWN_ID : null; // A quest reward takes precedence over stale creator shop-hat selections in saved previews.
+      const eqId = prizeHat || catalog.find(i => i.category === cat && !i.smithOnly && equipped.includes(i.id))?.id || null;
       const rid  = resolveVar(cat, eqId);
       profile[key] = (rid && optionCache?.has(rid)) ? optionCache.get(rid) : (fallback ?? none);
     };
@@ -893,9 +896,12 @@
   }
 
   // Build a portrait profile for a given appearance object (used for save-select cards)
-  function buildPreviewProfileFromAppearance(appearance, equippedCosmetics, appliedDyes) {
+  function buildPreviewProfileFromAppearance(appearance, equippedCosmetics, appliedDyes, gearInventory = null) {
     const prev = _state;
-    _state = { appearance: appearance || {}, equippedCosmetics: equippedCosmetics || [], appliedDyes: appliedDyes || {} };
+    const previewCosmetics = Array.isArray(equippedCosmetics) ? equippedCosmetics.filter(id => id !== FIVE_BLOSSOM_CROWN_ID) : []; // Keeps source metadata unchanged and rejects a stale unequipped crown.
+    const wornHat = gearInventory?.clothing?.hat; // Only the currently equipped physical reward belongs on the save-select portrait.
+    if (wornHat?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID || wornHat?.cosmeticId === FIVE_BLOSSOM_CROWN_ID) previewCosmetics.push(FIVE_BLOSSOM_CROWN_ID);
+    _state = { appearance: appearance || {}, equippedCosmetics: previewCosmetics, appliedDyes: appliedDyes || {} };
     const profile = buildPreviewProfile();
     _state = prev;
     return profile;
@@ -1204,7 +1210,7 @@
     (_saveMeta.characters || []).forEach(char => {
       const canvas = _el.querySelector(`[data-char-id="${esc(char.id)}"]`);
       if (!canvas) return;
-      const profile = buildPreviewProfileFromAppearance(char.appearance, char.equippedCosmetics, char.appliedDyes);
+      const profile = buildPreviewProfileFromAppearance(char.appearance, char.equippedCosmetics, char.appliedDyes, char.gearInventory);
       if (!profile) return;
       const renderFn = window.renderPortraitProfile || window.renderProfile;
       if (renderFn) { try { renderFn(canvas, profile).catch(() => {}); } catch (_) {} }

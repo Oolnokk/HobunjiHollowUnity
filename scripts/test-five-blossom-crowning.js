@@ -202,6 +202,33 @@ async function main(){
     assert.equal(portraitTintSlot(layers[0].paletteColorKey,portraitOption.tintSlot),null,'no costume dye on '+speciesId+' '+gender);
   }
   assert.equal(Object.keys(crownConfig.speciesVariants).length,speciesIndex.entries.length*2,'complete runtime variant coverage');
+  const onboardingSource=read('docs/onboarding-core.js'); // Exercise the shipping save-select resolver without loading UI or a GPU.
+  const onboardingHook='  window.HobunjiOnboarding = { init, reset, loadProfile, loadSaveMeta, openCreator, cancelCreator, creatorSessionInfo };';
+  assert(onboardingSource.includes(onboardingHook),'save-select preview test hooks the existing live module');
+  const onboardingWindow={
+    FarmWorldSettings:{normalize:()=>({})},
+    SCRATCHBONES_CONFIG:{game:{account:{shopCatalog:[{id:'appearance::hat::basic_headband',category:'hat'}]},
+      portrait:{},dyes:{catalog:[]}}},
+    getPortraitFighters:()=>[{speciesId:'mao-ao',gender:'male',id:'M'}],
+    randomPortraitProfileSeeded:()=>({bodyColors:{},facialHair:null})
+  }; // The renderer's shop-only lookup previously replaced earned crowns with the original headband.
+  const onboardingCtx=vm.createContext({window:onboardingWindow,document:{},localStorage:{},
+    console,URL,Image:class {},setTimeout(){}});
+  vm.runInContext(onboardingSource.replace(onboardingHook,
+    '  window.__previewCrownTest={setCosmetics(value){_cosmetics=value;},buildPreviewProfileFromAppearance};\\n'+onboardingHook),
+    onboardingCtx,{filename:'docs/onboarding-core.js'});
+  const previewOption=id=>({id,slot:'hat',layers:[{url:id}]});
+  onboardingWindow.__previewCrownTest.setCosmetics({optionCache:new Map([
+    ['appearance::hat::basic_headband',previewOption('appearance::hat::basic_headband')],
+    [crownId,previewOption(crownId)]]),hatOptions:[{id:'none'}],hoodOptions:[{id:'none'}]});
+  const previewAppearance={speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:{}};
+  const preview=(equippedHat)=>onboardingWindow.__previewCrownTest.buildPreviewProfileFromAppearance(
+    previewAppearance,['appearance::hat::basic_headband'],{}, {clothing:{hat:equippedHat}});
+  assert.equal(preview({cosmeticId:crownId,prizeCosmeticId:crownId}).hat?.id,crownId,
+    'saved character portrait shows the crowned hat even if original shop headband is also selected');
+  assert.equal(preview({cosmeticId:'appearance::hat::basic_headband'}).hat?.id,'appearance::hat::basic_headband',
+    'switching away from the crown removes it from the save-select portrait');
+  assert.equal(preview(null).hat?.id,'appearance::hat::basic_headband','an unawarded character preview is unchanged');
   for(const asset of Object.values(art)) assert(fs.existsSync(path.join(ROOT,'docs',asset)),asset+' is an actual shipped PNG');
   const legacyCrown=equipment.devWornClothing().hat; // Simulates a crown earned before the new sprites were uploaded.
   legacyCrown.baseCosmeticId='appearance::hat::basic_headband';
