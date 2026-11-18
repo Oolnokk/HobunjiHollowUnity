@@ -97,6 +97,7 @@ assert.match(host,/MUSIC_MINIGAME_SRC \+ '&instrument-key=' \+ encodeURIComponen
 assert.match(host,/syncGameplayTuning\?\.\(\)/,'live Dev Mode changes reapply the fixed key');
 assert.match(engine,/function startSong\([\s\S]*?enforceGameMusicKey\(\)/);
 assert.match(engine,/setAutoPickSlot\(sector, mode\)\s*\{\s*if \(GAME_OVERWORLD_MUSIC\) return false/);
+assert.match(engine,/\$\$\('\[data-auto-pick-slot\]'\)\.forEach/,'hosted performance setup uses the multi-element selector, not the single-element helper');
 assert.match(engine,/function cycleScale\([\s\S]*?!gameMusicDevMode\(\)/);
 assert.match(engine,/serializable\.tonicMidi = previous/,'ordinary game saves preserve prior developer choices');
 assert(!html.includes('id="lyrePatternLoadoutSettings"'),'Settings no longer owns four-direction patterns');
