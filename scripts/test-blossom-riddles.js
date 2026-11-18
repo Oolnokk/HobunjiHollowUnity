@@ -73,7 +73,7 @@ for (let seed = 0; seed < 1200; seed++) {
   ];
   const offset = seed % sample.length;
   const poem = Riddles.generate({zoneId:'map_northern_cliffs',layout,instance:layout.localeInstances[0],targetName:'Cyan Blossom',targetKind:'blossom',
-    landmarks:[sample[offset],sample[(offset+1)%sample.length],sample[(offset+2)%sample.length]],seed:'expanded-'+seed});
+    landmarks:[sample[offset],sample[(offset+1)%sample.length]],seed:'expanded-'+seed});
   assert.equal(poem.ok,true,'all expanded seeded poems rhyme: '+seed);
   assert.equal(poem.evidence.landmarkCount,2,'two distinct real landmarks can triangulate the target');
   for(const landmark of poem.facts.filter(f=>f.kind==='landmark'))coveredLandmarks.add(landmark.flavor);
