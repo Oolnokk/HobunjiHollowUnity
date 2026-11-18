@@ -381,7 +381,7 @@
     if (!group?.userData.kurrayaAssembly) return;
     const note=window.HeldActionAnimations?.kurrayaPlayNote; // Runtime owns this action's live source, not a duplicated hard-coded motion.
     if(note) {
-      if(twitchState.active) restoreNoteTransform(twitchState,group); // Rapid notes restart from the resting hold without accumulating drift.
+      if(twitchState.active && !group.userData.npcKurrayaHolder) restoreNoteTransform(twitchState,group); // Authored NPC holder is resampled after walker update; never replay an obsolete instrument-only rest transform.
       twitchState.basePosition={x:group.position.x,y:group.position.y,z:group.position.z};
       twitchState.baseRotation={x:group.rotation.x,y:group.rotation.y,z:group.rotation.z};
       twitchState.active=true;

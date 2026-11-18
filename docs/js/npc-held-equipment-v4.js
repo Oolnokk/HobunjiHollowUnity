@@ -574,7 +574,9 @@
       holder.scale.setScalar(1); // The game previously applied 0.85 to the naked assembly; retaining it would double-scale the authored holder.
       walker.stationToolMesh = holder = wrapper; // Existing per-NPC sound-note relay keeps working.
     }
-    const pose = instrument.npcNotePose(walker.stationKurrayaTwitch); // Same Neutral/Windup/Strike interpolation as the player.
+    const noteAt = performance.now(); // One frame's note timestamp is shared by holder, free right hand and body.
+    const noteProgress = instrument.npcNoteProgress(walker.stationKurrayaTwitch, noteAt); // Never sample the plucking hand at a later moment than the instrument.
+    const pose = instrument.npcNotePose(walker.stationKurrayaTwitch, noteAt); // Same Neutral/Windup/Strike interpolation as the player.
     if (!pose || !setHolderPose(state, holder, pose)) return false;
     holder.scale.setScalar(Math.max(0.01, Number(action.poses.neutral.scale) || 0.85)); // Neutral owns the visual scale across the whole note.
     const avatar = avatarRootFor(walker); // The existing procedural hand driver handles grip, elbow and free plucking hand at render time.
@@ -584,7 +586,7 @@
       avatar.userData.proceduralHandToolHolder = holder;
       avatar.userData.proceduralHandGripContext = 'melee';
       avatar.userData.proceduralHandFreeRightPose = grips()?.sampleFreeRightHand?.(
-        action.poses, action, instrument.npcNoteProgress(walker.stationKurrayaTwitch), action.sequence
+        action.poses, action, noteProgress, action.sequence
       ) || null;
     }
     walker.legs?.setStanceYawDeg?.(Number(pose.bodyYaw) || 0); // The same authored torso direction as player performance.
