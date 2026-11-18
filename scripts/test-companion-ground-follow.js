@@ -129,7 +129,8 @@ climbApi.init({
 });
 const droppingPet = { id: 'ledge-follower', creatureKey: 'dabinggi-hound', isCompanion: true,
   stableRole: 'companion', x: 1.5 * TILE, y: 1.5 * TILE, areaId: 'wilderness',
-  health: 100, def: { moveSpeed: TILE * 3 } }; // Owner has already landed two tiles downhill.
+  health: 100, def: { moveSpeed: TILE * 3 }, _followOwnerDownCliff: true,
+  _companionGroundFollow: { destinationX: 3.5 * TILE, destinationY: 1.5 * TILE } }; // The live companion AI marked this as owner-follow navigation.
 assert.equal(climbApi.navigate(droppingPet, 3.5 * TILE, 1.5 * TILE, TILE * 3, 0.05), true,
   'a nearby owner drop starts the shared creature movement');
 assert.equal(droppingPet._cliffClimb?.descending, true, 'companion leaps down instead of climbing up');
@@ -139,6 +140,21 @@ for (let i = 0; i < 16 && droppingPet._cliffClimb; i++)
 assert.equal(droppingPet._cliffClimb, null, 'real downward-leap animation completes and releases navigation');
 assert.equal(droppingPet.x, 2.5 * TILE, 'creature actually lands on the lower shelf');
 
+// An enemy chase or treasure wander must not trigger a direct leap via the shared navigator.
+const unrelatedTargetPet = { ...droppingPet, x: 1.5 * TILE, y: 1.5 * TILE, _followOwnerDownCliff: false }; // Same animal but no owner-retreat order.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'direct cliff shortcut never fires during ordinary combat or wandering');
+unrelatedTargetPet._followOwnerDownCliff = true;
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 4.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'the shortcut cannot target a non-owner waypoint');
+descendingGrid[1][2].elevTier = 2; // One upper flat tile lies between the pet and the edge.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'a creature cannot leap over walkable upper terrain before reaching the lip');
+descendingGrid[1][2].elevTier = 0;
+descendingGrid[1][2].water = 0.1; // Dynamic flooding is not always represented by the tile type.
+assert.equal(climbApi.tryCompanionLedgeDrop(unrelatedTargetPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
+  'flooded lower ledges do not count as safe drop destinations');
+descendingGrid[1][2].water = 0;
 descendingGrid[1][2].type = 'pit'; // The first available drop is no longer safe, even if the owner is below.
 const hazardPet = { ...droppingPet, x: 1.5 * TILE, y: 1.5 * TILE, _cliffClimb: null };
 assert.equal(climbApi.tryCompanionLedgeDrop(hazardPet, 3.5 * TILE, 1.5 * TILE, descendingNet), false,
