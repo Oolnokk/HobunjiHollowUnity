@@ -183,9 +183,9 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
     return { parent: {}, position: { x: 2, y: 1, z: 3,
       clone() { return { ...this, copy: this.copy, clone: this.clone }; },
       copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; } },
-      quaternion: { angle, clone() { return { angle: this.angle }; },
-      copy(value) { this.angle = value.angle; }, equals(value) { return this.angle === value.angle; } },
-      scale: { x: 1, clone() { return { x: this.x }; }, copy(value) { this.x = value.x; } } };
+      quaternion: { angle, clone() { return { angle: this.angle, clone: this.clone, copy: this.copy, equals: this.equals }; },
+      copy(value) { this.angle = value.angle; return this; }, equals(value) { return this.angle === value.angle; } },
+      scale: { x: 1, clone() { return { x: this.x, clone: this.clone, copy: this.copy }; }, copy(value) { this.x = value.x; return this; } } };
   }
   let playerRig = poseRoot(.42); // The actual PlayerBodyTransformComposer/game.js root changed by talon alignment.
   const portraitChild = poseRoot(.91); // An independent avatarRef child must never substitute for playerMesh on release.
