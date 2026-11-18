@@ -316,6 +316,19 @@ const noCurtain=Riddles.generate({zoneId:'map_northern_cliffs',layout:flatWaterf
 assert.equal(noCurtain.ok,true);
 assert.equal(noCurtain.evidence.uniqueStart.kind,'witnessStone',
   'a flat waterfall tile without a rendered curtain cannot outrank the visible dye-marked rock');
+const reusedFallLayout=layoutFor('cyan',27,30); // A forced cycle may reuse the workspace object's identity.
+for(let row=0;row<reusedFallLayout.rows;row++)for(let col=0;col<reusedFallLayout.cols;col++)
+  reusedFallLayout.tiles[row][col].elevTier=1;
+reusedFallLayout.tiles[13][17]={type:'waterfall',elevTier:3};
+const naturalOptions={zoneId:'map_northern_cliffs',layout:reusedFallLayout,
+  instance:reusedFallLayout.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom'};
+const priorCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1156'});
+assert.deepEqual(priorCycle.evidence.uniqueStart.coordinate,{col:17,row:13});
+reusedFallLayout.tiles[13][17]={type:'grass',elevTier:1};
+reusedFallLayout.tiles[21][39]={type:'waterfall',elevTier:4};
+const nextCycle=Riddles.generate({...naturalOptions,terrainGenerationKey:'world:1157'});
+assert.deepEqual(nextCycle.evidence.uniqueStart.coordinate,{col:39,row:21},
+  'natural landmark cache detects Tothal year changes even if the same mutable layout instance was reused');
 const edgeTerrain=layoutFor('cyan',25,20); // Without a painted marker, only one actual west-edge river opening exists.
 edgeTerrain.tiles[11][0]={type:'river',elevTier:0};
 edgeTerrain.tiles[12][0]={type:'river',elevTier:0};
