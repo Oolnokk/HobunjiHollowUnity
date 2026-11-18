@@ -31,7 +31,7 @@
   document.write('<script src="js/live-root-network.js?v=1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-growth.js?v=20261101htempleroot1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-mechanisms.js?v=20261031he2e77bc"></scr' + 'ipt>');
-  document.write('<script src="js/stone-age-ruin-scenery.js?v=20261118floorProfileIsolation1"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
+  document.write('<script src="js/stone-age-ruin-scenery.js?v=20261118floorProfileIsolation2"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
   document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261118shaftPortalProjection1"></scr' + 'ipt>');

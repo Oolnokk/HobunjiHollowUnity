@@ -158,7 +158,7 @@
     }
     const terrain=root.ZoneTerrainFeatures;
     const subdivisions=options.subdivisions===4?4:2; // Runtime defaults to the final 2×2 quad density; 4×4 remains available for reference/parity testing.
-    const shell=terrain.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}},{subdivisions}); // Avoid generating the 75% of boulder quads immediately discarded by the final floor mesh.
+    const shell=terrain.buildUndiggableBoulderShellData(grid,cols,rows,null,{NORMAL_TOP:0,PLATEAU_UNIT:1,TileType:{ROCK:'rock'}},{subdivisions,floorProfile:true}); // Keep playable floor stones low-relief while still discarding the unneeded source quads.
     const pieceIds=new Float32Array(shell.pos.length/3); // Texture charts remain isolated per irregular source boulder.
     for(let i=0;i<shell.idx.length;i+=3){
       const indices=[shell.idx[i],shell.idx[i+1],shell.idx[i+2]];
