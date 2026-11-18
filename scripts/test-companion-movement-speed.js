@@ -266,7 +266,7 @@ assert.equal(api.debugSnapshot().lastError, null, 'normal update paths do not re
 
 // Exercise game.js's actual movement choke point, not a second copy of its speed formula.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Shares the production movement authority used by regular animal and cliff-route travel.
-const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt)');
+const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null)');
 const moveEnd = gameSource.indexOf('\n      // Grid-walkability predicate', moveStart);
 assert(moveStart >= 0 && moveEnd > moveStart, 'the game still exposes one creature movement function for the integration fixture');
 let routeApproach = true; // Switches the real moveCreatureToward between cliff entry and ordinary ground motion.
