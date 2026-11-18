@@ -88,6 +88,7 @@ function witnessStone(T,host,sites){
   rock.position.set(site.point.col+.5,elevation(site)+.47,site.point.row+.5);
   rock.rotation.y=site.yaw;
   rock.userData.wildernessLandmarkScenery=true;
+  rock.userData.ownsWildernessWitnessBuffers=true; // Separates this scene-local engraved rock from cached shared foliage and furniture geometry.
   rock.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true}; // Mobile debugger can confirm the rendered color against the actual riddle.
   rock.raycast=()=>{}; // This permanent riddle marker is not a harvestable or combat target.
   host.add(rock);
@@ -125,7 +126,20 @@ async function debris(host,sites,ticket,zoneId){
 }
 function clear(){
  serial++;
- group?.traverse?.(node=>{if(node.userData?.ownsWildernessCairnBuffers){node.geometry?.dispose?.();node.material?.dispose?.();}}); // Per-zone instanced cairn buffers are owned; shared foliage and authored-furniture buffers are not.
+ const witness=[]; // Scene-local marked-rock buffers and their asynchronously generated engraving atlases must not survive a zone transition.
+ group?.traverse?.(node=>{
+  if(node.userData?.ownsWildernessCairnBuffers){node.geometry?.dispose?.();node.material?.dispose?.();}
+  if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node);
+ });
+ for(const rock of witness){
+  for(const child of [...rock.children]){
+   if(child.userData?.furniturePattern || child.userData?.ruinStoneSignalGlyph){
+    child.material?.dispose?.(); // The ruin pattern owner releases its retained atlas and glow via its material dispose hook.
+    child.geometry?.dispose?.();
+   }
+  }
+  rock.geometry?.dispose?.();rock.material?.dispose?.();
+ }
  group?.parent?.remove?.(group);group=null;scene=null;area='';
 }
 function update(){
@@ -139,7 +153,14 @@ function update(){
  witness:sites.find(s=>s.kind==='witnessStone')?.name||null}; // Mobile debug also exposes the singular color-coded starting marker.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
 }
-function debugSnapshot(){return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error};}
+function debugSnapshot(){
+ const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
+ const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
+ return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
+  dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
+   motif:marker?.userData?.witnessDye?.motifUrl||null,engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
+   runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
+}
 function init(injected){clear();deps=injected;error=null;root.DevCompanion?.registerStateProvider?.('wildernessLandmarkScenery',debugSnapshot);}
 return Object.freeze({init,update,clear,planForLayout,landmarksFor,debugSnapshot});
 });
