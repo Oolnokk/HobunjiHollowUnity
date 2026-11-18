@@ -7,10 +7,12 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../docs/js/companion-combat-response.js'), 'utf8');
 const game = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
+const navigationSource = fs.readFileSync(path.join(__dirname, '../docs/js/companion-follow-navigation.js'), 'utf8'); // Shared terrain authority for retreat.
 const index = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8');
 const context = { window: { __farmLog() {} } };
 vm.createContext(context);
 vm.runInContext(source, context);
+vm.runInContext(navigationSource, context);
 const R = context.window.CompanionCombatResponse;
 assert(R, 'CompanionCombatResponse is registered');
 
@@ -88,6 +90,9 @@ context.window.Combat.deps.TILE = 64;
 context.window.Combat.deps.getCurrentArea = () => 'forest'; // Only the active exterior map may influence companion combat.
 context.window.Combat.deps._isZoneArea = area => area === 'forest';
 context.window.Combat.deps.getActiveGrid = () => cliffGrid;
+context.window.CompanionFollowNavigation.init({
+  TILE: 64, getCurrentArea: () => 'forest', isZoneArea: area => area === 'forest', getActiveGrid: () => cliffGrid,
+}); // The production combat decision now consumes the same follow navigation used by game.js.
 let retreatClock = 10000; // Deterministic monotonic clock for the post-landing escape grace.
 context.performance = { now: () => retreatClock };
 let cancelledCliffAttack = 0; // Verifies that a started named attack does not retain movement authority during the drop.
@@ -113,6 +118,16 @@ assert.equal(R.shouldReevaluate(cliffPet, escapedOwner, 'forest', 150), false,
 assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), null);
 assert.equal(cliffPet._travelPath.length, 1, 'repeated combat checks must not erase the new safe detour');
 assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, true, 'mobile diagnostics report descent priority');
+let clearedTreasure = 0, clearedWatch = 0; // Confirms the response module owns secondary-behavior arbitration.
+cliffPet.treasureCue = { x: 1 };
+cliffPet.watchPlayerIdle = { timer: 1 };
+const retained = R.prioritizeOwnerRetreat(cliffPet, pursuer, .05,
+  () => { clearedTreasure++; }, () => { clearedWatch++; });
+assert.equal(retained, null, 'owner retreat wins over reintroduced Sicced and committed targets');
+assert.equal(clearedTreasure, 1);
+assert.equal(clearedWatch, 1);
+assert.equal(R.isRescuing(cliffPet, escapedOwner), false, 'rescue never overrides cliff escape');
+cliffPet.treasureCue = null; cliffPet.watchPlayerIdle = null;
 cliffGrid[0][0].incline = true; // A descending creature can briefly cross a cliff-face tile.
 cliffPet._cliffClimb = { phase: 'climb', descending: true };
 assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'forest'), true,
@@ -141,12 +156,12 @@ cliffPet.isCompanion = false; cliffPet.x = 32; // Enemies are not ordered to aba
 assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'forest'), false,
   'ordinary enemies and non-companions preserve their targeting');
 
-assert.match(game, /const rescueActive = !c\._followOwnerDownCliff && !!rescueHost/,
-  'the live loop allows owner retreat to override a stale honeyfuzzle rescue');
-assert.match(game, /if \(!isBanditCompanion && c\._followOwnerDownCliff\) \{\s*target = null;/,
-  'the live loop clears Sicced, downed-focus, and committed targets after every override');
-assert.match(game, /if \(c\.treasureCue\) _clearCompanionTreasureCue\(c, dt, 'following owner below cliff'\)/,
-  'a stale treasure investigation cannot strand a pet above its escaping owner');
+assert.match(game, /CompanionCombatResponse\.isRescuing\(c, rescueHost\)/,
+  'rescue versus retreat is arbitrated by the extracted combat response');
+assert.match(game, /CompanionCombatResponse\.prioritizeOwnerRetreat\(/,
+  'Sicced, downed-focus and committed target overrides pass through the final response arbiter');
+assert.match(source, /if \(companion\.treasureCue\) clearTreasureCue\?\.\(companion, dt, 'following owner below cliff'\)/,
+  'the response module clears a stale treasure detour before escape');
 assert.match(game, /!target && !c\._followOwnerDownCliff && !c\.treasureCue/,
   'watch-player idle cannot start during the follow descent');
 console.log('Companion combat responsiveness tests passed.');
