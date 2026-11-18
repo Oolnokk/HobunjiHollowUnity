@@ -321,11 +321,12 @@
   }
 
   async function mirrorPatternFile(id, bytes) {
-    if (_state !== 'ready' || !_handle) return false;
-    if (!(await ensurePermission(_handle, false))) return false;
+    const handle = _handle; // Keep one physical directory for permission checking and the entire custom-motif write.
+    if (_state !== 'ready' || !handle) return false;
+    if (!(await ensurePermission(handle, false))) return false;
     const payload = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0); // MotifStore supplies Uint8Array PNG bytes; this also accepts other ArrayBuffer views safely.
     if (!payload.byteLength) return false;
-    const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR, { create: true });
+    const dirHandle = await handle.getDirectoryHandle(PATTERNS_DIR, { create: true });
     const fileHandle = await dirHandle.getFileHandle(patternFilename(id), { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(payload);
@@ -334,10 +335,11 @@
   }
 
   async function readPatternFile(id) {
-    if (_state !== 'ready' || !_handle) return null;
-    if (!(await ensurePermission(_handle, false))) return null;
+    const handle = _handle; // A folder switch must not redirect a pending motif read after its permission check.
+    if (_state !== 'ready' || !handle) return null;
+    if (!(await ensurePermission(handle, false))) return null;
     try {
-      const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR);
+      const dirHandle = await handle.getDirectoryHandle(PATTERNS_DIR);
       const file = await (await dirHandle.getFileHandle(patternFilename(id))).getFile();
       return new Uint8Array(await file.arrayBuffer());
     } catch (error) {
@@ -347,10 +349,11 @@
   }
 
   async function deletePatternFile(id) {
-    if (_state !== 'ready' || !_handle) return false;
-    if (!(await ensurePermission(_handle, false))) return false;
+    const handle = _handle; // Delete only from the folder whose permission was checked, even during a switch.
+    if (_state !== 'ready' || !handle) return false;
+    if (!(await ensurePermission(handle, false))) return false;
     try {
-      const dirHandle = await _handle.getDirectoryHandle(PATTERNS_DIR);
+      const dirHandle = await handle.getDirectoryHandle(PATTERNS_DIR);
       await dirHandle.removeEntry(patternFilename(id));
       return true;
     } catch (error) {
