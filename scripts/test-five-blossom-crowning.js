@@ -156,7 +156,8 @@ async function main(){
   assert.equal(equipment.devWornClothing().hat?.label,'Five Blossom Crown');
   assert.equal(equipment.devWornClothing().hood?.uid,ownerHood.uid,'original non-facewrap hood is restored after scene');
   assert.notEqual(equipment.devWornClothing().hat?.uid,ownerBefore.uid,'original hat is replaced by prize hat');
-  assert.equal(W.__hobunjiPlayerProfile.gearInventory.clothingItems.length,1,'the crown is a unique collectible article');
+  assert.equal(W.__hobunjiPlayerProfile.gearInventory.clothingItems.length,2,'the crown and the previously worn hat remain owned');
+  assert(W.__hobunjiPlayerProfile.gearInventory.clothingItems.some(item=>item.uid===ownerBefore.uid),'old equipped hat survives crowning even in a legacy worn-only save');
   for(const id of names)assert.equal(W.KeyItemSystem.has(W.FestivalBlossomHunt.itemKey(id)),false,'blossom is handed in after the reward');
   assert.equal((await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0])).ok,false,'repeat turn-in is rejected');
   const art=equipment.FIVE_BLOSSOM_CROWN_ART;
@@ -180,6 +181,13 @@ async function main(){
   assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1157'].characterId,'farmhand');
   assert.equal(equipment.devWornClothing().hood?.cosmeticId,'facewrap','first-Finder facewrap was never hidden');
   assert.equal(equipment.devWornClothing().hat?.awardYear,1157);
+  const farmhandGear=W.__hobunjiPlayerProfile.gearInventory; // Replaying two different years verifies the actual owned-gear normalization path.
+  const annualCrowns=()=>farmhandGear.clothingItems.filter(item=>item.prizeCosmeticId==='appearance::hat::five_blossom_crown');
+  assert.equal(annualCrowns().length,2,'both years award separate crowns in the current live Gear collection');
+  assert.notEqual(equipment.__test.clothingGearCollectionKey(annualCrowns()[0]),equipment.__test.clothingGearCollectionKey(annualCrowns()[1]),'annual award identity must not collapse to an ordinary cosmetic grouping');
+  equipment.__test.normalizeGearClothingItems(farmhandGear);
+  assert.equal(annualCrowns().length,2,'character loading/migration preserves both earned crown years');
+  assert.equal(farmhandGear.clothing.hat?.awardYear,1157,'normalization leaves the most recent crown equipped');
   assert.equal(equipment.devWornClothing().hat?.baseCosmeticId,'appearance::hat::basic_headband',
     'new prize id retains the real headband portrait fallback');
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
