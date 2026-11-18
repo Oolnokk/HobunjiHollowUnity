@@ -40,6 +40,8 @@ jobs:
         run: node scripts/test-windows-desktop.js
       - name: Verify updater state machine and UI packaging
         run: node scripts/test-windows-updates.js
+      - name: Verify separate manually approved Friends update channel
+        run: node scripts/test-windows-friends.js
       - name: Check Electron scripts parse cleanly
         shell: pwsh
         run: |
