@@ -117,12 +117,15 @@
       const modelHeight = Number(rig.modelHeight) || Number(portrait.geometry?.parameters?.height) || modelWidth; // Original model height for vertical projection.
       if (!(modelWidth > 0 && modelHeight > 0)) return result;
       const point = new THREE.Vector3(); // Reused projection vector; no per-triangle Three allocations.
+      const flipped = window.PNGPlaneAvatar?.getPortraitsFlipped?.() === true; // Match the live character texture's optional X mirror.
       const transformed = []; // Indexed projected vertex points for the compact capture grid.
       const uvs = []; // Indexed UVs remain authored jumping-jack art coordinates, while positions are final posed coordinates.
       const xyz = positions.array, uv = uvAttribute.array;
       for (let i = 0; i < xyz.length / 3; i++) {
         point.set(xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]).applyMatrix4(toPortrait);
-        transformed.push({ x: width * (0.5 + point.x / modelWidth), y: height * (0.5 - point.y / modelHeight) });
+        // Capture into the ORIGINAL portrait canvas coordinates. The corpse plane
+        // mirrors the finished texture only at render time, just like live PNGPlaneAvatar.
+        transformed.push({ x: width * (0.5 + (flipped ? -point.x : point.x) / modelWidth), y: height * (0.5 - point.y / modelHeight) });
         uvs.push({ x: uv[i * 2], y: uv[i * 2 + 1] });
       }
       const layer = document.createElement('canvas'); // Isolates the garment until every triangle has painted successfully.
