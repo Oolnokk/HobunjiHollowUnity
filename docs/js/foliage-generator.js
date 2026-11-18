@@ -1114,7 +1114,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     leavesPerBranch:4, leafWidth:0.24, leafLength:0.32,
     leafRandYawDeg:115, leafRandPitchDeg:35, leafRandRollDeg:20, leafRadial:0.09,
     leafSpread:0.72, leafJitterAlong:0.05, leafJitterSide:0.03, leafJitterNormal:0.035,
-    leafTexture:'assets/leaves/leaf_1.png',
+    leafTexture:'assets/leaves/leaf_festival_blossom.svg', // Neutral white petal/leaf shape: exact cyan and pink survive texture multiplication.
     barkColorHex:0x4b9a62, scaleMul:1,
   });
   const pottedBlossomPresets = new Map(); // One stable per-color preset; its geometry/material share the existing tree-variant cache.
