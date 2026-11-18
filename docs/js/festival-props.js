@@ -6,6 +6,13 @@
     gifts: 'festivalGifts', ancestors: 'festivalAncestors', blossoms: 'festivalBlossoms',
     feast: 'festivalFeast', sweets: 'festivalSweets', masks: 'festivalMasks', bunting: 'festivalBunting',
   }); // Maps event dressings to the same editable JSON files used by ordinary furniture.
+  const BLOSSOM_WINDOW_SWATCHES = Object.freeze([ // Third palette entries in the authored temple's stained-glass overpass windows.
+    Object.freeze({ pattern:'blessed_blossom_balance', window:'first Balance', color:'#00ffff' }),
+    Object.freeze({ pattern:'blessed_blossom_potential', window:'Potential', color:'#ff8000' }),
+    Object.freeze({ pattern:'blessed_blossom_windswept', window:'Windswept', color:'#ffffff' }),
+    Object.freeze({ pattern:'blessed_blossom_rebirth', window:'Rebirth', color:'#ffbf00' }),
+    Object.freeze({ pattern:'blessed_blossom_balance', window:'second Balance', color:'#ffb3b3' }),
+  ]); // Five distinct real temple colors; the Balance motif appears with cyan and pale-pink accents.
   const structureDressings = Object.freeze({festivalArch:'road-arch',festivalStage:'bandstand',festivalDanceFloor:'dancefloor'}); // Fresh editor placements have no explicit event dressing field.
   function refreshFeast() { window.FurnitureTableSystem?.refreshServices?.(); }
   function onAuthoredFurnitureReady(root) {
@@ -37,7 +44,24 @@
         if (!data || group.userData.festivalDisposed) return;
         const visual = window.AuthoredFurniture.buildGroup(data, color); // Uses permanent furniture's PNG/stretch material and geometry pipeline.
         group.add(visual);
-         if (dressing === 'ancestors') void window.FestivalAncestorFigures?.decorate?.(group,record,visual); // Swap old primitives only after a real NPC statue successfully bakes.
+        if (dressing === 'blossoms') {
+          const rawIndex=Number(record.blossomVariant);
+          const index=Number.isInteger(rawIndex) ? ((rawIndex % BLOSSOM_WINDOW_SWATCHES.length) + BLOSSOM_WINDOW_SWATCHES.length) % BLOSSOM_WINDOW_SWATCHES.length : 0; // Use authored variant so moving tables preserves their colors.
+          const swatch=BLOSSOM_WINDOW_SWATCHES[index];
+          const tree=window.FoliageGenerator?.buildPottedBlossomTreeMesh?.(record.id || 'blossom-vase',swatch.color);
+          if (tree) {
+            tree.name='festival-blossom-sapling';
+            tree.position.y=0.735; // The stem begins INSIDE the authored vase (top lip at y≈0.8); not on the table surface.
+            tree.traverse?.(child=>{
+              if (child.geometry) child.userData.festivalSharedFoliage=true; // Skip shared foliage-cache GPU disposal when this festival prop is removed.
+            });
+            group.add(tree);
+            root.userData.festivalBlossomVase={variant:index,color:swatch.color,templePattern:swatch.pattern,source:'temple-window-overpass'};
+          } else {
+            window.__farmLog?.('Five Blossoms vase is missing FoliageGenerator.buildPottedBlossomTreeMesh.', 'warn'); // Visible in-game diagnostics on mobile.
+          }
+        }
+        if (dressing === 'ancestors') void window.FestivalAncestorFigures?.decorate?.(group,record,visual); // Swap old primitives only after a real NPC statue successfully bakes.
         window.FurnitureTableSystem?.refreshServices?.();
       }; // Only dressing assemblies are appended; structural furniture already comes through the normal furniture builder.
       const data = window.AuthoredFurniture?.peek?.(furnitureKey); // Avoids asynchronous work when preload has completed.
@@ -88,6 +112,7 @@
       object.userData.festivalDisposed = true; // Cancels pending dressing loads when a scene/layout is replaced.
       if (object.userData.festivalStructure) object.userData.authoredFurnitureDisposed = true; // Prevents the normal async furniture upgrade from rebuilding a removed structure.
       object.traverse(child => {
+        if (child.userData?.festivalSharedFoliage) return; // These cached variants are still used by other vases and later festival rebuilds.
         if (child.geometry && !geometries.has(child.geometry)) { geometries.add(child.geometry); child.geometry.dispose?.(); }
         const childMaterials = Array.isArray(child.material) ? child.material : child.material ? [child.material] : []; // Only these festival-owned assemblies are traversed; host tables keep their own lifecycle.
         for (const material of childMaterials) {
@@ -101,5 +126,5 @@
       object.userData.festivalTexture = null;
     });
   }
-  window.FestivalProps = { decorate, dispose, refreshFeast, dressingKeys, onAuthoredFurnitureReady };
+  window.FestivalProps = { decorate, dispose, refreshFeast, dressingKeys, blossomWindowSwatches:BLOSSOM_WINDOW_SWATCHES, onAuthoredFurnitureReady }; // Palette is inspectable in game/debug tooling.
 })();
