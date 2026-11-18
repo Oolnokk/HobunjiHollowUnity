@@ -399,8 +399,8 @@
 
   function _positionItemCategoryControls() {
     if (!_itemCategoryControls || _arcOpen !== 'item') return;
-    const previousPoint = _arcPt(163, _outerR() + 22); // Places the previous prompt beside the lower/left end of the item arch.
-    const nextPoint = _arcPt(111, _outerR() + 22); // Places the next prompt beside the upper/right end of the item arch.
+    const previousPoint = _arcPt(153, _outerR() + 78); // Stays outside the item buttons rather than overlapping the lower/left end of the arch.
+    const nextPoint = _arcPt(117, _outerR() + 78); // Stays outside the item buttons rather than overlapping the upper/right end of the arch.
     const previousButton = _itemCategoryControls.querySelector('.item-category-prev'); // Repositioned on desktop viewport resize.
     const nextButton = _itemCategoryControls.querySelector('.item-category-next'); // Repositioned on desktop viewport resize.
     if (previousButton) { previousButton.style.left = previousPoint.x + 'px'; previousButton.style.top = previousPoint.y + 'px'; }
@@ -516,7 +516,7 @@
 
   function _bindListeners() {
     _itemBtn = document.getElementById('itemBtn');
-    window.addEventListener('resize', _positionItemCategoryControls, { passive:true }); // Keeps desktop prompts aligned with the resized arch.
+    window.addEventListener?.('resize', _positionItemCategoryControls, { passive:true }); // Keeps desktop prompts aligned; the optional DOM hook preserves headless tool-recall regression tests.
     document.addEventListener('pointerdown', event => {
       if (_arcOpen !== 'item' || event.pointerType !== 'mouse' || (event.button !== 0 && event.button !== 2)) return;
       if (event.target?.closest?.('#itemCategoryControls, #itemBtn')) return; // Respect the actual item hold gesture and the on-screen prompt buttons.
@@ -529,8 +529,12 @@
       event.preventDefault(); event.stopImmediatePropagation(); // Do not release a held world action when the mouse click was a category shortcut.
     }, true);
     document.addEventListener('click', event => {
-      if (_arcOpen !== 'item' || event.pointerType !== 'mouse' || (event.button !== 0 && event.button !== 2)) return;
+      if (_arcOpen !== 'item' || (event.button !== 0 && event.button !== 2)) return;
       if (event.target?.closest?.('#itemCategoryControls, #itemBtn')) return;
+      // Some browsers emit click as a MouseEvent without pointerType. The wheel backdrop is
+      // the exclusive desktop category-click surface; never swallow touch-generated clicks.
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      if (!event.target?.closest?.('.arc-backdrop') && event.pointerType !== 'mouse') return;
       event.preventDefault(); event.stopImmediatePropagation();
     }, true);
     document.addEventListener('contextmenu', event => {
