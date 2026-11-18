@@ -163,6 +163,9 @@ assert.match(weaving, /PATTERNED_CANVAS_CACHE_BYTES = 48 \* 1024 \* 1024/, 'rast
 assert.match(weaving, /pendingPatternStackCanvases\.set\(key, task\)/, 'identical concurrent frame requests share one in-flight bake');
 assert.match(weaving, /finally \{ if \(pendingPatternStackCanvases\.get\(key\) === task\) pendingPatternStackCanvases\.delete\(key\); \}/, 'completed and failed bakes release their pending cache entries');
 assert.match(weaving, /compactPatternCacheKey\(JSON\.stringify\(renderable\)\)/, 'long embedded motif data URLs are hashed instead of retained as cache keys');
+assert.match(weaving, /\|\$\{debugLabel\}\|/, 'the cache key separates clothing and animal outlining semantics');
+assert.match(weaving, /const renderableSlots = patterns\.flatMap\(/, 'source-slot identity is preserved even if some motif image references are absent');
+assert.doesNotMatch(weaving, /const patternCanvases = \[\]/, 'one fused animal render does not retain every temporary motif canvas simultaneously');
 assert.match(colorPoolsSource, /previewNeedsAnotherPass = true/, 'slider edits are coalesced behind the currently composing preview');
 assert.match(colorPoolsSource, /previewCoalesced\+\+/, 'mobile diagnostics count prevented redundant preview renders');
 const bakeCacheStart = weaving.indexOf('  function forgetPatternedCanvas(');
@@ -173,10 +176,12 @@ const bakeCache = vm.runInNewContext(`
   const patternedCanvasBytesByKey = new Map();
   const PATTERNED_CANVAS_CACHE_LIMIT = 96;
   const PATTERNED_CANVAS_CACHE_BYTES = 48 * 1024 * 1024;
-  let patternedCanvasBytes = 0, patternedCanvasEvictions = 0;
+  let patternedCanvasBytes = 0, patternedCanvasEvictions = 0, patternedCanvasEpoch = 0;
+  const pendingPatternStackCanvases = new Map(), pendingPatternCanvasPromises = new Map();
   ${weaving.slice(bakeCacheStart, bakeCacheEnd)}
   ({ cachedPatternedCanvas, rememberPatternedCanvas, clearPatternedCanvases,
-    status: () => ({ count: patternedCanvasCache.size, bytes: patternedCanvasBytes, evictions: patternedCanvasEvictions }) });
+    pendingPatternStackCanvases, pendingPatternCanvasPromises,
+    status: () => ({ count: patternedCanvasCache.size, bytes: patternedCanvasBytes, evictions: patternedCanvasEvictions, epoch: patternedCanvasEpoch }) });
 `);
 for (let i = 0; i < 110; i++) bakeCache.rememberPatternedCanvas('small:' + i, { width: 10, height: 10 });
 assert.equal(bakeCache.status().count, 96, 'baked image cache evicts oldest entries after 96 images');
@@ -186,6 +191,15 @@ bakeCache.clearPatternedCanvases();
 for (let i = 0; i < 20; i++) bakeCache.rememberPatternedCanvas('large:' + i, { width: 1024, height: 1024 });
 assert.equal(bakeCache.status().bytes, 48 * 1024 * 1024, 'baked animal images cannot exceed their 48 MiB cache budget');
 assert.equal(bakeCache.status().count, 12, 'the byte budget evicts large images well below the 96-entry cap');
+const staleEpoch = bakeCache.status().epoch; // Simulates an animal bake started before a player profile/equipment reset.
+bakeCache.pendingPatternStackCanvases.set('old-frame', Promise.resolve({width:10,height:10}));
+bakeCache.pendingPatternCanvasPromises.set('old-woven', Promise.resolve({width:10,height:10}));
+bakeCache.clearPatternedCanvases();
+bakeCache.rememberPatternedCanvas('old-frame', {width:10,height:10}, staleEpoch);
+assert.equal(bakeCache.status().count, 0, 'late old-appearance raster results cannot resurrect a cleared cache');
+assert.equal(bakeCache.pendingPatternStackCanvases.size, 0, 'reset removes pending fused-frame work from deduplication');
+assert.equal(bakeCache.pendingPatternCanvasPromises.size, 0, 'reset removes pending garment work from deduplication');
+assert(bakeCache.status().epoch > staleEpoch, 'each cache reset invalidates the prior generation');
 const hashStart = weaving.indexOf('  function compactPatternCacheKey(');
 const hashEnd = weaving.indexOf('  function patternStackCanvasKey(', hashStart);
 const compact = vm.runInNewContext('(' + weaving.slice(hashStart, hashEnd).trim() + ')');
