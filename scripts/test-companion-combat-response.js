@@ -80,4 +80,35 @@ assert.match(game, /downedFocus\.health > 0 && !downedFocus\._downed/,
   'companion never pursues an invalid owner-downed focus');
 assert(index.indexOf('js/companion-combat-response.js') < index.indexOf('game.js?v='),
   'responsive decisions load before the main game loop');
+// The player jumped or was knocked below a cliff while the pet was still fighting above.
+const cliffGrid = Array.from({ length: 4 }, () => Array.from({ length: 5 }, () => ({ elevTier: 0, incline: false }))); // Small genuine tile-elevation fixture.
+cliffGrid[0][0].elevTier = 2;
+context.window.GridTileAccessors = { getActiveGrid: () => cliffGrid }; // Supplies production tile access without a game runtime.
+context.window.Combat.deps.TILE = 64;
+let cancelledCliffAttack = 0; // Verifies that a started named attack does not retain movement authority during the drop.
+context.window.Combat.animalAttacks = { cancel: actor => { cancelledCliffAttack++; actor._animalAttack = null; } };
+const cliffPet = { id: 'cliff-pet', x: 32, y: 32, areaId: 'forest', isCompanion: true,
+  stableRole: 'companion', _stage: { mode: 'active', t: 0.3 }, _animalAttack: { stage: 'windup' } }; // Follower still on upper ground.
+const escapedOwner = { x: 160, y: 32, health: 100 }; // Owner landed on a lower safe shelf.
+const pursuer = { id: 'cliff-foe', x: 34, y: 32, health: 20, areaId: 'forest', def: { hostile: true },
+  targetCreature: cliffPet }; // Would otherwise pin the pet in a defensive fight.
+cliffPet._companionCombatTarget = pursuer;
+cliffPet._companionDecisionNextAt = 1e15; // A long cached decision must be invalidated the moment the owner drops.
+assert.equal(R.shouldReevaluate(cliffPet, escapedOwner, 'forest', 150), true,
+  'a newly lower owner overrides cached combat target reevaluation');
+assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), null,
+  'the cliff-top pet leaves a fight to follow an owner who fell or jumped below');
+assert.equal(cancelledCliffAttack, 1, 'committed named attack is cancelled via its existing lifecycle');
+assert.equal(cliffPet._stage, null, 'old attack phase cannot reclaim movement during the drop');
+assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, true, 'mobile diagnostics report descent priority');
+cliffPet.x = 160; // A normal same-height reunion returns defensive behavior.
+assert.equal(R.shouldReevaluate(cliffPet, escapedOwner, 'forest', 150), true,
+  'the follower can immediately reacquire a threat after arriving below');
+assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), pursuer,
+  'combat resumes normally after crossing the ledge');
+assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, false);
+cliffPet.isCompanion = false; cliffPet.x = 32; // Enemies are not ordered to abandon combat.
+assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'forest'), false,
+  'ordinary enemies and non-companions preserve their targeting');
+
 console.log('Companion combat responsiveness tests passed.');
