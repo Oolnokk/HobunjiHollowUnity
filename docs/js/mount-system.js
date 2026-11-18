@@ -51,7 +51,7 @@
   const BOOST_DURATION_S = 1.35; // One dodge/whistle accelerates the mount for this duration.
   const CRUISE_SPEED_RATIO = 1; // Unboosted travel uses the complete player-derived mount speed, not a reduced hands-free fraction.
   const MOUNT_PLAYER_RUN_RATIO = 1.1; // Baseline is the current full-input player run speed +10%, before stable perks and temporary boosts.
-  const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the normal species mount speed.
+  const BOOST_SPEED_RATIO = 1.42; // Temporary peak-speed multiplier relative to the inherited player-running mount baseline.
   const MOUNT_COAST_DECEL_RATIO = 0.25; // Passive slowdown after wheat/combat acceleration, without weakening deliberate braking or collision stops.
   const MOUNT_COAST_SOFT_BAND_RATIO = 0.3; // Fade passive drag as excess speed approaches ordinary cruise, avoiding a hard-feeling final slowdown.
   const MOUNT_TOWN_MAX_STEP_UP = 0.25; // Same reachable step limit as the on-foot walking support solver.
@@ -121,7 +121,7 @@
   // already moving the more sluggishly it can turn — trading maneuverability
   // for the speed a mount gives you (see updateMountedMovement).
   const MOUNT_TURN_RATE_MAX = Math.PI * 3.2; // rad/s at a standstill
-  const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full mountSpeed
+  const MOUNT_TURN_RATE_MIN = Math.PI * 0.9; // rad/s at full player-derived mount speed
 
   // This is the existing Farm tab's actual PNG (and mask technique), not a new carrot asset.
   function ensureMountWheatHud() {
