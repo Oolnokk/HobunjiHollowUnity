@@ -314,9 +314,11 @@ assert(mount.x < 20 * T, 'a manual hop cannot leap through the tall boulder');
 assert.equal(win.Mounts.ridingDebug.jumping, false, 'collision-limited jump still lands cleanly');
 
 // Mounted melee uses measured carrier velocity rather than target speed or a player lunge.
+const normalMountedSpeed = win.Mounts.mountedTopSpeedPxS(); // Current player-run × 1.1 baseline; used throughout combat and coasting assertions instead of obsolete species mountSpeed.
+assert(Math.abs(normalMountedSpeed - deps.MOVE_SPEED * 1.1) < 1e-9, 'unperked mount baseline comes from current player running speed, not species mountSpeed');
 mount.vx = 0; mount.vy = 0;
 assert.equal(win.Mounts.mountedMeleeDamageMultiplier(), 1, 'a stopped mount has no artificial momentum damage');
-mount.vx = 340; mount.vy = 0;
+mount.vx = normalMountedSpeed; mount.vy = 0;
 assert(Math.abs(win.Mounts.mountedMeleeDamageMultiplier() - 1.65) < 1e-8,
   'normal gallop increases melee impact based on actual carrier speed');
 mount.vx = 0; mount.vy = 0;
@@ -327,7 +329,7 @@ assert.equal(win.Mounts.ridingDebug.wheatRemaining, beforeCombatWheat, 'combat b
 mount.x = 24 * T; mount.y = 9 * T;
 input.x = 1; input.y = 0;
 for (let i = 0; i < 60; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
-assert(win.Mounts.ridingDebug.speedPxS > 340 * 1.5, 'attack speed multiplies the actual carrier speed, not just the rendering');
+assert(win.Mounts.ridingDebug.speedPxS > normalMountedSpeed * 1.5, 'attack speed multiplies the actual carrier speed, not just the rendering');
 assert(win.Mounts.ridingDebug.combatBoostSeconds > 0, 'charged gallop persists beyond its first frame');
 for (let i = 0; i < 100; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
 assert.equal(win.Mounts.ridingDebug.combatBoostSeconds, 0, 'legacy timed combat burst still ends and restores ordinary speed settings');
@@ -355,11 +357,11 @@ input.x = 1; input.y = 0;
 win.Mounts.setMountedCombatWindupBoost('mountedQuickAttack', 2.5, 1);
 for (let i = 0; i < 24; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
 const windupActualSpeed = win.Mounts.ridingDebug.speedPxS; // Physical velocity reached after a mounted quick windup.
-assert(windupActualSpeed > 340 * 0.85, 'accelerating through the windup changes real carrier velocity');
+assert(windupActualSpeed > normalMountedSpeed * 0.85, 'accelerating through the windup changes real carrier velocity');
 win.Mounts.clearMountedCombatWindupBoost('mountedQuickAttack');
 now += 1000 / 60;
 win.Mounts.updateMountedMovement(1 / 60);
-assert(win.Mounts.ridingDebug.speedPxS > 340 * 0.85, 'after boost stops, strike-frame inertia remains instead of being discarded');
+assert(win.Mounts.ridingDebug.speedPxS > normalMountedSpeed * 0.85, 'after boost stops, strike-frame inertia remains instead of being discarded');
 assert.equal(win.Mounts.ridingDebug.windupMultiplier, 0, 'strike cannot continue to accelerate the mount');
 const speedAtRelease = win.Mounts.ridingDebug.speedPxS; // Compare the real carrier across the first half-second after the attack's speed grant ends.
 for (let i = 0; i < 30; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
@@ -380,7 +382,7 @@ function runCoastAtFrameRate(fps) {
   mount.x = 22 * T; mount.y = 9 * T;
   input.x = 1; input.y = 0;
   for (let i = 0; i < 240; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
-  assert(Math.abs(win.Mounts.ridingDebug.speedPxS - 340 * 0.66) < 0.01, 'frame-rate fixture returns to ordinary cruise');
+  assert(Math.abs(win.Mounts.ridingDebug.speedPxS - normalMountedSpeed) < 0.01, 'frame-rate fixture returns to the full player-derived ordinary cruise');
   assert.equal(win.Mounts.setMountedCombatWindupBoost('mountedCharge', 2.5, 1), true);
   for (let i = 0; i < fps / 2; i++) { now += 1000 / fps; win.Mounts.updateMountedMovement(1 / fps); }
   const accelerated = win.Mounts.ridingDebug.speedPxS; // Same funded 0.5 s charge, independent of simulation frequency.
@@ -406,7 +408,7 @@ for (let i = 0; i < 82; i++) { now += 1000 / 60; win.Mounts.updateMountedMovemen
 assert.equal(win.Mounts.ridingDebug.boostSeconds, 0, 'wheat surge ends normally rather than lingering after its duration');
 const wheatReleaseSpeed = win.Mounts.ridingDebug.speedPxS; // Surviving physical forward momentum when the wheat timer expires.
 for (let i = 0; i < 30; i++) { now += 1000 / 60; win.Mounts.updateMountedMovement(1 / 60); }
-assert(wheatReleaseSpeed > 340 * 0.85, 'wheat acceleration achieves a real speed increase before expiring');
+assert(wheatReleaseSpeed > normalMountedSpeed * 0.85, 'wheat acceleration achieves a real speed increase before expiring');
 assert(wheatReleaseSpeed - win.Mounts.ridingDebug.speedPxS < 140, 'wheat expiry uses the same gentle passive coasting as mounted combat');
 assert.equal(win.Mounts.ridingDebug.wheatRemaining, wheatBeforeExpiryCheck - 1, 'coasting does not consume additional wheat charges');
 
