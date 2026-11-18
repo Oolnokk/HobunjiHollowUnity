@@ -344,7 +344,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   function getLeafCardMaterial(preset) {
     let mat = _leafMatCache.get(preset);
     if (!mat) {
-      const tex = getLeafTexture(preset.leafTexture);
+      const tex = preset.pottedBlossomFinish && window.NaturalSurfaceMaterials?.naturalizeMesh
+        ? null : getLeafTexture(preset.leafTexture); // The baked festival PNG loads through NaturalSurfaceMaterials; skip a duplicate fetch (and nested-editor 404).
       const col = preset.leafColorHex
         ? new T.Color(preset.leafColorHex) // Material-only fallback until the body-filled PNG finish is installed.
         : new T.Color().setHSL((preset.leafTintH ?? 115) / 360, preset.leafTintS ?? 0.55, preset.leafTintL ?? 0.35);
