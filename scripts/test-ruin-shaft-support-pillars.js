@@ -96,6 +96,17 @@ async function run(){
     assert.equal(root.children.length,plan.platforms.length,'placeholder exists immediately for every slab');
     assert.equal(runtime.getState().fallback,plan.platforms.length);
     assert(root.children.every(holder=>holder.children.length===1),'exactly one temporary pillar per slab');
+    for(let i=0;i<plan.platforms.length;i++){
+      const slab=plan.platforms[i],fallback=root.children[i].children[0];
+      const pieces=new Map(fallback.children.map(node=>[node.name,node]));
+      const foot=pieces.get('foot'),shaft=pieces.get('stone-shaft'),capital=pieces.get('capital');
+      near(foot.geometry.dimensions[0],Supports.footprintTiles(slab),'loading foot matches even/odd tile size');
+      assert(capital.geometry.dimensions[0]<=slab.w,'fallback capital does not overhang platform width');
+      assert(capital.geometry.dimensions[2]<=slab.d,'fallback capital does not overhang platform depth');
+      near(shaft.position.y-shaft.geometry.dimensions[1]/2,.16,'fallback shaft meets foot');
+      near(shaft.position.y+shaft.geometry.dimensions[1]/2,
+        capital.position.y-capital.geometry.dimensions[1]/2,'fallback shaft meets capital');
+    }
     await runtime.ready;
     const state=runtime.getState();
     assert.equal(state.authored,plan.platforms.length,'all placeholders upgrade to canonical authored parts');
