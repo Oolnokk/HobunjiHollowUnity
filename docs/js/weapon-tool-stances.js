@@ -523,6 +523,19 @@
           window.__farmLog?.(`[weapon-stance] holder pose failed: ${error.message}`, 'warn');
         }
       }
+      if (mesh && torchIdle && !savedScale && (authoredToolActionActive || attackInProgress)
+          && window.AdventuringTools?.isThrowSequenceActive?.() === true
+          && Number.isFinite(targetPose?.scale) && targetPose.scale > 0) {
+        // The shared thrown-weapon animation has no torch-specific Neutral scale.
+        // Bake the exact idle size into the live Strike matrix, then restore the
+        // mutable holder so this never accumulates or resizes other weapon throws.
+        savedPosition = this.position.clone();
+        savedQuaternion = this.quaternion.clone();
+        savedScale = this.scale.clone();
+        this.scale.multiplyScalar(targetPose.scale);
+        const grip = window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('torch', 'melee'); // Current handle pivot for the held throw before it releases.
+        SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
+      }
 
       // game.js writes a -90° local-Z twist into the child plane whenever the
       // active animation is sweep. That twist belongs to the sweep motion, not

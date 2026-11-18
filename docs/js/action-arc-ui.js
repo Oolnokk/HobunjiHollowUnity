@@ -401,12 +401,14 @@
 
   function _positionItemCategoryControls() {
     if (!_itemCategoryControls || _arcOpen !== 'item') return;
-    const previousPoint = _arcPt(153, _outerR() + 78); // Stays outside the item buttons rather than overlapping the lower/left end of the arch.
-    const nextPoint = _arcPt(117, _outerR() + 78); // Stays outside the item buttons rather than overlapping the upper/right end of the arch.
-    const previousButton = _itemCategoryControls.querySelector('.item-category-prev'); // Repositioned on desktop viewport resize.
-    const nextButton = _itemCategoryControls.querySelector('.item-category-next'); // Repositioned on desktop viewport resize.
-    if (previousButton) { previousButton.style.left = previousPoint.x + 'px'; previousButton.style.top = previousPoint.y + 'px'; }
-    if (nextButton) { nextButton.style.left = nextPoint.x + 'px'; nextButton.style.top = nextPoint.y + 'px'; }
+    const promptAngle = 136; // Both prompts share the same arc tangent; Y is radially outside and A is inside.
+    const innerPoint = _arcPt(promptAngle, Math.max(48, _innerR() - 28)); // A is the bottom face button, nearest the wheel center.
+    const outerPoint = _arcPt(promptAngle, _outerR() + 60); // Y is the top face button, beyond the item and category-label arc.
+    const tangentDeg = promptAngle - 180; // SVG text curves follow the ring's local clockwise tangent.
+    const previousButton = _itemCategoryControls.querySelector('.item-category-prev'); // Inside prompt for LMB / controller A.
+    const nextButton = _itemCategoryControls.querySelector('.item-category-next'); // Outside prompt for RMB / controller Y.
+    if (previousButton) { previousButton.style.left = innerPoint.x + 'px'; previousButton.style.top = innerPoint.y + 'px'; previousButton.style.transform = 'translate(-50%,-50%) rotate(' + tangentDeg + 'deg)'; }
+    if (nextButton) { nextButton.style.left = outerPoint.x + 'px'; nextButton.style.top = outerPoint.y + 'px'; nextButton.style.transform = 'translate(-50%,-50%) rotate(' + tangentDeg + 'deg)'; }
   }
 
   function _showItemCategoryControls() {
@@ -416,9 +418,12 @@
       style.id = 'itemCategoryControlStyle';
       style.textContent = [
         '#itemCategoryControls{position:fixed;inset:0;z-index:205;pointer-events:none}',
-        '#itemCategoryControls .item-category-control{position:fixed;transform:translate(-50%,-50%);display:grid;place-items:center;min-width:90px;height:36px;padding:5px 9px;box-sizing:border-box;border:1px solid rgba(255,233,167,.9);border-radius:8px;background:rgba(18,24,34,.9);color:#fff1c2;font:700 12px/1.15 sans-serif;text-shadow:0 1px 3px #000;box-shadow:0 2px 9px #0008;pointer-events:auto;touch-action:manipulation;cursor:pointer}',
+        '#itemCategoryControls .item-category-control{position:fixed;display:grid;place-items:center;width:156px;height:48px;padding:0;box-sizing:border-box;border:0;background:transparent;color:var(--border-bright,#f9e28a);font-weight:800;font-size:12px;line-height:1.15;font-family:inherit;box-shadow:none;pointer-events:auto;touch-action:manipulation;cursor:pointer}',
+        '#itemCategoryControls .item-category-desktop-label{display:block;width:156px;height:48px;overflow:visible;filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 5px rgba(249,226,138,.7))}',
+        '#itemCategoryControls .item-category-desktop-label text{fill:currentColor;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.05em}',
+        '#itemCategoryControls .item-category-control:focus-visible{outline:2px solid var(--border-bright,#f9e28a);outline-offset:2px}',
         '#itemCategoryControls .item-category-mobile-arrow{display:none}',
-        '@media (pointer:coarse){#itemCategoryControls .item-category-control{left:max(10px,env(safe-area-inset-left,0px))!important;transform:none;width:52px;min-width:52px;height:52px;padding:0;border-radius:7px;font-size:25px;top:auto!important}#itemCategoryControls .item-category-prev{top:calc(50vh - 56px)!important}#itemCategoryControls .item-category-next{top:calc(50vh + 4px)!important}#itemCategoryControls .item-category-desktop-label{display:none}#itemCategoryControls .item-category-mobile-arrow{display:block}}',
+        '@media (pointer:coarse){#itemCategoryControls .item-category-control{left:max(10px,env(safe-area-inset-left,0px))!important;transform:none!important;width:52px;min-width:52px;height:52px;padding:0;border:1px solid var(--border-bright,#f9e28a);border-radius:7px;background:var(--glass,rgba(18,24,34,.85));font-size:25px;top:auto!important}#itemCategoryControls .item-category-prev{top:calc(50vh - 56px)!important}#itemCategoryControls .item-category-next{top:calc(50vh + 4px)!important}#itemCategoryControls .item-category-desktop-label{display:none}#itemCategoryControls .item-category-mobile-arrow{display:block}}',
       ].join('\n');
       document.head.appendChild(style);
     }
@@ -431,7 +436,8 @@
       const button = document.createElement('button'); // Each on-screen prompt is also a usable control, including for mobile multitouch.
       button.type = 'button'; button.className = 'item-category-control ' + className;
       button.setAttribute('aria-label', accessibleLabel);
-      button.innerHTML = '<span class="item-category-desktop-label">' + desktopLabel + '</span><span class="item-category-mobile-arrow" aria-hidden="true">' + mobileArrow + '</span>';
+      const pathId = className + '-text-arc'; // Unique SVG text path for the same curved typography as the item category heading.
+      button.innerHTML = '<svg class="item-category-desktop-label" viewBox="0 0 156 48" aria-hidden="true"><defs><path id="' + pathId + '" d="M 4 40 Q 78 0 152 40"/></defs><text><textPath href="#' + pathId + '" startOffset="50%" text-anchor="middle">' + desktopLabel + '</textPath></text></svg><span class="item-category-mobile-arrow" aria-hidden="true">' + mobileArrow + '</span>';
       button.addEventListener('pointerdown', event => {
         if (event.pointerType !== 'mouse' || event.button !== 2) return;
         event.preventDefault(); event.stopPropagation();

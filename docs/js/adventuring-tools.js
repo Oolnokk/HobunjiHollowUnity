@@ -43,7 +43,7 @@
   function stow() {
     cancelThrow('stow'); // Put away the held pose, not the flame; the same clock continues on the belt.
     updateBurn();
-    lastEvent = lit ? 'stowed on belt: still burning' : 'stowed on belt: unlit';
+    lastEvent = lit ? 'stowed on belt: still burning' : 'stowed: unlit torch hidden';
   }
   function light() {
     updateBurn();
@@ -263,11 +263,12 @@
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
       return {
-        lit, held, onBelt: !held, burnDurationMs: TORCH_BURN_MS,
+        lit, held, onBelt: !held && lit, burnDurationMs: TORCH_BURN_MS,
         burnRemainingMs: lit ? Math.max(0, litUntilMs - nowMs()) : 0,
         throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         belt: window.AdventuringTorchBelt?.debug || null, // Pixel Probe includes actual belt attachment, texture and flame visibility on mobile.
+        lastProjectile: window.RangedWeapons?.lastTorchThrow || null, // Expose the actual reticle target, converged launch vector and sprite scale in the existing mobile Pixel Probe torch section.
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
         torchStance: stance ? {
