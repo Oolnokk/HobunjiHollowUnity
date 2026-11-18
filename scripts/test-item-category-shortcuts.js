@@ -112,6 +112,7 @@ const promptContext = vm.createContext({
   _arcOpen:'item',_itemCategoryControls:null,
   _arcPt:(deg,radius)=>({x:100+deg,y:250+radius}),
   _outerR:()=>150,
+  _innerR:()=>115, // Distinct radii verify that controller A is inside and Y is outside.
   _jumpItemCategory:direction=>clicks.push(direction),
   document:{
     getElementById:id=>domElements.get(id) || null,
@@ -140,6 +141,13 @@ controls.children[0].listeners.contextmenu({preventDefault(){preventedPromptMenu
 assert.equal(preventedPromptMenu, true, 'right-click prompt browser menu is suppressed');
 assert.match(controls.children[0].style.left,/px$/, 'desktop previous prompt receives an arch-relative location');
 assert.match(controls.children[1].style.left,/px$/, 'desktop next prompt receives an arch-relative location');
+assert.equal(controls.children[0].style.top, '337px', 'controller A / left click lives inside the selection arch');
+assert.equal(controls.children[1].style.top, '460px', 'controller Y / right click lives outside the selection arch');
+assert.match(controls.children[0].style.transform,/rotate\(-44deg\)/, 'inner label follows the curved ring tangent');
+assert.match(controls.children[1].style.transform,/rotate\(-44deg\)/, 'outer label follows the same curved ring tangent');
+assert.match(controls.children[0].innerHTML,/<textPath[^>]*>◀  LMB \/ A<\/textPath>/, 'A is rendered along a real curved SVG text path');
+assert.match(controls.children[1].innerHTML,/<textPath[^>]*>RMB \/ Y  ▶<\/textPath>/, 'Y is rendered along a real curved SVG text path');
+assert.doesNotMatch(styleNodes[0].textContent,/border-radius:8px;background:rgba\(18,24,34/, 'desktop category labels are no longer foreign-looking pill buttons');
 vm.runInContext('_showItemCategoryControls()', promptContext);
 assert.equal(styleNodes.length,1,'reopening does not duplicate the prompt style');
 promptContext._arcOpen = null;
