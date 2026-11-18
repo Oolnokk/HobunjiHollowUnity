@@ -109,8 +109,23 @@
       root.add(flame);
     }
 
+    let idleScale = 1; // One neutral torch multiplier for both game belt art and the Animation Author preview.
+    function setIdleScale(value) {
+      const numeric = Number(value); // Current authored torch Neutral scale from WeaponToolStances, including editor overrides.
+      const next = Number.isFinite(numeric) && numeric > 0 ? Math.min(3, Math.max(.1, numeric)) : 1;
+      if (next === idleScale) return;
+      idleScale = next;
+      art.scale.set(next, next, 1); // Same uniform scale as the held animation, without baking it into saved belt-rig transforms.
+      art.position.y = -(TORCH_HEIGHT / 2) * (1 - next); // Keep the grip/handle end in place as the artwork changes size.
+      if (flame) {
+        flame.position.y = art.position.y + .24 * next;
+        flame.scale.set(.13 * next, .23 * next, 1);
+      }
+    }
+    setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
-      root, art, flame,
+      root, art, flame, setIdleScale,
+      get idleScale() { return idleScale; },
       setTexture(texture) {
         if (!texture || art.material.map === texture) return false;
         art.material.map = texture; art.material.needsUpdate = true;
@@ -121,8 +136,8 @@
         flame.visible = !!burning;
         if (burning) {
           const seconds = Number(timeMs || 0) / 1000;
-          flame.scale.set(.13 * (1 + .07 * Math.sin(seconds * 13)),
-            .23 * (1 + .08 * Math.sin(seconds * 11)), 1);
+          flame.scale.set(.13 * idleScale * (1 + .07 * Math.sin(seconds * 13)),
+            .23 * idleScale * (1 + .08 * Math.sin(seconds * 11)), 1);
         }
       },
       dispose() {
