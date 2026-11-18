@@ -59,4 +59,8 @@ router.setClaims('future-interaction',[{actionId:'action1',label:'Inspect',hudIc
 const contextual = window.ActionPromptUI.createActionArchLayout([first,second],'tool',false).slots;
 assert.equal(contextual[0].label,'Inspect','future contextual actions use the same opt-in native arch path');
 router.clearClaims('future-interaction');
+router.setClaims('future-item',[{actionId:'itemAction1',label:'Offer item',hudIcon:'🎁',showInArch:true,priority:75,onPress(){picks++;}}]);
+assert.equal(window.ActionPromptUI.createActionArchLayout([first,second],'tool',false).slots[3].label,'Offer item',
+  'future item-owned contextual actions occupy the native fourth arch slot');
+router.clearClaims('future-item');
 console.log('ok - Five Blossoms and future opt-in contextual actions populate the regular arch with paired touch input');
