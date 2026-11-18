@@ -43,7 +43,7 @@ const noWater = layoutFor('cyan'); // Missing preferred river may never produce 
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);
 assert.equal(missing.evidence.waterFound, false);
-assert.ok(missing.facts.some(f => f.kind === 'edge'), 'fallback points to a real map boundary');
+assert.equal(missing.facts.filter(f => f.kind === 'distance').length, 2, 'missing optional landmarks produce two measured map-boundary offsets');
 const withWater = layoutFor('cyan');
 withWater.tiles[23][26] = { type: 'stream' };
 const present = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: withWater, instance: withWater.localeInstances[0], blossomName: 'Cyan Blossom' });

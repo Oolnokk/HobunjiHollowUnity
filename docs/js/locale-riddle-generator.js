@@ -35,9 +35,9 @@
       A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
       B: [f => `The tree of ${f.value} is what you ought to know`, f => `At the ${f.value} tree, the final colors glow`, f => `Seek ${f.value} petals, not the grass below`]
     },
-    edge: {
-      A: [f => `Not far from ${f.value}, seek the light`, f => `Keep ${f.value} within your sight`, f => `Toward ${f.value}, go before the night`],
-      B: [f => `Remain by ${f.value}, and onward go`, f => `Near ${f.value}, the quiet breezes blow`, f => `Past ${f.value}, the blossoms show`]
+    distance: {
+      A: [f => `Count ${f.value} beneath the light`, f => `Mark ${f.value} by the final light`, f => `Measure ${f.value} to keep your bearing right`],
+      B: [f => `Walk ${f.value} before the blossoms show`, f => `Seek ${f.value} and let your footsteps slow`, f => `Go ${f.value}, where hidden petals glow`]
     }
   }); // Each verified descriptor has several interchangeable A and B lines with matching terminal sounds.
 
@@ -116,13 +116,14 @@
       .sort((a, b) => a.d - b.d)[0]; // Missing optional landmarks simply cannot enter a poem.
     if (landmark) facts.push({ kind: 'landmark', value: `${landmark.name} ${bearing(landmark.point.col - point.col, landmark.point.row - point.row)}`, source: landmark.source, distance: landmark.d });
     if (facts.length < 4) {
-      const edge = [
-        { value: 'the northern boundary', distance: point.row },
-        { value: 'the southern boundary', distance: size.rows - point.row },
-        { value: 'the western boundary', distance: point.col },
-        { value: 'the eastern boundary', distance: size.cols - point.col }
-      ].sort((a, b) => a.distance - b.distance)[0]; // A real, always-available second-stage bearing when optional terrain features did not spawn.
-      facts.push({ kind: 'edge', value: edge.value, source: 'final-grid-distance', distance: edge.distance });
+      const horizontal = point.col < size.cols / 2
+        ? { value: `${Math.round(point.col)} map tiles east of the western boundary`, distance: point.col }
+        : { value: `${Math.round(size.cols - 1 - point.col)} map tiles west of the eastern boundary`, distance: size.cols - 1 - point.col }; // Exact final-grid offsets replace misleading "near the border" claims for central sites.
+      const vertical = point.row < size.rows / 2
+        ? { value: `${Math.round(point.row)} map tiles south of the northern boundary`, distance: point.row }
+        : { value: `${Math.round(size.rows - 1 - point.row)} map tiles north of the southern boundary`, distance: size.rows - 1 - point.row }; // The second axis allows triangulation even without rivers, trails, or landmarks.
+      facts.push({ kind: 'distance', value: horizontal.value, source: 'final-grid-distance', distance: horizontal.distance });
+      facts.push({ kind: 'distance', value: vertical.value, source: 'final-grid-distance', distance: vertical.distance });
     }
     facts.push({ kind: 'tree', value: blossomName, source: 'stamped-target-tree' });
     return { ok: true, zoneId, point, facts, evidence: { waterFound: !!water, pathFound: !!path, landmarkFound: !!landmark, optionalTerrainFallback: !water && !path && !landmark } };
