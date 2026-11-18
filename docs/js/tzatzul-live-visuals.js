@@ -135,7 +135,11 @@
       }
       releasedPoseChecks.set(prey, { ...pose, poseSession: null, remaining: 2 }); // Guard only a verified late replay, not the new native pose.
     } else {
-      releasedPoseChecks.delete(prey);
+      // A new fall/combat quaternion can take over before the bird drops its
+      // prey. Keep a *position-only* replay guard; never restore that old angle.
+      if (pose.lastNativePosition && pose.lastAlignedPosition && pose.group.parent === pose.parent)
+        releasedPoseChecks.set(prey, { ...pose, poseSession: null, remaining: 2, positionOnly: true });
+      else releasedPoseChecks.delete(prey);
       debug.captiveHandoffs++;
     }
     debug.captiveRestores++;
@@ -283,6 +287,19 @@
         && sameVector(reset.group.position, reset.lastAlignedPosition)) {
         reset.group.position.copy(reset.lastNativePosition);
         debug.staleCarryPositionCorrections++;
+      }
+      if (reset.positionOnly) {
+        // The newer impact pose owns orientation. Watch only for a stale talon
+        // translation, and give up immediately when native movement takes over.
+        if (reset.group.parent !== reset.parent
+          || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'position')
+          || (!sameVector(reset.group.position, reset.lastNativePosition)
+            && !sameVector(reset.group.position, reset.lastAlignedPosition))) {
+          releasedPoseChecks.delete(prey);
+          continue;
+        }
+        if (--reset.remaining <= 0) releasedPoseChecks.delete(prey);
+        continue;
       }
       const newOwner = window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'quaternion')
         || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'scale'); // A resumed fall/locomotion action takes precedence over stale talon replay.
