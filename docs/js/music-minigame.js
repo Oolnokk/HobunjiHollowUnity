@@ -1145,9 +1145,6 @@
         if (modeText) modeText.textContent = String(labels[sector] || `MODE ${sector + 1}`).replace(/\s+/g, ' ').slice(0, 8);
         button.classList.toggle('selected', sector === selectedSector);
       });
-      const patternSelect = leftMount.querySelector('[data-plucking-pattern]'); // Mirrors the selected directional slot without overwriting a user's open picker each frame.
-      const patternId = stateSnapshot.autoPickSlots?.[selectedSector] || DEFAULT_AUTO_PICK_SLOTS[selectedSector]; // Shared slot id from the engine.
-      if (patternSelect && patternSelect.value !== patternId) patternSelect.value = patternId;
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
