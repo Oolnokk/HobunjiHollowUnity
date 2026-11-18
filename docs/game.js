@@ -480,6 +480,9 @@
       const TILE = 55;          // birds-eye tile size in px
       const PLAYER_RADIUS = 15;
       const MOVE_SPEED    = 238;  // px/s world units; used by updateMovement() target velocity.
+      const ENEMY_PURSUIT_SPEED_PX_S = MOVE_SPEED * 1.08 * 0.95; // Ordinary enemy pursuit reaches 95% of a starting player's Well Rested (+8%) running speed before enemy-only slows.
+      const enemyPursuitSpeedDebug = { targetPxS: ENEMY_PURSUIT_SPEED_PX_S, lastEnemyId: null, lastRequestedPxS: 0, lastResolvedPxS: 0 }; // Mobile-readable proof of the most recent ordinary enemy chase adjustment.
+      window.__enemyPursuitSpeedDebug = enemyPursuitSpeedDebug;
       // Dev balancing knob (Testing Arena's "Base movement speed" slider) --
       // multiplies the PLAYER's own target speed (updateMovement) and every
       // creature/bandit's speed at moveCreatureToward, the single choke
@@ -6348,7 +6351,18 @@
         // returning wildlife. The route graph prevents shortcutting vertically.
         const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy affects both cliff-route approaches and ground motion.
         const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky also slows both paths.
-        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for ordinary and cliff-route travel.
+        const authoredChaseSpeed = Number(c.def?.chaseSpeed); // Identifies ordinary pursuit requests without affecting sprint attacks, dodges, retreats, or custom AI speeds.
+        const ordinaryPursuit = (c.state === 'chase' || c.state === 'searching') && c.master !== player &&
+          !(c.isCompanion && !c.banditCompanion) && Number.isFinite(speed) && speed > 0 &&
+          Number.isFinite(authoredChaseSpeed) && authoredChaseSpeed > 0 && Math.abs(speed - authoredChaseSpeed) < 0.001;
+        const armorPaceMul = c._enemyPursuitArmorMul == null ? 1 : Math.max(0, Number(c._enemyPursuitArmorMul) || 0); // Bandit outfit penalties still scale the pursuit floor once.
+        const chasePace = ordinaryPursuit ? Math.max(speed, ENEMY_PURSUIT_SPEED_PX_S * armorPaceMul) : speed;
+        if (ordinaryPursuit) {
+          enemyPursuitSpeedDebug.lastEnemyId = c.id || c.creatureKey || 'enemy';
+          enemyPursuitSpeedDebug.lastRequestedPxS = speed;
+          enemyPursuitSpeedDebug.lastResolvedPxS = chasePace;
+        }
+        const baseSpeed = chasePace * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for both ordinary and cliff-route travel.
         if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
