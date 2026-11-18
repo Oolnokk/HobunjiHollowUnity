@@ -179,6 +179,7 @@ async function main(){
   assert.equal(cutscenes,1,'only one cinematic per shared world-year');
   assert.equal(equipment.devWornClothing().hat?.label,'Five Blossom Crown');
   assert.equal(equipment.devWornClothing().hood?.cosmeticId,'facewrap','later finder keeps their facewrap');
+  assert(W.__hobunjiPlayerProfile.gearInventory.clothingItems.some(item=>item.uid==='farmhand-hat'),'quiet crown award keeps the later finisher’s previous equipped hat owned');
   assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1156'].characterId,'owner','later farmhand cannot replace winner');
   civilYear=1157;area='town';tile={area,col:33,row:40};W.FestivalBlossomHunt.update();
   readyHunt();
