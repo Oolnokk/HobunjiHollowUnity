@@ -15,7 +15,7 @@ const grid = Array.from({ length: 40 }, () => Array.from({ length: 40 }, () => (
 }))); // Exposes wide rooms without treating an upstairs shaft floor as valid ground.
 const owner = { x: 18.5 * TILE, y: 18.5 * TILE, health: 100 }; // Physically located on lower floor y=2.
 const camera = { projectPoint: p => ({ x: (p.x - owner.x / TILE) / 4, y: (p.z - owner.y / TILE) / 4, z: 0 }) }; // Near owners are visibly onscreen; distant rooms are not.
-const state = { floor: 2, pathExists: true, blocked: false, companionVisible: false };
+const state = { floor: 2, pathExists: true, blocked: false, pathProbe: null }; // Optional path cell validates actual rock and door occupancy.
 let candidateFloorChecks = 0, routedChecks = 0, attackCancels = 0; // Verifies the real recovery uses authoritative collision/path APIs.
 const windowMock = {
   __farmLog() {},
@@ -34,7 +34,11 @@ const windowMock = {
   },
   TilePathfinding: {
     boxAround: () => ({ minCol: 0, maxCol: 40, minRow: 0, maxRow: 40 }),
-    findPath: () => { routedChecks++; return state.pathExists ? [{ col: 18, row: 18 }] : null; },
+    findPath: (_sc, _sr, _tc, _tr, walkable) => {
+      routedChecks++;
+      if (state.pathProbe && !walkable(state.pathProbe.col, state.pathProbe.row)) return null;
+      return state.pathExists ? [{ col: 18, row: 18 }] : null;
+    },
   },
   Combat: { animalAttacks: { cancel: () => attackCancels++ }, telegraph: { cancel() {}, isBusy: () => false },
     cancelStagedForAttacker() {} },
@@ -98,6 +102,12 @@ state.pathExists = false; // The destination is separated from the owner by a lo
 const disconnected = makePet();
 assert.equal(simulate(disconnected), false, 'landing must have a real same-story route back to its owner');
 state.pathExists = true;
+grid[18][17].type = 'rock'; // A locked/occupied cell can have legitimate support beneath it.
+state.pathProbe = { col: 17, row: 18 };
+const rockDoor = makePet();
+assert.equal(simulate(rockDoor), false, 'a rock or sealed-door tile blocks the recovery path even when a floor supports it');
+state.pathProbe = null;
+grid[18][17].type = 'floor';
 state.blocked = true;
 const blocked = makePet();
 assert.equal(simulate(blocked), false, 'registered blocker geometry prevents unsafe recovery');
