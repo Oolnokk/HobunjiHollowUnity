@@ -301,7 +301,7 @@ const world = {
   GameplayInputRouter: {setClaims(){},clearClaims(){}},
   DevCompanion: { registerStateProvider() {} },
   GridTileAccessors: { getActiveScene: () => scene },
-  FoliageGenerator: { buildPottedBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
+  FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { set() {} }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
   ClimbSystem: { groundYAt: (x,y) => { sampledHeights.push({x,y}); return 0; } }
 };
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/festival-blossom-hunt.js'), 'utf8'), vm.createContext({ window: world, console }));
