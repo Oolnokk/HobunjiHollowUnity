@@ -192,6 +192,32 @@ const compact = vm.runInNewContext('(' + weaving.slice(hashStart, hashEnd).trim(
 assert.equal(compact('same'), compact('same'), 'bake cache key is stable');
 assert.notEqual(compact('same'), compact('different'), 'different patterns cannot reuse stale baked pixels');
 assert(compact('data:image/png;base64,' + 'A'.repeat(100000)).length < 50, 'large pattern PNG is represented by a short cache key');
+const bakeWrapperStart = weaving.indexOf('  async function applyPatternStackToTintedImage(');
+const bakeWrapperEnd = weaving.indexOf('  async function composePatternStackToTintedImage(', bakeWrapperStart);
+assert(bakeWrapperStart > 0 && bakeWrapperEnd > bakeWrapperStart, 'async bake wrapper exists separately from the expensive raster builder');
+const bakeWrapper = weaving.slice(bakeWrapperStart, bakeWrapperEnd);
+let rasterCount = 0, finishRaster = null;
+const renderGate = new Promise(resolve => { finishRaster = resolve; }); // Holds one fake bake open so two concurrent requests must join it.
+const bakeEnvironment = { normalizePatternStack: patterns => patterns, cachedPatternedCanvas: () => null, pendingPatternStackCanvases: new Map(),
+  patternStackRenderKey: () => 'same-baked-frame', composePatternStackToTintedImage: () => { rasterCount++; return renderGate; } }; // Exercises the production concurrency wrapper without needing a browser canvas.
+const bakeProbe = vm.runInNewContext(`
+  const { normalizePatternStack, cachedPatternedCanvas, pendingPatternStackCanvases, patternStackRenderKey, composePatternStackToTintedImage } = environment;
+  let patternStackJoinCount = 0;
+  ${bakeWrapper}
+  ({ render: applyPatternStackToTintedImage, joinCount: () => patternStackJoinCount });
+`, { environment: bakeEnvironment });
+const frameStub = { width: 8, height: 8 }, patternStub = [{ motifUrl: 'motif:test' }]; // Identical frame and motif inputs used by concurrent animal requests.
+const firstBake = bakeProbe.render(frameStub, patternStub, '#ffffff', 'animal:test');
+const secondBake = bakeProbe.render(frameStub, patternStub, '#ffffff', 'animal:test');
+assert.equal(rasterCount, 1, 'two simultaneous equivalent requests launch exactly one expensive raster bake');
+assert.equal(bakeProbe.joinCount(), 1, 'duplicate requests are recorded by performance diagnostics');
+finishRaster(frameStub);
+Promise.all([firstBake, secondBake]).then(frames => {
+  assert.equal(frames[0], frameStub, 'first caller receives the baked frame');
+  assert.equal(frames[1], frameStub, 'second caller receives that same baked frame');
+  assert.equal(bakeEnvironment.pendingPatternStackCanvases.size, 0, 'successful bakes release their in-flight entry');
+}).catch(error => { console.error('Fused-pattern pending bake regression:', error); process.exitCode = 1; });
+
 
 const fuseStart = weaving.indexOf('  function fuseSampledPatternMasks(');
 const fuseEnd = weaving.indexOf('\n  async function applyPatternStackToTintedImage(', fuseStart);
