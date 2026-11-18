@@ -1,5 +1,35 @@
 # Performance investigation log
 
+## 18 Nov 2026: replace CPU-baked lunge/dodge afterimages with live-color GPU smears (device benchmark pending)
+
+Quick Attacks and Charged Breakers both drive combat lunges. The old combat-blink-dodge.js
+generated up to three frozen ghost portraits per moving actor. Each sampled skinned
+vertices on the CPU, copied its source texture maps into canvases and owned new GPU
+textures. The earlier 15 Nov measurement documented costs on this path, but did not
+prove that afterimages alone caused the user's newest combat freezes.
+
+The new path renders a single reusable soft, stretched silhouette per portrait surface.
+It shares the actor's live front/back textures, color-filled patterns, tint and GPU
+skeleton. The optional one-time GPU grid reduction takes 28x36 cells to 14x18 cells;
+subsequent motion samples update in-place velocity, length and opacity uniforms.
+The fragment shader modifies alpha before premultiplication and never modifies RGB.
+The real animated character remains sharp and untouched.
+
+Travel is observed after collision, accumulated between 55ms samples and normalized
+by the sample interval. Smears fade over 0.19s, while reusable resources are kept
+warm during combat, capped at 24 actor roots and pruned after 30 seconds idle.
+The presentation path no longer performs CPU pose baking, canvas snapshots or
+per-strike texture uploads. The existing mobile diagnostic
+ 'HobunjiDodgeFeedback.getDebug().blink.afterimages' reports
+ 'rgba-directional-motion-smear', active/cached records and measured travel.
+
+Executable fake-Three regressions check player/hostile color texture identity,
+GPU skin weights, shader alpha-only changes, mesh reuse, safe cleanup and
+the no-Three Blink fallback. The real-Three reduced-grid regression was updated.
+Device WebGL timing and visual review are still necessary to prove performance
+improvement and assess the blur's presentation. Strike callbacks, hit-stop and
+the separate empty tap2 recursive fallback remain unchanged.
+
 ## 16 Nov 2026: wilderness props drawn as merged batches; pants skinned on the GPU (headless)
 
 **What spawns in the wilderness and what it costs.** Draw census of one frame per zone (headless, outlines on, every
