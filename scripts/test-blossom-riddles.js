@@ -55,6 +55,44 @@ for (let seed = 0; seed < 400; seed++) {
   assert.doesNotMatch(candidate.text, forbiddenTiming, 'random poems contain no false time-of-day conditions');
   assert.doesNotMatch(candidate.text, forbiddenCounting, 'random poems contain no numeric grid-instruction clues');
 }
+// Expanded ABAB bank: phonetic variety and registered-landmark specificity.
+const coveredFamilies = new Set(); // Tracks exercised terminal sounds.
+const coveredLandmarks = new Set(); // Tracks independently sourced scenery categories.
+for (let seed = 0; seed < 1200; seed++) {
+  const layout = layoutFor('cyan');
+  layout.tiles[24][25] = { type:'stream' };
+  layout.tiles[24][26] = { type:'path' };
+  layout.tiles[25][27] = { type:'rock', rockKind:'undiggableBoulder', boulderId:'verified-rock' };
+  const sample = [
+    { name:'a stone cairn', kind:'stoneCairn', point:{col:30,row:25}, source:'generated-year-round-scenery' },
+    { name:'a broken stone pillar', kind:'brokenPillar', point:{col:30,row:29}, source:'generated-year-round-scenery' },
+    { name:'a dead tree', kind:'deadTree', point:{col:25,row:31}, source:'generated-year-round-scenery' },
+    { name:'a cliff door', kind:'cliffDoor', point:{col:16,row:24}, source:'registered-cliff-door' },
+    { name:'the root totem', kind:'rootTotem', point:{col:21,row:32}, source:'generated-root-totem' },
+    { name:'a wild animal den', kind:'animalDen', point:{col:34,row:20}, source:'generated-animal-den' }
+  ];
+  const offset = seed % sample.length;
+  const poem = Riddles.generate({zoneId:'map_northern_cliffs',layout,instance:layout.localeInstances[0],targetName:'Cyan Blossom',targetKind:'blossom',
+    landmarks:[sample[offset],sample[(offset+1)%sample.length],sample[(offset+2)%sample.length]],seed:'expanded-'+seed});
+  assert.equal(poem.ok,true,'all expanded seeded poems rhyme: '+seed);
+  assert.equal(poem.evidence.landmarkCount,2,'two distinct real landmarks can triangulate the target');
+  for(const landmark of poem.facts.filter(f=>f.kind==='landmark'))coveredLandmarks.add(landmark.flavor);
+  assert.ok(poem.stanzas.length<=2);
+  for(const stanza of poem.stanzas){
+    const endings=stanza.map(line=>line.replace(/[.,;!?]+$/,'').trim().split(/\s+/).pop().toLowerCase());
+    assert.notEqual(endings[0],endings[2],'A rhyme changes its ending word');
+    assert.notEqual(endings[1],endings[3],'B rhyme changes its ending word');
+    for(const word of endings){
+      const family=Object.keys(Riddles.RHYMES).find(name=>Riddles.RHYMES[name].includes(word));
+      assert.ok(family,'every terminal must be in the sound bank');
+      coveredFamilies.add(family);
+    }
+  }
+  assert.doesNotMatch(poem.text,forbiddenTiming);
+  assert.doesNotMatch(poem.text,forbiddenCounting);
+}
+assert.equal(coveredFamilies.size,10,'all ten phonetic families exercised');
+assert.ok(['stoneCairn','brokenPillar','deadTree','cliffDoor','rootTotem','animalDen'].every(kind=>coveredLandmarks.has(kind)),'all registered landmark types represented');
 const noWater = layoutFor('cyan'); // Missing preferred river may never produce a river clue.
 const missing = Riddles.generate({ zoneId: 'map_northern_cliffs', layout: noWater, instance: noWater.localeInstances[0], blossomName: 'Cyan Blossom' });
 assert.equal(missing.ok, true);
