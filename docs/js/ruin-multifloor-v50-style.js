@@ -226,6 +226,12 @@
         }
       }
     }
+    // Select coffin lids BEFORE engraving: they are actual wall panels that must remain bare stone.
+    const selectedCoffins=root.RuinWallCoffins?.pick?.(coffinSites,{seed,tier:ruin.tier||'hole'})||[];
+    for(const site of selectedCoffins)if(site.panel?.userData){
+      site.panel.userData.ruinNoPattern=true; // Re-engravings and rule edits preserve the exclusion.
+      site.panel.userData.ruinWallCoffin=true;
+    }
     const traditionGlyph=root.SpecialHarlyaoLiches?.defFor?.(ruin.theme)?.glyph;
     const special=ruin.specialBoss?{
       specialBoss:true,

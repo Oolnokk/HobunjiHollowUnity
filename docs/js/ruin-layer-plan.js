@@ -157,7 +157,15 @@
         const outerRadius=Math.floor((o.shaftSize+o.shaftWall*2)/2);
         const portal={x:cx+dir.dx*outerRadius+lateral.dx*o.portalOffset,
           z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
-        let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
+        // The shaft portal is now the door of a real enclosed five-cell-deep room.
+        // Its room ID, elevation and ambience participate in the same ownership as puzzle rooms.
+        const anteroom={id:`${wingId}-shaft-anteroom`,kind:'shaft-antechamber',challenge:null,
+          x:dir.dx>0?portal.x:dir.dx<0?portal.x-4:portal.x-2,
+          z:dir.dz>0?portal.z:dir.dz<0?portal.z-4:portal.z-2,
+          w:5,d:5,y,wingId,traits:{ambient:'shaft-approach',encounter:'none'}};
+        rooms.push(anteroom);
+        doorways.push({from:`shaft-f${floor}`,to:anteroom.id,side:dir.side,point:{...portal},floor});
+        let previous={...portal}; // The shaft-side door leads directly into the anteroom.
         for(let stage=1;stage<=challengeCount+1;stage++){ // One or two authored puzzles per shaft exit, followed by one required brazier.
           const isGoal=stage===challengeCount+1;
           // A room is a room: every puzzle room draws from the WHOLE implemented set, whatever its position in the wing.
@@ -171,7 +179,7 @@
           const large=defence||findBlocks;
           let rw=large?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
           let rd=large?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
-          const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
+          const gap=stage===1?integer(rng,6,7):integer(rng,3,6); // Keep the first puzzle clear of its five-cell shaft anteroom.
           const offset=integer(rng,-2,2); // Lateral hallway variation stays independent of rope room sizing.
           const id=`${wingId}-room${stage}`;
           const smallPool=puzzles.filter(kind=>kind!==prevKind); // The authored small-puzzle families share one selectable pool.
@@ -223,7 +231,7 @@
           if(isGoal)braziers.push({id:`${wingId}-brazier`,wingId,roomId:id,
             x:rx,z:rz,y,requires:nodes.filter(n=>n.challenge).map(n=>n.id)});
         }
-        wings.push({id:wingId,floor,side:dir.side,entry:{...portal,y},rooms:nodes,corridors,goalBrazierId:braziers[braziers.length-1].id});
+        wings.push({id:wingId,floor,side:dir.side,entry:{...portal,y},anteroom,rooms:nodes,corridors,goalBrazierId:braziers[braziers.length-1].id});
       }
       floors.push({floor,y,anchor:{...shaft.anchor},rooms,hallways,doorways,wings,braziers,nativePort,entry:floor===0?{kind:'external-wing',side:o.groundEntranceSide||'S'}:null});
     }
@@ -261,6 +269,12 @@
           &&wing.corridors.every(hall=>hall.rects.every(rect=>!intersects(rect,area)))));
       }
       for(const wing of floor.wings){
+        const ante=wing.anteroom; // Verify each doorway is an enclosed room, not an unowned corridor.
+        add(wing.id+'-shaftAnteroom',!!ante&&ante.kind==='shaft-antechamber'
+          &&ante.w===5&&ante.d===5&&floor.rooms.includes(ante)
+          &&floor.doorways.some(door=>door.to===ante.id&&door.from===`shaft-f${floor.floor}`
+            &&door.point.x===wing.entry.x&&door.point.z===wing.entry.z)
+          &&wing.rooms.every(room=>!intersects(ante,room)));
         add(wing.id+'-challenges',wing.rooms.length>=2&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
           r=>PLAYABLE_PUZZLES.includes(r.challenge)

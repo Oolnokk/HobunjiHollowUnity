@@ -12,6 +12,23 @@ const layout=Rooms.planRooms({options:{theme:'tothal'},floors:[{
 }]});
 assert.equal(layout.ok,true,layout.errors.join('; '));
 assert.equal(layout.rooms.length,2);
+const shaftAnte={id:'floor0-E-shaft-anteroom',kind:'shaft-antechamber',challenge:null,x:8,z:13,w:5,d:5};
+const firstAfterAnte={...room1,x:14};
+const withAnte=Rooms.planRooms({options:{theme:'hronal'},floors:[{
+  floor:0,y:0,doorways:[
+    {to:shaftAnte.id,from:'shaft-f0',point:{x:8,z:15}},
+    {to:firstAfterAnte.id,from:shaftAnte.id,point:{x:14,z:15}},
+    {to:room2.id,from:firstAfterAnte.id,point:{x:30,z:15}}],
+  wings:[{id:'floor0-E',side:'E',anteroom:shaftAnte,rooms:[firstAfterAnte,room2]}],
+}]});
+assert(withAnte.ok,withAnte.errors.join('; '));
+assert.equal(withAnte.rooms.length,3,'shaft anteroom is an independently owned room');
+assert.equal(withAnte.doors.length,3,'shaft anteroom gets a real door');
+assert.deepEqual(withAnte.doors.map(door=>door.initiallyLocked),[false,false,true],
+  'anteroom and initial challenge open automatically; later progression remains gated');
+assert.equal(withAnte.rooms[0].blocked.length,2,'5-cell entrance wall retains a three-cell shaft doorway');
+assert.equal(withAnte.rooms[0].kind,'shaft-antechamber');
+assert(withAnte.rooms[0].ambient,'anteroom shares normal per-room ambience');
 const v50=Rooms.v50Rooms({cellSize:.5,rooms:[{id:'vestibule',col:2,row:3,w:6,h:8}]},{
   originX:40,originZ:70,tileScale:2,y:12,prefix:'v50-f1',theme:'kanthic',
 });

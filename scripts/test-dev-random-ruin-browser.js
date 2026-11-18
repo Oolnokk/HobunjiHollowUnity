@@ -174,11 +174,63 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           failures.push({side,depth,teleported,held,y,voxelBlocked:collision?.grid?.blockedHere??null});
       }
     }
-    return {seed:state.seed,requestedSeed,portals:floor.sides,checked:floor.sides.length*(wall+1),probe,failures};
+    // These are the real V50 entrance-wall meshes, not decorative lookalikes.
+    // At least one rendered entrance wall MUST have a structural, height-aware collision footprint.
+    const wallCollision={rendered:0,blocked:0,instanced:0};
+    const entranceRoot=api.getRuntimeContext()?.root;
+    entranceRoot?.traverse?.(node=>{
+      if(!node.isMesh||!node.userData?.ruinInteriorWall||node.visible===false||wallCollision.rendered>=120)return;
+      const geometry=node.geometry;if(!geometry)return;
+      geometry.computeBoundingBox?.();if(!geometry.boundingBox)return;
+      node.updateWorldMatrix?.(true,false);
+      const center=geometry.boundingBox.getCenter(new THREE.Vector3());
+      if(node.isInstancedMesh){
+        if(node.count<1)return;
+        const matrix=new THREE.Matrix4();
+        node.getMatrixAt(0,matrix);
+        center.applyMatrix4(matrix);
+        wallCollision.instanced++;
+      }
+      center.applyMatrix4(node.matrixWorld);
+      wallCollision.rendered++;
+      const hit=window.DevRandomRuinTileOccupancy?.solidAt?.(center.x,center.z,.03,center.y);
+      if(hit?.tag==='v50-structural-wall')wallCollision.blocked++;
+    });
+    return {seed:state.seed,requestedSeed,portals:floor.sides,checked:floor.sides.length*(wall+1),probe,failures,wallCollision};
   });
   assert.deepEqual(cavePortals.failures,[], 'real two-door F2 cave remains physically blocked: '+JSON.stringify(cavePortals));
+  assert(cavePortals.wallCollision.rendered>0 && cavePortals.wallCollision.blocked>0,
+    'visible V50 entrance masonry must participate in the actual collision-footprint registry: '+JSON.stringify(cavePortals.wallCollision));
 
   console.log('[F2 portal probe passed]',JSON.stringify({seed:cavePortals.seed,portals:cavePortals.portals,checked:cavePortals.checked}));
+
+  // Reproduce the original F2 balcony failure through the ACTUAL game updateMovement loop:
+  // PlayerJump preserves vertical physics, then native game.js must still consume the dodge dash/timer.
+  const airborneDodge=await page.evaluate(async()=>{
+    const api=window.DevRandomRuin,player=window.Combat?.deps?.player,tile=window.Combat?.deps?.TILE||64;
+    const jump=window.PlayerJump,info=api.getState()?.shaftLayerPlan?.wings?.[1];
+    const directions={N:[0,-1],E:[1,0],S:[0,1],W:[-1,0]};
+    const [dx,dz]=directions[info?.sides?.at(-1)]||[0,1];
+    const start={x:player.x/tile,z:player.y/tile,y:api.getPlayerGroundSupportY?.()};
+    const flight=jump.beginFlight({x:start.x,z:start.z,y:start.y+.3,vy:0,vx:0,vz:0},
+      {source:'F2 real midair dodge regression',deliberate:false});
+    if(!flight)return {started:false};
+    player.dodging=true;player.dodgeT=.22;
+    player.dodgeDirX=-dx;player.dodgeDirY=-dz; // Dash inward through the already audited, open shaft portal.
+    for(let i=0;i<6;i++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    const report={started:true,nativeTimerAdvanced:player.dodgeT<.22,
+      remaining:player.dodgeT,horizontalTravel:Math.hypot(player.x/tile-start.x,player.y/tile-start.z),
+      feetY:player.physicalFeetY,upperY:start.y,retainedFlight:player._freeJump===flight};
+    player.dodging=false;player.dodgeT=0;
+    jump.reset?.(player,'F2 dodge test finished');
+    api.setPlayerWorldPoint(start,{grounded:true,snapCamera:false});
+    return report;
+  });
+  assert(airborneDodge.started&&airborneDodge.nativeTimerAdvanced
+    &&airborneDodge.horizontalTravel>.015&&airborneDodge.retainedFlight
+    &&airborneDodge.feetY>=airborneDodge.upperY-.1,
+    'F2 midair dodge must move at native dash speed, advance its timer and preserve upper-floor height: '+JSON.stringify(airborneDodge));
+  console.log('[F2 midair dodge passed]',JSON.stringify(airborneDodge));
 
   const puzzlePanel = await page.evaluate(() => {
     const details = document.getElementById('devRandomRuinPuzzleOptions');

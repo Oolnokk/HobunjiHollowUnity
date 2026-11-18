@@ -27,6 +27,33 @@ const NetworkChallenges={...Challenges,compose(options){ // Only the network-pro
 const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
+{ // The map and collision diagnostics cannot union an unopened wing-border voxel over an open shaft doorway.
+  const begin=runtime.indexOf('getShaftCollisionMap:(requestedFloor=0)=>{');
+  const end=runtime.indexOf('    isShaftNetworkComplete:',begin);
+  assert(begin>0&&end>begin,'production shaft collision projection remains available to the regression');
+  const method=runtime.slice(begin,end).trim().replace(/,\s*$/,'');
+  const grid=solid=>({
+    cols:8,rows:8,levels:10,
+    xToCol:Math.floor,zToRow:Math.floor,colToX:c=>c,rowToZ:r=>r,yToLevel:Math.floor,
+    inBounds:(c,r,l)=>c>=0&&r>=0&&c<8&&r<8&&l>=0&&l<10,
+    isSolid:(c,r,l)=>c===3&&r===4&&l===6&&solid,
+    canStand:(c,r,l)=>c===3&&r===4&&l===6&&!solid,
+  });
+  const project=(shaftSolid,wingSolid,owner)=>{
+    const shaft=grid(shaftSolid),wing=grid(wingSolid);
+    const ruin={shaftGrids:new Map([['shaft-hub',{grid:shaft}],['wing',{grid:wing}]]),
+      shaftHubPlan:{floorCount:2,options:{floorHeight:6}},cols:8,rows:8};
+    const window={RuinLayerPlayable:{selectGrid:()=>owner==='shaft'?shaft:wing}};
+    return new Function('ruin','window','return ({'+method+'}).getShaftCollisionMap;')(ruin,window)(1);
+  };
+  const open=project(false,true,'shaft'),closed=project(true,false,'shaft'),wingOpen=project(true,false,'wing');
+  assert(open.open.includes('3,4')&&!open.blocked.includes('3,4'),
+    'an unopened wing border cannot block a genuinely open shaft portal in diagnostics');
+  assert(closed.blocked.includes('3,4')&&!closed.open.includes('3,4'),
+    'a real shaft wall still blocks when the wing incorrectly reports an opening');
+  assert(wingOpen.open.includes('3,4')&&!wingOpen.blocked.includes('3,4'),
+    'an owned wing mouth remains open even if another grid is solid at that tile');
+}
 const index=require('./classic-script-group-index.js').expandClassicScriptGroups();
 const shaftSound=fs.readFileSync('docs/js/ruin-reaching-obelisks.js','utf8'); // Runtime event handlers are the only owners of shaft stone sounds.
 const rhythmSection=shaftSound.split('const applyBeat=()=>{')[1]?.split('const tick=dt=>{')[0]||'';
@@ -677,7 +704,7 @@ for(const side of ['north','east','south','west']){
     if(node.name?.startsWith('ruin-room-entry-partition-'))partitions.push(node);
     if(node.name?.startsWith('ruin-wing-corridor-ceiling-'))corridorCaps.push(node);
   });
-  const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.rooms));
+  const plannedRooms=connected.plan.floors.flatMap(floor=>floor.wings.flatMap(wing=>wing.anteroom?[wing.anteroom,...wing.rooms]:wing.rooms)); // Every shaft anteroom now owns a real ceiling/partition too.
   assert.equal(caps.length,plannedRooms.length,'each wing room owns a real ceiling');
   assert.equal(partitions.length,plannedRooms.length,'each room has an entrance partition with a door aperture');
   assert(partitions.every(w=>w.material.side===THREE.DoubleSide),'entrance wall flanks render from both sides');

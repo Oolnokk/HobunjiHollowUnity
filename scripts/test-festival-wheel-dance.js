@@ -135,6 +135,28 @@ for(const [ha,hb,ax=1,ay=1,bx=1,by=1] of [[1,1],[.8,1.3],[1.3,.8],[.6,1.8],[1.8,
  assert.equal(api.cameraButton(),null,'view action disappears after stop');
  assert.equal(a.hands.applyOwnedPose(),false,'hand owner released');assert.equal(activeShot,null,'camera released');assert.equal(api.stop(),false);assert.equal(inputClaims.size,0,'cancel claims released');
 }
+// The real world loop repositions the player/NPC roots and may return their facing/neck to idle
+// between the paired solver's frames. These are expected native baselines, not a new cutscene.
+{
+  const a=actor(1,0),b=actor(1,.6),walker={rec:{id:'sloomi'},area:'town',root:b.root,avatarGroup:b.model,legs:b.legs};
+  const initialA=a.root.position.clone(),initialB=b.root.position.clone(); // Logical world coordinates remain fixed while dance visuals orbit.
+  const facingA=a.root.quaternion.clone(),facingB=b.root.quaternion.clone(); // Normal actor-facing reset should be accepted by this exclusive dance.
+  const idleNeck=b.model.userData.neckRig.neckJoint.quaternion.clone(); // Ordinary NPC head/look update can reset to idle between frames.
+  api.init({getPlayerModel:()=>a.model,getPlayerLegs:()=>a.legs,surfaceY:()=>0});
+  assert(api.start(walker,a.root));
+  a.root.position.copy(initialA);b.root.position.copy(initialB);
+  a.root.quaternion.copy(facingA);b.root.quaternion.copy(facingB);
+  b.model.userData.neckRig.neckJoint.quaternion.copy(idleNeck);
+  api.update(1/60,false,'town');
+  assert(api.activeFor('sloomi'),'expected player/NPC position and facing resets do not cancel the pair');
+  assert(api.diagnostics().nativeResets>=3,'mobile dance diagnostics count native animation handoffs');
+  a.root.position.copy(initialA); // Engine may reset logical player position directly before a cancellation.
+  assert(api.stop('player-canceled'));
+  assert(Math.abs(a.root.quaternion.w-facingA.w)<1e-8,'a mid-handoff cancel still removes the authored root tilt');
+  assert(b.root.position.distanceTo(initialB)<1e-8,'uninterrupted NPC root returns to its original position');
+  assert(Math.abs(b.model.userData.neckRig.neckJoint.quaternion.w-idleNeck.w)<1e-8,'paired head gaze releases normally');
+  assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'all claims release after normal world-loop resets');
+}
 assert(cameraRefreshes>0,'paired pose refreshes the existing cinematic camera owner');
 assert(Math.abs(api.sample(.25).tilt-22*Math.PI/180)<1e-6,'preview rhythm retained');
 console.log('Paired dance: size-aware reach, coincident hands, planted support, alternating hops, preview gaze/camera, pause and cleanup passed.');
@@ -159,6 +181,7 @@ assert(api.start(cancelWalker,cancelA.root));cancelB.root.parent=null;api.update
  assert(!api.isActive(),'an unexpected absolute owner stops the previous dance');
  assert.equal(api.diagnostics().lastStopReason,'pose-owner-taken-over');
  assert(newA.root.position.distanceTo(replacement)<1e-8,'newer root position must survive delayed cleanup');
+ assert(Math.abs(newA.root.quaternion.w-1)<1e-8,'a displaced root must not retain the authored backward lean if its rotation was untouched');
  assert(newB.root.position.distanceTo(beforeB)<1e-8,'the untouched partner returns to the pre-dance pose');
  assert.equal(window.ActorRigCompositor.getDebug().activeAbsoluteClaims,0,'all paired ownership claims release after takeover');
  assert(api.start(newWalker,newA.root),'a replacement action may acquire the released rigs');
@@ -188,6 +211,15 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
 // Execute the actual game wiring: paired controls take priority over an aimed chair.
 {
  const game=fs.readFileSync('docs/game.js','utf8'); // Covers the mobile arch entry point rather than only exported runtime methods.
+ // Verify the player avatar and feet share the world root used by the festival system.
+ assert(game.includes('playerMesh.add(avatarGroup);'),'the rendered player portrait is a child of the real world root');
+ assert(game.includes('getPlayerMesh: () => playerMesh, // Passes the real player avatar root'),'festival injection supplies that same world root');
+ assert(game.includes("window.CharacterActionLocks?.isLocked?.('player', 'pose') === true"),'ordinary player mesh update respects paired pose ownership');
+ assert(game.includes('window.FestivalWheelDanceRuntime?.isPartner?.(w)'),'ordinary NPC walker update skips the paired partner');
+ const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);'; // The sole paired pose commit point before rendering.
+ const choreographyOffset=game.indexOf(choreographyUpdate); // Prevent an update-order regression that could hide only the player's dance.
+ assert(choreographyOffset>game.indexOf('function updatePlayerMesh(dt)'), 'paired pose runs after the player mesh update function is defined');
+ assert(game.indexOf("window.RuntimeFrameScheduler.checkpoint('pre-render');",choreographyOffset)>choreographyOffset,'the composed pair reaches the normal pre-render checkpoint');
  const a=game.indexOf('      function computeActionButtonsImpl() {'),b=game.indexOf('\n      // Fallback anchor',a);
  const context=vm.createContext({window:{FestivalWheelDanceRuntime:{isActive:()=>true,cameraButton:()=>({action:'festival_dance_view',inputAction:'action2'})},FestivalSystem:{actionButton:()=>({action:'festival_stop_dance'})}}});
  vm.runInContext(game.slice(a,b),context);

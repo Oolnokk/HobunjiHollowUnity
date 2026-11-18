@@ -185,12 +185,12 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261031h9b18729"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261117handDepthReplay2"></script>
+  <script src="js/held-action-animations.js?v=20261118festival1954x1955b"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
-  <script src="js/rig-transform-layers.js?v=20261117kissRenderClaims9"></script>
+  <script src="js/rig-transform-layers.js?v=20261118pairedRig1"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
   <script src="js/character-action-locks.js?v=20261117h49bd228"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
@@ -266,7 +266,7 @@
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-ink.js?v=20261115chromaticGlow3"></script> <!-- Alpha-only recolor + glow shared with the furniture editor. -->
   <script src="js/furniture-decal-runtime.js?v=20261115lichInk1"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261109shellaudit1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261117ruinCoffinPattern1"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261107ruinpngglow1"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -343,7 +343,7 @@
   <!-- Finite projectile cover heights for rock/tree/cavern tiles (extracted from game.js; init(deps) from game.js). -->
   <script src="js/projectile-tile-cover.js?v=20261015a"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
-  <script src="js/movement-block-debug.js?v=20261108mbd1"></script>
+  <script src="js/movement-block-debug.js?v=20261118shaftOwnership1"></script>
   <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
@@ -541,7 +541,7 @@
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261116ruinDeckWalk1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261118nativeDodge1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261116dungeonJump2"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261114h449336b"></script>
@@ -558,7 +558,7 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-jump-shaft.js?v=20261116slabCollision1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261115twoSided1"></script>
-  <script src="js/ruin-layer-plan.js?v=20261114f2apron"></script>
+  <script src="js/ruin-layer-plan.js?v=20261117shaftAnte1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261117revisitFire3"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
@@ -2827,12 +2827,12 @@
   <!-- Kurraya hold-assembly + reactive-twitch visuals (window.KurrayaInstrument)
        — must load before game.js, which calls window.KurrayaInstrument.init(...)
        during its own setup, mirroring window.Fishing above. -->
-  <script src="js/kurraya-instrument.js?v=20261112kurrayaParity1"></script>
+  <script src="js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
   <!-- Music (Lyre) performance minigame (window.MusicMinigame) — must
        load before game.js, which calls window.MusicMinigame.init(...)
        during its own setup, mirroring window.Fishing above. -->
   <script src="js/kurraya-puzzle.js?v=20261110releaseGrid1"></script>
-  <script src="js/music-minigame.js?v=20261114hmusicinputtiming1"></script>
+  <script src="js/music-minigame.js?v=20261118festival1954x1955c"></script>
   <!-- NPC Agenda + Activity Planner redesign (window.NpcAgenda/
        NpcActivities/NpcSocialStimuli/NpcActivityPlanner) — flexible agenda
        beats + a free-time/fallback planner that replaces "freeze if an
@@ -2928,7 +2928,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261118shoulderTextureOwner1"></script>
+  <script src="game.js?v=20261118ruinDodgeShoulder1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
