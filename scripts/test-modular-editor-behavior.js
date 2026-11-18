@@ -142,7 +142,7 @@ for (const shaftKey of singleEnded) {
   else assert.equal(recipes.length, 0,
     shaftKey + ': remove only the old mass-placed recipe boxes without changing mount geometry');
 }
-for (const shaftKey of ['bshuakauitl', 'pick-shovel', 'hachutuTorchStaff'])
+for (const shaftKey of ['bshuakauitl', 'hachutuTorchStaff']) // Pick-Shovel's connector recipes were removed on purpose (it is single-headed now).
   assert(Object.values(api.getConfig().shafts[shaftKey].overrides).some(pair => pair.bridges?.strokes?.some(op => op.recipe)),
     shaftKey + ': preserve potentially intentional multi-ended recipe placements');
 const originalKylie = JSON.parse(JSON.stringify(api.getConfig().shafts.kylie)); // Exact hand-adjusted Kylie mounts.
