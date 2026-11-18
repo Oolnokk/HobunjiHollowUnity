@@ -83,6 +83,12 @@ assert.equal(simulate(fighting), false, 'active combat cannot use the follow tel
 const prone = makePet();
 prone.prone = true;
 assert.equal(simulate(prone), false, 'downed or prone animal cannot be yanked across a room');
+const climbing = makePet();
+climbing._cliffClimb = { descending: true };
+assert.equal(simulate(climbing), false, 'active cliff animations must finish without teleport interruption');
+const routing = makePet();
+routing._cliffRouteTravel = { route: true };
+assert.equal(simulate(routing), false, 'an active authored cliff route must not be aborted by recovery');
 
 state.floor = 7; // The only available support is an overhead story, not the owner's floor.
 const wrongFloor = makePet();
