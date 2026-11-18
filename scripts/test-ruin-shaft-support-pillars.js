@@ -42,6 +42,10 @@ assert.deepEqual(byId.get('pillar_square_shaft').tileSpanRoots,{
   start:{partId:'pillar_square_base1',face:'max'},
   end:{partId:'pillar_square_collar',face:'min'},
 });
+const shaft=byId.get('pillar_square_shaft').transform;
+const rise=byId.get('pillar_square_base1').transform,neck=byId.get('pillar_square_collar').transform;
+near(shaft.y-shaft.sy/2,rise.y+rise.sy/2,'shaft starts exactly at top of raised foot');
+near(shaft.y+shaft.sy/2,neck.y-neck.sy/2,'shaft ends exactly under collar before stretching');
 for(const [width,expected] of [[1,3],[2,2],[3,3],[4,2],[5,3],[6,2],[1.9,2],[3.1,3],[5.4,3]])
   assert.equal(Supports.footprintTiles({w:width}),expected,'rounded tile parity '+width);
 assert.equal(Supports.layout({id:'p',w:2,x:8.5,z:9.5,y:12},-8,.45).footprintTiles,2);
@@ -70,6 +74,7 @@ async function run(){
       buildGroup(data){
         buildCalls.push(data);
         const group=new Node();
+        group.userData.authoredFurnitureData=data;
         group.userData.meshById=new Map();
         for(const part of data.parts){
           const mesh=new Mesh(new Geometry(part.transform.sx,part.transform.sy,part.transform.sz),new Material());
@@ -106,8 +111,12 @@ async function run(){
       near(holder.position.z,p.z,'live pillar Z matches platform');
       near(holder.position.y,plan.pit.bottomY,'live pillar begins in pit');
       near(spanCalls[i],p.y-.45-plan.pit.bottomY,'stretch target is underside');
-      near(visual.scale.x,tiles/.78,'base exactly two or three tiles wide');
-      near(visual.scale.z,tiles/.78,'base exactly two or three tiles deep');
+      const parts=new Map(visual.userData.authoredFurnitureData.parts.map(part=>[part.id,part]));
+      near(parts.get('pillar_square_base0').transform.sx,tiles,'base exactly two or three tiles wide');
+      near(parts.get('pillar_square_base0').transform.sz,tiles,'base exactly two or three tiles deep');
+      assert(parts.get('pillar_square_cap').transform.sx<=p.w,'capital stays within platform width');
+      assert(parts.get('pillar_square_cap').transform.sz<=p.d,'capital stays within platform depth');
+      assert(parts.get('pillar_square_shaft').transform.sx<parts.get('pillar_square_cap').transform.sx,'shaft tapers beneath capital');
       assert.equal(visual.userData.devRuinFootprintIgnore,true,'pillar does not block walking or provide fall support');
       assert(visual.children.every(child=>child.userData.devRuinFootprintIgnore),'every authored mesh stays non-physical');
     }
