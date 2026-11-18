@@ -217,7 +217,8 @@ async function main(){
   assert.equal(W.FestivalBlossomCeremony.arrangeCrowd(stage,fullVillage),100);
   const audience=fullVillage.map(walker=>W.FestivalBlossomCeremony.__test.scheduleOverride(walker.rec));
   assert(audience.every(target=>target.r>=0 && target.r<49.5),'even a 100-person audience stays inside the town south edge');
-  assert(Math.abs((audience[0].c+audience[24].c)/2-(Number(stage.col)+1.5))<0.01,'the large first audience rank centers on the stage');
+  const frontRow = audience.filter(target=>target.r === Math.min(...audience.map(entry=>entry.r))); // NPC ids are alphabetically sorted before slot assignment, not in their generated numeric order.
+  assert(Math.abs((Math.min(...frontRow.map(target=>target.c))+Math.max(...frontRow.map(target=>target.c)))/2-(Number(stage.col)+1.5))<0.01,'the large front audience rank centers on the stage');
   console.log('Five Blossoms crowning: picked Pack items, world-year first finder, player/farmhand stage ceremony, crowd, temporary hood removal, real hat gear/fallback, later awards, persistence, duplicate lockout passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
