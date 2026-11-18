@@ -529,3 +529,55 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   windowObject.HobunjiRangedWeaponArchetypes.patchGeneratedDefinitions();
   assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.debugSnapshot().blowgunStanceSource, 'blowgun-authored-mouth-to-reticle');
 }
+
+
+// Exercise the actual torch release function in isolation: the held world-space quaternion
+// must not affect its flight vector, geometry, or scale.
+{
+  const start = rangedWeaponsSource.indexOf('  function throwAdventuringTorch(visual = null) {');
+  const end = rangedWeaponsSource.indexOf('\n  function spawnVolley(', start);
+  assert(start >= 0 && end > start, 'shipping torch throw function is extractable');
+  const shots = []; // Exact spawn calls made by the real torch code under test.
+  let rayDirection = { x: 0, y: 0, z: -1 }; // Camera forward changes independently of the held torch's pose.
+  let cameraAvailable = true; // Checks the ordinary controller/camera-less fallback.
+  const torchWorld = {
+    WeaponToolStances: { poses: { torchHold: { scale: 0.68 } } },
+    HobunjiRangedCameraFocus: { invalidateAimTarget() {} },
+  };
+  const torchContext = vm.createContext({
+    window: torchWorld,
+    deps: { player: {}, TILE: 64, getPlayerAimRay: () => cameraAvailable ? { direction: rayDirection } : null },
+    playerAimSolution: () => ({ origin: { x: 3, y: 1.2, z: 4 }, direction: { x: 1, y: 0, z: 0 } }),
+    normalizedAimRay: input => input && { direction: input.direction },
+    spawnProjectile: (...args) => {
+      shots.push(args);
+      return {
+        mesh: { position: { x: 3, y: 1.2, z: 4 },
+          userData: { projectilePlane: { geometry: { parameters: { width: .17, height: .38 } } } } },
+        visual: { scale: { x: args[8].visualScale } }, launchTransformMode: 'flight-frame',
+      };
+    },
+    playRangedActionSfx() {},
+    Math, Number,
+  });
+  vm.runInContext('let lastTorchThrow = null;\n' + rangedWeaponsSource.slice(start, end), torchContext);
+  const held = { textureSource: { id: 'tinted-torch' },
+    sourceTransform: { position: { x: 3, y: 1.2, z: 4 }, quaternion: { x: .2, y: .4 },
+      planeWidth: 7, planeHeight: 12, scale: { x: 15, y: 15, z: 15 } } };
+  torchContext.held = held;
+  assert(vm.runInContext('throwAdventuringTorch(held)', torchContext), 'camera-facing throw succeeds');
+  assert(Math.abs(shots[0][3] + Math.PI / 2) < 1e-9, 'camera-facing -Z torch travels -Z, regardless of held world orientation');
+  assert.strictEqual(shots[0][8].preserveSourceOrientation, false, 'torch flight does not retain world-facing held quaternion');
+  assert.strictEqual(shots[0][8].visualScale, .68, 'torch projectile uses the idle Neutral multiplier');
+  assert.strictEqual(shots[0][8].sourceTransform.position.x, 3, 'launch still begins at the held strike position');
+  assert.strictEqual(Object.keys(shots[0][8].sourceTransform).join(','), 'position', 'held scale/rotation/plane dimensions never leak into projectile art');
+  assert.strictEqual(shots[0][8].textureSource, held.textureSource, 'colored held torch texture is reused');
+  rayDirection = { x: 0, y: .6, z: .8 };
+  vm.runInContext('throwAdventuringTorch(held)', torchContext);
+  assert(Math.abs(shots[1][7] - Math.atan2(.6, .8)) < 1e-9, 'aim elevation reaches the thrown torch ballistic pitch');
+  cameraAvailable = false;
+  vm.runInContext('throwAdventuringTorch(held)', torchContext);
+  assert.strictEqual(shots[2][3], 0, 'camera-less fallback uses the existing solver direction');
+  assert.strictEqual(vm.runInContext('lastTorchThrow.aimSource', torchContext), 'fallback-reticle', 'Pixel Probe records the fallback source');
+  console.log('torch camera ray, elevation, source-size isolation, fallback, and debug regression checks passed');
+}
