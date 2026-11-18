@@ -46,8 +46,12 @@ const editorNaturalMaterial=mapEditorHtml.indexOf('../../js/natural-surface-mate
 const editorFestivalScript=mapEditorHtml.indexOf('../../js/festival-props.js?v=');
 assert(editorFoliageScript>=0&&editorNaturalConfig>editorFoliageScript&&editorNaturalMaterial>editorNaturalConfig&&editorFestivalScript>editorNaturalMaterial,
   'Map Editor installs the canonical body-style PNG fill pipeline before creating feast vases');
-assert(standaloneFoliageHtml.includes('js/foliage-generator.js?v=20261118blossomPng25v2'),
-  'standalone foliage author requests current flower PNG code, not an older cached generator');
+const gameFoliageHtml=fs.readFileSync('docs/index.html','utf8'); // The shipped game owns the generator version against which editor versions are compared.
+const liveGeneratorVersion=gameFoliageHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Read the actual active token instead of pinning a test to a date-string.
+const authorGeneratorVersion=standaloneFoliageHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1];
+const mapGeneratorVersion=mapEditorHtml.match(/js\/foliage-generator\.js\?v=([A-Za-z0-9_-]+)/)?.[1];
+assert(liveGeneratorVersion&&authorGeneratorVersion===liveGeneratorVersion&&mapGeneratorVersion===liveGeneratorVersion,
+  'game, Map Editor and foliage author load one matching flower-generator version');
 const foliageSource=fs.readFileSync('docs/js/foliage-generator.js','utf8');
 assert(foliageSource.includes("leafTexture:'assets/leaves/leaf_1.png'"),
   'blossom preset uses bush leaf art, not a white SVG replacement');
