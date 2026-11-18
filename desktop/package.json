@@ -23,6 +23,7 @@
     "files": [
       "main.cjs",
       "save-folder-permissions.cjs",
+      "gpu-diagnostics.cjs",
       "game-protocol.cjs",
       "close-save.cjs",
       "update-controller.cjs",
