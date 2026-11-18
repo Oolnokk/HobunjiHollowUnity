@@ -2,7 +2,7 @@
   'use strict';
   // Wilderness fog/discovery maps then navigation compass; both must precede game.js initialization.
   const scriptUrls = [
-    "js/wilderness-landmark-scenery.js?v=20261118mergedSharedStone4",
+    "js/wilderness-landmark-scenery.js?v=20261118uniqueZoneDyes2",
     "js/wilderness-map.js?v=20261118h6d5b1bb",
     "js/navigation-compass.js?v=20261118h9d00478"
   ]; // Version tokens for these modules are owned in their feature manifest.
