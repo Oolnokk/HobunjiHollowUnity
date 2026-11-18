@@ -258,7 +258,7 @@
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
     router?.clearClaims?.('five-blossoms-tree'); // Never retain a previous character's Action 3 claim after switching worlds.
-    document?.getElementById?.('fiveBlossomsPick')?.remove?.(); // Remove any legacy fixed-position button left by a cached older module.
+    if (typeof document !== 'undefined') document.getElementById?.('fiveBlossomsPick')?.remove?.(); // Remove any legacy fixed-position button left by a cached older module.
     advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
     clearTrees(); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
