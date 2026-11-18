@@ -106,5 +106,53 @@ for(const id of ['gorkunash','five_blossoms']){
     assert.equal(reads,1,id+' uses one roster snapshot on fallback '+trial);
   }
 }
+
+// Real ritual/observance paths also reach generic stations when cached locales cannot assign a guest.
+const ceremonyTarget=id=>build(deps,()=>({id,name:id}),()=>true,new Set(['town']),null,win,
+  ()=>({npcStations:stations}),()=>[self],()=>false,()=>('1154:'+id),
+  ()=>27,assignments,()=>false,()=>false); // Non-feast scheduler with no meal adapter.
+for(const id of ['hachutukara','mountaindawn']){
+  const decide=ceremonyTarget(id);
+  clear();stations=[diningStation('a',22),diningStation('b',23)];
+  walkers=[make('main',20.5,20.5),make('other',21.5,20.5,'a')];
+  assert.equal(decide(self).stationId,'b',id+' generic guest station is occupied');
+  assert.equal(reads,1,id+' reads current roster once across candidate stations');
+  clear();stations=[diningStation('a',22),diningStation('b',23)];
+  assignments.set('other',{scope:'1154:'+id+':27:1',stationId:'a'});
+  assert.equal(decide(self).stationId,'b',id+' respects another guests reservation');
+  assert.equal(reads,1,id+' reads roster only for the unreserved candidate');
+}
+const priorCanStandAt=deps.canStandAt; // Restore the production terrain dependency after testing.
+let terrainSeed=3791; // Repeatable mixed terrain and positive/negative coordinates.
+function terrainRand(){terrainSeed=(terrainSeed*1664525+1013904223)>>>0;return terrainSeed/4294967296;}
+for(const id of ['tzizkhanash','hachutukara','mountaindawn']){
+  const decide=id==='tzizkhanash'?target:ceremonyTarget(id);
+  for(let trial=0;trial<100;trial++){
+    clear();
+    const c0=trial%2===0?-8:20,r0=trial%3===0?-6:20; // Verify grid indexing on negative world tiles.
+    walkers=[make('main',c0+.5,r0+.5)];
+    for(let i=0;i<60;i++)walkers.push(make('other'+i,c0+.5+(terrainRand()-.5)*5.5,
+      r0+.5+(terrainRand()-.5)*5.5,null,i%7?'town':'indoors'));
+    // Include borderline clearance values around exactly 0.6 from a candidate center.
+    walkers.push(make('edge',c0+.5+(trial%3===0?.6:trial%3===1?.599999:.600001),r0+.5));
+    const salt=trial%7; // Impassable tiles vary by trial rather than event.
+    deps.canStandAt=(area,c,r)=>((c*13+r*7+salt)%11)!==0;
+    let expected=null; // Brute-force original occupancy predicate with identical terrain checks.
+    for(let radius=0;radius<=4 && !expected;radius++)for(let dz=-radius;dz<=radius && !expected;dz++)for(let dx=-radius;dx<=radius;dx++){
+      if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
+      const c=c0+dx,r=r0+dz;
+      if(!deps.canStandAt('town',c,r))continue;
+      if(walkers.some(w=>w.rec.id!=='main'&&w.area==='town'&&
+        Math.hypot(w.root.position.x-c-.5,w.root.position.z-r-.5)<.6))continue;
+      expected={c,r};break;
+    }
+    const actual=decide(self);
+    assert.deepEqual([actual.c,actual.r],[expected?.c??c0,expected?.r??r0],
+      id+' walkable-grid and border-clearance parity '+trial);
+    assert.equal(reads,1,id+' scans current NPC roster only once '+trial);
+  }
+}
+deps.canStandAt=priorCanStandAt;
+
 win.NpcScheduling.resolveNpcStationTarget=originalResolve;
-console.log('Modern shared-feast paths: cached meals, chair/reservation parity, lazy standing grid and 300 extra crowded placements passed.');
+console.log('Modern shared-feast paths: cached meals, chair/reservation parity, lazy standing grid and 300 extra crowded placements, plus 300 ritual/terrain/border trials passed.');
