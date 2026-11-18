@@ -13653,15 +13653,6 @@ window.MODULAR_WEAPON_CONFIG = {
                     907
                   ]
                 ]
-              },
-              {
-                "even": true,
-                "amount": 0.35
-              },
-              {
-                "clean": true,
-                "smoothing": 2,
-                "speck": 40
               }
             ],
             "outline": 10,
@@ -17628,15 +17619,6 @@ window.MODULAR_WEAPON_CONFIG = {
                     907
                   ]
                 ]
-              },
-              {
-                "even": true,
-                "amount": 0.6
-              },
-              {
-                "clean": true,
-                "smoothing": 4,
-                "speck": 80
               }
             ],
             "outline": 10,
@@ -21595,15 +21577,6 @@ window.MODULAR_WEAPON_CONFIG = {
                     907
                   ]
                 ]
-              },
-              {
-                "even": true,
-                "amount": 0.35
-              },
-              {
-                "clean": true,
-                "smoothing": 2,
-                "speck": 40
               }
             ],
             "outline": 10,
@@ -25576,15 +25549,6 @@ window.MODULAR_WEAPON_CONFIG = {
                     907
                   ]
                 ]
-              },
-              {
-                "even": true,
-                "amount": 0.6
-              },
-              {
-                "clean": true,
-                "smoothing": 4,
-                "speck": 80
               }
             ],
             "outline": 10,
@@ -29549,15 +29513,6 @@ window.MODULAR_WEAPON_CONFIG = {
                     907
                   ]
                 ]
-              },
-              {
-                "even": true,
-                "amount": 0.35
-              },
-              {
-                "clean": true,
-                "smoothing": 2,
-                "speck": 40
               }
             ],
             "outline": 10,
