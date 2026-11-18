@@ -3,14 +3,16 @@
   const tools = new Map([['torch', {id:'torch', label:'Torch', icon:'🔥'}]]); // Registry for later unlockable adventuring tools.
   const unlocked = new Set(['torch']); // Current character unlocks; the starter torch is always present.
   let lastStrike = null; // Copied by Pixel Probe on mobile when checking reach and ignition.
-  let deps = null, lit = false, lastEvent = 'ready'; // Hand-held torch state is session-only, unlike future tool unlocks.
+  const TORCH_BURN_MS = 30_000; // One real-time flame lifetime shared by the held torch and belt copy.
+  let deps = null, lit = false, lastEvent = 'ready'; // The portable torch's flame is session-only; stowing never creates a second flame.
+  let litUntilMs = null; // Monotonic expiry timestamp, used by actions, mobile debug, and the belt presenter.
   let torchThrowHold = null; // The input owner that pairs exactly one held press with its release or cancellation.
   let torchThrowPending = null; // Released throws wait for the real Strike pose before spawning a projectile.
   let torchThrowRecovering = false; // Keeps the authored Strike/Return sequence alive even if the held mesh was temporarily unavailable.
   let torchThrowHeldHidden = false; // Only restore the previously hidden in-hand copy when its visibility toggle succeeded.
   let lastThrowOrigin='none'; // Pixel Probe/mobile debug identifies whether a launch sampled the held torch plane.
   function init(injected) {
-    deps = injected; lit = false; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; torchThrowHeldHidden = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
+    deps = injected; lit = false; litUntilMs = null; torchThrowHold = null; torchThrowPending = null; torchThrowRecovering = false; torchThrowHeldHidden = false; lastThrowOrigin = 'none'; lastStrike = null; lastEvent = 'ready'; unlocked.clear(); unlocked.add('torch');
     for (const key of (deps.getUnlocked?.() || [])) if (tools.has(key)) unlocked.add(key);
   }
   function register(def) { if (!def?.id || !def.label || typeof def.onSelect !== 'function') return false; tools.set(def.id,def); return true; }
@@ -26,13 +28,28 @@
       onSelect:()=>t.id==='torch'?deps?.selectTorch?.():t.onSelect?.()
     }));
   }
-  function isLit() { return lit; }
+  function nowMs() { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
+  function updateBurn() {
+    if (!lit || litUntilMs === null || nowMs() < litUntilMs) return false;
+    lit = false; litUntilMs = null;
+    cancelThrow('burned-out'); // A 30-second timeout during a charged throw cannot launch an unlit projectile.
+    lastEvent = 'torch burned out after 30 seconds';
+    deps?.refreshActionBar?.();
+    return true;
+  }
+  function isLit() { updateBurn(); return lit; }
   function isHoldingTorch() { return deps?.getActiveTool?.()==='adventuring' && deps?.getHeldMode?.()==='tool' && deps?.getEquippedTool?.()==='torch'; }
-  function canThrow() { return lit && isHoldingTorch(); }
-  function stow() { cancelThrow('stow'); if (!lit) return; lit = false; lastEvent='stowed: extinguished'; deps?.refreshActionBar?.(); }
+  function canThrow() { return isLit() && isHoldingTorch(); }
+  function stow() {
+    cancelThrow('stow'); // Put away the held pose, not the flame; the same clock continues on the belt.
+    updateBurn();
+    lastEvent = lit ? 'stowed on belt: still burning' : 'stowed on belt: unlit';
+  }
   function light() {
+    updateBurn();
     if (lit || !isHoldingTorch()) return false;
-    lit=true; lastEvent='lit from fire-hazard furniture'; deps?.refreshActionBar?.(); return true;
+    lit = true; litUntilMs = nowMs() + TORCH_BURN_MS;
+    lastEvent='lit from fire-hazard furniture'; deps?.refreshActionBar?.(); return true;
   }
   function forehandSwingVisual() {
     if (!isHoldingTorch()) return null;
@@ -101,6 +118,7 @@
   }
 
   function swingAtAim(cone) {
+    updateBurn(); // Swing ignition and melee contact must observe the same held/belt expiry.
     if (!isHoldingTorch()) return { ok: false, message: 'No torch equipped.' };
     const combat = window.Combat;
     const api = combat?.deps;
@@ -234,17 +252,20 @@
     const sampled = projectileVisual || deps?.getTorchProjectileVisual?.() || null; // Direct/dev throws use the same release-frame sample.
     if (!window.RangedWeapons?.throwAdventuringTorch?.(sampled)) return {ok:false,message:'Cannot throw the torch here.'};
     lastThrowOrigin = sampled?.sourceTransform?.position ? 'held-plane' : 'fallback';
-    lit=false; lastEvent='thrown: unlit torch replaced'; deps?.refreshActionBar?.();
+    lit=false; litUntilMs=null; lastEvent='thrown: unlit torch replaced'; deps?.refreshActionBar?.();
     return {ok:true,message:''};
   }
   window.AdventuringTools=Object.freeze({
-    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,forehandSwingVisual,swingAtAim,
+    init,register,unlock,entries,isLit,isHoldingTorch,canThrow,stow,light,updateBurn,forehandSwingVisual,swingAtAim,
     beginThrow,releaseThrow,cancelThrow,throwLit,updateThrow,isThrowSequenceActive,
     get debug() {
+      updateBurn(); // Pixel Probe reports the true clock even on a slow or resumed frame.
       const held = isHoldingTorch(); // Pixel Probe only samples the stance renderer when the adventuring torch is actually equipped.
       const stance = held ? window.WeaponToolStances?.debugSnapshot?.() : null; // Existing mobile diagnostics can confirm world-up correction and idle ownership.
       return {
-        lit, held, throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
+        lit, held, onBelt: !held, burnDurationMs: TORCH_BURN_MS,
+        burnRemainingMs: lit ? Math.max(0, litUntilMs - nowMs()) : 0,
+        throwCharging: !!torchThrowHold, throwPending:!!torchThrowPending, throwRecovering:torchThrowRecovering, throwHeldHidden:torchThrowHeldHidden, throwSource: torchThrowHold?.source || torchThrowPending?.source || null, throwLaunchOrigin:lastThrowOrigin,
         unlocked: [...unlocked], lastEvent, lastStrike,
         torchFire: held ? window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.()
           .find(entry => entry.itemKey === 'torch' && entry.attached)?.fire?.[0] || null : null,
