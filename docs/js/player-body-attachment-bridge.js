@@ -159,6 +159,15 @@
   const MAX_SHOULDER_SPRITE_PIXELS = 1024 * 1024; // Worn pets occupy a tiny fraction of the screen: limit 6.75MP source raster uploads.
   const smallPetHeadDebug = { applied: 0, failed: 0, downsampled: 0, reusedOverlays: 0, overwritesRestored: 0, temporaryTexturesReleased: 0, lastError: null }; // Mobile diagnostics distinguish initial growth from recovery after another texture writer.
 
+  function reportShoulderHeadFailure(kind, error) {
+    smallPetHeadDebug.failed++;
+    smallPetHeadDebug.lastError = String(error?.message || error); // Exposed in the existing mobile portrait diagnostic snapshot.
+    if (smallPetHeadDebug.failed <= 3) {
+      window.__farmLog?.('[shoulder-head] could not complete ' + (kind || 'pet')
+        + ' head/split portrait: ' + smallPetHeadDebug.lastError, 'warn', 'render'); // Touch-accessible debug log, throttled across retries.
+    }
+  }
+
   function shoulderTextureIsBound(companion, url, binding) {
     const avatar = companion?.avatarRef; // Compare actual rendered maps, not just a URL string that animation may leave unchanged.
     if (!binding || binding.url !== url || binding.avatar !== avatar || companion.currentFrameUrl !== url) return false;
@@ -272,7 +281,7 @@
     smallPetHeadFrameCache.set(companion, entry);
     Promise.resolve().then(async () => {
       const warp = window.BabyAnimalHeadWarp;
-      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0;
+      const wantsGrowth = (warp?.scaleForKind?.(kind) ?? 1) > 1 || (warp?.shorteningForKind?.(kind) ?? 0) > 0; // Skips unnecessary alpha-mask work when the user requests original proportions.
       if (wantsGrowth && headRequiresIdleMask(kind)) {
         let mask = await warp?.ensureIdleMask?.(kind); // Prefer the original idle art, not genotype-specific run/eye overlays.
         if (!mask && !renderer?.SPECIES?.[kind]?.base?.idle) {
@@ -316,8 +325,7 @@
       if (smallPetHeadFrameCache.get(companion) !== entry) return;
       entry.pending = false;
       entry.retryAt = Date.now() + 2000; // A temporarily failed head frame must not poison the companion's visual key forever.
-      smallPetHeadDebug.failed++;
-      smallPetHeadDebug.lastError = String(error?.message || error); // Visible through PlayerBodyAttachmentBridge.getDebug() on mobile.
+      reportShoulderHeadFailure(kind, error); // Missing masks/genotype colors retry without silently accepting adult-shaped art.
     });
     return true;
   }
@@ -490,8 +498,7 @@
       if (companion.__hobunjiShoulderSplitKey !== key) return null; // An old rejected request cannot alter newer split ownership.
       companion.__hobunjiShoulderSplitPromise = null;
       companion.__hobunjiShoulderSplitRetryAt = Date.now() + 2000; // Retry without permanently accepting a plain split frame.
-      smallPetHeadDebug.failed++;
-      smallPetHeadDebug.lastError = String(error?.message || error);
+      reportShoulderHeadFailure(genotypeKindFor(companion, combatDeps), error); // Failed two-layer art can retry after asset recovery.
       return null;
     });
     return true;
