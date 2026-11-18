@@ -158,6 +158,19 @@
     } catch (error) { return {ok:false,reason:String(error?.message || error)}; }
   }
 
+  function releaseFiveBlossomsFinder(worldId, civilYear, characterId) {
+    if (!worldId || !characterId || !Number.isSafeInteger(Number(civilYear))) return false;
+    try {
+      const {meta,world} = readWorld(worldId); // Failed ceremonies release only their own world-year reservation, never another player's win.
+      const yearKey = String(civilYear); // Mirrors the persisted civil-year identity in the claim function.
+      if (!world?.fiveBlossomsFinders?.[yearKey] ||
+          String(world.fiveBlossomsFinders[yearKey].characterId) !== String(characterId)) return false;
+      delete world.fiveBlossomsFinders[yearKey];
+      localStorage.setItem(META_KEY,JSON.stringify(meta));
+      return true;
+    } catch { return false; }
+  }
+
   window.WorldMetaStore = Object.freeze({
     loadLivestock,
     saveLivestock: (worldId, list) => writeField(worldId, 'livestock', list),
@@ -193,7 +206,7 @@
       try { return readWorldField(worldId, 'cropProvenance') || null; } catch { return null; }
     },
     saveCropProvenance: (worldId, ledger) => writeField(worldId, 'cropProvenance', ledger), // Same atomic world-field save path used by barn breeding and incubators.
-    fiveBlossomsFinder, claimFiveBlossomsFinder,
+    fiveBlossomsFinder, claimFiveBlossomsFinder, releaseFiveBlossomsFinder,
     loadStorage,
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
     loadPendingSupplyOrders,
