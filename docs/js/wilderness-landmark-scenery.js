@@ -95,7 +95,7 @@ function witnessStone(T,host,sites){
  for(const site of sites.filter(s=>s.kind==='witnessStone')){
   const art=root.OreRockTextures?.smallStoneArt?.(T); // Match main's latest natural rubble/stone geometry and authored PNG, not a feature-specific rectangular placeholder.
   if(!art){error='OreRockTextures.smallStoneArt unavailable for witness stone';continue;}
-  const rock=new T.Mesh(art.geometry.clone(),art.material.clone()); // One instance-specific carved geometry/material pair; shared quarry art remains untouched.
+  const rock=new T.Mesh(art.geometry,art.material); // Share the very same quarry PNG material and carved mesh as rubble/cairns; only the engraving child is instance-owned.
   rock.name='wilderness-dye-inscribed-witness-stone'; // A single unmistakable standing rock, not one motif applied to a thousand identical boulders.
   rock.position.set(site.point.col+.5,elevation(site)+.52,site.point.row+.5); // Shared loose-stone art is approximately one tile tall; lower face intersects the ground.
   rock.rotation.y=site.yaw;
@@ -152,7 +152,7 @@ function clear(){
     child.geometry?.dispose?.();
    }
   }
-  rock.geometry?.dispose?.();rock.material?.dispose?.();
+  // Base stone art is shared by every cairn and rubble rock. Only per-marker engraving children are owned here.
  }
  group?.parent?.remove?.(group);group=null;scene=null;area='';renderedLayout=null;renderedIdentity='';
 }
