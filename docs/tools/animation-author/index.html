@@ -1535,13 +1535,14 @@ function prepareRepositoryScript(code, relativePath, settings) {
     return `window.__HobunjiProceduralFeetDocsBase = ${JSON.stringify(docsBase)};\n${code}\n;delete window.__HobunjiProceduralFeetDocsBase;`;
   }
   if (relativePath !== CREATURE_RENDER_SCRIPT) return code;
-  const docsBase = rawUrl(settings.docsRoot); // Raw GitHub resolves fresh commit-pinned assets before jsDelivr has indexed that revision.
-  let prepared = code
-    .replaceAll('assets/creaturesprites/', `${docsBase}assets/creaturesprites/`)
-    .replaceAll("fetch('config/creature-base-masks.json')", `fetch('${docsBase}config/creature-base-masks.json')`)
-    .replace('const img = new Image();', "const img = new Image(); img.crossOrigin = 'anonymous';");
-  prepared += `\n//# sourceURL=${rawUrl(settings.docsRoot + relativePath)}`;
-  return prepared;
+  // Blob-loaded scripts report a blob: currentScript.src. Give the unmodified
+  // gameplay compositor its commit-pinned source URL so docsUrl() resolves
+  // masks, sprites and future assets against the selected repository revision.
+  const originDeclaration = "const MODULE_SCRIPT_URL = typeof document !== 'undefined' ? (document.currentScript?.src || '') : '';";
+  if (!code.includes(originDeclaration)) throw new Error('Creature renderer source-URL bootstrap changed; cannot safely resolve repository assets.');
+  const scriptUrl = rawUrl(settings.docsRoot + relativePath); // Used by the renderer to compute the repository docs root, independent of editor page location.
+  const prepared = code.replace(originDeclaration, `const MODULE_SCRIPT_URL = ${JSON.stringify(scriptUrl)};`);
+  return `${prepared}\n//# sourceURL=${scriptUrl}`;
 }
 
 async function executeClassicScript(code, sourceUrl) {
