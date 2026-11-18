@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, protocol, session, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { createDesktopUpdates } = require('./update-controller.cjs'); // Dedicated update-screen state and events.
 const { readFile } = require('node:fs/promises');
@@ -8,6 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { GAME_SCHEME, GAME_URL, getGameAsset, isGameUrl, localizeGameHtml } = require('./game-protocol.cjs');
 const { configureSaveFolderPermissions } = require('./save-folder-permissions.cjs'); // Tested Electron permission policy for the native folder picker.
+const { showGraphicsStatus } = require('./gpu-diagnostics.cjs'); // On-demand native GPU and main-game WebGL reporting, without DevTools.
 const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
 
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
@@ -111,6 +112,9 @@ function installMenu() {
         if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
       } },
       { label: 'Save Folder Status', click: showSaveStatus },
+      { label: 'Graphics Status', click: () => void showGraphicsStatus({
+        app, dialog, clipboard, getGameWindow: () => mainWindow,
+      }) },
       { label: 'Check for Updates', click: () => desktopUpdates?.open() },
       { label: 'Developer Tools', accelerator: 'Ctrl+Shift+I', click: () => mainWindow?.webContents.toggleDevTools() },
     ] },
