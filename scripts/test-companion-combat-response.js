@@ -85,6 +85,9 @@ const cliffGrid = Array.from({ length: 4 }, () => Array.from({ length: 5 }, () =
 cliffGrid[0][0].elevTier = 2;
 context.window.GridTileAccessors = { getActiveGrid: () => cliffGrid }; // Supplies production tile access without a game runtime.
 context.window.Combat.deps.TILE = 64;
+context.window.Combat.deps.getCurrentArea = () => 'forest'; // Only the active exterior map may influence companion combat.
+context.window.Combat.deps._isZoneArea = area => area === 'forest';
+context.window.Combat.deps.getActiveGrid = () => cliffGrid;
 let cancelledCliffAttack = 0; // Verifies that a started named attack does not retain movement authority during the drop.
 context.window.Combat.animalAttacks = { cancel: actor => { cancelledCliffAttack++; actor._animalAttack = null; } };
 const cliffPet = { id: 'cliff-pet', x: 32, y: 32, areaId: 'forest', isCompanion: true,
@@ -101,14 +104,33 @@ assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), n
 assert.equal(cancelledCliffAttack, 1, 'committed named attack is cancelled via its existing lifecycle');
 assert.equal(cliffPet._stage, null, 'old attack phase cannot reclaim movement during the drop');
 assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, true, 'mobile diagnostics report descent priority');
+cliffGrid[0][0].incline = true; // A descending creature can briefly cross a cliff-face tile.
+cliffPet._cliffClimb = { phase: 'climb', descending: true };
+assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'forest'), true,
+  'entering an incline during the drop does not resume combat in midair');
+cliffPet._cliffClimb = null;
+cliffGrid[0][0].incline = false;
 cliffPet.x = 160; // A normal same-height reunion returns defensive behavior.
 assert.equal(R.shouldReevaluate(cliffPet, escapedOwner, 'forest', 150), true,
   'the follower can immediately reacquire a threat after arriving below');
 assert.equal(R.chooseTarget(cliffPet, escapedOwner, [pursuer], 'forest', 150), pursuer,
   'combat resumes normally after crossing the ledge');
 assert.equal(R.debugSnapshot(cliffPet).followingDownCliff, false);
+cliffPet.x = 32;
+assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'town'), false,
+  'non-wilderness areas cannot trigger exterior cliff retreat behavior');
+assert.equal(R.shouldFollowOwnerDownCliff({ ...cliffPet, areaId: 'cave' }, escapedOwner, 'forest'), false,
+  'an animal in another area does not react to the player height');
 cliffPet.isCompanion = false; cliffPet.x = 32; // Enemies are not ordered to abandon combat.
 assert.equal(R.shouldFollowOwnerDownCliff(cliffPet, escapedOwner, 'forest'), false,
   'ordinary enemies and non-companions preserve their targeting');
 
+assert.match(game, /const rescueActive = !c\\._followOwnerDownCliff && !!rescueHost/,
+  'the live loop allows owner retreat to override a stale honeyfuzzle rescue');
+assert.match(game, /if \\(!isBanditCompanion && c\\._followOwnerDownCliff\\) \\{\\s*target = null;/,
+  'the live loop clears Sicced, downed-focus, and committed targets after every override');
+assert.match(game, /if \\(c\\.treasureCue\\) _clearCompanionTreasureCue\\(c, dt, 'following owner below cliff'\\)/,
+  'a stale treasure investigation cannot strand a pet above its escaping owner');
+assert.match(game, /!target && !c\\._followOwnerDownCliff && !c\\.treasureCue/,
+  'watch-player idle cannot start during the follow descent');
 console.log('Companion combat responsiveness tests passed.');
