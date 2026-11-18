@@ -6697,6 +6697,10 @@
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
         if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
+        if (window.PlayerBodyAttachmentBridge?.ownsCreatureFrame?.(c)) {
+          c._animLastX = c.x; c._animLastY = c.y; // Do not accumulate a false run-distance jump when the pet leaves the perch.
+          return; // The shoulder renderer owns this sprite; ordinary run/blink frames must not overwrite its grown head or split layers.
+        }
         c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
