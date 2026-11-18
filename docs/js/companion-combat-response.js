@@ -147,6 +147,12 @@
           companion?._honeyfuzzleRescueTarget?.creatureKey || companion?._honeyfuzzleRescueTarget?.name || null), // The player actor has no creature ID; show 'player' during an actual rescue.
       backingUp: companion?._stage?.mode === 'backingUp',
       groundFollow: companion?._companionGroundFollow || null, // Exposes the current ground/route destination to mobile Companion Combat diagnostics.
+      stuckRecovery: companion?._companionStuckRecovery ? {
+        stalledSeconds: Number(companion._companionStuckRecovery.stalled?.toFixed?.(1) || 0),
+        retrySeconds: Number(companion._companionStuckRecovery.retry?.toFixed?.(1) || 0),
+        cooldownSeconds: Number(companion._companionStuckRecovery.cooldown?.toFixed?.(1) || 0),
+      } : null, // Mobile companion diagnostics show why a hidden follower has not teleported yet.
+      recoverySummary: window.CompanionFollowNavigation?.debugSnapshot?.() || null, // Total unseen recoveries and latest refused reason.
       followingDownCliff: !!companion?._followOwnerDownCliff, // Explains immediate combat disengagement on mobile.
       escapeGraceRemainingMs: Math.max(0, (companion?._companionRetreatUntilMs || 0) -
         (typeof performance !== 'undefined' ? performance.now() : Date.now())), // Mobile-readable post-landing combat suppression.
