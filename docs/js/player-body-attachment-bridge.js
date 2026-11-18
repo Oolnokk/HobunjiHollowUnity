@@ -242,7 +242,7 @@
     return window.BabyAnimalHeadWarp?.maskModeForKind?.(kind) !== 'legacy-frame'; // Original painted-box method does not require a source alpha readback.
   }
   function releasePetSpriteUrl(url) {
-    if (typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return;
+    if (typeof url !== 'string' || !url.startsWith('blob:')) return; // Identical data-URL fallbacks may still be bound by another pet.
     if (window.Combat?.deps?.releaseCreatureTemporaryFrameTexture?.(url)) {
       smallPetHeadDebug.temporaryTexturesReleased++; // Mobile debug counter for generated textures freed from game.js's URL cache.
     }
