@@ -14,19 +14,33 @@ const makeSourceMaterial = () => ({
 
 {
   const source = fs.readFileSync('docs/js/combat/combat-blink-dodge.js', 'utf8');
-  const start = source.indexOf('  function cloneAfterimageMaterial(');
-  const end = source.indexOf('  function disposeAfterimage(', start);
-  assert(start >= 0 && end > start, 'Blink Dodge keeps its afterimage material builder');
-  const build = vm.runInNewContext(source.slice(start, end) + '\ncloneAfterimageMaterial', {
-    window: { HobunjiSpritePngSurface: softSurface },
-    AFTERIMAGE_BASE_OPACITY: 0.34, // The real afterimage opacity, below the solid sprite mask threshold.
-    freezeAfterimageTexture: texture => ({ ...texture, dispose() {} }), // Supplies an independent map as the production afterimage freeze does.
-  });
-  const record = build(makeSourceMaterial());
-  assert(record && record.material.map, 'the afterimage retains its frozen PNG map');
-  assert.equal(record.material.opacity, 0.34);
+  const start = source.indexOf('  function makeSmearMaterial(');
+  const end = source.indexOf('  function disposeSmear(', start);
+  assert(start >= 0 && end > start, 'Blink Dodge exposes its color-preserving smear material builder');
+  const build = vm.runInNewContext(source.slice(start, end) + '\nmakeSmearMaterial');
+  const original = makeSourceMaterial(); // Retains the live source map and opaque alpha-mask settings.
+  const record = build(original);
+  assert(record && record.material.map, 'the smear has the character source PNG map');
+  assert.strictEqual(record.material.map, original.map, 'color and patterns share the live source map instead of being re-uploaded');
+  assert.equal(original.alphaTest, 0.35, 'the character material is never mutated');
+  assert.equal(record.material.opacity, 1, 'RGBA fade is a shader uniform, not an RGB multiplier');
   assert.equal(record.material.depthWrite, false);
-  assert.equal(record.material.alphaTest, 0.001, 'afterimage fragments remain visible below the solid-mask threshold');
+  assert.equal(record.material.alphaTest, 0.001, 'soft, semitransparent silhouette pixels survive the solid sprite threshold');
+
+  const shader = {
+    uniforms: {},
+    vertexShader: '#include <common>\n#include <skinning_vertex>',
+    fragmentShader: '#include <common>\n#include <premultiplied_alpha_fragment>',
+  }; // Calls the real compiler hook with representative r128 shader chunks.
+  record.material.onBeforeCompile(shader, {});
+  assert.strictEqual(shader.uniforms.uSmearOpacity, record.uniforms.opacity);
+  assert.match(shader.fragmentShader, /gl_FragColor\.a \*= uSmearOpacity \* smoothstep/,
+    'the soft silhouette fades the output alpha channel only');
+  assert(
+    shader.fragmentShader.indexOf('gl_FragColor.a *=') < shader.fragmentShader.indexOf('#include <premultiplied_alpha_fragment>'),
+    'alpha fade precedes RGB premultiplication to avoid color halos'
+  );
+  assert.doesNotMatch(shader.fragmentShader, /gl_FragColor\.rgb\s*=/, 'source RGB is never replaced');
 }
 {
   const source = fs.readFileSync('docs/js/cinematic-camera-runtime.js', 'utf8');
