@@ -1249,7 +1249,7 @@
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
-      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
+      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles; physical support Y=${Number.isFinite(mountSync.surfaceGroundY) ? mountSync.surfaceGroundY.toFixed(4) : 'none'}; late animal render lift=${Number(mountSync.visualLiftY || 0).toFixed(4)}`); // Mobile snapshot distinguishes a bridge's true physical deck from animal-only render offset.
     }
     const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
     if (climbSafety) {
