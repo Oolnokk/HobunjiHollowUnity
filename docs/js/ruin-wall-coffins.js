@@ -43,7 +43,7 @@
       const parent=lid.parent;
       const wallMat=makeBlack(),wall=new THREE.Mesh(wallGeo,wallMat);
       wall.position.set(rest.x+site.dx*.10,rest.y,rest.z+site.dz*.10);wall.rotation.y=Math.atan2(site.dx,site.dz);wall.visible=false;wall.name='ruin-wall-coffin-darkness';
-      wall.userData.ruinNoPattern=true; // Opaque depth-writing recess in front of the patterned wall.
+      (wall.userData ||= {}).ruinNoPattern=true; // Opaque depth-writing recess in front of the patterned wall.
       const floorMat=makeBlack(0),floor=new THREE.Mesh(floorGeo,floorMat);
       floor.rotation.x=-Math.PI/2;floor.position.set(site.x+site.dx*.45,site.floorY+.07,site.z+site.dz*.45);floor.visible=false;floor.name='ruin-wall-coffin-spawn-tile';
       parent.add(wall,floor);
