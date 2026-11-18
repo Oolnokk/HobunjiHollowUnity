@@ -642,4 +642,14 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player._freeJump,flight,'midair dodge never cancels the ballistic jump');
   assert(h.player.physicalFeetY>0,'midair dodge retains the upper-story physical elevation');
 }
+{
+  const h=harness({start:{x:3.5,z:3.5},deepSupportY:2});
+  h.player._freeJump={area:'zone-test',phase:'supported',feetY:2,launchGround:2,
+    vy:0,vx:0,vz:0,elapsed:0,source:'free jump',safeX:3.5,safeZ:3.5}; // Simulates arrival on a genuine upper gallery dynamic support.
+  h.player.physicalFeetY=2;
+  h.player.dodging=true;
+  h.advance(.12);
+  assert.equal(h.player._freeJump?.phase,'supported','dodging along a raised gallery does not erase supported motion');
+  assert.equal(h.player.physicalFeetY,2,'the raised gallery maintains physical elevation throughout the dodge');
+}
 console.log('player-jump ok');
