@@ -12,7 +12,7 @@
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
     "js/locale-riddle-generator.js?v=20261118blossomRiddle1", // Pure, reusable terrain-verified rhyming clue generator.
     "js/festival-blossom-hunt.js?v=20261118blossomHunt1", // Weeklong quest adapter; no extra animation loop.
-    "js/festival-system.js?v=20261118festival1954x1955a",
+    "js/festival-system.js?v=20261118fiveBlossomsHunt2",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"
 ]; // Independently versioned modules loaded before game.js.

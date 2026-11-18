@@ -98,7 +98,7 @@
     expireOutdated();
     if (active()) start();
     const live = state();
-    if (active() && live?.status === 'active' && live.progress?.shiftYear !== shift) {
+    if (active() && live?.status === 'active' && String(live.progress?.shiftYear ?? '') !== String(shift ?? '')) {
       write('active', descriptor(Array.isArray(live.progress.found) ? live.progress.found : [], shift)); // Re-roll a clue after a Shift: old terrain facts cannot survive reshuffling.
     }
   }

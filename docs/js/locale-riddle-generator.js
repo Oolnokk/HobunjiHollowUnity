@@ -17,7 +17,7 @@
     },
     sector: {
       A: [f => `Keep to ${f.value}, and hold your bearing right`, f => `In ${f.value}, follow the morning light`, f => `Search ${f.value} with the stars in sight`],
-      B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `${f.value} is the place to know`]
+      B: [f => `Toward ${f.value}, where secret flowers grow`, f => `At ${f.value}, a patient seeker ought to go`, f => `This secret lies in ${f.value}, where tender petals grow`]
     },
     water: {
       A: [f => `With ${f.value}, you are drawing right`, f => `Look for ${f.value} in the daylight`, f => `When ${f.value} shines, hold your course in sight`],
@@ -32,8 +32,8 @@
       B: [f => `By ${f.value}, a hidden wonder may show`, f => `Where ${f.value}, your path should go`, f => `Beyond ${f.value}, the petals glow`]
     },
     tree: {
-      A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} blossom tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
-      B: [f => `The tree of ${f.value} is what you ought to know`, f => `At ${f.value} boughs, the final colors glow`, f => `Seek ${f.value} petals, not the grass below`]
+      A: [f => `Find the tree of ${f.value}, where petals catch the light`, f => `The ${f.value} tree will end your flight`, f => `Beneath ${f.value} blooms, your answer shines bright`],
+      B: [f => `The tree of ${f.value} is what you ought to know`, f => `At the ${f.value} tree, the final colors glow`, f => `Seek ${f.value} petals, not the grass below`]
     },
     edge: {
       A: [f => `Not far from ${f.value}, seek the light`, f => `Keep ${f.value} within your sight`, f => `Toward ${f.value}, go before the night`],
@@ -101,7 +101,7 @@
     const samples = nearbyEvidence(layout, point, radius);
     const water = samples.find(s => s.type === 'water');
     if (water) {
-      const kind = ['river', 'stream', 'waterfall'].includes(water.waterType) ? 'running water' : 'open water';
+      const kind = ['river', 'stream', 'waterfall'].includes(water.waterType) ? water.waterType : 'open water';
       facts.push({ kind: 'water', value: `the ${kind} ${bearing(water.col - point.col, water.row - point.row)}`, source: 'post-generation-water-tile', coordinate: { col: water.col, row: water.row }, distance: water.d });
     }
     const path = samples.find(s => s.type === 'path');
