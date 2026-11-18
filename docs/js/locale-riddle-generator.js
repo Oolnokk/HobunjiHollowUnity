@@ -250,12 +250,16 @@
   function crossingBetween(layout,from,to) {
     const dx=to.col-from.col,dy=to.row-from.row;
     const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))*4)); // Super-sampled straight bearing; no imagined bridge or ford.
-    const crossed=[];
+    const crossed=[],seen=new Set(); // Only distinct super-sampled tiles count toward an actual waterway crossing.
+    let runs=0,inWater=false; // Separate river bands must never masquerade as one crossing in a clue.
     for(let i=1;i<steps;i++){
-      const col=Math.round(from.col+dx*i/steps),row=Math.round(from.row+dy*i/steps);
-      const tile=tileAt(layout,col,row),type=String(tile?.type||'').toLowerCase();
-      if(!WATERWAY.has(type)||crossed.some(x=>x.col===col&&x.row===row))continue;
-      crossed.push({col,row,type,tile});
+      const col=Math.round(from.col+dx*i/steps),row=Math.round(from.row+dy*i/steps),key=col+','+row;
+      if(seen.has(key))continue;
+      seen.add(key);
+      const tile=tileAt(layout,col,row),type=String(tile?.type||'').toLowerCase(),water=WATERWAY.has(type);
+      if(water&&!inWater)runs++;
+      inWater=water;
+      if(water)crossed.push({col,row,type,tile});
     }
     if(!crossed.length)return null;
     const river=crossed.some(x=>x.type==='river'||x.type==='waterfall'),name=river?'river':'stream';
@@ -274,7 +278,7 @@
       }
       if(center!=null&&banks.length===2&&banks.every(y=>y!=null&&y-center>=PLATEAU_UNIT*.75)){canyon=true;break;}
     }
-    return {type:name,canyon,coordinates:crossed.map(({col,row})=>({col,row}))}; // Diagnostic evidence retains the exact stamped water tiles.
+    return {type:name,canyon,runs,coordinates:crossed.map(({col,row})=>({col,row}))}; // Diagnostic evidence retains the exact stamped water tiles.
   }
   function elevationProfile(layout,from,to) {
     const dx=to.col-from.col,dy=to.row-from.row;
@@ -288,136 +292,100 @@
     }
     return minimum===Infinity?null:{minimum,maximum};
   }
+  function majorElevationEvents(layout,from,to) {
+    const dx=to.col-from.col,dy=to.row-from.row,steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))*2));
+    let last=null,trend=0,turns=0; // A continuous climb or descent is one event; a single ridge or hollow is also one.
+    for(let i=0;i<=steps;i++){
+      const pos={col:Math.round(from.col+dx*i/steps),row:Math.round(from.row+dy*i/steps)};
+      const height=elevationAt(layout,pos);
+      if(height==null)continue;
+      if(last!=null&&Math.abs(height-last)>=PLATEAU_UNIT*.45){
+        const sign=Math.sign(height-last);
+        if(sign!==trend){turns++;trend=sign;}
+      }
+      last=height;
+    }
+    if(!turns){
+      const before=elevationAt(layout,from),after=elevationAt(layout,to);
+      return before!=null&&after!=null&&Math.abs(after-before)>=PLATEAU_UNIT*.5?1:0;
+    }
+    return Math.ceil(turns/2); // Up then down describes one crest; a second reversal becomes another event.
+  }
   function routeBearing(layout,from,to,place) {
     const bearing=compass(from,to),before=elevationAt(layout,from),after=elevationAt(layout,to);
     const diff=before==null||after==null?null:after-before;
-    const steps=diff==null?null:Math.round(Math.abs(diff)/PLATEAU_UNIT);
-    const profile=diff==null?null:elevationProfile(layout,from,to); // The path may descend into a gorge then return to the starting altitude.
-    const trough=!!profile && profile.minimum < Math.min(before,after)-PLATEAU_UNIT*.5;
-    const crest=!!profile && profile.maximum > Math.max(before,after)+PLATEAU_UNIT*.5;
-    const crossing=crossingBetween(layout,from,to);
-    let elevation;
-    if(diff==null)elevation='following the visible terrain';
-    else if(trough&&crest)elevation='descending through low ground and climbing over higher ground';
-    else if(trough)elevation=diff>PLATEAU_UNIT*.5
-      ?'descending into lower ground, then climbing to higher ground'
-      :diff< -PLATEAU_UNIT*.5
-        ?'descending into lower ground, then climbing partway back up'
-        :'descending into lower ground, then climbing back up';
-    else if(crest)elevation=diff>PLATEAU_UNIT*.5
-      ?'climbing over higher ground, then descending partway'
-      :diff< -PLATEAU_UNIT*.5
-        ?'climbing over higher ground, then descending to lower ground'
-        :'climbing over higher ground, then descending back down';
-    else if(Math.abs(diff)<.35)elevation='staying on roughly level ground';
-    else if(diff>0)elevation=steps>=2?'climbing '+steps+' plateau tiers':'climbing to higher ground';
-    else elevation=steps>=2?'descending '+steps+' plateau tiers':'descending to lower ground';
-    const water=crossing?(crossing.canyon?', crossing the '+crossing.type+' cutting a canyon':', crossing the '+crossing.type):'';
-    return {description:bearing+', '+elevation+water+', toward '+place,bearing,elevation,crossing,
+    const profile=diff==null?null:elevationProfile(layout,from,to); // Real intermediate heights distinguish a ridge or hollow from level terrain.
+    const crossing=crossingBetween(layout,from,to); // A river crossing is one landmark instruction; do not stack altitude changes onto it.
+    let elevation='following the visible terrain';
+    if(diff!=null) {
+      if(Math.abs(diff)>=PLATEAU_UNIT*.5)elevation=diff>0?'climbing to higher ground':'descending to lower ground';
+      else if(profile?.minimum < Math.min(before,after)-PLATEAU_UNIT*.5)elevation='descending through a hollow';
+      else if(profile?.maximum > Math.max(before,after)+PLATEAU_UNIT*.5)elevation='climbing over a ridge';
+      else elevation='across roughly level ground';
+    }
+    const elevationEvents=majorElevationEvents(layout,from,to); // Detect multiple major ridges, not just the total altitude difference.
+    const eventCount=crossing?crossing.runs:elevationEvents; // A canyon's descent and return are included in its river-crossing instruction.
+    const complex=eventCount>1; // A multi-river or multi-ridge leg must not claim it has just one obstacle.
+    const event=complex?'through varied terrain':crossing
+      ?'crossing the '+crossing.type+(crossing.canyon?' where it cuts a canyon':'')
+      :elevation;
+    return {description:bearing+', '+event+', toward '+place,bearing,elevation,crossing,eventCount,
+      terrainEvent:complex?'complex':crossing?'river-crossing':'elevation',
       altitudeProfile:profile,from:{...from},to:{...to}};
-  }
-  const NATURAL_START_CACHE = new WeakMap(); // Generated wilderness layouts are immutable through a Tothal cycle; forced regeneration supplies a new layout.
-  function uniqueNaturalStart(layout,zoneName,allowEdgeRivers=false,generationKey='') {
-    if(!layout || typeof layout!=='object')return null;
-    const cached=NATURAL_START_CACHE.get(layout);
-    if(cached?.generationKey===generationKey && (cached.waterfall || !allowEdgeRivers || cached.edgeScanned))return cached.waterfall||cached.edge||null;
-    const {cols,rows}=dimensions(layout),seen=new Set(),falls=[];
-    const valid=(col,row)=>col>=0&&row>=0&&col<cols&&row<rows;
-    for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
-      if(String(tileAt(layout,col,row)?.type||'')!=='waterfall'||seen.has(col+','+row))continue;
-      const queue=[{col,row}],members=[];let drop=0;
-      seen.add(col+','+row);
-      for(let cursor=0;cursor<queue.length;cursor++){
-        const item=queue[cursor],tile=tileAt(layout,item.col,item.row);
-        members.push(item);
-        const tier=Number(tile?.elevTier)||0;
-        const waterTop=tier*PLATEAU_UNIT-.10+.015; // Same river/waterfall surface height as ZoneTerrainFeatures.renderedWaterSurfaceY.
-        for(const [dx,dy] of [[0,1],[1,0],[0,-1],[-1,0]]){
-          const nx=item.col+dx,ny=item.row+dy;
-          if(!valid(nx,ny))continue;
-          const next=tileAt(layout,nx,ny),type=String(next?.type||'');
-          if(!next)continue;
-          const nextTier=Number(next.elevTier)||0;
-          if(nextTier!==tier){ // The real waterfall curtain renderer creates edges against dry cliffs as well as water.
-            const nextTop=nextTier*PLATEAU_UNIT-(WATERWAY.has(type)?(type==='stream'?.05:.10)-.015:0);
-            drop=Math.max(drop,Math.abs(waterTop-nextTop)); // Measure an actual rendered vertical sheet, not unrelated neighboring elevations.
-          }
-          const k=nx+','+ny;
-          if(type==='waterfall'&&!seen.has(k)){seen.add(k);queue.push({col:nx,row:ny});}
-        }
-      }
-      if(drop>=PLATEAU_UNIT*.75){
-        members.sort((a,b)=>a.row-b.row||a.col-b.col);
-        falls.push({point:members[0],drop}); // The waterfall is an actually rendered vertical water sheet, not merely a blue river tile.
-      }
-    }
-    falls.sort((a,b)=>b.drop-a.drop||a.point.row-b.point.row||a.point.col-b.point.col);
-    let waterfall=null,edge=null;
-    if(falls.length){
-      const max=falls[0].drop,tied=falls.filter(f=>Math.abs(f.drop-max)<.0001);
-      const word=tied.length===1?'the tallest waterfall'
-        :tied.filter(f=>f.point.row===tied[0].point.row).length===1?'the northernmost of the tallest waterfalls'
-        :'the westernmost of the northernmost tallest waterfalls';
-      waterfall={kind:'waterfallAnchor',unique:true,name:word+' in '+zoneName,point:falls[0].point,source:'measured-waterfall-drop'};
-    }
-    if(!waterfall && allowEdgeRivers){
-      const borders=[
-        {name:'northern',cells:Array.from({length:cols},(_,col)=>({col,row:0}))},
-        {name:'eastern',cells:Array.from({length:rows},(_,row)=>({col:cols-1,row}))},
-        {name:'southern',cells:Array.from({length:cols},(_,col)=>({col,row:rows-1}))},
-        {name:'western',cells:Array.from({length:rows},(_,row)=>({col:0,row}))}
-      ];
-      for(const border of borders){
-        const groups=[];let active=[];
-        for(const p of [...border.cells,null]){
-          const t=p?String(tileAt(layout,p.col,p.row)?.type||''):'';
-          if(p&&WATERWAY.has(t)){active.push(p);continue;}
-          if(active.length)groups.push(active);
-          active=[];
-        }
-        if(groups.length!==1)continue; // Only one actual river/stream band touches this cardinal boundary.
-        const group=groups[0],river=group.some(p=>String(tileAt(layout,p.col,p.row)?.type)==='river');
-        edge={kind:'riverEdgeAnchor',unique:true,name:'the only '+(river?'river':'stream')+' crossing on the '+border.name+' boundary of '+zoneName,
-          point:group[Math.floor(group.length/2)],source:'verified-boundary-waterway'};break;
-      }
-    }
-    NATURAL_START_CACHE.set(layout,{waterfall,edge,edgeScanned:allowEdgeRivers,generationKey}); // At most one full-grid inspection per generated zone.
-    return waterfall||edge;
   }
   function uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks,generationKey=''}) {
     const name=zoneName||ZONES[zoneId]||zoneId;
-    const candidates=landmarks.filter(x=>x.kind==='witnessStone'&&x.unique===true&&x.source==='generated-year-round-scenery'
-      &&Number.isFinite(x.point?.col)&&Number.isFinite(x.point?.row)&&tileAt(layout,x.point.col,x.point.row));
-    const marker=uniqueNaturalStart(layout,name,false,generationKey)||(candidates.length===1?candidates[0]:null)||uniqueNaturalStart(layout,name,true,generationKey);
-    if(!marker)return null; // Fall back to broad factual hints if neither a unique natural reference nor the unique dyed marker exists.
-    const midpoint={col:(marker.point.col+point.col)/2,row:(marker.point.row+point.row)/2};
-    const available=landmarks.filter(x=>x!==marker&&x.kind!=='witnessStone'&&x.kind!=='blossom'
-      &&Number.isFinite(x.point?.col)&&Number.isFinite(x.point?.row)
-      &&Math.hypot(x.point.col-point.col,x.point.row-point.row)>3
-      &&Math.hypot(x.point.col-marker.point.col,x.point.row-marker.point.row)>3
-      &&tileAt(layout,x.point.col,x.point.row));
-    available.sort((a,b)=>{
-      const da=Math.hypot(a.point.col-midpoint.col,a.point.row-midpoint.row);
-      const db=Math.hypot(b.point.col-midpoint.col,b.point.row-midpoint.row);
-      return da-db||a.point.row-b.point.row||a.point.col-b.point.col;
-    });
-    const waypoint=available.find(x=>Math.hypot(x.point.col-midpoint.col,x.point.row-midpoint.row)
-      <=Math.max(8,Math.hypot(point.col-marker.point.col,point.row-marker.point.row)*.45))||null;
-    const anchorName=marker.kind==='witnessStone'?'the only '+marker.dyeName+'-inscribed witness stone in '+name:marker.name;
-    const route=[],facts=[{kind:'routeAnchor',value:anchorName,
-      source:marker.source,coordinate:{...marker.point},unique:true,dye:marker.dyeId||null}];
-    let current=marker.point;
-    if(waypoint) {
-      const leg=routeBearing(layout,current,waypoint.point,waypoint.name);
-      route.push(leg);facts.push({kind:'routeStep',value:leg.description,source:waypoint.source,coordinate:{...waypoint.point},...leg});
-      current=waypoint.point;
+    const markers=landmarks.filter(site=>site.unique===true&&site.dyeId
+      &&site.source==='generated-year-round-scenery'
+      &&Number.isFinite(site.point?.col)&&Number.isFinite(site.point?.row)
+      &&tileAt(layout,site.point.col,site.point.row)); // Every starting mark is physically stamped, and its color unique in this zone.
+    if(!markers.length)return null;
+    const size=dimensions(layout);
+    const targetSector=sectorAt(point.col,point.row,size.cols,size.rows); // The destination's actual broad sector changes when a forced Shift moves its blossom.
+    const targetPlace='the flowering tree in '+targetSector; // Sector-specific but never a literal grid coordinate or tile count.
+    const legCache=new Map(); // Per-clue route samples are shared by each candidate, keeping 13-color plans inexpensive on mobile.
+    const getLeg=(from,to,place)=>{
+      const key=from.col+','+from.row+'>'+to.col+','+to.row+'|'+place;
+      if(!legCache.has(key))legCache.set(key,routeBearing(layout,from,to,place));
+      return legCache.get(key);
+    };
+    let best=null; // Compare short routes with at most one colored intermediate waypoint; never generate fictional landmarks.
+    for(const start of markers){
+      if(Math.hypot(start.point.col-point.col,start.point.row-point.row)<4)continue;
+      const direct=getLeg(start.point,point,targetPlace);
+      const possibilities=[{legs:[direct],waypoint:null}];
+      for(const waypoint of markers){
+        if(waypoint===start || Math.hypot(waypoint.point.col-point.col,waypoint.point.row-point.row)<4
+          ||Math.hypot(waypoint.point.col-start.point.col,waypoint.point.row-start.point.row)<4)continue;
+        const first=getLeg(start.point,waypoint.point,waypoint.name);
+        const last=getLeg(waypoint.point,point,targetPlace);
+        if(first.eventCount>1||last.eventCount>1)continue; // Split a genuine pair of river crossings at an actual marked stone.
+        possibilities.push({legs:[first,last],waypoint});
+      }
+      for(const plan of possibilities){
+        const complex=plan.legs.filter(leg=>leg.eventCount>1).length;
+        const length=plan.legs.reduce((sum,leg)=>sum+Math.hypot(leg.to.col-leg.from.col,leg.to.row-leg.from.row),0);
+        const score=complex*100000+(start.kind==='witnessStone'?0:100)+
+          (plan.waypoint?8:0)+length*.01; // Prefer a single-event leg, then the original witness start, then concise verses.
+        if(!best||score<best.score)best={...plan,start,score};
+      }
     }
-    const final=routeBearing(layout,current,point,'the flowering tree');
-    route.push(final);
-    if(waypoint)facts.push({kind:'routeStep',value:final.description,source:'stamped-target-object',coordinate:{...point},...final});
-    else facts[0].value+='; then go '+final.description; // A direct one-leg trip belongs in the opening couplet, never repeated as two fictional moves.
+    if(!best)return null;
+    const marker=best.start;
+    const anchorName=marker.name+(marker.name.includes(name)?'':' in '+name); // Diagnostics preserve the full zone-qualified referent.
+    const route=best.legs,facts=[{kind:'routeAnchor',value:marker.name,zoneName:name,
+      source:marker.source,coordinate:{...marker.point},unique:true,dye:marker.dyeId||null}]; // In verse, say the broader region BEFORE the colored rock.
+    if(best.waypoint){
+      const leg=route[0];
+      facts.push({kind:'routeStep',value:leg.description,source:best.waypoint.source,
+        coordinate:{...best.waypoint.point},...leg});
+      const final=route[1];
+      facts.push({kind:'routeStep',value:final.description,source:'stamped-target-object',
+        coordinate:{...point},...final});
+    }else facts[0].value+='; then go '+route[0].description; // A direct leg belongs in the opening line.
     facts.push({kind:'blossom',value:goalName,source:'stamped-target-object'});
-    return {facts,route,anchor:{name:marker.name,coordinate:{...marker.point},dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
+    return {facts,route,anchor:{name:anchorName,coordinate:{...marker.point},
+      dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
   }
 
   function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false, terrainGenerationKey = '' } = {}) {
@@ -492,9 +460,11 @@
       const line = typeof phrase === 'function' ? phrase(fact) : phrase.replaceAll('{value}', fact.kind === 'sector' && /^(?:Look|Search|Seek|Go) \{value\}/.test(phrase) ? 'within ' + fact.value : fact.value);
       const word = line.trim().split(/\s+/).pop().toLowerCase();
       if (!fallback) fallback = line;
-      if (word !== previousEnding) return line;
+      if (word !== previousEnding) return fact.kind==='routeAnchor'&&fact.zoneName
+        ? 'In '+fact.zoneName+', '+line[0].toLowerCase()+line.slice(1) : line;
     }
-    return fallback;
+    return fact.kind==='routeAnchor'&&fact.zoneName
+      ? 'In '+fact.zoneName+', '+fallback[0].toLowerCase()+fallback.slice(1) : fallback;
   }
   function chooseFamily(lines, parity, exclude, seed) {
     const hinted = lines.filter((_, index) => index % 2 === parity)
