@@ -88,7 +88,7 @@
   },
   "placement": {
     "allowedZones": [
-      "map_eastern_mire"
+      "map_western_slope"
     ],
     "clearanceTiles": 1,
     "requiresFlatGround": true,

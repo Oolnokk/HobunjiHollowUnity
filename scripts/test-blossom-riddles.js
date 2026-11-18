@@ -24,6 +24,8 @@ for (const id of ids) {
   assert.equal(def.objects[0].collision.mode, 'custom', 'tree trunk has a solid collision footprint');
   assert.ok(def.objects[0].collision.w > 0 && def.objects[0].collision.w <= 0.5, 'trunk collider stays narrower than the authored tree locale');
   assert.ok(def.placement.allowedZones.length === 1);
+  assert.ok(!def.placement.allowedZones.includes('map_eastern_mire'), 'Feast blossoms must not stamp into the Eastern Mire');
+  if (id === 'gold') assert.deepEqual(def.placement.allowedZones, ['map_western_slope'], 'Gold Blossom moved west but remains the third quest target');
   assert.equal(def.placement.shiftGeneratedSecret, true, 'new Tothal year hides the newly relocated target until rediscovery');
   assert.ok(Object.values(def.terrainAnchors).every(rule => rule.strength === 'preferred'), 'terrain is preferential, never mandatory');
 }
@@ -122,7 +124,7 @@ let festival = true, civilYear = 1156, calendarReady = false, shiftYear = 1156, 
 const sampledHeights = []; // Checks the live tree altitude sampler's pixel-space contract, including plateau elevation. // Integration tracks world-scene foliage's shared-geometry protection. // Test calendar and movement are controlled without real-time timers.
 const progress = {}; // Member-owned quest records, just like QuestProgressStore.snapshot().
 const zones = new Map(); // Generated zone layouts, each already containing its own real blossom locale.
-const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_eastern_mire', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
+const assignedZones = { cyan: 'map_northern_cliffs', white: 'map_western_slope', gold: 'map_western_slope', amber: 'map_southern_cloud_forest', rose: 'map_southern_cloud_forest' }; // Mirrors the quest adapter's five targets.
 for (let i = 0; i < ids.length; i++) {
   const id = ids[i], zone = assignedZones[id];
   if (!zones.has(zone)) zones.set(zone, layoutFor(id, 15 + 14 * (i % 2), 16 + 14 * (i % 2)));

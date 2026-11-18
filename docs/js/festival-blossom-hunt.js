@@ -7,7 +7,7 @@
   const BLOSSOMS = Object.freeze([
     { id: 'cyan', name: 'Cyan Blossom', color: '#00ffff', zoneId: 'map_northern_cliffs', paletteIndex: 0 },
     { id: 'white', name: 'White Blossom', color: '#ffffff', zoneId: 'map_western_slope', paletteIndex: 2 },
-    { id: 'gold', name: 'Golden Blossom', color: '#ffbf00', zoneId: 'map_eastern_mire', paletteIndex: 3 },
+    { id: 'gold', name: 'Golden Blossom', color: '#ffbf00', zoneId: 'map_western_slope', paletteIndex: 3 },
     { id: 'amber', name: 'Amber Blossom', color: '#ff8000', zoneId: 'map_southern_cloud_forest', paletteIndex: 1 },
     { id: 'rose', name: 'Rose Blossom', color: '#ffb3b3', zoneId: 'map_southern_cloud_forest', paletteIndex: 4 }
   ].map(item => Object.freeze({ ...item, localeId: 'locale_five_blossoms_' + item.id }))); // Five authored locale files; two share the southern forest.

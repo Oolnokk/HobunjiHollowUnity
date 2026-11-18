@@ -4,7 +4,7 @@
   // Update version tokens here, not in index.html; the common parser-time loader fetches this manifest fresh.
   const scriptUrls = [
     "js/ruin-site-locales.js?v=20261002hb4d3f2d",
-    "js/stampable-locale-defs.js?v=20261118fiveBlossomsLocaleCache1",
+    "js/stampable-locale-defs.js?v=20261118goldWesternSlope1",
     "js/tothal-zone-cache.js?v=20261110banubuNightAudit2",
     "js/ruin-sites.js?v=20261114lichHeartsAudit2"
   ]; // Parser-ordered script URLs; dependency/load order stays unchanged.
