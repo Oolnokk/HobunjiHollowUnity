@@ -494,7 +494,7 @@
         paint.patternLibraryId || '',
         paint.repoPatternId || paint.pattern?.repoPatternId || '',
         Math.max(7, Math.min(14, Number(paint.patternScale) || 7)).toFixed(3),
-        compactHashText(JSON.stringify(Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : (paint.pattern || null))), // Includes future second-slot paint data in the creature-frame cache key.
+        compactHashText(JSON.stringify([Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : (paint.pattern || null), Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns.slice(0, 5) : []])), // Cache accounts for every fused motif placement and the separate overpass.
       ].join(':');
     }).join('|');
     return compactHashText(compact);
@@ -535,11 +535,18 @@
     const paint = colorPoolPaintFor(genotype, regionId);
     if (!paint) return null;
     const dyeHex = paint.dyeHex || window.DyeSystem?.getById?.(paint.dyeId)?.hex || null;
-    const rawPatterns = Array.isArray(paint.patterns) ? paint.patterns.slice(0, 2) : [
-      paint.pattern || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null),
-    ]; // Current Color Pools UI writes only the legacy primary slot; a future unlock can populate patterns[1] without changing rendering.
-    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Both slots share a usage scale but may have separate ink dyes.
-    const debugBase = { patternCount: rawPatterns.filter(Boolean).length, patternScale: animalPatternScale, dyeHex, status: 'pending' };
+    const primary = paint.pattern || paint.patterns?.[0]
+      || (paint.patternLibraryId ? window.PatternLibrary?.getById?.(paint.patternLibraryId) : null)
+      || (paint.repoPatternId ? { repoPatternId: paint.repoPatternId } : null); // Backward-compatible single-pattern reads.
+    const merged = (Array.isArray(paint.mergedPatterns) ? paint.mergedPatterns : [])
+      .filter(pattern => pattern && typeof pattern === 'object').slice(0, 5); // Up to five independent shapes sharing the primary dye and outline.
+    const overpass = paint.patterns?.[1]
+      || (paint.overpassPatternId ? { repoPatternId: paint.overpassPatternId } : null)
+      || (paint.overpassPatternLibraryId ? window.PatternLibrary?.getById?.(paint.overpassPatternLibraryId) : null);
+    const rawPatterns = primary ? [primary, ...merged, ...(overpass ? [overpass] : [])] : [];
+    const fusedPrimaryCount = primary ? 1 + merged.length : 1; // Tells the shared compositor which motifs must unite BEFORE any overpass is processed.
+    const animalPatternScale = Math.max(7, Math.min(14, Number(paint.patternScale) || 7)); // Per-animal scale applies to every fused and overpass motif.
+    const debugBase = { patternCount: rawPatterns.length, fusedPatternCount: merged.length, patternScale: animalPatternScale, dyeHex, status: 'pending' };
     try {
       const patterns = [];
       for (const raw of rawPatterns) {
@@ -547,14 +554,13 @@
         let pattern = { ...raw };
         const repoPatternId = pattern.repoPatternId || (patterns.length === 0 ? paint.repoPatternId : null) || null;
         if (repoPatternId && !(pattern.motifDataUrl || pattern.motifUrl || pattern.customMotifId)) {
-          pattern = await window.RepoPatternLibrary?.getById?.(repoPatternId) || pattern;
+          pattern = { ...(await window.RepoPatternLibrary?.getById?.(repoPatternId) || {}), ...pattern }; // Preserve animal-specific placements on resolved repo motifs.
         }
-        if (pattern) {
-          const secondaryInk = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex;
-          patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale,
-            ...(patterns.length === 1 && /^#[0-9a-f]{6}$/i.test(secondaryInk || '') ? { inkColorHex: secondaryInk } : {}) }); // Only slot 2 receives the independent dye.
-        }
-        if (patterns.length >= 2) break;
+        const isOverpass = patterns.length >= fusedPrimaryCount;
+        if (!isOverpass) delete pattern.inkColorHex; // The primary and all fused shapes use exactly the region's primary dye.
+        const secondaryInk = paint.overpassDyeHex || window.DyeSystem?.getById?.(paint.overpassDyeId)?.hex;
+        patterns.push({ ...pattern, usageScaleMultiplier: animalPatternScale,
+          ...(isOverpass && /^#[0-9a-f]{6}$/i.test(secondaryInk || '') ? { inkColorHex: secondaryInk } : {}) });
       }
       const compositor = window.ClothingWeavingSystem?.applyPatternStackToTintedImage
         || window.ClothingWeavingSystem?.__test?.applyPatternStackToTintedImage;
@@ -573,7 +579,7 @@
       }
       if (regionMask) await window.PixelWorkYield?.maybeYield();
       const clippedSource = regionMask ? maskedRegionCanvas(imageOrCanvas, regionMask) : imageOrCanvas;
-      const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern', compositorOptions || {}); // Optional shared fur-surface alignment; ordinary patterns keep their existing per-cell offsets.
+      const rendered = await compositor(clippedSource, patterns, dyeHex, cachePrefix, null, 'animal-surface-pattern', { ...(compositorOptions || {}), fusedPrimaryCount }); // Same-layer masks are unioned; a distinct overpass still retains its clearance and secondary ink.
       const applied = !!rendered && rendered !== clippedSource;
       setPatternPaintDebug(regionId, {
         ...debugBase,
@@ -581,7 +587,7 @@
         status: applied ? 'applied' : 'failed',
         reason: applied ? null : 'compositor returned the unpatterned source',
         motifRefs,
-        overpass: patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12, Number(patterns[1]?.overpassClearanceMultiplier) || 3)) } : null, // Mirrors the shared compositor's player/dev-authored slot-2 clamp for mobile diagnostics.
+        overpass: overpass ? { clearanceMultiplier: Math.max(3, Math.min(12, Number(patterns[fusedPrimaryCount]?.overpassClearanceMultiplier) || 3)) } : null, // Fused primary motifs are not mistaken for a second-color overpass in mobile diagnostics.
       });
       return applied ? rendered : null;
     } catch (error) {

@@ -56,6 +56,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 #apLeft{width:300px;min-width:260px;max-width:80vw;overflow:auto;-webkit-overflow-scrolling:touch;
   border-right:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));padding:10px}
 #apRight{flex:1;min-width:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:4px 4px 40px}
+#apPreviewDock{position:sticky;top:0;z-index:3;padding:6px;background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:12px} /* Keep animal preview visible while editing long pattern forms. */
 .portraitFrame{width:220px;height:220px;margin:0 auto;border:1px solid rgba(255,255,255,.16);border-radius:16px;
   background:radial-gradient(circle at 50% 28%,rgba(255,255,255,.12),rgba(255,255,255,.02));
   display:flex;align-items:center;justify-content:center;overflow:hidden}
@@ -131,7 +132,13 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
   body{overflow:auto}
   #app{height:auto;min-height:100dvh}
   #appearancePane,#databasePane{flex-direction:column}
-  #apLeft{width:auto;max-width:none;border-right:none;border-bottom:1px solid var(--line)}
+  #apLeft{display:contents}
+  #apPreviewDock{position:sticky;top:0;z-index:5;width:100%;padding:6px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 6px 16px rgba(0,0,0,.42)}
+  #apPreviewDock .portraitFrame{width:112px;height:112px}
+  #apPreviewDock #apCanvas{width:104px;height:104px}
+  #apPreviewStatus{max-height:35px;overflow:auto}
+  #apLeftActions{padding:10px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2))}
+  #apRight{overflow:visible;width:100%} /* Mobile uses one scroll region; the preview dock stays visible above the editors. */
   #sidebar{width:auto;max-width:none;min-width:0;border-right:none;border-bottom:1px solid var(--line)}
   #npcList{max-height:40vh}
   .grid2,.grid3{grid-template-columns:1fr}
@@ -158,11 +165,14 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
     <!-- ════════ Tab 1: Appearance ════════ -->
     <section id="appearancePane" class="mainPane activePane">
       <aside id="apLeft">
+        <div id="apPreviewDock">
         <div class="row" style="justify-content:center;margin-bottom:8px">
           <span class="pill" id="targetPill" style="border-color:rgba(106,167,255,.5);color:var(--text)">Editing: Player</span>
         </div>
         <div class="portraitFrame"><canvas id="apCanvas" width="200" height="200"></canvas></div>
         <div class="help" style="text-align:center;margin-top:5px" id="apPreviewStatus">Loading portrait assets…</div>
+        </div>
+        <div id="apLeftActions">
         <div class="row" style="margin-top:8px">
           <button id="toggle3dBtn" class="secondary" style="flex:1">Enable 3D plane preview</button>
         </div>
@@ -191,6 +201,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
         <div class="help" style="margin-top:8px">
           Exports use the <b>npc_avatar_editor_export.v1</b> shape understood by the NPC database and avatar preview pipelines.
           “Set as my player” writes the <b>hobunjiPlayerProfile</b> localStorage key read by the game's onboarding.
+        </div>
         </div>
       </aside>
       <div id="apRight">
@@ -387,8 +398,8 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
 <script src="../../js/metal-armor-system.js?v=20261112h9fb31ab"></script>
 <script src="../../js/sprite-recolor.js?v=20261027h649a218" data-character-studio-sprite-recolor="1"></script>
 <script src="../../js/repo-pattern-library.js?v=20261111h873ccf1" data-character-studio-repo-pattern-library="1"></script>
-<script src="../../js/clothing-weaving-system.js?v=20261118voorgCoatSeam2" data-character-studio-weaving-compositor="1"></script>
-<script src="../../js/repo-picker.js?v=20261115animalhat1"></script>
+<script src="../../js/clothing-weaving-system.js?v=20261118fusedAnimal1" data-character-studio-weaving-compositor="1"></script>
+<script src="../../js/repo-picker.js?v=20261118fusedPatternBakeAudit2"></script>
 <script src="../../config/npcs/clothing-patterns.js?v=npcappearance1"></script>
 <script src="../../js/npc-wardrobe.js?v=20261107devvisual2"></script>
 <script src="../../js/portrait-utils.js?v=20261112imagePrune1"></script>

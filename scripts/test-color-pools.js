@@ -78,6 +78,21 @@ api.__test.setLibraryPattern('base', 'new-primary');
 assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'replacing primary retains its independent overpass dye');
 api.__test.setOverpassPattern('base', '');
 assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'clearing only overpass leaves first paint intact');
+assert.equal(api.__test.addFusedPattern('base', 'fuse-a'), true, 'first fused motif can share the base genetic region');
+assert.equal(api.__test.addFusedPattern('base', 'fuse-b'), true, 'a third motif shares primary ink rather than occupying the overpass slot');
+assert.equal(api.__test.setFusedPatternPlacement('base', 0, { repoPatternId:'fuse-a', usageOffsetX:12 }), true, 'individual fused motifs have independent placement settings');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns[0].usageOffsetX, 12, 'fused placement persists through Apply data normalization');
+assert.equal(api.__test.cleanDraft().base.patterns.length, 1, 'fused motifs do not masquerade as an overpass in the legacy pattern stack');
+api.__test.setOverpassPattern('base', 'overpass');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 2, 'an overpass coexists with the merged primary pattern group');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'the distinct overpass still receives its own dye');
+api.__test.setLibraryPattern('base', 'new-primary');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 2, 'changing primary preserves the additive fused motifs');
+assert.equal(api.__test.removeFusedPattern('base', 0), true, 'a single fused motif can be removed without clearing the genetic region');
+assert.equal(api.__test.cleanDraft().base.mergedPatterns.length, 1, 'only the selected fused motif was removed');
+assert.equal(api.__test.removeFusedPattern('base', 0), true, 'last fused motif can be removed');
+assert.equal(api.__test.cleanDraft().base.patterns[1].inkColorHex, '#cc7722', 'removing fused motifs retains the original overpass');
+api.__test.setOverpassPattern('base', '');
 const previewSource = { dyeHex:'#225588', pattern:{ repoPatternId:'old' }, patterns:[
   { repoPatternId:'old' }, { repoPatternId:'overpass', inkColorHex:'#cc7722' }
 ] }; // Simulates Color Pools' saved two-color paint before opening PatternAuthoring.
@@ -139,10 +154,99 @@ assert(renderer.includes("applyColorPoolPaint(basePaintSource, genotype, 'base'"
 assert(renderer.includes('fullBaseRecolor ? null : basePaintMask'), 'ordinary base paint is clipped by the authored genetic base mask');
 assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
-assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass compositor'), 'the real two-slot weaving compositor is public for Color Pools/NPC reuse');
+assert(renderer.includes('fusedPrimaryCount'), 'animal renderer tells the compositor to union the same-color group before its separate overpass');
+assert(renderer.includes('paint.mergedPatterns'), 'saved fused motifs survive into the runtime species renderer');
+assert(weaving.includes('function fuseSampledPatternMasks('), 'shared mask combinator draws one perimeter around overlapping motifs');
+
+assert.match(weaving, /PATTERNED_CANVAS_CACHE_LIMIT = 96/, 'raster cache has an entry bound');
+assert.match(weaving, /PATTERNED_CANVAS_CACHE_BYTES = 48 \* 1024 \* 1024/, 'raster cache caps retained RGBA memory at 48 MiB');
+assert.match(weaving, /pendingPatternStackCanvases\.set\(key, task\)/, 'identical concurrent frame requests share one in-flight bake');
+assert.match(weaving, /finally \{ if \(pendingPatternStackCanvases\.get\(key\) === task\) pendingPatternStackCanvases\.delete\(key\); \}/, 'completed and failed bakes release their pending cache entries');
+assert.match(weaving, /compactPatternCacheKey\(JSON\.stringify\(renderable\)\)/, 'long embedded motif data URLs are hashed instead of retained as cache keys');
+assert.match(weaving, /\|\$\{debugLabel\}\|/, 'the cache key separates clothing and animal outlining semantics');
+assert.match(weaving, /const renderableSlots = patterns\.flatMap\(/, 'source-slot identity is preserved even if some motif image references are absent');
+assert.doesNotMatch(weaving, /const patternCanvases = \[\]/, 'one fused animal render does not retain every temporary motif canvas simultaneously');
+assert.match(colorPoolsSource, /previewNeedsAnotherPass = true/, 'slider edits are coalesced behind the currently composing preview');
+assert.match(colorPoolsSource, /previewCoalesced\+\+/, 'mobile diagnostics count prevented redundant preview renders');
+const bakeCacheStart = weaving.indexOf('  function forgetPatternedCanvas(');
+const bakeCacheEnd = weaving.indexOf('  const wovenIconDataUrlPromises =', bakeCacheStart);
+assert(bakeCacheStart > 0 && bakeCacheEnd > bakeCacheStart, 'isolated LRU implementation found for direct testing');
+const bakeCache = vm.runInNewContext(`
+  const patternedCanvasCache = new Map();
+  const patternedCanvasBytesByKey = new Map();
+  const PATTERNED_CANVAS_CACHE_LIMIT = 96;
+  const PATTERNED_CANVAS_CACHE_BYTES = 48 * 1024 * 1024;
+  let patternedCanvasBytes = 0, patternedCanvasEvictions = 0, patternedCanvasEpoch = 0;
+  const pendingPatternStackCanvases = new Map(), pendingPatternCanvasPromises = new Map();
+  ${weaving.slice(bakeCacheStart, bakeCacheEnd)}
+  ({ cachedPatternedCanvas, rememberPatternedCanvas, clearPatternedCanvases,
+    pendingPatternStackCanvases, pendingPatternCanvasPromises,
+    status: () => ({ count: patternedCanvasCache.size, bytes: patternedCanvasBytes, evictions: patternedCanvasEvictions, epoch: patternedCanvasEpoch }) });
+`);
+for (let i = 0; i < 110; i++) bakeCache.rememberPatternedCanvas('small:' + i, { width: 10, height: 10 });
+assert.equal(bakeCache.status().count, 96, 'baked image cache evicts oldest entries after 96 images');
+assert.equal(bakeCache.cachedPatternedCanvas('small:0'), null, 'evicted sprites are recomposed on later request');
+assert(bakeCache.cachedPatternedCanvas('small:109'), 'newly painted sprites stay hot');
+bakeCache.clearPatternedCanvases();
+for (let i = 0; i < 20; i++) bakeCache.rememberPatternedCanvas('large:' + i, { width: 1024, height: 1024 });
+assert.equal(bakeCache.status().bytes, 48 * 1024 * 1024, 'baked animal images cannot exceed their 48 MiB cache budget');
+assert.equal(bakeCache.status().count, 12, 'the byte budget evicts large images well below the 96-entry cap');
+const staleEpoch = bakeCache.status().epoch; // Simulates an animal bake started before a player profile/equipment reset.
+bakeCache.pendingPatternStackCanvases.set('old-frame', Promise.resolve({width:10,height:10}));
+bakeCache.pendingPatternCanvasPromises.set('old-woven', Promise.resolve({width:10,height:10}));
+bakeCache.clearPatternedCanvases();
+bakeCache.rememberPatternedCanvas('old-frame', {width:10,height:10}, staleEpoch);
+assert.equal(bakeCache.status().count, 0, 'late old-appearance raster results cannot resurrect a cleared cache');
+assert.equal(bakeCache.pendingPatternStackCanvases.size, 0, 'reset removes pending fused-frame work from deduplication');
+assert.equal(bakeCache.pendingPatternCanvasPromises.size, 0, 'reset removes pending garment work from deduplication');
+assert(bakeCache.status().epoch > staleEpoch, 'each cache reset invalidates the prior generation');
+const hashStart = weaving.indexOf('  function compactPatternCacheKey(');
+const hashEnd = weaving.indexOf('  function patternStackCanvasKey(', hashStart);
+const compact = vm.runInNewContext('(' + weaving.slice(hashStart, hashEnd).trim() + ')');
+assert.equal(compact('same'), compact('same'), 'bake cache key is stable');
+assert.notEqual(compact('same'), compact('different'), 'different patterns cannot reuse stale baked pixels');
+assert(compact('data:image/png;base64,' + 'A'.repeat(100000)).length < 50, 'large pattern PNG is represented by a short cache key');
+const bakeWrapperStart = weaving.indexOf('  async function applyPatternStackToTintedImage(');
+const bakeWrapperEnd = weaving.indexOf('  async function composePatternStackToTintedImage(', bakeWrapperStart);
+assert(bakeWrapperStart > 0 && bakeWrapperEnd > bakeWrapperStart, 'async bake wrapper exists separately from the expensive raster builder');
+const bakeWrapper = weaving.slice(bakeWrapperStart, bakeWrapperEnd);
+let rasterCount = 0, finishRaster = null;
+const renderGate = new Promise(resolve => { finishRaster = resolve; }); // Holds one fake bake open so two concurrent requests must join it.
+const bakeEnvironment = { normalizePatternStack: patterns => patterns, cachedPatternedCanvas: () => null, pendingPatternStackCanvases: new Map(),
+  patternStackRenderKey: () => 'same-baked-frame', composePatternStackToTintedImage: () => { rasterCount++; return renderGate; } }; // Exercises the production concurrency wrapper without needing a browser canvas.
+const bakeProbe = vm.runInNewContext(`
+  const { normalizePatternStack, cachedPatternedCanvas, pendingPatternStackCanvases, patternStackRenderKey, composePatternStackToTintedImage } = environment;
+  let patternStackJoinCount = 0;
+  ${bakeWrapper}
+  ({ render: applyPatternStackToTintedImage, joinCount: () => patternStackJoinCount });
+`, { environment: bakeEnvironment });
+const frameStub = { width: 8, height: 8 }, patternStub = [{ motifUrl: 'motif:test' }]; // Identical frame and motif inputs used by concurrent animal requests.
+const firstBake = bakeProbe.render(frameStub, patternStub, '#ffffff', 'animal:test');
+const secondBake = bakeProbe.render(frameStub, patternStub, '#ffffff', 'animal:test');
+assert.equal(rasterCount, 1, 'two simultaneous equivalent requests launch exactly one expensive raster bake');
+assert.equal(bakeProbe.joinCount(), 1, 'duplicate requests are recorded by performance diagnostics');
+finishRaster(frameStub);
+Promise.all([firstBake, secondBake]).then(frames => {
+  assert.equal(frames[0], frameStub, 'first caller receives the baked frame');
+  assert.equal(frames[1], frameStub, 'second caller receives that same baked frame');
+  assert.equal(bakeEnvironment.pendingPatternStackCanvases.size, 0, 'successful bakes release their in-flight entry');
+}).catch(error => { console.error('Fused-pattern pending bake regression:', error); process.exitCode = 1; });
+
+
+const fuseStart = weaving.indexOf('  function fuseSampledPatternMasks(');
+const fuseEnd = weaving.indexOf('\n  function patternStackRenderKey(', fuseStart);
+const fuse = vm.runInNewContext('(' + weaving.slice(fuseStart, fuseEnd).trim() + ')'); // Exercise pure intersection behavior without browser canvas.
+const merged = fuse([Uint8Array.from([1,1,0,0]), Uint8Array.from([0,1,1,0])],
+  [Uint8Array.from([0,1,0,0]), Uint8Array.from([0,0,1,0])], 2);
+assert.deepEqual(Array.from(merged.combinedMask), [1,1,1,0], 'overlapping same-ink motifs combine into one continuous alpha silhouette');
+assert.deepEqual(Array.from(merged.combinedSeparator), [0,0,1,0], 'fusion removes the internal overlap seam but retains outer motif separators');
+assert(colorPoolsSource.includes('.cp-preview-column{position:sticky'), 'Color Pools preview remains pinned while scrolling many regions');
+assert(colorPoolsSource.includes('data-act="add-fused"'), 'Color Pools exposes additive pattern picker and per-entry remove controls');
+assert(weaving.includes('.loomcraft-preview-column{position:sticky'), 'loom pattern editing keeps the shared preview in sight');
+assert(weaving.includes('applyPatternStackToTintedImage, // Shared primary+overpass and opt-in fused-primary compositor'), 'the shared compositor remains public for Color Pools/NPC reuse');
 assert(weaving.includes('pattern.motifDataUrl || pattern.motifUrl'), 'shared stack compositor also accepts repo-authored motif URLs');
 assert(renderer.includes('applyPatternStackToTintedImage'), 'Color Pools routes animal surface paint through the primary+overpass compositor');
-assert(renderer.includes('patterns.length > 1 ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'animal paint diagnostics expose the actual authored/clamped knot-style overpass gap');
+assert(renderer.includes('overpass: overpass ? { clearanceMultiplier: Math.max(3, Math.min(12'), 'only the distinct overpass can expose knot-style clearance; fused motifs cannot');
 assert(stableSource.includes('stableEntries, // Shared live Stable collection'), 'Stable progression exposes its existing live collection instead of a duplicate store');
 assert(stableSource.includes('saveStable,'), 'Color Pools persists through the Stable owner');
 assert(furniture.includes('CATALOG.stonePedestal'), 'stone pedestal has a fallback matching the authored asset');
