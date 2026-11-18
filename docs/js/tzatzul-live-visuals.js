@@ -15,7 +15,8 @@
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
     lastBird: null, lastPose: null, captiveRestores: 0, captiveRestoreMisses: 0,
     lastCaptiveRestore: null, captiveHandoffs: 0, staleCarryCorrections: 0,
-    tintRestores: 0, refreshedPlanes: 0, staleCarryScaleCorrections: 0 }; // Distinguish late scale replays from the existing orientation-only correction counter. // Plain serializable diagnostics for mobile.
+    tintRestores: 0, refreshedPlanes: 0, staleCarryScaleCorrections: 0,
+    captivePositionRestores: 0, captivePositionHandoffs: 0, staleCarryPositionCorrections: 0 }; // Captive root translation is tracked separately from rotation/scale for mobile diagnostics.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   const isSkeeriActor = actor => actor?.isRuinSkeeri === true || (kind(actor) === 'skeeri' && actor?.isCompanion === true); // Shared native wing rig for authored ruin enemies and trained Skeeri.
@@ -49,7 +50,7 @@
     }
     return prey?.avatarRef?.group === group; // NPC and creature visual promotion must not restore detached old portraits.
   }
-  function sameScale(current, expected) {
+  function sameVector(current, expected) {
     if (!expected) return true;
     return !!current && ['x', 'y', 'z'].every(axis => {
       if (current[axis] == null && expected[axis] == null) return true; // Sparse isolated tool/test vectors still compare their authored axes.
@@ -85,8 +86,9 @@
         return false;
       }
     }
-    captivePoses.set(prey, { group, quaternion: group.quaternion.clone(),
-      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null, poseSession }); // Capture height/rotation, but keep the release-world position.
+    captivePoses.set(prey, { group, parent: group.parent, quaternion: group.quaternion.clone(),
+      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null, poseSession,
+      lastNativePosition: null, lastAlignedPosition: null }); // Translation is a per-frame visual offset, not a claim on the actor's world travel.
     return true;
   }
   function restoreCaptive(prey) {
@@ -102,9 +104,20 @@
       debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': visual root replaced';
       return false;
     }
+    // Talon alignment also overwrites the live root's position. Restore only the last
+    // clean simulation position when the root still contains OUR exact talon output.
+    // Do not rewind world travel to the original pickup, or fight a new position owner.
+    const positionOwned = !!pose.lastNativePosition && !!pose.lastAlignedPosition
+      && pose.group.parent === pose.parent
+      && sameVector(pose.group.position, pose.lastAlignedPosition)
+      && !window.ActorRigCompositor?.absoluteOwner?.(pose.group, 'position');
+    if (positionOwned) {
+      pose.group.position.copy(pose.lastNativePosition);
+      debug.captivePositionRestores++;
+    } else if (pose.lastAlignedPosition) debug.captivePositionHandoffs++;
     const orientationOwned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
-    const scaleOwned = sameScale(pose.group.scale, pose.scale); // A new scale owner must also defeat stale talon reset.
-    const staleTalonScale = !scaleOwned && sameScale(pose.group.scale, pose.lastDecomposedScale); // A precisely recognized late replay of the bird's intermediate matrix scale is not a new native scale owner.
+    const scaleOwned = sameVector(pose.group.scale, pose.scale); // A new scale owner must also defeat stale talon reset.
+    const staleTalonScale = !scaleOwned && sameVector(pose.group.scale, pose.lastDecomposedScale); // A precisely recognized late replay of the bird's intermediate matrix scale is not a new native scale owner.
     if (orientationOwned && staleTalonScale && pose.scale) {
       pose.group.scale.copy(pose.scale); // Correct ONLY the known talon intermediate scale before shared owner validation.
       debug.staleCarryScaleCorrections++;
@@ -263,10 +276,18 @@
       if (prey.tzatzulCapturedBy || !stillOwnsCaptiveGroup(prey, reset.group) || !(prey.health > 0)) {
         releasedPoseChecks.delete(prey); continue;
       }
+      // One delayed depth/render pass can replay just the portrait translation, with
+      // no stale quaternion. Correct only an exact talon position on the original rig.
+      if (reset.lastAlignedPosition && reset.lastNativePosition && reset.group.parent === reset.parent
+        && !window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'position')
+        && sameVector(reset.group.position, reset.lastAlignedPosition)) {
+        reset.group.position.copy(reset.lastNativePosition);
+        debug.staleCarryPositionCorrections++;
+      }
       const newOwner = window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'quaternion')
         || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'scale'); // A resumed fall/locomotion action takes precedence over stale talon replay.
-      if (newOwner || (!sameScale(reset.group.scale, reset.scale)
-        && !sameScale(reset.group.scale, reset.lastDecomposedScale))) {
+      if (newOwner || (!sameVector(reset.group.scale, reset.scale)
+        && !sameVector(reset.group.scale, reset.lastDecomposedScale))) {
         releasedPoseChecks.delete(prey);
         debug.captiveHandoffs++;
         continue;
@@ -371,9 +392,20 @@
       debug.captiveHandoffs++;
       return false; // A newer combat/fall animator displaced the talon orientation mid-flight.
     }
+    if (group.position?.clone && (!captiveBefore.lastAlignedPosition
+      || !sameVector(group.position, captiveBefore.lastAlignedPosition))) {
+      // Cache the *latest* native body root, not the pickup root. If a previous
+      // talon frame is still there, retain the known clean position instead.
+      if (captiveBefore.lastNativePosition) captiveBefore.lastNativePosition.copy(group.position);
+      else captiveBefore.lastNativePosition = group.position.clone();
+    }
     payload.matrix.decompose(group.position, group.quaternion, group.scale);
     const captivePose = captivePoses.get(prey); // Used by restoreCaptive to identify the exact orientation this talon pass last wrote.
     if (captivePose?.group === group) {
+      if (group.position?.clone) {
+        if (captivePose.lastAlignedPosition) captivePose.lastAlignedPosition.copy(group.position);
+        else captivePose.lastAlignedPosition = group.position.clone(); // Exact talon translation used for ownership-aware release.
+      }
       if (captivePose.lastAlignedQuaternion) captivePose.lastAlignedQuaternion.copy(group.quaternion);
       else captivePose.lastAlignedQuaternion = group.quaternion.clone(); // Allocate once per capture, not per animated flight frame.
       if (captivePose.lastDecomposedScale) captivePose.lastDecomposedScale.copy(group.scale);
