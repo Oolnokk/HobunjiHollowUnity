@@ -1,0 +1,136 @@
+name: Publish approved Friends Windows build
+
+# No push/PR trigger: a developer must explicitly approve each Friends release.
+on:
+  workflow_dispatch:
+    inputs:
+      approval:
+        description: 'Enter PUBLISH to release the current main commit to friends'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: friends-windows-publishing
+  cancel-in-progress: false
+
+jobs:
+  build-friends-installer:
+    if: github.ref == 'refs/heads/main' && inputs.approval == 'PUBLISH'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify desktop and tester build tools
+        shell: pwsh
+        run: |
+          node scripts/test-windows-desktop.js
+          node scripts/test-windows-updates.js
+          node --check scripts/desktop-friends-build.js
+          node --check desktop/main.cjs
+          node --check desktop/update-controller.cjs
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Configure an independently installed Friends edition
+        shell: pwsh
+        run: |
+          $version = "0.2.${{ github.run_number }}"
+          node scripts/desktop-friends-build.js configure $version
+          if ($LASTEXITCODE -ne 0) { throw 'Friends packaging configuration failed' }
+      - name: Package approved game snapshot
+        working-directory: desktop
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify isolation and updater metadata
+        shell: pwsh
+        run: |
+          $version = "0.2.${{ github.run_number }}"
+          $installer = "desktop/dist/Hobunji-Hollow-Tester-Setup-$version.exe"
+          if (-not (Test-Path $installer)) { throw "Missing Friends installer: $installer" }
+          if (-not (Test-Path 'desktop/dist/latest.yml')) { throw 'Missing Friends update metadata' }
+          if (-not (Test-Path 'desktop/dist/win-unpacked/resources/app-update.yml')) { throw 'Missing packaged Friends feed' }
+          $appFeed = Get-Content 'desktop/dist/win-unpacked/resources/app-update.yml' -Raw
+          if ($appFeed -notmatch 'provider:\s*generic' -or $appFeed -notmatch 'friends-update-feed') {
+            throw 'Friends installer is not isolated from the main release feed'
+          }
+          $latest = Get-Content 'desktop/dist/latest.yml' -Raw
+          if ($latest -notmatch [regex]::Escape($version)) { throw 'Friends version mismatch' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hobunji-Hollow-Friends-Windows-Installer
+          path: |
+            desktop/dist/Hobunji-Hollow-Tester-Setup-*.exe
+            desktop/dist/Hobunji-Hollow-Tester-Setup-*.exe.blockmap
+            desktop/dist/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-friends-release:
+    needs: build-friends-installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: Hobunji-Hollow-Friends-Windows-Installer
+          path: release
+      - name: Prepare checksum-preserving, release-pinned update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/desktop-friends-build.js feed "0.2.${{ github.run_number }}" release/latest.yml
+          grep -F 'friends-v0.2.${{ github.run_number }}' release/latest.yml
+      - name: Publish approved installer as a prerelease (never GitHub latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="0.2.${{ github.run_number }}"
+          gh release create "friends-v$version" \
+            "release/Hobunji-Hollow-Tester-Setup-$version.exe" \
+            "release/Hobunji-Hollow-Tester-Setup-$version.exe.blockmap" \
+            "release/latest.yml" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Hobunji Hollow Friends $version" \
+            --notes "Developer-approved Friends build of main at commit $GITHUB_SHA. Only manually approved Friends releases advance the Friends update feed." \
+            --prerelease
+      - name: Move only the Friends update feed to this approved release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p feed-checkout
+          cd feed-checkout
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git"
+          if git ls-remote --exit-code --heads origin friends-update-feed >/dev/null; then
+            git fetch --depth 1 origin friends-update-feed
+            git checkout -b friends-update-feed FETCH_HEAD
+          else
+            git checkout --orphan friends-update-feed
+          fi
+          cp ../release/latest.yml latest.yml
+          git add latest.yml
+          git commit -m "Approve Friends desktop version 0.2.${{ github.run_number }}"
+          git push origin HEAD:refs/heads/friends-update-feed
