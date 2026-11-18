@@ -62,6 +62,8 @@
   }
 
   function alchemyMovementMultiplier() {
+    const liveGetSpeedMul = window.AlchemySystem?.getSpeedMul; // On-foot movement reads this dynamically; post-init Well Rested potion wrappers must also affect mounts and followers.
+    if (typeof liveGetSpeedMul === 'function') return multiplier(() => window.AlchemySystem.getSpeedMul(), 1);
     const direct = mountDeps?.getAlchemySpeedMul || deps?.getAlchemySpeedMul;
     return multiplier(
       typeof direct === 'function'
