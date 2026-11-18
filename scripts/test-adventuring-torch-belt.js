@@ -48,8 +48,10 @@ let heldMode = 'tool'; // Simulates tool draw/put-away while keeping the selecte
 let player = new Group(); // Player roots may be replaced when an avatar respawns or loads.
 player.userData = { speciesId:'mao-ao', gender:'male', portraitModelHeight:1 };
 let avatar = new Group(); player.add(avatar); // Current PNG portrait used to sample live belt anchors.
-const handMap = { image: { width:20, height:60 } }; // Exact authored/colored held sprite texture.
-const toolMeshMap = { adventuring: { userData: { toolPlane: { material: { map:handMap } } } } };
+const realTorchHeight = .5 * 1204 / 450; // The actual 450×1204 torch PNG's dimensions at game.js's 0.5-unit tool plane width.
+const handMap = { image: { width:450, height:1204 } }; // Real torch PNG dimensions, reusing the colored held texture.
+const sourcePlane = { geometry:{ parameters:{ width:.5, height:realTorchHeight } }, material:{ map:handMap } }; // The actual equipment-plane dimensions supplied by game.js.
+const toolMeshMap = { adventuring: { userData: { toolPlane: sourcePlane } } };
 const subscribers = new Map(); // Captures the real shared frame-scheduler registration.
 const world = {
   THREE,
@@ -102,12 +104,22 @@ assert.equal(belt.visible, true, 'the stowed torch appears on the actual player'
 assert.equal(belt.children[0].material.map, handMap, 'belt shares the already-colored held PNG');
 assert.equal(belt.children[0].rotation.z, Math.PI, 'authored -Y torch tip is upright on the belt');
 assert.equal(belt.children[0].scale.x, .68, 'belt torch reads the authored idle scale, not its raw size');
-assert(Math.abs(belt.children[0].position.y - (-.38 / 2 * .32)) < 1e-8, 'idle scaling keeps the grip end anchored');
+assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .5 * .68) < 1e-8, 'belt width matches the held tool width multiplied by Neutral scale');
+assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - realTorchHeight * .68) < 1e-8, 'belt height follows the real torch PNG aspect and Neutral scale');
+assert(Math.abs(belt.children[0].position.y - realTorchHeight * .68 / 2) < 1e-8, 'the handle stays exactly on the hip anchor');
+assert(Math.abs(belt.children[1].position.y - (realTorchHeight + .05) * .68) < 1e-8, 'flame reaches the true upright tip rather than an old miniature offset');
 assert.equal(torch.debug.belt.idleScale, .68, 'Pixel Probe exposes the actual belt multiplier');
+assert(Math.abs(torch.debug.belt.visibleDimensions.height - realTorchHeight * .68) < 1e-8, 'mobile debug reports the full sized visible art');
 assert.equal(torch.debug.onBelt, true, 'only a lit, stowed torch is reported on the belt');
 world.WeaponToolStances.poses.torchHold.scale = .81; sync({timestamp:now});
 assert.equal(belt.children[0].scale.x, .81, 'editing Neutral scale changes the stowed sprite without rebuilding it');
-assert(Math.abs(belt.children[1].position.y - (belt.children[0].position.y + .24 * .81)) < 1e-8, 'flame follows the resized tip');
+assert(Math.abs(belt.children[1].position.y - (realTorchHeight + .05) * .81) < 1e-8, 'flame follows the resized actual tip');
+sourcePlane.geometry.parameters.width = .44; sourcePlane.geometry.parameters.height = .99; // Live species/tool geometry can update after the PNG has already loaded.
+sync({timestamp:now});
+assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .44 * .81) < 1e-8, 'live held plane width changes without mesh rebuild');
+assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - .99 * .81) < 1e-8, 'live held plane aspect changes without mesh rebuild');
+assert(Math.abs(belt.children[0].position.y - .99 * .81 / 2) < 1e-8, 'updated geometry keeps the handle on the belt anchor');
+sourcePlane.geometry.parameters.width = .5; sourcePlane.geometry.parameters.height = realTorchHeight; // Restore the authored shape for the burn/respawn checks.
 world.WeaponToolStances.poses.torchHold.scale = .68; sync({timestamp:now});
 assert.equal(belt.children[1].visible, true, 'belt flame continues burning after stow');
 assert.equal(world.AdventuringTorchBelt.debug.placement, 'animated pants-belt spline');
