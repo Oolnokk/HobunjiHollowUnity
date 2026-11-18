@@ -68,8 +68,11 @@ assert.equal(profile.anchors.beltStow.position.x,.264,'native reset returns to t
 // Run the exact late bridge that preserves all earlier V15.xx rig hooks and installs
 // one additional authoring anchor, including the existing JSON autosave path.
 const start=html.indexOf('// Belt-stowed equipment: integrate the external authoring module');
-const end=html.indexOf('syncAllMaaPanelBodies();',start);
+const end=html.indexOf('\n})();\n</script>',start); // This must be the outer Animation Author closure, not the following UI-resize script.
 assert(start>=0 && end>start);
+const normalizedDefinition = html.indexOf('function normalizedRigProfileLibrary');
+assert(html.lastIndexOf('</script>',start) < normalizedDefinition,
+  'belt bridge must remain inside the Animation Author IIFE so its private profile functions are in scope');
 let renderInvocations=0, inspectorMounts=0, saveCalls=0, changeEvents=[];
 const rigState={mode:'rig',rig:{selectedAnchor:'posterior'},editTarget:'rigAnchor',actors:[actor]};
 const selection={ actor };
