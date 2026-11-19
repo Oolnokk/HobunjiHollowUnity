@@ -26,6 +26,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: GAME_SCHEME, privileges: {
 const GAME_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, 'game')
   : path.resolve(__dirname, '..', 'docs'); // Shipped game assets or original checkout.
+const desktopIcon = path.join(GAME_ROOT, 'assets', 'hud', 'icon_hobunji.png'); // Shipped image used for both native Electron windows.
 const VENDOR_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, 'vendor')
   : path.join(__dirname, 'node_modules', 'three'); // Locally bundled r128 files.
@@ -199,7 +200,7 @@ async function prepareUpdateRestart() {
 function createWindow() {
   const win = new BrowserWindow({
     title: desktopTitle, width: 1440, height: 900, minWidth: 900, minHeight: 600,
-    show: false, backgroundColor: '#12191b',
+    show: false, backgroundColor: '#12191b', icon: desktopIcon,
     webPreferences: {
       nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false,
     },
@@ -252,7 +253,7 @@ if (!singleInstance) {
   });
   app.on('web-contents-created', (_event, contents) => attachNavigationGuards(contents));
   desktopUpdates = createDesktopUpdates({
-    app, BrowserWindow, ipcMain, shell, autoUpdater,
+    app, BrowserWindow, ipcMain, shell, autoUpdater, desktopIcon,
     getGameWindow: () => mainWindow,
     prepareRestart: prepareUpdateRestart,
     cancelPreparedRestart: () => { closeAllowed = false; },
