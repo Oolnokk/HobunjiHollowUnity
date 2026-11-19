@@ -13,7 +13,7 @@
     "js/zone-prop-render-batches.js?v=20261119hsettledEligibility2",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261118h9d25902",
-    "js/shoulder-pet-attachment-runtime.js?v=20261119ha28b42f", // Shared pin solver, before game.js starts.
+    "js/shoulder-pet-attachment-runtime.js?v=20261119h14f115f", // Shared pin solver, before game.js starts.
     "js/adventuring-torch-belt.js?v=20261118beltTrueSize4" // Stowed belt sprite and 30-second live torch timeout before game.js starts.
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
