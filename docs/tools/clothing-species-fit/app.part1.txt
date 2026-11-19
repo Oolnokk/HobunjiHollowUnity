@@ -112,7 +112,8 @@ function saveState(){
     ...A.settings,mode,region,gender:E.gender.value,species:E.species.value,sourceSpecies:E.sourceSpecies.value,sourceGender:E.sourceGender.value,repo:base(),
     garment:region==='body'?E.garment.value:(A.settings?.garment||''),
     headGarment:region==='headwear'?E.garment.value:(A.settings?.headGarment||''),
-    headbandEditCurve:E.headbandEditCurve.value,headbandView:E.headbandView.value
+    headbandEditCurve:E.headbandEditCurve.value,headbandView:E.headbandView.value,
+    headbandWholeDrag:E.headbandWholeDrag.checked // Remembers whether mobile touch moves a whole curve or just one node.
   };
   localStorage.setItem(STORE,JSON.stringify(A));
 }
