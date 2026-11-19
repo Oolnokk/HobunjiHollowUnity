@@ -16,31 +16,42 @@ global.THREE = THREE;
 require('../docs/js/foliage-generator.js'); // Use the real generator and its cached variants, not a handcrafted tree fixture.
 const generator = window.FoliageGenerator;
 assert.ok(generator?.buildWildernessBlossomTreeMesh, 'wilderness builder is exported independently of table flowers');
-assert.equal(generator.wildernessBlossomRecipe.knotTiers, 3, 'wilderness trees have three canopy branch levels');
-assert.equal(generator.pottedBlossomRecipe.knotTiers, 1, 'the feast table flower stays a single-rung sapling');
-for (const color of ['#00ffff','#ffffff','#ffbf00','#ff8000','#ffb3b3']) {
-  const a = generator.buildWildernessBlossomTreeMesh('blossom-color-'+color,color);
-  const b = generator.buildWildernessBlossomTreeMesh('blossom-color-'+color,color);
-  const bounds = new THREE.Box3().setFromObject(a); // Measures seeded branches and petals after normalized world transforms.
-  const size = bounds.getSize(new THREE.Vector3());
-  assert.ok(size.x <= 2.001 && size.y <= 2.001 && size.z <= 2.001,
-    color+': all branches, foliage and petals fit the 2×2×2-tile envelope');
-  assert.ok(size.y > 1.95, color+': tree is approximately two tiles tall, not a tiny table flower');
-  assert.ok(bounds.min.y >= -0.001, color+': roots begin at the wilderness floor');
-  assert.equal(a.userData.wildernessBlossom.branchTiers,3);
-  assert.equal(a.userData.wildernessBlossom.blossomColor,color);
-  const petals = a.getObjectByName('wilderness-blossom-sprigs');
-  assert.ok(petals?.isMesh && petals.geometry.attributes.uv, color+': separately tinted tiny PNG blossom planes exist');
-  assert.ok(petals.geometry.attributes.position.count >= 100,
-    color+': multiple outer-branch blossom sprigs are distributed across all tiers');
-  const leaves = a.children.find(child => child.isMesh && child.userData.noOutline && child !== petals);
-  assert.ok(leaves?.material?.map, color+': green shadewood foliage remains distinct from colored blossom planes');
-  assert.notEqual(leaves.material.color.getHex(),new THREE.Color(color).getHex(),
-    color+': tree leaves must not become one giant colored blossom');
-  const petalsB = b.getObjectByName('wilderness-blossom-sprigs');
-  assert.equal(petals.geometry,petalsB.geometry,color+': repeated tree instances reuse shared petals geometry');
-  assert.equal(leaves.geometry,b.children.find(child=>child.isMesh&&child.userData.noOutline&&child!==petalsB).geometry,
-    color+': repeated tree instances reuse shared leaves geometry');
+assert.equal(generator.wildernessBlossomRecipe.map_northern_cliffs.species,'crownedPine');
+assert.equal(generator.wildernessBlossomRecipe.map_western_slope.species,'deadTree');
+assert.equal(generator.wildernessBlossomRecipe.map_southern_cloud_forest.species,'shadewood');
+assert.equal(generator.pottedBlossomRecipe.knotTiers,1,'the feast table flower remains a one-tier sapling');
+const nativeForZone = {
+  map_northern_cliffs:{id:'cyan',species:'crownedPine',color:'#00ffff',make:()=>generator.buildCrownedPineMesh(12,13)},
+  map_western_slope:{id:'white',species:'deadTree',color:'#ffffff',make:()=>generator.buildDeadTreeMesh(12,13)},
+  map_southern_cloud_forest:{id:'amber',species:'shadewood',color:'#ff8000',make:()=>generator.buildShadewoodMesh(12,13)}
+}; // The three real biome builders are the authoritative non-event counterparts.
+for(const [zone,info] of Object.entries(nativeForZone)) {
+  const normal = info.make(),first = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
+  const second = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
+  const originalBounds = new THREE.Box3().setFromObject(normal);
+  const bloomBounds = new THREE.Box3().setFromObject(first);
+  const nativeHeight = originalBounds.getSize(new THREE.Vector3()).y;
+  const bloomHeight = bloomBounds.getSize(new THREE.Vector3()).y;
+  assert.ok(bloomHeight>1.5 && bloomHeight/nativeHeight>0.6 && bloomHeight/nativeHeight<1.6,
+    zone+': a single native-scale tree replaces the miniature standalone blossom tree');
+  assert.equal(first.userData.wildernessBlossom.nativeSpecies,info.species);
+  assert.equal(first.userData.wildernessBlossom.blossomColor,info.color);
+  assert.equal(first.userData.wildernessBlossom.unfellable,true,'story locale tree is not a resource for an axe');
+  assert.equal(first.userData.unfellableStoryTree,true);
+  const petals=first.getObjectByName('wilderness-blossom-sprigs');
+  assert.ok(petals?.isMesh && petals.geometry.attributes.uv,zone+': native branches carry tiny leaf-textured clusters');
+  assert.ok(petals.geometry.attributes.position.count>=100,zone+': leaf bunches appear on multiple real branches');
+  assert.equal(petals.material.color.getHex(),new THREE.Color(info.color).getHex(),'leaf bunches retain the exact temple swatch');
+  assert.equal(petals.geometry,second.getObjectByName('wilderness-blossom-sprigs').geometry,
+    'each species/color combination reuses cached vertex buffers and one blossom mesh');
+  const leaves=first.children.find(child=>child.isMesh && child.userData.noOutline && child!==petals);
+  if(info.species==='deadTree') assert.equal(leaves,undefined,'Western Slope keeps native leafless limbs except the blossom leaf bunches');
+  else {
+    assert.ok(leaves?.material?.map,zone+': ordinary leaf canopy is still present');
+    assert.notEqual(leaves.material.color.getHex(),petals.material.color.getHex(),zone+': the whole tree must not turn blossom-colored');
+    const anotherLeaves=second.children.find(child=>child.isMesh && child.userData.noOutline && child!==second.getObjectByName('wilderness-blossom-sprigs'));
+    assert.equal(leaves.geometry,anotherLeaves.geometry,'native foliage stays instanced by reference');
+  }
 }
 // Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
 async function verifyScenery(){
@@ -134,6 +145,6 @@ scenery.clear();
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;
-console.log('ok - blossom tree geometry, three-tier leaves, uniquely dyed boulders/pillars, Shift redraw and cleanup');
+console.log('ok - regional native blossom tree geometry, shared leaf bunches, dyed landmarks and Shift redraw');
 }
 verifyScenery().catch(error=>{console.error(error);process.exitCode=1;});
