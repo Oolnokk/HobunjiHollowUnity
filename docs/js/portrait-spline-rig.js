@@ -5,7 +5,7 @@
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback;
   const RAD = Math.PI / 180;
-  const DEFAULT_DEADZONE = Object.freeze({ x: 4, y: 4, z: 6 });
+  const DEFAULT_BONE = Object.freeze({yaw:8,pitch:10,roll:18}); // One root-to-tip joint drives each accessory, no six-direction poses.
   const SLOT_NAMES = new Set(['facialHair', 'hairSide', 'hairSideL']);
   const live = new Set(); // Mobile diagnostics; entries are removed by the avatar's disposal hook.
 
@@ -359,34 +359,14 @@
     ctx.putImageData(image,0,0);
     return source;
   }
-  function makeDefaultSegments(points) {
-    if (!Array.isArray(points) || points.length < 2) return [];
-    let totalLength=0;
-    for(let i=1;i<points.length;i++) totalLength+=Math.hypot(points[i].u-points[i-1].u,points[i].v-points[i-1].v);
-    const reach=clamp(totalLength*.22,.016,.09); // Natural gust displacement scales with the authored beard/hair length, not a constant pose per species.
-    return points.slice(1).map((point,i)=>{
-      const previous=points[i],length=Math.hypot(point.u-previous.u,point.v-previous.v);
-      const fraction=(i+1)/(points.length-1),tension=.08+.92*fraction*fraction; // Root-adjacent segments are substantially stiffer; the tip leads and pulls the middle instead of the middle outrunning it.
-      const amplitude=reach*tension,vertical=Math.abs(point.v-previous.v)/Math.max(length,.001);
-      const roll=clamp(vertical*12*tension,0,12),pitch=clamp(9*tension,0,9);
-      const poses={};
-      for(const dir of ['left','right','up','down','toward','away']){
-        const sign=['left','down','away'].includes(dir)?-1:1;
-        const lateral=dir==='left'||dir==='right',verticalWind=dir==='up'||dir==='down';
-        poses[dir]={
-          yaw:lateral ? sign*3*tension : 0,
-          pitch:verticalWind ? sign*4*tension : (dir==='toward'||dir==='away'?-sign*pitch:0), // Hanging strands have negative local Y: backward X pitch moves toward +Z, not forward.
-          roll:lateral ? sign*roll : 0,
-          translate:{
-            x:lateral?sign*amplitude:0,
-            y:verticalWind?sign*amplitude*.7:0,
-            z:!lateral&&!verticalWind?sign*amplitude*.55:0,
-          },
-        };
-      }
-      return {deadzone:{x:Math.round(6-3*fraction),y:Math.round(8-3*fraction),z:Math.round(9-3*fraction)},poses};
-    });
+  function defaultBone(points) {
+    const root=points?.[0],tip=points?.[points.length-1];
+    const length=root&&tip?Math.hypot(tip.u-root.u,tip.v-root.v):.2;
+    const scale=clamp(length/.26,.45,1.4); // Short moustaches bend less than long hanging beards.
+    return {yaw:Math.round(DEFAULT_BONE.yaw*scale),pitch:Math.round(DEFAULT_BONE.pitch*scale),
+      roll:Math.round(DEFAULT_BONE.roll*scale)};
   }
+
   function suggestRestPoints(sprite, head) {
     if (!sprite?.width || !sprite?.height) return null;
     const c=document.createElement('canvas');c.width=c.height=MASK_SIZE;
@@ -406,7 +386,7 @@
     }
     if(maxY<0) return null;
     const rootY=overlapCount?clamp(Math.round(overlapY/overlapCount),minY,Math.min(maxY,minY+Math.round((maxY-minY)*.5))):minY;
-    const tipY=maxY,midY=Math.round((rootY+tipY)/2);
+    const tipY=maxY;
     const centerAt=y=>{
       for(let gap=0;gap<MASK_SIZE;gap++){
         if(y-gap>=0&&rowCount[y-gap])return rowSum[y-gap]/rowCount[y-gap];
@@ -417,65 +397,38 @@
     const rootX=overlapCount?overlapX/overlapCount:centerAt(rootY);
     const points=[
       {u:clamp((rootX+.5)/MASK_SIZE,0,1),v:(rootY+.5)/MASK_SIZE,depth:.012},
-      {u:clamp((centerAt(midY)+.5)/MASK_SIZE,0,1),v:(midY+.5)/MASK_SIZE,depth:.021},
       {u:clamp((centerAt(tipY)+.5)/MASK_SIZE,0,1),v:(tipY+.5)/MASK_SIZE,depth:.032},
     ];
-    if(points[2].v-points[0].v<.035) return null; // Tiny/sideways ornament retains the editable generic spline instead of a degenerate suggestion.
+    if(points[1].v-points[0].v<.035) return null; // A tiny accessory keeps a user-authored bone instead of a degenerate pivot.
     return points;
   }
 
   function normalize(input) {
     if (!input || input.enabled === false || !Array.isArray(input.points) || input.points.length < 2) return null;
-    const points = input.points.slice(0, 16).map((point, i) => ({
-      u: clamp(finite(point?.u, 0.5), 0, 1),
-      v: clamp(finite(point?.v, 0.5), 0, 1),
-      depth: clamp(finite(point?.depth, 0.012 + i * 0.004), 0.003, 0.35),
+    // Old multi-knot assets migrate at load: preserve the root and final tip, drop every blend-space segment.
+    const points=[input.points[0],input.points[input.points.length-1]].map((point,i)=>({
+      u:clamp(finite(point?.u,.5),0,1),v:clamp(finite(point?.v,.5+i*.2),0,1),
+      depth:clamp(finite(point?.depth,.012+i*.02),.003,.35),
     }));
-    if (points.every(p => p.u === points[0].u && p.v === points[0].v)) return null;
-    const suggested = makeDefaultSegments(points); // Old unconfigured cosmetics receive usable poses without overwriting explicitly authored ones.
-    const segments = points.slice(1).map((_, i) => {
-      const source = input.segments?.[i] || suggested[i];
-      const directions = {};
-      for (const key of ['left', 'right', 'up', 'down', 'toward', 'away']) {
-        const pose = source.poses?.[key] || {};
-        directions[key] = {
-          yaw: clamp(finite(pose.yaw), -85, 85),
-          pitch: clamp(finite(pose.pitch), -85, 85),
-          roll: clamp(finite(pose.roll), -85, 85),
-          translate: {
-            x: clamp(finite(pose.translate?.x), -.35, .35),
-            y: clamp(finite(pose.translate?.y), -.35, .35),
-            z: clamp(finite(pose.translate?.z), -.35, .35),
-          }, // Direction-specific 3D endpoint offset authored with the viewer gizmos; old rotational poses normalize to zero.
-        };
-      }
-      return {
-        deadzone: {
-          x: clamp(finite(source.deadzone?.x, DEFAULT_DEADZONE.x), 0, 44),
-          y: clamp(finite(source.deadzone?.y, DEFAULT_DEADZONE.y), 0, 44),
-          z: clamp(finite(source.deadzone?.z, DEFAULT_DEADZONE.z), 0, 44),
-        },
-        poses: directions,
-      };
-    });
+    if(Math.hypot(points[1].u-points[0].u,points[1].v-points[0].v)<.005)return null;
+    const defaults=defaultBone(points),raw=input.bone||{};
+    const bone=Object.fromEntries(['yaw','pitch','roll'].map(axis=>[axis,
+      clamp(finite(raw[axis],defaults[axis]),0,65)])); // Maximum physical swing in degrees for a unit gust.
     return {
-      version: 1, enabled: true, points, segments,
-      regionMasks: Object.fromEntries(['front', 'rear'].flatMap(view => {
-        const normalized = normalizePixelMask(input.regionMasks?.[view]);
-        return normalized ? [[view, normalized]] : [];
-      })), // Per-plane rigid/flexible regions; absence means an unconverted legacy hairstyle.
-      hoodOpeningMask: normalizePixelMask(input.hoodOpeningMask),
-      hoodOverlapMask: normalizePixelMask(input.hoodOverlapMask),
-      hoodRigidOverlapMask: normalizePixelMask(input.hoodRigidOverlapMask),
-      rearOffset: {
-        u: clamp(finite(input.rearOffset?.u), -.25, .25),
-        v: clamp(finite(input.rearOffset?.v), -.25, .25),
-      },
-      width: clamp(finite(input.width, .1), .01, .5),
-      windResponse: clamp(finite(input.windResponse, 1), 0, 5),
-      tipFollow: clamp(finite(input.tipFollow, .58), 0, .9), // Bottom-most knot drives the middle one; the head attachment remains immobile.
-      segmentsX: clamp(Math.round(finite(input.segmentsX, 24)), 4, 40),
-      segmentsY: clamp(Math.round(finite(input.segmentsY, 32)), 4, 48),
+      version:2,enabled:true,points,bone,
+      regionMasks:Object.fromEntries(['front','rear'].flatMap(view=>{
+        const mask=normalizePixelMask(input.regionMasks?.[view]);return mask?[[view,mask]]:[];
+      })),
+      hoodOpeningMask:normalizePixelMask(input.hoodOpeningMask),
+      hoodOverlapMask:normalizePixelMask(input.hoodOverlapMask),
+      hoodRigidOverlapMask:normalizePixelMask(input.hoodRigidOverlapMask),
+      hoodStretchPx:clamp(Math.round(finite(input.hoodStretchPx,12)),0,32),
+      rearOffset:{u:clamp(finite(input.rearOffset?.u),-.25,.25),
+        v:clamp(finite(input.rearOffset?.v),-.25,.25)},
+      width:clamp(finite(input.width,.1),.01,.5),
+      windResponse:clamp(finite(input.windResponse,1),0,5),
+      segmentsX:clamp(Math.round(finite(input.segmentsX,24)),4,40),
+      segmentsY:clamp(Math.round(finite(input.segmentsY,32)),4,48),
     };
   }
 
@@ -484,90 +437,41 @@
     return normalize(option?.variantSplineRigs?.[key] || option?.splineRig);
   }
 
-  function axisAmount(input, deadzone) {
-    const direction = clamp(finite(input), -1, 1);
-    const angle = Math.atan(Math.abs(direction)) / RAD;
-    const response = clamp((angle - deadzone) / Math.max(0.01, 45 - deadzone), 0, 1);
-    return Math.sign(direction) * response;
-  }
-
-  function blendSegment(segment, wind) {
-    const d = segment.deadzone;
-    const x = axisAmount(wind.x, d.x), y = axisAmount(wind.y, d.y), z = axisAmount(wind.z, d.z);
-    const angles = { yaw: 0, pitch: 0, roll: 0 };
-    const translation = { x: 0, y: 0, z: 0 }; // Accumulates direction-weighted knot translations; excluded from neutral output for legacy clients.
-    for (const [axis, low, high, strength] of [['x', 'left', 'right', x], ['y', 'down', 'up', y], ['z', 'away', 'toward', z]]) {
-      const pose = segment.poses[strength < 0 ? low : high];
-      for (const component of ['yaw', 'pitch', 'roll']) angles[component] += Math.abs(strength) * pose[component];
-      for (const component of ['x', 'y', 'z']) translation[component] += Math.abs(strength) * (pose.translate?.[component] || 0);
-    }
-    // Independent axes blend without allowing a diagonal gust to triple the authored excursion.
-    const divisor = Math.max(1, Math.hypot(x, y, z));
-    for (const component of ['yaw', 'pitch', 'roll']) angles[component] = clamp(angles[component] / divisor, -85, 85);
-    for (const component of ['x', 'y', 'z']) translation[component] = clamp(translation[component] / divisor, -.35, .35);
-    if (Object.values(translation).some(value => Math.abs(value) > 1e-9)) angles.translate = translation;
-    return angles;
-  }
-
-  function segmentVector(from, to, angles, factor) {
-    const yaw = angles.yaw * RAD * factor, pitch = angles.pitch * RAD * factor, roll = angles.roll * RAD * factor;
-    const dx = to.u - from.u, dy = from.v - to.v, dz = to.depth - from.depth;
-    const x1 = dx * Math.cos(yaw) + dz * Math.sin(yaw);
-    const z1 = dz * Math.cos(yaw) - dx * Math.sin(yaw);
-    const y2 = dy * Math.cos(pitch) - z1 * Math.sin(pitch);
-    const z2 = dy * Math.sin(pitch) + z1 * Math.cos(pitch);
-    const t = angles.translate || {}; // Offsets apply in portrait-local XYZ, so gizmo movement matches game wind poses.
-    return { x: x1 * Math.cos(roll) - y2 * Math.sin(roll) + (t.x || 0) * factor,
-      y: x1 * Math.sin(roll) + y2 * Math.cos(roll) + (t.y || 0) * factor,
-      z: z2 + (t.z || 0) * factor };
-  }
-
   function posePoints(rig, wind = {}) {
-    const rest=rig.points.map(p=>({x:p.u-.5,y:.5-p.v,z:p.depth}));
-    const points=rest.map(p=>({...p})), offset=rest.map(()=>({x:0,y:0,z:0}));
-    const follow=clamp(finite(rig.tipFollow,.58),0,.9);
+    const root=rig.points[0],tip=rig.points[1],rest=[
+      {x:root.u-.5,y:.5-root.v,z:root.depth},
+      {x:tip.u-.5,y:.5-tip.v,z:tip.depth},
+    ];
+    const x=clamp(finite(wind.x),-1,1),y=clamp(finite(wind.y),-1,1),z=clamp(finite(wind.z),-1,1);
+    const bone=rig.bone||defaultBone(rig.points);
+    // Exactly one joint: rotate the root-to-tip vector; the attachment itself never moves.
+    const angles={yaw:bone.yaw*x,pitch:bone.pitch*(.35*y-z),roll:bone.roll*(x+.3*y)};
+    const end=segmentVector(root,tip,angles,1),base=rest[0],target={
+      x:base.x+end.x,y:base.y+end.y,z:base.z+end.z,
+    };
     let collisions=0;
-    // Evaluate tip-first. A gust on the last knot partially pulls the middle knot, but
-    // moving the middle knot alone never drags the tip. Root remains anchored to the skull.
-    for(let i=rig.segments.length-1;i>=0;i--){
-      const angles=blendSegment(rig.segments[i],wind);
-      const v=segmentVector(rig.points[i],rig.points[i+1],angles,1);
-      const previous=rest[i],target=rest[i+1],child=offset[i+2]||{x:0,y:0,z:0};
-      const delta={x:v.x-(target.x-previous.x)+child.x*follow,
-        y:v.y-(target.y-previous.y)+child.y*follow,
-        z:v.z-(target.z-previous.z)+child.z*follow}; // Tip motion propagates upward with declining influence.
-      const candidate=factor=>({x:target.x+delta.x*factor,y:target.y+delta.y*factor,z:target.z+delta.z*factor});
-      let next=candidate(1);
-      if(next.z<.003){
-        collisions++;
-        let lo=0,hi=1;
-        for(let pass=0;pass<12;pass++){
-          const middle=(lo+hi)/2;
-          if(candidate(middle).z>=.003)lo=middle;else hi=middle;
-        }
-        next=candidate(lo);
-        if(next.z<.003)next.z=.003;
-      }
-      points[i+1]=next;
-      offset[i+1]={x:next.x-target.x,y:next.y-target.y,z:next.z-target.z};
+    if(target.z<.003){
+      collisions=1;
+      const start=rest[1],denominator=start.z-target.z;
+      const fraction=denominator>0?clamp((start.z-.003)/denominator,0,1):0;
+      target.x=start.x+(target.x-start.x)*fraction;
+      target.y=start.y+(target.y-start.y)*fraction;
+      target.z=Math.max(.003,start.z+(target.z-start.z)*fraction);
     }
-    return {points,collisions};
+    return {points:[base,target],collisions};
   }
-
-  function cubic(a, b, c, d, t) {
-    const t2 = t * t, t3 = t2 * t; // Catmull-Rom interpolant; knots remain in place while first derivatives join smoothly.
-    return .5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  function segmentVector(from,to,angles,factor) {
+    const yaw=angles.yaw*RAD*factor,pitch=angles.pitch*RAD*factor,roll=angles.roll*RAD*factor;
+    const dx=to.u-from.u,dy=from.v-to.v,dz=to.depth-from.depth;
+    const x1=dx*Math.cos(yaw)+dz*Math.sin(yaw),z1=dz*Math.cos(yaw)-dx*Math.sin(yaw);
+    const y2=dy*Math.cos(pitch)-z1*Math.sin(pitch),z2=dy*Math.sin(pitch)+z1*Math.cos(pitch);
+    return {x:x1*Math.cos(roll)-y2*Math.sin(roll),y:x1*Math.sin(roll)+y2*Math.cos(roll),z:z2};
   }
 
   function curvePoint(points, index, fraction, normalized = false) {
-    const a = points[Math.max(0, index - 1)], b = points[index];
-    const c = points[index + 1], d = points[Math.min(points.length - 1, index + 2)];
-    const value = (point, axis) => normalized
-      ? axis === 'x' ? point.u - .5 : axis === 'y' ? .5 - point.v : point.depth
-      : point[axis]; // The author uses normalized (u,v,depth); posed strands use model-relative (x,y,z).
-    const t = clamp(fraction, 0, 1);
-    return Object.fromEntries(['x', 'y', 'z'].map(axis => [axis,
-      cubic(value(a, axis), value(b, axis), value(c, axis), value(d, axis), t)]));
+    const a=points[0],b=points[1],t=clamp(fraction,0,1);
+    const get=(p,axis)=>normalized?(axis==='x'?p.u-.5:axis==='y'?.5-p.v:p.depth):p[axis];
+    return Object.fromEntries(['x','y','z'].map(axis=>[axis,get(a,axis)*(1-t)+get(b,axis)*t]));
   }
 
   function deformPosition(rig, posed, u, v, width, height, pinned = false, motion = pinned ? 0 : 1, overlap = 0) {
@@ -582,8 +486,8 @@
       const squared = (x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2;
       if (squared < closest) { closest = squared; index = i; fraction = t; }
     }
-    const rest = curvePoint(rig.points, index, fraction, true); // Cubic neutral centerline blends each neighboring knot instead of a kinked polyline.
-    const target = curvePoint(posed, index, fraction); // Pose in the same continuous parametric space before displacing texture vertices.
+    const rest = curvePoint(rig.points, 0, fraction, true); // One bone: linear root-to-tip interpolation.
+    const target = curvePoint(posed, 0, fraction); // Same single-joint shape for all wind directions.
     const influence = (1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2) * motion;
     const z = overlap ? .003 : Math.max(.003, rest.z + (target.z - rest.z) * influence);
     return { x: (x + (target.x - rest.x) * influence) * width,
@@ -782,9 +686,9 @@
       })),
     }));
   }
-  window.PortraitSplineRig = { normalize, resolveOptionRig, blendSegment, posePoints, curvePoint,
+  window.PortraitSplineRig = { normalize, resolveOptionRig, defaultBone, posePoints, curvePoint,
     sampleHoodOverlap: (fit, u, v) => fit?.overlap[maskPixel(u, v)] || 0,
-    deformPosition, attachmentPinField, isPinnedPixel, attachmentMotion, strandGeometry, selectHoodOpening, fitHood, hoodOcclusion, prepareSplineTexture, makeDefaultSegments, suggestRestPoints,
+    deformPosition, attachmentPinField, isPinnedPixel, attachmentMotion, strandGeometry, selectHoodOpening, fitHood, hoodOcclusion, prepareSplineTexture, suggestRestPoints,
     normalizePixelMask, decodePixelMask, encodePixelMask, maskFromOverlap, paintPixelMask,
     attach, refresh, detach, debug };
 })();
