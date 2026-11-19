@@ -655,7 +655,7 @@
 
     refresh();
     window.QuickPotionArcUI = Object.freeze({
-      readGeometry: () => ({ outerRingGeometry:lastGeometry, labelOutsetPx:LABEL_OUTSET_PX }), // Cheap live geometry for other UI-open RAF owners; diagnostics also walks DOM and must not be polled each frame.
+      readGeometry: () => ({ outerRingGeometry:lastGeometry, labelOutsetPx:LABEL_OUTSET_PX, buttonSize:BUTTON_SIZE }), // Cheap live geometry for other UI-open RAF owners; diagnostics also walks DOM and must not be polled each frame.
       diagnostics: () => ({
         installed,
         currentBranchLabel,
