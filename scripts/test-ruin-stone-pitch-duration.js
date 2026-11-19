@@ -78,6 +78,18 @@ const nativeYawn = voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('b
 assert.equal(audioCalls.at(-1).playbackRate, 0.2, 'native fallback keeps the authored yawn duration stretch');
 assert.equal(audioCalls.at(-1).preservesPitch, true, 'native fallback must not lower the yawn pitch');
 assert.equal(nativeYawn.independentPitch, false, 'mobile diagnostics correctly disclose that native media cannot apply separate species pitch modulation');
+voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('breath-test.m4a', {
+  tempo: 0.35, pitchSemitones: 7, preservePitchOnFallback: false,
+}); // Legacy native media necessarily couples tempo and pitch when no special priority is requested.
+assert(Math.abs(audioCalls.at(-1).playbackRate - 0.35 * Math.pow(2, 7 / 12)) < 1e-10,
+  'default native fallback still couples authored tempo and pitch when no priority is requested');
+const pitchedNativeYawn = voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('breath-test.m4a', {
+  tempo: 0.35, pitchSemitones: 7, preservePitchOnFallback: false, preferPitchShiftOnFallback: true,
+}); // Yawns prefer the exact voice pitch, accepting a faster native recording when WSOLA is unavailable.
+assert(Math.abs(audioCalls.at(-1).playbackRate - Math.pow(2, 7 / 12)) < 1e-10,
+  'native-only yawns play at the actual requested +7-semitone voice pitch instead of being lowered by the 0.350x tempo');
+assert.equal(audioCalls.at(-1).preservesPitch, false, 'native-only pitch variation must not be canceled by pitch preservation');
+assert.equal(pitchedNativeYawn.independentPitch, false, 'native fallback correctly reports coupled pitch/tempo');
 
 (async () => {
   const samples = Float32Array.from({ length: 48000 }, (_, index) => Math.sin(index * 0.12) * 0.3); // One second of test sound for actual DSP duration measurements.
