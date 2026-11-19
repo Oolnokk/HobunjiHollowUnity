@@ -1,0 +1,37 @@
+name: Wall torch sprite and perch regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wall-torch-sprite-perch.yml'
+      - 'docs/js/authored-furniture-runtime.js'
+      - 'docs/js/wall-ornament-placement.js'
+      - 'docs/js/house-wall-fixtures.js'
+      - 'docs/config/furniture-authored/wallTorch.json'
+      - 'scripts/test-torch-lantern-furniture.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sprite-perch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check modified script syntax
+        run: |
+          node --check docs/js/authored-furniture-runtime.js
+          node --check docs/js/wall-ornament-placement.js
+          node --check docs/js/house-wall-fixtures.js
+          node --check scripts/test-torch-lantern-furniture.js
+      - name: Check torches and existing wall mounting behavior
+        run: |
+          node scripts/test-torch-lantern-furniture.js
+          node scripts/test-house-wall-fixtures.js
+          node scripts/test-wall-support-extension.js
+          node scripts/test-general-store-wall-sign.js
