@@ -749,6 +749,8 @@
   }
 
   function updateSequence(renderer, scene, pass, endedAt, reused) {
+    // The isolated mist pass reuses world depth without modifying world matrices.
+    if (pass === 'mist' && scene?.userData?.cloudForestMistRedraw) return;
     if (pass === 'base') {
       reuseSequenceByRenderer.set(renderer, { scene, baseAt: endedAt });
       return;

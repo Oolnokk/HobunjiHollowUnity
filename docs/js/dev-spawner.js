@@ -551,7 +551,7 @@
     const toRemove = [..._arenaSpawnedFoliage];
     for (const vegGroup of toRemove) {
       _arenaSpawnedFoliage.delete(vegGroup);
-      deps.treeFadeActive.delete(vegGroup);
+      window.ZoneTreeFade.forget(vegGroup);
       vegGroup.parent?.remove(vegGroup);
       if (zi?.cullables) {
         const idx = zi.cullables.indexOf(vegGroup);

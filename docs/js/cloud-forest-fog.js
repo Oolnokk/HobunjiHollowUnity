@@ -3,17 +3,12 @@
 
   // Southern Cloud Forest mist + non-invasive sky/lighting integration.
   // The original skydome/material rendering paths remain authoritative.
-  // Shared with game.js's render loop: the shell/target outline passes draw
-  // straight into _mainRT with real depth, with no idea the mist cylinders
-  // add extra atmospheric haze beyond the scene's own regular fog -- so an
-  // outline on something genuinely behind the mist would otherwise come out
-  // fully crisp, reading as a cutout hole in the haze around it. Tagging
-  // mist meshes with this layer (in addition to their default one) lets the
-  // render loop redraw just them, after those outline passes, so they
-  // re-cover any outline drawn on something the mist should still obscure.
+  // The outline pass uses the existing world depth; its mist redraw needs only the three cylinders.
   const MIST_REDRAW_LAYER = 5;
   let deps = null;
   let group = null;
+  let redrawScene = null; // Holds lightweight copies that share the live mist geometry and materials.
+  let lastRedrawLayerCount = 0; // Reported by the mobile lighting snapshot.
   let texture = null;
   const layers = [];
   let attachedScene = null;
@@ -243,9 +238,15 @@
     mesh.frustumCulled = false;
     mesh.renderOrder = 890 + index;
     mesh.visible = false;
-    mesh.layers.enable(MIST_REDRAW_LAYER);
     group.add(mesh);
-    return { mesh, material, config };
+
+    const redrawMesh = new THREE.Mesh(mesh.geometry, material); // Shares texture animation and tint with the base pass.
+    redrawMesh.matrixAutoUpdate = false;
+    redrawMesh.frustumCulled = false;
+    redrawMesh.renderOrder = mesh.renderOrder;
+    redrawMesh.layers.set(MIST_REDRAW_LAYER);
+    redrawScene.add(redrawMesh);
+    return { mesh, material, config, redrawMesh };
   }
 
   function init(injectedDeps) {
@@ -257,6 +258,10 @@
     texture = createSprayTexture();
     group = new THREE.Group();
     group.name = 'cloud_forest_mist_cylinders';
+    redrawScene = new THREE.Scene();
+    redrawScene.name = 'cloud_forest_mist_redraw';
+    redrawScene.userData.cloudForestMistRedraw = true;
+    redrawScene.autoUpdate = false;
     for (let i = 0; i < LAYER_CONFIG.length; i++) layers.push(makeLayer(LAYER_CONFIG[i], i));
     upgradeTextureIfAvailable();
     loadAtmosphereTuning();
@@ -378,6 +383,31 @@
       mesh.rotation.y = t * config.spinSpeed;
       material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed) % 1;
       material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6) % 1;
+    }
+  }
+
+  function renderOutlineMist(renderer, camera, scene) {
+    lastRedrawLayerCount = 0;
+    if (!group?.visible || attachedScene !== scene || group.parent !== scene) return;
+
+    for (const { mesh, material, redrawMesh } of layers) {
+      redrawMesh.visible = mesh.visible && material.opacity > 0;
+      if (!redrawMesh.visible) continue;
+      redrawMesh.matrixWorld.copy(mesh.matrixWorld); // The base pass already applied gameplay and developer overrides.
+      lastRedrawLayerCount++;
+    }
+    if (!lastRedrawLayerCount) return;
+
+    redrawScene.fog = scene.fog;
+    const previousMask = camera.layers.mask; // Restored even if the renderer throws.
+    const autoClear = renderer.autoClear; // Preserve the world color, depth and stencil already in the target.
+    try {
+      camera.layers.set(MIST_REDRAW_LAYER);
+      renderer.autoClear = false;
+      renderer.render(redrawScene, camera);
+    } finally {
+      renderer.autoClear = autoClear;
+      camera.layers.mask = previousMask;
     }
   }
 
@@ -1234,6 +1264,7 @@
     __test: Object.freeze({ undergroundLightingForArea, enclosedDarknessOverlayAlpha }), // Pure policy checks; the production overlay and mobile diagnostics use these same functions.
     init,
     update,
+    renderOutlineMist,
     setLayerRadius,
     setLayerOpacity,
     getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
@@ -1251,8 +1282,6 @@
     // is instant. Re-enabling needs no counterpart: the very next update()
     // call sets group.visible from isCloudForestArea() itself.
     setEnabled: (enabled) => { if (!enabled && group) { group.visible = false; syncUndergroundFog(null); } },
-    // True only while the mist group is attached and showing, so game.js can
-    // skip its layer-5 mist redraw (a full extra scene render) everywhere else.
     isActive: () => !!(group?.visible && attachedScene),
     getDebugState: () => {
       const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
@@ -1290,6 +1319,8 @@
           cloudForest: { ...tuning.cloudForest },
           lantern: { ...tuning.lantern },
         },
+        outlineMistRedrawLayers: group?.visible ? lastRedrawLayerCount : 0,
+        treeFade: window.ZoneTreeFade?.snapshot(),
         layers: layerLive.map(l => ({ ...l })),
       };
     },

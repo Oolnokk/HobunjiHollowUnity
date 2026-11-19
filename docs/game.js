@@ -11619,10 +11619,7 @@
             }
           }
           window.ClimbSystem?.removeBranchesInBounds(mapId, bounds);
-          group.traverse(object => {
-            _treeFadeActive.delete(object);
-            for (const material of (object.userData?._fadeMaterials || [])) material.dispose?.();
-          });
+          group.traverse(window.ZoneTreeFade.forget);
         };
         const disposeRuntimeChunk = record => {
           record.group.traverse(object => {
@@ -15914,6 +15911,7 @@
         window.WildernessChunks?.destroyZone(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
+          window.ZoneTreeFade.forget(o);
           if (o.geometry) o.geometry.dispose();
           if (o.userData?.mergedWaterStatKey) window.MergedWaterRenderer.clearStats(o.userData.mergedWaterStatKey);
         });
@@ -16141,8 +16139,7 @@
         if (!zi || !vegGroup) return false;
         vegGroup.parent?.remove(vegGroup);
         byTile.delete(`${col},${row}`);
-        _treeFadeActive.delete(vegGroup);
-        for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
+        window.ZoneTreeFade.forget(vegGroup);
 
         const floorMeshes = _zoneFloorMeshGroups.get(mapId);
         const floorIndex = floorMeshes?.indexOf(vegGroup) ?? -1;
@@ -23050,43 +23047,8 @@
       // is genuinely close to dead-center on the sightline count as
       // blocking, not merely anything within a whole canopy-width of it.
       const OCCLUSION_XZ_RADIUS_MUL = 0.5;
-      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
-      window.ZoneTreeFade.init({ treeFadeActive: _treeFadeActive, lerpPerSec: TREE_FADE_LERP_PER_SEC });
-      function ensureTreeFadeMaterials(vegGroup) {
-        let mats = vegGroup.userData._fadeMaterials;
-        if (mats) return mats;
-        mats = [];
-        for (const child of vegGroup.children) {
-          if (!child.material) continue;
-          const clone = child.material.clone();
-          clone.transparent = true;
-          child.material = clone;
-          mats.push(clone);
-        }
-        vegGroup.userData._fadeMaterials = mats;
-        vegGroup.userData._fadeOpacity = 1;
-        vegGroup.userData._fadeTarget = 1;
-        return mats;
-      }
-      // depthWrite:false only while a tree is actually in its blocking-fade
-      // state — see the comment above. Reverted (true) the instant a tree
-      // stops blocking, alongside the opacity revert in
-      // updateZoneVegetationCulling, so a tree back at full opacity also
-      // goes back to normally occluding things behind it.
-      //
-      // Also pulls the tree off the shell-outline pass's layer (see
-      // shellOutlineMat/_markOutline) while blocking. That pass renders
-      // every layer-1 mesh's silhouette in solid, opacity-independent black
-      // (back faces extruded along normals, its own override material —
-      // unrelated to the mesh's real material entirely), so a "faded" tree
-      // still traced a fully opaque black outline over whatever it was
-      // supposed to be letting show through, defeating the whole point.
-      // Re-enabled the instant a tree stops blocking, same as depthWrite.
-      function setTreeBlocking(vegGroup, mats, blocking) {
-        for (const m of mats || []) m.depthWrite = !blocking;
-      }
-      // Split out of setTreeBlocking so the Cloud Forest's distance-based
-      // Outline Radius (independent of occlusion blocking — see
+      window.ZoneTreeFade.init({ lerpPerSec: TREE_FADE_LERP_PER_SEC });
+      // The Cloud Forest’s distance-based outline radius (see
       // updateZoneVegetationCulling's radialCullRadius branch) can toggle
       // just the outline layer without also touching depthWrite/occlusion
       // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
@@ -23100,8 +23062,6 @@
           if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
-      // updateTreeFadeAnimation and the camera-to-player sightline test (isBetweenCameraAndPlayer2D) now live in
-      // js/zone-tree-fade.js (window.ZoneTreeFade), wired below via init({ treeFadeActive, lerpPerSec }).
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
         const zi = _zoneScenes.get(currentArea);
@@ -23193,35 +23153,10 @@
               }
               outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
             }
-            if (target !== 1 || obj.userData._fadeMaterials) {
-              const isFirstFade = !obj.userData._fadeMaterials;
-              const mats = ensureTreeFadeMaterials(obj);
-              // ensureTreeFadeMaterials always inits _fadeOpacity at 1 (its
-              // original occlusion-only design never needed anything else —
-              // a tree was always fully visible until something started
-              // blocking it). For the Cloud Forest's distance fade that's
-              // wrong the first time a tree is seen: a tree already out
-              // near the fade band would pop in fully opaque and then
-              // visibly animate down to its real target, instead of just
-              // reading at the right opacity immediately. Snap straight to
-              // target on this first frame only; every later frame still
-              // lerps normally as target keeps changing with distance.
-              if (isFirstFade) {
-                obj.userData._fadeOpacity = target;
-                for (const m of mats) m.opacity = target;
-              }
-              obj.userData._fadeTarget = target;
-              _treeFadeActive.add(obj);
-              setTreeBlocking(obj, mats, blocking);
-            }
+            window.ZoneTreeFade.setTarget(obj, target, blocking);
             setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
-          } else if (obj.userData._fadeMaterials) {
-            obj.userData._fadeTarget = 1;
-            obj.userData._fadeOpacity = 1;
-            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
-            setTreeBlocking(obj, obj.userData._fadeMaterials, false);
-            setTreeOutlineEnabled(obj, true);
-            _treeFadeActive.delete(obj);
+          } else {
+            window.ZoneTreeFade.reset(obj);
           }
         }
       }
@@ -27355,21 +27290,10 @@
             window.PerfProfiler?.end(rpTargetPerf);
           }
 
-          // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
-          // the two outline passes above. Both just drew straight into
-          // _mainRT with real depth, with no idea the mist cylinders add
-          // extra atmospheric haze beyond the scene's own regular fog — so
-          // an outline on something genuinely behind the mist would
-          // otherwise come out fully crisp, reading as a cutout hole in the
-          // haze around it. depthTest still applies, so this correctly
-          // leaves outlines on anything nearer than the mist untouched.
-          // Skipped outside the Cloud Forest: with no mist attached it drew
-          // nothing but still cost a full scene traversal every frame.
+          // Blend mist back over the outlines using their existing depth buffer.
           if (s_cloudForestFog && window.CloudForestFog?.isActive?.()) {
             const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
-            camera.layers.set(5);
-            renderer.render(activeScene, camera);
-            camera.layers.enableAll();
+            window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
             window.PerfProfiler?.end(rpMistPerf);
           }
           renderer.autoClearColor = true;
@@ -32450,7 +32374,6 @@
         tileSurfaceYInArea,
         markOutline: _markOutline,
         zoneScenes: _zoneScenes,
-        treeFadeActive: _treeFadeActive,
         isFarmOwner,
         getFarmEditMode: () => farmEditMode,
         toggleFarmEditMode: window.FarmEditor.toggleFarmEditMode,
