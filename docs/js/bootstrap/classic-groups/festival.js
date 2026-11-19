@@ -12,7 +12,7 @@
     "js/festival-offering-ritual.js?v=20261110tzkFortune1",
     "js/locale-riddle-generator.js?v=20261118oneEventPerLeg3",
     "js/festival-blossom-hunt.js?v=20261118reviewAnchor4",
-    "js/festival-blossom-ceremony.js?v=20261118crownStage3",
+    "js/festival-blossom-ceremony.js?v=20261119h8503bae",
     "js/festival-system.js?v=20261118crownTurnIn1",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"
