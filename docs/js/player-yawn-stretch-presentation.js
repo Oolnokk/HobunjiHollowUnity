@@ -10,6 +10,7 @@
   const WEAPON_IDLE_CHANNEL = 'weapon-idle-stance-body-yaw'; // Idle weapon yaw must not compete with the unarmed stretch.
   const hidden = new Map(); // Original held-visual visibility, restored after completion or interruption.
   const handBase = new Map(); // Per-hand pre-stretch transforms avoid accumulating poses across multiple render passes.
+  const shoulderAnchors = { left: null, right: null }; // Rig-local shoulder samples from the gameplay phase, never resolved during a temporary render pose.
   let entry = null; // The active player yawn from NpcYawnRest, or null outside its five-second window.
   let yawnLock = null; // Blocks weapon/tool actions without stopping walking or changing the equipped selection.
   let sentinel = null; // Invisible pre-render mesh that runs after the ordinary procedural hand driver.
@@ -18,6 +19,9 @@
   let ownedHandRig = null; // A temporary idle-pose provider makes the ordinary hand driver release weapon grips before the stretch.
   let progress = 0; // Five-second normalized yawn clock, read by the final-render hand pose.
   let handApplications = 0; // Mobile-readable count of successful final-render stretch samples.
+  let constrainedHandSamples = 0; // Mobile diagnostic count of reach-limited wrist poses.
+  let greatestWristReachFraction = 0; // Highest actual shoulder-to-wrist fraction seen in the current yawn.
+  let authoredShoulderSamples = 0; // Counts use of the existing species/rig shoulder anchors instead of a guessed shoulder.
   let lastError = null; // Mobile diagnostics when a late-created dependency is unavailable.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -81,7 +85,10 @@
     if (!found) mesh?.traverse?.(node => {
       if (!found && node?.userData?.proceduralHandRig) found = node.userData.proceduralHandRig;
     });
-    if (handRig !== found) { restoreHandPose(); releaseHandOwnership(); handRig = found; handBase.clear(); }
+    if (handRig !== found) {
+      restoreHandPose(); releaseHandOwnership(); handRig = found; handBase.clear();
+      shoulderAnchors.left = null; shoulderAnchors.right = null; // Old avatar's shoulder coordinates must not cross rig replacements.
+    }
     return handRig;
   }
 
@@ -99,6 +106,21 @@
     releaseHandOwnership();
     rig.setPoseProvider(OWNER, owned => owned.useIdlePose?.()); // The native frame driver now chooses neutral hands instead of an invisible weapon's grip.
     ownedHandRig = rig;
+  }
+
+  function captureShoulderAnchors() {
+    const rig = discoverHandRig(); // Only called from gameplay start/update, before the renderer applies temporary body/neck transforms.
+    for (const side of ['left', 'right']) {
+      const socket = rig?.group?.getObjectByName?.(side + '_hand_socket');
+      if (!socket?.position || !rig?.shoulderPositionLocal) { shoulderAnchors[side] = null; continue; }
+      const target = shoulderAnchors[side] || socket.position.clone(); // Allocate at most one 3D shoulder vector per side and avatar.
+      const shoulder = rig.shoulderPositionLocal(side, target); // This resolver may update avatar world matrices: never call it during onBeforeRender.
+      if (!Number.isFinite(shoulder?.x) || !Number.isFinite(shoulder?.y) || !Number.isFinite(shoulder?.z)) {
+        shoulderAnchors[side] = null; continue;
+      }
+      if (shoulder !== target) target.copy(shoulder);
+      shoulderAnchors[side] = target;
+    }
   }
 
   function samePose(actual, expected) {
@@ -153,10 +175,26 @@
       socket.position.copy(record.base.position);
       socket.quaternion.copy(record.base.quaternion);
       const sign = side === 'left' ? -1 : 1;
-      const reach = Math.max(0.1, Number(handRig.armLengthForSide?.(side)) || height * 0.29);
-      socket.position.x += sign * reach * 0.15 * stretch;
-      socket.position.y += reach * (1.76 + 0.10 * Math.sin(progress * Math.PI * 4)) * stretch;
-      socket.position.z += height * 0.045 * stretch;
+      const authoredReach = Number(handRig.armLengthForSide?.(side)); // The species/age-scaled arm length, including very small characters.
+      const reach = Number.isFinite(authoredReach) && authoredReach > 0 ? authoredReach : height * 0.29; // Never substitute an oversized minimum.
+      const shoulder = shoulderAnchors[side]; // Immutable for all draw passes in this frame; uses hand-IK's authored anchor sampled before rendering.
+      const hasAuthoredShoulder = Number.isFinite(shoulder?.x) && Number.isFinite(shoulder?.y) && Number.isFinite(shoulder?.z);
+      if (hasAuthoredShoulder) authoredShoulderSamples++;
+      const shoulderX = hasAuthoredShoulder ? shoulder.x : record.base.position.x; // Legacy rig fallback stays in its own socket frame.
+      const shoulderY = hasAuthoredShoulder ? shoulder.y : record.base.position.y + reach * 0.82;
+      const shoulderZ = hasAuthoredShoulder ? shoulder.z : record.base.position.z;
+      const targetX = record.base.position.x + sign * reach * 0.14 * stretch; // Animated wrist target, always relative to native idle.
+      const targetY = record.base.position.y + reach * (1.70 + 0.04 * Math.sin(progress * Math.PI * 4)) * stretch;
+      const targetZ = record.base.position.z + height * 0.045 * stretch;
+      const dx = targetX - shoulderX, dy = targetY - shoulderY, dz = targetZ - shoulderZ;
+      const distance = Math.hypot(dx, dy, dz);
+      const maxReach = reach * (1 - 0.06 * stretch); // Exact rest reach at onset; a slight elbow bend only during extension.
+      const ratio = stretch > 0.000001 && distance > maxReach ? maxReach / distance : 1; // Clamp about the real shoulder, never an imagined wrist-relative origin.
+      if (ratio < 1) constrainedHandSamples++;
+      greatestWristReachFraction = Math.max(greatestWristReachFraction, distance * ratio / reach); // Mobile-readable bound for this species.
+      socket.position.x = shoulderX + dx * ratio;
+      socket.position.y = shoulderY + dy * ratio;
+      socket.position.z = shoulderZ + dz * ratio;
       socket.rotateX?.(-0.28 * stretch);
       socket.rotateZ?.(sign * 0.13 * stretch);
       socket.visible = true;
@@ -227,11 +265,12 @@
     if (entry) end(entry);
     entry = activeYawn;
     progress = 0;
+    constrainedHandSamples = 0; greatestWristReachFraction = 0; authoredShoulderSamples = 0; // Reset per-yawn reach/anchor diagnostics.
     yawnLock = window.CharacterActionLocks?.acquire?.({
       owner: OWNER, reason: 'five-second player yawn and stretch',
       participants: [{ id: 'player', channels: ['tools', 'actions'] }],
     }) || null; // The player may still walk at 25% speed; selection never changes.
-    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); hookPortraitPlanes(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); captureShoulderAnchors(); ensureSentinel(); hookPortraitPlanes(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -239,7 +278,7 @@
   function update(activeYawn, t) {
     if (!entry || entry !== activeYawn) return false;
     progress = clamp01(t);
-    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); captureShoulderAnchors(); ensureSentinel(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -248,6 +287,7 @@
     if (entry !== activeYawn) return;
     restoreHandPose();
     releaseHandOwnership();
+    shoulderAnchors.left = null; shoulderAnchors.right = null; // No prior yawn's shoulder samples survive cleanup.
     entry = null;
     progress = 0;
     yawnLock?.release?.();
@@ -259,7 +299,7 @@
     version: 1, start, update, end, actionBlocked,
     debugSnapshot: () => ({
       active: !!entry, progress, hasHandRig: !!handRig, sentinelAttached: !!sentinel?.parent,
-      handApplications, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
+      handApplications, constrainedHandSamples, greatestWristReachFraction, authoredShoulderSamples, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
     }),
     _test: Object.freeze({ applyStretch, suppressHeldVisuals, restoreHandPose, heldRoots }),
   });

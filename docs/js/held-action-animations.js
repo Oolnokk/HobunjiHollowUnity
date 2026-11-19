@@ -490,7 +490,7 @@
     new URL('js/procedural-hand-outline-parity.js?v=20261117handDepthReplay2', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261116boneyKasaRig1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20261117hRigShoulder1', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261119rigIdleHand2', docsBase).href,
     new URL('js/procedural-hand-frame-driver.js?v=20261118captainWeapon1', docsBase).href,
   ];
   if (isAttackEditor) {

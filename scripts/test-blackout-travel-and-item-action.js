@@ -226,4 +226,12 @@ const alcoholBridge = loader.indexOf('alcohol-gameplay-bridge.js?v=');
 assert.ok(elevationBridge >= 0 && alcoholBridge > elevationBridge,
   'the latest town body-elevation bridge remains loaded before alcohol gameplay');
 
+assert.match(game, /_heldDrinkIdleStart\.position\.copy\(heldItemHolder\.position\)/,
+  'eating and processor insertion capture the visible idle hand position before switching to Drink');
+assert.match(game, /function applyHeldDrinkPose[\s\S]*?blendHeldDrinkFromIdle\(idleBlend\)/,
+  'drink windup begins at the existing hand position instead of teleporting to a low neutral pose');
+assert.match(game, /placeAtMouth\(heldItemHolder, _headFrame, _heldAttachJob\.pose[\s\S]{0,250}blendHeldDrinkFromIdle\(_heldAttachJob\.idleBlend\)/,
+  'render-time head adjustment cannot undo the idle-start animation blend');
+assert.match(game, /function beginHeldProcessorInsertion[\s\S]{0,1800}beginHeldDrinkAnimation\(itemKey, applyInsertion\)/,
+  'processor insertion shares the same corrected idle-to-drink presentation as food');
 console.log('blackout travel and standard item action routing tests passed');

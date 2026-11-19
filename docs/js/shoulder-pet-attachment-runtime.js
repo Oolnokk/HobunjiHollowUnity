@@ -13,6 +13,7 @@
     }
 
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
+    const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
     function worldQuaternionWithoutReflection(node) {
       const out = new THREE.Quaternion(); // Shared caller scratch result; the source's actual local quaternions, not decomposed signed scales, determine orientation.
       if (node?.isObject3D && node.quaternion) {
@@ -26,7 +27,7 @@
       }
       return node?.getWorldQuaternion?.(out) || out; // Test doubles and older preview rigs have no local quaternion hierarchy.
     }
-    const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
+    const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(worldUp, Math.PI); // Swaps the two facing poses without mirroring the sprite.
     const SHOULDER_PET_LEAN_AXIS = new THREE.Vector3(1, 0, 0); // Maps the front/back sprite planes' opposite Z rolls into one shared pet-local X lean.
     const SHOULDER_PET_LEAN_QUATERNION = new THREE.Quaternion(); // Reused by the final perch/grip solver to avoid allocating a quaternion each animation frame.
     const neutralGripYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(61)); // Stock shoulder yaw gives neutral grip rigs a readable side silhouette.
@@ -34,6 +35,16 @@
     const ownerLateral = new THREE.Vector3(); // World-space lateral ray including the owner's actual reflection.
     const perchInOwnerSpace = new THREE.Vector3(); // Reads the live perch side after the source pixel follows the portrait flip.
     const ownerOrigin = new THREE.Vector3(); // Subtracted from the lateral point to obtain a direction.
+    function keepHeadingUpright(rotation) {
+      petHeading.set(0, 0, 1).applyQuaternion(rotation);
+      if (Math.hypot(petHeading.x, petHeading.z) > 1e-6) {
+        return rotation.setFromAxisAngle(worldUp, Math.atan2(petHeading.x, petHeading.z));
+      }
+      // When forward points straight up or down, use the horizontal right axis.
+      petHeading.set(1, 0, 0).applyQuaternion(rotation);
+      return rotation.setFromAxisAngle(worldUp, Math.atan2(-petHeading.z, petHeading.x));
+    }
+
     function shoulderLateralHeading(owner, rotation) {
       owner.localToWorld(ownerLateral.set(1, 0, 0));
       owner.localToWorld(ownerOrigin.set(0, 0, 0));
@@ -107,8 +118,8 @@
       if (s_invertShoulderPetRotationSource) selectedRotationQuaternion.invert();
       const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
       const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
-      const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
-      const worldQuaternion = selectedRotationQuaternion.clone();
+      const authoredRotationOffset = keepHeadingUpright(perchQuaternion.multiply(inverseGripQuaternion)); // Keep the authored facing correction on the horizontal plane.
+      const worldQuaternion = keepHeadingUpright(selectedRotationQuaternion.clone()); // Carrier pitch and roll still move the perch, but never tilt the pet's body.
       let authoredFacesInward = false; // Identifies which of the two authored half-turns points toward the carrier's midline.
       if (!s_cancelShoulderPetRotationalOffset) {
         worldQuaternion.multiply(authoredRotationOffset);
@@ -160,9 +171,10 @@
       if (!group || !finalTransform?.worldPosition || !finalTransform?.worldQuaternion) return;
       const fallbackPlayerMesh = finalTransform.faceRotationSource === 'player-body-fallback-no-authored-anchors'
         ? getPlayerMesh() : null; // The legacy no-perch/no-grip path still arrives with a possibly reflected getWorldQuaternion from game.js.
-      const worldQuaternion = fallbackPlayerMesh?.isObject3D
-        ? worldQuaternionWithoutReflection(fallbackPlayerMesh)
-        : finalTransform.worldQuaternion; // Canonicalize that fallback here, without adding another transform writer to game.js.
+      const worldQuaternion = fallbackPlayerMesh
+        ? keepHeadingUpright(fallbackPlayerMesh.isObject3D
+          ? worldQuaternionWithoutReflection(fallbackPlayerMesh) : finalTransform.worldQuaternion.clone())
+        : finalTransform.worldQuaternion; // The legacy path also follows the owner's horizontal heading.
       const parent = group.parent; // Used to convert the resolved world attachment transform back into the pet root's actual local space.
       parent?.updateWorldMatrix?.(true, false);
       const parentWorldQuaternion = parent ? worldQuaternionWithoutReflection(parent)
@@ -195,7 +207,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the scale-free owner body heading.' : 'Authored shoulderPerch position and rotation follow the live skinned portrait surface.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'The shoulder grip follows the live perch and the pet stays upright through carrier tilt.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
