@@ -223,7 +223,7 @@ async function check(){
   assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
   assert.equal(materials.wings.color.value,'ffffff');
   assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
-  for(const hex of ['#4a5d61','#687149','#786947','#344d43','#495769']){
+  for(const hex of ['#4a5d61','#687149',...Object.values(newPingdortCoats)]){
     assert.equal(tintedRig.restoreTint(hex),true,'New Pingdort coat should recolor the live flight rig');
     const rgb=renderColors.hexToRgb(hex); // Native blue-moss and bog-olive textures use the shared shade fill, not flat material multiplication.
     for(const material of Object.values(materials)){
@@ -232,7 +232,7 @@ async function check(){
       assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'Ink outlines stay black');
     }
   }
-  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,7,'Each new coat tone updates all cached flight poses once');
+  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,13,'Every newly authored coat swaps all three flight textures once');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('create(appearance)'),'Native bird owner passes Pingdort genotype to rig constructor');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner restores after damage or genetic edits');
   assert(db.pingdort.modelWidth<db.drenkirra.modelWidth);
