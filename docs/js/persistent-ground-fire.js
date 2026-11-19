@@ -55,7 +55,7 @@
       state.visual?.update?.(Math.min(.05,1/emitter.rate),true); // Show particles promptly even immediately after the torch is lit.
     }).catch(error=>window.__farmLog?.('[puzzle-fire] flame renderer failed: '+String(error?.message||error),'warn'));
     return {
-      update(dt){if(!state.disposed&&anchor.visible!==false)state.visual?.update?.(dt,true);},
+      update(dt,lit=true){if(!state.disposed)state.visual?.update?.(dt,lit!==false&&anchor.visible!==false);}, // Outdoor wall torches and festival fires must honor their ambient scheduler's rain-extinguish state.
       dispose(){state.disposed=true;state.visual?.dispose?.();state.visual=null;},
     };
   }

@@ -15,7 +15,7 @@
     return;
   }
 
-  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'candleCluster', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
+  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'candleCluster', 'standingLamp', 'hearth', 'wallTorch']); // Used to limit always-on VFX to intentional flame-bearing furniture.
   const FIRE_HAZARD_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'hearth']); // These fixtures remain ignition sources across procedural and authored builds.
   const AMBIENT_UNATTACHED_TTL_MS = 5000; // Used to discard preview groups that were built but never added to a scene.
   const FIRE_FURNITURE_DEFS = Object.freeze({ // Used to register real placeable decorative furniture definitions before game init.
@@ -247,56 +247,123 @@
   }
 
   function makeCandleClusterFlames(group, emitters, parts) {
-    // One Points draw for sixteen candle tips: per-candle authored particle emitters in the Furniture Editor
-    // still describe the arrangement, but runtime must not add sixteen draw calls for each of 25 town clusters.
+    // Keep the sixteen editable authored wick anchors, but use ONE actual campfire
+    // emitter draw call instead of maintaining a second custom candle-flame renderer.
     const sources = new Map((parts || []).map(part => [part.id, part]));
-    const tips = emitters.map((emitter, i) => {
+    const tips = emitters.map(emitter => {
       const part = sources.get(emitter.attachedPartId);
       if (!part?.transform) return null;
       const t = part.transform;
-      return {x:Number(t.x)||0,y:(Number(t.y)||0)+(Number(t.sy)||0)*.5+.02,z:Number(t.z)||0,phase:i*2.39996};
-    }).filter(Boolean); // Every flame follows its candle's authored footprint and height.
+      return { x: Number(t.x) || 0, y: (Number(t.y) || 0) + (Number(t.sy) || 0) * .5 + .02, z: Number(t.z) || 0 };
+    }).filter(Boolean); // Authored candle geometry remains the single authority for wick placement.
     if (!tips.length) return null;
-    const count=tips.length*3, positions=new Float32Array(count*3), colors=new Float32Array(count*3);
-    const geometry=new THREE.BufferGeometry(), position=new THREE.BufferAttribute(positions,3), color=new THREE.BufferAttribute(colors,3);
-    geometry.setAttribute('position',position); geometry.setAttribute('color',color);
-    const material=new THREE.PointsMaterial({size:.047,vertexColors:true,transparent:true,opacity:.9,depthWrite:false,sizeAttenuation:true});
-    const points=new THREE.Points(geometry,material);points.name='festival_cluster_candle_flames';points.frustumCulled=false;
-    points.visible=false;group.add(points);
-    let phase=0; // Each update advances all 48 tiny flame particles without allocating Three.js objects.
+    const state = { visual: null, disposed: false, source: 'loading-campfire' }; // Async emitter loading must not revive a removed festival cluster.
+    Promise.resolve(authored.load('campfire')).then(data => {
+      if (state.disposed) return;
+      const source = data?.particleEmitters?.find(emitter => emitter?.enabled !== false && emitter.type === 'fire');
+      if (!source) {
+        state.source = 'missing-campfire-fire';
+        window.__farmLog?.('[ambient-fire] canonical campfire emitter not available for candle cluster', 'warn');
+        return;
+      }
+      const candle = emitters.find(emitter => emitter?.enabled !== false && emitter.type === 'fire') || {};
+      const flame = deepCloneJson(source); // Never modify the shared authored campfire JSON.
+      delete flame.attachedPartId;
+      flame.id = 'candle_cluster_campfire_fire';
+      flame.name = 'Candle Cluster Campfire Flames';
+      flame.position = { x: 0, y: 0, z: 0 };
+      flame.emissionOrigins = tips; // AuthoredFurniture samples one of the 16 wicks each spawn with one draw call.
+      const scale = Math.max(.12, Math.min(.5, Number(candle.size || .047) / Math.max(.01, Number(source.size) || .19))); // Small candle: resize the same flame, not invent a new particle behavior.
+      flame.size = (Number(source.size) || .19) * scale;
+      flame.radius = (Number(source.radius) || .13) * scale;
+      flame.speed = (Number(source.speed) || .7) * scale;
+      flame.spread = (Number(source.spread) || .3) * scale;
+      flame.gravity = (Number(source.gravity) || -.05) * scale;
+      flame.lifetime = Math.max(.2, (Number(source.lifetime) || .72) * .7);
+      flame.rate = Math.max(16, Math.round(tips.length * 3 / flame.lifetime)); // Roughly three live canonical particles per wick, preserving the old cluster's GPU/CPU budget.
+      const capacity = Math.ceil(flame.rate * flame.lifetime) + 3; // One draw/particle buffer per cluster, not sixteen per-wick draw calls.
+      state.visual = authored.createEmitterVisual(group, flame, capacity);
+      state.source = state.visual ? 'authored-campfire' : 'emitter-unavailable';
+    }).catch(error => {
+      if (state.disposed) return;
+      state.source = 'campfire-load-failed';
+      window.__farmLog?.('[ambient-fire] candle cluster campfire load failed: ' + String(error?.message || error), 'warn');
+    });
     return {
-      update(dt,lit) {
-        phase+=Math.max(0,Number(dt)||0);
-        for(let i=0;i<tips.length;i++)for(let n=0;n<3;n++) {
-          const tip=tips[i], k=(i*3+n)*3, offset=phase*(1.6+n*.2)+tip.phase+n*2;
-          positions[k]=tip.x+Math.sin(offset)*.008;
-          positions[k+1]=tip.y+n*.023+Math.sin(offset*1.3)*.01;
-          positions[k+2]=tip.z+Math.cos(offset)*.008;
-          colors[k]=1;colors[k+1]=n===2?.22:.65+Math.sin(offset)*.1;colors[k+2]=n===2?.04:.09;
-        }
-        position.needsUpdate=true;color.needsUpdate=true;
-        points.visible=!!lit; // Rain extinguishes every tip immediately; clear weather reignites automatically.
-      },
-      dispose(){group.remove(points);geometry.dispose();material.dispose();}
+      update(dt, lit) { if (!state.disposed) state.visual?.update?.(dt, lit); },
+      dispose() { state.disposed = true; state.visual?.dispose?.(); state.visual = null; },
+      debugSnapshot() { return { source: state.source, candleTips: tips.length, batched: true }; },
+    };
+  }
+
+  function attachWallTorchFlame(anchor) {
+    if (!anchor?.add) return null;
+    const shared = window.PersistentGroundFire?.attachCampfireFlame; // Game areas already have the canonical campfire-based VFX helper.
+    if (typeof shared === 'function') return shared(anchor, { scale: .5, rateScale: .55 });
+
+    // Standalone furniture/interior editors don't load PersistentGroundFire.
+    // Build the exact same campfire emitter through AuthoredFurniture instead
+    // of silently losing torch flames or resurrecting the old gradient sprite.
+    const state = { visual: null, disposed: false, source: 'loading-campfire' }; // Owned by the shared ambient scheduler; disposal invalidates late loads.
+    Promise.resolve(authored.load('campfire')).then(data => {
+      if (state.disposed) return;
+      const source = data?.particleEmitters?.find(emitter => emitter?.type === 'fire' && emitter.enabled !== false);
+      if (!source) { state.source = 'missing-campfire-fire'; return; }
+      const flame = deepCloneJson(source); // The player's campfire asset is immutable even in editor previews.
+      delete flame.attachedPartId;
+      flame.id = 'wall_torch_campfire_fire';
+      flame.name = 'Wall Torch Campfire Flames';
+      flame.position = { x: 0, y: 0, z: 0 };
+      for (const field of ['radius', 'size', 'speed', 'spread', 'gravity']) {
+        if (Number.isFinite(flame[field])) flame[field] *= .5; // Scaled campfire plume follows the slender handheld torch.
+      }
+      flame.rate = Math.max(3, Math.round((Number(source.rate) || 38) * .55));
+      const capacity = Math.max(8, Math.ceil(flame.rate * (Number(source.lifetime) || .72)) + 3);
+      state.visual = authored.createEmitterVisual(anchor, flame, capacity);
+      state.visual?.update?.(Math.min(.05, 1 / flame.rate), true); // Standalone editor previews get visible fire even before a scheduler attaches.
+      state.source = state.visual ? 'authored-campfire' : 'renderer-unavailable';
+    }).catch(error => {
+      if (state.disposed) return;
+      state.source = 'campfire-load-failed';
+      window.__farmLog?.('[ambient-fire] wall torch campfire VFX failed: ' + String(error?.message || error), 'warn');
+    });
+    return {
+      update(dt, lit) { if (!state.disposed) state.visual?.update?.(dt, lit); },
+      dispose() { state.disposed = true; state.visual?.dispose?.(); state.visual = null; },
+      debugSnapshot() { return { source: state.source, canonicalCampfire: true }; },
     };
   }
 
   function attachAmbientEmitters(group, data, key) {
-    if (!group || !AMBIENT_FIRE_KEYS.has(key) || !Array.isArray(data?.particleEmitters) || !authored.createEmitterVisual) return group;
-    if (ambientRecordByGroup.has(group)) return group;
-    const emitters = data.particleEmitters.filter(emitter => emitter?.enabled !== false); // Used to create only authored emitters that are meant to run continuously.
-    if (!emitters.length) return group;
+    if (!group || !AMBIENT_FIRE_KEYS.has(key) || !authored.createEmitterVisual) return group;
     group.userData = group.userData || {};
-    if (!ambientEmitterTargetsReady(group, emitters)) {
+    const isWallTorch = key === 'wallTorch'; // Real wall torches own a tilted flame anchor, not a custom gradient sprite.
+    const previousRecord = ambientRecordByGroup.get(group); // A furniture upgrade may replace the entire torch sprite/anchor within its live root.
+    if (previousRecord) {
+      if (!isWallTorch || previousRecord.fireAnchor === group.userData.wallTorchFireAnchor) return group;
+      disposeAmbientRecord(previousRecord); // Retire particles on the removed fallback sprite before rebinding to the authored mount.
+    }
+    const emitters = Array.isArray(data?.particleEmitters)
+      ? data.particleEmitters.filter(emitter => emitter?.enabled !== false)
+      : []; // Existing authored emitters continue unchanged for every other fixture.
+    if (!isWallTorch && !emitters.length) return group;
+    if (!isWallTorch && !ambientEmitterTargetsReady(group, emitters)) {
       group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Used by the authored-upgrade callback to retry only after attachedPartId meshes exist.
       return group;
     }
     if (key === 'candleCluster') instanceCandleClusterBodies(group, data.parts); // Optimization is limited to these static authored candle parts.
-    const visuals = key === 'candleCluster'
-      ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
-      : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Batched candle tips keep draw calls proportional to clusters, not total candles.
+    const wallTorchAnchor = isWallTorch ? group.userData.wallTorchFireAnchor : null; // Set by the shared handheld-torch sprite builder, including house fixtures.
+    const visuals = isWallTorch
+      ? [wallTorchAnchor && attachWallTorchFlame(wallTorchAnchor)].filter(Boolean)
+      : key === 'candleCluster'
+        ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
+        : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Every flame now uses the authored campfire emitter rather than a synthetic sprite or a separate point simulator.
+    if (isWallTorch && !visuals.length) {
+      group.userData.hobunjiAmbientFurnitureVfxPendingKey = key; // Recover on the authored furniture-ready callback if this page loaded the shared fire helper late.
+      return group;
+    }
     if (!visuals.length) return group;
-    const record = { group, visuals, key, createdAt: performance.now(), wasAttached: false }; // Stored until the furniture is removed from its scene.
+    const record = { group, visuals, key, fireAnchor: wallTorchAnchor || null, createdAt: performance.now(), wasAttached: false }; // Tracks the actual torch tip so an in-place furniture upgrade cannot keep emitting from a removed anchor.
     ambientRecords.add(record);
     ambientRecordByGroup.set(group, record);
     delete group.userData.hobunjiAmbientFurnitureVfxPendingKey;
