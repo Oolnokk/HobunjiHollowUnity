@@ -79,7 +79,8 @@ window.NaturalSurfaceMaterials={naturalizeMesh(mesh,surface){
   assert.notEqual(mesh.geometry,sharedStoneArt.geometry,'cliff UVs must never mutate the shared quarry/witness geometry');
   mesh.material=cliffMaterial;mesh.userData.naturalSurface=surface;cliffNaturalizations++;return mesh;
 }};
-window.HobunjiSurfaceStretchUV={mapMesh(mesh){
+window.HobunjiSurfaceStretchUV={mapMesh(mesh,options){
+  if(mesh.userData?.naturalSurface!=='cliffs')return naturalMapper.mapMesh(mesh,options); // Real authored masonry retains the production stretch mapper, independent from the cliff-cairn counting mock.
   assert.equal(mesh.userData.naturalSurface,'cliffs','the cliff material is assigned before surface-island unwrapping');
   mesh.geometry=mesh.geometry.clone();cliffUnwraps++;
   return {patchCount:8}; // Six polygon walls and two caps use independent full-PNG texture islands.
