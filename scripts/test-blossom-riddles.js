@@ -57,6 +57,12 @@ const nearStones=nearSites.filter(site=>site.blossomNear);
 assert.equal(nearStones.length,2,'both western blossoms receive their own physical unique starting debris');
 assert.equal(new Set(nearSites.filter(site=>site.dyeId).map(site=>site.dyeId)).size,
   nearSites.filter(site=>site.dyeId).length,'adding blossom landmarks never reuses a dye within the same zone');
+for(const site of nearSites.filter(site=>site.marked)) {
+  assert.match(site.patternId||'',/^harlyao_glyph_(entropy|ignorance|servitude)$/,
+    'every physical marked landmark has a canonical ruin wall pattern identifier');
+  assert.equal(site.patternUrl,'assets/patterns/motif_'+site.patternId+'.png',
+    'the physical pattern and its diagnostic asset refer to the exact same glyph');
+}
 assert.equal(nearStones.find(site=>site.blossomNear==='locale_five_blossoms_white').kind,'markedBoulder',
   'the converted ordinary tree becomes a patterned, dyed boulder');
 assert.equal(nearStones.find(site=>site.blossomNear==='locale_five_blossoms_gold').kind,'brokenPillar',

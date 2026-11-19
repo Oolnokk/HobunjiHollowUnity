@@ -13,6 +13,7 @@
   const COINS = Object.freeze(['emoji_gloat_coin1.png', 'emoji_gloat_coin2.png', 'emoji_gloat_coin3.png']); // Original animated gloat-coin variations.
   const COIN_COLORS = Object.freeze(['#4d9980', '#dad4af', '#a2a0a0']); // Verdigris, white bronze and tin.
   const EMOJI_SIZE_FACTOR = 1 / 3; // Shrinks only reaction art and its animation travel, leaving other world popups alone.
+  const ANIMAL_EMOJI_SIZE_FACTOR = 2 * EMOJI_SIZE_FACTOR; // Gives smaller animal reactions more readable art at their existing scale.
   const EMOJI_GLOW_BLUR_PX = 5; // Subtle colored edge glow for each cached PNG mask.
   const ASSET_BASE = typeof document !== 'undefined' && document.currentScript?.src
     ? new URL('../assets/symbols/', document.currentScript.src).href : 'assets/symbols/'; // Asset path relative to module, not page URL.
@@ -142,13 +143,15 @@
       return Number.isFinite(height) && height > .2 ? Math.min(6, height) : fallbackHeight;
     } catch (_) { return fallbackHeight; }
   }
-  function anchorFor(root, options, height, size) {
-    const creatureKind = options.creatureKind || options.profile?.chatheadCreatureKind
+  function creatureKindFor(root, options) {
+    return options.creatureKind || options.profile?.chatheadCreatureKind
       || options.profile?.creatureKind || options.profile?.animalKind
       || root.userData?.creatureKind || root.userData?.creatureId || ''; // Selects the authored chathead crop for named and ordinary animals.
-    if (!creatureKind && options.animal !== true) {
-      return { height: height * .77, offsetX: Math.max(height * .32, size * .9), side: 'npc-right' }; // Human reactions sit alongside the head rather than above the full rig.
-    }
+  }
+  function portraitSide() {
+    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === false ? -1 : 1; // Keep the right-hand anchor with the game's default flipped humanoid portrait.
+  }
+  function animalAnchorFor(root, options, height, size, creatureKind, avatarRef) {
     const authoredHeight = Number(options.height) || Number(root.userData?.portraitModelHeight); // Full centered animal-plane height, not its bounding-box top above the root.
     const modelHeight = authoredHeight > 0 ? authoredHeight : height * 2; // Animal groups are centered on their card; bounds-only fallback is half the card height.
     const authoredWidth = Number(options.width) || Number(root.userData?.portraitModelWidth); // Width follows the species/card when available.
@@ -157,27 +160,32 @@
       || { x: .32, y: .12, width: .36, height: .36 }; // Sprite-normalized top-left fallback for species without a loaded chathead profile.
     const headCenterY = frame.y + frame.height * .5; // Places the reaction at the head's vertical center in the centered animal card.
     const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space center, shared by both mirrored animal faces.
-    const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the chathead's left edge.
+    const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the near edge of the head crop.
     return { height: (.5 - headCenterY) * modelHeight + modelHeight * .045,
-      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap },
-      side: 'animal-left' }; // The renderer projects the actual visible left edge as the animal turns.
+      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap, avatarRef } };
   }
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
     const popup = window.WorldPopupText; // Owns the billboard, animation clock, and scene lifecycle.
+    const avatarRef = options.avatarRef || options.faceWalker?.animalAvatarRef || root?.userData?.animalAvatarRef; // Named NPC dialogue starts at the walker root, while the sprite lives on its avatar group.
+    root = avatarRef?.group || root;
     if (!Object.hasOwn(TYPES, type) || !root?.isObject3D || !root.parent || root.visible === false || !popup?.showIconEffect) return false;
     const now = performance.now();
     const last = lastByRoot.get(root); // Limits repeated emotional reactions on any one character.
     if (!options.force && last != null && now - last < 900) return false;
     const height = heightFor(root, options.height); // Popups attach to the scene, so previous reactions never affect actor bounds.
-    const size = Math.max(.25, Math.min(.62, height * .38)) * EMOJI_SIZE_FACTOR; // Retains the existing reaction scale independently of head placement.
-    const anchor = anchorFor(root, options, height, size); // Side and vertical anchor are resolved only when the reaction starts.
+    const creatureKind = creatureKindFor(root, options); // Selects the species chathead crop when one is available.
+    const animal = !!creatureKind || options.animal === true; // Named creatures and livestock share the larger scale and card anchor.
+    const size = Math.max(.25, Math.min(.62, height * .38)) * (animal ? ANIMAL_EMOJI_SIZE_FACTOR : EMOJI_SIZE_FACTOR); // Scales the reaction and its spacing alongside the head.
+    const anchor = animal ? animalAnchorFor(root, options, height, size, creatureKind, avatarRef)
+      : { height: height * .77, offsetX: Math.max(height * .32, size * .9) }; // Humanoid reactions sit alongside the head.
     const accepted = popup.showIconEffect(root, {
       kind: POPUP_KIND,
       duration: TYPES[type].duration,
       height: anchor.height,
       offsetX: anchor.offsetX,
       headOffset: anchor.headOffset,
+      getSide: animal ? undefined : portraitSide,
       size,
       loadParts: () => Promise.all(partsFor(type).map(async item => {
         const widthScale = item.part === 'cloud' ? 2 : item.part === 'coin' ? .72 : item.part === 'ray' ? .8 : 1; // Preserve the source cloud, coin and ray proportions.
@@ -190,7 +198,9 @@
     if (!accepted) return false;
     lastByRoot.set(root, now);
     stats.triggered++;
-    stats.last = { actor: root.name || 'character', type, side: anchor.side, height: anchor.height, offsetX: anchor.offsetX, at: Date.now() };
+    stats.last = { actor: root.name || 'character', type, size,
+      side: animal ? 'animal-facing' : portraitSide() < 0 ? 'npc-left' : 'npc-right',
+      height: anchor.height, offsetX: anchor.offsetX, at: Date.now() };
     return true;
   }
   function reactionForDialogue(options = {}) {
@@ -212,7 +222,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
-      latestChange: 'NPC emojis are right of the head; animal emojis follow the left edge of their authored chathead crop.' };
+      latestChange: 'Character emojis follow the portrait flip, and animal emojis are twice as large and switch sides as the animal turns.' };
   }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;
