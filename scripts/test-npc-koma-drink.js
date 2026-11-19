@@ -132,6 +132,16 @@ assert.equal(drink.heldItemTarget(handParent), null, 'completed leaf releases ne
 assert.equal(drink.heldItemTarget(walker.root), null, 'completed leaf releases world-root hand target');
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
 assert.equal(disposals, 2, 'completion disposes its geometry and material, retaining the shared PNG');
+const rigIdle = walker.avatarGroup.userData.proceduralHandRig; // Existing rig exposes a pure, read-only neutral-position provider.
+rigIdle.idlePositionLocal = (side, out) => out.set(-0.24, 0.52, 0.03);
+assert.equal(drink.playDailyKoma(walker, () => toasts.push('rig-interrupted'), 5), 5000);
+assert.equal(drink.getDebug()[0]?.idleHandSource, 'authored-rig-idle',
+  'Koma uses the actual shoulder/posterior resting wrist without a stale held-tool pose');
+assert.equal(drink.heldItemTarget(walker.root).holder.position.y, 0.52,
+  'Koma starts at the rig-neutral hand height when no editor-saved rest exists');
+drink.stopAutonomous(walker, '__daily_koma_leaf__');
+assert.equal(toasts.length, 1, 'interrupting the rig-neutral leaf applies no chew');
+delete rigIdle.idlePositionLocal;
 walker.avatarGroup.userData.gameFreeHandRest = { right: { hand: { x: -0.3, y: 0.55, z: 0.1 } } }; // An editor-authored rest overrides a stale held-tool wrist.
 assert.equal(drink.playDailyKoma(walker, () => toasts.push('late'), 5), 5000);
 assert.equal(drink.getDebug()[0]?.idleHandSource, 'authored-avatar-rest', 'the next Koma uses the rigger-authored free-hand rest point');
@@ -145,7 +155,7 @@ assert.equal(drink.heldItemTarget(handParent), null, 'interruption clears hand a
 assert.equal(drink.heldItemTarget(walker.root), null);
 assert.equal(drink.getDebug().length, 0);
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
-assert.equal(disposals, 4, 'interruption disposes both transient per-actor resources');
+assert.equal(disposals, 6, 'interruption of both neutral-start variations disposes their per-actor resources');
 
 // Player Koma reuses the same leaf/drink and may walk at 25% speed during a yawn.
 // Only tools/actions are locked; movement and the player's camera-relative facing stay authoritative.
@@ -174,6 +184,6 @@ drink.update(2);
 assert.equal(playerRoot.rotation.y, 2.2, 'finishing the drink does not restore an obsolete player facing');
 assert.equal(locks.isLocked('player', 'actions'), false, 'the player is never stranded in a locked control state');
 assert.equal(drink.heldItemTarget(playerRoot), null);
-assert.equal(disposals, 6, 'player ritual also disposes its own geometry/material');
+assert.equal(disposals, 8, 'player ritual also disposes its own geometry/material');
 
 console.log('Daily Koma: NPC and moving player hand grips, true action locks, facing, strike and cleanup OK');

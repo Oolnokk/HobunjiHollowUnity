@@ -301,16 +301,19 @@
       interaction.idleHandSource = 'authored-avatar-rest';
       return start;
     }
-    const socket = avatar?.userData?.proceduralHandRig?.group?.getObjectByName?.('right_hand_socket');
-    if (socket?.getWorldPosition && parent?.worldToLocal) {
-      socket.updateWorldMatrix?.(true, false);
+    const rig = avatar?.userData?.proceduralHandRig; // Uses the same authored shoulder/posterior neutral as the ordinary free-hand driver.
+    const rigRest = rig?.idlePositionLocal?.('right', start);
+    if (rigRest && Number.isFinite(rigRest.x) && Number.isFinite(rigRest.y) && Number.isFinite(rigRest.z)
+        && rig?.parent?.localToWorld && parent?.worldToLocal) {
+      if (rigRest !== start) start.copy(rigRest);
+      rig.parent.updateWorldMatrix?.(true, false);
+      rig.parent.localToWorld(start);
       parent.updateWorldMatrix?.(true, false);
-      socket.getWorldPosition(start);
-      parent.worldToLocal(start); // Fallback: current physical wrist, already transformed into the item's parent frame.
-      interaction.idleHandSource = 'procedural-socket';
-    } else {
-      interaction.idleHandSource = 'hand-attachment';
+      parent.worldToLocal(start);
+      interaction.idleHandSource = 'authored-rig-idle';
+      return start;
     }
+    interaction.idleHandSource = 'hand-attachment'; // Safer than borrowing the current socket from a previous weapon/held tool.
     return start;
   }
 
