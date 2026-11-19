@@ -791,10 +791,17 @@
     const size = deps?.getDecorSize?.(stage.key) || {}; // Share FestivalSystem's existing furniture footprint adapter.
     const c = Math.floor(Number(stage.col) + (Number(stage.postX) || 0) + (Number(size.fw) || 2) / 2);
     const r = Math.floor(Number(stage.row) + (Number(stage.postZ) || 0) + (Number(size.fd) || 2) + 1);
-    const offsets = [[0,0],[-1,0],[1,0],[0,1],[-2,0],[2,0],[-1,1],[1,1],[0,2]]; // Small bounded fallback search, run only on Hunundi's schedule decisions.
-    for (const [dx,dr] of offsets) {
-      if (deps?.canStandAt?.('town',c+dx,r+dr) === false) continue;
-      return {area:'town',c:c+dx,r:r+dr,pose:'stand',activity:'receiving the Five Blossoms'}; // Ordinary NPC movement brings the real Hunundi walker to the plaza; no duplicate actor or waypoint.
+    const canStandNpc = window.NpcPathfinding?.isNpcTileWalkable; // NPC-sized collision includes furniture, unlike the general terrain-only standing probe.
+    for (let radius = 0; radius <= 4; radius++) { // The plaza can be crowded; expand beyond the original nine cells without a new pathfinding pass.
+      for (let dr = 0; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+        if (Math.max(Math.abs(dc), dr) !== radius) continue;
+        const col = c + dc, row = r + dr; // Candidate tile in the existing town pathfinding grid.
+        const clear = typeof canStandNpc === 'function'
+          ? canStandNpc('town', col, row)
+          : deps?.canStandAt?.('town', col, row) !== false; // Editor/test fallback while the NPC pathfinder is not registered.
+        if (!clear) continue;
+        return {area:'town',c:col,r:row,pose:'stand',activity:'receiving the Five Blossoms'}; // Use the actual traversable NPC destination; never choose an obstructed stage or chair.
+      }
     }
     return null;
   }
