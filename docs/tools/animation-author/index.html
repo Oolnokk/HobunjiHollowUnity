@@ -15717,6 +15717,7 @@ clearAnimationActors = function(...args) {
       const height = actor.shoulderRestModelDimensions?.modelHeight;
       const gameProfile = parityV1554.gameplayProfileForKind(actor.source.kind);
       const layout = layoutV1554(actor);
+      if (!layout) return { species: actor.source.kind, excluded: 'Uses the separate Omgurku hybrid lower-body floor solver.' }; // Safe mobile diagnostics for non-genetics rigs.
       return {
         species: actor.source.kind, sizeClass: layout.sizeClass, effective: layout,
         game: gameProfile ? parityV1554.placement(gameProfile, actor.creatureSizeClass, height) : null,
