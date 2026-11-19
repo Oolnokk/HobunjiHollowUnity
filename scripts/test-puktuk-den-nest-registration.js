@@ -104,12 +104,13 @@ assert.deepEqual(
     { key: 'puktukHide', label: 'PUKTUK HIDE', max: 99 },
     { key: 'voorgAssHide', label: 'VOORG-ASS HIDE', max: 99 },
     { key: 'nelkHide', label: 'NELK HIDE', max: 99 },
+    { key: 'nazgrakuHide', label: 'NAZGRAKU HIDE', max: 99 },
     { key: 'uumkaoiiShell', label: "UUMKAO'II SHELL", max: 99 },
   ],
   'Wool, hides and Uumkao\'ii shell must be visible in the normal inventory picker',
 );
 
-for (const key of ['puktukHide', 'voorgAssHide', 'nelkHide']) {
+for (const key of ['puktukHide', 'voorgAssHide', 'nelkHide', 'nazgrakuHide']) {
   assert.equal(woolItemDefs[key].cat, 'material', key + ' is a standard material');
   assert(woolItemDefs[key].tags.includes('Hide'), key + ' remains recognized as a hide');
   assert(woolItemDefs[key].sellPrice > 0, key + ' can be shipped and valued by the ordinary economy');
