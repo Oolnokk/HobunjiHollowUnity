@@ -105,6 +105,9 @@
       if (root !== activeScene) continue; // Retain inactive-area actors without modifying their materials.
       if (!object.isMesh || !hierarchyVisible || !(object.layers.mask & (1 << LAYER))) continue;
       meshCount++;
+      // The base colour pass already updated the scene. Refresh only this depth participant
+      // and its ancestors for any late animation-hook changes before skipping another whole-scene update.
+      object.updateWorldMatrix?.(true, false);
       if (Array.isArray(object.material)) {
         for (const material of object.material) captureMaterial(material);
       } else {
@@ -149,6 +152,7 @@
     if (!renderer || !camera || meshCount === 0) return;
 
     const previousLayerMask = camera.layers.mask; // Restored even if the depth replay throws.
+    const previousSceneAutoUpdate = activeScene.autoUpdate; // Reinstated after this additional render pass.
     // Depth-only has to hold for EVERY layer-4 mesh, not just the registered ones whose materials
     // captureMaterial() silenced: a mesh that inherited the layer without being registered (e.g. a cloned
     // dual-wield weapon copy) would otherwise paint itself in colour over the finished frame, outside the
@@ -162,6 +166,7 @@
         colorBuffer.setLocked(true);
       }
       camera.layers.set(LAYER);
+      activeScene.autoUpdate = false; // The colour pass resolved the world; only registered depth meshes need a fresh transform.
       renderer.render(activeScene, camera);
     } finally {
       if (lockColor) {
@@ -169,6 +174,7 @@
         colorBuffer.setMask(true);
       }
       camera.layers.mask = previousLayerMask;
+      activeScene.autoUpdate = previousSceneAutoUpdate;
       for (const [material, state] of materialStates) {
         material.colorWrite = state.colorWrite;
         material.depthWrite = state.depthWrite;
