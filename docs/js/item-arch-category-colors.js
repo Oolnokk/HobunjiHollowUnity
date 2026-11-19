@@ -802,7 +802,8 @@
 
   // Old public debug hooks survive, but their modules have no separate observers, CSS or animation loops.
   window.ItemArchStickyCategoryHeading = { installed: true, refresh: queueRefresh,
-    debugSnapshot: () => ({ ...presentationDebugSnapshot(), stickyVisible: false,
+    debugSnapshot: () => ({ ...presentationDebugSnapshot(),
+      stickyVisible: itemArcIsOpen() && Boolean(lastSelected) && Boolean(document.querySelector('.arc-slot.arc-arrow.arc-active')),
       lastSelected: lastSelected ? { ...lastSelected } : null }) };
   window.ItemArchOriginalPresentation = { installed: true, refresh: queueRefresh,
     debugSnapshot: presentationDebugSnapshot };
