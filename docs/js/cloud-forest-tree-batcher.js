@@ -292,6 +292,7 @@
       culledChunkCount: 0,
       frustumCulledChunkCount: 0, // Exposed in mobile diagnostics, separate from distance culling.
       frustumActive: false, // Shows whether a valid gameplay camera is supplying view bounds.
+      lastVisibilityPolicy: null, // Cache invalidated immediately by the developer's culling-mode toggle.
       lastVisibilityX: NaN, lastVisibilityZ: NaN, lastVisibilityRadius: NaN,
       lastViewCamera: null, lastViewMatrix: null, lastProjectionMatrix: null,
       frustum: new THREE.Frustum(), // Reused; never allocate a new frustum in the frame loop.
@@ -379,7 +380,9 @@
       || Math.hypot(playerX - state.lastVisibilityX, playerZ - state.lastVisibilityZ) >= MOVE_REFRESH_TILES;
     const radiusChanged = !Number.isFinite(state.lastVisibilityRadius)
       || Math.abs(cullRadiusTiles - state.lastVisibilityRadius) >= 0.05;
-    if (!cameraChanged && !moved && !radiusChanged) {
+    const policy = fogDeps?.getVegetationCullMode?.() || null; // Changes when Cloud Forest switches between compact and ordinary corridors.
+    const policyChanged = policy !== state.lastVisibilityPolicy;
+    if (!cameraChanged && !moved && !radiusChanged && !policyChanged) {
       // The general wilderness vegetation pass can toggle group.visible independently.
       // Preserve the last camera decision without recomputing frustum planes every frame.
       for (const chunk of state.chunks) {
@@ -391,6 +394,7 @@
     state.lastVisibilityX = playerX;
     state.lastVisibilityZ = playerZ;
     state.lastVisibilityRadius = cullRadiusTiles;
+    state.lastVisibilityPolicy = policy;
     state.frustumActive = cameraReady;
     if (cameraReady) {
       state.lastViewCamera = camera;
@@ -411,7 +415,12 @@
       const dx = chunk.centerX - playerX;
       const dz = chunk.centerZ - playerZ;
       const maxDistance = Math.max(0, cullRadiusTiles) + chunk.radius;
-      const withinRadius = dx * dx + dz * dz <= maxDistance * maxDistance;
+      // Use the *same* directional culling gate as procedural trees. The
+      // batcher runs each fog frame and otherwise re-shows chunks hidden by
+      // updateZoneVegetationCulling, silently defeating the shorter corridor.
+      const corridorDecision = fogDeps?.isVegetationChunkInView?.(chunk.group.userData.cullSphere, chunk.visible);
+      const withinRadius = typeof corridorDecision === 'boolean'
+        ? corridorDecision : dx * dx + dz * dz <= maxDistance * maxDistance;
       const outsideView = withinRadius && cameraReady && chunk.viewSphere
         && !state.frustum.intersectsSphere(chunk.viewSphere);
       const visible = withinRadius && !outsideView;
