@@ -73,6 +73,18 @@ const server=http.createServer((req,res)=>{
     assert(before.viewer.gpuHair?.ok,
       'the beard must actually render colored pixels on the GPU: '+JSON.stringify(before.viewer.gpuHair));
     assert(before.viewer.arrows.some(item=>item.axis==='x'),'the selected knot has a real X-axis move gizmo');
+    // Wind previews must move existing meshes rather than allocate new ones on each touch input.
+    await page.locator('#testStrength').evaluate(input=>{
+      input.value='.47';input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    const windEdited=await debug();
+    assert.equal(windEdited.viewer.markerRebuilds,before.viewer.markerRebuilds,
+      'wind slider should not rebuild the 3D knot spheres');
+    assert.equal(windEdited.viewer.gizmoRebuilds,before.viewer.gizmoRebuilds,
+      'wind slider should not rebuild the 3D XYZ gizmo');
+    await page.locator('#testStrength').evaluate(input=>{
+      input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
     const natural=await page.evaluate(()=>{
       const authored=JSON.parse(document.querySelector('#json').value);
       return {tip:authored.segments.at(-1).poses.right.translate.x,
@@ -82,6 +94,25 @@ const server=http.createServer((req,res)=>{
     assert(natural.tip>natural.upper&&natural.tip>0,
       'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
     assert(natural.follow>0&&!natural.hasOldGrip,'authored head pixels alone determine the hard mask');
+    const rigBeforeDraft=await page.locator('#json').inputValue();
+    await page.locator('#json').fill('{"draft":');
+    await page.locator('#testStrength').evaluate(input=>{
+      input.value='.65';input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
+    assert.equal(await page.locator('#json').inputValue(),'{"draft":',
+      'manual JSON must not be erased by live WebGL redraws');
+    assert.match(await page.locator('#jsonDraftStatus').innerText(),/Unapplied JSON/,
+      'mobile authors should see when typed JSON is not yet applied');
+    await page.locator('#download').click();
+    assert.match(await page.locator('#catalogStatus').innerText(),/Apply rig JSON before exporting/,
+      'export cannot silently discard unapplied JSON changes');
+    await page.locator('#json').fill(rigBeforeDraft);
+    await page.locator('#applyJson').click();
+    assert.equal(await page.locator('#jsonDraftStatus').innerText(),'',
+      'applying valid JSON clears the draft warning');
+    await page.locator('#testStrength').evaluate(input=>{
+      input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));
+    });
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
     assert(before.viewer.seamlessSingleMesh && before.viewer.pinnedFrontVertices>0,
       'beard geometry must consist of one full-art mesh with nonzero hard-pinned head vertices');
@@ -130,6 +161,26 @@ const server=http.createServer((req,res)=>{
     assert.equal((await debug()).regionMasks.front,repainted.regionMasks.front,'one undo reverses the complete brush stroke');
     await page.locator('#moveMode').click();
     assert(await page.locator('#paintMode').isHidden(),'rigging mode hides brush tools');
+    // A touch near the knot selects it without snapping its resting position to the finger.
+    const originalRig=JSON.parse(await page.locator('#json').inputValue());
+    await page.locator('#preview').scrollIntoViewIfNeeded();
+    const knotCanvas=await page.locator('#preview').boundingBox();
+    await page.mouse.click(knotCanvas.x+knotCanvas.width*(originalRig.points[1].u+.013),
+      knotCanvas.y+knotCanvas.height*(originalRig.points[1].v+.009));
+    const selectedPoint=JSON.parse(await page.locator('#json').inputValue()).points[1];
+    assert.equal(selectedPoint.u,originalRig.points[1].u,'knot selection preserves rest X');
+    assert.equal(selectedPoint.v,originalRig.points[1].v,'knot selection preserves rest Y');
+    await page.locator('#addPoint').click();
+    const inserted=JSON.parse(await page.locator('#json').inputValue());
+    assert.equal(inserted.points.length,originalRig.points.length+1,'knot insertion increases spline length');
+    assert.equal(JSON.stringify(inserted.segments[2]),JSON.stringify(originalRig.segments[1]),
+      'inserting a knot must preserve the downstream authored segment poses');
+    await page.locator('#removePoint').click();
+    const restored=JSON.parse(await page.locator('#json').inputValue());
+    assert.equal(JSON.stringify(restored.points),JSON.stringify(originalRig.points),
+      'removing the inserted knot restores the original resting geometry');
+    assert.equal(JSON.stringify(restored.segments),JSON.stringify(originalRig.segments),
+      'removing the inserted knot restores all original authored poses');
     await page.locator('#generateBlend').click();
     const generated=await debug();
     assert.equal(generated.regionMasks.front,repainted.regionMasks.front,
