@@ -438,7 +438,7 @@ assert.match(heldRender, /return materialLooksLikeGrassBillboard\(object\.materi
   'the protected-cover classifier recognizes billboard-grass ShaderMaterial, even on plain Mesh objects');
 assert.match(heldRender, /function isProtectedCover\(object[^)]*\)[\s\S]{0,220}surfaceComposer\?\.isProtectedCover/,
   'held depth classification delegates protected-cover decisions to the shared composer');
-assert.match(heldRender, /surfaceClassificationHints\.baseGround = data\.hachutuGroundRoot === true/,
+assert.match(heldRender, /surfaceClassificationHints\.baseGround =[\s\S]{0,250}\|\| data\.hachutuGroundRoot === true/,
   'Hachutu floor-root meshes are passed into the shared ground-surface classifier');
 assert.match(heldRender, /surfaceComposer\?\.getGroundXrayKind/,
   "held and shell depth replays use the composer's ground policy rather than independent exceptions");
