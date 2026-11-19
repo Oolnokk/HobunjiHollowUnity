@@ -83,6 +83,7 @@
     png.userData.nonInteractive = true;
     png.raycast = () => {}; // Pixel art never blocks fixture selection or game interactions.
     png.userData.noOutline = true; // The authored torch PNG already has its own black silhouette ink.
+    png.userData.hobunjiSharedWallTorchArt = true; // FurnitureVesselRuntime preserves this cached geometry/material when discarding a temporary fallback.
     png.layers?.disable?.(1); // A billboard must never inherit the 3D generated-shell outline pass.
     pivot.add(png);
     const flameAnchor = new Three.Group(); // World/player-campfire particles follow the torch's existing tilted grip.
