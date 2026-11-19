@@ -177,7 +177,7 @@ function paintContourOverlay(ctx){
   ctx.drawImage(R.contourMaskOverlay,0,0);
 }
 
-function headbandSelectionKey(){return contourSelectionKey()+'::donor::'+E.sourceSpecies.value+'_'+E.sourceGender.value} // Each donor/target, garment and gender pair has independent whole and per-node fitting.
+function headbandSelectionKey(){return contourSelectionKey()} // targetKey already isolates donor species/gender, target species/gender, region and garment.
 function traceHeadbandCanvas(canvas){
   if(!canvas)return null;
   const data=canvas.getContext('2d',{alpha:true}).getImageData(0,0,canvas.width,canvas.height);
@@ -207,9 +207,11 @@ function currentHeadbandRecord(){
   if(!R.body||!R.cloth||fitRegion()!=='headwear')return null;
   A.headbandSplines ||= {}; // Persistent source/target maps are isolated from the normal 6x6 grid.
   const key=headbandSelectionKey(),valid=window.ClothingHeadbandSpline.valid;
-  if(!A.headbandSplines[key]){
-    const previous=A.headbandSplines[contourSelectionKey()]; // Old releases keyed headwear only by target. Copy rather than mutate that legacy record.
-    if(previous&&valid(previous.source)&&valid(previous.target))A.headbandSplines[key]=clone(previous);
+  const duplicateKey=key+'::donor::'+E.sourceSpecies.value+'_'+E.sourceGender.value; // Compatibility with one intermediate development revision that appended an unnecessary donor suffix.
+  const duplicate=A.headbandSplines[duplicateKey];
+  if(duplicate&&valid(duplicate.source)&&valid(duplicate.target)){
+    A.headbandSplines[key]=clone(duplicate); // Preserve newer work performed with the suffixed key before dropping the duplicate.
+    delete A.headbandSplines[duplicateKey];
   }
   const saved=A.headbandSplines[key];
   if(saved&&valid(saved.source)&&valid(saved.target))return saved;
