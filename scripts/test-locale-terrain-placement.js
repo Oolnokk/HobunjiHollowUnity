@@ -95,4 +95,59 @@ const fakeGenerator = {
 Placement.install(fakeGenerator);
 fakeGenerator.generateWorkspace('unit', { width: 12, locales: [legacy, cave] });
 assert.deepStrictEqual(receivedLocales.map(item => item.id), ['legacy']);
+
+// Blossom locales must reserve the full native crown, not only their trunk's authored footprint.
+function blossomWorkspace() {
+  const root={id:'root',cols:36,rows:36,tiles:{},generatedFrom:{seed:'blossom',note:'Flattened after 1x tile-density expansion.'}};
+  for(let r=0;r<36;r++)for(let c=0;c<36;c++)root.tiles[`${c},${r}`]={type:'grass'};
+  return {maps:[root],localeInstances:[],objects:[],entry:{col:1,row:1,side:'west'}};
+}
+const blossomTemplate={
+  id:'locale_five_blossoms_cyan',name:'Cyan Blossom Tree',category:'story_poi',
+  cols:3,rows:3,festivalBlossom:{id:'cyan'},
+  tiles:Object.fromEntries(Array.from({length:9},(_,i)=>[`${i%3},${Math.floor(i/3)}`,{type:'grass'}])),
+  objects:[{id:'blossom',key:'blossom-tree',col:1,row:1,w:1,h:1}],
+  terrainAnchors:{'7,1':{terrain:'water',strength:'preferred',weight:1}},
+  placement:{allowedZones:[],requiresFlatGround:true,minDistanceFromEntry:0,clearanceTiles:0,preferSeclusion:false}
+}; // Uses the real festivalBlossom marker rather than a test-only site name.
+const cleanBlossom=blossomWorkspace();
+Placement.placeTerrainAwareLocales(cleanBlossom,[blossomTemplate],{seed:'blossom-fixed',scale:1});
+assert.equal(cleanBlossom.localeInstances.length,1,'flat test zone can stamp a blossom');
+const originalBlossom=cleanBlossom.localeInstances[0].objects[0];
+const clearGroundLandmark=cleanBlossom.localeInstances[0].blossomStartLandmark; // The real terrain pass reserves a short, dry-land starting point.
+assert.ok(clearGroundLandmark && Number.isInteger(clearGroundLandmark.col) && Number.isInteger(clearGroundLandmark.row),
+  'every generated blossom receives a nearby riddle start landmark');
+assert.ok(Math.hypot(clearGroundLandmark.col-originalBlossom.x, clearGroundLandmark.row-originalBlossom.y)<=18,
+  'riddle starting debris stays within eighteen tiles of the actual blossom, regardless of entry sector');
+assert.equal(clearGroundLandmark.replacedTree,false,'an ordinary clear-ground location can host authored patterned pillar debris');
+const treeCol=Math.min(34,Math.max(1,originalBlossom.x+(originalBlossom.x<24?4:-4)));
+const treeRow=originalBlossom.y;
+const farCol=originalBlossom.x<18?35:0;
+const farRow=originalBlossom.y<18?35:0;
+const crowdedBlossom=blossomWorkspace();
+const nearTile=crowdedBlossom.maps[0].tiles[`${treeCol},${treeRow}`];
+nearTile.type='shrub';nearTile.floraKind='copse';
+nearTile.generatedObjectId='neighbor-tree';nearTile.generatedObjectType='copse';
+const distantTile=crowdedBlossom.maps[0].tiles[`${farCol},${farRow}`];
+distantTile.type='shrub';distantTile.floraKind='copse';
+distantTile.generatedObjectId='distant-tree';distantTile.generatedObjectType='copse';
+const landmarkTreeTile=crowdedBlossom.maps[0].tiles[`${clearGroundLandmark.col},${clearGroundLandmark.row}`]; // Promote the previously valid fallback to a replaceable ordinary tree.
+landmarkTreeTile.type='shrub';landmarkTreeTile.floraKind='copse';
+landmarkTreeTile.generatedObjectId='landmark-tree';landmarkTreeTile.generatedObjectType='copse';
+crowdedBlossom.objects=[{id:'neighbor-tree'},{id:'distant-tree'},{id:'landmark-tree'}];
+Placement.placeTerrainAwareLocales(crowdedBlossom,[blossomTemplate],{seed:'blossom-fixed',scale:1});
+assert.equal(crowdedBlossom.localeInstances.length,1,'an ordinary nearby tree must not block a quest locale');
+assert.equal(crowdedBlossom.localeInstances[0].objects[0].x,originalBlossom.x,'nearby clearable flora must not move the quest tree');
+assert.equal(nearTile.type,'grass','nearby native canopy is removed before it can render inside the blossom');
+assert.equal(nearTile.floraKind,undefined,'cleared canopy cannot respawn from a stray copse flora tag');
+assert.equal(crowdedBlossom.objects.some(o=>o.id==='neighbor-tree'),false,'removed tree object metadata must not resurrect its mesh');
+const nearLandmark=crowdedBlossom.localeInstances[0].blossomStartLandmark; // The tree-replacement site must survive export as locale instance metadata.
+assert.equal(nearLandmark.replacedTree,true,'choose a real nearby copse to replace with patterned debris when one is available');
+assert.equal(nearLandmark.col,clearGroundLandmark.col);
+assert.equal(nearLandmark.row,clearGroundLandmark.row);
+assert.equal(landmarkTreeTile.type,'grass','replaced tree has no residual rendered shrub below the patterned boulder');
+assert.equal(crowdedBlossom.objects.some(o=>o.id==='landmark-tree'),false,'replaced copse is removed from generated object records');
+assert.equal(distantTile.floraKind,'copse','ordinary trees outside the clearance radius are preserved');
+assert.equal(crowdedBlossom.objects.some(o=>o.id==='distant-tree'),true,'distant native trees are not disturbed');
+
 console.log('locale-terrain-placement tests passed');
