@@ -139,12 +139,12 @@ async function testFestivalRecovery() {
     getVisitorPresence: rec => contextAbsent.has(rec.id) ? {active: false} : null,
   };
   const recover = new Function(
-    'deps', 'residents', 'festivalHours', 'window', 'Promise',
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
     'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
     'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
     festivalSource.slice(start, end) +
     '\nreturn recoverMissingFestivalGuests;'
-  )(deps, () => residents, () => true, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
+  )(deps, () => residents, () => true, () => false, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }; // Allows the rejection handler and cleanup microtasks to finish.
   recover(4000);
   await settle();
@@ -168,11 +168,11 @@ async function testFestivalRecovery() {
     ensureNpcWalker(id) {limited.push(id); return new Promise(resolve => pending.push(resolve));},
   };
   const crowded = new Function(
-    'deps', 'residents', 'festivalHours', 'window', 'Promise',
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
     'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
     'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
     festivalSource.slice(start, end) + '\nreturn recoverMissingFestivalGuests;'
-  )(crowdedDeps, () => crowd, () => true, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
+  )(crowdedDeps, () => crowd, () => true, () => false, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
   crowded(4000);
   assert.equal(limited.length, 3, 'festival recovery must start at most three slow avatar builds');
   crowded(7500);
@@ -181,6 +181,21 @@ async function testFestivalRecovery() {
   await settle();
   crowded(11000);
   assert.equal(limited.length, 4, 'once a build frees capacity, a different waiting resident gets a turn');
+
+  const daylightRequests = []; // Only the ready blossom host is recoverable outside the gathering window.
+  const daylight = new Function(
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
+    'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
+    'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
+    festivalSource.slice(start, end) + '\nreturn recoverMissingFestivalGuests;'
+  )({
+    getWalkers: () => [], isFestivalSuspended: () => false,
+    ensureNpcWalker: async id => { daylightRequests.push(id); return true; },
+  }, () => [{id:'father_hunundi_hodu'},{id:'pahu'},{id:'leaf'}], () => false, () => true,
+  {NpcScheduling:{getVisitorPresence:()=>null}}, Promise);
+  daylight(14000);
+  await settle();
+  assert.deepEqual(daylightRequests, ['father_hunundi_hodu'], 'ready Uung daytime hunt recovers only the host, not all sleeping festival guests');
 }
 
 function testWildernessHomeRoutes() {
