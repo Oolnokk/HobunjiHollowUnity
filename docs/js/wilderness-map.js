@@ -167,6 +167,7 @@
     return out;
   }
 
+  const isBlossomHuntLocale = id => String(id || '').startsWith('locale_five_blossoms_'); // Seasonal puzzle trees are never map markers or selectable compass waypoints.
   const ENTER_ONLY_LOCALE_IDS = new Set(['locale_banubu_shrine']); // Only a successful interior visit may reveal these locales on the map.
 
   function localeDiscoveryKey(instance) {
@@ -392,7 +393,7 @@
     const discovered = _loadDiscoveredLocales();
     const landmarks = [];
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId || (!inst.alwaysVisible && !localeIsDiscovered(inst, discovered))) continue;
+      if (isBlossomHuntLocale(inst.localeId) || inst.zoneId !== zoneId || (!inst.alwaysVisible && !localeIsDiscovered(inst, discovered))) continue;
       landmarks.push({
         id: `locale:${inst.localeId}`, source: 'locale', localeId: inst.localeId,
         label: inst.name, category: inst.category || 'misc', zoneId,
@@ -420,6 +421,7 @@
     const saved = _loadWaypoint();
     if (!saved) return null;
     if (saved.source === 'locale') {
+      if (isBlossomHuntLocale(saved.localeId)) return null; // Old saved waypoints cannot reveal a hidden blossom's location.
       if (ENTER_ONLY_LOCALE_IDS.has(saved.localeId) && !localeIsDiscovered({ localeId: saved.localeId }, _loadDiscoveredLocales(forCompass))) return null; // Hide stale previously-selected Banubu waypoints until the cave is actually entered.
       const live = _allLocaleInstances().find(inst => inst.localeId === saved.localeId);
       if (!live && (saved.category === 'ruin_entrance'
@@ -440,7 +442,7 @@
   function _sameWaypoint(a, b) { return !!a && !!b && a.id === b.id; }
 
   function setWaypoint(landmark) {
-    if (!landmark || !Number.isFinite(landmark.col) || !Number.isFinite(landmark.row)) return;
+    if (!landmark || isBlossomHuntLocale(landmark.localeId) || !Number.isFinite(landmark.col) || !Number.isFinite(landmark.row)) return;
     const saved = {
       id: landmark.id, source: landmark.source, label: landmark.label,
       zoneId: landmark.zoneId, col: landmark.col, row: landmark.row,
@@ -536,7 +538,7 @@
     const selectedWaypoint = _resolvedWaypoint();
     const interactiveLandmarks = new Map(_visibleLandmarks(zoneId).map(landmark => [landmark.id, landmark]));
     for (const inst of _allLocaleInstances()) {
-      if (inst.zoneId !== zoneId) continue;
+      if (inst.zoneId !== zoneId || isBlossomHuntLocale(inst.localeId)) continue;
       if (!inst.alwaysVisible && !localeIsDiscovered(inst, discovered)) continue;
       const mx = (inst.col + 0.5) * scaleX, my = (inst.row + 0.5) * scaleY;
       ctx.beginPath();

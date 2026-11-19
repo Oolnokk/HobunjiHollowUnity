@@ -2,8 +2,8 @@
   'use strict';
   // Wilderness fog/discovery maps then navigation compass; both must precede game.js initialization.
   const scriptUrls = [
-    "js/wilderness-landmark-scenery.js?v=20261118uniqueZoneDyes2",
-    "js/wilderness-map.js?v=20261119hfaba13b",
+    "js/wilderness-landmark-scenery.js?v=20261118nearBlossomDebris1",
+    "js/wilderness-map.js?v=20261118blossomNoWaypoint1",
     "js/navigation-compass.js?v=20261119hca1a58d"
   ]; // Version tokens for these modules are owned in their feature manifest.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');

@@ -625,6 +625,92 @@
     if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(object => object?.generatedObjectId !== objectId && object?.id !== objectId);
   }
 
+  function clearNativeTreeCircle(context, col, row, radius) {
+    const removedIds = new Set(); // Used to remove a native tree's generated object and all of its footprint tiles together.
+    let cleared = 0;
+    for (let r = Math.floor(row - radius); r <= Math.ceil(row + radius); r++) {
+      for (let c = Math.floor(col - radius); c <= Math.ceil(col + radius); c++) {
+        if (Math.hypot(c - col, r - row) > radius || context.claimed?.has(sourceKey(c, r))) continue;
+        const tile = tileRecord(context.root, c, r);
+        if (!tile) continue;
+        const kind = tileGeneratedType(tile);
+        if (!(kind === 'copse' || kind === 'tree' || (tile.type === 'shrub' && tile.floraKind === 'copse'))) continue;
+        if (tileGeneratedId(tile)) removedIds.add(tileGeneratedId(tile));
+        tile.type = 'grass';
+        delete tile.floraKind; delete tile.generatedObjectId; delete tile.generatedObjectType;
+        cleared++;
+      }
+    }
+    if (removedIds.size) {
+      for (const tile of Object.values(context.root.tiles || {})) {
+        if (!removedIds.has(tileGeneratedId(tile))) continue;
+        if ((tile.type === 'shrub' && tile.floraKind === 'copse') || ['tree', 'copse'].includes(tileGeneratedType(tile))) tile.type = 'grass';
+        delete tile.floraKind; delete tile.generatedObjectId; delete tile.generatedObjectType;
+      }
+      if (Array.isArray(context.workspace.objects)) context.workspace.objects = context.workspace.objects.filter(entry => !removedIds.has(entry?.id));
+      if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(entry => !removedIds.has(entry?.generatedObjectId) && !removedIds.has(entry?.id));
+    }
+    return cleared;
+  }
+
+  function blossomTreeCenter(compiled, selected) {
+    const object = compiled.locale?.objects?.find(entry => entry.key === 'blossom-tree'); // The stamped trunk, not the authored locale origin, owns the clue-distance constraint.
+    return object ? {
+      col: selected.anchorC + (Number(object.col) || 0) * compiled.scale,
+      row: selected.anchorR + (Number(object.row) || 0) * compiled.scale
+    } : null;
+  }
+
+  function clearBlossomOverlappingTrees(context, compiled, selected) {
+    if (!compiled.locale?.festivalBlossom) return 0;
+    const center = blossomTreeCenter(compiled, selected);
+    return center ? clearNativeTreeCircle(context, center.col, center.row, 6) : 0; // No ordinary canopy may grow through the permanent story tree.
+  }
+
+  function chooseBlossomStartLandmark(context, compiled, selected) {
+    if (!compiled.locale?.festivalBlossom) return null;
+    const center = blossomTreeCenter(compiled, selected);
+    if (!center) return null;
+    const targetTier = tileTier(context, Math.round(center.col), Math.round(center.row)); // The first landmark should be on the blossom's reachable elevation.
+    let best = null; // One bounded generation-time search replaces an existing tree when available.
+    for (let r = Math.floor(center.row - 18); r <= Math.ceil(center.row + 18); r++) {
+      for (let c = Math.floor(center.col - 18); c <= Math.ceil(center.col + 18); c++) {
+        const distance = Math.hypot(c - center.col, r - center.row);
+        if (distance < 7 || distance > 18 || context.claimed?.has(sourceKey(c, r))) continue;
+        const tile = tileRecord(context.root, c, r);
+        if (!tile || tile.water || tile.path || tile.incline || tile.ramp || tile.mapBoundary || tile.skipFloor
+            || tile.borderEscarpment || tile.distantBoundaryLandscape) continue;
+        const kind = tileGeneratedType(tile);
+        const nativeTree = kind === 'copse' || kind === 'tree' || (tile.type === 'shrub' && tile.floraKind === 'copse');
+        if (!nativeTree && (!['grass', 'weeds'].includes(tile.type) || kind)) continue;
+        if (Math.abs(tileTier(context, c, r) - targetTier) > 0.05) continue;
+        if ((context.workspace.localeInstances || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7)) continue;
+        if ((context.workspace.rootTotems || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 4)) continue;
+        if ((context.workspace.localeInstances || []).some(other => other.blossomStartLandmark &&
+          Math.hypot(c - other.blossomStartLandmark.col, r - other.blossomStartLandmark.row) < 5)) continue; // Distinct patterned debris cannot overlap another blossom's reserved physical marker.
+        const steps = Math.ceil(distance); // Reject a direct opening leg cut by a river, canyon, cliff, or unwalkable boundary.
+        let connected = true;
+        for (let step = 1; step < steps; step++) {
+          const from = tileRecord(context.root,
+            Math.round(center.col + (c - center.col) * step / steps),
+            Math.round(center.row + (r - center.row) * step / steps));
+          if (!from || WATER_TYPES.has(from.type) || from.water || from.skipFloor || from.borderEscarpment
+              || from.distantBoundaryLandscape || from.mapBoundary
+              || Math.abs(tileTier(context,
+                Math.round(center.col + (c - center.col) * step / steps),
+                Math.round(center.row + (r - center.row) * step / steps)) - targetTier) > 0.05) {
+            connected = false; break;
+          }
+        }
+        if (!connected) continue;
+        const score = (nativeTree ? 0 : 100) + Math.abs(distance - 11) * 3
+          + candidateTie(context.seed, compiled.locale.id, c, r) * 2; // Native-tree replacement wins over a clear-ground fallback.
+        if (!best || score < best.score) best = { col: c, row: r, replacedTree: nativeTree, score };
+      }
+    }
+    return best ? { col: best.col, row: best.row, replacedTree: best.replacedTree } : null;
+  }
+
   function clearClearableObjectsUnderFootprint(context, compiled, anchorC, anchorR) {
     const ids = new Set(); // Whole generated objects are removed when any of their overlay tiles intersect the locale footprint.
     for (const cell of compiled.tiles.values()) {
@@ -810,10 +896,20 @@
       return { placed: false, diagnostic: { localeId: locale.id, name: locale.name, status: 'skipped', reason: 'no terrain-aware placement matched', scale, tested: search.tested, valid: search.valid, rejected: search.rejected } };
     }
     const clearedObjectIds = clearClearableObjectsUnderFootprint(context, compiled, search.best.anchorC, search.best.anchorR); // Clearable clutter is removed before tile metadata is overwritten.
+    clearBlossomOverlappingTrees(context, compiled, search.best); // A permanent quest canopy cannot spawn inside the ordinary forest canopy.
+    const blossomStartLandmark = chooseBlossomStartLandmark(context, compiled, search.best); // Saved beside the stamped tree; no waypoint or extra full-map pass.
+    if (blossomStartLandmark?.replacedTree) clearNativeTreeCircle(context, blossomStartLandmark.col, blossomStartLandmark.row, 0); // Debris replaces, never overlaps, its original tree.
+    context.claimed = context.claimed || new Set(); // Footprints and claimed clue sites prevent later terrain-aware locales from overwriting earlier placements.
+    if (blossomStartLandmark) {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const c = blossomStartLandmark.col + dc, r = blossomStartLandmark.row + dr; // One-tile clearance around each persistent boulder or authored pillar.
+        if (tileRecord(context.root, c, r)) context.claimed.add(sourceKey(c, r)); // Later locale footprints cannot stamp over visible engraving.
+      }
+    }
     for (const cell of compiled.tiles.values()) paintLocaleTile(context, compiled, search.best, cell);
-    context.claimed = context.claimed || new Set(); // Footprints placed earlier in this pass; evaluateCandidate rejects any overlap.
     for (const cell of compiled.tiles.values()) context.claimed.add(sourceKey(search.best.anchorC + cell.c, search.best.anchorR + cell.r));
     const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
+    if (blossomStartLandmark) instance.blossomStartLandmark = blossomStartLandmark; // TothalZoneCache already persists complete locale instances.
     context.workspace.localeInstances = Array.isArray(context.workspace.localeInstances) ? context.workspace.localeInstances : [];
     context.workspace.localeInstances.push(instance);
     const interiorTransition = appendInteriorTransition(context, locale, instance); // Used to add the interior link after the base exporter has already finalized root.transitions.
@@ -843,6 +939,7 @@
         rejected: search.rejected,
         fallback: fallbackDiagnostic,
         clearedObjectIds,
+        ...(blossomStartLandmark ? { blossomStartLandmark } : {}), // Wilderness Lab and mobile placement diagnostics show the short, reachable opening anchor.
       },
     };
   }

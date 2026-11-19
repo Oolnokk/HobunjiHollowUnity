@@ -39,6 +39,7 @@
     landmark: '#6ab69e', // Bronze verdigris: shared perception silhouette for caves, camps, cliff doors, and mini-cliff herbs.
     farmSelected: '#35dcff', // Farmwork uses the same mask/glow with its own color language.
     farmAssignable: '#b58aff',
+    blossomStart: '#ffffff', // Live blossom swatch overrides the neutral fallback per target.
   });
   const INFO_COLORS = Object.freeze({
     title: '#FFB86C', // Matches WorldPopupText's interaction object color.
@@ -135,15 +136,15 @@
       || material?.uniforms?.uGrassTex?.value || null; // ReagentPlants' leaf silhouettes are custom grass shaders; preserve their texture alpha in the glow.
   }
 
-  function maskMaterialFor(source, category, skinned) {
+  function maskMaterialFor(source, category, skinned, customColor = null) {
     let byCategory = maskMaterials.get(source);
     if (!byCategory) { byCategory = new Map(); maskMaterials.set(source, byCategory); }
-    const key = category + (skinned ? ':s' : '');
+    const key = category + ':' + (customColor || '') + (skinned ? ':s' : ''); // A flower's color cannot recolor unrelated cached silhouettes.
     let mat = byCategory.get(key);
     const map = sourceMap(source);
     if (!mat) {
       mat = new (THREE().MeshBasicMaterial)({
-        color: COLORS[category],
+        color: customColor || COLORS[category],
         map,
         alphaTest: map ? Math.max(0.35, Number(source?.alphaTest) || 0) : 0,
         transparent: false,
@@ -305,9 +306,13 @@
       hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
       shaftLadders: [ ...(window.RuinReachingObelisks?.senseTargets?.(scene) || []), ...(window.ShaftHub?.senseTargets?.(scene) || []) ], // Both moving obelisks and fixed buttresses show only their real V50 ladder meshes.
+      blossomStarts: window.FestivalBlossomStartCue?.senseTargets?.(scene) || [], // Just the verified quest start in the current chunk.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
-    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
+    for (const [kind, roots] of Object.entries(specialSources)) for (const entry of roots) {
+      if (kind === 'blossomStarts') consider(entry.root, 'blossomStart', { color: entry.color }, Math.SQRT2 * (Number(window.WildernessChunks?.constants?.CHUNK_TILES) || 16) + 2); // All positions in the same streaming chunk remain discoverable.
+      else consider(entry, 'interact');
+    }
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }
@@ -470,8 +475,8 @@
         const original = mesh.material;
         const skinned = !!mesh.isSkinnedMesh;
         mesh.material = Array.isArray(original)
-          ? original.map(m => maskMaterialFor(m, target.category, skinned))
-          : maskMaterialFor(original, target.category, skinned);
+          ? original.map(m => maskMaterialFor(m, target.category, skinned, target.color))
+          : maskMaterialFor(original, target.category, skinned, target.color);
         const hadLayer = (mesh.layers.mask & (1 << LAYER)) !== 0; // r128 Layers has no isEnabled().
         mesh.layers.enable(LAYER);
         swapped.push({ mesh, original, hadLayer });
