@@ -107,8 +107,33 @@
     const head = attachmentPinField(rig.regionMasks?.[rear ? 'rear' : 'front']);
     const overlap = rear ? null : attachmentPinField(rig.hoodOverlapMask);
     const rigidOverlap = rear ? null : attachmentPinField(rig.hoodRigidOverlapMask);
-    if ((!head && !overlap && !rigidOverlap) || !THREE.BufferGeometry) return new THREE.PlaneGeometry(width, height, rig.segmentsX, rig.segmentsY);
-
+    const authoredHole = rear ? null : attachmentPinField(rig.hoodOpeningMask);
+    if ((!head && !overlap && !rigidOverlap && !authoredHole) || !THREE.BufferGeometry)
+      return new THREE.PlaneGeometry(width,height,rig.segmentsX,rig.segmentsY);
+    // Refine only the vicinity the elastic aperture could reach, rather than
+    // making every NPC hair mesh 200×200. This gives pinning a vertex at each
+    // rim pixel so cloth and hair do not pull apart under wind.
+    let hoodZone=null;
+    if(authoredHole){
+      hoodZone=new Uint8Array(MASK_SIZE*MASK_SIZE);
+      const queue=new Uint16Array(hoodZone.length),distance=new Uint8Array(hoodZone.length);
+      distance.fill(255);
+      let next=0,front=0;
+      for(let i=0;i<authoredHole.length;i++)if(authoredHole[i]){
+        distance[i]=0;hoodZone[i]=1;queue[next++]=i;
+      }
+      const reach=clamp(Math.round(finite(rig.hoodStretchPx,12)),0,32)+2;
+      for(;front<next;front++){
+        const i=queue[front],step=distance[i]+1;
+        if(step>reach)continue;
+        const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+        for(const neighbor of [x?i-1:-1,x<MASK_SIZE-1?i+1:-1,
+          y?i-MASK_SIZE:-1,y<MASK_SIZE-1?i+MASK_SIZE:-1]){
+          if(neighbor<0||distance[neighbor]<=step)continue;
+          distance[neighbor]=step;hoodZone[neighbor]=1;queue[next++]=neighbor;
+        }
+      }
+    }
     const columns = rig.segmentsX, rows = rig.segmentsY;
     const xs = Array.from({ length: columns + 1 }, (_, i) => Math.round(i * MASK_SIZE / columns));
     const ys = Array.from({ length: rows + 1 }, (_, i) => Math.round(i * MASK_SIZE / rows));
@@ -117,7 +142,8 @@
       const first = maskPixel((rear ? MASK_SIZE - x - .5 : x + .5) / MASK_SIZE, (y + .5) / MASK_SIZE);
       for (let py = y; py < bottom; py++) for (let px = x; px < right; px++) {
         const i = py * MASK_SIZE + (rear ? MASK_SIZE - 1 - px : px);
-        if (head?.[i] !== head?.[first] || overlap?.[i] !== overlap?.[first] || rigidOverlap?.[i] !== rigidOverlap?.[first]) return true;
+        if (hoodZone?.[i] || head?.[i] !== head?.[first]
+          || overlap?.[i] !== overlap?.[first] || rigidOverlap?.[i] !== rigidOverlap?.[first]) return true;
       }
       return false;
     };
