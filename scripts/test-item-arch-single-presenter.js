@@ -168,12 +168,15 @@ class MutationObserver {
   constructor(callback) { this.callback = callback; observers.push(this); }
   observe() {}
 }
+let cheapGeometryCalls = 0; // Verifies hot-path geometry reads never poll the expensive all-DOM diagnostic snapshot.
+let fullDiagnosticsCalls = 0; // Must remain zero across the item-wheel's repeated UI-open frames.
 const window = {
   CookingSystem: { init() {} },
   FarmCrates: { init() {} },
   AlchemySystem: { init() {} },
   QuickPotionArcUI: {
-    diagnostics: () => ({ outerRingGeometry: { center: {x:200,y:200}, radius:120 }, labelOutsetPx:17 }),
+    readGeometry: () => { cheapGeometryCalls++; return { outerRingGeometry: { center: {x:200,y:200}, radius:120 }, labelOutsetPx:17 }; },
+    diagnostics: () => { fullDiagnosticsCalls++; return { outerRingGeometry: { center: {x:200,y:200}, radius:120 }, labelOutsetPx:17 }; },
     refresh() { this.calls = (this.calls || 0) + 1; },
   },
 };
@@ -228,6 +231,8 @@ const beforeGeometryReads = geometryReads;
 for (let i=0;i<5;i++) step();
 assert.equal(seed.style.writes + berry.style.writes + heading.writes,beforeWrites, 'steady open frames do not rewrite unchanged styles/SVG attributes');
 assert.equal(geometryReads,beforeGeometryReads,'valid Potion Select geometry avoids per-frame synchronous layout reads');
+assert(cheapGeometryCalls > 5, 'item arch consumes the cheap live selector geometry during the open-frame loop');
+assert.equal(fullDiagnosticsCalls, 0, 'UI-open item updates never request the full Potion Select DOM diagnostic snapshot');
 
 seed.classList.delete('arc-active'); edge.classList.add('arc-active');
 send('pointermove'); step(); step();
