@@ -143,6 +143,58 @@ assert.deepEqual(scissorSnapshot.shell, secondWalk.shell, 'fused shell candidate
 for (const object of culled) object.visible = true;
 scene.children.splice(-2, 2);
 
+// Sweep reproducible combinations of nested mesh parents, hidden branches,
+// inert depth participants, alpha/sprite impostors and offscreen shell meshes.
+// For every case, the fused list must equal a real second post-cull walk.
+let shellSweepSeed = 0x5c311; // Deterministic seed used only for regression scene generation.
+function shellSweepRand() {
+  shellSweepSeed ^= shellSweepSeed << 13;
+  shellSweepSeed ^= shellSweepSeed >>> 17;
+  shellSweepSeed ^= shellSweepSeed << 5;
+  return (shellSweepSeed >>> 0) / 0x100000000;
+}
+for (let trial = 0; trial < 100; trial++) {
+  const root = {
+    visible: true, children: [], parent: null,
+    traverseVisible(cb) {
+      const visit = node => {
+        if (node.visible === false) return;
+        cb(node);
+        for (const child of node.children || []) visit(child);
+      };
+      visit(this);
+    },
+  }; // Real-world visibility skips every descendant of a hidden group.
+  const keep = new Set(); // Held parts whose alternate depth participation forbids scissor culling.
+  for (let groupIndex = 0; groupIndex < 12; groupIndex++) {
+    const parent = {
+      parent: root, visible: shellSweepRand() > 0.15, children: [], isMesh: shellSweepRand() < 0.25,
+      userData: {}, layers: { mask: shellSweepRand() > 0.5 ? 2 : 1 },
+    };
+    root.children.push(parent);
+    for (let leafIndex = 0; leafIndex < 7; leafIndex++) {
+      const child = {
+        parent, children: [], visible: shellSweepRand() > 0.12,
+        isMesh: shellSweepRand() > 0.18, isSprite: false,
+        userData: {}, layers: { mask: shellSweepRand() > 0.3 ? 2 : 1 },
+        within: shellSweepRand() > 0.3,
+      };
+      if (!child.isMesh) child.isSprite = shellSweepRand() > 0.3;
+      if (child.isSprite) child.userData.hobunjiNoOutline = shellSweepRand() > 0.5;
+      child.userData.replayInert = shellSweepRand() < 0.2; // Models inert leaf depth surfaces, never parents.
+      if (shellSweepRand() < 0.08) keep.add(child);
+      parent.children.push(child);
+    }
+  }
+  const fused = { depth: [], shell: [] }; // Filled directly by the shipped scissor culler.
+  const culledSweep = collectFromScissor(root, keep, null, null, false, fused);
+  for (const object of culledSweep) object.visible = false;
+  const exact = helpers.collectShellReplayCandidates(root);
+  assert.deepEqual(fused.depth, exact.depth, 'trial ' + trial + ': depth list matches post-cull traversal');
+  assert.deepEqual(fused.shell, exact.shell, 'trial ' + trial + ': shell list matches post-cull traversal');
+  for (const object of culledSweep) object.visible = true;
+}
+
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
 assert.match(replay, /shellCandidateSnapshot = \{ depth: \[\], shell: \[\] \}/,
   'successful scissor culling captures the depth and shell candidates in the same walk');
