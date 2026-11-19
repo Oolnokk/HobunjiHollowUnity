@@ -46,6 +46,10 @@ assert.deepEqual([...torchParts.keys()], ['wall_torch_plate','wall_torch_arm','w
 assert.equal(torchParts.get('wall_torch_arm').transform.z,.145,'arm reaches the painted handle');
 assert.equal(torchParts.get('wall_torch_rest').transform.z,.34,'30° socket sits along the torch centerline');
 assert.equal(torchParts.get('wall_torch_rest').transform.rx,30,'authored socket pitches 30° outward to match the PNG');
+const socket=torchParts.get('wall_torch_rest').transform; // Center of the actual tilted 3D socket relative to the sprite grip.
+const handleDeltaY=socket.y-.82,handleDeltaZ=socket.z-.31; // Compare against the shared sprite pivot in authored-furniture-runtime.
+assert.ok(Math.abs(handleDeltaZ-handleDeltaY*Math.tan(Math.PI/6))<.006,
+  'authored socket center follows the 30° torch centerline rather than intersecting it sideways');
 const authoredTorchSource=read('docs/js/authored-furniture-runtime.js'); // Validate the art bridge for rendered authored furniture.
 const fallbackTorchSource=read('docs/js/wall-ornament-placement.js'); // JSON-cold fallback must match the authored version.
 const houseTorchSource=read('docs/js/house-wall-fixtures.js'); // Older house fixtures must not use cubes.
@@ -67,6 +71,10 @@ assert.ok(houseTorchSource.includes('handleRest.rotation.x=Math.PI/6'),
   'house wall support surface rotates to align with the handheld torch');
 assert.ok(houseTorchSource.includes('tilt.rotation.x=Math.PI/6'),
   'isolated house editor art tilts outward too');
+assert.ok(houseTorchSource.includes('spriteWidth=spriteHeight*(.26/.70)'),
+  'isolated house editor keeps exactly the same torch sprite width/height ratio');
+assert.ok(houseTorchSource.includes('art.position.set(0,spriteHeight*.5,.017*(h/.72))'),
+  'isolated house editor places the handle at the same scaled local grip offset');
 assert.ok(!fallbackTorchSource.includes("id: 'wall_torch_shaft'"),
   'procedural fallback never recreates the unwanted cylinder shaft');
 assert.equal(torch.wallOrnament.attachmentSurfaceId, 'wall_torch_plate:surface:4', 'wall attachment contract remains stable');
