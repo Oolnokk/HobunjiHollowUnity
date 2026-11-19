@@ -249,4 +249,15 @@ check(music.getWeatherAudioDebugState().wind.strength === 1,
   'a proper blizzard raises wind SFX to the normalized cap without new audio loops');
 check(music.getWeatherAudioDebugState().loops.wind1.target === 0.20,
   'blizzard reaches the full authored strong-wind volume');
+// BGS mixer runs every frame; diagnostics must not build seven verbose
+// state strings each frame when their existing throttle will discard them.
+let audioReadyReads = 0; // Counts evaluation of the costly debug-only ready-state label.
+Object.defineProperty(MockAudio.prototype, 'readyState', {
+  configurable: true, get() { audioReadyReads++; return 4; },
+});
+const startReadyReads = audioReadyReads; // Separates this performance check from earlier mobile diagnostic snapshots.
+for (let frame = 0; frame < 20; frame++) music.updateExteriorBgs();
+check(audioReadyReads - startReadyReads < 30,
+  'per-frame weather audio mixing must not format readiness diagnostics until the trace throttle is due');
+
 console.log('Regional wind SFX passed: dry katabatic wind, sheltered zones, indoor filtering and blizzards.');
