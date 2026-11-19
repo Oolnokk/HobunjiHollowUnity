@@ -2,6 +2,7 @@
 'use strict';
 // Actual Three.js geometry contract for the five physical wilderness blossom trees (not the feast's table vases).
 const assert = require('node:assert/strict'); // Checks measured world-scale bounds, distinct leaf canopy and tiny blossom sprigs.
+const fs = require('node:fs'); // Reads actual Debris-ifier recipes to test every small chip and shaft's dimensions.
 let THREE; // Matches the production foliage-generator runtime.
 try { THREE = require('three'); }
 catch (error) {
@@ -72,12 +73,14 @@ sharedStoneArt.geometry.addEventListener('dispose',()=>{sharedStoneDisposed=true
 window.OreRockTextures={smallStoneArt:()=>sharedStoneArt}; // Renderer-provided shared rock art is required for both cairns and the newly engraved witness.
 window.GridTileAccessors={getActiveScene:()=>scene};
 window.AuthoredFurniture={
-  async load(key){return {key};}, // Simulate the real asynchronous furniture data load.
+  async load(key){return JSON.parse(fs.readFileSync('docs/config/furniture-authored/'+key+'.json','utf8'));},
   buildGroup(def){const root=new THREE.Group(),parts=new Map();
-    const partIds=def.key==='ruinPillarBroken'?['base','stump','fallen','cap','chip']:['base','stub','chip_a'];
-    for(const id of partIds){const part=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());
-      part.userData.authoredPart={id,kind:'box'};parts.set(id,part);root.add(part);}
-    root.userData.meshById=parts;return root;} // Mirror the real multi-part authored debris so every major stone is checked.
+    for(const part of def.parts){const {sx,sy,sz,x,y,z,rx,ry,rz}=part.transform;
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshBasicMaterial());
+      mesh.name=part.name;mesh.position.set(x,y,z);
+      mesh.rotation.set(THREE.MathUtils.degToRad(rx),THREE.MathUtils.degToRad(ry),THREE.MathUtils.degToRad(rz));
+      mesh.userData.authoredPart=part;parts.set(part.id,mesh);root.add(mesh);}
+    root.userData.meshById=parts;return root;} // Actual authored sizes/rotations/IDs; an untapered box isolates UV coverage from the live Furniture Author's bevels.
 };
 window.ClimbSystem={groundYAt:()=>1.25};
 const ruinSurfaces=window.FurniturePatternSurfaces; // The real projector is the coverage oracle, not the test's simulated atlas.
@@ -85,10 +88,9 @@ window.RuinPatternSurfaceRules={mergedConfig:()=>({defaultScale:4,rules:{}})}; /
 window.FurniturePatternSurfaces={
   applyPart(mesh,part) {
     const patterns=part.patternSurfaces||[],rock=part.kind==='sphere';
-    assert.deepEqual(patterns.map(record=>record.selector),rock?['all']:['sides','caps'],
-      'intact pillar sides use the perimeter unwrap and broken caps cover the complementary exposed faces');
-    let selectedTriangles=0, sideTriangles=0, capTriangles=0; // Count real source triangles included in each pattern projection.
-    for(const pattern of patterns) {
+    assert.deepEqual(patterns.map(record=>record.selector),rock?['all']:['pillar-wrap'],
+      'one engraving covers every source face: original pillar side wrap and both planar cut faces');
+    for(const pattern of patterns){
       assert.match(pattern?.patternId||'',/^harlyao_glyph_(entropy|ignorance|servitude)$/,
         'dyed stones reuse an authored Harlyao ruin-wall motif, not a separate decal');
       assert.equal(pattern.mode,'engraving','all projected surfaces use the ruin-wall engraving mode');
@@ -98,28 +100,37 @@ window.FurniturePatternSurfaces={
       assert.equal(pattern.glowPulseDepth,0,'wilderness masonry must never pulse');
       assert.ok(pattern.maxAtlasPx<=256,'mobile pattern atlases stay bounded');
       assert.match(pattern.palette[1],/^#[0-9a-f]{6}$/i,'engraving ink has the authored dye hex');
-      const projected=ruinSurfaces.surfaceGeometry(mesh,ruinSurfaces.normalize(pattern),part);
-      assert.ok(projected,'the real ruin surface projector accepts every assigned face class');
-      const triangles=projected.getAttribute('position').count/3;
-      selectedTriangles+=triangles;
-      if(pattern.selector==='sides') {
-        sideTriangles=triangles;
-        const uv=projected.getAttribute('uv').array; // Production's original continuous pillar-side unwrap is the same geometry generator.
-        const us=Array.from({length:uv.length/2},(_,i)=>uv[i*2]);
-        assert.ok(Math.max(...us)-Math.min(...us)>0.8,'side UVs wrap around all four faces, not a single decal');
+      const record=ruinSurfaces.normalize(pattern); // Production geometry projector, not a proxy decal.
+      const projected=ruinSurfaces.surfaceGeometry(mesh,record,part);
+      assert.ok(projected,'the real ruin surface projector accepts all authored faces');
+      const positionCount=mesh.geometry.index?.count||mesh.geometry.attributes.position.count;
+      assert.equal(projected.getAttribute('position').count,positionCount,
+        'every source triangle has exactly one engraving without face omissions');
+      if(!rock){
+        const triangleMap=geometry=>{
+          const p=geometry.getAttribute('position').array,u=geometry.getAttribute('uv').array,out=new Map();
+          for(let i=0;i<p.length/9;i++)out.set(Array.from(p.slice(i*9,i*9+9)).join(','),Array.from(u.slice(i*6,i*6+6)));
+          return out;
+        }; // Triangle keys let source side/cap layouts be compared regardless of source face order.
+        const actual=triangleMap(projected),expected=new Map();
+        for(const selector of ['sides','top','bottom']){
+          const reference=ruinSurfaces.surfaceGeometry(mesh,{...record,selector},part);
+          assert.ok(reference,selector+' must select real authored faces from '+part.id);
+          for(const [key,uv] of triangleMap(reference)){
+            assert.ok(!expected.has(key),'original pillar reference faces must be disjoint');
+            expected.set(key,uv);
+          }
+          reference.dispose();
+        }
+        assert.equal(expected.size,actual.size,'original wrapped sides and both ends partition the full authored mesh');
+        for(const [key,uv] of expected)assert.deepEqual(actual.get(key),uv,
+          'each triangle preserves its original ruin UV, including minuscule chips');
       }
-      if(pattern.selector==='caps')capTriangles=triangles;
       projected.dispose();
       const engraving=new THREE.Mesh(new THREE.PlaneGeometry(.2,.2),new THREE.MeshBasicMaterial());
       engraving.userData.furniturePattern={mode:'engraving',slot:pattern.slot,patternId:pattern.patternId,status:'ready'};
       mesh.add(engraving);
-      decorations++; // Each runtime overlay is counted separately; a marker no longer disguises incomplete sides as a full pattern.
-    }
-    assert.equal(selectedTriangles,(mesh.geometry.index?.count||mesh.geometry.attributes.position.count)/3,
-      'every source triangle has exactly one projected engraving (sides plus both broken ends)');
-    if(!rock) {
-      assert.ok(sideTriangles>0,'all vertical masonry side triangles are selected');
-      assert.ok(capTriangles>0,'the broken piece also engraves both local end-cap faces');
+      decorations++; // One overlay per original fragment, including formerly plain chips.
     }
     return mesh;
   },
@@ -146,17 +157,15 @@ assert.equal(scenery.debugSnapshot().dyedWitness.nonGlowing,true,'mobile debug r
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
 assert.equal(scenery.debugSnapshot().plan.marked.length,originalMarked,'mobile diagnostics enumerate every marked object');
 let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){paintedPillars++;
-  const parts=node.userData.meshById, expected=[...parts.keys()].filter(id=>['base','stump','stub','fallen','cap'].includes(id));
-  assert.equal(node.userData.wildernessPatternedParts,expected.length,'every major stone part is decorated exactly once');
+  const parts=node.userData.meshById, expected=[...parts.keys()];
+  assert.equal(node.userData.wildernessPatternedParts,expected.length,'all original fragments are decorated once, including chips');
   for(const id of expected){
     const target=parts.get(id),children=target.children.filter(part=>part.userData?.furniturePattern);
-    assert.deepEqual(children.map(part=>part.userData.furniturePattern.slot),['ruin-pillar-sides','ruin-pillar-broken-ends'],
-      id+' retains the intact pillar side UV and also covers both broken end caps');
-    assert.deepEqual(target.userData.wildernessPatternSurfaces,{expected:2,actual:2,scale:4},
-      id+' reports complete side and cap coverage');
+    assert.deepEqual(children.map(part=>part.userData.furniturePattern.slot),['ruin-pillar-entire-fragment'],
+      id+' has one full original-side + both-cap engraving, not two overlapping overlays');
+    assert.deepEqual(target.userData.wildernessPatternSurfaces,{expected:1,actual:1,scale:4},
+      id+' reports complete original ruin pattern coverage');
   }
-  for(const [id,mesh] of parts)if(id.startsWith('chip'))assert.equal(mesh.children.some(part=>part.userData?.furniturePattern),false,
-    'tiny loose chips are not separate atlas/draw call owners');
 }});
 assert.ok(paintedPillars>0,'even a small generated area renders colored full-surface pillar patterns');
 assert.ok(scenery.debugSnapshot().patternedPillarParts>paintedPillars,'mobile debug counts multi-part masonry patterns');
