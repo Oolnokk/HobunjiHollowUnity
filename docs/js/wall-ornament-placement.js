@@ -252,7 +252,7 @@
   const WALL_TORCH_PARTS = Object.freeze([
     Object.freeze({ id: 'wall_torch_plate', kind: 'box', name: 'Wall Torch Plate', color: '#5a4029', transform: { x: 0, y: 0.8, z: 0, rx: 0, ry: 0, rz: 0, sx: 0.16, sy: 0.24, sz: 0.035 } }),
     Object.freeze({ id: 'wall_torch_arm', kind: 'beam', name: 'Wall Torch Perch Arm', color: '#4b3523', transform: { x: 0, y: 0.82, z: 0.145, rx: 0, ry: 0, rz: 0, sx: 0.07, sy: 0.07, sz: 0.29 } }),
-    Object.freeze({ id: 'wall_torch_rest', kind: 'box', name: 'Wall Torch Handle Rest', color: '#5a4029', transform: { x: 0, y: 0.81, z: 0.31, rx: 0, ry: 0, rz: 0, sx: 0.135, sy: 0.06, sz: 0.115 } }),
+    Object.freeze({ id: 'wall_torch_rest', kind: 'box', name: 'Wall Torch Tilted Handle Socket', color: '#5a4029', transform: { x: 0, y: 0.865, z: 0.34, rx: 30, ry: 0, rz: 0, sx: 0.135, sy: 0.16, sz: 0.115 } }),
   ]); // Procedural perch mirrors wallTorch.json while the real torch comes from torch.png.
 
   function buildWallTorchGroup(api, baseColor) {
