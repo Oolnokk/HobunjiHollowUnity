@@ -127,6 +127,34 @@ restore = frame();
 assert(tents[1].children.every(m => !m.visible), 'rejoins after holding still');
 restore();
 
+// Eligibility changes do not necessarily bump geometry attribute versions.
+// No settled-frame optimization may draw an obsolete merged copy after such edits.
+const reuseBeforePartial = Batches.snapshot().fastReuseFrames;
+panel.setDrawRange(0, 3); // One triangle rather than the previous full two-triangle panel.
+restore = frame();
+assert(tents[0].children.every(m => m.visible), 'partial draw ranges unbatch originals immediately');
+assert.strictEqual(Batches.snapshot().fastReuseFrames, reuseBeforePartial,
+  'partial draw range invalidates settled fast reuse in the same frame');
+restore?.();
+panel.setDrawRange(0, Infinity);
+clock += 1000;
+restore = frame();
+assert(tents[0].children.every(m => !m.visible), 'full draw ranges can resume batching');
+restore();
+const defaultHook = canvas.onBeforeCompile;
+canvas.onBeforeCompile = function changedShader() {}; // Existing material ID/geometry versions remain unchanged.
+const reuseBeforeShader = Batches.snapshot().fastReuseFrames;
+restore = frame();
+assert(tents[0].children.every(m => m.visible), 'a new non-bake-safe material hook immediately disables merging');
+assert.strictEqual(Batches.snapshot().fastReuseFrames, reuseBeforeShader,
+  'custom shader invalidates the settled fast path in the same frame');
+restore?.();
+canvas.onBeforeCompile = defaultHook;
+clock += 1000;
+restore = frame();
+assert(tents[0].children.every(m => !m.visible), 'removing the hook restores legal batching');
+restore();
+
 // Hidden owners draw nothing and leave the batch; disabling restores everything.
 tents[2].visible = false;
 frame()();

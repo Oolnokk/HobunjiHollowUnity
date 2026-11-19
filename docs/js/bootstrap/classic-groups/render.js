@@ -10,7 +10,7 @@
     "js/outline-composite-material.js?v=20261114composite1",
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
     "js/farm-tile-render-batches.js?v=20261114farmBatch1",
-    "js/zone-prop-render-batches.js?v=20261119hd62449c",
+    "js/zone-prop-render-batches.js?v=20261119hsettledEligibility2",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261118h9d25902",
     "js/shoulder-pet-attachment-runtime.js?v=20261117turnStability2", // Shared pin solver, before game.js starts.

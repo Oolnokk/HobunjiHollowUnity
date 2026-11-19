@@ -325,6 +325,24 @@
     return sources;
   }
 
+  // A material or geometry can become unbatchable without changing its
+  // matrix or buffer version (for example a drawRange edit or shader hook).
+  // Recheck those small render contracts on the fast path, without constructing
+  // owner groups or allocating attribute-name arrays per frame.
+  function settledMemberEligible(mesh) {
+    const material = mesh.material, geometry = mesh.geometry;
+    if (!material || Array.isArray(material) || material.transparent || !geometry?.attributes?.position) return false;
+    const custom = material.isShaderMaterial || material.isRawShaderMaterial
+      || (defaultBeforeCompile && material.onBeforeCompile !== defaultBeforeCompile);
+    if (custom && material.userData?.hobunjiWorldBakeSafe !== true) return false;
+    const fullCount = geometry.index ? geometry.index.count : geometry.attributes.position.count;
+    const drawRange = geometry.drawRange;
+    if (drawRange && (drawRange.start !== 0 || (Number.isFinite(drawRange.count) && drawRange.count !== fullCount))) return false;
+    for (const name in geometry.morphAttributes) return false; // Any added morph channel makes the old bake invalid.
+    if (custom) for (const name in geometry.attributes) if (!ATTRIBUTE_NAMES.includes(name)) return false;
+    return true;
+  }
+
   // A stable frame reuses known groups without rescanning every prop owner or
   // rebuilding grouping keys. The authoritative matrix/geometry signatures
   // are STILL compared each frame; a moving/edited batch member falls through
@@ -342,7 +360,7 @@
           || member.material !== drawn.material || member.material?.transparent
           || member.layers.mask !== drawn.layers.mask
           || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
-          || member.renderOrder !== drawn.renderOrder || !member.geometry?.attributes?.position
+          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member)
           || !isStill(member, t)) return null;
         hidden.push(member);
       }
