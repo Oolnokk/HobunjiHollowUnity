@@ -72,6 +72,26 @@ const preserved = parity.normalizeImported(JSON.parse(JSON.stringify(custom)), c
 assert.equal(preserved.creatures.grehlr.sizeScales.small.x, .73, 'intentional X authoring survives import');
 assert.equal(preserved.creatures.grehlr.groundOffsets.small, 0, 'intentional Auto/0 survives import');
 
+// Audit every real gameplay species, not only the representative mock rows above.
+const realRuntime = { window: {}, document: {}, localStorage: { getItem: () => null, setItem: () => {} },
+  performance: { now: () => 0 } }; // The shared runtime registry can be evaluated without DOM or WebGL.
+vm.runInNewContext(fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'), realRuntime);
+vm.runInNewContext(src, realRuntime);
+const realProfiles = realRuntime.window.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures;
+const realParity = realRuntime.window.AnimationAuthorCreatureGameplayParity;
+assert(Object.keys(realProfiles).length >= 16, 'expect at least the current canonical 16 creature rig entries');
+for (const [kind, rig] of Object.entries(realProfiles)) {
+  for (const cls of ['small', 'medium', 'large']) {
+    const expectedScale = rig.sizeScales[cls];
+    const expectedGround = rig.groundOffsets[cls];
+    const effective = realParity.placement(rig, cls, 1.2);
+    assert.equal(effective.widthScale, expectedScale.x, kind + ' ' + cls + ' width');
+    assert.equal(effective.heightScale, expectedScale.y, kind + ' ' + cls + ' height');
+    assert.equal(effective.groundLift, expectedGround > 0 ? expectedGround : 1.2 * expectedScale.y / 2,
+      kind + ' ' + cls + ' absolute vs Auto ground');
+  }
+}
+
 const pixels = new Uint8ClampedArray(4 * 4 * 4); // A tiny native PNG image with transparent foot padding.
 pixels[(2 * 4 + 1) * 4 + 3] = 255;
 pixels[(3 * 4 + 1) * 4 + 3] = 200; // Antialiased fringe is deliberately ignored by the game.
@@ -87,6 +107,13 @@ assert.match(index, /record\.object\.scale\.set\(record\.baseScale\.x \* scale\.
 assert.doesNotMatch(index, /creaturePlaneScaleRoot\.scale\.set\(1, layout\.heightScale, layout\.widthScale\)/,
   'new parity code must not rescale the retired group hierarchy a second time');
 assert.match(index, /Reset all three scales to gameplay/, 'reset scales uses per-species gameplay values, not generic editor fallbacks');
+assert.match(index, /const oldImportV1554 = importAnimationProjectData/, 'post-import parity wrapper exists');
+assert.match(index, /if \(options.fromAutosave && data\?\.attachmentRigProfiles\?\.creatures\)/,
+  'legacy autosaves restore authored class and ground rows after the V15.24 wholesale overwrite');
+assert.match(index, /if \(stored\.sizeScales\) target\.sizeScales = structuredCloneSafe\(recovered\.sizeScales\)/,
+  'autosave restoration applies guarded user-authored sizes');
+assert.match(index, /if \(stored\.groundOffsets\) target\.groundOffsets = structuredCloneSafe\(recovered\.groundOffsets\)/,
+  'autosave restoration applies guarded user-authored floor lifts');
 assert.match(index, /animationAuthor\.mode === 'rig' \? 0 : layout\.groundLift/, 'rig floor calibrator remains fixed');
 assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue floor uses the real Auto lift');
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
