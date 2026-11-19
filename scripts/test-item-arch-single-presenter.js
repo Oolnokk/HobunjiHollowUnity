@@ -32,6 +32,7 @@ class Style {
 }
 class ClassList extends Set {
   add(...names) { for (const name of names) super.add(name); return this; }
+  contains(name) { return this.has(name); }
   remove(...names) { for (const name of names) super.delete(name); }
 }
 class Element {
