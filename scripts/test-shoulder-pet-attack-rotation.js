@@ -17,10 +17,10 @@ assert.doesNotMatch(indexSource, /Shoulder-Pet Rotation Source|Invert Selected S
 assert.match(runtimeSource, /const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE\.Quaternion\(\)\.setFromAxisAngle\(new THREE\.Vector3\(0, 1, 0\), Math\.PI\);/,
   'shoulder facing swap is authored as an exact 180-degree local-Y quaternion');
 assert.match(runtimeSource,
-  /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,3200}const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;/,
-  'brief inward/front state selects the 180-degree local transform while outward/behind stays at zero extra turn');
+  /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,5000}const shoulderFacingTurnDeg = facingTowardPlayerCenter !== authoredFacesInward \? 180 : 0;/,
+  'the chosen half-turn depends on the authored heading and the observation pose');
 assert.match(runtimeSource,
-  /worldQuaternion\.multiply\(authoredRotationOffset\);[\s\S]{0,180}worldQuaternion\.multiply\(SHOULDER_PET_HALF_TURN_QUATERNION\)/,
+  /worldQuaternion\.multiply\(authoredRotationOffset\);[\s\S]{0,700}worldQuaternion\.multiply\(SHOULDER_PET_HALF_TURN_QUATERNION\)/,
   'the half-turn is applied after the authored perch/grip correction in pet-local space');
 assert.doesNotMatch(runtimeSource, /authoredRotationOffset\.invert\(\)/,
   'opposite shoulder facing never inverts the authored quaternion');
@@ -59,6 +59,7 @@ assert.doesNotMatch(indexSource, /src="js\/shoulder-pet-attachment-runtime\.js/,
   'index.html does not acquire a new standalone script registration');
 
 class TestVector3 {
+  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   clone() { return new TestVector3(this.x, this.y, this.z); }
   copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
@@ -207,7 +208,11 @@ for (const skinned of [true, false]) {
           'reported grip error is measured from the rendered group matrix');
         assert.equal(fakeGroup.userData.hobunjiShoulderPetAttachment.gripPositionSource,
           'rendered-group-matrix', 'mobile diagnostics report the live render-matrix source');
-        assert.equal(pose.shoulderFacingTurnDeg, facingInward ? 180 : 0, 'facing state remains unchanged by lean');
+        assert.equal(pose.shoulderFacingTurnDeg, neutral.shoulderFacingTurnDeg, 'lean leaves the selected half-turn alone');
+        const heading = new TestVector3(0, 0, 1).applyQuaternion(pose.worldQuaternion);
+        const ownerRight = new TestVector3(1, 0, 0).applyQuaternion(playerQuaternion);
+        assert.equal(heading.x * ownerRight.x + heading.z * ownerRight.z > 0, facingInward,
+          'the rendered nose points toward the midline from this left shoulder exactly in the inward pose');
         assert.equal(pose.shoulderLeanDeg, lean, 'runtime exposes the exact applied lean');
         if (lean !== 0) {
           assert.ok(pose.worldPosition.distanceTo(neutral.worldPosition) > 1e-5,
@@ -221,6 +226,20 @@ for (const skinned of [true, false]) {
       closeness(withoutCuriosity.worldPosition, neutral.worldPosition, 'neutral lean leaves the authored facing pose unchanged');
     }
   }
+}
+// Grehlr, Drenkirra and neutral grip rigs differ in which authored half-turn starts toward the midline.
+const solveBody = solverFactory(THREE, playerMesh, playerNeckJoint, {}, 'body', false, false);
+for (const shoulderX of [-0.28, 0.28]) for (const gripYaw of [-61, 0, 61]) {
+  const headings = [false, true].map(inward => {
+    const pose = solveBody({ x: shoulderX, y: 0.45, z: 0 },
+      { rotationDeg: { y: gripYaw } }, { __hobunjiShoulderFacingInward: inward });
+    const localHeading = new TestVector3(0, 0, 1).applyQuaternion(pose.worldQuaternion)
+      .applyQuaternion(playerQuaternion.clone().invert()); // Root +Z is the art's nose direction.
+    assert(Math.abs(localHeading.x) > 0.5, 'neutral grips also present a readable side profile');
+    assert.equal(localHeading.x * shoulderX < 0, inward, 'pose points toward the actual perch side of the midline');
+    return localHeading;
+  });
+  closeness(headings[0].add(headings[1]), new TestVector3(), 'both poses stay opposite around the grip');
 }
 // Even the legacy option to cancel the authored perch/grip rotation must not cancel the observation's 180° facing swap.
 const canceledRotationSolver = solverFactory(THREE, playerMesh, playerNeckJoint,

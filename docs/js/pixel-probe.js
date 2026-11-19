@@ -542,7 +542,7 @@
     const expectedDepth = !liveActivePet; // Attached pet cards and the owner's portrait share one depth-write-free stack.
     lines.push(`Live active shoulder pet this frame: ${liveActivePet ? `${liveActivePet.creatureKey} (id ${liveActivePet.id})` : '(none)'}`);
     lines.push(`Gameplay attachment state: active=${_petLayeringActive} pet=${_petLayeringPet ? `${_petLayeringPet.creatureKey} (id ${_petLayeringPet.id})` : '(none)'}`);
-    lines.push(`Compositor: mode=${petPolicy.mode || '(not available)'} active=${!!petPolicy.active} frontPet=${petPolicy.frontForeground ? 'ABOVE' : 'behind'} backPet=${petPolicy.backForeground ? 'ABOVE' : 'behind'} frontMask=${compositor.frontPortraitMaskedGear ?? '-'}/${compositor.frontPortraitGearCandidates ?? '-'} reason=${compositor.frontPortraitMaskReason || '-'} stencilBits=${compositor.stencilBits ?? '-'}`);
+    lines.push(`Compositor: mode=${petPolicy.mode || '(not available)'} active=${!!petPolicy.active} petFromFront=${petPolicy.frontForeground ? 'ABOVE' : 'behind'} petFromRear=${petPolicy.backForeground ? 'ABOVE' : 'behind'} frontMask=${compositor.frontPortraitMaskedGear ?? '-'}/${compositor.frontPortraitGearCandidates ?? '-'} reason=${compositor.frontPortraitMaskReason || '-'} stencilBits=${compositor.stencilBits ?? '-'}`);
     if (!!liveActivePet !== _petLayeringActive || liveActivePet !== _petLayeringPet || !!liveActivePet !== !!petPolicy.active) {
       lines.push('>>> MISMATCH — gameplay and shared compositor have different active shoulder pets; inspect the game render/attachment frame.');
     }
@@ -554,11 +554,7 @@
       for (const [label, mesh] of [['active pet front plane', liveActivePet.avatarRef?.frontPlane], ['active pet back plane', liveActivePet.avatarRef?.backPlane]]) {
         if (!mesh?.material) continue;
         checks.push([label, 'depthWrite', false, mesh.material.depthWrite]);
-        const front = label === 'active pet front plane'; // The owner's portrait stages are fixed; only the active pet swaps sides.
-        const orders = window.HeldObjectRenderOrder?.SHOULDER_PET_RENDER_ORDERS;
-        const expectedOrder = front
-          ? (petPolicy.frontForeground ? orders?.frontAbove : orders?.frontBehind)
-          : (petPolicy.backForeground ? orders?.backAbove : orders?.backBehind);
+        const expectedOrder = petPolicy.petFrontOrder; // Both pet cards occupy the same stage regardless of which faces the camera.
         if (expectedOrder !== undefined) checks.push([label, 'renderOrder', expectedOrder, mesh.renderOrder]);
       }
     }

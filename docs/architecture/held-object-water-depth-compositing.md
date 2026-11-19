@@ -100,32 +100,24 @@ continues to depth-test normally; weapon stencils share the actor order.
 
 ## Shoulder pets are part of the owner's portrait occlusion
 
-Only the active pet and the existing inward/outward animation state are supplied
-by `docs/game.js`. The camera's front/back view does not select an additional
-pet mode. `HeldObjectRenderOrder.setShoulderPetLayering()` preserves the owner's
-front/back portrait draw orders and puts **each pet face** in the corresponding
-owner portrait stage:
+The observation pose selects the side of the owner where the animal draws.
+The shoulder attachment resolves the authored orientation against the owner's
+midline before picking the appropriate half-turn. The pet's two sprite cards
+share one draw stage, so exposing a different card during the turn cannot
+change who covers whom.
 
-| Shoulder pet orientation | Pet front vs. owner front | Pet back vs. owner back |
+| Shoulder pet orientation | Looking at owner's front | Looking at owner's back |
 | --- | --- | --- |
-| Facing the owner's midline (180° local turn) | Behind owner front sprites | Above owner back sprites |
-| Facing away from the owner's midline (0° local turn) | Above owner front sprites | Behind owner back sprites |
+| Facing the owner's midline | Pet draws in front | Pet peeks out from behind |
+| Facing away from the owner's midline | Pet peeks out from behind | Pet draws in front |
 
-An active pet and its owner remain a single depth-tested,
-depth-write-free portrait stack, preventing the intersecting cards from clipping
-one another. The rest of the world keeps normal physical depth occlusion.
-The pet front/rear cards and their authored split-mesh helpers are always assigned
-together within each face stage; a split helper tracks its base card's priority
-and material flags. There is no `shoulderPet.presentation` setting or competing
-player-over/pet-over/world-depth diagnostic mode.
+The visible owner portrait and pet share a depth-tested, depth-write-free
+stack. Split pet and hat meshes follow their source stages, and opaque world
+geometry still occludes the stack by physical depth.
 
-When the optional owner-front weapon stencil is enabled (its shipped default
-is **off**), the player's front portrait participates even though it does not
-write normal color-pass depth. **Only the pet face above its matching owner
-face**, and its same-face split copy, joins that private mask: back when
-looking inward, front when looking away. The other face never masks the owner's
-held gear. An enabled mask also runs on maps without nearby classified ground,
-floors or water; stencil owner IDs are not shared with unrelated NPCs.
+The optional owner-front weapon stencil also includes the pet silhouette
+when the pet is in front of the owner in the current view. Both pet cards
+are eligible and the renderer culls the reverse side.
 
 When the front-art masking rule is enabled, a shoulder pet makes the
 owner's portrait stack depth-write-free, and the framebuffer has no usable
@@ -139,11 +131,11 @@ immediately afterward. Diagnostics expose the fallback count and
 
 Replacing or detaching a shoulder pet restores the previous pet's ordinary
 depth and draw order, cleans up its private stencil participation, and restores
-the owner's unchanged portrait orders and normal depth writes.
+the owner's ordinary portrait orders and normal depth writes.
 The compositor reasserts this once more before each base world draw after other
 depth writers have run. Its transparent-sort transaction gives the owner's
 front/back cards, pet front/back cards, hat overlays and split helpers
-**one consistent set of four face-stage priorities**. The observation animation
+**one consistent set of three portrait-stage priorities**. The observation animation
 alone chooses which pet face is foreground. Individual pairwise overrides are
 not sufficient: with a nearby NPC, portrait-depth ranking can otherwise
 produce non-transitive ordering cycles involving a third transparent item.
@@ -477,7 +469,7 @@ partial tint.
 
 ## Shell outlines inherit the source object's ground-x-ray visibility
 
-Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. The held renderer removes accidental layer-1 membership from authored weapon planes while retaining their held-object x-ray and water mask layers. The shell replayer also filters authored planes defensively.
+Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. Render classification removes accidental layer-1 membership from authored planes when they join the scene, including art outside the held-object registry. Their other render layers are retained. Held-object enforcement and shell replay also check authored art.
 
 The occluder depth material transaction is prepared **once per shell replay**, not once per elevation group: each group updates only ground tile/elevation uniforms. The final full-depth restore uses that same material transaction, and the outer `finally` restores material/camera/renderer flags even if a draw throws.
 

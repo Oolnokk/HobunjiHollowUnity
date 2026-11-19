@@ -29,6 +29,19 @@
     const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI); // Used to swap the perched animal between its two local facing transforms without mirroring the sprite.
     const SHOULDER_PET_LEAN_AXIS = new THREE.Vector3(1, 0, 0); // Maps the front/back sprite planes' opposite Z rolls into one shared pet-local X lean.
     const SHOULDER_PET_LEAN_QUATERNION = new THREE.Quaternion(); // Reused by the final perch/grip solver to avoid allocating a quaternion each animation frame.
+    const neutralGripYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(61)); // Stock shoulder yaw gives neutral grip rigs a readable side silhouette.
+    const petHeading = new THREE.Vector3(); // The animal's nose points along local +Z; the two cards face along ±X.
+    const ownerLateral = new THREE.Vector3(); // World-space lateral ray including the owner's actual reflection.
+    const ownerOrigin = new THREE.Vector3(); // Subtracted from the lateral point to obtain a direction.
+    function shoulderLateralHeading(owner, rotation) {
+      owner.localToWorld(ownerLateral.set(1, 0, 0));
+      owner.localToWorld(ownerOrigin.set(0, 0, 0));
+      ownerLateral.sub(ownerOrigin);
+      petHeading.set(0, 0, 1).applyQuaternion(rotation);
+      return (petHeading.x * ownerLateral.x + petHeading.z * ownerLateral.z)
+        / (Math.hypot(ownerLateral.x, ownerLateral.z) || 1);
+    }
+
     function _shoulderPetSurfaceTransform(perch, grip, pet) {
       const playerMesh = getPlayerMesh(); // Live owner mesh, never a stale captured avatar.
       const playerNeckJoint = getPlayerNeckJoint(); // Live skinned neck after portrait rebuilds.
@@ -49,7 +62,7 @@
       const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
       const perchWorldPosition = perchFrame?.position
         || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
-      const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Brief curiosity state: true selects the same authored attachment transform turned exactly 180° around local Y.
+      const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Desired heading for this held observation pose.
       let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
       let resolvedRotationSource = s_shoulderPetRotationSource;
       switch (s_shoulderPetRotationSource) {
@@ -93,10 +106,18 @@
       const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
       const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
       const authoredRotationOffset = perchQuaternion.clone().multiply(inverseGripQuaternion);
-      const shoulderFacingTurnDeg = facingTowardPlayerCenter ? 180 : 0; // Inward/front is the outward authored local transform plus one exact half-turn, never a quaternion inversion or sprite mirror.
       const worldQuaternion = selectedRotationQuaternion.clone();
-      if (!s_cancelShoulderPetRotationalOffset) worldQuaternion.multiply(authoredRotationOffset);
-      if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION); // Observation owns its 180° local turn even when the legacy authored-offset override is active.
+      let authoredFacesInward = false; // Identifies which of the two authored half-turns points toward the carrier's midline.
+      if (!s_cancelShoulderPetRotationalOffset) {
+        worldQuaternion.multiply(authoredRotationOffset);
+        if (perch.x) {
+          const authoredLateralHeading = petHeading.set(0, 0, 1).applyQuaternion(authoredRotationOffset).x; // Only neutral rigs need an added yaw; head animation alone cannot enable it.
+          if (Math.abs(authoredLateralHeading) < 0.05) worldQuaternion.multiply(neutralGripYaw);
+          authoredFacesInward = shoulderLateralHeading(playerMesh, worldQuaternion) * perch.x < 0;
+        }
+      }
+      const shoulderFacingTurnDeg = facingTowardPlayerCenter !== authoredFacesInward ? 180 : 0;
+      if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION);
       const shoulderLeanDeg = Number(pet?.shoulderCuriosity?.currentLeanDeg); // The root lean must participate in the grip-offset solve, not rotate sprite planes around their centers.
       if (Number.isFinite(shoulderLeanDeg) && shoulderLeanDeg !== 0) {
         worldQuaternion.multiply(SHOULDER_PET_LEAN_QUATERNION.setFromAxisAngle(SHOULDER_PET_LEAN_AXIS, THREE.MathUtils.degToRad(shoulderLeanDeg)));
@@ -163,6 +184,7 @@
       };
       setCanonicalPlaneRotation(c.avatarRef.frontPlane, Math.PI / 2);
       setCanonicalPlaneRotation(c.avatarRef.backPlane, -Math.PI / 2);
+      group.updateWorldMatrix?.(false, false); // The grip readback needs this pose even before the first render updates matrices.
       const alignedGripWorldPosition = finalTransform.gripLocalPosition
         ? group.localToWorld(new THREE.Vector3( // Read the actual rendered root matrix, not merely undoing the same offset calculation.
             finalTransform.gripLocalPosition.x, finalTransform.gripLocalPosition.y, finalTransform.gripLocalPosition.z))
