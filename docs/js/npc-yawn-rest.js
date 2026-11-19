@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 7; // Fallback yawns play the untouched intensity-5 clip at 0.350x tempo until its natural end.
+  const VERSION = 8; // Fallback yawns now use shared species/gender pitch while retaining 0.350x tempo and natural audio tails.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -193,32 +193,35 @@
   async function voiceFor(species, gender) {
     const key = species + ':' + gender;
     if (!voicePlans.has(key)) voicePlans.set(key, (async () => {
-      const mod = voiceModulation(species, gender);
       const genderFile = await findVoiceFile(species, gender);
-      if (genderFile) return { url: genderFile, pitch: 0, tempo: 1, gain: 1, source: 'gender yawn' };
+      if (genderFile) return { type: 'gender', url: genderFile }; // Only file discovery is stable enough to cache across combat-voice config reloads.
       if (gender === 'female') {
         const maleFile = await findVoiceFile(species, 'male');
-        if (maleFile) {
-          const male = voiceModulation(species, 'male');
-          return {
-            url: maleFile,
-            pitch: (Number(mod.pitchSemitones) || 0) - (Number(male.pitchSemitones) || 0),
-            tempo: (Number(mod.tempo) || 1) / Math.max(0.1, Number(male.tempo) || 1),
-            gain: (Number(mod.gain) || 1) / Math.max(0.1, Number(male.gain) || 1),
-            source: 'male yawn, relative female modulation',
-          };
-        }
+        if (maleFile) return { type: 'borrowed male', url: maleFile }; // Share HEAD probes, not the female-to-male pitch offset.
       }
-      return {
-        url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
-        pitch: 0, // Fallback plays the original breath without species/gender pitch modulation.
-        tempo: BREATH_FALLBACK_TEMPO, // Exact utterance tempo; no inherited species cadence.
-        gain: 1, // No combat voice-gain multiplier; normal SFX mixing remains in startVoice.
-        fallbackBreath: true, // Used to leave the recording untrimmed and let it finish after the pose.
-        source: 'breath 5 (0.350x utterance tempo)',
-      };
+      return { type: 'fallback' };
     })());
-    return voicePlans.get(key);
+    const recording = await voicePlans.get(key); // Cached existence check; modulation is recomputed after this await using the current config.
+    if (recording.type === 'gender') return { url: recording.url, pitch: 0, tempo: 1, gain: 1, source: 'gender yawn' };
+    const mod = voiceModulation(species, gender);
+    if (recording.type === 'borrowed male') {
+      const male = voiceModulation(species, 'male');
+      return {
+        url: recording.url,
+        pitch: (Number(mod.pitchSemitones) || 0) - (Number(male.pitchSemitones) || 0),
+        tempo: (Number(mod.tempo) || 1) / Math.max(0.1, Number(male.tempo) || 1),
+        gain: (Number(mod.gain) || 1) / Math.max(0.1, Number(male.gain) || 1),
+        source: 'male yawn, relative female modulation',
+      };
+    }
+    return {
+      url: window.CombatVocalizations?.getConfig?.()?.assets?.breath?.['5'] || BREATH_FALLBACK,
+      pitch: Number(mod.pitchSemitones) || 0, // Missing yawn clips reuse the actor's current combat-voice pitch independently of the 0.350x utterance tempo.
+      tempo: BREATH_FALLBACK_TEMPO, // Exact utterance tempo; no inherited species cadence.
+      gain: 1, // No combat voice-gain multiplier; normal SFX mixing remains in startVoice.
+      fallbackBreath: true, // Used to leave the recording untrimmed and let it finish after the pose.
+      source: 'breath 5 (0.350x utterance tempo)',
+    };
   }
 
   function stopVoice(entry) {
@@ -277,7 +280,8 @@
       },
       tempo: plan.tempo, pitchSemitones: plan.pitch, volume,
       trimSilence: !plan.fallbackBreath, // The fallback uses the complete, untrimmed intensity-5 recording.
-      preservePitchOnFallback: true, // Native playback should preserve source pitch when Web Audio is unavailable.
+      preservePitchOnFallback: Math.abs(plan.pitch) < 0.05, // Neutral-pitch yawns still play slowly without lowering the original recording's pitch.
+      preferPitchShiftOnFallback: Math.abs(plan.pitch) >= 0.05, // Emergency native media prioritizes the species/gender pitch; it cannot independently retain the 0.350x yawn tempo.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,
