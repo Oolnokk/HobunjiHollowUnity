@@ -15626,15 +15626,13 @@ clearAnimationActors = function(...args) {
         || Number(actor.model?.userData?.modelHeight) || 0; // Unscaled native PNG height, fixed when the actor is created.
       return parityV1554.placement(attachmentRigProfileForActor(actor), sizeClass, modelHeight);
     }
-    const oldScaleV1554 = applyCreaturePlaneScaleV1513; // Existing anchor sockets and plane parent are retained.
+    const oldScaleV1554 = applyCreaturePlaneScaleV1513; // V15.14 already moved visible sizing onto mesh-local X/Y and left an anchor-only X/Y carrier.
     applyCreaturePlaneScaleV1513 = function(actor, sizeClass = actor?.creatureSizeClass) {
-      const result = oldScaleV1554(actor, sizeClass);
+      const result = oldScaleV1554(actor, sizeClass); // Preserve direct mesh scales AND anchor-only X/Y; do not rescale either a second time.
       const layout = layoutV1554(actor, sizeClass);
-      if (!result || !layout || !actor.creaturePlaneScaleRoot) return result;
-      actor.creaturePlaneScaleRoot.scale.set(1, layout.heightScale, layout.widthScale); // The ±90° animal planes display group Z as WIDTH, not X (depth).
-      actor.creaturePlaneScaleRoot.updateMatrixWorld(true);
-      updateActorRigAttachmentSocketsV1513(actor);
-      actor.model.userData.creatureBillboardScale = { ...layout.groupScale }; // Actual Three.js axes, separate from authored PNG X/Y input semantics.
+      if (!result || !layout) return result;
+      actor.model.userData.creatureBillboardEquivalentScale = { ...layout.groupScale }; // Game's equivalent group Z-width/Y-height, for diagnostics only.
+      actor.model.userData.creatureScaleHierarchy = 'direct-png-plane-local-xy-and-anchor-only-xy'; // Document the live V15.14 hierarchy, not its retired V15.13 layout.
       return result;
     };
     const oldClassV1554 = applyCreatureSizeClass; // Original control still chooses the class and handles gizmos/attachments.
@@ -15697,7 +15695,12 @@ clearAnimationActors = function(...args) {
         species: actor.source.kind, sizeClass: layout.sizeClass, effective: layout,
         game: gameProfile ? parityV1554.placement(gameProfile, actor.creatureSizeClass, height) : null,
         previewOriginY: actor.visualOffset?.position.y,
-        billboardScale: actor.creaturePlaneScaleRoot?.scale ? { ...actor.creaturePlaneScaleRoot.scale } : null,
+        anchorScale: actor.creaturePlaneScaleRoot?.scale
+          ? { x: actor.creaturePlaneScaleRoot.scale.x, y: actor.creaturePlaneScaleRoot.scale.y, z: actor.creaturePlaneScaleRoot.scale.z } : null,
+        planeLocalScale: directCreaturePlaneMeshesV1514(actor).map(record => ({
+          x: record.object.scale.x, y: record.object.scale.y, z: record.object.scale.z,
+          nativeX: record.baseScale.x, nativeY: record.baseScale.y,
+        })), // Measured direct-mesh scale; not an inferred group scale on the retired V15.13 hierarchy.
       }; // Public mobile-friendly debug with game values and actual rendered transforms.
     }
     function showParityV1554() {
@@ -15724,6 +15727,14 @@ clearAnimationActors = function(...args) {
         + ' · art padding shift: ' + Number(actor.model?.userData?.creatureOpaquePaddingCorrectionY ?? 0).toFixed(4);
       card.append(title, detail);
       const gameProfile = parityV1554.gameplayProfileForKind(actor.source.kind); // Live game baseline for the selected species, not a historical editor snapshot.
+      if (actor.creaturePlaneScaleRoot) {
+        const anchor = actor.creaturePlaneScaleRoot.scale;
+        const actual = directCreaturePlaneMeshesV1514(actor)[0];
+        detail.textContent += '\nAnchor-only scale X=' + anchor.x.toFixed(3) + ', Y=' + anchor.y.toFixed(3)
+          + ' · PNG-local first plane X=' + (actual?.object?.scale?.x ?? 0).toFixed(3)
+          + ', Y=' + (actual?.object?.scale?.y ?? 0).toFixed(3);
+      } // Display the real direct-mesh and anchor-only scales without mutating either one.
+
       if (gameProfile) {
         const matches = ['small', 'medium', 'large'].every(size => {
           const authored = parityV1554.placement(profile, size, actor.shoulderRestModelDimensions?.modelHeight);
