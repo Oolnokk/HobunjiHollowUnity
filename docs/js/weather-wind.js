@@ -16,16 +16,29 @@
   const clamp01 = value => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)); // Used to bound all shared wind strengths.
   const weatherCalendar = () => window.WeatherFX?.getProjection?.()?.calendar || null; // Reuses the already-initialized weather owner's calendar, without extra listeners.
   const currentSeconds = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000; // One clock shared by audio, fog and vegetation.
+  const windSample = { area: null, frame: -1, profile: DEFAULT_ZONE, gust: 0, precipitation: NaN, strength: 0 }; // One allocation reused by all listeners in the same 60Hz atmospheric sample.
 
   function profileForArea(area) {
     return ZONES[String(area || '')] || DEFAULT_ZONE;
   }
 
-  function gustForArea(area, seconds = currentSeconds()) {
-    const profile = profileForArea(area); // Provides a distinct phase and gust magnitude for each biome.
+  function sampleForArea(area, seconds) {
     const time = Number.isFinite(seconds) ? seconds : 0;
-    return clamp01(0.47 + 0.33 * Math.sin(time * 0.23 + profile.phase)
-      + 0.23 * Math.sin(time * 0.079 + profile.phase * 1.57));
+    const frame = Math.floor(time * 60); // Atmospheric gusts change at most 60 times/s, regardless of FPS or consumer count.
+    if (windSample.area !== area || windSample.frame !== frame) {
+      const profile = profileForArea(area); // Each zone keeps its own authored wind baseline and gust phase.
+      windSample.area = area;
+      windSample.frame = frame;
+      windSample.profile = profile;
+      windSample.gust = clamp01(0.47 + 0.33 * Math.sin(time * 0.23 + profile.phase)
+        + 0.23 * Math.sin(time * 0.079 + profile.phase * 1.57));
+      windSample.precipitation = NaN; // New zone/time requires recalculating the weather contribution.
+    }
+    return windSample;
+  }
+
+  function gustForArea(area, seconds = currentSeconds()) {
+    return sampleForArea(area, seconds).gust; // Fog diagnostics reuse the same sample as visuals and audio.
   }
 
   function precipitationFor(calendar) {
@@ -34,12 +47,15 @@
   }
 
   function strengthForArea(area, calendar = weatherCalendar(), seconds = currentSeconds()) {
-    const profile = profileForArea(area); // Determines the actual wind range, irrespective of precipitation.
-    const snowOrRain = precipitationFor(calendar); // Provides weather's extra wind over the regional katabatic baseline.
-    if (area === 'map_western_slope' && snowOrRain >= 3) return 1; // A proper Slope blizzard is full force.
-    const gust = gustForArea(area, seconds);
-    return clamp01(profile.base + profile.gust * (gust - 0.4)
-      + Math.min(0.3, snowOrRain * 0.09));
+    const sample = sampleForArea(area, seconds); // Reuses this frame's gust even across mist, foliage and audio calls.
+    const snowOrRain = precipitationFor(calendar); // Weather changes still take effect immediately within the same frame.
+    if (sample.precipitation !== snowOrRain) {
+      sample.precipitation = snowOrRain;
+      sample.strength = area === 'map_western_slope' && snowOrRain >= 3 ? 1
+        : clamp01(sample.profile.base + sample.profile.gust * (sample.gust - 0.4)
+          + Math.min(0.3, snowOrRain * 0.09));
+    }
+    return sample.strength;
   }
 
   function vegetationSwayForArea(area, calendar = weatherCalendar(), seconds = currentSeconds()) {
