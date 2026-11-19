@@ -109,7 +109,47 @@ assert.equal(detached.has(ordinaryShell), false, 'detached mesh is skipped');
 ordinaryShell.parent = holder;
 assert.equal(sceneWalks, 3, 'visibility validation does not require any extra scene traversals');
 
+// The scissor cull and shell replay may share one visible-scene enumeration.
+// Exercise the shipped culler with a temporary snapshot and compare against
+// the former second walk after the culled objects are actually hidden.
+const collectFromScissor = new Function(
+  'hasAlternateReplayPose', 'isDepthReplayInert', 'instancedReplaySphere',
+  'hasAuthoredInstanceBounds', 'isReplayCullable', 'replayFrustumIntersects',
+  'hasLayer', 'SHELL_LAYER',
+  'let lastReplayInstancedCulled=0,lastReplayInstancedKept=0,lastReplayInertCount=0;'
+  + 'let lastReplayCulledCount=0,lastReplayKeptCount=0,instancedReplaySphereReuses=0;'
+  + section('  function collectReplayCulled(', '  function cullReplayGroup(')
+  + '\\nreturn collectReplayCulled;'
+)(
+  () => false, object => object.userData?.replayInert === true,
+  () => null, () => false, object => !!object.isMesh && !object.children?.length,
+  object => object.within !== false,
+  (object, layer) => !!(object.layers?.mask & (1 << layer)), 1,
+);
+const outsideShell = { isMesh: true, layers: { mask: 2 }, visible: true, userData: {}, within: false, children: [] };
+const inertSprite = { isSprite: true, layers: { mask: 1 }, visible: true, userData: { hobunjiNoOutline: true, replayInert: true }, children: [] };
+scene.children.push(outsideShell, inertSprite);
+outsideShell.parent = inertSprite.parent = scene;
+const previousWalks = sceneWalks;
+const scissorSnapshot = { depth: [], shell: [] };
+const culled = collectFromScissor(scene, new Set([xrayShell]), null, null, false, scissorSnapshot);
+assert.equal(sceneWalks, previousWalks + 1, 'scissor culling uses one full visible-scene walk');
+assert(culled.includes(outsideShell) && culled.includes(inertSprite),
+  'offscreen and inert objects are removed before the shell snapshot');
+for (const object of culled) object.visible = false;
+const secondWalk = helpers.collectShellReplayCandidates(scene);
+assert.deepEqual(scissorSnapshot.depth, secondWalk.depth, 'fused depth candidates match a second post-cull scene traversal');
+assert.deepEqual(scissorSnapshot.shell, secondWalk.shell, 'fused shell candidates match a second post-cull scene traversal');
+for (const object of culled) object.visible = true;
+scene.children.splice(-2, 2);
+
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
+assert.match(replay, /shellCandidateSnapshot = \\{ depth: \\[\\], shell: \\[\\] \\}/,
+  'successful scissor culling captures the depth and shell candidates in the same walk');
+assert.match(replay, /!!nearReplay, shellCandidateSnapshot\\)\\)/,
+  'shell replay passes its snapshot into the existing culler');
+assert.match(replay, /if \\(!replayCandidates\\) replayCandidates = collectShellReplayCandidates\\(scene\\)/,
+  'unscissored shell passes retain live traversal fallback');
 assert.match(replay, /let replayCandidates = null;/,
   'shell candidate snapshot remains in scope through the final depth restore');
 assert.match(replay, /replayCandidates = collectShellReplayCandidates\(scene\)/,
