@@ -48,7 +48,10 @@ assert.ok(api?.installed && typeof api.markSceneMatricesCurrent === 'function', 
 
 const popup = { isMesh: true, renderOrder: 1200, visible: true, layers: new Layers(1), material: { map: { isCanvasTexture: true }, depthTest: false, depthWrite: false } };
 function makeWorld() {
-  return { name: 'world', isScene: true, overrideMaterial: null, background: { kind: 'bg' }, autoUpdate: true, children: [], traverse(cb) { cb(popup); } };
+  const scene = { name: 'world', isScene: true, overrideMaterial: null, background: { kind: 'bg' },
+    autoUpdate: true, children: [], traverse(cb) { cb(popup); } };
+  popup.parent = scene; // Match real Object3D ancestry for the world-text registry.
+  return scene;
 }
 const shellMaterial = new ShaderMaterial({ side: THREE.BackSide, uniforms: { uThickness: { value: 1 } } });
 const post = {
