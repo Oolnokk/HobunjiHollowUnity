@@ -185,6 +185,7 @@ function changeHeadbandWhole(field,value){
   );
   selected.record[selected.curve]=applied.nodes;
   selected.entry.settings=applied.settings;
+  if(applied.fraction>0)selected.record.enabled=true; // Authoring a visible transform enables the relevant front/rear spline preview.
   R.headbandWholeWarning=applied.fraction<.99999
     ?'Edit constrained at the sprite edge or before node crossing ('+Math.round(applied.fraction*100)+'% of requested adjustment).'
     :'';
@@ -389,6 +390,7 @@ E.stage.addEventListener('pointermove',e=>{
       const result=window.ClothingHeadbandSpline.fitWholeTransform(
         selected.entry.base,selected.entry.settings,desired,R.body.width,R.body.height);
       record[headbandDrag.curve]=result.nodes;selected.entry.settings=result.settings;
+      if(result.fraction>0)record.enabled=true; // Whole-curve drag previews the fitted headband, even if its spline was previously off.
       R.headbandWholeWarning=result.fraction<.99999?'Whole-curve drag constrained at sprite edge.':'';
       syncHeadbandWholeControls();
     }else{
