@@ -1533,9 +1533,10 @@
       const forceCutoutDepth = isMesh && hasLayer(object, PNG_OCCLUDER_LAYER);
       const forceCoverDepth = isMesh && isProtectedCover(object); // Transparent water/slush and alpha-cutout grass must occlude held gear.
       // GPU color masking makes ordinary opaque materials safe to leave untouched.
-      // Custom onBeforeRender hooks still see colorWrite=false, preserving the
-      // hand/portrait depth-parity adapters and any authored draw-time behavior.
-      const hasDrawHook = object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender;
+      // Preserve colorWrite=false for custom callbacks in EITHER render hook:
+      // a draw-end observer can distinguish a depth replay by material state too.
+      const hasDrawHook = (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
+        || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
       forEachMaterial(object.material, (material) => {
         const forceDepth = isMesh && (forceCutoutDepth || forceCoverDepth || Number(material?.alphaTest || 0) > 0);
         if (colorMaskLocked && !forceDepth && !hasDrawHook) {
@@ -3546,9 +3547,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // materials retain colorWrite:true. The callback is synchronous, and a
     // failed draw must never leave the next color/shell pass muted.
     if (!colorBuffer?.setMask || !colorBuffer?.setLocked) return draw();
-    colorBuffer.setMask(false);
-    colorBuffer.setLocked(true);
     try {
+      colorBuffer.setMask(false);
+      colorBuffer.setLocked(true);
       const result = draw();
       shellMaskedDepthDraws++;
       return result;
@@ -3586,7 +3587,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
     let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
-    const nearReplay = nearReplaySupport(true); // This replay silences color per material, so no color-mask lock is needed.
+    const nearReplay = nearReplaySupport(true); // Depth snapshots complement GPU color masking, with the legacy material fallback where unavailable.
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : []; // Visual backgrounds are never true hand/foot shell occluders.
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
