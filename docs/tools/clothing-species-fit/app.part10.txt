@@ -204,7 +204,7 @@ for(const [field,slider,number,percent] of wholeBindings){
   for(const input of [slider,number]){
     input.addEventListener('input',()=>{
       const displayed=Number(input.value);
-      if(!Number.isFinite(display)||input.value==='')return; // Allow an unfinished '-' or decimal while typing.
+      if(!Number.isFinite(displayed)||input.value==='')return; // Allow an unfinished '-' or decimal while typing.
       const min=Number(input.min),max=Number(input.max);
       const bounded=Math.max(min,Math.min(max,displayed));
       changeHeadbandWhole(field,percent?bounded/100:bounded); // Undo starts on the first actual change, not on focus/tap.
