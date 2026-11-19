@@ -205,6 +205,7 @@
     if (record.selector === 'top') return ny > .7;
     if (record.selector === 'bottom') return ny < -.7;
     if (record.selector === 'sides') return Math.abs(ny) < .7;
+    if (record.selector === 'caps') return Math.abs(ny) >= .7; // Complement the original pillar-side unwrap on broken masonry: both local cut ends get the same motif without gaps.
     if (record.selector === 'front') return nz > .7;
     if (record.selector === 'back') return nz < -.7;
     return true;
