@@ -728,10 +728,11 @@
 
   function _farmAnimalFollowMateTick(animal, onStep) {
     const mate = breedingFollowerMap().get(animal.livestockId); // Parent A leads; parent B follows only while both are visible on the farm.
-    if (!mate || mate._barnHome || mate._vatWorkPose || mate._harvestFrozen || mate._dialogueFrozen || !mate.avatarRef?.group?.visible) {
+    if (!mate) {
       if (animal._breedingMateId) {
         animal._breedingMateId = null;
         animal._mateFollowPath = null;
+        animal._wanderPath = null; // A stale station detour must not resume when the breeding pair expires.
         animal.wanderTargetCol = null; animal.wanderTargetRow = null;
         animal.wanderWaitT = 0; animal.wanderPhase = 'pick';
       }
@@ -740,11 +741,20 @@
     if (animal._breedingMateId !== mate.livestockId) {
       animal._breedingMateId = mate.livestockId;
       animal._mateFollowPath = null;
+      animal._wanderPath = null; // Discard a pre-pair station detour before allowing the mate to lead.
       animal.wanderTargetCol = null; animal.wanderTargetRow = null;
       animal.wanderWaitT = 0; animal.wanderPhase = 'following';
       animal._mateFollowRetryAt = 0;
     }
+    if (mate._barnHome || mate._vatWorkPose || mate._harvestFrozen || mate._dialogueFrozen || !mate.avatarRef?.group?.visible) {
+      animal._mateFollowPath = null; // The mate is temporarily busy/hidden: stay nearby, do not revert to random wandering.
+      return true;
+    }
     if (animal._facingPlayer) return true; // Retain existing focused-head pause instead of overriding it.
+    const mateHopBlocked = (col, row) => _tileTouchesAnyBarn(col, row) // Existing barn personal-space rule.
+      || (col !== animal.col && row !== animal.row
+        && (!canSpawnAt(col, animal.row) || !canSpawnAt(animal.col, row)
+          || _tileTouchesAnyBarn(col, animal.row) || _tileTouchesAnyBarn(animal.col, row))); // Prevent diagonal corner clipping, as the shared A* planner already does.
     if (Math.hypot(animal.wx - mate.wx, animal.wz - mate.wz) <= BREEDING_MATE_GAP_TILES) {
       animal._mateFollowPath = null; // Close enough: wait beside the moving mate instead of entering their occupied tile.
       return true;
@@ -755,13 +765,13 @@
     animal._mateFollowLeaderTile = leaderTile;
     if (animal._mateFollowPath?.length) {
       const hop = animal._mateFollowPath[0];
-      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn, false)) {
+      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, mateHopBlocked, false)) {
         animal._mateFollowPath.shift();
         return true;
       }
       animal._mateFollowPath = null;
     }
-    if (_farmAnimalStepToward(animal, mate.col, mate.row, onStep, _tileTouchesAnyBarn, false)) return true;
+    if (_farmAnimalStepToward(animal, mate.col, mate.row, onStep, mateHopBlocked, false)) return true;
     const now = performance.now(); // Blocked paths are retried at most once per throttle interval.
     if (now < (animal._mateFollowRetryAt || 0)) return true;
     animal._mateFollowRetryAt = now + BREEDING_MATE_PATH_RETRY_MS;
@@ -775,12 +785,13 @@
       }
     }
     candidates.sort((a, b) => a.distance - b.distance);
-    for (const candidate of candidates.slice(0, 3)) {
+    for (const candidate of candidates) { // Try all nearby sides of the mate; the three closest Euclidean tiles may all be unreachable behind a barn.
       const path = window.TilePathfinding?.findPath?.(animal.col, animal.row, candidate.col, candidate.row, isWalkable, {
         bounds: window.TilePathfinding.boxAround(animal.col, animal.row, candidate.col, candidate.row, 5),
+        maxNodes: 200, // A bounded local search keeps even blocked pens safe on lower-end phones.
       });
       if (!path?.length) continue;
-      if (_farmAnimalStepToward(animal, path[0].col, path[0].row, onStep, _tileTouchesAnyBarn, false)) {
+      if (_farmAnimalStepToward(animal, path[0].col, path[0].row, onStep, mateHopBlocked, false)) {
         path.shift();
         animal._mateFollowPath = path;
         break;
@@ -1857,6 +1868,7 @@
       deps.saveWorldLivestock(livestock);
       stableCache.forEach((entries, characterId) => _saveCharacterStable(characterId, entries));
       deps._saveWorldBreedingPairs(remainingPairs);
+      invalidateBreedingFollowCache(); // Completed/expired pair bindings must not follow for another 750 ms.
     }
   }
 
