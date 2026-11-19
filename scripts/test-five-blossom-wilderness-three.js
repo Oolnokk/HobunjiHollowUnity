@@ -57,8 +57,8 @@ for(const [zone,info] of Object.entries(nativeForZone)) {
 async function verifyScenery(){
 const scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Built witness stones are the exact physical referents named in saved riddles.
 const worldLayout = {
-  cols:70, rows:70,
-  tiles:Array.from({length:70},()=>Array.from({length:70},()=>({type:'grass',elevTier:1}))),
+  cols:120, rows:120,
+  tiles:Array.from({length:120},()=>Array.from({length:120},()=>({type:'grass',elevTier:1}))), // Large enough that limited dye witness sites do not consume every ordinary cairn.
   localeInstances:[{localeId:'locale_five_blossoms_cyan',x:28,y:28}]
 }; // A flat generated wilderness still needs one deterministic, uniquely dyed route anchor.
 const zoneId='map_northern_cliffs';
