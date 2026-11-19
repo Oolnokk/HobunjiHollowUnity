@@ -426,6 +426,7 @@
           barn:_layoutAdapter ? (_layoutAdapter.debugSnapshot ? _layoutAdapter.debugSnapshot() : window.BarnIncubator?.debugSnapshot?.()) : null,
           cropGenealogy:{status:window.CropVarieties?.provenanceStatus || null,lastBreeding:breeding || null,
             lastChildRoutes:breeding ? window.CropVarieties?.provenanceFor?.(breeding.offspring) || null : null},
+          breedingMateFollowing:window.FarmAnimals?.breedingFollowDebug?.() || null, // Existing mobile Copy Layout Debug now shows live world-only follower-to-leader bindings.
           livestockBirths:(deps?.loadWorldLivestock?.() || []).filter(entry=>entry.offspringProvenance)
             .slice(-20).map(entry=>({id:entry.id,species:entry.kind,provenance:entry.offspringProvenance})),
           stabledBirths:(deps?.getStable?.() || []).filter(entry=>entry.offspringProvenance)
@@ -1494,10 +1495,21 @@
     const icon = STABLE_KIND_ICONS[entry.kind] || '🦆';
     return `${icon} ${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}`;
   }
+  function fertilityPotionInBag() {
+    for (const [key, count] of Object.entries(deps.inventory || {})) {
+      if (!(count > 0)) continue;
+      const payload = window.AlchemySystem?.POTION_ITEMS?.[key] || window.AlchemySystem?.parseBrewedItemKey?.(key); // Reuses the exact alchemy recipe identity of saved or found bottles.
+      const recipe = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Only the authored one-day livestock effect can shorten breeding.
+      if (recipe?.useMode === 'livestock' && recipe.application === 'reduceBreedingDays') return key;
+    }
+    return null;
+  }
+
   function renderFarmBreedingPairsList(pairs, livestock) {
     const list = document.getElementById('farmBreedingPairsList');
     if (!list) return;
     list.innerHTML = '';
+    const fertilityKey = deps.hasFarmPermission('livestock') ? fertilityPotionInBag() : null; // Farm tab administration works even when one or both parents are personal-Stable animals.
     pairs.forEach(pair => {
       const pct = Math.max(0, Math.min(100, Math.round((pair.progress || 0) * 100)));
       const row = document.createElement('div');
@@ -1509,6 +1521,18 @@
           `<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;"><div style="width:${pct}%;height:100%;background:#e08a3c;"></div></div>` +
           `<span class="farm-note" style="white-space:nowrap">${pct >= 100 ? 'Ready — resolves this hour' : pct + '%'}</span>` +
         `</div>`;
+      if (fertilityKey && pct < 100) {
+        const button = document.createElement('button'); // Pair-specific Farm action avoids requiring a physically spawned parent, including for Stable pairings.
+        button.type = 'button';
+        button.className = 'settings-small-btn';
+        button.textContent = '🥚 Use Potion of Fertility';
+        button.addEventListener('click', () => {
+          const result = window.FarmAnimals.administerFertilityPotion(pair.id, fertilityKey);
+          deps.showToast(result.message, !!result.ok);
+          if (result.ok) renderFarmLivestock(); // Refresh both the progress bar and the remaining potion selection.
+        });
+        row.appendChild(button);
+      }
       list.appendChild(row);
     });
   }
@@ -1540,8 +1564,13 @@
   function setBreedingPair(refA, refB) {
     if (!deps.hasFarmPermission('livestock') || !refA || !refB || window.FarmAnimals.refsEqual(refA, refB)) return;
     const pairs = deps._loadWorldBreedingPairs();
+    if (pairs.some(pair => [pair.parentA, pair.parentB].some(ref => window.FarmAnimals.refsEqual(ref, refA) || window.FarmAnimals.refsEqual(ref, refB)))) {
+      deps.showToast('One of those animals is already in a breeding pair.', false);
+      return;
+    }
     pairs.push({ id: 'pair_' + Math.random().toString(36).slice(2, 10), parentA: refA, parentB: refB, startedDay: deps.calendar.day, progress: 0 });
     deps._saveWorldBreedingPairs(pairs);
+    window.FarmAnimals.invalidateBreedingFollowCache?.(); // Pair follow behavior starts on the next farm AI tick.
     deps.showToast('Breeding pair set — track their progress bar in the Farm tab (keep them fed for a faster, luckier litter).', true);
   }
 
