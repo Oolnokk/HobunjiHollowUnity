@@ -61,16 +61,19 @@ window.SCRATCHBONES_CONFIG = {
           {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
           {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
         ],
-        // Small forest/mire hunters: woodland earth pigments with muted greens, not tropical parrot hues.
+        // Small forest/mire hunters: deep, muted mossy greens, blue-moss and greener bog-olive are common,
+        // while brown/grey coats remain possible. Weights feed wild nests, fertile eggs and breeding.
         "pingdort": [
           {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:5},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
           {id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
           {id:'fawn',name:'Fawn',hex:'#a47650',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
           {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:3},
           {id:'cream',name:'Cream',hex:'#c7aa77',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
-          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'moss',name:'Moss Green',hex:'#536747',weight:3},
-          {id:'sage',name:'Sage Green',hex:'#859578',weight:3},{id:'fern',name:'Fern Green',hex:'#55744e',weight:3},
-          {id:'lichen',name:'Lichen Green',hex:'#a3a77e',weight:2},{id:'deep-pine',name:'Deep Pine',hex:'#354b3f',weight:1},
+          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'moss',name:'Moss Green',hex:'#485543',weight:8},
+          {id:'sage',name:'Sage Green',hex:'#859578',weight:5},{id:'fern',name:'Fern Green',hex:'#55744e',weight:6},
+          {id:'lichen',name:'Lichen Green',hex:'#a3a77e',weight:4},{id:'deep-pine',name:'Deep Pine',hex:'#354b3f',weight:1},
+          {id:'blue-moss',name:'Blue Moss',hex:'#4a5d61',weight:8},
+          {id:'bog-olive',name:'Bog Olive',hex:'#687149',weight:8},
         ],
         // Nelk favor pale and middle tones; the darkest coats remain inheritable, but uncommon.
         "nelk": [
@@ -160,6 +163,9 @@ window.SCRATCHBONES_CONFIG = {
         "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 },
         "nelk": { "itemKey": "nelkEggs", "cooldownDays": 1 },
         "nazgraku": { "itemKey": "nazgrakuEggs", "cooldownDays": 2 }
+      },
+      "additionalResources": {
+        "nazgraku": [{ "itemKey": "nazgrakuMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true }] // An independent dairy cycle alongside the existing egg resource.
       }
     },
     "debug": {

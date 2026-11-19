@@ -176,6 +176,13 @@
           if (Number.isFinite(Number(amount)) && Number(amount) > 0)
             gained[itemKey] = (gained[itemKey] || 0) + Number(amount);
       }
+      // A creature may carry a separately authored carcass pool in addition to its mixed hoard.
+      // Only the outermost roll grants it: the mixed pool recursively visits its source pools.
+      const bonusId = !parentIds.length ? context.entity?.def?.bonusLootPool : null; // Optional per-corpse pool, currently Tzatzul.
+      if (typeof bonusId === 'string' && bonusId !== poolId && _lootPools[bonusId]) {
+        const bonus = rollLootPool(bonusId, context, [poolId]); // Never recursively reward the hoard as an ordinary corpse product.
+        for (const [key, qty] of Object.entries(bonus)) gained[key] = (gained[key] || 0) + qty;
+      }
       lastMixedRoll = { poolId, selected, availableSources: sources.map(source => source.poolId),
         deferredSources: (Array.isArray(pool.sourcePools) ? pool.sourcePools : []).map(source => source?.poolId)
           .filter(id => id && !sources.some(source => source.poolId === id)),

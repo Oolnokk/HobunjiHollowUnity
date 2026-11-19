@@ -156,6 +156,32 @@ async function main() {
   }
   assert.equal(windowStub.AnimalHides.getDebug().pack.uumkaoiiShell, undefined, 'Shell loot does not create hide metadata');
 
+  // Actual corpse interaction must bridge new wild creature definitions into both the
+  // inventory and AnimalHides provenance, not just have populated JSON loot pools.
+  for (const [kind, poolId, meatKey, hideKey, bonusLootPool] of [
+    ['nazgraku', 'creature_nazgraku', 'nazgrakuMeat', 'nazgrakuHide', null],
+    ['pingdort', 'creature_pingdort', 'pingdortMeat', 'pingdortHide', null],
+    ['tzatzul', 'mixedCrateTreasurePuzzle', 'tzatzulMeat', 'tzatzulHide', 'creature_tzatzul'],
+    ['tzatzul-hatchling', 'creature_tzatzul_hatchling', 'tzatzulMeat', 'tzatzulHide', null],
+  ]) {
+    const meatBefore = corpseInventory[meatKey] || 0, hideBefore = corpseInventory[hideKey] || 0;
+    const creature = {
+      id: 'test-' + kind, creatureKey: kind,
+      def: { label: kind, lootPool: poolId, ...(bonusLootPool ? { bonusLootPool } : {}) },
+      genotype: { base: { color: '#776655' } },
+      tzatzulIdentity: { tintHex: '#718bc2' },
+    }; // The adult alone has its two-source hoard+butcher roll.
+    const corpse = corpseContext.makeCorpseWorldObject(creature);
+    assert.equal(lootCorpseWithSourceDiagnostics(corpse).ok, true, kind + ' corpse is lootable');
+    assert((corpseInventory[meatKey] || 0) > meatBefore, kind + ' awards meat through the real corpse action');
+    assert((corpseInventory[hideKey] || 0) > hideBefore, kind + ' awards hide through the real corpse action');
+    const record = windowStub.AnimalHides.groupsFor(hideKey, corpseInventory[hideKey])
+      .map(group => group.hideRecord).find(hide => hide?.sourceKind === kind);
+    assert(record, kind + ' hide retains species provenance');
+    if (kind.startsWith('tzatzul'))
+      assert.equal(record.appearance.baseColor, '#718bc2', kind + ' skin retains this exact bird tint');
+  }
+
   const skeeriPalette = {body:'#695168',pattern:'#8f718f',eyes:'#da31ff'}; // Individual encounter dyes persist on butchering.
   const skeeriCorpse = {id:'test-skeeri',creatureKey:'skeeri-medium',
     skeeriPalette,def:{label:'Skeeri',lootPool:'creature_skeeri-medium'}};

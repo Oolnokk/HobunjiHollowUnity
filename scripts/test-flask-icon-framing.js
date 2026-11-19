@@ -10,13 +10,12 @@ const read = name => fs.readFileSync(path.join(root, name), 'utf8'); // Reads th
 async function main() {
   const game = read('docs/game.js'); // Supplies the real icon renderer for the isolated DOM tests.
   const equipment = read('docs/js/equipment-panel.js'); // Supplies the weapon's square crop implementation.
-  const sticky = read('docs/js/item-arch-sticky-category-heading.js'); // Verifies category CSS cannot conceal item sprites.
-  const original = read('docs/js/item-arch-original-presentation.js'); // Verifies the final selector style permits sprite backgrounds.
+  const category = read('docs/js/item-arch-category-colors.js'); // One item-arc style authority must preserve sprite thumbnails.
   const actionArc = read('docs/js/action-arc-ui.js'); // Verifies selector calls the same item icon renderer.
   assert.match(game, /const icon = box\.querySelector\('\.iib-icon'\);[^\n]*\n\s*applyItemSpriteIcon\(icon, def, key\);\s*window\.InventoryStacks\.applyHeadIcon\(icon,/, 'both icon renderers receive the same queried tile element');
   assert.match(actionArc, /deps\.applyItemSpriteIcon\(iconEl, deps\.ITEM_DEFS\[s\.key\], s\.key\)/);
   assert.match(game, /frameFlask = def\.spriteIcon === 'throwing_flask\.png'/);
-  for (const css of [sticky, original]) {
+  for (const css of [category]) {
     assert.match(css, /\.arc-icon:not\(\.sprited-icon\)/, 'emoji-only background reset is required');
     // No item icon selector may force a background reset on .sprited-icon.
     const blocks = css.match(/[^{}]+\{[^{}]*background:\s*none\s*!important[^{}]*\}/g) || []; // Finds forced background resets only.
@@ -25,7 +24,7 @@ async function main() {
       assert.match(block, /\.arc-icon:not\(\.sprited-icon\)/, 'background:none may only target emoji icons');
     }
   }
-  assert.match(original, /\.arc-icon\.sprited-icon\s*\{[^}]*width:1\.25em\s*!important/s);
+  assert.match(category, /\.arc-icon\.sprited-icon\s*\{[^}]*width:1\.25em\s*!important/s);
 
   const index = equipment.indexOf('  function squareToolIcon('); // Isolates the actual weapon thumbnail code.
   const stop = equipment.indexOf('  function renderToolIcon(', index);

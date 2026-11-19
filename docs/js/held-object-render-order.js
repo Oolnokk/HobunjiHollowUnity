@@ -3186,6 +3186,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const oldShadowAutoUpdate = shadowMap?.autoUpdate;
 
     const glState = renderer.state;
+    const stencilBuffer = glState?.buffers?.stencil; // Reset the write mask before clearing the held replay stencil.
     const overlayMeshes = [...held, ...feet];
     const overlayDrawOrder = rankedHeldOverlayOrder(portraitOrder, overlayMeshes, scene); // Preserve near/far actor stacking while editing equipment ranks.
     const scissorMeshes = bodyTint?.portraits.length ? [...overlayMeshes, ...bodyTint.portraits] : overlayMeshes; // Cover both gear and wet portraits in the final tint pass.
@@ -3295,7 +3296,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         : lastBaseStencilBits < 8 ? 'stencil-unavailable'
           : !portraitMask?.portraits.length ? 'no-owner-front-portrait' : 'mask-prepared';
       if (scissored) glState.setScissorTest(false);
-      renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
+      // WebGL clears only writable stencil bits. A previous tint draw can leave the mask at zero.
+      stencilBuffer?.setMask?.(0xff);
+      renderer.clearStencil?.(); // Clear the full stencil buffer before stamping this frame's masks.
       if (scissored) glState.setScissorTest(true);
       if (lastBaseStencilBits >= 8 && portraitMask?.portraits.length
         && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
@@ -3512,6 +3515,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       }
 
       if (scissored) { restoreRendererScissor(renderer); scissored = false; }
+      stencilBuffer?.setMask?.(0xff); // The read-only water tint sets the write mask to zero.
       renderer.clearStencil?.();
     } finally {
       if (groundMaterials) setGroundElevationFilter(groundMaterials, null);

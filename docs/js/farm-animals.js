@@ -696,7 +696,125 @@
     animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
   }
 
+  // Followers use existing tile reservations and farm pathfinding; one refresh
+  // per 0.75 s keeps save-backed breeding pairs out of the per-frame loop.
+  const BREEDING_MATE_GAP_TILES = 1.75; // Minimum rendered separation used by follower movement below.
+  const BREEDING_MATE_CACHE_MS = 750; // Limits pair/animal lookup work during AI ticks.
+  const BREEDING_MATE_PATH_RETRY_MS = 1200; // Prevents pathfinding every AI tick when a pen is blocked.
+  let breedingFollowerById = new Map(); // Live world-only parentB -> parentA map used by the daytime wander override.
+  let breedingWorldParentIds = new Set(); // Shared timed cache for held Fertility contextual prompts, including mixed Stable/world pairs.
+  let breedingFollowerRefreshAt = 0; // Next allowed breeding-map rebuild in milliseconds.
+
+  function invalidateBreedingFollowCache() {
+    breedingFollowerRefreshAt = 0; // Newly paired, sold, or respawned livestock is discovered on its next AI tick.
+    breedingFollowerById.clear();
+    breedingWorldParentIds.clear();
+  }
+
+  function breedingFollowerMap() {
+    const now = performance.now(); // Stable real-time cache clock; breeding progress itself remains game-hour based.
+    if (now < breedingFollowerRefreshAt) return breedingFollowerById;
+    breedingFollowerRefreshAt = now + BREEDING_MATE_CACHE_MS;
+    const liveById = new Map(); // Indexed once per refresh, instead of scanning live animals per follower.
+    for (const animal of deps.animalObjects) if (animal?.livestockId) liveById.set(animal.livestockId, animal);
+    const followers = new Map(); // Only live farm/world parents can pair-follow; personal Stable companions never do.
+    const worldParentIds = new Set(); // Allows prompt filtering without loading breeding pairs on every render frame.
+    for (const pair of deps._loadWorldBreedingPairs?.() || []) {
+      if (pair?.parentA?.source === 'world') worldParentIds.add(pair.parentA.id);
+      if (pair?.parentB?.source === 'world') worldParentIds.add(pair.parentB.id);
+      if (pair?.parentA?.source !== 'world' || pair?.parentB?.source !== 'world') continue;
+      const leader = liveById.get(pair.parentA.id), follower = liveById.get(pair.parentB.id);
+      if (!leader || !follower || leader === follower || followers.has(follower.livestockId)) continue;
+      followers.set(follower.livestockId, leader);
+    }
+    breedingFollowerById = followers;
+    breedingWorldParentIds = worldParentIds;
+    return followers;
+  }
+
+  function isActiveWorldBreedingParent(livestockId) {
+    breedingFollowerMap(); // Shares the 750 ms save parse/map refresh already used by daytime partner following.
+    return breedingWorldParentIds.has(livestockId);
+  }
+
+  function _farmAnimalFollowMateTick(animal, onStep) {
+    const mate = breedingFollowerMap().get(animal.livestockId); // Parent A leads; parent B follows only while both are visible on the farm.
+    if (!mate) {
+      if (animal._breedingMateId) {
+        animal._breedingMateId = null;
+        animal._mateFollowPath = null;
+        animal._wanderPath = null; // A stale station detour must not resume when the breeding pair expires.
+        animal.wanderTargetCol = null; animal.wanderTargetRow = null;
+        animal.wanderWaitT = 0; animal.wanderPhase = 'pick';
+      }
+      return false;
+    }
+    if (animal._breedingMateId !== mate.livestockId) {
+      animal._breedingMateId = mate.livestockId;
+      animal._mateFollowPath = null;
+      animal._wanderPath = null; // Discard a pre-pair station detour before allowing the mate to lead.
+      animal.wanderTargetCol = null; animal.wanderTargetRow = null;
+      animal.wanderWaitT = 0; animal.wanderPhase = 'following';
+      animal._mateFollowRetryAt = 0;
+    }
+    if (mate._barnHome || mate._vatWorkPose || mate._harvestFrozen || mate._dialogueFrozen || !mate.avatarRef?.group?.visible) {
+      animal._mateFollowPath = null; // The mate is temporarily busy/hidden: stay nearby, do not revert to random wandering.
+      return true;
+    }
+    if (animal._facingPlayer) return true; // Retain existing focused-head pause instead of overriding it.
+    const mateHopBlocked = (col, row) => _tileTouchesAnyBarn(col, row) // Existing barn personal-space rule.
+      || (col !== animal.col && row !== animal.row
+        && (!canSpawnAt(col, animal.row) || !canSpawnAt(animal.col, row)
+          || _tileTouchesAnyBarn(col, animal.row) || _tileTouchesAnyBarn(animal.col, row))); // Prevent diagonal corner clipping, as the shared A* planner already does.
+    const takePlannedHop = hop => _farmAnimalStepToward(animal, hop.col, hop.row, onStep,
+      (col, row) => col !== hop.col || row !== hop.row || mateHopBlocked(col, row), false); // Never silently substitute an axis hop for a blocked diagonal A* waypoint.
+    if (Math.hypot(animal.wx - mate.wx, animal.wz - mate.wz) <= BREEDING_MATE_GAP_TILES) {
+      animal._mateFollowPath = null; // Close enough: wait beside the moving mate instead of entering their occupied tile.
+      return true;
+    }
+    if (!_farmAnimalNearTargetTile(animal, FARM_ANIMAL_HOP_CHAIN_TILES)) return true;
+    const leaderTile = mate.col + ',' + mate.row; // Detours must be replanned if the leader moves.
+    if (animal._mateFollowLeaderTile !== leaderTile) animal._mateFollowPath = null;
+    animal._mateFollowLeaderTile = leaderTile;
+    if (animal._mateFollowPath?.length) {
+      const hop = animal._mateFollowPath[0];
+      if (takePlannedHop(hop)) {
+        animal._mateFollowPath.shift();
+        return true;
+      }
+      animal._mateFollowPath = null;
+    }
+    if (_farmAnimalStepToward(animal, mate.col, mate.row, onStep, mateHopBlocked, false)) return true;
+    const now = performance.now(); // Blocked paths are retried at most once per throttle interval.
+    if (now < (animal._mateFollowRetryAt || 0)) return true;
+    animal._mateFollowRetryAt = now + BREEDING_MATE_PATH_RETRY_MS;
+    const isWalkable = (col, row) => canSpawnAt(col, row) && !_tileTouchesAnyBarn(col, row); // Reuses ordinary farm tile legality.
+    const candidates = []; // Open neighboring tiles keep the destination beside, not inside, the leader.
+    for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) {
+      if (!dc && !dr) continue;
+      const col = mate.col + dc, row = mate.row + dr;
+      if (col >= 0 && col < deps.COLS && row >= 0 && row < deps.ROWS && isWalkable(col, row)) {
+        candidates.push({ col, row, distance: Math.hypot(col - animal.col, row - animal.row) });
+      }
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+    for (const candidate of candidates) { // Try all nearby sides of the mate; the three closest Euclidean tiles may all be unreachable behind a barn.
+      const path = window.TilePathfinding?.findPath?.(animal.col, animal.row, candidate.col, candidate.row, isWalkable, {
+        bounds: window.TilePathfinding.boxAround(animal.col, animal.row, candidate.col, candidate.row, 5),
+        maxNodes: 200, // A bounded local search keeps even blocked pens safe on lower-end phones.
+      });
+      if (!path?.length) continue;
+      if (takePlannedHop(path[0])) {
+        path.shift();
+        animal._mateFollowPath = path;
+        break;
+      }
+    }
+    return true; // Paired animals never drift away to an independent random station while the mate is outdoors.
+  }
+
   function _farmAnimalWanderTick(animal, dt, onStep) {
+    if (_farmAnimalFollowMateTick(animal, onStep)) return;
     if (animal._facingPlayer) return; // Stopped to look at the player: no new hops and the rest timer holds until they look away.
     if (animal.wanderWaitT > 0) {
       animal.wanderPhase = 'rest';
@@ -782,19 +900,31 @@
     animal._barnHome = false;
   }
 
+  function additionalResourceDefs(kind) {
+    const defs = window.SCRATCHBONES_CONFIG?.game?.livestock?.additionalResources?.[kind]; // Authored independent resource definitions, currently Nazgraku milk alongside eggs.
+    return Array.isArray(defs) ? defs : [];
+  }
+
   function _farmAnimalGetButtons(animal, label, icon) {
     if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
     const buttons = [];
-    const resourceReady = !!(rec?.resourceReady && resDef);
+    let resourceReady = !!(rec?.resourceReady && resDef); // Includes any independently ready dairy product for the Talk action priority.
 
     // Harvest is Action 1 while a good is ready. Talk follows as Action 2;
     // as soon as the good is collected, Talk naturally slides into Action 1.
     if (resourceReady) {
       const itemLabel = deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
-      const verb = deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
+      const verb = resDef.verb || deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
       buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
+    }
+    if (rec) for (const extraDef of additionalResourceDefs(rec.kind)) {
+      if (!rec.additionalResources?.[extraDef.itemKey]?.ready) continue;
+      const itemLabel = deps.ITEM_DEFS[extraDef.itemKey]?.label || extraDef.itemKey;
+      buttons.push({ icon: deps.ITEM_DEFS[extraDef.itemKey]?.icon || icon, label: `${extraDef.verb || 'Collect'} ${itemLabel}`,
+        action: 'obj_collect_' + animal.id + ':' + extraDef.itemKey, style: resourceReady ? 'secondary' : 'primary', allowed: true });
+      resourceReady = true;
     }
     const talkName = rec?.name || label;
     buttons.push({ icon: '💬', label: `Talk to ${talkName}`, action: 'obj_talk_' + animal.id, style: resourceReady ? 'secondary' : 'primary', allowed: true });
@@ -804,7 +934,10 @@
     const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
     const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
     if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
-      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
+      const canFertilize = heldRecipe.application !== 'reduceBreedingDays' || isActiveWorldBreedingParent(animal.livestockId); // Only active breeding parents expose Fertility; the 750 ms lookup cache avoids per-frame save parsing.
+      if (canFertilize && deps.hasFarmPermission?.('livestock') !== false) {
+        buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
+      }
     }
     return buttons;
   }
@@ -837,13 +970,29 @@
       if (resDef?.interactive) { beginHarvestInteraction(animal); return { ok: true }; }
       return collectResource(animal.livestockId);
     }
+    const collectPrefix = 'obj_collect_' + animal.id + ':'; // Distinguishes a secondary product without changing old action identifiers.
+    if (typeof action === 'string' && action.startsWith(collectPrefix)) { // Ignore malformed/controller-canceled inputs safely.
+      const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
+      const itemKey = action.slice(collectPrefix.length); // Only exact authored secondary resource keys may be harvested.
+      const extraDef = additionalResourceDefs(rec?.kind).find(def => def.itemKey === itemKey);
+      if (!extraDef) return { ok: false, message: 'Unknown livestock resource.' };
+      if (extraDef.interactive) { beginHarvestInteraction(animal, itemKey); return { ok: true }; }
+      return collectResource(animal.livestockId, itemKey);
+    }
     return { ok: false, message: fallbackMessage };
   }
 
   function administerBreedingPotion(livestockId, itemKey) {
     const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Permanent brewed potency payload.
     const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authoritative administration mode.
-    if (definition?.useMode !== 'livestock' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if (definition?.useMode !== 'livestock') return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if (definition.application === 'reduceBreedingDays') {
+      const ref = { source: 'world', id: livestockId }; // Farm-world parent reference used by existing breeding-pair identity checks.
+      const pair = deps._loadWorldBreedingPairs().find(entry => refsEqual(entry.parentA, ref) || refsEqual(entry.parentB, ref));
+      if (!pair) return { ok: false, message: 'That animal is not in an active breeding pair.' };
+      return administerFertilityPotion(pair.id, itemKey);
+    }
+    if (definition.application !== 'nextOffspringSize' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
     if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
     const list = deps.loadWorldLivestock();
     const rec = list.find(entry => entry.id === livestockId);
@@ -855,6 +1004,35 @@
     deps.saveMemberWorldData?.();
     deps.refreshItemScroll?.();
     return { ok: true, message: `${definition.icon} ${definition.label} will affect ${rec.name || 'this animal'}'s next offspring.` };
+  }
+
+  function administerFertilityPotion(pairId, itemKey) {
+    const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Stored recipe identity, not the bottle's display label.
+    const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authored one-day effect shared by Farm UI and animal interaction.
+    if (definition?.useMode !== 'livestock' || definition.application !== 'reduceBreedingDays' || !(definition.daysReduced > 0)) return { ok: false, message: 'Select a Potion of Fertility.' };
+    if (deps.hasFarmPermission?.('livestock') === false) return { ok: false, message: 'You cannot manage breeding livestock on this farm.' };
+    if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
+    const pairs = deps._loadWorldBreedingPairs();
+    const pair = pairs.find(entry => entry.id === pairId);
+    if (!pair) return { ok: false, message: 'That breeding pair is no longer active.' };
+    const livestock = deps.loadWorldLivestock();
+    const stableCache = new Map(); // Resolves mixed and Stable parents under the same ownership rules as hourly gestation.
+    const resolveParent = window.FarmAnimals?.resolveBreedingParent || resolveBreedingParent; // Use the Nursery's installed adulthood guard, not the unwrapped private resolver.
+    const parentA = resolveParent(pair.parentA, livestock, stableCache);
+    const parentB = resolveParent(pair.parentB, livestock, stableCache);
+    if (!parentA || !parentB) return { ok: false, message: 'A parent in that breeding pair is unavailable or too young.' };
+    const progress = normalizeBreedingProgress(pair); // Migrates older readyDay/startDay pairs without discarding their elapsed time.
+    if (progress >= 1) return { ok: false, message: 'That pair is already ready to give birth.' };
+    const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
+    const dayProgress = (definition.daysReduced / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart); // Equivalent to one full day of current heart-adjusted hourly ticks.
+    pair.progress = Math.min(1, progress + dayProgress);
+    deps._saveWorldBreedingPairs(pairs);
+    deps.inventory[itemKey]--;
+    deps.clampInventoryStack(itemKey);
+    deps.saveMemberWorldData?.();
+    deps.refreshItemScroll?.();
+    if (pair.progress >= 1) window.FarmAnimals.tickBreedingProgress(0); // Immediate birth goes through Nursery's existing wrapper and baby registration.
+    return { ok: true, message: pair.progress >= 1 ? '🥚 The breeding pair is ready!' : '🥚 Breeding time shortened by one in-game day.' };
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
@@ -1249,13 +1427,19 @@
 
   // Gives the ready resource item and resets the cooldown — called from
   // the animal's own "Collect" action button (see _farmAnimalOnAction).
-  function collectResource(livestockId) {
+  function collectResource(livestockId, itemKey = null) {
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
-    const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
-    if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
-    deps.inventory[resDef.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[resDef.itemKey] || 0) + 1);
+    const primary = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind]; // Legacy primary product (Nazgraku eggs) keeps its save fields.
+    const extra = itemKey && itemKey !== primary?.itemKey
+      ? additionalResourceDefs(rec.kind).find(def => def.itemKey === itemKey) : null; // Secondary product (Nazgraku milk) has an independent saved cooldown.
+    if (itemKey && itemKey !== primary?.itemKey && !extra) return { ok: false, message: 'Unknown livestock resource.' };
+    const resDef = extra || primary;
+    const extraState = extra ? rec.additionalResources?.[extra.itemKey] : null;
+    if (!resDef || !(extra ? extraState?.ready : rec.resourceReady)) return { ok: false, message: 'Nothing to collect yet.' };
+    if ((deps.inventory[resDef.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) return { ok: false, message: 'Your bag is full.' };
+    deps.inventory[resDef.itemKey] = (deps.inventory[resDef.itemKey] || 0) + 1;
     const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
     // A well-cared-for (well-fed, high-heart) animal nudges its own
     // product quality up on top of whatever Farming rolls — every full
@@ -1268,10 +1452,11 @@
     const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
     deps.awardFarmingXp?.();
-    rec.resourceReady = false;
     // Higher hearts also shorten the regen cooldown — up to 40% faster at
     // a full 5 hearts, never below 1 day.
-    rec.daysUntilResource = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08)));
+    const nextDays = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08))); // Shared husbandry timing for both resource channels.
+    if (extraState) { extraState.ready = false; extraState.daysUntilResource = nextDays; }
+    else { rec.resourceReady = false; rec.daysUntilResource = nextDays; }
     deps.saveWorldLivestock(list);
     return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
@@ -1289,6 +1474,15 @@
         if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
         l.daysUntilResource--;
         if (l.daysUntilResource <= 0) l.resourceReady = true;
+        changed = true;
+      }
+      if (l.barnId) for (const extraDef of additionalResourceDefs(l.kind)) {
+        const saved = l.additionalResources || (l.additionalResources = {}); // Persist independent readiness alongside existing egg/resource fields.
+        const state = saved[extraDef.itemKey] || (saved[extraDef.itemKey] = { ready: false, daysUntilResource: extraDef.cooldownDays }); // Old saves initialize lazily on the first housed-day tick.
+        if (state.ready) continue;
+        if (!Number.isFinite(state.daysUntilResource)) state.daysUntilResource = extraDef.cooldownDays;
+        state.daysUntilResource--;
+        if (state.daysUntilResource <= 0) state.ready = true;
         changed = true;
       }
       // Uumkao'ii dew cooldown — separate from the egg resource above;
@@ -1421,6 +1615,12 @@
         resourceLabel: resDef ? (deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey) : null,
         resourceReady: !!(resDef && rec.resourceReady),
         daysUntilResource: resDef && !rec.resourceReady && Number.isFinite(rec.daysUntilResource) ? Math.max(0, rec.daysUntilResource) : null,
+        additionalResources: additionalResourceDefs(rec.kind).map(def => ({
+          itemKey: def.itemKey, label: deps.ITEM_DEFS[def.itemKey]?.label || def.itemKey,
+          ready: !!rec.additionalResources?.[def.itemKey]?.ready,
+          daysUntilResource: Number.isFinite(rec.additionalResources?.[def.itemKey]?.daysUntilResource)
+            ? Math.max(0, rec.additionalResources[def.itemKey].daysUntilResource) : def.cooldownDays,
+        })), // Perception consumers can inspect every independently ready animal product.
         housed: !!rec.barnId,
         dewReady: rec.kind === 'uumkaoii' ? !!rec.dewReady : null,
         dewDaysUntil: rec.kind === 'uumkaoii' && !rec.dewReady && Number.isFinite(rec.dewDaysUntil) ? Math.max(0, rec.dewDaysUntil) : null,
@@ -1459,6 +1659,8 @@
   // instead just faces the animal directly once in position.
   const HARVEST_HANDLER_OFFSET = {
     'gar-wolf': { x: -0.243, z: 0.249 },
+    'moot': { x: -0.243, z: 0.249 }, // Reuse the authored milk-harvest handler approach until a species-specific clip exists.
+    'nazgraku': { x: -0.243, z: 0.249 }, // Ditto, without changing the independent egg collection action.
     'dabinggi-hound': { x: -0.493, z: 0.429 },
     'grehlr': { x: 0.064, z: -0.86 },
   };
@@ -1467,10 +1669,10 @@
     return !!harvestInteraction;
   }
 
-  function beginHarvestInteraction(animal) {
+  function beginHarvestInteraction(animal, itemKey = null) {
     if (harvestInteraction || !animal) return;
     const offset = HARVEST_HANDLER_OFFSET[animal.animalKey];
-    if (!offset) { collectResource(animal.livestockId); return; } // no authored spot — just collect instantly
+    if (!offset) { collectResource(animal.livestockId, itemKey); return; } // no authored spot — just collect instantly
     const theta = animal.groupRot;
     const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
     const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
@@ -1479,7 +1681,7 @@
     const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
     animal._harvestFrozen = true;
     harvestInteraction = {
-      animal, livestockId: animal.livestockId,
+      animal, livestockId: animal.livestockId, itemKey, // The player finishes harvesting the same good they selected, even if another becomes ready.
       phase: 'in', t: 0,
       startX: deps.player.x, startY: deps.player.y, startAngle: deps.getFacingAngle(),
       targetX, targetY, targetAngle,
@@ -1502,7 +1704,7 @@
       deps.setFacingAngle(h.targetAngle); deps.player.angle = deps.getFacingAngle();
       h.t += dt;
       if (h.t >= HARVEST_ACTIVE_DURATION_S) {
-        const result = collectResource(h.livestockId);
+        const result = collectResource(h.livestockId, h.itemKey);
         if (result?.message) deps.showToast(result.message, !!result.ok);
         h.phase = 'out'; h.t = 0;
       }
@@ -1669,9 +1871,17 @@
   // heart-boosted toward rarer traits), spawns the offspring on an open
   // tile, and appends it to world.livestock. Pairs are consumed on
   // resolution — a farmhand must re-pair to breed again.
+  function normalizeBreedingProgress(pair) {
+    if (pair.progress != null && Number.isFinite(Number(pair.progress))) return Math.max(0, Number(pair.progress));
+    const rawDays = Number(pair.readyDay) - Number(pair.startedDay); // Old saves used a fixed readyDay rather than hourly progress.
+    const totalDays = Number.isFinite(rawDays) ? Math.max(1, rawDays) : LIVESTOCK_GESTATION_DAYS;
+    const elapsed = Number(deps.calendar?.day) - Number(pair.startedDay);
+    return Math.min(0.999, (Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0) / totalDays);
+  }
+
   function tickBreedingProgress(dayFraction = 1 / GESTATION_HOURS_PER_DAY) {
     const pairs = deps._loadWorldBreedingPairs();
-    if (!pairs.length || dayFraction <= 0) return;
+    if (!pairs.length || !Number.isFinite(dayFraction) || dayFraction < 0) return;
     const livestock = deps.loadWorldLivestock();
     const stableCache = new Map(); // Persists pending modifiers for stable parents too.
     const remainingPairs = [];
@@ -1682,11 +1892,7 @@
       if (!parentA || !parentB) { changed = true; continue; } // a parent was sold/removed/stable-emptied — pair quietly lapses
       // Migrate a pre-heart-level pair (readyDay, no progress field yet)
       // to an equivalent starting progress instead of losing its head start.
-      if (pair.progress == null) {
-        const totalDays = Math.max(1, Number(pair.readyDay) - Number(pair.startedDay));
-        const elapsedDays = Math.max(0, Number(deps.calendar.day) - Number(pair.startedDay));
-        pair.progress = Math.min(0.999, elapsedDays / totalDays);
-      }
+      pair.progress = normalizeBreedingProgress(pair);
       const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
       pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
       changed = true;
@@ -1725,10 +1931,12 @@
       deps.saveWorldLivestock(livestock);
       stableCache.forEach((entries, characterId) => _saveCharacterStable(characterId, entries));
       deps._saveWorldBreedingPairs(remainingPairs);
+      invalidateBreedingFollowCache(); // Completed/expired pair bindings must not follow for another 750 ms.
     }
   }
 
   function clearAnimalObjects() {
+    invalidateBreedingFollowCache(); // Farm swaps must never retain references to disposed animal avatars.
     deps.animalObjects.forEach(obj => {
       deps.worldObjects.delete(obj.col + ',' + obj.row);
       obj.reset && obj.reset();
@@ -1889,6 +2097,9 @@
     updateHarvestInteraction,
     addToStable,
     administerBreedingPotion,
+    administerFertilityPotion,
+    invalidateBreedingFollowCache,
+    breedingFollowDebug: () => ({ followers: [...breedingFollowerMap()].map(([followerId, leader]) => ({ followerId, leaderId: leader.livestockId })) }), // Mobile farm-layout debug reads pair movement bindings without DevTools.
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,

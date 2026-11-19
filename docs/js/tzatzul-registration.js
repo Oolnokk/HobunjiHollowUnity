@@ -69,6 +69,7 @@
       attacks: ['pounce'], // Exterior fight will replace this with flight-based engagement once nests are generated.
       isFlyingSpecies: true,
       lootPool: 'mixedCrateTreasurePuzzle', // The killed adult's stored prey is drawn from the full crate / treasure / puzzle pool.
+      bonusLootPool: 'creature_tzatzul', // Add body products once, without replacing the mother's accumulated prey hoard.
       sprites: { idle: SPRITES.perched, run: [SPRITES.flying, SPRITES.flying] },
     };
     const adult = db[KIND];
@@ -80,6 +81,7 @@
       attackDamage: 6, attackRangePx: tile * 0.72, attackCooldownS: 1.8,
       attacks: ['tzatzulPeck'], isFlyingSpecies: false,
       lootPool: 'creature_tzatzul_hatchling', // Nest hatchlings do not independently produce a mother's accumulated prey hoard.
+      bonusLootPool: null, // Never inherit the adult's extra body products or accumulated hoard.
       sprites: { idle: SPRITES.perched, run: [SPRITES.perched, SPRITES.perched] },
     };
     const visual = window.CreatureGeneticsRender?.SPECIES;
@@ -92,6 +94,15 @@
       visual[HATCHLING_KIND] ||= { ...adultVisual, prefix: HATCHLING_KIND,
         base: { idle: SPRITES.perched, run1: SPRITES.perched, run2: SPRITES.perched } };
     }
+    const products = { // These inventory keys are generated from corpse loot, not from a new harvesting path.
+      tzatzulMeat: {label:'Tzatzul Meat',icon:'🥩',cat:'ingredient',sellPrice:30,tags:['Meat','Poultry','Tzatzul']},
+      tzatzulHide: {label:'Tzatzul Hide',icon:'🟫',cat:'material',sellPrice:40,tags:['Material','Hide','Tzatzul']},
+    };
+    const items = injected.ITEM_DEFS; // Live Pack definitions must exist before the player opens a dead bird's loot.
+    if (items) for (const [key,spec] of Object.entries(products)) items[key]={...spec,...(items[key]||{})};
+    const inventoryItems = injected.inventoryItems; // Wild bird products appear in the ordinary item wheel.
+    if (Array.isArray(inventoryItems)) for (const [key,spec] of Object.entries(products))
+      if (!inventoryItems.some(item=>item?.key===key)) inventoryItems.push({key,icon:spec.icon,label:spec.label.toUpperCase(),max:99});
     last.registered = true;
     return true;
   }

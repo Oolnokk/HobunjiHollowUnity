@@ -44,12 +44,14 @@
     const rarityTier = RARITY_STARS[value?.tier] ? value.tier : 'Common';
     const traits = genotype ? window.CreatureGenetics?.genotypeTraits?.(kind, genotype) : null;
     const skeeriCoat = /^skeeri-(?:small|medium|large)$/.test(String(rawKind)) ? creature?.skeeriPalette : null; // Encounter palettes replace breeding genotypes for Skeeri.
+    const tzatzulTint = /^tzatzul(?:-hatchling)?$/.test(String(rawKind)) && /^#[0-9a-f]{6}$/i.test(creature?.tzatzulIdentity?.tintHex || '')
+      ? creature.tzatzulIdentity.tintHex : null; // Tzatzul keep their own unique body hue even without a breedable genotype.
     const coatColors = skeeriCoat && /^#[0-9a-f]{6}$/i.test(skeeriCoat.body || '')
       ? [{id:'base',label:'Fur',color:skeeriCoat.body}, ...(/^#[0-9a-f]{6}$/i.test(skeeriCoat.pattern || '') ? [{id:'markings',label:'Markings',color:skeeriCoat.pattern}] : [])]
       : []; // Individually dyed fur and markings survive butchering and shipping.
     const appearance = {
-      baseColor: coatColors[0]?.color || genotype?.base?.color || null,
-      colors: clone(coatColors.length ? coatColors : (traits?.colors || [])) || [],
+      baseColor: coatColors[0]?.color || tzatzulTint || genotype?.base?.color || null,
+      colors: clone(coatColors.length ? coatColors : (tzatzulTint ? [{id:'base',label:'Fur',color:tzatzulTint}] : (traits?.colors || []))) || [],
       patterns: clone((traits?.patterns || []).filter(layer => layer.enabled)) || [],
       colorPoolPaint: clone(genotype?.colorPoolPaint || null),
     }; // Display-ready visible coat summary; complete genetic/paint data also stays in genotype.
