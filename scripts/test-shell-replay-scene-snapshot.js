@@ -114,7 +114,7 @@ assert.match(replay, /let replayCandidates = null;/,
   'shell candidate snapshot remains in scope through the final depth restore');
 assert.match(replay, /replayCandidates = collectShellReplayCandidates\(scene\)/,
   'shell replay captures the scene after temporary culling is installed');
-assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth\)/g) || []).length, 1,
+assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth, canMaskShellColor\)/g) || []).length, 1,
   'all elevation groups and the final depth restore share one colorless-material transaction');
 assert.match(replay, /if \(depthStates\) restoreMaterialStates\(depthStates\)/,
   'depth material mutations restore once in finally even if a shell draw throws');
