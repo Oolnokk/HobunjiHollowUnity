@@ -157,8 +157,8 @@ for(const name of names)for(const key of [name,name+'Number']){
 const begin=core.indexOf('const wholeBindings=['),finish=core.indexOf('E.headbandWholeReset.onclick=',begin);
 assert(begin>=0&&finish>begin,'Whole controls event bindings exist');
 const changes=[];let commits=0;
-new Function('E','changeHeadbandWhole','finishHeadbandWholeGesture',
-  core.slice(begin,finish))(controlE,(field,value)=>changes.push([field,value]),()=>{commits++});
+new Function('E','changeHeadbandWhole','finishHeadbandWholeGesture','syncHeadbandWholeControls',
+  core.slice(begin,finish))(controlE,(field,value)=>changes.push([field,value]),()=>{commits++},()=>{});
 const listeners=eventMap.get(numeric);
 assert(!listeners.keyup,'Number input must not commit and create undo history after every digit');
 numeric.value='-1';listeners.input[0]();numeric.value='-12.5';listeners.input[0]();
