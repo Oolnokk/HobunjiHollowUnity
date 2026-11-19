@@ -10,6 +10,8 @@
   const layers = [];
   const rowAssignments = []; // Reused row descriptors populated during updateRowLayers, avoiding per-frame temporary arrays and Sets.
   let rowAssignmentCount = 0; // Number of populated descriptors in the current update; consumed by assignRowLayers and rendering.
+  const rowWindow = { spacing: 0, firstFront: 0, firstBehind: 0, frontCount: 0, behindCount: 0 }; // Rematch pooled rows only when the requested window changes.
+  let rowWindowRebuilds = 0; // Exposed in getDebugState to distinguish matching work from frame-by-frame animation.
   let rowAssignmentStamp = 0; // Marks claimed pooled layers without allocating a per-frame Set.
   let rowReassignments = 0; // Exposed in getDebugState to diagnose row churn while walking.
   let activeContentKind = 'rain'; // Keeps layer-content changes event-driven instead of visiting every plane each frame.
@@ -20,6 +22,7 @@
   let rowTravelCoordinate = 0; // Player travel projected onto the current precipitation-row axis; preserves walking-through-row parallax while yaw rotates around the player.
   let rowLastPlayerX = null;
   let rowLastPlayerZ = null;
+  const frameContext = { camera: null, speedMultiplier: 1, opacityMultiplier: 1, aspect: 1, halfFovTan: 0 }; // Shared scratch for row and camera-sheet projection.
   let initCount = 0; // Exposed in getDebugState() to catch accidental precipitation reinitialization during store/interior transitions.
 
   const RAW_SPRITE_LEAN_DEG = -30; // Native procedural streak lean before correction.
@@ -218,7 +221,6 @@
       blizzardTexture,
       contentKind: 'rain',
       config,
-      rowKey: null,
       rowCoordinate: null, // Original row identity is side + exact coordinate, including when Testing Arena spacing changes.
       rowSide: null, // Distinguishes forward and behind rows for the row pool.
       assignmentStamp: 0, // Used only by assignRowLayers to mark each claimed mesh.
@@ -251,6 +253,7 @@
   }
 
   function resetRowFrameTracking() {
+    rowWindow.spacing = 0;
     rowTravelCoordinate = 0;
     rowLastPlayerX = null;
     rowLastPlayerZ = null;
@@ -292,7 +295,7 @@
   }
 
   function updateCameraLayers(dt, context) {
-    ensureLayerCount(3);
+    rowWindow.spacing = 0; // Camera sheets release the row identities of the first three meshes.
     layers.forEach((layer, index) => {
       if (index >= 3) { layer.mesh.visible = false; return; }
       const { mesh, material, config } = layer;
@@ -307,7 +310,6 @@
       mesh.renderOrder = 900 + (2 - index);
       material.opacity = config.opacity * context.opacityMultiplier;
       layer.currentOpacity = material.opacity;
-      layer.rowKey = null;
       layer.rowCoordinate = null;
       layer.rowSide = null;
       mesh.visible = true;
@@ -315,40 +317,47 @@
     });
   }
 
-  function desiredRows(playerRowCoordinate) {
+  function refreshRowWindow(playerRowCoordinate) {
     const spacing = settings.rowSpacingTiles; // Spacing used by both row families and their placement calculations.
     const gridPosition = playerRowCoordinate / spacing; // Current position on the player-following row lattice.
+    const firstFront = Math.floor(gridPosition) + 1; // Closest front row strictly ahead of the player's plane.
+    const firstBehind = Math.ceil(gridPosition) - 1; // Closest back row strictly behind the player's plane.
+    if (rowWindow.spacing === spacing
+        && rowWindow.firstFront === firstFront && rowWindow.firstBehind === firstBehind
+        && rowWindow.frontCount === settings.frontCount && rowWindow.behindCount === settings.behindCount) return;
+    rowWindow.spacing = spacing;
+    rowWindow.firstFront = firstFront;
+    rowWindow.firstBehind = firstBehind;
+    rowWindow.frontCount = settings.frontCount;
+    rowWindow.behindCount = settings.behindCount;
+    rowWindowRebuilds++;
     rowAssignmentCount = 0;
-    // Reuse each descriptor across frames. A descriptor's row index changes only
-    // when the player crosses a band boundary (or the arena settings change).
     for (let sideIndex = 0; sideIndex < 2; sideIndex++) {
       const front = sideIndex === 0;
       const sign = front ? 1 : -1;
       const count = front ? settings.frontCount : settings.behindCount;
       const side = front ? 'front' : 'behind';
-      const firstIndex = sign > 0 ? Math.floor(gridPosition) + 1 : Math.ceil(gridPosition) - 1;
+      const firstIndex = front ? firstFront : firstBehind;
       const maxDistance = Math.max(spacing, spacing * count);
       for (let i = 0; i < count; i++) {
         const rowIndex = firstIndex + sign * i; // Stable integer row identity used for mesh reuse.
         const rowCoordinate = rowIndex * spacing; // World-space row coordinate along the moving lattice.
         let assignment = rowAssignments[rowAssignmentCount];
         if (!assignment) {
-          assignment = { rowCoordinate: 0, side: null, distance: 0, maxDistance: 0, layer: null };
+          assignment = { rowCoordinate: 0, side: null, maxDistance: 0, layer: null };
           rowAssignments.push(assignment);
         }
         assignment.rowCoordinate = rowCoordinate;
         assignment.side = side;
-        assignment.distance = Math.abs(rowCoordinate - playerRowCoordinate);
         assignment.maxDistance = maxDistance;
         assignment.layer = null;
         rowAssignmentCount++;
       }
     }
-    return rowAssignmentCount;
+    assignRowLayers(rowAssignmentCount);
   }
 
   function assignRowLayers(count) {
-    ensureLayerCount(Math.max(3, count));
     const stamp = ++rowAssignmentStamp; // Current-update claim marker; no Set or array expansion is needed.
     // First claim all existing matching rows before recycling any spare layer.
     for (let i = 0; i < count; i++) {
@@ -372,7 +381,6 @@
       layer.assignmentStamp = stamp;
       layer.rowCoordinate = assignment.rowCoordinate;
       layer.rowSide = assignment.side;
-      layer.rowKey = `${assignment.side}:${assignment.rowCoordinate}`;
       layer.currentOpacity = 0;
       layer.material.opacity = 0;
       assignment.layer = layer;
@@ -419,7 +427,7 @@
     const localForwardX = cameraForward.x * cosYaw - cameraForward.z * sinYaw;
     const localForwardZ = cameraForward.x * sinYaw + cameraForward.z * cosYaw;
 
-    assignRowLayers(desiredRows(rowTravelCoordinate));
+    refreshRowWindow(rowTravelCoordinate);
     const fadeLerp = 1 - Math.exp(-dt / 0.32); // One shared fade coefficient for all active sheets this frame.
     const groundY = settings.followCameraY ? 0 : deps.getPlayerGroundY(); // Reused if row placement follows terrain rather than the camera.
     for (let i = 0; i < rowAssignmentCount; i++) {
@@ -427,8 +435,9 @@
       const layer = assignment.layer;
       const { mesh, material, config } = layer;
       const cameraRelativeDistance = config.distance;
+      const rowOffset = assignment.rowCoordinate - rowTravelCoordinate; // Keeps fade continuous within a row window, including in unlocked test mode.
       const localZ = settings.lockRowZ
-        ? assignment.rowCoordinate - rowTravelCoordinate
+        ? rowOffset
         : localCameraZ + localForwardZ * cameraRelativeDistance;
       let rayDistance = Math.abs(cameraRelativeDistance);
       if (settings.lockRowZ && Math.abs(localForwardZ) > 0.001) {
@@ -445,7 +454,7 @@
       const y = settings.followCameraY
         ? context.camera.position.y + cameraForward.y * rayDistance
         : groundY + viewHeight * 0.5;
-      const distanceFade = Math.max(0, Math.min(1, 1 - assignment.distance / assignment.maxDistance));
+      const distanceFade = Math.max(0, Math.min(1, 1 - Math.abs(rowOffset) / assignment.maxDistance));
       const targetOpacity = config.opacity * context.opacityMultiplier * distanceFade;
       layer.currentOpacity += (targetOpacity - layer.currentOpacity) * fadeLerp;
       material.opacity = layer.currentOpacity;
@@ -463,7 +472,6 @@
       layer.mesh.visible = false;
       layer.currentOpacity = 0;
       layer.material.opacity = 0;
-      layer.rowKey = null;
       layer.rowCoordinate = null;
       layer.rowSide = null;
     });
@@ -502,15 +510,13 @@
     // Both rain and Western Slope snow use this exact precipitation-rate path.
     const precipitationRate = clampNumber(deps.calendar.rainStrength, 0.1, 6, 2);
     const precipitationRatio = precipitationRate / 2;
-    const context = {
-      camera,
-      speedMultiplier: clampNumber(0.55 + precipitationRatio * 0.45, 0.35, 1.9, 1),
-      opacityMultiplier: clampNumber(0.35 + precipitationRatio * 0.65, 0.2, 2.0, 1),
-      aspect: Math.max(0.5, Number(camera.aspect) || 1),
-      halfFovTan: Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5),
-    };
-    if (settings.mode === 'rows') updateRowLayers(dt, context);
-    else updateCameraLayers(dt, context);
+    frameContext.camera = camera;
+    frameContext.speedMultiplier = clampNumber(0.55 + precipitationRatio * 0.45, 0.35, 1.9, 1);
+    frameContext.opacityMultiplier = clampNumber(0.35 + precipitationRatio * 0.65, 0.2, 2.0, 1);
+    frameContext.aspect = Math.max(0.5, Number(camera.aspect) || 1);
+    frameContext.halfFovTan = Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5);
+    if (settings.mode === 'rows') updateRowLayers(dt, frameContext);
+    else updateCameraLayers(dt, frameContext);
   }
 
   function setSettings(patch = {}) {
@@ -566,6 +572,7 @@
       frustumCulling: true, // Offscreen sheet rejection is handled by Three.js during rendering.
       rowAssignmentScratchSize: rowAssignments.length,
       rowReassignments,
+      rowWindowRebuilds,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
       blizzardAudioRouting: typeof window.Music?.weatherRegionForArea === 'function',
@@ -583,10 +590,10 @@
 // rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
 // synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
 if (!window.HobunjiSkyDome) {
-  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261114h3bd93e0"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261119hc12a2f4"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20261114h3bd93e0';
+    skyScript.src = 'js/sky-dome.js?v=20261119hc12a2f4';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }
