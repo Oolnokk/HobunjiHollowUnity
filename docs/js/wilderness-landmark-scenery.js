@@ -252,6 +252,7 @@ async function debris(host,sites,ticket,zoneId){
    built.name='wilderness-broken-stone-pillar';built.position.set(site.point.col+.5,elevation(site),site.point.row+.5);
    built.rotation.y=site.yaw;built.scale.multiplyScalar(site.size);built.userData.wildernessLandmarkScenery=true;
    built.userData.wildernessLandmarkSitePoint={...site.point}; // The authored pillar, not a proxy, is the sense target.
+   if(site.marked)built.updateMatrixWorld?.(true); // Surface UV density includes the final authored part + wilderness scale on its first atlas build.
    if(site.marked){
     const parts=built.userData?.meshById;
     const targets=[...new Set(PATTERNED_PILLAR_PARTS.map(id=>parts?.get?.(id)).filter(mesh=>mesh?.isMesh))]; // Resolve authored parts before attaching any overlay children.
