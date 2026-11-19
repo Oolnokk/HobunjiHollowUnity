@@ -102,7 +102,12 @@
     }
     pivot.userData.wallTorchSpriteUrl = wallTorchSpriteUrl; // Mobile-visible inspection of loaded sprite provenance.
     group.add(pivot);
-    window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(group, null, 'wallTorch'); // Also covers house-mounted torches created outside the furniture builder.
+    group.addEventListener?.('added', () => {
+      // Only a mounted host owns ambient fire. FurnitureVesselRuntime may create an
+      // unattached temporary authored group and move its children into the live one.
+      // Registering on that temporary group used to allocate an orphan emitter.
+      window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(group, null, 'wallTorch');
+    }); // House-mounted torches bypass the normal furniture builder but still join the shared ambient scheduler.
     return pivot;
   }
 
