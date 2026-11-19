@@ -219,7 +219,7 @@
       if(!painted[i])continue;
       // Authored openings are seeds, not arbitrary transparent cuts through the hood.
       // A clicked transparent hole may sit one or two pixels beside the beard's edge.
-      if(hair[i]){distance[i]=0;aperture[i]=1;queue[tail++]=i;continue;}
+      if(hair[i]){if(distance[i]!==0){distance[i]=0;aperture[i]=1;queue[tail++]=i;}continue;}
       const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
       for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
         if(Math.abs(dx)+Math.abs(dy)>2)continue;
@@ -249,17 +249,20 @@
       if(y)aperture[i-MASK_SIZE]=1;
       if(y<MASK_SIZE-1)aperture[i+MASK_SIZE]=1;
     }
-    let stretchedPixels=0,openingPixels=0;
+    let stretchedPixels=0,openingPixels=0,minX=MASK_SIZE,maxX=-1,minY=MASK_SIZE,maxY=-1;
     for(let i=0;i<aperture.length;i++){
       if(!aperture[i])continue;
       image.data[i*4+3]=0;openingPixels++;
+      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
     }
     // Draw a continuous cloth rim around the reshaped hole: pixels still owned
     // by the hood can sample neighboring original cloth, but never sample the new void.
     const rim=4;
-    for(let i=0;i<aperture.length;i++){
+    for(let y=Math.max(0,minY-rim);y<=Math.min(MASK_SIZE-1,maxY+rim);y++)
+      for(let x=Math.max(0,minX-rim);x<=Math.min(MASK_SIZE-1,maxX+rim);x++){
+      const i=y*MASK_SIZE+x;
       if(aperture[i]||source[i*4+3]<8)continue;
-      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
       let nearest=-1,best=rim*rim+1;
       for(let dy=-rim;dy<=rim;dy++)for(let dx=-rim;dx<=rim;dx++){
         const px=x+dx,py=y+dy,d=dx*dx+dy*dy;
