@@ -24,14 +24,14 @@
     document.head.appendChild(script);
   }
 
-  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 9) {
-    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr9', 'grehlr-head-rig-correction')) {
-      lateLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr9', 'grehlr-head-rig-correction');
+  if (!window.HobunjiGrehlrHeadRigCorrection || Number(window.HobunjiGrehlrHeadRigCorrection.version) < 10) {
+    if (!parserLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr10', 'grehlr-head-rig-correction')) {
+      lateLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr10', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs1') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs1', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs1', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs2') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {

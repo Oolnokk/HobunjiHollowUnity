@@ -16,7 +16,7 @@ const win = {CreatureGeneticsRender:renderer, HobunjiAnimalHeadRigSpecies:specie
 const context = vm.createContext({window:win, localStorage,console,JSON,Object,String,Array,Number});
 vm.runInContext(fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'),context,{filename:'animal-head-rig-authored.js'});
 const api = win.HobunjiAuthoredAnimalHeadRigs;
-assert.equal(api?.version,'2026-11-18-nine-authored-rigs1','latest defaults must load on desktop and mobile');
+assert.equal(api?.version,'2026-11-18-nine-authored-rigs2','latest defaults must load on desktop and mobile');
 const plain = value=>JSON.parse(JSON.stringify(value)); // Normalizes the vm realm before deep-equality comparisons.
 for(const id of ids){
   const records=bestiary.creatures.filter(c=>c.id===id);
@@ -34,6 +34,10 @@ assert.deepEqual(plain(api.get('drenkirra').weightMap),originalDrenkirra.weightM
 assert(api.get('drenkirra').shoulderRest?.enabled,'Drenkirra keeps a shoulder pose');
 assert.deepEqual(plain(api.get('grehlr-den-mother')),plain(api.get('grehlr')),
  'Grehlr Den-Mother shares the authored base species rig');
+assert.equal(api.get('grehlr').shoulderRest.afterPoints[1].x,0.45273197437284163,
+ 'second shoulder spline point must preserve the exact uploaded precision');
+assert.equal(api.get('grehlr').shoulderRest.afterPoints[4].x,0.46590469124098366,
+ 'fifth shoulder spline point must preserve the exact uploaded precision');
 const explicit={enabled:true,pivot:{x:0.125,y:0.875},local:true}; // Editor-supplied rigs always outrank committed species.
 preview=JSON.stringify({'gar-wolf':explicit});
 assert.deepEqual(plain(avatars.buildAnimalPlaneAvatarModel(null,'',{creatureId:'gar-wolf'}).options.headRig),explicit,
