@@ -96,7 +96,7 @@ assert.strictEqual(A.outcomeWeight(rareOutcome), 0.1, 'breeding potions must use
 assert.strictEqual(A.RECIPE_DEFS.breedingPygmation.brewWeight, 0.1, 'Breeding Pygmation must use the same 0.10 base reaction weight before targeting bonuses');
 assert.strictEqual(A.RECIPE_DEFS.potionOfFertility.brewWeight, 0.1, 'Fertility is a real rare livestock reaction');
 assert.strictEqual(A.RECIPE_DEFS.potionOfFertility.daysReduced, 1, 'Fertility always reduces one in-game day');
-assert.ok(A.enumerateRecipes(['hazewortSprig', 'cloudberryVine', 'frostcapMoss']).some(outcome => outcome.recipeId === 'potionOfFertility'), 'Fertility standard ingredients brew a real three-source reaction');
+assert.ok(A.enumerateRecipes(['palehartLichen', 'cloudberryVine', 'mireLotusBud']).some(outcome => outcome.recipeId === 'potionOfFertility'), 'Fertility standard ingredients brew a real three-source reaction');
 assert.ok(A.outcomeWeight(rareOutcome) < A.outcomeWeight(commonOutcome), 'breeding potions must carry a lower natural reaction weight');
 assert.ok(A.targetingProbability(20, rarityOutcomes, rareOutcome.recipeId) < A.targetingProbability(20, rarityOutcomes, commonOutcome.recipeId), 'rare reaction weight must also reduce targeting reliability');
 const weightedCounts = Object.fromEntries(rarityOutcomes.map(outcome => [outcome.recipeId, 0]));
