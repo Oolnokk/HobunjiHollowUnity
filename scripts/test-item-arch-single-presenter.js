@@ -30,6 +30,10 @@ class Style {
   setProperty(key, value) { this.values.set(key, String(value)); this.writes++; }
   removeProperty(key) { this.values.delete(key); this.writes++; }
 }
+class ClassList extends Set {
+  add(...names) { for (const name of names) super.add(name); return this; }
+  remove(...names) { for (const name of names) super.delete(name); }
+}
 class Element {
   constructor(tag = 'div') {
     this.nodeType = 1;
@@ -39,7 +43,7 @@ class Element {
     this.parentElement = null;
     this.dataset = {};
     this.style = new Style();
-    this.classList = new Set();
+    this.classList = new ClassList();
     this.attributes = new Map();
     this.textContent = '';
     this.writes = 0; // Number of SVG attribute writes, used for repeated-render idempotence.
