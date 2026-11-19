@@ -22,6 +22,7 @@
   const pickedStorageLocks = Object.create(null); // Exact NPC/area/furniture lock victories, saved with each player's existing NPC wardrobe data.
   const wornClothingByNpc = {}; // npcId -> { slot: full clothing instance }; preserves weaving/colorC/player-origin metadata while an item is actually worn.
   const devClothingOverrides = new Map(); // NPC id -> slot -> visual-only preview fields, never included in wardrobe serialization.
+  const portraitRenderGenerations = new WeakMap(); // Walker -> latest generation; only its completed canvases may reach live textures.
   const defaultTraitSets = {}; // npcId -> Set(trait ids) snapshotted once so later gifted clothes never redefine taste.
   let activeWardrobeContext = null; // Only a physically assigned spouse wardrobe can grant the spouse-only clothing override.
   let activeWardrobeRender = null; // Lets pack-to-wardrobe transfers refresh the currently open panel.
@@ -516,10 +517,31 @@
       : baseExport;
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(decorateAppearance(renderedExport));
     if (!profile) { if (strict) throw new Error('NPC portrait profile could not be built.'); return false; }
-    walker.profile = profile;
+    const generation = (portraitRenderGenerations.get(walker) || 0) + 1; // Current request's sole permission to commit portrait pixels.
+    portraitRenderGenerations.set(walker, generation);
+    const makeStagingCanvas = live => {
+      const canvas = document.createElement('canvas'); // Async renderer writes to private canvases so stale jobs cannot repaint live artwork.
+      canvas.width = live.width; canvas.height = live.height;
+      return canvas;
+    };
     try {
-      await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, profile, { forceEyesOpen: true });
-      if (walker.avatarBackCanvas) await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarBackCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+      const front = makeStagingCanvas(walker.avatarFrontCanvas);
+      const back = walker.avatarBackCanvas ? makeStagingCanvas(walker.avatarBackCanvas) : null;
+      if (await window.NpcAvatarPreview.renderProfileToCanvas(front, profile, { forceEyesOpen: true }) === false)
+        throw new Error('NPC front portrait renderer declined the draw.');
+      if (back && await window.NpcAvatarPreview.renderProfileToCanvas(back, profile, { portraitView: 'behind', forceEyesOpen: true }) === false)
+        throw new Error('NPC back portrait renderer declined the draw.');
+      if (portraitRenderGenerations.get(walker) !== generation || walker.rec !== rec) return false; // Newer requests or replaced walkers win.
+      const commitCanvas = (live, staged) => {
+        live.width = staged.width; live.height = staged.height;
+        const context = live.getContext('2d');
+        if (!context) throw new Error('NPC portrait live canvas is unavailable.');
+        context.clearRect(0, 0, live.width, live.height);
+        context.drawImage(staged, 0, 0);
+      };
+      commitCanvas(walker.avatarFrontCanvas, front);
+      if (back) commitCanvas(walker.avatarBackCanvas, back);
+      walker.profile = profile;
       if (!window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas, { backCanvas: walker.avatarBackCanvas }))
         throw new Error('NPC portrait texture upload failed.');
       return true;

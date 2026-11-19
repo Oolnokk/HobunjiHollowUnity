@@ -105,7 +105,8 @@
     }
     stats.scans++;
     stats.scanMs = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : now) - start);
-    records.set(scene, { candidates, lastScanAt: now, version: residencyVersion() });
+    records.set(scene, { candidates, lastScanAt: now, version: residencyVersion(),
+      batchVersion: Number(scene.userData?.hobunjiZonePropBatchRevision || 0) });
     return candidates;
   }
 
@@ -176,8 +177,10 @@
     return Number.isFinite(v) ? v : null;
   }
 
-  function needsRescan(record, now) {
+  function needsRescan(record, now, scene) {
     if (!record) return true;
+    // Prop batching ran earlier in this very frame: replacement meshes must not wait for the idle-rescan timer.
+    if (record.batchVersion !== Number(scene.userData?.hobunjiZonePropBatchRevision || 0)) return true;
     const age = now - record.lastScanAt;
     const version = residencyVersion();
     if (version === null) return age >= RESCAN_MS;
@@ -208,7 +211,7 @@
     let candidates, cameraX, cameraZ; // Scan and camera sampling must fail open before any earlier culler can leak visibility.
     try {
       const record = records.get(scene);
-      candidates = needsRescan(record, now) ? scan(scene, now) : record.candidates;
+      candidates = needsRescan(record, now, scene) ? scan(scene, now) : record.candidates;
       stats.frames++;
       stats.candidates = candidates.length;
       camera.updateMatrixWorld?.(true); // The view may be a cutscene camera unrelated to the player's tile.

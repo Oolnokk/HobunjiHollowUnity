@@ -47,13 +47,14 @@
   ];
   const OWNER_NAME_PREFIXES = [['puzzle-cave-cliff-door-puzzle', 'cliffDoorPuzzle']];
   const RESCAN_MS = 1000; // Owner roots are found by a full scene walk at most this often; each frame walks only their subtrees.
+  const STABLE_COLLECT_MS = 300; // Full owner/group discovery is spaced out only while existing batch members remain valid.
   // Ancestor flags copied onto a batch so the held-object/x-ray classifiers treat it like its members.
   const CARRIED_FLAG_PATTERN = /^(hobunji|is|surface|ground|background|noOutline|skipOcclusionFade|terrain|cameraObstacle)/;
 
   let enabled = true;
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }
   const motion = new WeakMap(); // mesh -> { sig: Float64Array, stillSince }
-  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0 };
+  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0 };
   const rejectReasons = {};
   const defaultBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
   const defaultBeforeCompile = window.THREE?.Material?.prototype?.onBeforeCompile;
@@ -222,6 +223,11 @@
     return data;
   }
 
+  function markBatchMembershipChanged(scene) {
+    const data = scene.userData; // Consumed by WildernessDistanceCull before this frame's world render.
+    data.hobunjiZonePropBatchRevision = (data.hobunjiZonePropBatchRevision || 0) + 1;
+  }
+
   function buildBatch(THREE, record, batch, members, owner, t) {
     const first = members[0];
     const geometry = mergeWorldGeometry(THREE, members);
@@ -244,6 +250,7 @@
     mesh.userData = carriedUserData(members, owner);
     batch.members = members.slice();
     batch.builtAt = t;
+    markBatchMembershipChanged(record.holder.parent); // New/rebuilt mesh must enter distance culling immediately.
     stats.rebuilds++;
   }
 
@@ -255,7 +262,7 @@
       holder.visible = false; // Shown only inside renderWorldPasses.
       holder.matrixAutoUpdate = false;
       holder.userData.hobunjiZonePropBatchHolder = true;
-      record = { holder, batches: new Map(), roots: null, scannedAt: 0 };
+      record = { holder, batches: new Map(), roots: null, scannedAt: 0, collectedAt: -Infinity };
       records.set(scene, record);
     }
     if (record.holder.parent !== scene) scene.add(record.holder);
@@ -318,6 +325,57 @@
     return sources;
   }
 
+  // A material or geometry can become unbatchable without changing its
+  // matrix or buffer version (for example a drawRange edit or shader hook).
+  // Recheck those small render contracts on the fast path, without constructing
+  // owner groups or allocating attribute-name arrays per frame.
+  function settledMemberEligible(mesh) {
+    const material = mesh.material, geometry = mesh.geometry;
+    if (!material || Array.isArray(material) || material.transparent || !geometry?.attributes?.position) return false;
+    const custom = material.isShaderMaterial || material.isRawShaderMaterial
+      || (defaultBeforeCompile && material.onBeforeCompile !== defaultBeforeCompile);
+    if (custom && material.userData?.hobunjiWorldBakeSafe !== true) return false;
+    const fullCount = geometry.index ? geometry.index.count : geometry.attributes.position.count;
+    const drawRange = geometry.drawRange;
+    if (drawRange && (drawRange.start !== 0 || (Number.isFinite(drawRange.count) && drawRange.count !== fullCount))) return false;
+    for (const name in geometry.morphAttributes) return false; // Any added morph channel makes the old bake invalid.
+    if (custom) for (const name in geometry.attributes) if (!ATTRIBUTE_NAMES.includes(name)) return false;
+    return true;
+  }
+
+  // A stable frame reuses known groups without rescanning every prop owner or
+  // rebuilding grouping keys. The authoritative matrix/geometry signatures
+  // are STILL compared each frame; a moving/edited batch member falls through
+  // to the full collector immediately, not at the next timed rescan.
+  function reuseSettledBatches(scene, record, t) {
+    if (!record.batches.size || t - record.collectedAt >= STABLE_COLLECT_MS) return null;
+    const hidden = []; // Collected without mutation; invalid fast paths leave every mesh visible.
+    for (const batch of record.batches.values()) {
+      const drawn = batch.mesh;
+      if (!drawn || batch.members.length < 2) return null;
+      for (const member of batch.members) {
+        if (!attachedTo(member, scene) || !effectivelyVisible(member)
+          || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
+          || member.onBeforeRender !== defaultBeforeRender
+          || member.material !== drawn.material || member.material?.transparent
+          || member.layers.mask !== drawn.layers.mask
+          || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
+          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member)
+          || !isStill(member, t)) return null;
+        hidden.push(member);
+      }
+    }
+    for (const member of hidden) member.visible = false;
+    record.holder.visible = true;
+    stats.sources = hidden.length; stats.batches = record.batches.size;
+    stats.drawsSaved = hidden.length - record.batches.size;
+    stats.fastReuseFrames++;
+    return function restoreStableBatches() {
+      for (const member of hidden) member.visible = true;
+      record.holder.visible = false;
+    };
+  }
+
   // Returns a restore function, or null when nothing was swapped.
   function suspendForRender(scene, { isZone = false } = {}) {
     if (!enabled || !isZone || !scene?.isScene || window.THREE == null) return null;
@@ -328,8 +386,13 @@
     // World matrices are last render's (no extra scene-wide update): a prop that starts moving this frame is drawn one frame
     // at its previous pose, then its changed matrix drops it out of the batch until it settles again.
     const record = recordFor(scene);
+    const fastRestore = reuseSettledBatches(scene, record, t); // Skips per-frame owner scans and grouping when unchanged.
+    if (fastRestore) return fastRestore;
+    record.collectedAt = t;
+    stats.fullCollects++;
     const groups = new Map();
     if (!collect(scene, record, t, groups)) {
+      if (record.batches.size) markBatchMembershipChanged(scene); // Deleted candidate meshes must leave the culler list too.
       for (const batch of record.batches.values()) { record.holder.remove(batch.mesh); batch.mesh.geometry.dispose(); }
       record.batches.clear();
       return null;
@@ -340,6 +403,7 @@
       record.holder.remove(batch.mesh);
       batch.mesh.geometry.dispose(); // The material belongs to the props.
       record.batches.delete(key);
+      markBatchMembershipChanged(scene);
     }
     const hidden = [];
     for (const [key, group] of groups) {
@@ -370,6 +434,6 @@
   window.ZonePropRenderBatches = {
     suspendForRender,
     setEnabled,
-    snapshot: () => ({ enabled, cellTiles: CELL_TILES, stillMs: STILL_MS, ...stats, rejectReasons: { ...rejectReasons } }),
+    snapshot: () => ({ enabled, cellTiles: CELL_TILES, stillMs: STILL_MS, stableCollectMs: STABLE_COLLECT_MS, ...stats, rejectReasons: { ...rejectReasons } }),
   };
 })();

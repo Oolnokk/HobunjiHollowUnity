@@ -983,20 +983,51 @@
     }
   }
 
+  const dialoguePortraitCanvasPools = new WeakMap(); // Per-walker reusable private canvases; overlapping renders cannot repaint the live wardrobe texture.
+  const dialoguePortraitVersions = new WeakMap(); // Per-walker request epochs prevent late speech frames from replacing newer expressions.
+  function borrowDialoguePortraitCanvas(walker, live) {
+    let pool = dialoguePortraitCanvasPools.get(walker);
+    if (!pool) { pool = []; dialoguePortraitCanvasPools.set(walker, pool); }
+    let slot = pool.find(candidate => !candidate.busy);
+    if (!slot) { slot = { canvas: document.createElement('canvas'), busy: false }; pool.push(slot); }
+    slot.busy = true;
+    if (slot.canvas.width !== live.width) slot.canvas.width = live.width;
+    if (slot.canvas.height !== live.height) slot.canvas.height = live.height;
+    return slot;
+  }
+
   async function _renderNpcDialoguePortrait() {
     const walker = deps.getDialogueWalker();
     if (!deps.getDialogueOpen() || !walker?.profile || !window.NpcAvatarPreview) return false;
     if (walker.avatarGroup?.userData?.namedAnimalNpc) return false; // Named animals already animate their live creature plane; do not keep repainting an unused hidden portrait canvas.
     if (!walker.avatarFrontCanvas || !window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel) return false;
-    const renderOptions = {
-      breathingComposer: window.portraitBreathingComposer || null,
-      seatId: dialogueSeatId(),
-    };
-    // Dialogue expressions/yap now update the NPC's existing world-space avatar only.
-    // The obsolete fixed viewport portrait canvas was intentionally removed.
-    await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, walker.profile, renderOptions);
-    window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas);
-    return true;
+    const live = walker.avatarFrontCanvas, group = walker.avatarGroup, profile = walker.profile; // Wardrobe refreshes replace profile identity only after their private render commits.
+    const request = (dialoguePortraitVersions.get(walker) || 0) + 1;
+    dialoguePortraitVersions.set(walker, request);
+    const slot = borrowDialoguePortraitCanvas(walker, live);
+    try {
+      const renderOptions = {
+        breathingComposer: window.portraitBreathingComposer || null,
+        seatId: dialogueSeatId(),
+      };
+      // Expressions/yap still update the real world avatar, but only by promoting
+      // completed private art: an older dialogue job must not draw onto a newly
+      // clothed NPC's live front canvas after the wardrobe has committed.
+      if (await window.NpcAvatarPreview.renderProfileToCanvas(slot.canvas, profile, renderOptions) === false) return false;
+      if (!deps.getDialogueOpen() || deps.getDialogueWalker() !== walker || walker.profile !== profile
+          || walker.avatarGroup !== group || walker.avatarFrontCanvas !== live
+          || dialoguePortraitVersions.get(walker) !== request) return false;
+      if (live.width !== slot.canvas.width) live.width = slot.canvas.width;
+      if (live.height !== slot.canvas.height) live.height = slot.canvas.height;
+      const ctx = live.getContext('2d');
+      if (!ctx) return false;
+      ctx.clearRect(0, 0, live.width, live.height);
+      ctx.drawImage(slot.canvas, 0, 0);
+      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(group, live);
+      return true;
+    } finally {
+      slot.busy = false; // Reuse this canvas for the next 12fps expression frame instead of allocating every tick.
+    }
   }
 
   let _npcDialoguePortraitRenderPending = false;

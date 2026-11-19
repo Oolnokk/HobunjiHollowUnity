@@ -45,4 +45,35 @@ assert.equal(plain(api.loadPendingSupplyOrders('w1')), '[]');
 
 localStorage.removeItem('hobunjiSaveMeta');
 assert.equal(plain(api.loadStorage('w1')), JSON.stringify({}), 'a cleared save reads as empty');
+// When the canonical storage guard supplies a trustworthy revision, repeated
+// interaction/HUD reads should not even call synchronous localStorage.getItem.
+const guardedValues = new Map(); // Controlled browser snapshot shared by the revision and WorldMetaStore adapters.
+let guardRevision = 0, guardedReads = 0;
+const guardedStorage = {
+  getItem(key) { guardedReads++; return guardedValues.get(key) ?? null; },
+  setItem(key,value) { guardedValues.set(key,String(value)); guardRevision++; },
+  removeItem(key) { guardedValues.delete(key); guardRevision++; },
+};
+const guardedWindow = { HobunjiStorageQuota: { getSaveMetaRevision: () => guardRevision } };
+const guardedContext = vm.createContext({
+  window: guardedWindow, localStorage: guardedStorage, JSON, performance, console, structuredClone,
+});
+vm.runInContext(fs.readFileSync('docs/js/world-meta-store.js','utf8'), guardedContext);
+const guardedApi = guardedWindow.WorldMetaStore;
+const guardedMeta = list => JSON.stringify({ worlds: [{ id:'w1', livestock: list, storage:{seed:1} }] });
+guardedStorage.setItem('hobunjiSaveMeta', guardedMeta([{id:'one'}]));
+assert.equal(guardedApi.loadLivestock('w1')[0].id, 'one');
+const initialGuardedReads = guardedReads;
+for(let i=0;i<200;i++) guardedApi.loadLivestock('w1');
+assert.equal(guardedReads, initialGuardedReads, 'stable guarded revisions bypass synchronous storage across 200 HUD reads');
+guardedStorage.setItem('hobunjiSaveMeta', guardedMeta([{id:'two'}]));
+assert.equal(guardedApi.loadLivestock('w1')[0].id, 'two', 'guarded write revision immediately loads the new animal');
+assert.equal(guardedReads, initialGuardedReads+1, 'a changed save causes exactly one storage read');
+assert.equal(guardedApi.saveStorage('w1',{seed:9}), true);
+assert.equal(guardedApi.loadStorage('w1').seed, 9, 'writes issued by WorldMetaStore itself invalidate guarded cached metadata');
+const readsAfterSave = guardedReads;
+for(let i=0;i<200;i++) guardedApi.loadStorage('w1');
+assert.equal(guardedReads, readsAfterSave, 'repeated post-write reads reuse the new world metadata');
+guardedStorage.removeItem('hobunjiSaveMeta');
+assert.equal(plain(guardedApi.loadLivestock('w1')), '[]', 'guarded deletion discards stale livestock');
 console.log('world meta store cache: ok');
