@@ -122,23 +122,40 @@ context.DevSpawner.init({ grantLoot: loot => { grants.push(plain(loot)); return 
   const instance = workspace.localeInstances.find(locale => locale.localeId === camp.id);
   assert.equal(instance.objects.filter(object => object.key === 'artifactPedestal').length, 3);
   const structure = instance.objects.find(object => object.id === 'obj_structure');
-  const tentPiece = JSON.parse(fs.readFileSync('docs/config/pieces/researchers-tent.json', 'utf8')); // Independent rendered-mesh footprint for doorway alignment.
-  const tentCells = tentPiece.footprint.cells; // Actual authored shell cells, not the scaled wilderness clearing.
-  const tentWidth = Math.max(...tentCells.map(cell => cell.x)) - Math.min(...tentCells.map(cell => cell.x)) + 1; // Visible shell width.
-  const tentHeight = Math.max(...tentCells.map(cell => cell.y)) - Math.min(...tentCells.map(cell => cell.y)) + 1; // Visible shell depth.
-  assert.equal(structure.w, tentWidth, 'exported tent width must match the rendered piece, not the scaled clearing');
-  assert.equal(structure.h, tentHeight, 'exported tent depth must match the rendered piece, not the scaled clearing');
-  assert.equal(instance.connectors[0].side, 'east', 'the east-facing flap defines the entrance side');
-  const entranceCol = structure.x + structure.w; // The runtime's east-facing door trigger sits just beyond the tent shell.
-  const entranceRow = structure.y + Math.round(structure.h / 2); // The runtime offsets this tile along the flap.
-  assert.equal(entranceCol, structure.x + tentWidth, 'door trigger must be directly outside the rendered east gable');
-  assert(entranceRow >= structure.y && entranceRow < structure.y + tentHeight, 'door trigger must be in front of the tent, not off its corner');
+  const tentPiece = JSON.parse(fs.readFileSync('docs/config/pieces/researchers-tent.json', 'utf8')); // Source for the visible tent shell dimensions.
+  const tentCells = tentPiece.footprint.cells; // The mesh uses authored cells, not the enlarged generated clearing.
+  const tentWidth = Math.max(...tentCells.map(cell => cell.x)) - Math.min(...tentCells.map(cell => cell.x)) + 1; // Width used by the runtime door calculation.
+  const tentHeight = Math.max(...tentCells.map(cell => cell.y)) - Math.min(...tentCells.map(cell => cell.y)) + 1; // Depth used by the runtime door calculation.
+  assert.equal(structure.w, tentWidth * generator.generationTileScale, 'generator keeps the full scaled footprint for terrain cleanup');
+  assert.equal(structure.h, tentHeight * generator.generationTileScale, 'generator keeps the full scaled footprint for terrain cleanup');
+  assert.equal(instance.connectors[0].side, 'east', 'the tent flap faces east toward the locale path');
+
+  // Exercise the actual game.js offset expression for every possible tent rotation.
+  const runtimeSource = fs.readFileSync('docs/game.js', 'utf8'); // Uses the production transition logic rather than copying its math.
+  const offsetStart = runtimeSource.indexOf('const tentEntranceFootprint = tentBuilding[0] || null;'); // Beginning of the runtime door calculation.
+  const offsetEnd = runtimeSource.indexOf('const tentTransitions =', offsetStart); // Ends immediately before the transition record.
+  assert(offsetStart >= 0 && offsetEnd > offsetStart, 'tent entrance calculation must be present in game.js');
+  const calculateDoorOffset = new Function('tentBuilding', 'tentDoorSide', runtimeSource.slice(offsetStart, offsetEnd) + '\nreturn TENT_DOOR_TILE_OFFSET_BY_SIDE;'); // Executes the original, unmodified runtime expression.
+  const renderedTent = [{ footprintW: tentWidth, footprintD: tentHeight }]; // Exactly the 3x3 building footprint that game.js renders.
+  const expectedOffsets = { // Each trigger is one tile outside the correct gable, centered on its opening.
+    south: { dx: Math.floor(tentWidth / 2), dz: tentHeight },
+    east: { dx: tentWidth, dz: Math.floor(tentHeight / 2) },
+    north: { dx: Math.floor(tentWidth / 2), dz: -1 },
+    west: { dx: -1, dz: Math.floor(tentHeight / 2) }
+  };
+  for (const [side, expected] of Object.entries(expectedOffsets))
+    assert.deepEqual(calculateDoorOffset(renderedTent, side), expected, `tent entrance must match the rendered ${side} gable`);
+
+  const eastOffset = calculateDoorOffset(renderedTent, instance.connectors[0].side); // Active east-facing tent entry tile.
+  const entranceCol = structure.x + eastOffset.dx; // Exterior tile immediately in front of the east flap.
+  const entranceRow = structure.y + eastOffset.dz; // Center row, not the back corner of the tent.
+  assert.equal(entranceCol, structure.x + tentWidth, 'east entrance must be next to the visible tent rather than the far edge of the generated clearing');
+  assert.equal(entranceRow, structure.y + Math.floor(tentHeight / 2), 'east entrance must be centered on the flap');
   const merged = terrain.buildMergedZoneGrid(workspace, workspace.maps[0].id);
-  const entranceGround = merged.tiles.get(`${entranceCol},${entranceRow}`); // Verifies the destination is valid terrain, not a rock obstacle.
-  assert(entranceGround && entranceGround.type !== 'rock', 'tent entrance must remain on open ground');
-  const generatedShell = camp.objects.find(object => object.id === 'obj_structure'); // Preserve the full old scaled-terrain regression area.
-  for (let row = structure.y; row < structure.y + generatedShell.h * generator.generationTileScale; row++)
-    for (let col = structure.x; col < structure.x + generatedShell.w * generator.generationTileScale; col++)
+  const entranceGround = merged.tiles.get(`${entranceCol},${entranceRow}`); // Validate entry tile terrain after the plateau/locale fold.
+  assert(entranceGround && entranceGround.type !== 'rock', 'entrance must remain on walkable-looking ground');
+  for (let row = structure.y; row < structure.y + structure.h; row++)
+    for (let col = structure.x; col < structure.x + structure.w; col++)
       assert.notEqual(merged.tiles.get(`${col},${row}`).type, 'rock', 'tent metadata does not export as random rock terrain');
   console.log('Artifact collection: donations, world persistence, milestones, dialogue, tier loot and guaranteed chest fallback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
