@@ -111,6 +111,40 @@
         </div>
         <div class="field"><label for="headbandView">Head plane to edit</label><select id="headbandView"><option value="front">Front head</option><option value="back">Backplane head (rear)</option></select></div>
         <div class="row"><button type="button" id="headbandFlipH">Flip selected curve horizontally</button><button type="button" id="headbandFlipV">Flip selected curve vertically</button></div>
+
+        <div class="headband-whole-controls" id="headbandWholeSection">
+          <h2>Whole spline · selected curve</h2>
+          <div class="small">Move, resize or rotate all seven nodes together around the curve's center. Applies to the selected original/target curve on the chosen front/back plane.</div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeX">X position (px)</label>
+            <input id="headbandWholeX" type="range" min="-120" max="120" step="1" value="0">
+            <input id="headbandWholeXNumber" type="number" min="-120" max="120" step="1" value="0" aria-label="X position px">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeY">Y position (px)</label>
+            <input id="headbandWholeY" type="range" min="-120" max="120" step="1" value="0">
+            <input id="headbandWholeYNumber" type="number" min="-120" max="120" step="1" value="0" aria-label="Y position px">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeScaleX">Width (%)</label>
+            <input id="headbandWholeScaleX" type="range" min="20" max="250" step="1" value="100">
+            <input id="headbandWholeScaleXNumber" type="number" min="20" max="250" step="1" value="100" aria-label="Width %">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeScaleY">Height (%)</label>
+            <input id="headbandWholeScaleY" type="range" min="20" max="250" step="1" value="100">
+            <input id="headbandWholeScaleYNumber" type="number" min="20" max="250" step="1" value="100" aria-label="Height %">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeRotation">Rotation (°)</label>
+            <input id="headbandWholeRotation" type="range" min="-60" max="60" step="1" value="0">
+            <input id="headbandWholeRotationNumber" type="number" min="-60" max="60" step="1" value="0" aria-label="Rotation °">
+          </div>
+          <div class="row"><label class="small"><input type="checkbox" id="headbandWholeDrag"> Drag whole curve instead of individual nodes</label></div>
+          <div class="row"><button type="button" id="headbandWholeReset">Reset whole transform</button><button type="button" id="headbandWholeBake">Bake as new baseline</button></div>
+          <div id="headbandWholeStatus" class="small" aria-live="polite">Whole-curve position, width, height and rotation are saved with this garment.</div>
+          <div class="small">The editor limits any edit that would leave the sprite or reverse the left-to-right node order. Individual node dragging or flipping bakes the current whole-curve transform as its new baseline.</div>
+        </div>
         <div class="row"><button type="button" id="headbandTraceSource">Auto-map original</button><button type="button" id="headbandTraceTarget">Trace authored target</button></div>
         <div class="row"><button type="button" id="headbandCopy">Copy original to target</button><button type="button" id="headbandReset">Reset both curves</button></div>
         <div id="headbandRearSection" hidden>
