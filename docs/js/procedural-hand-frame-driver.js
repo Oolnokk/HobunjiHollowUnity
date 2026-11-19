@@ -937,15 +937,13 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
-      if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); return; } // A paired action owns hand contacts; restore any previous visual holder lift.
+      restoreHeldItemReach(record); // A previous carried object's visual lift never leaks into an action or another holder.
+      if (record.rig.applyOwnedPose?.()) return; // A paired action owns hand contacts through the final render sync.
       if (inHandCalibrationMode()) {
-        restoreHeldItemReach(record);
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
         const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
-        if (!heldItem) restoreHeldItemReach(record);
-        if (!heldItem) restoreHeldItemReach(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
@@ -988,6 +986,7 @@
         continue;
       }
       ensureSyncSentinel(record);
+      restoreHeldItemReach(record); // Revert the previous visual pose even when the rig is no longer being rendered.
       if (!rigRecentlyRendered(record)) {
         record._poseSyncSkipped = true;
         continue;
@@ -1000,9 +999,8 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
-      if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); continue; } // Explicit pose ownership precedes held-tool and idle fallback writers.
+      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
-        restoreHeldItemReach(record);
         syncCalibrationWorkspace(record);
       } else {
         const heldItem = heldItemTarget(record);
@@ -1044,14 +1042,13 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
-        if(record.rig.applyOwnedPose?.()){restoreHeldItemReach(record);results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
+        restoreHeldItemReach(record); // Explicit diagnostics obey the same release-before-owner order as rendering.
+        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
-          restoreHeldItemReach(record);
           results.push(syncCalibrationWorkspace(record, true));
         } else {
           const heldItem = heldItemTarget(record);
           const holder = heldItem ? null : currentToolHolder(record);
-          if (!heldItem) restoreHeldItemReach(record);
           if (heldItem) {
             syncRigToHeldItem(record, heldItem);
             results.push({ direct: true, heldItem: true, reachLift: record.heldItemScratch?.reachApplied?.length?.() || 0 });
