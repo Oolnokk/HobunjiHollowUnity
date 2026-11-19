@@ -16,7 +16,8 @@ const E={
   repo:$('repo'),reload:$('reload'),status:$('status'),gender:$('gender'),species:$('species'),sourceSpecies:$('sourceSpecies'),sourceGender:$('sourceGender'),useStartingAsTarget:$('useStartingAsTarget'),sourceLayerStatus:$('sourceLayerStatus'),garment:$('garment'),fitRegion:$('fitRegion'),
   contourEnabled:$('contourEnabled'),contourStrength:$('contourStrength'),contourFeather:$('contourFeather'),contourBrush:$('contourBrush'),contourStatus:$('contourStatus'),
   contourPaintMode:$('contourPaintMode'),contourEraseMode:$('contourEraseMode'),contourClear:$('contourClear'),contourMaskPng:$('contourMaskPng'),contourShowOutline:$('contourShowOutline'),
-  headbandEnabled:$('headbandEnabled'),headbandEditCurve:$('headbandEditCurve'),headbandTraceSource:$('headbandTraceSource'),headbandTraceTarget:$('headbandTraceTarget'),headbandCopy:$('headbandCopy'),headbandReset:$('headbandReset'),headbandStatus:$('headbandStatus'), // Seven-point source mapping and fitted-target controls.
+  headbandEnabled:$('headbandEnabled'),headbandEditCurve:$('headbandEditCurve'),headbandTraceSource:$('headbandTraceSource'),headbandTraceTarget:$('headbandTraceTarget'),headbandCopy:$('headbandCopy'),headbandReset:$('headbandReset'),headbandStatus:$('headbandStatus'),
+  headbandView:$('headbandView'),headbandFlipH:$('headbandFlipH'),headbandFlipV:$('headbandFlipV'),headbandRearSection:$('headbandRearSection'),headbandRearImport:$('headbandRearImport'),headbandRearExport:$('headbandRearExport'),headbandRearEdit:$('headbandRearEdit'),headbandRearFromFront:$('headbandRearFromFront'),headbandRearFromExisting:$('headbandRearFromExisting'),headbandRearBlank:$('headbandRearBlank'),headbandRearRemove:$('headbandRearRemove'),headbandRearDraw:$('headbandRearDraw'),headbandRearErase:$('headbandRearErase'),headbandRearSample:$('headbandRearSample'),headbandRearColor:$('headbandRearColor'),headbandRearBrush:$('headbandRearBrush'),headbandRearFullPlane:$('headbandRearFullPlane'),headbandRearStatus:$('headbandRearStatus'), // Rear-facing sprite authoring and editable spline orientation. // Seven-point source mapping and fitted-target controls.
   help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),match3D:$('match3D'),match3DStatus:$('match3DStatus'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
@@ -38,7 +39,8 @@ const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
   body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
   contourMask:null,contourMaskKey:null,contourMaskOverlay:null,contourSourceCache:null,contourLastFit:null,
-  headbandGridCache:new WeakMap(),headbandWarpStats:null, // Caches the unchanged 6x6 raster during curve-only drag edits.
+  headbandGridCache:new WeakMap(),headbandWarpStats:null,
+  headbandRearCanvas:null,headbandRearKey:null,headReferenceBack:null,backplaneReference:null, // Native target-space rear pixels, isolated game rear head and full rear body guide. // Caches the unchanged 6x6 raster during curve-only drag edits.
   assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   repositoryGeneration:0, // Cancels stale catalog batches when a new repository reload starts.
   garmentSelectionEpoch:0, // Distinguishes user selection changes from automatic catalog-population fallback.
@@ -108,7 +110,7 @@ function saveState(){
     ...A.settings,mode,region,gender:E.gender.value,species:E.species.value,sourceSpecies:E.sourceSpecies.value,sourceGender:E.sourceGender.value,repo:base(),
     garment:region==='body'?E.garment.value:(A.settings?.garment||''),
     headGarment:region==='headwear'?E.garment.value:(A.settings?.headGarment||''),
-    headbandEditCurve:E.headbandEditCurve.value
+    headbandEditCurve:E.headbandEditCurve.value,headbandView:E.headbandView.value
   };
   localStorage.setItem(STORE,JSON.stringify(A));
 }
@@ -117,8 +119,8 @@ function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,local
 function pushUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
 function restore(raw){
   const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};A.contourFits=v.contourFits||{};A.headbandSplines=v.headbandSplines||{};
-  R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap(); // Undo restores stored masks rather than reusing an orphaned painting buffer.
-  saveState();syncTransformControls();syncMaskTransformControls();syncContourControls();syncHeadbandControls();render();
+  R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap();R.headbandRearCanvas=null;R.headbandRearKey=null; // Undo restores stored masks rather than reusing an orphaned painting buffer.
+  saveState();syncTransformControls();syncMaskTransformControls();syncContourControls();syncHeadbandControls();hydrateHeadbandRearArt().then(()=>{syncHeadbandControls();render()}).catch(error=>log('Rear art restore: '+error.message));render();
 }
 
 function syncHistory(){E.undo.disabled=!undoStack.length;E.redo.disabled=!redoStack.length}
