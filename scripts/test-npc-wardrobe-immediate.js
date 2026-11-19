@@ -499,6 +499,12 @@ fallbackWalker.area = 'map_i_test_bedroom';
   renderJobs[0].canvas.lastPaint = 'old'; renderJobs[0].resolve();
   assert.equal(await firstRace, false, 'superseded portrait does not commit');
   assert.deepEqual(uploaded, ['new'], 'only the latest rendered portrait reaches the live texture');
+  context.NpcAvatarPreview.renderProfileToCanvas = async () => false; // A missing renderer must never upload an empty canvas.
+  const previousLiveInk = walker.avatarFrontCanvas.lastPaint;
+  assert.equal(await wardrobe.refreshWalkerAppearance(walker), false, 'declined portrait does not count as a refresh');
+  assert.equal(walker.avatarFrontCanvas.lastPaint, previousLiveInk, 'refused draw leaves live portrait intact');
+  await assert.rejects(wardrobe.refreshWalkerAppearance(walker, { strict: true }), /front portrait renderer declined/,
+    'strict crown/inspector refresh reports a rejected renderer');
   context.NpcAvatarPreview.renderProfileToCanvas = originalRenderer;
   context.PNGPlaneAvatar.refreshSinglePlaneAvatarModel = originalRefresh;
 

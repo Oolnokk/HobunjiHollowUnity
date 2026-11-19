@@ -527,8 +527,10 @@
     try {
       const front = makeStagingCanvas(walker.avatarFrontCanvas);
       const back = walker.avatarBackCanvas ? makeStagingCanvas(walker.avatarBackCanvas) : null;
-      await window.NpcAvatarPreview.renderProfileToCanvas(front, profile, { forceEyesOpen: true });
-      if (back) await window.NpcAvatarPreview.renderProfileToCanvas(back, profile, { portraitView: 'behind', forceEyesOpen: true });
+      if (await window.NpcAvatarPreview.renderProfileToCanvas(front, profile, { forceEyesOpen: true }) === false)
+        throw new Error('NPC front portrait renderer declined the draw.');
+      if (back && await window.NpcAvatarPreview.renderProfileToCanvas(back, profile, { portraitView: 'behind', forceEyesOpen: true }) === false)
+        throw new Error('NPC back portrait renderer declined the draw.');
       if (portraitRenderGenerations.get(walker) !== generation || walker.rec !== rec) return false; // Newer requests or replaced walkers win.
       const commitCanvas = (live, staged) => {
         live.width = staged.width; live.height = staged.height;

@@ -1013,7 +1013,7 @@
       // Expressions/yap still update the real world avatar, but only by promoting
       // completed private art: an older dialogue job must not draw onto a newly
       // clothed NPC's live front canvas after the wardrobe has committed.
-      await window.NpcAvatarPreview.renderProfileToCanvas(slot.canvas, profile, renderOptions);
+      if (await window.NpcAvatarPreview.renderProfileToCanvas(slot.canvas, profile, renderOptions) === false) return false;
       if (!deps.getDialogueOpen() || deps.getDialogueWalker() !== walker || walker.profile !== profile
           || walker.avatarGroup !== group || walker.avatarFrontCanvas !== live
           || dialoguePortraitVersions.get(walker) !== request) return false;
