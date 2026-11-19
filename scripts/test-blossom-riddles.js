@@ -46,6 +46,32 @@ for (let i = 0; i < 400; i++) {
   assert.ok(output.facts.every(fact => fact.source !== 'requested-terrain'), 'poem only states verified facts');
   poems++;
 }
+// The first landmark must be genuinely near the blossom, even when a distant river makes a more dramatic opening.
+const localStartLayout=layoutFor('white',40,35); // Two same-zone blossoms receive independent marker palettes.
+localStartLayout.localeInstances[0].blossomStartLandmark={col:50,row:35,replacedTree:true};
+const goldInstance=layoutFor('gold',15,14).localeInstances[0];
+goldInstance.blossomStartLandmark={col:24,row:14,replacedTree:false};
+localStartLayout.localeInstances.push(goldInstance);
+const nearSites=Scenery.planForLayout('map_western_slope',localStartLayout,'riddle-distance-cap');
+const nearStones=nearSites.filter(site=>site.blossomNear);
+assert.equal(nearStones.length,2,'both western blossoms receive their own physical unique starting debris');
+assert.equal(new Set(nearSites.filter(site=>site.dyeId).map(site=>site.dyeId)).size,
+  nearSites.filter(site=>site.dyeId).length,'adding blossom landmarks never reuses a dye within the same zone');
+assert.equal(nearStones.find(site=>site.blossomNear==='locale_five_blossoms_white').kind,'markedBoulder',
+  'the converted ordinary tree becomes a patterned, dyed boulder');
+assert.equal(nearStones.find(site=>site.blossomNear==='locale_five_blossoms_gold').kind,'brokenPillar',
+  'an open-ground fallback becomes a patterned, dyed authored broken pillar');
+for(const [instance,goal] of [[localStartLayout.localeInstances[0],'White Blossom'],[goldInstance,'Golden Blossom']]) {
+  const clue=Riddles.generate({zoneId:'map_western_slope',layout:localStartLayout,instance,
+    targetKind:'blossom',targetName:goal,requireUniqueStart:true,landmarks:nearSites,seed:'local-start:'+goal});
+  assert.equal(clue.ok,true,'real nearby debris can start a valid generated riddle');
+  assert.ok(clue.evidence.uniqueStart.distanceToBlossom<=20,
+    'the opening landmark stays within 20 tiles of the blossom, independent of the zone entrance');
+  assert.equal(Riddles.validate(clue),true,'nearby anchors preserve the rhyme and direction constraints');
+}
+assert.equal(Scenery.planForLayout('map_western_slope',localStartLayout,'riddle-distance-cap'),nearSites,
+  'the world-cycle landmark planner caches a stable physical target through repeated clue evaluations');
+
 // Riddles describe real places only: never imply a sunrise, moon phase, specific hour or countable map coordinates.
 const forbiddenTiming = /\\b(?:night|tonight|daylight|morning|evening|sunrise|sunset|dusk|dawn|midnight|noon|stars|moonlight|shadows|fading light|final light)\\b/i; // The quest calendar owns the deadline; a poem never owns an hour.
 const forbiddenCounting = /\\b\\d+\\s+(?:map\\s+)?tiles?\\b|\\b(?:count|measure)\\s+\\d+\\b/i; // Walking exact map-tile distances is not a treasure riddle.
@@ -386,6 +412,8 @@ assert.equal(riverStart.ok,true,'a measured confluence can start the hunt even w
 assert.equal(riverStart.evidence.uniqueStart.kind,'riverConfluence','two distinct broad centerlines identify a real meeting');
 assert.match(riverStart.text,/^In Northern Cliffs, in the heart of the zone, (?:begin|start|stand) at the meeting of two broad rivers/);
 assert.ok(riverStart.evidence.uniqueStart.coordinate,'river landmark includes a reachable dry-bank coordinate');
+assert.ok(Number.isInteger(riverStart.evidence.uniqueStart.waterCenter?.col) && Number.isInteger(riverStart.evidence.uniqueStart.waterCenter?.row),
+  'confluence audio anchor is the verified central water tile rather than the dry-bank approach');
 const riverEnd=layoutFor('cyan',54,43); // An unambiguous map-edge river end is another valid starting landmark.
 riverEnd.rivers=[{id:'one-main-channel',width:6,nodes:[[0,20],[20,20],[40,38],[69,38]]}];
 for(const [col,row] of [[0,20],[20,20],[40,38],[69,38]])riverEnd.tiles[row][col]={type:'river'};
@@ -393,6 +421,8 @@ const riverEndVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:riverE
   targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true,seed:'river-at-zone-rim'});
 assert.equal(riverEndVerse.ok,true,'a single main river meeting the border gives a grounded start');
 assert.equal(riverEndVerse.evidence.uniqueStart.kind,'riverEnd');
+assert.ok(Number.isInteger(riverEndVerse.evidence.uniqueStart.waterCenter?.col) && Number.isInteger(riverEndVerse.evidence.uniqueStart.waterCenter?.row),
+  'river-edge audio anchor uses a real central water tile');
 assert.match(riverEndVerse.text,/the broad river where it meets the (?:west|east) edge/);
 assert.match(riverEndVerse.text,/^In Northern Cliffs, in /,'river anchors also announce their position within the zone');
 for(let seed=0;seed<50;seed++){
@@ -499,6 +529,13 @@ for (let i = 0; i < ids.length; i++) {
 }
 const plantedTrees = []; // Tracks final scene positions to catch accidental loss of the foliage builder's local planting offset.
 const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); plantedTrees.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
+const zoneInfo = {scene,cullables:[]}; // Native directional vegetation culler retains the same scene's registered quest roots.
+class FakeBounds { // The hunt's culling integration is tested without requiring WebGL in the fast regression suite.
+  setFromObject(tree) { const p=tree.position;this.min={x:p.x-2,y:p.y,z:p.z-2};this.max={x:p.x+2,y:p.y+4,z:p.z+2};return this; }
+  isEmpty() { return false; }
+  getBoundingSphere(sphere) {sphere.center={x:(this.min.x+this.max.x)/2,z:(this.min.z+this.max.z)/2};sphere.radius=4;return sphere;}
+}
+
 const world = {
   FestivalProps: { blossomWindowSwatches: [{ color:'#00ffff' }, { color:'#ff8000' }, { color:'#ffffff' }, { color:'#ffbf00' }, { color:'#ffb3b3' }] },
   LocaleRiddleGenerator: Riddles, // The festival adapter consumes the same generator loaded by the browser script group.
@@ -513,8 +550,9 @@ const world = {
   GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
   WildernessLandmarkScenery: {landmarksFor(zone,layout){return Scenery.planForLayout(zone,layout,'unit-world:'+shiftYear);}}, // The real hunt now uses the same dye-marked landmarks as the scene.
   DevCompanion: { registerStateProvider() {} },
-  GridTileAccessors: { getActiveScene: () => scene },
-  FoliageGenerator: { buildWildernessBlossomTreeMesh() { treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
+  GridTileAccessors: { getActiveScene: () => scene, getZoneSceneInfo: () => zoneInfo },
+  THREE: {Box3:FakeBounds,Sphere:class Sphere{}},
+  FoliageGenerator: { buildWildernessBlossomTreeMesh(seed, color, zoneId) { assert.ok(Object.values(assignedZones).includes(zoneId),'blossom builder receives the real biome');treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
   ClimbSystem: { groundYAt: (x,y) => { sampledHeights.push({x,y}); return 0; } }
 };
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/festival-blossom-hunt.js'), 'utf8'), vm.createContext({ window: world, console }));
@@ -570,6 +608,8 @@ for (const id of ids) {
   tileListener({to:currentTile});
   assert.ok(!progress[questId].progress.found.includes(id),id+' must NOT be picked merely by entering its tile');
   assert.equal(hunt.nearbyTree()?.id,id,'the real tree becomes interactable inside reach');
+   assert.ok(zoneInfo.cullables.length>0 && zoneInfo.cullables.every(tree=>tree.userData.cullSphere),
+     'each quest tree joins the same zone cullables registry as ordinary foliage');
   const pickClaim=actionClaims.get('five-blossoms-tree')?.[0];
   assert.equal(pickClaim?.actionId,'action3',id+': pick action is assigned to the real third arch button');
   assert.equal(pickClaim?.showInArch,true,id+': pickup uses shared action-arch presentation');
@@ -622,6 +662,7 @@ currentZone = 'map_northern_cliffs';
 hunt.update();
 assert.ok(hunt.debugSnapshot().displayedTrees.includes('locale_five_blossoms_cyan'), 'the tree remains a physical wilderness locale outside the festival');
 assert.equal(treeBuilds, 6, 'a revisited zone receives a fresh tree instance while shared source geometry remains cached by FoliageGenerator');
+assert.equal(zoneInfo.cullables.length,1,'zone transitions unregister old quest trees, preventing stale culling references');
 assert.ok(plantedTrees.every(tree => tree.position.y === .25), 'scene placement retains the builder\'s root-level offset above the sampled floor');
 const northTree = Riddles.positionOf(zones.get('map_northern_cliffs').localeInstances[0], 'blossom-tree');
 assert.ok(sampledHeights.some(p => p.x === (northTree.col + .5) * deps.TILE && p.y === (northTree.row + .5) * deps.TILE), 'tree floor is sampled in pixel-space, not map-tile coordinates');
