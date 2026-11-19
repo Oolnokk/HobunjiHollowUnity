@@ -175,16 +175,19 @@
       clueTarget = target; clueLayout = targetLayout; clueSynced = true; // Identical rerolls need no new member save.
     }
   }
-  function clearTrees() {
-    const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // A fresh zone build may already own a different culling registry.
-    for (const node of visibleTrees.values()) {
-      node.parent?.remove?.(node);
-      for (const registry of new Set([visibleCullRegistries.get(node), zone?.cullables])) {
-        if (!registry) continue;
-        const index = registry.indexOf(node);
-        if (index >= 0) registry.splice(index, 1); // Remove both old and currently active references without touching other foliage.
-      }
+  function releaseVisibleTree(node) {
+    const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // Some active scenes have already replaced their original culling array.
+    window.FestivalBlossomPetals?.detach?.(node); // Dispose only the tree's own particle positions/material; cached native foliage stays shared.
+    node.parent?.remove?.(node);
+    for (const registry of new Set([visibleCullRegistries.get(node), zone?.cullables])) {
+      if (!registry) continue;
+      const index = registry.indexOf(node);
+      if (index >= 0) registry.splice(index, 1); // Release both the original owner and any current zone registry.
     }
+    visibleCullRegistries.delete(node);
+  }
+  function clearTrees() {
+    for (const node of visibleTrees.values()) releaseVisibleTree(node);
     visibleCullRegistries.clear();
     visibleTrees.clear();
     visibleScene = null;
@@ -195,12 +198,15 @@
     const area = mapDeps?.getCurrentArea?.();
     if (!BLOSSOMS.some(item => item.zoneId === area)) { if (visibleTrees.size) clearTrees(); return; } // Blossom locales exist all year; only collecting them is festival-limited.
     const scene = window.GridTileAccessors?.getActiveScene?.();
-    if (!scene) return;
+    if (!scene) { if (visibleTrees.size) clearTrees(); return; } // A zone-scene teardown must detach stale animated trees even before the replacement scene is ready.
     const layout = zoneLayout(area); // O(1) identity test catches forced Shift regeneration without recreating the Three.js scene.
     if (visibleScene !== scene || visibleZone !== area || visibleLayout !== layout) clearTrees();
     visibleScene = scene; visibleZone = area; visibleLayout = layout;
     for (const blossom of BLOSSOMS) {
-      if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
+      if (blossom.zoneId !== area) continue;
+      const previous = visibleTrees.get(blossom.localeId); // A live temple swatch change rebuilds only this blossom, not every tree.
+      if (previous?.parent === scene && previous.userData?.festivalBlossomHunt?.color === blossomColor(blossom)) continue; // A rebuilt zone may detach an old tree without changing its scene/layout references.
+      if (previous) { releaseVisibleTree(previous); visibleTrees.delete(blossom.localeId); }
       const instance = localeFor(blossom);
       const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // The region's own native tree shape, with tiny colored leaf bunches among its branches.
       if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
@@ -233,7 +239,11 @@
         }
       }
       visibleTrees.set(blossom.localeId, tree);
+      window.FestivalBlossomPetals?.attach?.(tree); // Adds one small Points child after the tree's static culling sphere was measured.
     }
+  }
+  function syncPetalContext() {
+    window.FestivalBlossomPetals?.setContext?.(window.PlayerTileEvents?.current?.(),mapDeps?.getCurrentArea?.()); // Existing 200-ms festival cadence does the distance check.
   }
   function nearbyTree(tile = window.PlayerTileEvents?.current?.()) {
     if (!active() || !tile || state()?.status !== 'active') return null;
@@ -294,6 +304,7 @@
   function onTile() {
     syncCalendar();
     buildVisibleTrees();
+    syncPetalContext();
     syncStartCue();
     syncPickPrompt(); // Moving near a blossom only makes Pick available: never automatically collects a flower.
   }
@@ -308,12 +319,12 @@
     router?.clearClaims?.('five-blossoms-tree'); // Never retain a previous character's Action 3 claim after switching worlds.
     if (typeof document !== 'undefined') document.getElementById?.('fiveBlossomsPick')?.remove?.(); // Remove any legacy fixed-position button left by a cached older module.
     advertisedPick = '__reset__'; // New member/world must not inherit another character's targeting.
-    clearTrees(); registerItems(); syncPickPrompt();
+    clearTrees(); window.FestivalBlossomPetals?.setContext?.(null,''); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
   }
   function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;clueTarget = null;clueLayout = null;clueSynced = false;cueGeneratedFor = '';cueGeneratedLayout = null;lastGenerated = null;window.FestivalBlossomStartCue?.reset?.();registerItems(); }
   function update() {
-    syncCalendar();buildVisibleTrees();syncStartCue();syncPickPrompt(); // Reuses the existing 200-ms festival tick: no new per-frame landmark search.
+    syncCalendar();buildVisibleTrees();syncPetalContext();syncStartCue();syncPickPrompt(); // Native petal emitters share this low-frequency distance gate and the central render scheduler.
   }
   function menuStatus() {
     const live = state();
@@ -385,7 +396,8 @@
       savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
       nearbyPick:nearbyTree()?.id || null,advertisedPick,usesNativeArch:true,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false,
-      startCue: window.FestivalBlossomStartCue?.debugSnapshot?.() || null
+      startCue: window.FestivalBlossomStartCue?.debugSnapshot?.() || null,
+      fallingPetals: window.FestivalBlossomPetals?.debugSnapshot?.() || null // Mobile diagnostic shows capped count and whether the shared scheduler is active.
     };
   }
   window.FestivalBlossomHunt = Object.freeze({ init,bindQuestDeps,update,menuStatus,debugSnapshot,BLOSSOMS,

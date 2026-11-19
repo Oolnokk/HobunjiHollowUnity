@@ -539,6 +539,7 @@ for (let i = 0; i < ids.length; i++) {
 const plantedTrees = []; // Tracks final scene positions to catch accidental loss of the foliage builder's local planting offset.
 const scene = { children: [], add(obj) { obj.parent = this; this.children.push(obj); plantedTrees.push(obj); }, remove(obj) { this.children = this.children.filter(x => x !== obj); obj.parent = null; } }; // Tracks visible foliage ownership/cleanup.
 const zoneInfo = {scene,cullables:[]}; // Native directional vegetation culler retains the same scene's registered quest roots.
+let sceneAvailable = true; // Simulates a brief zone rebuild with no active Three.js scene without changing the generated map.
 class FakeBounds { // The hunt's culling integration is tested without requiring WebGL in the fast regression suite.
   setFromObject(tree) { const p=tree.position;this.min={x:p.x-2,y:p.y,z:p.z-2};this.max={x:p.x+2,y:p.y+4,z:p.z+2};return this; }
   isEmpty() { return false; }
@@ -559,7 +560,7 @@ const world = {
   GameplayInputRouter: {setClaims(id,rows){actionClaims.set(id,rows);},clearClaims(id){actionClaims.delete(id);}},
   WildernessLandmarkScenery: {landmarksFor(zone,layout){return Scenery.planForLayout(zone,layout,'unit-world:'+shiftYear);}}, // The real hunt now uses the same dye-marked landmarks as the scene.
   DevCompanion: { registerStateProvider() {} },
-  GridTileAccessors: { getActiveScene: () => scene, getZoneSceneInfo: () => zoneInfo },
+  GridTileAccessors: { getActiveScene: () => sceneAvailable ? scene : null, getZoneSceneInfo: () => zoneInfo },
   THREE: {Box3:FakeBounds,Sphere:class Sphere{}},
   FoliageGenerator: { buildWildernessBlossomTreeMesh(seed, color, zoneId) { assert.ok(Object.values(assignedZones).includes(zoneId),'blossom builder receives the real biome');treeBuilds++; return { userData: {}, position: { y:.25, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }, scale: { multiplyScalar() {} }, traverse(fn) { const mesh={geometry:{},userData:{}}; fn(mesh); if(mesh.userData.festivalSharedFoliage) protectedMeshCount++; } }; } },
   ClimbSystem: { groundYAt: (x,y) => { sampledHeights.push({x,y}); return 0; } }
@@ -704,6 +705,21 @@ assert.equal(relocatedTree.position.z,relocatedPoint.row+.5,'the visual moves to
 zones.set(northId,missingZone);
 hunt.update();
 assert.equal(zoneInfo.cullables.length,1,'restoring the original layout still leaves exactly one native tree in the culling array');
+const beforeMissingScene=zoneInfo.cullables[0]; // Rebuilding a scene can temporarily return no active Three.js scene.
+sceneAvailable=false;
+hunt.update();
+assert.equal(beforeMissingScene.parent,null,'missing active scene detaches the previous native blossom root');
+assert.equal(zoneInfo.cullables.length,0,'a temporary scene gap must not retain an obsolete vegetation cullable');
+assert.equal(hunt.debugSnapshot().displayedTrees.length,0,'scene loss clears per-locale visual ownership');
+sceneAvailable=true;
+hunt.update();
+assert.equal(zoneInfo.cullables.length,1,'the native blossom returns when the new scene is ready');
+const detachedRoot=zoneInfo.cullables[0]; // A zone can also detach a root without changing scene or layout identity.
+scene.remove(detachedRoot);
+hunt.update();
+assert.equal(zoneInfo.cullables.length,1,'a removed tree is rebuilt into the same live scene');
+assert.notEqual(zoneInfo.cullables[0],detachedRoot,'the old detached tree is not mistaken for a valid scene resident');
+
 
 // The parser must not import a second unversioned terrain matcher after its versioned script has already installed.
 const temporarySource = fs.readFileSync(path.join(ROOT, 'docs/js/temporary-locales.js'), 'utf8');
