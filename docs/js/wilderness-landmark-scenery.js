@@ -241,8 +241,9 @@ function cairns(T,host,sites){
 function prepareStaticRuinVisual(group){
  group.traverse?.(node=>{
   if(!node.isMesh||node.isSkinnedMesh||node.isInstancedMesh||!node.geometry?.getAttribute?.('position'))return;
-  node.frustumCulled=true; // Authored ruin furniture must use per-part bounds, not remain an always-drawn world decoration.
-  node.userData.hobunjiWildernessDistanceCull=true; // Optional distance cull operates only during the synchronous world render.
+  if(node.frustumCulled===false)return; // Preserve deliberate no-cull sprite billboards, shader-displaced engraving glows and animated decals.
+  node.frustumCulled=true; // Regular authored stone uses its own geometry sphere, never a zone-wide owner bound.
+  node.userData.hobunjiWildernessDistanceCull=true; // Only static, ordinarily frustum-cullable meshes enter the render-only distance pass.
   if(!node.geometry.boundingSphere)node.geometry.computeBoundingSphere?.(); // Reuse authored local bounds in subsequent camera passes.
  });
 }
@@ -312,7 +313,10 @@ function clear(){
  group?.traverse?.(node=>{
   if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
  });
- // Cairn chunks share one cached, owned cliff-mapped geometry/material; neither they nor quarry stone buffers are disposed on a zone Shift.
+ // Release per-zone InstancedMesh renderer state, but never dispose the shared cliff/quarry geometries or material.
+ const cairnGroup=group?.children?.find(node=>node.name==='wilderness-stone-cairns');
+ for(const chunk of cairnGroup?.children||[])chunk.dispose?.(); // One instance matrix per spatial chunk; its owning mesh may release GPU bookkeeping on Shift.
+ 
  for(const rock of witness){
   for(const child of [...rock.children]){
    if(child.userData?.furniturePattern || child.userData?.ruinStoneSignalGlyph){
