@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm'); // Exercises the actual sprite renderer without a browser/WebGL context.
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const lamp = JSON.parse(read('docs/config/furniture-authored/standingLamp.json'));
@@ -73,3 +74,45 @@ assert.match(read('docs/tools/building-interior-author/index.html'), /key:'stand
 assert.ok(!read('docs/tools/locale-editor/locale-preview3d.js').includes("standingLamp: 'furniture/standing_lamp_bronze.glb'"), 'locale preview no longer loads the old lampshade GLB');
 assert.match(read('docs/index.html'), /procedural-furniture\.js\?v=[A-Za-z0-9_-]+/, 'game procedural furniture loader has a cache-bust token');
 console.log('Torch and Lantern Table furniture regressions passed.');
+
+
+const loadedTorchTextures=[]; // Verifies that separate wall torches reuse one GPU texture.
+const registeredTorchLights=[]; // Verifies exactly one renderer light per wall torch.
+class TorchNode {
+  constructor() {
+    this.children=[]; this.userData={}; this.name='';
+    this.position={ set(...xyz){ this.xyz=xyz; } };
+    this.rotation={}; this.scale={ setScalar(value){ this.value=value; } };
+  }
+  add(node) { this.children.push(node); node.parent=this; }
+  getObjectByName(name) { return this.children.find(child=>child.name===name)||null; }
+}
+class TorchMesh extends TorchNode {
+  constructor(geometry,material) { super();this.geometry=geometry;this.material=material; }
+}
+const fakeThree={
+  Group:TorchNode,Mesh:TorchMesh,Sprite:TorchMesh,PointLight:TorchNode,
+  Matrix4:class {},Vector3:class {},Quaternion:class {},
+  TextureLoader:class { load(url){const texture={url};loadedTorchTextures.push(texture);return texture;} },
+  PlaneGeometry:class { constructor(width,height){this.width=width;this.height=height;} },
+  MeshBasicMaterial:class { constructor(args){Object.assign(this,args);} },
+  DoubleSide:2,NearestFilter:1003,SRGBColorSpace:'srgb'
+}; // Only the Three entry points needed by the static torch artwork.
+const artWindow={THREE:fakeThree,
+  FurnitureLightRegistry:{register(light){registeredTorchLights.push(light);}}};
+vm.runInNewContext(authoredTorchSource,{window:artWindow,THREE:fakeThree}, {filename:'authored-furniture-runtime.js'});
+const firstMount=new TorchNode(),secondMount=new TorchNode(); // Independent furniture roots must not share mutable transforms.
+const sprite1=artWindow.AuthoredFurniture.attachWallTorchSprite(firstMount,fakeThree);
+const sprite2=artWindow.AuthoredFurniture.attachWallTorchSprite(secondMount,fakeThree);
+assert.ok(sprite1&&sprite2,'wall torches assemble with the real runtime helper');
+assert.notEqual(sprite1,sprite2,'each placed torch has its own support-relative transform');
+assert.equal(loadedTorchTextures.length,1,'all mounted sprites share the same loaded handheld PNG');
+const paintedSprite=sprite1.children.find(child=>child.name==='wall_torch_actual_handheld_png');
+assert.ok(paintedSprite,'one handheld torch PNG plane is attached to the perch');
+assert.equal(paintedSprite.rotation.z,Math.PI,'painted down points up in world space');
+assert.equal(paintedSprite.geometry.width,.26,'wall sprite maintains the intended narrow handheld proportions');
+assert.equal(paintedSprite.geometry.height,.70,'wall sprite maintains the original elongated torch aspect');
+assert.equal(registeredTorchLights.length,2,'one light source per mounted torch, not per primitive flame');
+assert.equal(artWindow.AuthoredFurniture.attachWallTorchSprite(firstMount,fakeThree),sprite1,
+  'repeated attachments never duplicate the torch or its light');
+assert.equal(registeredTorchLights.length,2,'reattachment does not register duplicate lights');
