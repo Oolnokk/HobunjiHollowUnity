@@ -113,7 +113,7 @@
   function _loadDiscoveredLocales(forCompass = false) {
     const worldId = deps.tothalWorldId(); // Scope every read to the active save world.
     if (!worldId) return {};
-    const revision = window.HobunjiStorageQuota?.getSaveMetaRevision?.(); // Bypasses synchronous storage only when guarded writes can invalidate the cache.
+    const revision = window.HobunjiStorageQuota?.getSaveMetaLocaleRevision?.(); // Bypasses synchronous storage only when guarded writes can invalidate the cache.
     if (forCompass && revision !== undefined && _discoveredLocalesCache.worldId === worldId &&
         _discoveredLocalesCache.revision === revision) {
       _localeCompassHits++;
@@ -145,7 +145,7 @@
       const raw = JSON.stringify(meta); // Persisted text also seeds the reader cache after a successful write.
       localStorage.setItem('hobunjiSaveMeta', raw);
       _discoveredLocalesCache = {
-        worldId, raw, locales: { ...discovered }, revision: window.HobunjiStorageQuota?.getSaveMetaRevision?.(),
+        worldId, raw, locales: { ...discovered }, revision: window.HobunjiStorageQuota?.getSaveMetaLocaleRevision?.(),
       }; // Only successful writes refresh the read cache.
     } catch {}
   }

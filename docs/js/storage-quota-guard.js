@@ -30,6 +30,8 @@
   ]);
   const SAVE_META_KEY = 'hobunjiSaveMeta'; // The compass tracks this one key without polling its full value.
   let saveMetaRevision = 0; // Advances whenever the guarded canonical metadata can change.
+  let saveMetaLocaleRevision = 0; // Compass-only revision: ignores changes unrelated to locale discovery.
+  let lastLocaleSections; // Serialized discoveredLocales fragments, not a second copy of the entire save.
   let guardedLocalStorage = null; // Virtual preview storage uses its own methods and must bypass revision caching.
   const stats = { quotaHits: 0, evicted: [], unresolved: 0, lastKey: '' };
   const folderStaging = new Map(); // Canonical values that no longer fit in the browser, read by the existing folder snapshot pipeline.
@@ -56,6 +58,56 @@
     return rank < 0 ? CHECKPOINT_EVICTION_ORDER : CHECKPOINT_EVICTION_ORDER.slice(0, rank);
   }
 
+  // Extract discoveredLocales JSON values without parsing the complete metadata.
+  // Performed on writes or cross-tab events, never during compass-frame polls.
+  function localeSections(raw) {
+    if (typeof raw !== 'string') return null;
+    const needle = '"discoveredLocales"';
+    const parts = [];
+    let cursor = 0;
+    while (cursor < raw.length) {
+      const at = raw.indexOf(needle, cursor);
+      if (at === -1) break;
+      cursor = at + needle.length;
+      if (raw[at - 1] === '\\') continue; // JSON-escaped key-like text inside a value is not a property.
+      let pos = cursor;
+      while (pos < raw.length && /\s/.test(raw[pos])) pos++;
+      if (raw[pos] !== ':') continue;
+      pos++;
+      while (pos < raw.length && /\s/.test(raw[pos])) pos++;
+      const start = pos;
+      if (raw[pos] === '{' || raw[pos] === '[') {
+        const stack = []; // Tracks only this one value's nested object/array boundaries.
+        let quoted = false, escaped = false;
+        for (; pos < raw.length; pos++) {
+          const char = raw[pos];
+          if (quoted) {
+            if (escaped) escaped = false;
+            else if (char === '\\') escaped = true;
+            else if (char === '"') quoted = false;
+          } else if (char === '"') quoted = true;
+          else if (char === '{') stack.push('}');
+          else if (char === '[') stack.push(']');
+          else if (char === '}' || char === ']') {
+            if (stack.pop() !== char) return raw; // Corrupt metadata must invalidate conservatively.
+            if (!stack.length) { pos++; break; }
+          }
+        }
+        if (stack.length || quoted) return raw;
+      } else {
+        while (pos < raw.length && !/[,}\]\s]/.test(raw[pos])) pos++;
+      }
+      parts.push(raw.slice(at, pos));
+      cursor = Math.max(pos, start + 1);
+    }
+    return parts.join('\u001f');
+  }
+  function noteLocaleWrite(value, force = false) {
+    const next = localeSections(value);
+    if (force || lastLocaleSections !== next) saveMetaLocaleRevision++;
+    lastLocaleSections = next;
+  }
+
   function install() {
     const proto = window.Storage?.prototype;
     if (!proto || proto.setItem.__hobunjiQuotaGuard) return false;
@@ -73,7 +125,7 @@
       const result = originalRemoveItem.call(this, key); // Preserve native errors before changing staged state.
       if (this === window.localStorage) {
         folderStaging.delete(key);
-        if (key === SAVE_META_KEY) saveMetaRevision++;
+        if (key === SAVE_META_KEY) { saveMetaRevision++; noteLocaleWrite(null, true); }
       }
       return result;
     };
@@ -82,6 +134,7 @@
       if (this === window.localStorage) {
         folderStaging.clear();
         saveMetaRevision++;
+        noteLocaleWrite(null, true);
       }
       return result;
     };
@@ -92,7 +145,7 @@
         const result = originalSetItem.call(this, key, value);
         if (this === window.localStorage) {
           folderStaging.delete(key);
-          if (key === SAVE_META_KEY) saveMetaRevision++;
+          if (key === SAVE_META_KEY) { saveMetaRevision++; noteLocaleWrite(value); }
         }
         return result;
       } catch (error) {
@@ -108,7 +161,7 @@
           try {
             const result = originalSetItem.call(this, key, value);
             folderStaging.delete(key);
-            if (key === SAVE_META_KEY) saveMetaRevision++;
+            if (key === SAVE_META_KEY) { saveMetaRevision++; noteLocaleWrite(value); }
             console.warn(`[storage-quota] freed space for "${key}" by dropping browser recovery copy "${victim}".`);
             return result;
           } catch (retryError) {
@@ -120,7 +173,7 @@
           // is staging, not durable success: syncSnapshot/syncNow must still
           // finish their actual disk writes before the UI reports a save.
           folderStaging.set(key, value);
-          if (key === SAVE_META_KEY) saveMetaRevision++;
+          if (key === SAVE_META_KEY) { saveMetaRevision++; noteLocaleWrite(value); }
           return;
         }
         stats.unresolved += 1;
@@ -132,9 +185,13 @@
     window.addEventListener?.('storage', event => {
       if (event.storageArea === window.localStorage && (event.key === SAVE_META_KEY || event.key === null)) {
         saveMetaRevision++;
+        noteLocaleWrite(event.key === null ? null : event.newValue, event.key === null); // Cross-tab restore/delete.
       }
     });
-    try { guardedLocalStorage = window.localStorage; } catch (_) {}
+    try {
+      guardedLocalStorage = window.localStorage;
+      lastLocaleSections = localeSections(originalGetItem.call(guardedLocalStorage, SAVE_META_KEY)); // One boot-time read, no JSON.parse.
+    } catch (_) {}
     return true;
   }
 
@@ -148,6 +205,12 @@
         if (guardedLocalStorage && guardedLocalStorage === window.localStorage) return saveMetaRevision;
       } catch (_) {}
       return undefined;
+    },
+    getSaveMetaLocaleRevision() {
+      try {
+        if (guardedLocalStorage && guardedLocalStorage === window.localStorage && lastLocaleSections !== undefined) return saveMetaLocaleRevision;
+      } catch (_) {}
+      return undefined; // Custom/preview storage uses the existing direct read path.
     },
     getWriteFailureCount: () => stats.unresolved,
     requireBrowserPersistence(callback) {
