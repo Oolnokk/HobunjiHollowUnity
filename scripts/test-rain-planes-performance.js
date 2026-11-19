@@ -24,13 +24,14 @@ class Vec2 {
   constructor() { this.x = 0; this.y = 0; }
   set(x, y) { this.x = x; this.y = y; return this; }
 }
-class CanvasTexture {
-  constructor(image) {
-    this.image = image;
-    this.offset = new Vec2();
-    this.repeat = new Vec2();
+class Matrix3 {
+  setUvTransform(x, y, sx, sy, rotation, cx, cy) {
+    assert.deepEqual([rotation, cx, cy], [0, 0, 0]);
+    this.elements = [sx, 0, 0, 0, sy, 0, x, y, 1];
   }
-  clone() { return new CanvasTexture(this.image); }
+}
+class CanvasTexture {
+  constructor(image) { this.image = image; }
 }
 class MeshBasicMaterial {
   constructor(options) {
@@ -53,7 +54,11 @@ class Mesh {
   }
 }
 const THREE = {
-  Vector3: Vec3, Euler, CanvasTexture, MeshBasicMaterial, Group, Mesh,
+  Vector3: Vec3, Euler, Matrix3, CanvasTexture, MeshBasicMaterial, Group, Mesh,
+  ShaderChunk: {
+    uv_pars_vertex: 'uniform mat3 uvTransform;',
+    uv_vertex: 'vUv = ( uvTransform * vec3( uv, 1 ) ).xy;',
+  },
   PlaneGeometry: class { constructor() { geometryCreations++; } },
   RepeatWrapping: 1, LinearFilter: 2, NearestFilter: 3,
   DoubleSide: 4, MathUtils: { degToRad: angle => angle * Math.PI / 180 },
@@ -98,6 +103,13 @@ const deps = {
 }; // All inputs consumed by RainPlanes for its regular update path.
 rain.init(deps);
 rain.update(1 / 60);
+function compileLayer(mesh) {
+  const shader = { uniforms: {}, vertexShader: '#include <uv_pars_vertex>\nvoid main() {\n#include <uv_vertex>\n}' }; // Exercises the same UV chunks Three injects before linking a MeshBasicMaterial.
+  mesh.material.onBeforeCompile(shader);
+  assert.match(shader.vertexShader, /uniform mat3 hobunjiPrecipitationUvTransform;/);
+  assert.match(shader.vertexShader, /vUv = \( hobunjiPrecipitationUvTransform \* vec3/);
+  return shader.uniforms.hobunjiPrecipitationUvTransform.value.elements;
+}
 const group = scene.getObjectByName('world_rain_planes');
 assert.ok(group, 'precipitation group is attached to the active scene');
 assert.equal(group.children.length, 17, 'default row mode creates five near and twelve far planes');
@@ -110,15 +122,38 @@ assert.equal(state.layerPoolSize, 17);
 assert.equal(state.rowAssignmentScratchSize, 17);
 assert.equal(state.rowReassignments, 17);
 const rainTexture = group.children[0].material.map; // Original rain map used to check weather-content swaps.
-const initialUvY = rainTexture.offset.y; // UV movement must remain active on a reused mesh.
+assert.equal(state.precipitationTextureCount, 1, 'rain does not generate snow canvases');
+assert.ok(group.children.every(mesh => mesh.material.map === rainTexture), 'rain sheets share one GPU texture');
+assert.ok(group.children.every(mesh => !Object.hasOwn(mesh, 'onBeforeRender')),
+  'precipitation must remain eligible for the held-object depth replay skip');
+const leadingUv = compileLayer(group.children[0]); // Holds a live reference to Three's uniform matrix during weather updates.
+const nextUv = compileLayer(group.children[1]); // Another material using the same rain map and shader program.
+const initialUvY = leadingUv[7]; // UV movement must remain active on a reused mesh.
+assert.notEqual(nextUv[7], initialUvY, 'shared artwork keeps independent sheet phases');
+assert.equal(nextUv[0], 9, 'each sheet applies its own texture repetition');
 rain.update(1 / 60);
 state = rain.getDebugState();
 assert.equal(state.rowReassignments, 17, 'stationary rows keep their existing meshes');
-assert.notEqual(rainTexture.offset.y, initialUvY, 'rain texture still scrolls each frame');
+assert.notEqual(leadingUv[7], initialUvY, 'rain texture still scrolls each frame');
 for (let frame = 0; frame < 120; frame++) rain.update(1 / 60); // Exercise two seconds of steady rain without creating new row descriptors.
 assert.equal(temporarySetCreations, 0, 'steady rain must not allocate transient Sets for row matching');
 assert.equal(rain.getDebugState().rowAssignmentScratchSize, 17, 'row assignment storage stays bounded after 120 frames');
 assert.equal(rain.getDebugState().rowReassignments, 17, 'stationary rain must not cause row-pool churn');
+assert.equal(rain.getDebugState().rowAssignmentPasses, 1, 'stationary rain must not repeatedly search the pool');
+
+deps.player.y += 1; // Move off the exact starting boundary and into a row interval.
+rain.update(1 / 60);
+const withinRowPasses = rain.getDebugState().rowAssignmentPasses; // Compare after moving within the same interval.
+const withinRowPosition = group.children[1].position.y; // The live placement must still follow the camera.
+const withinRowOpacity = group.children[1].material.opacity; // Fade still advances on animation updates.
+deps.player.y += 1;
+camera.position.y += 1;
+rain.update(1 / 60);
+assert.equal(rain.getDebugState().rowAssignmentPasses, withinRowPasses, 'walking within one interval reuses assignments');
+assert.notEqual(group.children[1].position.y, withinRowPosition, 'sheet geometry still tracks the camera');
+assert.notEqual(group.children[1].material.opacity, withinRowOpacity, 'sheet opacity still updates');
+deps.player.y -= 2;
+rain.update(1 / 60);
 
 // The old renderer identifies a row by side + world coordinate, NOT by the
 // index within a spacing preset. +5 units is the same row in both presets.
@@ -155,12 +190,16 @@ outdoor = true;
 calendar.isRaining = false;
 rain.update(1 / 60);
 assert.equal(rain.getDebugState().layerCount, 0, 'clear weather outdoors must also stay invisible');
+const pausedRainOffset = leadingUv[7]; // Rain phase should resume when switching back from snow.
 calendar.isRaining = true;
 area = 'map_western_slope';
 rain.update(1 / 60);
 assert.equal(rain.getDebugState().activeContent, 'blizzard');
 assert.notEqual(group.children[0].material.map, rainTexture, 'Western Slope really swaps the same material to snow artwork');
 assert.equal(group.children.length, 17, 'snow reuses the precipitation pool');
+assert.equal(rain.getDebugState().precipitationTextureCount, 4, 'one rain texture and three snow families are cached');
+assert.equal(group.children[0].material.map, group.children[3].material.map, 'sheets share snow artwork within each depth family');
+assert.notEqual(group.children[0].material.map, group.children[1].material.map, 'snow depth families retain distinct artwork');
 assert.ok(group.children.every(mesh => mesh.material.map.image.width === 640),
   'all active snow planes must use blizzard artwork, not the rain texture');
 rain.setSettings({ frontCount: 12, behindCount: 12 });
@@ -182,6 +221,8 @@ area = 'farm';
 rain.update(1 / 60);
 assert.equal(rain.getDebugState().activeContent, 'rain', 'returning from Western Slope restores rain');
 assert.equal(group.children[0].material.map, rainTexture, 'returning to the farm restores the original rain texture');
+assert.ok(Math.abs(leadingUv[7] - (pausedRainOffset + 1.08 * 3 / 60) % 1) < 1e-10,
+  'each weather type resumes the sheet phase it had before switching');
 assert.equal(geometryCreations, 1, 'mode switches never allocate duplicate plane geometry');
 
 const nextScene = new Group(); // Another outdoor map scene, to verify precipitation is transferred rather than duplicated.
