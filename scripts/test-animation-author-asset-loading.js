@@ -20,8 +20,6 @@ assert.match(html, /const assetBase = rawUrl\(settings\.docsRoot \+ 'assets\/'\)
   'portraits must use immutable GitHub raw as primary instead of a possibly stale CDN');
 assert.match(html, /const configBase = rawUrl\(settings\.docsRoot \+ 'config\/'\)/,
   'cosmetic configs must come from the same commit as portrait assets');
-assert.match(html, /const docsBase = rawUrl\(settings\.docsRoot\)/,
-  'creature compositor paths must also use the selected raw revision');
 assert.match(html, /path => rawUrl\(settings\.docsRoot \+ path\)/,
   'rig-preview creature registry must use the same pinned repository paths');
 
@@ -34,6 +32,11 @@ const prepare = new Function('rawUrl', 'cdnUrl', 'CREATURE_RENDER_SCRIPT', 'loca
   path => 'https://cdn.jsdelivr.net/gh/Oolnokk/HobunjiHollowUnity@TEST_COMMIT/' + path,
   'js/creature-genetics-render.js', { href: 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/TEST_COMMIT/docs/tools/animation-author/index.html' }
 );
+const creatureRenderer = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Exercise the shipped compositor, not a test double.
+const preparedCreature = prepare(creatureRenderer, 'js/creature-genetics-render.js', { docsRoot: 'docs/' });
+const selectedCreatureScriptUrl = 'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/TEST_COMMIT/docs/js/creature-genetics-render.js'; // Expected URL for creature base masks and sprites.
+assert(preparedCreature.includes('const MODULE_SCRIPT_URL = ' + JSON.stringify(selectedCreatureScriptUrl) + ';'),
+  'creature compositor must resolve from the selected commit instead of the editor page');
 const prepared = prepare(breathing, 'js/portrait-breathing.js', { docsRoot: 'docs/' });
 assert.match(prepared, /const candidates = \["https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUnity\/TEST_COMMIT\/docs\/config\/"\]/,
   'breathing auto-init must resolve from root, not tools/animation-author/docs/config');

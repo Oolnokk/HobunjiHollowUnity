@@ -39,7 +39,7 @@
     ['NpcViewFrustumCull', 'npc-view-frustum-cull.js?v=20261110npcReplayCull2'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261109tribeAiSleepPerf1'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261117hcorpse2'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261118hb4f3905'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
@@ -71,7 +71,7 @@
     // depth writes, so provide a colorless order-889 depth copy before mist 890-892
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20260906a'],
-    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261117hcorpse3'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261118h6966faa'],
     // Faceted cliffs and rock geometry use PNG edges; explicitly tagged rounded wilderness stones retain the 3D silhouette shell.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20261113hstoneReview1'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20260907b'],

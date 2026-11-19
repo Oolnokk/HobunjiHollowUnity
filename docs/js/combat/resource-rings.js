@@ -58,39 +58,41 @@
   // same world-space Y plane; renderOrder handles which layer paints last.
   const RESOURCE_FILL_Y_OFFSET = .004;
 
-  function makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments) {
+  function appendFlatArc(vertices, indices, innerRadius, outerRadius, startDeg, endDeg, yOffset, segments) {
     const span = endDeg - startDeg;
     const safeSegments = Math.max(2, Math.ceil(Math.abs(span) / 8), segments);
-    const vertices = [];
-    const indices = [];
+    const vertexStart = vertices.length / 3; // Offsets triangle indices when several arcs share one mesh.
 
     for (let i = 0; i <= safeSegments; i++) {
       const t = i / safeSegments;
       const angle = (startDeg + span * t) * Math.PI / 180;
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
-      vertices.push(cos * outerRadius, 0, sin * outerRadius);
-      vertices.push(cos * innerRadius, 0, sin * innerRadius);
+      vertices.push(cos * outerRadius, yOffset, sin * outerRadius);
+      vertices.push(cos * innerRadius, yOffset, sin * innerRadius);
     }
 
     for (let i = 0; i < safeSegments; i++) {
-      const outerA = i * 2;
+      const outerA = vertexStart + i * 2;
       const innerA = outerA + 1;
       const outerB = outerA + 2;
       const innerB = outerA + 3;
       indices.push(outerA, outerB, innerA, innerA, outerB, innerB);
     }
+  }
 
+  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false, renderOrderOffset = yOffset) {
+    const vertices = []; // Holds this arc's final positions for the shared mesh builder.
+    const indices = []; // Holds this arc's triangle indices.
+    appendFlatArc(vertices, indices, innerRadius, outerRadius, startDeg, endDeg, yOffset, segments);
+    return makeArcMeshFromBuffers(vertices, indices, color, opacity, additive, renderOrderOffset);
+  }
+
+  function makeArcMeshFromBuffers(vertices, indices, color, opacity, additive, renderOrderOffset) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
-    return geometry;
-  }
-
-  function makeArcMesh(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset, segments = 32, additive = false, renderOrderOffset = yOffset) {
-    const geometry = makeFlatArcGeometry(innerRadius, outerRadius, startDeg, endDeg, segments);
-    geometry.translate(0, yOffset, 0);
     const material = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
       // X-ray through grass billboards/foliage/anything else in front —
@@ -163,16 +165,20 @@
     return group;
   }
 
+  const DASH_COUNT = 9; // Used by both Exhaustion and the Health-risk overlay.
+  let dashedArcsBuilt = 0; // Pixel Probe counts one batch per constructed dashed arc.
+
   function makeDashedArc(innerRadius, outerRadius, startDeg, endDeg, color, opacity, yOffset) {
-    const group = new THREE.Group();
-    const dashCount = 9;
+    const vertices = []; // Holds all dash positions at their authored individual elevations.
+    const indices = []; // Holds nine disconnected sets of triangles in one draw.
     const span = endDeg - startDeg;
-    for (let i = 0; i < dashCount; i++) {
-      const dashStart = startDeg + span * (i / dashCount);
-      const dashEnd = startDeg + span * ((i + .48) / dashCount);
-      group.add(makeArcMesh(innerRadius, outerRadius, dashStart, dashEnd, color, opacity, yOffset + i * .0008, 5));
+    for (let i = 0; i < DASH_COUNT; i++) {
+      const dashStart = startDeg + span * (i / DASH_COUNT);
+      const dashEnd = startDeg + span * ((i + .48) / DASH_COUNT);
+      appendFlatArc(vertices, indices, innerRadius, outerRadius, dashStart, dashEnd, yOffset + i * .0008, 5);
     }
-    return group;
+    dashedArcsBuilt++;
+    return makeArcMeshFromBuffers(vertices, indices, color, opacity, false, yOffset);
   }
 
   // Subtracts every range in `claimed` from every range in `ranges`,
@@ -323,16 +329,11 @@
   // tagged with a resourceKey — runs every frame (not just on rebuild) so
   // the animation keeps playing across frames where nothing else changed.
   function applyAfflictionPulseTransform(hudGroup, entity, nowMs) {
-    // Resource arcs live one level below the rotated fighter-ring wrapper.
-    // Walk the tree rather than checking only the HUD's direct children;
-    // the old direct-child loop never reached a tagged arc, so the intended
-    // affliction feedback animation could not run.
-    const pending = [...hudGroup.children];
-    while (pending.length) {
-      const child = pending.pop();
-      pending.push(...child.children);
-      const key = child.userData?.resourceKey;
-      if (!key) continue;
+    // The rotated resource wrapper is the first child, before the optional
+    // target halo. Only its immediate resource groups can receive a pulse.
+    const resourceGroups = hudGroup.children[0].children; // Excludes all arc meshes, dash geometry and target-lock rings.
+    for (const child of resourceGroups) {
+      const key = child.userData.resourceKey;
       const until = entity._afflictionPulseUntil?.[key] || 0;
       const remaining = (until - nowMs) / 1000;
       if (remaining > 0) {
@@ -549,6 +550,7 @@
   window.ResourceRings = {
     updateRingHud,
     disposeRingHud,
+    debugSnapshot: () => ({ dashedArcsBuilt, dashMeshesAvoided: dashedArcsBuilt * (DASH_COUNT - 1) }),
     parseCssColor,
     // Exposed so other visual systems (game.js's weapon ghost-trail) can
     // reuse the exact same per-affliction color the resource bars themselves

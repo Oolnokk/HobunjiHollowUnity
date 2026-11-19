@@ -69,6 +69,33 @@ assert.ok(main.includes("closingStatus?.saveInProgress"), 'Updater refuses to ra
 assert.ok(main.includes("closingStatus?.closeRequested"), 'Updater refuses to race an active shutdown request');
 assert.ok(main.includes("if (closeInProgress) return; // The updater already owns"), 'Normal close cannot launch a second write while update install is saving');
 
+assert.equal((main.match(/app\.commandLine\.appendSwitch\('force_high_performance_gpu'\)/g) || []).length, 1,
+  'Desktop opts into the documented high-performance discrete GPU switch exactly once');
+assert.ok(main.indexOf("app.commandLine.appendSwitch('force_high_performance_gpu')") < main.indexOf('app.whenReady()'),
+  'GPU preference must be set before Chromium/Electron initialization');
+assert.ok(!main.includes("app.commandLine.appendSwitch('force_low_power_gpu')"),
+  'Desktop must not also request the integrated/low-power GPU');
+
+// Exercise actual Electron bootstrap order without launching a real Electron window.
+const startupCalls = []; // Records GPU preference, protocol registration and second-instance handling in the production main entry point.
+const fakeElectronApp = {
+  isPackaged: false,
+  commandLine: { appendSwitch: name => startupCalls.push('switch:' + name) },
+  requestSingleInstanceLock: () => { startupCalls.push('single-instance-lock'); return false; },
+  quit: () => startupCalls.push('quit'),
+  on: () => {},
+}; // Forces the harmless second-instance startup path; no game or updater window is created.
+vm.runInNewContext(main, {
+  require: name => name === 'electron'
+    ? { app: fakeElectronApp, protocol: { registerSchemesAsPrivileged: () => startupCalls.push('protocol') } }
+    : name === 'electron-updater' ? { autoUpdater: {} }
+      : name.startsWith('./') ? require(path.join(repo, 'desktop', name)) : require(name),
+  __dirname: path.join(repo, 'desktop'),
+  process, console,
+});
+assert.deepEqual(startupCalls, ['switch:force_high_performance_gpu', 'protocol', 'single-instance-lock', 'quit'],
+  'High-performance GPU preference is actually applied before protocol initialization and app startup');
+
 async function checkGraphicsStatus() {
   const software = describeGraphicsStatus({
     accelerationEnabled: true,
@@ -110,6 +137,7 @@ async function checkGraphicsStatus() {
   const gameWindow = { isDestroyed: () => false, webContents: { executeJavaScript: async script => vm.runInNewContext(script, page) } };
   const report = await showGraphicsStatus({
     app: { isHardwareAccelerationEnabled: () => true,
+      commandLine: { hasSwitch: name => name === 'force_high_performance_gpu' },
       getGPUFeatureStatus: () => ({ webgl: 'enabled', gpu_compositing: 'enabled' }),
       getGPUInfo: async level => { assert.equal(level, 'basic'); return { gpuDevice: [{ active: true, deviceString: 'GeForce GTX' }] }; } },
     dialog: { showMessageBox: async (_win, dialog) => { displayed = dialog; return { response: 0 }; } },
@@ -118,6 +146,12 @@ async function checkGraphicsStatus() {
   assert.equal(displayed.title, 'Hobunji Hollow — Graphics Status');
   assert.equal(copied, report, 'GPU status can be copied directly from the game');
   assert.match(report, /ANGLE \(NVIDIA GeForce GTX\)/);
+  assert.match(report, /Discrete GPU preference: requested at startup/, 'Native diagnostics proves this build actually requested the dedicated adapter');
+  assert.match(describeGraphicsStatus({ highPerformanceRequested: true,
+    webgl: { state: 'ready', unmaskedRenderer: 'ANGLE (Intel HD Graphics 530)' },
+    features: { webgl: 'enabled' } }), /Renderer: ANGLE \(Intel/,
+    'Even after a discrete GPU preference, the actual Intel WebGL renderer is reported without being misrepresented');
+
 
   const missingGpu = await showGraphicsStatus({
     app: { isHardwareAccelerationEnabled: () => true,

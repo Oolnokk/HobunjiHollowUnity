@@ -46,6 +46,7 @@ const w={PerchSupport:supports,__farmLog(){},
   ].map(r=>{supports.register(area,r.support);return r;}):[],releaseInactive(){}},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
+vm.runInNewContext(file('docs/js/flying-combat-orbit.js'),{window:w,Math,console});
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
 const deps={TILE:64,player,hostileObjects:creatures,companionObjects:companions,getCurrentArea:()=>zone,worldSurfaceY:()=>0,
   makeCreatureEntity:(creatureKey,x,y,opts)=>({creatureKey,x,y,areaId:zone,
@@ -175,14 +176,60 @@ supports.attach=function(actor,point,t){ // Simulate a destroyed physical roost 
   return originalAttach(actor,point,t);
 };
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,secondCaptive));
+farBird._tzFlight.fallbackFoe=player;player.health=100; // A living, established combat opponent must be circled when the original perch is gone.
 assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
 for(let i=0;i<80&&farBird._tzFlight.phase==='return';i++)w.TzatzulFlightRuntime.update(.1);
-assert.equal(farBird._tzFlight.phase,'await-roost','missing landing perch cannot create an endless return');
+assert.equal(farBird._tzFlight.phase,'orbit','an unperchable flying enemy circles its foe instead of waiting indefinitely');
 assert.equal(farBird._tzFlight.captive,null,'lost roost releases surviving prey without an invisible cave');
 assert.equal(secondCaptive.tzatzulCapturedBy,null,'lost roost clears captive ownership');
-supports.attach=originalAttach;
+const orbitLeg=farBird._tzFlight.segment; // The real flight line, not an independently teleported steering position.
+assert(orbitLeg&&Math.hypot(orbitLeg.to.x-player.x,orbitLeg.to.y-player.y)/64<=5.01,
+  'first evasive chord stays close to the current foe');
+const orbitBefore=w.TzatzulFlightRuntime.debugSnapshot().orbits;
+for(let i=0;i<50;i++)w.TzatzulFlightRuntime.update(.1);
+assert(w.TzatzulFlightRuntime.debugSnapshot().orbits>orbitBefore,
+  'unavailable perch produces successive ring arcs, not a one-time sidestep');
+let recoveredRoost=false; // Confirms a rebuilt physical perch is reoccupied after real flight, without teleportation.
+supports.attach=function(actor,point,t){if(actor===farBird&&point.dimension===0)recoveredRoost=true;return originalAttach(actor,point,t);};
 w.TzatzulFlightRuntime.ensureZone(zone);
-assert.equal(farBird._tzFlight.phase,'perched','the original perch can recover after scene regeneration');
+for(let i=0;i<100&&!recoveredRoost;i++)w.TzatzulFlightRuntime.update(.1);
+assert(recoveredRoost,'the physical perch takes precedence again as soon as it can be reached');
+supports.attach=originalAttach;
+const recoveredPoint=farBird._tzFlight.roost; // Keep the real spire intact while testing a genuinely removed perch record.
+farBird._tzFlight.roost=null;farBird._tzFlight.fallbackFoe=player;
+assert(w.TzatzulFlightRuntime.__test.returnHome(farBird),'a missing roost record starts combat circling immediately');
+assert.equal(farBird._tzFlight.phase,'orbit','null perch cannot leave the old swoop state running with no segment');
+assert(farBird._tzFlight.segment,'no-perch orbit still owns an ordinary flight support');
+farBird._tzFlight.roost=recoveredPoint;
+let landedOnRealRoost=false; // Arrival must use the real point even if the healthy mother immediately starts another hunt.
+supports.attach=function(actor,point,t) {
+  if(actor===farBird&&point.dimension===0)landedOnRealRoost=true;
+  return originalAttach(actor,point,t);
+};
+assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
+for(let i=0;i<80&&!landedOnRealRoost;i++)w.TzatzulFlightRuntime.update(.1);
+assert(landedOnRealRoost,'recovering a physical perch safely ends the missing-roost fallback');
+supports.attach=originalAttach;
+const blockedMother={x:320,y:128,branchSurfaceY:5,onPerch:{dimension:1},health:100,areaId:zone,
+  _tzNestMother:true,def:{modelWidth:1.3},_tzFlight:{identity:{id:'blocked-mother'},roost:null,
+    phase:'return',segment:null,fallbackFoe:player,orbitDirection:1,orbitLegs:0}};
+w.TzatzulNestEncounter={clearAirPath:()=>false}; // Mimic a fully obstructed nest flight ring; no wall tunnelling is acceptable.
+assert.equal(w.TzatzulFlightRuntime.__test.returnHome(blockedMother),false);
+assert.equal(blockedMother._tzFlight.phase,'await-roost','fully blocked orbit waits instead of repeatedly spawning illegal paths');
+for(let i=0;i<8;i++)w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'await-roost','blocked circular geometry cannot force an unsafe route');
+w.TzatzulNestEncounter.clearAirPath=()=>true; // A later opening must eventually permit normal combat circling.
+for(let i=0;i<8&&blockedMother._tzFlight.phase!=='orbit';i++)
+  w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'orbit','indoor mother retries after obstructions clear instead of idling permanently');
+assert(blockedMother._tzFlight.segment,'retry creates a real elevated flight leg');
+blockedMother._tzFlight.orbitLegs=3; // This accepted orbit is the final evasive chord before the next normal attack.
+for(let i=0;i<20&&blockedMother._tzFlight.phase==='orbit';i++)
+  w.TzatzulFlightRuntime.advanceNestFlight(blockedMother,.1);
+assert.equal(blockedMother._tzFlight.phase,'swoop',
+  'the nest mother resumes a real body-first attack between no-perch circles');
+assert(blockedMother._tzFlight.segment?.mode==='swoop','orbit combat reuses the existing flight/collision attack leg');
+delete w.TzatzulNestEncounter;
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
 assert(supports.attach(farBird,farBird._tzFlight.roost));

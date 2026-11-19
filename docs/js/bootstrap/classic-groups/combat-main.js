@@ -13,11 +13,11 @@
     "js/combat/combat-animal-attacks.js?v=20261117hypedCreature6",
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261117hypedCreature6",
     "js/combat/combat-attach.js?v=20261117hypedCreature6",
-    "js/combat/combat-loadout.js?v=20261117toolStanceWalk1",
+    "js/combat/combat-loadout.js?v=20261118torchThrowScaled2",
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261104scent1439c",
-    "js/companion-combat-response.js?v=20261110decf5f6ae3",
+    "js/companion-combat-response.js?v=20261118followArbiter1",
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261104scent1439c",
     "js/combat/combat-input.js?v=20261117hypedInput2",
@@ -26,15 +26,15 @@
     "js/combat/combat-quickattacks.js?v=20261117hypedQuick3",
     "js/combat/combat-mounted.js?v=20261116mountedCombat1",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",
-    "js/combat/combat-blink-dodge.js?v=20261115hc8b1508",
+    "js/combat/combat-blink-dodge.js?v=20261118ghostOptIn1",
     "js/combat/combat-charged-breaker.js?v=20261117hypedCharge4",
     "js/combat/combat-flurry.js?v=20261117hypedFlurry3",
-    "js/combat/combat-loadout-ui.js?v=20261116windupCharge1",
-    "js/combat/combat-enchantments.js?v=20261116decouple2",
+    "js/combat/combat-loadout-ui.js?v=20261118instrumentLoadout1",
+    "js/combat/combat-enchantments.js?v=20261118captainWeapon1",
     "js/combat/fey-illusions.js?v=20261117feySensory4",
     "js/combat/fey-hyped-attacks.js?v=20261117hypedCreature6",
     "js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1",
-    "js/combat/loadout-weapon-preview.js?v=20261117flailViewport1"
+    "js/combat/loadout-weapon-preview.js?v=20261118instrumentSubtabPreview1"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // Parser-time writing preserves blocking evaluation and dependencies of the former inline registrations.

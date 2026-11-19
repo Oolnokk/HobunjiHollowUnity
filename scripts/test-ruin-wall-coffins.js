@@ -32,7 +32,10 @@ const run = Coffins.mount({ THREE, sites, seed: 3, tier: 'lich', getPlayerY: () 
   const flush = () => new Promise(r => setImmediate(r));
   for (let i = 0; i < 30; i++) run.update(.05);
   assert.equal(run.snapshot().states.every(s => s === 'closed'), true, 'nothing wakes while the player is far away');
-  const first = run.coffins[0]; player.x = first.site.x; player.z = first.site.z + 1.2; player.y = first.site.floorY;
+  const first = run.coffins[0];
+  assert.equal(first.wall.material.depthWrite,true,'the dark coffin opening hides underlying wall engravings');
+  assert(first.wall.position.z>first.rest.z,'the dark opening renders in front of the wall, not behind it');
+  player.x = first.site.x; player.z = first.site.z + 1.2; player.y = first.site.floorY;
   run.update(.05);
   assert.equal(first.state, 'falling');
   assert.deepEqual(openingSounds.map(event=>event.key),['breakRock','ruinCoffinShriek'],'activation plays exactly one rock break and one skeleton scream immediately');

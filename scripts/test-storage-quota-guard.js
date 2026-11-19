@@ -35,7 +35,9 @@ localStorage.setItem(auto, fill(60));
 localStorage.setItem('hobunjiSaveMeta', fill(80));
 
 // Canonical save grows past the quota: evict autoPrevious, then auto, but keep manual.
+const revisionBeforeEviction = Q.getSaveMetaRevision(); // Canonical writes count once even when quota eviction retries them.
 localStorage.setItem('hobunjiSaveMeta', fill(260));
+assert.equal(Q.getSaveMetaRevision(), revisionBeforeEviction + 1);
 assert.equal(localStorage.getItem('hobunjiSaveMeta').length, 260, 'canonical save write succeeds');
 assert.equal(localStorage.getItem(autoPrev), null, 'autoPrevious evicted first');
 assert.equal(localStorage.getItem(auto), null, 'auto evicted next');
@@ -54,7 +56,9 @@ assert.ok(Q.debugSnapshot().quotaHits >= 2);
 // A canonical save too large even after eviction remains usable by an armed
 // folder, while browser-only saves and other storage keys must still fail.
 win.LocalSaveFolder = { getStatus: () => ({ state: 'ready', autoSyncArmed: true }) };
+const revisionBeforeStaging = Q.getSaveMetaRevision(); // Folder-staged metadata must invalidate live readers too.
 localStorage.setItem('hobunjiSaveMeta', fill(500));
+assert.equal(Q.getSaveMetaRevision(), revisionBeforeStaging + 1);
 assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(500));
 assert.notEqual(localStorage._data.get('hobunjiSaveMeta'), fill(500), 'staging does not pretend to have written native browser storage');
 assert.ok(Q.debugSnapshot().stagedKeys.includes('hobunjiSaveMeta'));
@@ -63,7 +67,9 @@ assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(520), 'repeated read/
 assert.throws(() => localStorage.setItem('unrelated', fill(500)), /quota/);
 assert.throws(() => localStorage.setItem(manual, fill(500)), /quota/, 'recovery checkpoints are not silently staged');
 win.LocalSaveFolder = { getStatus: () => ({ state: 'ready', autoSyncArmed: false }) };
+const revisionBeforeFailure = Q.getSaveMetaRevision(); // A rejected write leaves the readable metadata unchanged.
 assert.throws(() => localStorage.setItem('hobunjiSaveMeta', fill(530)), /quota/, 'an unarmed folder does not authorize writes');
+assert.equal(Q.getSaveMetaRevision(), revisionBeforeFailure);
 Q.importFolderSnapshot(() => localStorage.setItem('hobunjiSaveMeta', fill(540)));
 assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(540), 'validated folder imports can hydrate before arming');
 assert.throws(() => localStorage.setItem('hobunjiSaveMeta', fill(550)), /quota/, 'import staging permission does not leak');
@@ -80,9 +86,15 @@ sessionStorage.setItem('hobunjiSaveMeta', 'session-only');
 assert.equal(sessionStorage.getItem('hobunjiSaveMeta'), 'session-only', 'sessionStorage reads never see local staging');
 sessionStorage.clear();
 assert.equal(localStorage.getItem('hobunjiSaveMeta'), fill(600), 'clearing sessionStorage does not clear local staging');
+const revisionBeforeClear = Q.getSaveMetaRevision(); // Clearing browser metadata also clears staged values and advances the revision.
 localStorage.clear();
+assert.equal(Q.getSaveMetaRevision(), revisionBeforeClear + 1);
 assert.equal(localStorage.getItem('hobunjiSaveMeta'), null);
 assert.equal(Q.hasStagedValues(), false, 'clearing localStorage also clears its staged canonical values');
+
+win.localStorage = { getItem: () => null }; // Preview mode uses isolated Map-backed storage methods.
+assert.equal(Q.getSaveMetaRevision(), undefined, 'virtual storage must use the unguarded read path');
+win.localStorage = localStorage;
 
 const index = fs.readFileSync('docs/index.html', 'utf8');
 const guardAt = index.indexOf('js/storage-quota-guard.js');

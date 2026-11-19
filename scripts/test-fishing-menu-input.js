@@ -5,6 +5,7 @@ const vm = require('node:vm'); // Executes owner functions with lightweight depe
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Contains the common mobile/keyboard/controller dispatcher.
 const fishing = fs.readFileSync('docs/js/fishing-minigame.js', 'utf8'); // Contains camera cleanup and catch reward presentation.
 const nav = fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'); // Contains focus ownership across menu transitions.
+const NAV_VISIBILITY_SHIM = 'function invalidateVisibility() {}\nfunction navClassAdd(node, name) { node.classList.add(name); }\nfunction navClassRemove(node, name) { node.classList.remove(name); }\n'; // Helpers the production nav functions call (visibility memo invalidation).
 function ownerFunction(source, name, indent = '  ') {
   const start = source.indexOf(`${indent}function ${name}(`); // Locates the real function declaration.
   assert(start >= 0, `missing owner ${name}`);
@@ -53,7 +54,7 @@ const main = { name: 'main' }, child = { name: 'submenu' }; // Represents a subm
 const mainButton = { closest: () => main, hasAttribute: () => false }, childButton = { closest: () => child, hasAttribute: () => false }; // Each target resolves to its registered owner.
 const panels = { PANEL_SELECTOR: 'panel', knownPanels: new Set([main, child]), targetsInPanel: panel => panel === main ? [mainButton, childButton] : [childButton] }; // Main descendants include the nested submenu for exclusion coverage.
 Object.assign(panels, { automaticEntryEnabled: false, navigationRoot: panel => panel, groupTarget: element => element, isGroup: () => false, subtabsByGroup: new Map(), clearGroups() {} }); // This ownership-only fixture has no controller input or entered groups; nested confinement is exercised by test-controller-nested-groups.
-vm.runInNewContext(['owningRegisteredPanel', 'belongsToNavigation', 'directTargets', 'projectSingleChild', 'navigationTargets'].map(name => ownerFunction(nav, name)).join('\n'), panels);
+vm.runInNewContext(['owningRegisteredPanel', 'belongsToNavigation', 'directTargets', 'projectSingleChild', 'navigationTargets'].map(name => ownerFunction(nav, name)).join('\n') + NAV_VISIBILITY_SHIM, panels);
 assert.equal(panels.belongsToNavigation(mainButton, child), false, 'submenu rejects underlying main menu focus');
 assert.equal(panels.navigationTargets(child).length, 1);
 assert.equal(panels.navigationTargets(child)[0], childButton);
@@ -63,7 +64,7 @@ console.log('Fishing cancellation, camera restoration, treasure captions and men
 
 const directions = []; // Captures directional navigation while a numeric input has focus.
 const navigate = { currentTarget: { tagName: 'INPUT', type: 'number', value: '17' }, move: dir => directions.push(dir), moveVector: (x, y) => directions.push([x, y]) };
-vm.runInNewContext(ownerFunction(nav, 'moveOrAdjust') + ownerFunction(nav, 'moveVectorOrAdjust'), navigate);
+vm.runInNewContext(NAV_VISIBILITY_SHIM + ownerFunction(nav, 'moveOrAdjust') + ownerFunction(nav, 'moveVectorOrAdjust'), navigate);
 navigate.moveOrAdjust('left');
 navigate.moveVectorOrAdjust(1, 0.1);
 assert.equal(navigate.currentTarget.value, '17', 'directional browsing never changes a focused numeric value');
@@ -83,7 +84,7 @@ panels.isDisabled = () => false;
 panels.updateHintBar = () => {};
 panels.setFocus = target => { panels.currentTarget = target; };
 panels.visiblePanels = () => [main, child];
-vm.runInNewContext(['activePanel', 'reconcileStack', 'activatePanel', 'pickDefaultTarget'].map(name => ownerFunction(nav, name)).join('\n'), panels);
+vm.runInNewContext(['activePanel', 'reconcileStack', 'activatePanel', 'pickDefaultTarget'].map(name => ownerFunction(nav, name)).join('\n') + NAV_VISIBILITY_SHIM, panels);
 panels.reconcileStack();
 assert.equal(panels.currentTarget, childButton, 'opening a submenu immediately transfers focus');
 panels.visiblePanels = () => [main];

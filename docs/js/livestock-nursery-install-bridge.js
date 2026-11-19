@@ -7,14 +7,14 @@
   const featureScripts = [ // Used to load each modular feature's config before its runtime implementation.
     { globalKey: 'LivestockNurseryObserverScope', src: 'js/livestock-nursery-observer-scope.js?v=20260916scope1' },
     { globalKey: 'LivestockNurseryOutdoorGrowth', src: 'js/livestock-nursery-outdoor-growth.js?v=20260916outdoor1' },
-    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261117boundSleeper1' },
+    { globalKey: 'AnimalSleepPresentation', src: 'js/animal-sleep-presentation.js?v=20261118shoulderTextureOwner1' },
     { globalKey: 'OutdoorLivestockWelfare', src: 'js/outdoor-livestock-welfare.js?v=20260916outdoor1' },
     { globalKey: 'OutdoorLivestockPresence', src: 'js/outdoor-livestock-presence.js?v=20260916presence1' },
     { globalKey: 'ANIMAL_GROWTH_CONFIG', src: 'config/animal-growth-config.js?v=20261019hd965d6f' },
     { globalKey: 'AnimalBabyArrival', src: 'js/animal-baby-arrival.js?v=20261117babyChatheadNames1' },
     { globalKey: 'AnimalGrowth', src: 'js/animal-growth.js?v=20261024naming1' },
     { globalKey: 'StableAnimalProgression', src: 'js/stable-animal-progression.js?v=20261103crs2' },
-    { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261116windupCharge1' },
+    { globalKey: 'StableAnimalPerkAdjustments', src: 'js/stable-animal-perk-adjustments.js?v=20261118playerRunBase1' },
     { globalKey: 'CompanionResilience', src: 'js/stable-companion-resilience.js?v=20261024resil1' }, // Appends offense/defense/revival perks to the tree perk-adjustments just replaced.
     { globalKey: 'StableAnimalTownFamiliarity', src: 'js/stable-animal-town-familiarity.js?v=20260917rapport2' },
     { globalKey: 'StableAnimalTrainingRefinements', src: 'js/stable-animal-training-refinements.js?v=20261028hfurytactics1' },

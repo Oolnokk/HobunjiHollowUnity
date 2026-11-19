@@ -24,13 +24,10 @@
     }
     const b=root.DynamicSurfaces?.blockerAt?.(wx,wz,{worldY:feetY,radius:half,actorHeight:1.25});
     if(b)out.push('dynamic blocker:'+b.id);
-    const floors=root.DevRandomRuin?.getShaftCollisionMap;
-    if(floors&&area==='map_i_dev_random_ruin'){
-      for(let f=0;f<8;f++){
-        const m=floors(f);if(!m)break;
-        if(Math.abs((Number(m.y)||0)-feetY)>1.5)continue;
-        if(m.blocked?.has?.(Math.floor(wx)+','+Math.floor(wz))||(Array.isArray(m.blocked)&&m.blocked.includes(Math.floor(wx)+','+Math.floor(wz))))out.push('ruin shaft wall cell (floor '+f+') at '+Math.floor(wx)+','+Math.floor(wz));
-      }
+    if(area==='map_i_dev_random_ruin'){
+      const physical=root.DevRandomRuin?.shaftBodyBlocksAtFeet; // Probe the same selectable, full-height voxel volume as ordinary ruin movement.
+      if(typeof physical==='function'&&physical(wx,wz,half,feetY))
+        out.push('ruin shaft wall at '+Math.floor(wx)+','+Math.floor(wz)+' (feet '+Number(feetY).toFixed(2)+')');
     }
     return out;
   }

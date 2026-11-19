@@ -189,10 +189,23 @@
       baseClose();
     }
 
+    function strongestOwnedFlasks(entries) {
+      const byRecipe = new Map(); // Keeps one visible throwable per recipe without changing actual inventory stacks or the legacy exact-key selector.
+      for (const entry of entries || []) {
+        const payload = entryPayload(entry); // Reads either registered or dynamically brewed flask potency metadata.
+        const recipeId = payload?.recipeId; // Identifies a flask type across its different potency item keys.
+        const tier = Number(payload?.potencyTier) || 0; // Higher numeric potency wins within the same flask type.
+        if (!recipeId || !(Number(entry?.count) > 0)) continue;
+        const previous = byRecipe.get(recipeId); // Used to replace a weaker displayed entry with its strongest owned counterpart.
+        if (!previous || tier > (Number(entryPayload(previous)?.potencyTier) || 0)) byRecipe.set(recipeId, entry);
+      }
+      return [...byRecipe.values()];
+    }
+
     function currentCategoryEntries(kind) {
       const state = A.potionCategoryState() || {};
       if (kind === 'buffs') return state.buffs?.items || [];
-      return state.flasks?.items || [];
+      return strongestOwnedFlasks(state.flasks?.items || []); // Flasks show only the strongest owned potency for each recipe type.
     }
 
     function openCategory(kind) {
@@ -214,7 +227,7 @@
       const categoryState = A.potionCategoryState() || {};
       const contextual = context.reverse().map(entry => wheelEntry(entry)).filter(Boolean); // Highest-scored restorative ends nearest Cancel.
       const buffs = categoryState.buffs?.items || [];
-      const flasks = categoryState.flasks?.items || [];
+      const flasks = currentCategoryEntries('flasks'); // Root gateway reflects only the actually displayable flask types.
       const buffGateway = buffs.length ? { id:'buffs', icon:'✨', label:'Buffs', className:'potion-category potion-buff-gateway', disabled:false, onSelect:() => openCategory('buffs') } : null;
       const flaskGateway = flasks.length ? { id:'flasks', icon:'🫙', label:'Flasks', className:'potion-category potion-flask-gateway', disabled:false, onSelect:() => openCategory('flasks') } : null;
       const cancel = { id:'cancel', icon:'✕', label:'Cancel', className:'potion-cancel', active:true, disabled:false, onSelect:closeSelector };
@@ -437,6 +450,7 @@
       contextual:(A.contextualRestoratives() || []).map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), score:entry.score, count:entry.count })),
       buffs:currentCategoryEntries('buffs').map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), count:entry.count })),
       flasks:currentCategoryEntries('flasks').map(entry => ({ itemKey:entry.itemKey, label:inventoryLabel(entry), count:entry.count })),
+      flaskCandidates:(A.potionCategoryState()?.flasks?.items || []).length, // Lets mobile diagnostics verify that hidden weaker potencies were not deleted.
       lastSelection:lastSelection && { ...lastSelection },
       lastRestore:lastRestore && { ...lastRestore },
       tapBandageMaxMs:TAP_BANDAGE_MAX_MS,

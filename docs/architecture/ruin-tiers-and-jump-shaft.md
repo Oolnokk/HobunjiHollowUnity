@@ -38,6 +38,16 @@ reach (`compose().checks`, also run by `scripts/test-ruin-tiers-jump-shaft.js`).
 * The ground story is a gallery around a **death pit** (tradition hazard: lava, ice spikes, or the real sinking plasm); the DynamicSurfaces pit also stops jumps landing on the ruin's ground tile. Above the top gallery the shaft has **one extra story of open height with no balcony**: the bomber Skeeri nest (a basket balcony on the north wall) lives there.
 * The runtime exposes the same surface the old obelisk runtime did, so the ruin's
   airborne/fall reconciler (`reconcileObeliskPlayer`) drives it. Landing on a lower platform or gallery after a fall is survivable (drops over 3 units cost non-lethal Health + Footing, `applyShaftFallDamage`); falling past the lowest one is the pit.
+* Every jump slab now has a structural `pillar_square` stretching from the death-pit basin
+  to the slab's **underside**. `RuinShaftSupportPillars` reads the original editable
+  `assets/models/furniture/data/pillar_square.json`; its runtime-only recipe uses the
+  same fixed-foot / stretchy-middle / fixed-cap `FurnitureTileSpan` solver as the
+  IKMC ceiling ladder. An even rounded slab width gives a **2×2** footing; odd gives
+  **3×3**. Bases are centered on the slab; capitals are limited to the slab width.
+  These are deliberately visual-only: they add no landing surface, climbing
+  collision or safe floor inside the fatal pit. A temporary stone silhouette upgrades
+  to authored parts on asset load. See `getState().supportPillars` for counts/failures;
+  all instances, including late-loading ones, are removed on teardown.
 * **tothal**: every platform is ice (`RuinJumpShaft.isIceAt`, consulted by
   `DevRandomRuinLichThemes.movementPhysicsAt` at the player's own height).
 * **hronal**: some slabs are exactly the pillar blast radius wide and carry the existing

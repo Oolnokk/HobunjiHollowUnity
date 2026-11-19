@@ -34,11 +34,43 @@ class Color {
   getHex() { return this.hex; }
 }
 
+class Group {
+  constructor() {
+    this.children = [];
+    this.userData = {};
+    this.position = { x: 0, z: 0 };
+    this.rotation = {};
+    this.scale = { x: 1, setScalar(value) { this.x = value; } };
+  }
+  add(child) { child.parent = this; this.children.push(child); }
+  remove(child) { this.children.splice(this.children.indexOf(child), 1); child.parent = null; }
+}
+
+class BufferGeometry {
+  setAttribute(name, attribute) { this[name] = attribute; }
+  setIndex(indices) { this.indices = indices; }
+  computeVertexNormals() {}
+  dispose() { this.disposed = true; }
+}
+
+class Float32BufferAttribute {
+  constructor(values, itemSize) { this.array = Float32Array.from(values); this.itemSize = itemSize; }
+}
+
+class MeshBasicMaterial {
+  constructor(options) { Object.assign(this, options); }
+  dispose() { this.disposed = true; }
+}
+
+class Mesh extends Group {
+  constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; }
+}
+
 let testNowMs = 0; // Used to exercise time-gated affliction recovery without real-time sleeps.
 const context = {
   console,
   performance: { now: () => testNowMs },
-  THREE: { Color },
+  THREE: { Color, Group, BufferGeometry, Float32BufferAttribute, MeshBasicMaterial, Mesh },
   CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
   dispatchEvent() {},
 };
@@ -75,6 +107,52 @@ assert.equal(ResourceRings.isResourceHomeostatic(fullEntity, 'stamina'), false);
 fullEntity.afflictions.woundedStamina = 0;
 fullEntity.exhaustion.active = true;
 assert.equal(ResourceRings.isResourceHomeostatic(fullEntity, 'stamina'), false);
+
+const ringScene = new Group(); // Executes the same ring update path as a rendered enemy.
+const ringActor = { ...fullEntity, health: 80, stamina: 0,
+  exhaustion: { active: true, blackStamina: 60 }, afflictions: { ...fullEntity.afflictions, woundedStamina: 15 } };
+const projected = new Set(); // Tracks every mesh that receives the snow/slush ground projection hook.
+context.EnvironmentSurfaceMicroPlateau = { bindGroundProjection: mesh => projected.add(mesh) };
+const ringHud = ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+const [fighterRings, targetHalo] = ringHud.children; // Only the fighter's resource groups can pulse.
+const [healthRing, staminaRing] = fighterRings.children;
+assert.equal(healthRing.userData.resourceKey, 'health');
+assert.equal(staminaRing.userData.resourceKey, 'stamina');
+assert.equal(targetHalo.children.length, 2, 'target-lock halo stays independent');
+
+for (const [ring, color, opacity] of [[staminaRing, 0xffffff, 0.34], [healthRing, 0xff9b2f, 0.96]]) {
+  const dash = ring.children.filter(mesh => mesh.material?.color === color && mesh.material?.opacity === opacity);
+  assert.equal(dash.length, 1, 'nine dashes share one draw in each resource ring');
+  const mesh = dash[0];
+  assert(projected.has(mesh), 'the batch receives the usual ground projection hook');
+  const { position, indices } = mesh.geometry;
+  const verticesPerDash = 12; // Five segments with two vertices per segment boundary.
+  assert.equal(position.array.length, 9 * verticesPerDash * 3);
+  assert.equal(indices.length, 9 * 5 * 6);
+  for (let i = 0; i < 9; i++) {
+    const start = i * verticesPerDash;
+    assert(indices.slice(i * 30, (i + 1) * 30).every(index => index >= start && index < start + verticesPerDash),
+      'neighboring dashes are never connected by triangles');
+    assert(Math.abs(position.array[start * 3 + 1] - position.array[1] - i * 0.0008) < 1e-7,
+      'the batch preserves the authored height offset of every dash');
+  }
+}
+assert.equal(ResourceRings.debugSnapshot().dashMeshesAvoided, 16);
+testNowMs = 60;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.notEqual(staminaRing.position.x, 0, 'affliction feedback animates on the reused arc without a geometry rebuild');
+assert.equal(targetHalo.position.x, 0, 'affliction feedback cannot move the target halo');
+testNowMs = 5000;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.equal(staminaRing.position.x, 0, 'the arc resets its position when the pulse ends');
+assert.equal(staminaRing.scale.x, 1, 'the arc resets its scale when the pulse ends');
+assert.equal(ResourceRings.debugSnapshot().dashedArcsBuilt, 2, 'unchanged ring geometry survives pulse updates');
+const oldDashGeometry = staminaRing.children.find(mesh => mesh.material?.opacity === 0.34).geometry;
+ResourceRings.disposeRingHud(ringActor);
+assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geometry');
+assert.equal(ringScene.children.length, 0);
+delete context.EnvironmentSurfaceMicroPlateau;
+testNowMs = 0;
 
 const recoveringEntity = { ...fullEntity, stamina: 73, exhaustion: { active: true, blackStamina: 40 }, afflictions: { ...fullEntity.afflictions } }; // Exercises the Exhausted/black-Stamina invariant through both recovery and cap enforcement.
 ResourceSystem.tick(recoveringEntity, 0.25, { staminaRegenPerSec: 999 });

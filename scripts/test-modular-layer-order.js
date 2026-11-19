@@ -147,7 +147,8 @@ async function run() {
   assert.notDeepEqual(actualTransforms[0], initialHeadTransforms[0],
     'the rig transform is a separate parent, not an additional child-primitive adjustment');
   const globalFrameTransformCount = transformed.operations.filter(op => op.startsWith('scale:') || op.startsWith('translate:')).length;
-  assert.equal(globalFrameTransformCount, 2,
+  const staffArt = api.getConfig().shafts.hachutuTorchStaff.shaftArtTransform; // A lengthened haft adds the shaft-only art translate/scale/translate.
+  assert.equal(globalFrameTransformCount, 2 + (staffArt?.enabled ? 3 : 0),
     'shaft rendering only uses output-frame scale/translation, with no duplicate-rig transform on the shaft PNG');
   assert.equal(transformed.operations.filter(op => op === 'paint:haft').length, 1,
     'nonmetal shaft artwork is painted exactly once at original authoring coordinates');
@@ -209,7 +210,7 @@ async function run() {
   api.replace(areaBase);
   const baseTwoHead=await api.compose('hachutuTorchStaff','warhammer');
   const areaDraft=JSON.parse(JSON.stringify(api.getConfig()));
-  const topArea={id:'topCap',label:'Top cap',box:{x0:130,y0:185,x1:280,y1:348},
+  const topArea={id:'topCap',label:'Top cap',box:{x0:130,y0:-50,x1:280,y1:300},
     transform:{scaleX:1.4,scaleY:.7,x:63,y:-36}};
   areaDraft.shafts.hachutuTorchStaff.rigRegions=[topArea];
   api.replace(areaDraft);
@@ -255,14 +256,14 @@ async function run() {
   const partialRecipeDraft=JSON.parse(JSON.stringify(api.getConfig()));
   partialRecipeDraft.shafts.hachutuTorchStaff.rigRegions=[{
     id:'partialStep',label:'Not recipe center',
-    box:{x0:175,y0:276,x1:205,y1:310},
+    box:{x0:175,y0:224,x1:205,y1:269},
     transform:{scaleX:2,scaleY:.5,x:120,y:30}
   }];
   api.replace(partialRecipeDraft);
   const partialShaft=api.getConfig().shafts.hachutuTorchStaff;
   const partialStrokes=partialShaft.overrides.dagger.bridges.strokes;
   const firstRecipeExpanded=api.expandOps([partialStrokes[0]]);
-  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=276 && op.y<=310),
+  assert(firstRecipeExpanded.some(op=>op.junction && op.y>=224 && op.y<=269),
     'the source recipe really has an internal junction inside this small region');
   const unselectedRecipeOps=api.rigBridgeOperations(partialShaft,partialStrokes);
   assert(unselectedRecipeOps.every(op=>op._rigRegionId !== 'partialStep'),
@@ -298,6 +299,9 @@ async function run() {
     'area labels, source box, and transformation survive a second configuration round trip');
   // Optional shaft art: the shaft and fuel move together, but the two fitted
   // head primitives preserve their positions when the overall rig is unchanged.
+  const plainArt=JSON.parse(JSON.stringify(api.getConfig())); // The shipped Torch-Staff haft is lengthened; compare against an un-stretched art baseline.
+  plainArt.shafts.hachutuTorchStaff.shaftArtTransform={scaleX:1,scaleY:1,x:0,y:0,enabled:false};
+  api.replace(plainArt);
   const unscaledArt=await api.compose('hachutuTorchStaff','warhammer');
   const artDraft=JSON.parse(JSON.stringify(api.getConfig()));
   artDraft.shafts.hachutuTorchStaff.shaftArtTransform={
@@ -310,7 +314,7 @@ async function run() {
   for(const [i,before] of sampleHeads(unscaledArt).entries()) {
     const after=sampleHeads(scaledArt)[i];
     assert(Math.hypot(after.x-before.x,after.y-before.y)<1e-7
-      && Math.abs(after.scale-before.scale)<1e-7,
+      && Math.abs(after.scale-before.scale)<1e-3, // Canvas pixel rounding on the larger lengthened frame.
       'optional shaft art must not change attached head pixels (allow subpixel canvas rounding)');
   }
   const shaftSample=canvas=>{

@@ -171,6 +171,7 @@
     deps = injectedDeps;
     window.DelversGuild?.bindQuestDeps?.(injectedDeps); // Shares the live quest store with the Guild's three-key-stones story task.
     window.FeyArmamentQuest?.bindQuestDeps?.(injectedDeps); // The knotwork investigation uses the same saved member Quest Log.
+    window.FestivalBlossomHunt?.bindQuestDeps?.(injectedDeps); // The timed blossom riddles use the canonical member quest save.
     _installBanditCampDangerSubtitle();
   }
 
@@ -342,7 +343,8 @@
           `;
         } else if (task.kind === 'story') {
           const live = task.provider === 'banubu' ? window.BanubuQuestline?.menuStatus?.()
-            : task.provider === 'feyArmament' ? window.FeyArmamentQuest?.menuStatus?.() : null; // Story quest owners supply live readiness without changing saved stage data.
+            : task.provider === 'feyArmament' ? window.FeyArmamentQuest?.menuStatus?.()
+            : task.provider === 'blossomHunt' ? window.FestivalBlossomHunt?.menuStatus?.() : null; // Story quest owners supply live readiness without changing saved stage data.
           const ready = live?.active ? !!live.ready : !!task.ready;
           const giver = task.npcName || 'Quest giver';
           row.innerHTML = `
@@ -350,8 +352,8 @@
             <div class="sh-info">
               <div class="sh-name">${deps.esc(task.title || 'Quest')}</div>
               <div class="sh-desc">${deps.esc(live?.objective || task.objective || 'Continue the quest.')}</div>
-              ${task.detail ? `<div class="sh-desc" style="margin-top:2px;">${deps.esc(task.detail)}</div>` : ''}
-              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${live?.statusText ? deps.esc(live.statusText) : ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
+              ${task.detail ? `<div class="sh-desc" style="margin-top:2px;${task.provider === 'blossomHunt' ? 'white-space:pre-line;' : ''}">${deps.esc(live?.detail || task.detail)}</div>` : ''}
+              <div class="sh-desc" style="margin-top:2px;color:${ready ? 'var(--accent)' : 'inherit'};">${live?.statusText ? deps.esc(live.statusText) : task.provider === 'blossomHunt' ? 'Follow the verse to the next tree.' : ready ? `Ready — return to ${deps.esc(giver)}.` : `In progress — return to ${deps.esc(giver)} when the objective is complete.`}</div>
             </div>
           `;
         } else if (task.commission) {

@@ -24,7 +24,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   });
   assert.equal(generated.ok, true, `fixed ruin seed should generate: ${JSON.stringify(generated.audit, null, 2)}`);
   await page.waitForFunction(() => window.GridTileAccessors?.getCurrentArea?.() === 'map_i_dev_random_ruin', null, { timeout:30000 });
-  await page.waitForFunction(() => {
+  const ruinReadiness = () => {
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.();
     const root = window.DevRandomRuin?.getRuntimeContext?.()?.root;
     let hiddenPatternOverlays = 0; // Intentionally hidden pattern:sides helper geometry is not an activator surface players should see.
@@ -37,7 +37,8 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       && render.visibleDoorSources===render.sourceDoorMeshes
       && render.visibleActivatorSources+hiddenPatternOverlays===render.sourceActivatorMeshes
       && collision?.blocked?.length>0&&render.totalProxyCount===0;
-  }, null, { timeout:30000, polling:500 }).catch(async error => { // Allow slow headless initialization, but still fail when the authoritative collision grid never appears.
+  }; // One identical predicate for polling and timeout verification prevents stale readiness diagnoses.
+  await page.waitForFunction(ruinReadiness, null, { timeout:60000, polling:500 }).catch(async error => { // Allow slow headless initialization, but still fail when the authoritative collision grid never appears.
     // Keep the original assertion, but report the exact failed counts when CI
     // cannot display WebGL. These are also available from Pixel Probe in-game.
     const sceneDebug = await page.evaluate(() => ({
@@ -72,6 +73,9 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     }));
     console.error('[ruin collision smoke] wall proxy readiness:', JSON.stringify(sceneDebug));
     console.error('[ruin collision smoke] page errors:', JSON.stringify(errors.slice(-12)));
+    const readyAtTimeout = await page.evaluate(ruinReadiness); // Heavy generation can delay the final poll despite a fully populated collision scene.
+    console.error('[ruin collision smoke] readiness at timeout:', readyAtTimeout);
+    if (readyAtTimeout) return; // The downstream assertions still validate all actual gameplay and rendered state.
     throw error;
   });
 

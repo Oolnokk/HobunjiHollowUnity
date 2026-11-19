@@ -80,7 +80,8 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
   clock += elapsedBeforeSecondaryPasses;
   camera.layers.set(4); renderer.render(scene, camera); // PNG occluder depth
   scene.overrideMaterial = shellMaterial; camera.layers.set(1); renderer.render(scene, camera); scene.overrideMaterial = null; // Shell outline
-  camera.layers.set(5); renderer.render(scene, camera); // Cloud-forest mist redraw
+  const mist = { ...makeOtherScene('mist'), name: 'mist-redraw', autoUpdate: false, userData: { cloudForestMistRedraw: true } };
+  camera.layers.set(5); renderer.render(mist, camera); // Isolated Cloud Forest mist redraw.
   camera.layers.enableAll();
   // The painterly post-process renders its own scenes inside the composite call. They end the global
   // adjacent-pass sequence but cannot change the world scene's matrices.
@@ -97,30 +98,30 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
   const updated = worldRenders.filter(r => r.matricesUpdated);
   assert.equal(updated.length, 1, `only the base render may recompute matrices; got ${JSON.stringify(worldRenders)}`);
   assert.equal(worldRenders[0].matricesUpdated, true, 'the first world render is the base pass');
-  const afterReplays = worldRenders.slice(-4); // pngDepth, shell, mist, world-text overlay
-  assert.equal(afterReplays.length, 4);
-  assert.deepEqual(afterReplays.map(r => r.matricesUpdated), [false, false, false, false], `PNG-depth, shell, mist and world-text passes must reuse the base matrices: ${JSON.stringify(afterReplays)}`);
+  const afterReplays = worldRenders.slice(-3); // PNG depth, shell and world-text overlay.
+  assert.equal(afterReplays.length, 3);
+  assert.deepEqual(afterReplays.map(r => r.matricesUpdated), [false, false, false], `PNG-depth, shell and world-text passes must reuse the base matrices: ${JSON.stringify(afterReplays)}`);
   assert.equal(frame.filter(r => r.scene.startsWith('painterly-')).length, 3, 'unrelated scenes were rendered between the mist pass and the text overlay');
-  assert.ok(afterReplays[3].mask === (1 << api.worldTextOverlayLayer) >>> 0, 'the last world render is the layer-6 text overlay draw');
+  assert.ok(afterReplays[2].mask === (1 << api.worldTextOverlayLayer) >>> 0, 'the last world render is the layer-6 text overlay draw');
   assert.equal(scene.autoUpdate, true, 'scene.autoUpdate is restored after the frame');
-  assert.ok(api.snapshot().reusedSceneMatrixPasses >= 4, 'reuse counter reflects the four reused passes');
+  assert.ok(api.snapshot().reusedSceneMatrixPasses >= 3, 'reuse counter reflects the three reused passes');
 }
 
 // 2. Control: without the re-arm the replays end the sequence and every later pass walks the scene again.
 {
   const scene = makeWorld();
   const frame = runFrame({ rearmAfterReplays: false, scene });
-  const afterReplays = frame.filter(r => r.scene === 'world').slice(-4);
-  assert.deepEqual(afterReplays.slice(0, 3).map(r => r.matricesUpdated), [true, true, true], 'documents the original behavior the re-arm fixes: PNG-depth, shell and mist each re-walk the scene');
-  assert.equal(afterReplays[3].matricesUpdated, true, 'a pass that re-walked the scene since the base render means the overlay must not assume the base matrices');
+  const afterReplays = frame.filter(r => r.scene === 'world').slice(-3);
+  assert.deepEqual(afterReplays.slice(0, 2).map(r => r.matricesUpdated), [true, true], 'documents the original behavior the re-arm fixes: PNG-depth and shell each re-walk the scene');
+  assert.equal(afterReplays[2].matricesUpdated, true, 'a pass that re-walked the scene since the base render means the overlay must not assume the base matrices');
 }
 
 // 3. A stale base render is never reused (guards against an old frame's matrices).
 {
   const scene = makeWorld();
   const frame = runFrame({ rearmAfterReplays: true, scene, elapsedBeforeSecondaryPasses: api.snapshot().maxReuseAgeMs + 50 });
-  const afterReplays = frame.filter(r => r.scene === 'world').slice(-4);
-  assert.deepEqual(afterReplays.map(r => r.matricesUpdated), [true, true, true, true], 'past the reuse age limit every pass, including the text overlay, recomputes matrices');
+  const afterReplays = frame.filter(r => r.scene === 'world').slice(-3);
+  assert.deepEqual(afterReplays.map(r => r.matricesUpdated), [true, true, true], 'past the reuse age limit every pass, including the text overlay, recomputes matrices');
 }
 
 // 4. Re-arming refuses a non-scene and reuse is per-scene: another scene's passes are untouched.

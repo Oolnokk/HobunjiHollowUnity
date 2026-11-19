@@ -1093,6 +1093,8 @@
     if (knockbackLedgeDebug) {
       lines.push(`Knockback ledge: entity=${knockbackLedgeDebug.entity || '-'} phase=${knockbackLedgeDebug.phase || '-'} originY=${Number(knockbackLedgeDebug.originSurfaceY || 0).toFixed(2)} landingY=${Number(knockbackLedgeDebug.landingSurfaceY || 0).toFixed(2)} drop=${Number(knockbackLedgeDebug.dropTiers || 0).toFixed(2)}tier reason=${knockbackLedgeDebug.reason || '-'}`);
     }
+    const resourceRingsDebug = window.ResourceRings?.debugSnapshot?.(); // Shows dashed ring batching during combat on mobile.
+    if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} mesh allocations avoided`);
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);
@@ -1243,13 +1245,20 @@
     if (mountedRide && window.Mounts?.rideState !== 'none') {
       lines.push(`Mount riding: state=${window.Mounts.rideState} cruise=${mountedRide.cruise} speed=${Number(mountedRide.speedPxS || 0).toFixed(1)}px/s coasting=${!!mountedRide.coasting} wheat=${mountedRide.wheatRemaining}/6 boost=${Number(mountedRide.boostSeconds || 0).toFixed(2)}s combatBurst=${Number(mountedRide.combatBoostSeconds || 0).toFixed(2)}s/x${Number(mountedRide.combatBoostMultiplier || 1).toFixed(2)} windup=${mountedRide.windupOwner || '-'} paid=${Math.round((mountedRide.windupSpentFraction || 0)*100)}% x${Number(mountedRide.windupMultiplier || 1).toFixed(2)} momentumDamage=x${Number(mountedRide.meleeDamageMultiplier || 1).toFixed(2)} orbit=${mountedRide.orbitActive ? (mountedRide.orbitTarget || '-') : '-'} radius=${Number(mountedRide.orbitRadiusPx || 0).toFixed(0)}px recharge=${Number(mountedRide.rechargeSeconds || 0).toFixed(1)}s hops=${mountedRide.autoRockJumps}/${mountedRide.manualJumps} jumping=${mountedRide.jumping} boosts=${mountedRide.boosts} whistle=${mountedRide.lastWhistle || '-'} breath=${mountedRide.lastBreath ?? '-'} input=${mountedRide.claimed}`);
     }
+    if (mountedRide && window.Mounts?.rideState !== 'none') {
+      lines.push(`Mount speed sources: playerRun=${Number(mountedRide.playerRunSpeedPxS || 0).toFixed(1)}px/s unboostedRiding=${Number(mountedRide.topSpeedPxS || 0).toFixed(1)}px/s (run x1.1 x training)`); // Phone-visible proof of current speed inheritance independent of actual coasting velocity.
+    }
+    const lastEnemyPursuit = window.__enemyPursuitSpeedDebug; // Shared hostile mover publishes the latest ordinary chase, without a frame-level console.
+    if (lastEnemyPursuit?.lastEnemyId) {
+      lines.push(`Enemy pursuit: last=${lastEnemyPursuit.lastEnemyId} requested=${Number(lastEnemyPursuit.lastRequestedPxS || 0).toFixed(1)}px/s resolved=${Number(lastEnemyPursuit.lastResolvedPxS || 0).toFixed(1)}px/s floor=${Number(lastEnemyPursuit.targetPxS || 0).toFixed(1)}px/s`);
+    }
     const mountedMelee = window.Combat?.mountedCombat?.debug; // Mobile diagnostics for fixed one-off strikes and their combo-mastery momentum.
     if (mountedMelee && window.Mounts?.rideState === 'mounted') {
       lines.push(`Mounted melee: attempted=${mountedMelee.attempts} strikes=${mountedMelee.strikes} last=${JSON.stringify(mountedMelee.lastHit || null)}`);
     }
     const mountSync = window.Mounts?.renderSync; // Used to make rider/carrier drift inspectable from the mobile Debug tab.
     if (mountSync?.active) {
-      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles`);
+      lines.push(`Mount render sync: pre-pin XZ drift=${mountSync.beforeXzDriftTiles.toFixed(4)} tiles post-pin=${mountSync.afterXzDriftTiles.toFixed(4)} vertical correction=${mountSync.verticalCorrectionTiles.toFixed(4)} tiles; physical support Y=${Number.isFinite(mountSync.surfaceGroundY) ? mountSync.surfaceGroundY.toFixed(4) : 'none'}; late animal render lift=${Number(mountSync.visualLiftY || 0).toFixed(4)}`); // Mobile snapshot distinguishes a bridge's true physical deck from animal-only render offset.
     }
     const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
     if (climbSafety) {
@@ -1292,6 +1301,9 @@
     const wildernessMapDebug = window.WildernessMap?.getDebug?.(); // Exposes the saved waypoint and active Map-tab region without requiring desktop devtools.
     if (wildernessMapDebug) {
       const waypoint = wildernessMapDebug.waypoint;
+      if (wildernessMapDebug.localeCompassReads != null) {
+        lines.push(`Compass locale metadata: ${wildernessMapDebug.localeCompassReads} storage reads, ${wildernessMapDebug.localeCompassHits} cache hits`);
+      }
       lines.push(`Map: zone=${wildernessMapDebug.activeZone || 'none'} landmarks=${wildernessMapDebug.visibleLandmarks} rememberedThreats=${wildernessMapDebug.rememberedThreats || 0} waypoint=${waypoint ? `${waypoint.label}@${waypoint.zoneId}:${Number(waypoint.col).toFixed(1)},${Number(waypoint.row).toFixed(1)}` : 'none'}`);
     }
     const chunkSnapshot = window.WildernessChunks?.snapshot?.(); // Reused for mobile chunk-rebuild budget diagnostics and residency reporting.
@@ -1357,6 +1369,9 @@
       const swingPose = window.BanditCombat?.swingPoseCpuMs; // Per-enemy animation cost, also captured on completely missed attacks.
       if (swingPose?.samples) lines.push(`Bandit swing pose CPU peak/last: ${Number(swingPose.peakMs).toFixed(1)}/${Number(swingPose.lastMs).toFixed(1)}ms per bandit (Profiler)`);
     }
+    const combatAfterimageDebug = window.HobunjiDodgeFeedback?.getDebug?.()?.blink?.afterimages; // Manual Pixel Probe only; no diagnostic allocations on combat frames.
+    if (combatAfterimageDebug)
+      lines.push(`Combat afterimages: ${combatAfterimageDebug.enabled ? 'ON' : 'off (default)'} active=${combatAfterimageDebug.active || 0} cached=${combatAfterimageDebug.pooled || 0} created=${combatAfterimageDebug.entriesCreated || 0} reused=${combatAfterimageDebug.entriesReused || 0}`);
     const held = deps.getHeldObjectDebug?.();
     if (held) lines.push(`Held objects: mode=${held.mode} tool=${held.toolVisible ? 'visible' : 'hidden'}/${held.toolParent} item=${held.heldItemVisible ? 'visible' : 'hidden'}/${held.heldItemParent} key=${held.heldItemKey || '-'} drink=${held.drinkAnimating ? `${held.drinkPhase}@${Math.round(held.drinkProgress * 100)}%` : 'idle'}`);
     if (held?.heldItemActionInput?.active) {

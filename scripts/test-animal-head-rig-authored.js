@@ -1,174 +1,119 @@
 'use strict';
+const assert = require('node:assert/strict'); // The production renderer/painter integration must preserve complete uploaded rigs.
+const fs = require('node:fs'); // Loads the shipped modules and creature bestiary.
+const vm = require('node:vm'); // Runs browser-only installers without devtools.
+const ids = ["moot","voorg-ass","puktuk","gar-wolf","grehlr","dabinggi-hound","uumkaoii","nelk","nazgraku"]; // Nine species explicitly approved for this release.
+const bestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json','utf8'));
+const originalDrenkirra = { pivot:{x:.4375,y:.51}, weightMap:{ marker:'unchanged-head-paint' } }; // Non-upload regression fixture.
+const renderer = { ANIMAL_HEAD_RIGS: {drenkirra:originalDrenkirra}, HEAD_RIG_VARIANT_ALIASES:{} };
+const species = {ANIMAL_HEAD_RIGS:renderer.ANIMAL_HEAD_RIGS, baseSpeciesFor:kind=>kind==='grehlr-den-mother'?'grehlr':kind,resolveForOptions:()=>null};
+const avatars = { buildAnimalPlaneAvatarModel(_THREE,_url,options={}){ return {options}; } };
+let preview = '{}'; // Simulates the browser's locally edited rig preview.
+const localStorage = { getItem:key=>key==='hobunji_animal_head_rigs_v1'?preview:null };
+const win = {CreatureGeneticsRender:renderer, HobunjiAnimalHeadRigSpecies:species, PNGPlaneAvatar:avatars,
+  CreatureGenetics:{SPECIES_ALIAS:{}}, AnimalHeadRigRuntime:{STORAGE_KEY:'hobunji_animal_head_rigs_v1'},
+  __farmLog(){},localStorage};
+const context = vm.createContext({window:win, localStorage,console,JSON,Object,String,Array,Number});
+vm.runInContext(fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'),context,{filename:'animal-head-rig-authored.js'});
+const api = win.HobunjiAuthoredAnimalHeadRigs;
+assert.equal(api?.version,'2026-11-18-nine-authored-rigs1','latest defaults must load on desktop and mobile');
+const plain = value=>JSON.parse(JSON.stringify(value)); // Normalizes the vm realm before deep-equality comparisons.
+for(const id of ids){
+  const records=bestiary.creatures.filter(c=>c.id===id);
+  assert.equal(records.length,1,id+': editor needs exactly one full creature record');
+  const expected=records[0].headRig;
+  assert(expected?.shoulderRest?.enabled,id+': full painted shoulder export is required');
+  assert.deepEqual(plain(api.get(id)),expected,id+': uploaded full rig equals painter source');
+  assert.deepEqual(plain(renderer.ANIMAL_HEAD_RIGS[id]),expected,id+': renderer contains new default');
+  assert.deepEqual(plain(species.ANIMAL_HEAD_RIGS[id]),expected,id+': species lookup contains new default');
+  assert.deepEqual(plain(avatars.buildAnimalPlaneAvatarModel(null,id+'_idle.png',{creatureId:id}).options.headRig),expected,
+    id+': runtime avatar builder receives whole authored rig including growth controls');
+}
+assert.deepEqual(plain(api.get('drenkirra').weightMap),originalDrenkirra.weightMap,
+ 'Drenkirra keeps previous painted head when no uploaded replacement exists');
+assert(api.get('drenkirra').shoulderRest?.enabled,'Drenkirra keeps a shoulder pose');
+assert.deepEqual(plain(api.get('grehlr-den-mother')),plain(api.get('grehlr')),
+ 'Grehlr Den-Mother shares the authored base species rig');
+const explicit={enabled:true,pivot:{x:0.125,y:0.875},local:true}; // Editor-supplied rigs always outrank committed species.
+preview=JSON.stringify({'gar-wolf':explicit});
+assert.deepEqual(plain(avatars.buildAnimalPlaneAvatarModel(null,'',{creatureId:'gar-wolf'}).options.headRig),explicit,
+ 'locally painted preview wins over built-in defaults');
+assert.deepEqual(plain(avatars.buildAnimalPlaneAvatarModel(null,'',{creatureId:'moot',headRig:explicit}).options.headRig),explicit,
+ 'explicit animation/editor option always wins');
+preview='{}';
+assert.equal(avatars.buildAnimalPlaneAvatarModel(null,'',{creatureId:'gar-wolf'}).options.headRig.babyHeadScale,1.3,
+ 'clearing a preview reverts to new committed baby head without a reload');
 
-const assert = require('node:assert/strict'); // Regression assertions for independent shoulder presets.
-const fs = require('node:fs'); // Loads the committed authored rig module.
-const vm = require('node:vm'); // Runs the browser module against minimal renderer stubs.
-
-const source = fs.readFileSync('docs/js/animal-head-rig-authored.js', 'utf8');
-const dabinggiOriginal = {
-  enabled: true, coordinateSpace: 'sprite-normalized-top-left',
-  pivot: { x: .123, y: .456 }, weightMap: { sentinel: 'dabinggi-head' },
-  minDeg: -30, maxDeg: 30,
-};
-const drenkirraOriginal = {
-  enabled: true, pivot: { x: .4375, y: .5123456790123457 },
-  weightMap: { sentinel: 'drenkirra-head' },
-};
-const nazgrakuOriginal = {
-  enabled: true, pivot: { x: .421875, y: .42592592592592593 },
-  weightMap: { sentinel: 'nazgraku-head' },
-}; // The canonical Nazgraku head map must survive shoulder-only updates.
-const renderer = {
-  ANIMAL_HEAD_RIGS: {
-    'dabinggi-hound': JSON.parse(JSON.stringify(dabinggiOriginal)),
-    drenkirra: JSON.parse(JSON.stringify(drenkirraOriginal)),
-    nazgraku: JSON.parse(JSON.stringify(nazgrakuOriginal)),
+const expectedMaps={
+  "moot": {
+    "weightMap": "e2dd3c3c",
+    "compressibilityMap": "18759591"
   },
-  HEAD_RIG_VARIANT_ALIASES: {},
-};
-const windowStub = {
-  CreatureGeneticsRender: renderer,
-  CreatureGenetics: { SPECIES_ALIAS: {} },
-  HobunjiAnimalHeadRigSpecies: {
-    baseSpeciesFor: kind => kind,
-    resolveForOptions: () => null,
-    ANIMAL_HEAD_RIGS: renderer.ANIMAL_HEAD_RIGS,
+  "voorg-ass": {
+    "weightMap": "5596eaec",
+    "compressibilityMap": "eb040ff6"
   },
-  __farmLog() {},
-};
-const context = vm.createContext({
-  window: windowStub, localStorage: { getItem: () => null },
-  console, JSON, Object, String,
-});
-vm.runInContext(source, context, { filename: 'animal-head-rig-authored.js' });
-
-const api = windowStub.HobunjiAuthoredAnimalHeadRigs;
-assert(api, 'authored rig layer should install');
-assert.equal(api.version, '2026-11-17-gar-wolf-grehlr-rigs1');
-const plain = value => JSON.parse(JSON.stringify(value)); // Normalizes VM-realm arrays for deep equality.
-const targets = ['puktuk', 'dabinggi-hound', 'nelk', 'drenkirra', 'nazgraku']; // Five species retain the original Puktuk shoulder; Gar-wolf now has an uploaded independent pose.
-const puktuk = api.get('puktuk');
-const expectedShoulder = puktuk.shoulderRest;
-assert.deepEqual(plain(puktuk.pivot), { x: .484375, y: .5 }, 'uploaded shoulder must not overwrite Puktuk head paint');
-assert.equal(expectedShoulder.enabled, true);
-assert.equal(expectedShoulder.useSpline, true);
-assert.equal(expectedShoulder.useRun1, true);
-assert.equal(expectedShoulder.splitFrame, false);
-assert.equal(expectedShoulder.splitRightUsesIdle, false);
-assert.equal(expectedShoulder.frameShiftX, .51);
-assert.equal(expectedShoulder.followFrameShiftX, false);
-assert.equal(expectedShoulder.separatorRotationDeg, -13);
-assert.equal(expectedShoulder.separatorAspect, 2.2916666666666665);
-assert.equal(expectedShoulder.beforePoints.length, 7);
-assert.equal(expectedShoulder.afterPoints.length, 7);
-assert.equal(expectedShoulder.afterPoints[6].y, 1.9852540076075054);
-
-for (const kind of targets) {
-  const rig = api.get(kind);
-  assert(rig, kind + ' has an authored head/shoulder carrier');
-  assert.deepEqual(plain(rig.shoulderRest), plain(expectedShoulder), kind + ' exactly mirrors the source pose initially');
-  if (kind !== 'puktuk') {
-    assert.notStrictEqual(rig.shoulderRest, expectedShoulder, kind + ' must own its own shoulder settings object');
-    assert.notStrictEqual(rig.shoulderRest.beforePoints, expectedShoulder.beforePoints, kind + ' must own separate BEFORE points');
-    assert.notStrictEqual(rig.shoulderRest.afterPoints[0], expectedShoulder.afterPoints[0], kind + ' must own separate AFTER vertices');
+  "puktuk": {
+    "weightMap": "e18bd65d",
+    "compressibilityMap": "8b4e349a",
+    "stretchabilityMap": "49d37702"
+  },
+  "gar-wolf": {
+    "weightMap": "1b3d0a54"
+  },
+  "grehlr": {
+    "weightMap": "72fe5e4c",
+    "compressibilityMap": "d59e15f9",
+    "stretchabilityMap": "ef76e3e2"
+  },
+  "dabinggi-hound": {
+    "weightMap": "497c97a8"
+  },
+  "uumkaoii": {
+    "weightMap": "52f9e3f1",
+    "compressibilityMap": "c73e77cb",
+    "stretchabilityMap": "473958c9"
+  },
+  "nelk": {
+    "weightMap": "8c4f163f",
+    "compressibilityMap": "59322801",
+    "stretchabilityMap": "04e0498a"
+  },
+  "nazgraku": {
+    "weightMap": "31220f8a",
+    "compressibilityMap": "5d5deb33",
+    "stretchabilityMap": "13d686e4"
+  }
+}; // Signed-off fingerprints of every 16-bit source RLE stream.
+function fingerprint(map){
+  let hash=0x811c9dc5; // FNV-1a checks both bytes of all run lengths and painted values.
+  for(const value of map.data){
+    hash=Math.imul(hash^(value&255),0x01000193);
+    hash=Math.imul(hash^(value>>>8),0x01000193);
+  }
+  return (hash>>>0).toString(16).padStart(8,'0');
+}
+for(const [id,maps] of Object.entries(expectedMaps)){
+  const rig=api.get(id);
+  for(const [name,digest] of Object.entries(maps)){
+    const m=rig[name];
+    assert.equal(m?.encoding,'rle-u9',id+'/'+name+': painted map encoding');
+    assert.equal(m.data.length%2,0,id+'/'+name+': complete runs');
+    let cells=0; // Reject maps that leave gaps or overshoot the authored UV grid.
+    for(let i=0;i<m.data.length;i+=2){
+      assert(Number.isSafeInteger(m.data[i])&&m.data[i]>0,id+'/'+name+': positive integer run');
+      assert(Number.isInteger(m.data[i+1])&&m.data[i+1]>=0&&m.data[i+1]<=256,id+'/'+name+': legal intensity');
+      cells+=m.data[i];
+    }
+    assert.equal(cells,m.width*m.height,id+'/'+name+': full painted area');
+    assert.equal(fingerprint(m),digest,id+'/'+name+': exact uploaded paint values');
   }
 }
-assert.deepEqual(plain(api.get('dabinggi-hound').pivot), dabinggiOriginal.pivot, 'Dabinggi head pivot preserved');
-assert.deepEqual(plain(api.get('dabinggi-hound').weightMap), dabinggiOriginal.weightMap, 'Dabinggi head paint preserved');
-assert.deepEqual(plain(api.get('drenkirra').pivot), drenkirraOriginal.pivot, 'Drenkirra head pivot preserved');
-assert.deepEqual(plain(api.get('drenkirra').weightMap), drenkirraOriginal.weightMap, 'Drenkirra head paint preserved');
-assert.equal(api.get('nelk').weightMap.width, 128, 'Nelk retains its detailed painted head');
-assert.deepEqual(plain(api.get('nazgraku').pivot), nazgrakuOriginal.pivot, 'Nazgraku head pivot preserved');
-assert.deepEqual(plain(api.get('nazgraku').weightMap), nazgrakuOriginal.weightMap, 'Nazgraku head paint preserved');
-assert.deepEqual(plain(api.get('uumkaoii').pivot), { x: .3921486852536997, y: .4735364861361454 }, 'Uumkao\'ii head pivot preserved');
-assert.equal(api.get('uumkaoii').weightMap.width, 128, 'Uumkao\'ii keeps its painted head map');
-assert.equal(api.get('moot').weightMap.width, 128, 'Moot receives Voorg-Ass detailed neck paint, not a body-only placeholder');
-assert.equal(api.get('gar-wolf').shoulderRest.weightMap, undefined, 'new Puktuk shoulder does not inherit old Gar-wolf shoulder paint');
-
-
-const garWolf = api.get('gar-wolf'); // Uploaded species-specific head and shoulder, replacing the original shared Puktuk pose.
-assert.equal(garWolf.shoulderRest.frameShiftX, .43, 'Gar-wolf uses its uploaded divider position');
-assert.equal(garWolf.shoulderRest.separatorRotationDeg, -28, 'Gar-wolf uses its uploaded divider angle');
-assert.equal(garWolf.shoulderRest.useRun1, false, 'Gar-wolf keeps its uploaded resting-frame choice');
-assert.equal(garWolf.shoulderRest.splitFrame, false, 'Gar-wolf keeps split frames disabled');
-assert.equal(garWolf.babyHeadShortening, .24, 'Gar-wolf keeps its 24% brachycephaly override');
-assert.equal(garWolf.babyHeadUsePaintedFrame, false, 'Gar-wolf explicitly selects alpha growth');
-assert.equal(garWolf.babyAbdomenScale, 1.2, 'Gar-wolf keeps its abdomen growth');
-const grehlrRig = api.get('grehlr'); // This upload supersedes the earlier Grehlr shoulder and baby-growth values.
-assert.equal(grehlrRig.shoulderRest.frameShiftX, .55, 'Grehlr uses its uploaded divider position');
-assert.equal(grehlrRig.shoulderRest.separatorRotationDeg, 0, 'Grehlr uses its uploaded divider angle');
-assert.equal(grehlrRig.shoulderRest.splitFrame, true, 'Grehlr keeps split frames enabled');
-assert.equal(grehlrRig.babyHeadScale, 1.15, 'Grehlr uses its uploaded 115% head scale');
-assert.equal(grehlrRig.babyHeadShortening, .06, 'Grehlr keeps its 6% brachycephaly');
-assert.equal(grehlrRig.babyHeadUsePaintedFrame, false, 'Grehlr explicitly selects alpha growth');
-assert.equal(grehlrRig.babyAbdomenEnabled, false, 'Grehlr has abdomen growth disabled');
-for (const mapName of ['weightMap', 'compressibilityMap', 'stretchabilityMap']) {
-  const map = grehlrRig[mapName]; // Guard against truncated or dropped uploaded Grehlr paint.
-  assert.equal(map.data.reduce((sum, value, index) => sum + (index % 2 === 0 ? value : 0), 0), map.width * map.height, mapName + ' decodes exactly');
-}
-const uumkaoiiShoulder = api.get('uumkaoii').shoulderRest; // Latest user-edited Uumkao'ii shoulder pose.
-assert.equal(uumkaoiiShoulder.useSpline, true);
-assert.equal(uumkaoiiShoulder.useRun1, false);
-assert.equal(uumkaoiiShoulder.splitFrame, false);
-assert.equal(uumkaoiiShoulder.splitRightUsesIdle, false);
-assert.equal(uumkaoiiShoulder.frameShiftX, .51);
-assert.equal(uumkaoiiShoulder.followFrameShiftX, false);
-assert.equal(uumkaoiiShoulder.separatorRotationDeg, -1);
-assert.equal(uumkaoiiShoulder.separatorAspect, 1.4212860310421287);
-assert.equal(uumkaoiiShoulder.beforePoints.length, 7);
-assert.equal(uumkaoiiShoulder.afterPoints.length, 7);
-assert.deepEqual(plain(uumkaoiiShoulder.beforePoints[6]), { x: 1.0399996666666664, y: .572691993389205 });
-assert.deepEqual(plain(uumkaoiiShoulder.afterPoints[6]), { x: .9672338415359367, y: .9348808700890657 });
-const voorgShoulder = api.get('voorg-ass').shoulderRest; // Latest user-edited Voorg-Ass shoulder pose.
-assert.equal(voorgShoulder.useSpline, true);
-assert.equal(voorgShoulder.useRun1, false);
-assert.equal(voorgShoulder.splitFrame, false);
-assert.equal(voorgShoulder.splitRightUsesIdle, false);
-assert.equal(voorgShoulder.frameShiftX, .46);
-assert.equal(voorgShoulder.followFrameShiftX, true);
-assert.equal(voorgShoulder.separatorRotationDeg, 0);
-assert.equal(voorgShoulder.separatorAspect, 1.7);
-assert.equal(voorgShoulder.beforePoints.length, 7);
-assert.equal(voorgShoulder.afterPoints.length, 7);
-assert.deepEqual(plain(voorgShoulder.beforePoints[6]), { x: .9599996666666666, y: .572691993389205 });
-assert.deepEqual(plain(voorgShoulder.afterPoints[6]), { x: .6976709902869936, y: 1.2729887486531961 });
-const mootShoulder = api.get('moot').shoulderRest; // Uploaded Moot shoulder is distinct from its historical Voorg-Ass starting pose.
-assert.notDeepEqual(plain(mootShoulder), plain(voorgShoulder), 'Moot preserves its newly authored shoulder pose rather than copying an older source');
-assert.equal(mootShoulder.separatorAspect, 1.617, 'Moot retains the uploaded separator aspect');
-assert.notStrictEqual(mootShoulder, voorgShoulder, 'Moot has a separate shoulder settings object');
-assert.notStrictEqual(mootShoulder.beforePoints, voorgShoulder.beforePoints, 'Moot has separate BEFORE points');
-assert.notStrictEqual(mootShoulder.afterPoints, voorgShoulder.afterPoints, 'Moot has separate AFTER points');
-assert.notStrictEqual(mootShoulder.afterPoints[0], voorgShoulder.afterPoints[0], 'Moot has separate control point objects');
-assert.notStrictEqual(api.get('moot'), api.get('voorg-ass'), 'Moot retains its own head carrier');
-const mootRig = api.get('moot'); // Verify and mutate the independent Moot neck rig.
-const voorgRig = api.get('voorg-ass'); // Compare to the original Voorg-Ass neck rig.
-const mootNeck = plain(mootRig); // Snapshot all Moot deformation settings, excluding shoulder pose.
-const voorgNeck = plain(voorgRig); // Snapshot all Voorg-Ass deformation settings, excluding shoulder pose.
-delete mootNeck.shoulderRest;
-delete voorgNeck.shoulderRest;
-assert.notDeepEqual(mootNeck, voorgNeck, 'Moot retains its independently uploaded painted Head influence and native frame');
-assert.equal(mootRig.pivot.x, .37400034701593793, 'Moot keeps the uploaded head pivot');
-assert.equal(mootRig.babyHeadScale, undefined, 'Moot inherits the new universal 123% baby-head percent without an authored species override');
-assert.equal(mootRig.babyHeadFrame.width, .46468750000000003, 'Moot keeps its authored baby head-frame fallback');
-assert.notStrictEqual(mootRig.pivot, voorgRig.pivot, 'Moot neck pivot is independently editable');
-assert.notStrictEqual(mootRig.weightMap, voorgRig.weightMap, 'Moot neck weight map is independently editable');
-assert.notStrictEqual(mootRig.weightMap.data, voorgRig.weightMap.data, 'Moot neck paint bytes are independently editable');
-assert.notStrictEqual(mootRig.compressibilityMap.data, voorgRig.compressibilityMap.data, 'Moot compressibility paint is independently editable');
-const originalVoorgNeckValue = voorgRig.weightMap.data[0]; // Guard Voorg-Ass against Moot neck edits.
-mootRig.weightMap.data[0] += 1;
-assert.equal(voorgRig.weightMap.data[0], originalVoorgNeckValue, 'editing Moot neck paint does not alter Voorg-Ass');
-assert.equal(api.get('voorg-ass').pivot.x, .37400034701593793, 'Voorg-Ass original head paint and pivot retained');
-assert.equal(api.get('voorg-ass').weightMap.width, 128, 'Voorg-Ass original head map retained');
-assert.notStrictEqual(uumkaoiiShoulder.beforePoints, voorgShoulder.beforePoints, 'uploaded species have independent point arrays');
-assert.notStrictEqual(voorgShoulder.beforePoints, expectedShoulder.beforePoints, 'Voorg-Ass does not share Puktuk points');
-
-const originalX = expectedShoulder.beforePoints[0].x;
-api.get('gar-wolf').shoulderRest.beforePoints[0].x = -.5;
-assert.equal(expectedShoulder.beforePoints[0].x, originalX, 'editing Gar-wolf cannot move Puktuk');
-assert.notEqual(api.get('dabinggi-hound').shoulderRest.beforePoints[0].x, -.5, 'editing Gar-wolf cannot move Dabinggi');
-const voorgEnd = voorgShoulder.afterPoints[6].y; // Mutations to either species' editable points must not affect the other.
-mootShoulder.afterPoints[6].y += .1;
-assert.equal(voorgShoulder.afterPoints[6].y, voorgEnd, 'editing Moot does not alter Voorg-Ass');
-voorgShoulder.beforePoints[0].x += .1;
-assert.notEqual(mootShoulder.beforePoints[0].x, voorgShoulder.beforePoints[0].x, 'editing Voorg-Ass does not alter Moot');
-console.log('animal-head-rig-authored: Moot preserves uploaded independent neck/shoulder painting and inherits universal baby head scale');
+const otherEnd=api.get('voorg-ass').shoulderRest.afterPoints[6].y; // An edit to Moot must not leak into Voorg-Ass.
+const moot=api.get('moot'),voorg=api.get('voorg-ass');
+assert.notStrictEqual(moot.weightMap.data,voorg.weightMap.data,'each species has independent head paint data');
+moot.shoulderRest.afterPoints[6].y+=.01;
+assert.equal(voorg.shoulderRest.afterPoints[6].y,otherEnd,'independent shoulder curve survives runtime edits');
+assert.notStrictEqual(api.get('nelk').shoulderRest.beforePoints,api.get('nazgraku').shoulderRest.beforePoints,
+ 'painted shoulder splines are not shared mutable instances');
+console.log('animal-head-rig-authored: nine complete rigs, source fingerprints, fallbacks, preview and avatar ownership passed');

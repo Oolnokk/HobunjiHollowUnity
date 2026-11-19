@@ -64,7 +64,7 @@
     if(!session)return false;
     const old=session;session=null; // Clear before releasing locks or camera selection can reenter gameplay.
     const claimedPose = !!old.poseSession; // Scoped ownership prevents a late dance cleanup from overwriting a newer scene/animation.
-    const poseRelease = old.poseSession?.release(); // Restore only transforms still authored by this session, before releasing action locks.
+    const poseRelease = old.poseSession?.release({restoreUnaffectedProperties:true}); // Restore surviving dance twists even when ordinary world movement has reclaimed root position.
     lastPoseRelease = poseRelease || null; // Diagnostic count of skipped transforms held by newer owners.
     window.WorldActionInputClaims?.clearClaims?.('paired-dance');
     for(const actor of old.actors) {
@@ -75,8 +75,9 @@
         actor.legs.group.quaternion.copy(actor.initial.legRotation);actor.neck.quaternion.copy(actor.initial.neck);
       }
       const ordinaryRigRestored = !claimedPose || (
-        old.poseSession.wasRestored(actor.root,'position') && old.poseSession.wasRestored(actor.root,'quaternion')
-        && old.poseSession.wasRestored(actor.legs.group,'quaternion')); // Never invoke idle IK or hand sync on a rig replaced by another action.
+        old.poseSession.wasRestored(actor.root,'quaternion') && old.poseSession.wasRestored(actor.legs.group,'quaternion')
+        && (old.poseSession.wasRestored(actor.root,'position')
+          || Math.hypot(actor.root.position.x-actor.initial.position.x,actor.root.position.z-actor.initial.position.z)<.35)); // Ordinary tile grounding may have already reset the root position; only reinitialize recovered local IK.
       if (actor.root.parent && actor.legs.group.parent && ordinaryRigRestored) {
         actor.legs.update(0,0,false,null);actor.legs.pants?.update?.();actor.hands.useIdlePose();
       }
@@ -119,8 +120,8 @@
       pose:{},rotation:new T.Quaternion(),yaw:new T.Quaternion(),tilt:new T.Quaternion(),flip:new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0),Math.PI),
       up:new T.Vector3(0,1,0),xAxis:new T.Vector3(1,0,0),radial:new T.Vector3(),delta:new T.Vector3(),
       contacts:[new T.Vector3(),new T.Vector3()],cameraPosition:new T.Vector3(),cameraTarget:new T.Vector3(),cameraState:deps?.captureCamera?.(),
-      cameraMode:'follow',orbitAzimuth:0,shoulderOffsetH:0, // Camera mode and angle belong to this dance and pause on its simulation clock.
-      supportPoint:new T.Vector3(),lastSupport:null,cameraRecord:null,lock:null}; // Reused vectors and a fixed count of analytic constraints replace per-frame anatomy checks/searches.
+      cameraMode:'orbit',orbitAzimuth:0,shoulderOffsetH:0, // Show both dancers first; action 2 offers the close follow view.
+      supportPoint:new T.Vector3(),lastSupport:null,cameraRecord:null,lock:null,nativeResets:0,reachFallbacks:0,unjoinedHandFrames:0}; // Temporary anatomical mismatches must not cancel the entire pair.
     try {
       if(!applyFrame()){stop('anatomical-reach');return failStart('anatomical-reach');}
     } catch(error) {
@@ -132,7 +133,7 @@
     for(const actor of s.actors)actor.hands.setPoseProvider('paired-dance',()=>applyHands(actor));
     s.lock=window.CharacterActionLocks?.acquire?.({owner:'festival-wheel-dance',reason:'Procedural paired dance',participants:[
       {id:'player',channels:['movement','tools','pose','facing','head','camera']},{id:window.NpcCharacterState?.participantId?.(walker.rec.id)||`npc:${walker.rec.id}`,channels:['movement','tools','actions','pose','facing','head']}]});
-    activateDanceCamera();
+    updateCameraView();activateDanceCamera(); // Initialize the entire two-actor orbit shot before its camera is presented.
     window.WorldActionInputClaims?.setClaims?.('paired-dance',[
       ...['dodge','action1'].map(actionId=>({actionId,label:'Stop dancing',priority:600,onPress:()=>stop('player-canceled')})),
       {actionId:'action2',label:'Switch dance view',priority:600,onPress:toggleCameraView},
@@ -214,12 +215,12 @@
       const other=side==='left'?'right':'left',pa=shoulderWorld(a,side,a.worldShoulders[side]),pb=shoulderWorld(b,other,b.worldShoulders[other]);
       const ux=pb.x-pa.x-s.delta.x*gap,uz=pb.z-pa.z-s.delta.z*gap,dy=pb.y-pa.y,limit=(a.reach[side]+b.reach[other])*.98;
       const along=ux*s.delta.x+uz*s.delta.z,discriminant=along*along+limit*limit-dy*dy-ux*ux-uz*uz; // Exact sphere reach with preserved lateral shoulder spacing.
-      if(discriminant<0)return false;
+      if(discriminant<0){s.reachFallbacks++;continue;} // Shoulder heights can temporarily exceed the two-arm sphere during an alternating hop.
       const upper=-along+Math.sqrt(discriminant),lower=-along-Math.sqrt(discriminant);
       allowedGap=Math.min(allowedGap,upper);
       minGap=Math.max(minGap,lower);
     }
-    if(allowedGap<minGap)return false;
+    if(allowedGap<minGap){s.reachFallbacks++;allowedGap=gap;} // Preserve the existing contact pose rather than stopping the dance.
     if(allowedGap<gap) {
       s.delta.multiplyScalar(gap-allowedGap);if(support===0)b.root.position.sub(s.delta);else a.root.position.add(s.delta);
       a.root.updateWorldMatrix(true,false);b.root.updateWorldMatrix(true,false);
@@ -227,7 +228,14 @@
     for(let i=0;i<2;i++) {
       const side=SIDES[i],other=SIDES[1-i],pa=shoulderWorld(a,side,a.worldShoulders[side]),pb=shoulderWorld(b,other,b.worldShoulders[other]);
       const distance=pa.distanceTo(pb),ra=a.reach[side],rb=b.reach[other]; // Intersection of the two reachable spheres places one shared wrist contact without arm extension.
-      if(distance>ra+rb+1e-5)return false;
+      if(distance>ra+rb+1e-5){
+        // If the two arm spheres cannot intersect, each arm reaches safely toward its partner.
+        // The next feasible frame automatically rejoins the shared hand contact.
+        a.targets[side].copy(pa).lerp(pb,ra*.98/distance);
+        b.targets[other].copy(pb).lerp(pa,rb*.98/distance);
+        s.reachFallbacks++;s.unjoinedHandFrames++;
+        continue;
+      }
       const fraction=Math.max(0,Math.min(1,Math.max(1-rb/Math.max(distance,.0001),Math.min(.5,ra/Math.max(distance,.0001)))));
       s.contacts[i].copy(pa).lerp(pb,fraction);a.targets[side].copy(s.contacts[i]);b.targets[other].copy(s.contacts[i]);
     }
@@ -286,9 +294,32 @@
     const pitch=Math.max(-32*Math.PI/180,Math.min(32*Math.PI/180,-Math.atan2(actor.targetLocal.y,Math.max(.0001,Math.hypot(actor.targetLocal.x,actor.targetLocal.z))))); // Exact preview gaze limits and parent-space direction; no camera deadzone.
     actor.neck.rotation.set(pitch,yaw,0,'XYZ');
   }
+  function expectedNativeReset(node,property,current,base) {
+    const actor=session?.actors.find(a=>a.root===node||a.legs.group===node||a.neck===node); // Only the two captured rigs may renew ordinary animation baselines.
+    if(!actor)return false;
+    if(node===actor.root && property==='position') {
+      // Player grounding and NPC idle movement rewrite visual roots from their unmoving logical tile every frame.
+      return Math.hypot(current.x-base.x,current.z-base.z)<.35 && Math.abs(current.y-base.y)<.65;
+    }
+    if(property==='quaternion') {
+      // Standard locomotion/facing/idle pose may reset a joint to its pre-dance quaternion.
+      const dot=Math.abs(current.x*base.x+current.y*base.y+current.z*base.z+current.w*base.w);
+      return dot>.98;
+    }
+    return false;
+  }
   function applyFrame() {
     const s=session;if(!s)return false;
-    if(s.poseSession&&!s.poseSession.owns())return false; // A newer solver or a rebuilt rig displaced this action.
+    if(s.poseSession) {
+      let resets=0; // Count only accepted native overwrites, not arbitrary teleports or new cutscene poses.
+      const accepted=s.poseSession.acceptExpectedOverwrites?.((node,property,current,base)=> {
+        const known=expectedNativeReset(node,property,current,base);
+        if(known)resets++;
+        return known;
+      });
+      if(!accepted || !s.poseSession.owns())return false; // Unknown writers still end the dance without taking over their pose.
+      s.nativeResets+=resets;
+    }
     try {
     const pose=sample(s.elapsed,s.pose),rock=Math.sin(pose.progress*Math.PI*8),amplitude=Math.abs(rock),support=rock>=0?1:0; // Lower dancer supports the alternating hop and bends smoothly with it.
     if(s.lastSupport!==null && support!==s.lastSupport)s.actors[support].root.localToWorld(s.supportPoint.copy(s.actors[support].hipLocal)); // Transfer the pivot onto the partner's actual landing position.
@@ -337,8 +368,8 @@
     deps?.refreshCamera?.(); // Reuses game.js's cinematic collision/framing owner after this frame's paired pose settles.
   }
   function diagnostics() {
-    return {latestChange:'Paired roots, legs and neck now release only compositor-owned pose transforms after interruptions; paired garments keep physical depth.',
-      active:!!session,lastStopReason,lastStartFailure,lastPoseRelease,poseOwnership:session?.poseSession?'actor-rig-compositor':'legacy-fallback',...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,progress:session.pose.progress,
+    return {latestChange:'Paired dance is composed after ordinary pre-render, begins with a wide two-actor orbit, and does not abort when anatomical hand contacts briefly cannot meet.',
+      active:!!session,lastStopReason,lastStartFailure,lastPoseRelease,poseOwnership:session?.poseSession?'actor-rig-compositor':'legacy-fallback',suppressedNpcSocialRenderFrames:window.NpcSocialInhibition?.getDebug?.()?.poseOwnedSkips ?? 0,...(session?{npcId:session.walker.rec.id,elapsedS:session.elapsed,nativeResets:session.nativeResets,reachFallbacks:session.reachFallbacks,unjoinedHandFrames:session.unjoinedHandFrames,progress:session.pose.progress,
         baseTiltDeg:session.baseTilt*180/Math.PI,authorDurationS:DURATION_S,authorRevolutions:2,
         actors:session.actors.map(a=>({species:a.model.userData.speciesId,gender:a.model.userData.gender,rigScale:{x:a.worldScale.x,y:a.worldScale.y,z:a.worldScale.z},verticalLegFactor:a.verticalFactor,pantsDepthBias:a.pants?.maskUniforms?.uPantsDepthBias?.value??null,grounded:a.grounded,crouch:a.crouch,supportSlides:a.supportSlides,legLength:a.legLength,armReach:a.reach,neckDeg:{pitch:a.neck.rotation.x*180/Math.PI,yaw:a.neck.rotation.y*180/Math.PI},handReachRatio:Object.fromEntries(SIDES.map(side=>[side,a.handTargets[side].distanceTo(a.worldShoulders[side])/a.reach[side]]))})),
         cameraMode:session.cameraMode,shoulderOffsetH:session.shoulderOffsetH,orbitAzimuthDeg:session.orbitAzimuth*180/Math.PI,orbitSpeedDegS:-4,

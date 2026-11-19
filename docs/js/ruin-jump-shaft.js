@@ -25,6 +25,8 @@
 })(typeof self !== 'undefined' ? self : globalThis, function () {
   'use strict';
   const root = typeof self !== 'undefined' ? self : globalThis;
+  const supportPillars = typeof module === 'object' && module.exports
+    ? require('./ruin-shaft-support-pillars.js') : root.RuinShaftSupportPillars; // Authoring-driven structural visuals; jump/pit physics remain here.
   const TRAVERSAL = 'jumpPlatforms';
   // PlayerJump.CONFIG (docs/js/player-jump.js). Duplicated on purpose: the
   // layout proof must run under node without the browser module.
@@ -333,6 +335,7 @@
       DS.registerSurface({ id: scope + '-' + p.id, scope, topY: p.y, priority: 4,
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
+    const platformSupports = supportPillars?.mount?.(plan,{ THREE, parent: group, slabThickness: THICKNESS }); // Grounded authored pillar per slab, no new landing supports/blockers.
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
     const slabBlockerId=scope+'-platform-slabs'; // Reuses the ordinary forced-movement blocker registry and is removed on disposal.
     const footprintBlockers=root.AreaFootprintBlockers; // One shared authority for walking, dodging, lunging and creatures.
@@ -398,6 +401,7 @@
       footprintBlockers?.remove?.(slabBlockerId); // No slab side collision may outlive its jump-shaft geometry.
       for (const handle of plasmHandles) handle?.dispose?.();
       plasmHandles = [];
+      platformSupports?.dispose?.(); // Free TileSpan's hidden geometries and prevent late load reattachment.
       group.parent?.remove(group);
       for (const node of owned) node.geometry?.dispose?.();
       for (const m of materials) m.dispose?.();
@@ -409,7 +413,8 @@
       fixtures: plan.platforms.filter(p => p.fixtureSlot?.occupiedBy
         && !['explodingPillar','plasm'].includes(p.fixtureSlot.occupiedBy)).map(p => [p.id, p.fixtureSlot.occupiedBy, p.originalKind || null]),
       route0: plan.platforms.filter(p => p.floor === 0).map(p => [p.kind, +p.x.toFixed(2), +p.z.toFixed(2), +p.y.toFixed(2), +p.w.toFixed(2), +p.d.toFixed(2)]), // Compact layout for on-device checks and headless drivers.
-      pillars: pillarRecords.length, plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'death-pit' });
+      pillars: pillarRecords.length, supportPillars: platformSupports?.getState?.() || null,
+      plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'death-pit' });
     plan.mounted = true; // Future Hronal/Kanthic requests cannot swap out already-rendered hazards.
     return {
       plan, method: TRAVERSAL, tick, dispose, columns, supportAt, isVoidAt, isIceAt, tradition, pitY: plan.pit.bottomY, softLanding: true,

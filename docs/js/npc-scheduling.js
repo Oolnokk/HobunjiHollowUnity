@@ -595,19 +595,22 @@
   let targetRevision = 0; // Invalidates all walker decision leases when a dynamic override changes.
   const NEAR_DECISION_MS = 160; // Active-area destination selection at ~6Hz instead of render cadence.
   const FAR_DECISION_MS = 500; // Off-area agendas need fewer polls; movement remains independently updated.
-  const targetOverrides = new Map(); // ownerId → provider, insertion-ordered.
-  function registerTargetOverride(ownerId, provider) {
+  const targetOverrides = new Map(); // ownerId → provider/priority; equal-priority providers retain their existing insertion order.
+  let orderedTargetOverrides = []; // Pre-sorted on registration, not in the per-NPC schedule decision path.
+  function registerTargetOverride(ownerId, provider, priority = 0) {
     const id = String(ownerId || '').trim();
     if (!id) return false;
-    if (typeof provider === 'function') targetOverrides.set(id, provider);
+    const rank = Number(priority); // Special scenes can temporarily override social/dining schedules without changing normal priorities.
+    if (typeof provider === 'function') targetOverrides.set(id, {provider,priority:Number.isFinite(rank) ? rank : 0});
     else targetOverrides.delete(id);
+    orderedTargetOverrides = [...targetOverrides.entries()].sort((a,b) => b[1].priority - a[1].priority);
     targetRevision++;
     return true;
   }
   function resolveTargetOverride(rec) {
-    if (!targetOverrides.size || !rec?.id) return null;
+    if (!orderedTargetOverrides.length || !rec?.id) return null;
     let hasWalker = null; // Resolved lazily; most providers bail out on npc id first.
-    for (const [ownerId, provider] of targetOverrides) {
+    for (const [ownerId, {provider}] of orderedTargetOverrides) {
       try {
         const target = provider(rec, { get hasExistingWalker() { if (hasWalker === null) hasWalker = hasExistingNpcWalker(rec); return hasWalker; } });
         if (target) return { ...target, area: deps.normalizeNpcArea(target.area), overrideOwner: ownerId };

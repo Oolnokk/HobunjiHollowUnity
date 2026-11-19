@@ -673,7 +673,7 @@
     const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
     root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
     root.updateMatrixWorld?.(true); // Rules measure faces in world space (a sideways pillar's faces are short, not tall).
-    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern && !node.userData?.ruinStoneSignalGlyph && node.name !== 'engraving-glyph-glow') meshes.push(node); });
+    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern && !node.userData?.ruinNoPattern && !node.userData?.ruinStoneSignalGlyph && node.name !== 'engraving-glyph-glow') meshes.push(node); }); // Wall-coffin lids and darkness never receive pattern atlases.
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.

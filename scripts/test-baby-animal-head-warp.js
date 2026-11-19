@@ -260,7 +260,7 @@ assert(nest.includes('ensureIdleMask?.(kind, canvas)'), 'nest babies prime from 
 const bridge = fs.readFileSync('docs/js/player-body-attachment-bridge.js', 'utf8');
 assert(bridge.includes('await warp?.ensureIdleMask?.(kind)'),
   'small shoulder-pet frame pipeline awaits the registered idle sprite');
-assert(bridge.includes('await window.BabyAnimalHeadWarp?.ensureIdleMask?.(kind, idleSource)'),
+assert(bridge.includes('await warp?.ensureIdleMask?.(kind, idleSource)'),
   'small shoulder-pet split source uses the LEFT idle sprite before clipping run1');
 assert(bridge.includes('return loadFrameImage(rawUrl)'),
   'non-composited species must still enlarge their real raw shoulder-pet sprite');

@@ -66,8 +66,13 @@
   let _arcEls = [], _arcBd = null, _arcOpen = null, _arcSlots = [], _arcActive = -1;
   let _heldEntrySelectorKind = null; // Shared by keyboard/controller/pointer adapters so wheel input knows which held selector owns it.
   let _fadingEls = [];
+  let _itemCategoryControls = null; // Owns the visible previous/next category prompts while the item wheel is open.
+  let _lastItemCategoryJump = null; // Shown by the mobile-friendly item selector diagnostic API.
 
   function _clearArc(keepBackdrop = false) {
+    if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; } // A canceled/changed arch cannot keep its item scroll timer alive.
+    _iScrollDir = 0; // New wheel opens with no stale edge-sentinel direction.
+    _itemCategoryControls?.remove(); _itemCategoryControls = null; // Never leave category controls over a different selection arch.
     if (_arcBd && !keepBackdrop) { _arcBd.remove(); _arcBd = null; }
     _arcEls.forEach(e => e.remove()); _arcEls = [];
     _fadingEls.forEach(e => e.remove()); _fadingEls = [];
@@ -376,6 +381,76 @@
     _arcActive = newSlots.findIndex(s => s.data.type === 'item' && s.data.index === activeItemIndex);
   }
 
+  function _jumpItemCategory(direction) {
+    if (_arcOpen !== 'item') return false; // Shortcuts never open a closed wheel or interfere with potion/item commits.
+    const stacks = deps.getInventoryStackItems(); // Live owned, wheel-eligible stack order from game.js.
+    const oldIndex = deps.getActiveItemIndex(); // Used to preserve the selection if no other category exists.
+    const nextIndex = window.ItemArchCategoryColors?.nextCategoryIndex?.(stacks, oldIndex, direction) ?? -1; // One canonical category resolver for every input device.
+    if (nextIndex < 0 || nextIndex === oldIndex) return false;
+    if (_iScrollT) { clearInterval(_iScrollT); _iScrollT = null; }
+    _iScrollDir = 0; // Stops a held edge-sentinel scroll from undoing the category jump.
+    deps.setHeldMode('item');
+    deps.setActiveItemIndex(nextIndex);
+    window.HudUpdate.refreshItemScroll(); deps.refreshActionBar();
+    _iScroll = Math.max(0, Math.min(Math.max(0, stacks.length - ITEM_VIS), nextIndex - Math.floor(ITEM_VIS / 2))); // Centers the new group's first item when space allows.
+    _buildItemSlots();
+    window.ItemArchCategoryColors?.refresh?.();
+    _lastItemCategoryJump = { from: stacks[oldIndex]?.key || null, to: stacks[nextIndex]?.key || null, direction: direction < 0 ? 'previous' : 'next', at:Date.now() }; // Captures exact item keys for debugging on mobile.
+    return true;
+  }
+
+  function _positionItemCategoryControls() {
+    if (!_itemCategoryControls || _arcOpen !== 'item') return;
+    const promptAngle = 136; // Both prompts share the same arc tangent; Y is radially outside and A is inside.
+    const innerPoint = _arcPt(promptAngle, Math.max(48, _innerR() - 28)); // A is the bottom face button, nearest the wheel center.
+    const outerPoint = _arcPt(promptAngle, _outerR() + 60); // Y is the top face button, beyond the item and category-label arc.
+    const tangentDeg = promptAngle - 180; // SVG text curves follow the ring's local clockwise tangent.
+    const previousButton = _itemCategoryControls.querySelector('.item-category-prev'); // Inside prompt for LMB / controller A.
+    const nextButton = _itemCategoryControls.querySelector('.item-category-next'); // Outside prompt for RMB / controller Y.
+    if (previousButton) { previousButton.style.left = innerPoint.x + 'px'; previousButton.style.top = innerPoint.y + 'px'; previousButton.style.transform = 'translate(-50%,-50%) rotate(' + tangentDeg + 'deg)'; }
+    if (nextButton) { nextButton.style.left = outerPoint.x + 'px'; nextButton.style.top = outerPoint.y + 'px'; nextButton.style.transform = 'translate(-50%,-50%) rotate(' + tangentDeg + 'deg)'; }
+  }
+
+  function _showItemCategoryControls() {
+    if (_itemCategoryControls) return;
+    if (!document.getElementById('itemCategoryControlStyle')) {
+      const style = document.createElement('style'); // Shared responsive presentation for mouse/controller prompts and stacked mobile arrows.
+      style.id = 'itemCategoryControlStyle';
+      style.textContent = [
+        '#itemCategoryControls{position:fixed;inset:0;z-index:205;pointer-events:none}',
+        '#itemCategoryControls .item-category-control{position:fixed;display:grid;place-items:center;width:156px;height:48px;padding:0;box-sizing:border-box;border:0;background:transparent;color:var(--border-bright,#f9e28a);font-weight:800;font-size:12px;line-height:1.15;font-family:inherit;box-shadow:none;pointer-events:auto;touch-action:manipulation;cursor:pointer}',
+        '#itemCategoryControls .item-category-desktop-label{display:block;width:156px;height:48px;overflow:visible;filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 5px rgba(249,226,138,.7))}',
+        '#itemCategoryControls .item-category-desktop-label text{fill:currentColor;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:.05em}',
+        '#itemCategoryControls .item-category-control:focus-visible{outline:2px solid var(--border-bright,#f9e28a);outline-offset:2px}',
+        '#itemCategoryControls .item-category-mobile-arrow{display:none}',
+        '@media (pointer:coarse){#itemCategoryControls .item-category-control{left:max(10px,env(safe-area-inset-left,0px))!important;transform:none!important;width:52px;min-width:52px;height:52px;padding:0;border:1px solid var(--border-bright,#f9e28a);border-radius:7px;background:var(--glass,rgba(18,24,34,.85));font-size:25px;top:auto!important}#itemCategoryControls .item-category-prev{top:calc(50vh - 56px)!important}#itemCategoryControls .item-category-next{top:calc(50vh + 4px)!important}#itemCategoryControls .item-category-desktop-label{display:none}#itemCategoryControls .item-category-mobile-arrow{display:block}}',
+      ].join('\n');
+      document.head.appendChild(style);
+    }
+    const controls = document.createElement('div'); // Created only for an open item arch and removed by _clearArc().
+    controls.id = 'itemCategoryControls';
+    for (const [direction, className, desktopLabel, mobileArrow, accessibleLabel] of [
+      [-1, 'item-category-prev', '◀  LMB / A', '↑', 'Previous item category'],
+      [1, 'item-category-next', 'RMB / Y  ▶', '↓', 'Next item category'],
+    ]) {
+      const button = document.createElement('button'); // Each on-screen prompt is also a usable control, including for mobile multitouch.
+      button.type = 'button'; button.className = 'item-category-control ' + className;
+      button.setAttribute('aria-label', accessibleLabel);
+      const pathId = className + '-text-arc'; // Unique SVG text path for the same curved typography as the item category heading.
+      button.innerHTML = '<svg class="item-category-desktop-label" viewBox="0 0 156 48" aria-hidden="true"><defs><path id="' + pathId + '" d="M 4 40 Q 78 0 152 40"/></defs><text><textPath href="#' + pathId + '" startOffset="50%" text-anchor="middle">' + desktopLabel + '</textPath></text></svg><span class="item-category-mobile-arrow" aria-hidden="true">' + mobileArrow + '</span>';
+      button.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'mouse' || event.button !== 2) return;
+        event.preventDefault(); event.stopPropagation();
+        _jumpItemCategory(1); // Right-click advances even when the pointer is directly over a category prompt.
+      });
+      button.addEventListener('contextmenu', event => event.preventDefault()); // The desktop shortcut must not open a browser menu over its own prompt.
+      button.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); _jumpItemCategory(direction); });
+      controls.appendChild(button);
+    }
+    document.body.appendChild(controls);
+    _itemCategoryControls = controls;
+    _positionItemCategoryControls();
+  }
   function _openItemArc() {
     window.Spyglass?.endAim?.('item arch opened');
     _clearArc(); _arcOpen = 'item';
@@ -386,6 +461,7 @@
     _iScroll = Math.max(0, deps.getActiveItemIndex() - Math.floor(ITEM_VIS / 2));
     _iScrollDir = 0;
     _buildItemSlots();
+    _showItemCategoryControls();
   }
 
   function _arcMove(px, py) {
@@ -454,6 +530,31 @@
 
   function _bindListeners() {
     _itemBtn = document.getElementById('itemBtn');
+    window.addEventListener?.('resize', _positionItemCategoryControls, { passive:true }); // Keeps desktop prompts aligned; the optional DOM hook preserves headless tool-recall regression tests.
+    document.addEventListener('pointerdown', event => {
+      if (_arcOpen !== 'item' || event.pointerType !== 'mouse' || (event.button !== 0 && event.button !== 2)) return;
+      if (event.target?.closest?.('#itemCategoryControls, #itemBtn')) return; // Respect the actual item hold gesture and the on-screen prompt buttons.
+      _jumpItemCategory(event.button === 0 ? -1 : 1);
+      event.preventDefault(); event.stopImmediatePropagation(); // A category click must not swing/use the selected item underneath the arch.
+    }, true);
+    document.addEventListener('pointerup', event => {
+      if (_arcOpen !== 'item' || event.pointerType !== 'mouse' || (event.button !== 0 && event.button !== 2)) return;
+      if (event.target?.closest?.('#itemCategoryControls, #itemBtn')) return;
+      event.preventDefault(); event.stopImmediatePropagation(); // Do not release a held world action when the mouse click was a category shortcut.
+    }, true);
+    document.addEventListener('click', event => {
+      if (_arcOpen !== 'item' || (event.button !== 0 && event.button !== 2)) return;
+      if (event.target?.closest?.('#itemCategoryControls, #itemBtn')) return;
+      // Some browsers emit click as a MouseEvent without pointerType. The wheel backdrop is
+      // the exclusive desktop category-click surface; never swallow touch-generated clicks.
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      if (!event.target?.closest?.('.arc-backdrop') && event.pointerType !== 'mouse') return;
+      event.preventDefault(); event.stopImmediatePropagation();
+    }, true);
+    document.addEventListener('contextmenu', event => {
+      if (_arcOpen !== 'item' || event.target?.closest?.('#itemCategoryControls')) return;
+      event.preventDefault(); event.stopImmediatePropagation(); // Right-click turns categories instead of opening the browser context menu.
+    }, true);
     window._desktopSelectionArc = {
       openTool() {
         // Tool Select is claimed outright by the faced Shattercask, even for
@@ -497,6 +598,8 @@
         }
         _setActive(next); // Back-carried Burdens are taken into the hands only when the selector commits.
       },
+      jumpItemCategory(dir) { return _jumpItemCategory(dir); }, // Category-level shortcuts are separate from ordinary per-item wheel scrolling.
+      itemCategoryDebug() { return { open:_arcOpen === 'item', lastJump:_lastItemCategoryJump, visibleControls:!!_itemCategoryControls }; },
       scrollItem(dir) {
         window.Spyglass?.stow?.('item selected');
         if (_arcOpen !== 'item') _openItemArc();

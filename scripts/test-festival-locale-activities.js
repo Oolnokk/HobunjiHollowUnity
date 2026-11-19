@@ -11,8 +11,7 @@ for (const name of ['festival-calendar','map-layout-system','festival-locale-act
 const calendar=browser.window.FestivalCalendar, maps=browser.window.MapLayoutSystem, api=browser.window.FestivalLocaleActivities;
 const activityKinds={hachutukara:['mask-dance','sparring','story-circle'],
   tzizkhanash:['ancestor-offerings','remembrance'],
-  five_blossoms:['blossom-dance','blossom-music'],
-  mountaindawn:['gift-exchange']}; // Required autonomous gathering kinds; Gorkunash retains its existing owner.
+  mountaindawn:['gift-exchange']}; // Only rituals use this adapter; Gorkunash and Five Blossoms use NpcSharedMeals.
 for (const [event,kinds] of Object.entries(activityKinds)) {
   const def=calendar.get(event), ordinal=calendar.ordinal(def.month,def.day);
   const current=maps.getEffectiveMapData(town,{dateOrdinal:ordinal,minutes:17*60,weekday:'Anan'});
@@ -24,7 +23,7 @@ for (const [event,kinds] of Object.entries(activityKinds)) {
     assert(stations.every(st=>st.festivalLocaleKind===root.festivalLocale.kind),root.id+' exports its role');
     assert(stations.every(st=>['host','participant','audience'].includes(st.festivalRole)),root.id+' provides usable social roles');
   }
-  const host = event==='hachutukara'?'father_hunundi_hodu':event==='five_blossoms'?'foroji_funji':null;
+  const host = event==='hachutukara'?'father_hunundi_hodu':null;
   if (host) assert(current.npcStations.some(st=>st.festivalLocaleParent&&st.festivalNpcId===host),event+' uses an authored, movable host');
 
   // Root relocation must carry ALL participants, not leave a second list of static positions behind.
@@ -72,8 +71,15 @@ for (const [event,kinds] of Object.entries(activityKinds)) {
     assert(mourners.some(t=>t.socialAncestorCeremony.kind==='ancestor-offerings'),'NPCs autonomously observe at the offering shrine');
   }
 
-  if(event==='five_blossoms')assert.equal(api.targetFor(records.find(r=>r.id==='foroji_funji')).toolKey,'kurraya','festival musician performs at the real instrument station');
 }
+// Both shared feasts must bypass legacy fixed activity targets entirely.
+select('five_blossoms');api.update();
+assert(records.every(rec=>api.targetFor(rec)===null),'Five Blossoms uses the shared meal and dance scheduler, not ritual standing slots');
+const blossoms=layout.decor.filter(p=>p.festivalLocale);
+assert(blossoms.some(p=>p.festivalLocale.kind==='dining'),'Five Blossoms has a movable dinner locale');
+assert(blossoms.some(p=>p.festivalLocale.kind==='bandstand'),'Five Blossoms has a live instrument stage');
+assert(blossoms.some(p=>p.festivalLocale.kind==='dance'),'Five Blossoms has a dance floor');
+assert(!layout.decor.some(p=>p.activity?.type==='welcome'),'the old activity board is removed');
 active=false;api.update();
 assert(records.every(rec=>api.targetFor(rec)===null),'ending the gathering restores normal NPC scheduling');
 console.log('Festival locale relocation, active roles, autonomous dancing, host music and cleanup passed.');

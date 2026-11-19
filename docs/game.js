@@ -480,6 +480,9 @@
       const TILE = 55;          // birds-eye tile size in px
       const PLAYER_RADIUS = 15;
       const MOVE_SPEED    = 238;  // px/s world units; used by updateMovement() target velocity.
+      const ENEMY_PURSUIT_SPEED_PX_S = MOVE_SPEED * 1.08 * 0.95; // Ordinary enemy pursuit reaches 95% of a starting player's Well Rested (+8%) running speed before enemy-only slows.
+      const enemyPursuitSpeedDebug = { targetPxS: ENEMY_PURSUIT_SPEED_PX_S, lastEnemyId: null, lastRequestedPxS: 0, lastResolvedPxS: 0 }; // Mobile-readable proof of the most recent ordinary enemy chase adjustment.
+      window.__enemyPursuitSpeedDebug = enemyPursuitSpeedDebug;
       // Dev balancing knob (Testing Arena's "Base movement speed" slider) --
       // multiplies the PLAYER's own target speed (updateMovement) and every
       // creature/bandit's speed at moveCreatureToward, the single choke
@@ -4997,6 +5000,17 @@
         }
         return _creatureTexCache.back.get(url);
       }
+      function releaseCreatureTemporaryFrameTexture(url) {
+        // Generated pet portraits are unique to an equip/appearance, unlike permanent species PNG URLs.
+        if (typeof url !== 'string' || !url.startsWith('blob:')) return false; // Data URLs can match between pets on older browsers, so they are not uniquely owned.
+        const front = _creatureTexCache.front.get(url); // Disposed when a shoulder frame is replaced or unequipped.
+        const back = _creatureTexCache.back.get(url); // Distinct only on renderers without shared front/back mirroring.
+        _creatureTexCache.front.delete(url);
+        _creatureTexCache.back.delete(url);
+        front?.dispose?.();
+        if (back && back !== front) back.dispose?.();
+        return !!(front || back);
+      }
       // Genotype-composited textures for pattern-layer livestock (gar-wolf,
       // dabinggi-hound) — mirrors _creatureTexCache's URL-keyed pattern but
       // keyed by (kind, frame, genotype signature) instead, since the actual
@@ -6326,7 +6340,7 @@
       // tuning constants) now lives in js/enemy-collision-reposition.js.
       window.EnemyCollisionReposition.init({ creatureCanEnterTile });
 
-      function moveCreatureToward(c, tx, ty, speed, dt) {
+      function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
         // would come out NaN, every subsequent comparison against it is
@@ -6337,7 +6351,18 @@
         // returning wildlife. The route graph prevents shortcutting vertically.
         const heavyMoveMul = window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1; // Heavy affects both cliff-route approaches and ground motion.
         const stickySpeedMul = window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1; // Soursap Sticky also slows both paths.
-        const baseSpeed = speed * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for ordinary and cliff-route travel.
+        const authoredChaseSpeed = Number(c.def?.chaseSpeed); // Identifies ordinary pursuit requests without affecting sprint attacks, dodges, retreats, or custom AI speeds.
+        const ordinaryPursuit = movementOptions?.pursuit !== false && (c.state === 'chase' || c.state === 'searching') && c.master !== player &&
+          !(c.isCompanion && !c.banditCompanion) && Number.isFinite(speed) && speed > 0 &&
+          Number.isFinite(authoredChaseSpeed) && authoredChaseSpeed > 0 && Math.abs(speed - authoredChaseSpeed) < 0.001;
+        const armorPaceMul = c._enemyPursuitArmorMul == null ? 1 : Math.max(0, Number(c._enemyPursuitArmorMul) || 0); // Bandit outfit penalties still scale the pursuit floor once.
+        const chasePace = ordinaryPursuit ? Math.max(speed, ENEMY_PURSUIT_SPEED_PX_S * armorPaceMul) : speed;
+        if (ordinaryPursuit) {
+          enemyPursuitSpeedDebug.lastEnemyId = c.id || c.creatureKey || 'enemy';
+          enemyPursuitSpeedDebug.lastRequestedPxS = speed;
+          enemyPursuitSpeedDebug.lastResolvedPxS = chasePace;
+        }
+        const baseSpeed = chasePace * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for both ordinary and cliff-route travel.
         if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
@@ -6697,6 +6722,10 @@
 
       function updateCreatureAnimFrame(c, dt, moving, runInPlace = false) {
         if (c._wildlifeVisualsReleased) return; // No asynchronous texture work for data-only actors.
+        if (c.stableRole === 'shoulderPet' && window.PlayerBodyAttachmentBridge?.ownsCreatureFrame?.(c)) {
+          c._animLastX = c.x; c._animLastY = c.y; // Do not accumulate a false run-distance jump when the pet leaves the perch.
+          return; // The shoulder renderer owns this sprite; ordinary run/blink frames must not overwrite its grown head or split layers.
+        }
         c._genotypeTexturesReleased = false; // Active playback reacquires native-resolution frames through the normal cache path.
         // A genotype-bearing creature (gar-wolf/dabinggi-hound with genes —
         // see makeCreatureEntity's opts.genotype) needs its composited
@@ -7808,28 +7837,15 @@
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
 
-      // Resolve a moving owner's *walkable landing*, not their midair position.
-      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
-      function companionFollowGoal(c, master) {
-        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
-        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
-        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
-        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
-        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
-        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
-        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
-          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
-        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
-        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
-        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
-        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
-          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
-        return {
-          x, y,
-          distance: Math.hypot(x - c.x, y - c.y),
-          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
-        };
-      }
+      // Companion destinations, tier checks and off-screen stuck recovery share one module.
+      // This is an adapter only; game.js remains the sole movement and animation frame owner.
+      window.CompanionFollowNavigation.init({
+        TILE, player, getCurrentArea: () => currentArea, isZoneArea: _isZoneArea,
+        getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        surfaceYForTile: tileSurfaceYInArea, creatureCanEnter: creatureCanEnterTile,
+        getCamera: () => camera,
+      });
+
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -8772,7 +8788,7 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
-          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          const followGoal = window.CompanionFollowNavigation.goal(c, master); // Shared navigation/escape state, independent of the frame executor.
           c._companionGroundFollow = {
             mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
             distancePx: Math.round(followGoal.distance),
@@ -8818,8 +8834,7 @@
           }
 
           const rescueHost = c._honeyfuzzleRescueTarget; // Combat.attach assigns the swarmed ally this pet is actively rescuing.
-          const rescueActive = !!rescueHost && rescueHost.health > 0
-            && !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker => window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle');
+          const rescueActive = window.CompanionCombatResponse.isRescuing(c, rescueHost); // Combat response owns the rescue-vs-retreat priority.
           if (!rescueActive && rescueHost) c._honeyfuzzleRescueTarget = null; // Detachment and interrupted rescue cannot leave a stale friendly-fire focus.
           if (rescueActive && !window.Combat?.animalAttacks?.isBusy(c) && !window.Combat?.telegraph?.isBusy(c)) {
             target = null; // The dedicated rescue attack is applied by Combat.attach, not the normal hostile-target routine.
@@ -8833,6 +8848,9 @@
           if (!target && window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             target = c._animalAttack?.state?.target || c; // A kicked/killed target must not interrupt the Voorg-Ass's one-second stationary impact pose.
           }
+          target = window.CompanionCombatResponse.prioritizeOwnerRetreat(
+            c, target, dt, _clearCompanionTreasureCue, _clearCompanionWatchIdle
+          ); // The chooser's retreat priority also wins after Sicced, special attacks and treasure overrides.
           if (!target && !rescueActive && window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           if (!target && !rescueActive && window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
           if (!target && !rescueActive) c._stage = null;
@@ -8842,14 +8860,14 @@
           if (c.treasureCue && !_treasureCueTargetStillBuried(c.treasureCue)) {
             _clearCompanionTreasureCue(c, dt, 'treasure revealed, found, or area left');
           }
-          if (!isBanditCompanion && !target && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
+          if (!isBanditCompanion && !target && !c._followOwnerDownCliff && c.knockbackT <= 0 && !c.treasureCue && distToMaster <= FOLLOW_FAR_PX && _isZoneArea(currentArea)) {
             window.RuinSites?.trackNearby?.(c, master, dt);
             const treasureHint = window.WildTreasure?.nearestBuriedPixelPos(currentArea, master.x, master.y);
             if (treasureHint && treasureHint.dist <= TREASURE_HINT_RANGE_PX) _startCompanionTreasureCue(c, treasureHint);
           }
           const playerIdle = !isBanditCompanion && _isPlayerGenuinelyIdle();
           if (c.watchPlayerIdle && (!playerIdle || distToMaster > FOLLOW_FAR_PX)) _clearCompanionWatchIdle(c, !playerIdle ? 'player became active' : 'follow distance required');
-          if (!target && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
+          if (!target && !c._followOwnerDownCliff && !c.treasureCue && !c.watchPlayerIdle && playerIdle && distToMaster <= FOLLOW_NEAR_PX) {
             const startChance = 1 - Math.pow(1 - COMPANION_WATCH_IDLE_RATE_PER_SEC, Math.max(0, dt));
             if (rnd() < startChance) _startCompanionWatchIdle(c);
           }
@@ -9024,6 +9042,9 @@
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
+          if (window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+            moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
+          }
 
           if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
@@ -11598,10 +11619,7 @@
             }
           }
           window.ClimbSystem?.removeBranchesInBounds(mapId, bounds);
-          group.traverse(object => {
-            _treeFadeActive.delete(object);
-            for (const material of (object.userData?._fadeMaterials || [])) material.dispose?.();
-          });
+          group.traverse(window.ZoneTreeFade.forget);
         };
         const disposeRuntimeChunk = record => {
           record.group.traverse(object => {
@@ -15893,6 +15911,7 @@
         window.WildernessChunks?.destroyZone(mapId);
         const zi = _zoneScenes.get(mapId);
         if (zi?.scene) zi.scene.traverse(o => {
+          window.ZoneTreeFade.forget(o);
           if (o.geometry) o.geometry.dispose();
           if (o.userData?.mergedWaterStatKey) window.MergedWaterRenderer.clearStats(o.userData.mergedWaterStatKey);
         });
@@ -16120,8 +16139,7 @@
         if (!zi || !vegGroup) return false;
         vegGroup.parent?.remove(vegGroup);
         byTile.delete(`${col},${row}`);
-        _treeFadeActive.delete(vegGroup);
-        for (const material of (vegGroup.userData?._fadeMaterials || [])) material.dispose?.();
+        window.ZoneTreeFade.forget(vegGroup);
 
         const floorMeshes = _zoneFloorMeshGroups.get(mapId);
         const floorIndex = floorMeshes?.indexOf(vegGroup) ?? -1;
@@ -19099,7 +19117,7 @@
           const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
           const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
-          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
+          const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
           player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
             const struck = dodgeSwept.blockedAt || { x: desiredX, y: desiredY }; // Real first rejected sweep center, not a slowdown heuristic.
@@ -19537,6 +19555,13 @@
         // projectile's underside. Offset by that same radius so the player's
         // actual feet, not a point below them, clear the top of a low rock.
         return canOccupyAt(wx, wy, radius, footprintY); // canOccupyAt offsets by radius when checking cover; the resulting underside stays above the deck.
+      }
+
+      function canPlayerDodgeOccupy(wx, wy) {
+        const feetY = Number(player.physicalFeetY); // Native dodge sweeps use this foot height while PlayerJump owns an airborne or elevated support.
+        return player._freeJump && Number.isFinite(feetY)
+          ? canPlayerOccupyAtHeight(wx, wy, feetY)
+          : canPlayerOccupy(wx, wy);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -23022,43 +23047,8 @@
       // is genuinely close to dead-center on the sightline count as
       // blocking, not merely anything within a whole canopy-width of it.
       const OCCLUSION_XZ_RADIUS_MUL = 0.5;
-      const _treeFadeActive = new Set(); // vegGroup refs currently mid-fade
-      window.ZoneTreeFade.init({ treeFadeActive: _treeFadeActive, lerpPerSec: TREE_FADE_LERP_PER_SEC });
-      function ensureTreeFadeMaterials(vegGroup) {
-        let mats = vegGroup.userData._fadeMaterials;
-        if (mats) return mats;
-        mats = [];
-        for (const child of vegGroup.children) {
-          if (!child.material) continue;
-          const clone = child.material.clone();
-          clone.transparent = true;
-          child.material = clone;
-          mats.push(clone);
-        }
-        vegGroup.userData._fadeMaterials = mats;
-        vegGroup.userData._fadeOpacity = 1;
-        vegGroup.userData._fadeTarget = 1;
-        return mats;
-      }
-      // depthWrite:false only while a tree is actually in its blocking-fade
-      // state — see the comment above. Reverted (true) the instant a tree
-      // stops blocking, alongside the opacity revert in
-      // updateZoneVegetationCulling, so a tree back at full opacity also
-      // goes back to normally occluding things behind it.
-      //
-      // Also pulls the tree off the shell-outline pass's layer (see
-      // shellOutlineMat/_markOutline) while blocking. That pass renders
-      // every layer-1 mesh's silhouette in solid, opacity-independent black
-      // (back faces extruded along normals, its own override material —
-      // unrelated to the mesh's real material entirely), so a "faded" tree
-      // still traced a fully opaque black outline over whatever it was
-      // supposed to be letting show through, defeating the whole point.
-      // Re-enabled the instant a tree stops blocking, same as depthWrite.
-      function setTreeBlocking(vegGroup, mats, blocking) {
-        for (const m of mats || []) m.depthWrite = !blocking;
-      }
-      // Split out of setTreeBlocking so the Cloud Forest's distance-based
-      // Outline Radius (independent of occlusion blocking — see
+      window.ZoneTreeFade.init({ lerpPerSec: TREE_FADE_LERP_PER_SEC });
+      // The Cloud Forest’s distance-based outline radius (see
       // updateZoneVegetationCulling's radialCullRadius branch) can toggle
       // just the outline layer without also touching depthWrite/occlusion
       // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
@@ -23072,8 +23062,6 @@
           if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
-      // updateTreeFadeAnimation and the camera-to-player sightline test (isBetweenCameraAndPlayer2D) now live in
-      // js/zone-tree-fade.js (window.ZoneTreeFade), wired below via init({ treeFadeActive, lerpPerSec }).
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
         const zi = _zoneScenes.get(currentArea);
@@ -23165,35 +23153,10 @@
               }
               outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
             }
-            if (target !== 1 || obj.userData._fadeMaterials) {
-              const isFirstFade = !obj.userData._fadeMaterials;
-              const mats = ensureTreeFadeMaterials(obj);
-              // ensureTreeFadeMaterials always inits _fadeOpacity at 1 (its
-              // original occlusion-only design never needed anything else —
-              // a tree was always fully visible until something started
-              // blocking it). For the Cloud Forest's distance fade that's
-              // wrong the first time a tree is seen: a tree already out
-              // near the fade band would pop in fully opaque and then
-              // visibly animate down to its real target, instead of just
-              // reading at the right opacity immediately. Snap straight to
-              // target on this first frame only; every later frame still
-              // lerps normally as target keeps changing with distance.
-              if (isFirstFade) {
-                obj.userData._fadeOpacity = target;
-                for (const m of mats) m.opacity = target;
-              }
-              obj.userData._fadeTarget = target;
-              _treeFadeActive.add(obj);
-              setTreeBlocking(obj, mats, blocking);
-            }
+            window.ZoneTreeFade.setTarget(obj, target, blocking);
             setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
-          } else if (obj.userData._fadeMaterials) {
-            obj.userData._fadeTarget = 1;
-            obj.userData._fadeOpacity = 1;
-            for (const m of obj.userData._fadeMaterials) m.opacity = 1;
-            setTreeBlocking(obj, obj.userData._fadeMaterials, false);
-            setTreeOutlineEnabled(obj, true);
-            _treeFadeActive.delete(obj);
+          } else {
+            window.ZoneTreeFade.reset(obj);
           }
         }
       }
@@ -27193,15 +27156,16 @@
         if (s_cloudForestFog) window.CloudForestFog?.update(dt);
         window.PerfProfiler?.end(meshUpdatePerf);
 
-        // Festival paired animation is a post-locomotion visual layer: both
-        // actual avatar roots are positioned together after NPC and player
-        // simulation, with no second requestAnimationFrame.
-        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
         // Simulation/state mutation for this frame is finished; anything that
         // needs fresh gameplay state but must run before Three.js traverses
         // the scene belongs at this checkpoint, not a separate RAF (see
         // docs/architecture/runtime-frame-scheduler.md).
         window.RuntimeFrameScheduler.checkpoint('pre-render');
+        // A paired dance has exclusive control of both actors' live roots and IK.
+        // Run it AFTER ordinary pre-render hand, neck and stance presentation,
+        // so those other writers cannot hide the player or invalidate the next
+        // frame's pose checkpoint. The two dancers are finalized together.
+        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
 
         // ── Render active scene ──────────────────────────────────
         // An opaque loading/introduction screen covers the whole canvas, so
@@ -27326,21 +27290,10 @@
             window.PerfProfiler?.end(rpTargetPerf);
           }
 
-          // Redraw Cloud Forest mist (layer 5, see cloud-forest-fog.js) over
-          // the two outline passes above. Both just drew straight into
-          // _mainRT with real depth, with no idea the mist cylinders add
-          // extra atmospheric haze beyond the scene's own regular fog — so
-          // an outline on something genuinely behind the mist would
-          // otherwise come out fully crisp, reading as a cutout hole in the
-          // haze around it. depthTest still applies, so this correctly
-          // leaves outlines on anything nearer than the mist untouched.
-          // Skipped outside the Cloud Forest: with no mist attached it drew
-          // nothing but still cost a full scene traversal every frame.
+          // Blend mist back over the outlines using their existing depth buffer.
           if (s_cloudForestFog && window.CloudForestFog?.isActive?.()) {
             const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
-            camera.layers.set(5);
-            renderer.render(activeScene, camera);
-            camera.layers.enableAll();
+            window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
             window.PerfProfiler?.end(rpMistPerf);
           }
           renderer.autoClearColor = true;
@@ -28357,7 +28310,7 @@
         // caught the very first transition into fishing but then never
         // rebuilt again for the rest of the round, since .active stays true
         // throughout. Phase changes every step, so it always forces a rebuild.
-        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}`;
+        const key = `${currentArea}|${heldMode}|${activeTool}|${activeItemIndex}|${selectedItemKey}|${selectedItemCount}|${reticle.col},${reticle.row}|${tile.type}|${tile.crop}|${tile.cropReady}|${obj ? obj.id : 'none'}|${processingFurnitureObjects.size}|${animalObjects.size}|${_pendingSpotTransition?.id || ''}|${nearbyNpcKey}|${nearbyNpcActivityKey}|${nearbyNpcShopKey}|${window.Fishing?.state?.phase || ''}|${window.MusicMinigame?.state?.active || ''}|${actionButtonKey}|${window.GameplayInputRouter?.getArchRevision?.() ?? 0}`;
         const needsRebuild = key !== _lastBarKey;
         _lastBarKey = key;
 
@@ -28405,6 +28358,10 @@
         // All five physical buttons and the popup hints now read from one shared arch layout.
 
         const DESK_KEYS = ['E', 'Q', 'F3', 'F4'];
+        function contextualArchBadgeIndex(button, slot) {
+          return button?.worldInteraction === true && button.inputAction === 'action' + (slot + 1)
+            ? slot : btns.indexOf(button); // Claimed world actions are deliberately not in the generic button list, but still own a real physical key.
+        }
 
         function applyAbt(elId, b, originalIdx) {
           const el = document.getElementById(elId);
@@ -28745,11 +28702,11 @@
           }
         }
 
-        applyAbt('btnAction1',    archLayout.slots[0], btns.indexOf(archLayout.slots[0]));
-        applyAbt('btnAction2',    archLayout.slots[1], btns.indexOf(archLayout.slots[1]));
-        applyAbt('btnAction3',    archLayout.slots[2], btns.indexOf(archLayout.slots[2]));
-        applyAbt('btnItemAction1', archLayout.slots[3], btns.indexOf(archLayout.slots[3]));
-        applyAbt('btnItemAction2', archLayout.slots[4], btns.indexOf(archLayout.slots[4]));
+        applyAbt('btnAction1',    archLayout.slots[0], contextualArchBadgeIndex(archLayout.slots[0], 0));
+        applyAbt('btnAction2',    archLayout.slots[1], contextualArchBadgeIndex(archLayout.slots[1], 1));
+        applyAbt('btnAction3',    archLayout.slots[2], contextualArchBadgeIndex(archLayout.slots[2], 2));
+        applyAbt('btnItemAction1', archLayout.slots[3], contextualArchBadgeIndex(archLayout.slots[3], 3));
+        applyAbt('btnItemAction2', archLayout.slots[4], contextualArchBadgeIndex(archLayout.slots[4], 4));
 
         if (isDesktop) window.HudUpdate.refreshKeyHud(btns);
       }
@@ -31090,6 +31047,7 @@
         canPlayerOccupy,
         canOccupyAt,
         setCreatureFrame,
+        releaseCreatureTemporaryFrameTexture, // Lets the shoulder presenter release each generated PNG's GPU pair when it releases the URL.
         genotypeKindFor: (c) => (c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null),
         showToast,
         triggerWeaponSwingVisual,
@@ -32416,7 +32374,6 @@
         tileSurfaceYInArea,
         markOutline: _markOutline,
         zoneScenes: _zoneScenes,
-        treeFadeActive: _treeFadeActive,
         isFarmOwner,
         getFarmEditMode: () => farmEditMode,
         toggleFarmEditMode: window.FarmEditor.toggleFarmEditMode,

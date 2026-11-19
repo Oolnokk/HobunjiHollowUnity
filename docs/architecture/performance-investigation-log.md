@@ -1,5 +1,58 @@
 # Performance investigation log
 
+## 18 Nov 2026: dense Cloud Forest steady rendering
+
+- The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
+  mist's geometry, materials, world transforms and fog, and blends against the current world target's
+  depth. It no longer submits the whole forest scene for this pass.
+- Trees whose fade has settled leave the animation set, including those that remain partially faded.
+  At full opacity the tree draws with its original materials again. Fade copies are reused until
+  their tree unloads. The mobile lighting snapshot includes `outlineMistRedrawLayers` and
+  `treeFade.animating`.
+- The Three.js regression verifies the mist pass's inputs, render state restoration and three-mesh
+  scene. The fade test verifies zero opacity writes across 60 settled frames, material restoration
+  and chunk teardown's cleanup method. No physical-device frame-time measurement yet.
+
+## 18 Nov 2026: redundant primary-folder recovery scans
+
+Routine folder-save status notifications used to trigger a second sweep of all six
+recovery slots. Each populated slot was read and parsed from disk, then mirrored to
+browser storage again. Successful saves already mirror the affected slots as part
+of the checkpoint write. Unchanged autosaves and lock-only writes touch no recovery
+slot. These operations now publish status without the extra sweep. First arm,
+folder load, restore and failure paths can still reconcile history. Recovery UI
+refreshes read the folder directly, including changes made by another device.
+
+The checkpoint harness recorded zero slot reads across 60 routine notifications
+and six reads for one explicit refresh, which picked up an external checkpoint.
+Save Diagnostics exposes recovery scan counts under `folderRecoveryReads`.
+
+## 18 Nov 2026: combat afterimages now opt-in, off by default
+
+A follow-up to the colored motion-smear experiment prioritizes runtime smoothness over an
+effect that was difficult to see. Reverted the experimental GPU smear and retained the
+original pooled/decimated portrait ghosts behind **Settings > Visual Effects > Combat
+Afterimages**, stored as `hobunjiCombatAfterimages` (`'1'` enabled, `'0'` or missing
+disabled). The checkbox is unchecked by default, including for existing players who
+never chose an effect setting.
+
+In the default-off path, `Combat.update` does not sample player dodge/lunge movement,
+build snapshots, skin ghost geometry, refresh canvases/textures, update fades, or prune
+the ghost pool. Hostile combat expression/AI and regular dodges, Blink, heavy attacks
+and quick attacks continue unchanged; only the optional ghost path is skipped.
+The direct spawn entry points also check the preference, including Blink teleport
+bursts and enemy ghosts. Disabling afterimages mid-fight disposes live and pooled
+ghost resources immediately and resets motion-history state before any subsequent
+opt-in. The existing `HobunjiDodgeFeedback` mobile diagnostics expose
+`afterimages.enabled` and the existing counters, plus an opt-in/out method.
+
+This should eliminate *afterimage-related* combat frame cost when disabled,
+not all possible combat freezes. Prior headless measurements identified ghost
+snapshotting as one source of work but did not prove it was the sole cause.
+Relevant old afterimage geometry/pooling tests now explicitly opt in, and the
+Visual Effects runtime test covers default-off, enable, persistent preference,
+resource reuse and disable/cleanup. Full device FPS still needs measurement.
+
 ## 16 Nov 2026: wilderness props drawn as merged batches; pants skinned on the GPU (headless)
 
 **What spawns in the wilderness and what it costs.** Draw census of one frame per zone (headless, outlines on, every
@@ -1277,7 +1330,7 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - **Not yet measured:** none of these merges recorded a before/after number. Distance cull (#1912) counts hidden meshes, not GPU draw-call savings; capture `WildernessChunks` debug panel `non-veg distance` + `Distance Cull: ON/OFF` frame times on a mobile device before claiming a speedup. Same for the 40% portrait density (#1928), the sense landmark cache (#1912), Pack batching (#1883), rain row pooling (#1874) and the locale cache (#1907).
 - **Fixed in review:** `WildernessDistanceCull` rescanned the whole scene every 750 ms with one allocated record per node, and kept the candidate list (and so unloaded chunk meshes) after leaving the zone. It now rescans when `WildernessChunks.residencyVersion()` changes (min 250 ms apart, 5 s idle safety net), walks with parallel stacks, reuses its per-frame hidden list/release closure, and drops its record outside zones (`scripts/test-wilderness-distance-cull-rescan.js`).
 - **Fixed in review:** `grehlr`'s saddle `sourcePixel` in `config/attachment-rig-profiles.js` was still in the pre-downscale 3000×2250 space; rescaled to the 1024×768 sprite. Metadata only (the saddle `position` is model-space and the rule is `authoredFixed`).
-- **Lead, not fixed:** `WildernessMap._loadDiscoveredLocales` still reads `localStorage['hobunjiSaveMeta']` on every compass tick (the parse is cached, the read is not).
+- **Fixed 18 Nov:** hidden-locale waypoints use the storage guard’s save-metadata revision to avoid polling unchanged metadata. See the compass entry below.
 - **Needs eyes:** the 40% default shrinks the flying-animal perched plane from 32×20 to 13×8 segments, which is deformed by the 7-point shoulder spline; check it for faceting on a device.
 
 ## 17 Nov 2026: more consumers of PlayerTileEvents
@@ -1294,3 +1347,27 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - **Not yet measured on a device.** Remaining leads: batch/reuse `getBoundingClientRect` reads in `isNavTarget`/`enteredGroups`, `scrollIntoView` on focus, `backdrop-filter` while the menu is open.
 
 - **Controller-only controls at the bottom of Inventory (Pack/Gear):** `.inv-grid-area`, `.inv-pgscroll` and `.inv-equip-section` (and the Gear workspace in `inventory-gear-compact-effects.js`) used fixed row-model heights that run past `#mpInventory` (`overflow:hidden`) whenever the real pane is shorter than the 28-row model (measured 51 px at 568x320, 59 px at 800x600). Their own scroll range then ended below the clip edge: the wheel could not reach the last rows, but the controller's `scrollIntoView` scrolls the hidden pane itself. The designed heights are now caps (`height:auto; bottom:0; max-height:<design>`); headless pane overflow went 51/59 px -> 0 in both modes. The other 13 menu tabs showed no non-wheel-scrollable clipped controls at either size.
+
+## 18 Nov 2026: controller nav visibility memo
+
+- **Measured on unchanged main (headless, menu open on Pack, 118 items, 33 targets), per press:** 1,366 `getComputedStyle` + 288 `getBoundingClientRect` calls (`isVisible` ran ~288x: every candidate, every ancestor, again per group/target projection and in `enteredGroups`), ~4.5 ms synchronous. Style recalcs per press: ~3.6 in the press itself, ~4.8 more in the following frames (decorate / readability / labelling observers), vs 3.4 per frame with the menu open and no input.
+- **Changed:** `isVisible` is memoised (final answer + per-node "hides its subtree") and the memo is dropped at every class write this module makes (`navClassAdd/Remove`), at each external entry point and at the end of the current microtask checkpoint. Tests that slice nav functions into isolated vm contexts got shim helpers.
+- **Not done / not expected to help:** the remaining per-press recalcs come from other modules' observers reacting to the detail-panel rebuild, not from nav reads.
+
+- **Quit-guard header relayout fired on every inventory selection:** `folder-save-quit-guard.js` observes the whole `#menuPanel` subtree and treated any element add/remove as "header controls changed", scheduling an 80 ms `labelMenuControls()` (button style/label writes + a `scrollWidth` layout read) after every controller press. Records whose target is inside `.mp-body` are now ignored (header/tab-strip changes and panel class changes still relayout). `scripts/test-folder-save-primary.js` covers it and fails on the old code. Not yet measured end to end.
+
+## 18 Nov 2026: action prompt innerHTML write skip
+
+- `ActionPromptUI.setPromptText` compared `element.innerHTML` to the source string. The getter re-serializes the subtree and returns browser-normalised markup, so any prompt containing an `<img>` (the touch icon) never matched and the button subtree was rewritten on every per-frame refresh (fishing, moving ruin puzzles), feeding the HUD MutationObservers. It now compares against the last string it wrote (`scripts/test-action-prompt-write-cache.js`, which fails on the old code). Not yet measured on a device.
+
+## 18 Nov 2026: compass storage reads and wildlife visibility
+
+- Secret locale waypoints reuse the parsed discoveries while the active world and save-metadata revision match. The existing storage quota guard advances the revision on native writes, quota retries, folder-staged writes, removal, clearing and browser storage events. Discovery operations and Map-panel reads still consult current metadata directly. Compass visibility still evaluates the current Tothal cycle each time. Live camp and den waypoints stop scanning at the first matching marker without copying the whole threat list.
+- The executable waypoint fixture checks that 60 unchanged polls require zero metadata reads. It also covers immediate same-tab updates, cross-tab invalidation, unrelated writes, world changes and cycle changes. Pixel Probe reports cumulative compass storage reads and cache hits.
+- Wildlife visibility checks active attack guards once per fighting animal per LOD update, down from twice. Wake and release decisions share the resolved calm radius, and the executable streaming test confirms the previous release and return thresholds. Real-device frame time has yet to be measured.
+
+## 18 Nov 2026: dashed combat resource rings
+
+- Exhausted Stamina and the orange Health-risk overlay each combine nine dashes into one indexed mesh. The batch preserves disconnected dash geometry, per-dash elevation, material and snow/slush projection. This saves eight meshes and eight world-pass submissions per visible dashed arc. Arc geometry writes its final height during construction.
+- Affliction pulses update only the three possible resource groups instead of visiting the descendant meshes every frame. The ring fixture verifies projection binding, open gaps, pulse timing, and disposal. Pixel Probe shows dash batches and mesh allocations avoided. Real-device frame time has yet to be measured.
+- A headless Three.js r128 WebGL comparison confirmed pixel-for-pixel parity in three workloads, including two overlapping actors and a simulated snow lift. World-pass submission counts for the ring fixture were 35 → 27 (one dashed arc), 44 → 28 (two), and 86 → 54 (four). Triangle counts matched.

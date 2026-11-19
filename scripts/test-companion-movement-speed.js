@@ -99,6 +99,13 @@ api.update();
 const defaultPlayerSpeed = 238 * cookingMul * combatMul * alchemyMul;
 assert.ok(Math.abs(playerPet.def.moveSpeed - defaultPlayerSpeed) < 1e-9, 'ordinary follow speed equals 100% of the player’s current effective speed');
 assert.ok(Math.abs(playerPet.def.chaseSpeed - defaultPlayerSpeed) < 1e-9, 'chase speed also follows the player’s current effective pace');
+const prePotionWrapperRunSpeed = api.playerRunningSpeed(player); // Baseline before a late AlchemySystem getter replacement.
+windowStub.AlchemySystem.getSpeedMul = () => alchemyMul * 1.125; // Mirrors a Well Rested potion-strength wrapper installed after Mounts.init.
+assert.ok(Math.abs(api.playerRunningSpeed(player) / prePotionWrapperRunSpeed - 1.125) < 1e-9,
+  'live Alchemy speed getter changes must reach mount baselines and follower speeds after boot');
+delete windowStub.AlchemySystem.getSpeedMul; // Restore the original fixture before testing existing companion behavior.
+assert.ok(Math.abs(api.playerRunningSpeed(player) - prePotionWrapperRunSpeed) < 1e-9,
+  'restored Alchemy getter falls back to existing captured dependency without a lingering multiplier');
 assert.equal(sourceDef.moveSpeed, 100, 'shared species moveSpeed remains unchanged');
 assert.equal(sourceDef.chaseSpeed, 160, 'shared species chaseSpeed remains unchanged');
 playerPet.stableRole = 'companion';
@@ -266,7 +273,7 @@ assert.equal(api.debugSnapshot().lastError, null, 'normal update paths do not re
 
 // Exercise game.js's actual movement choke point, not a second copy of its speed formula.
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Shares the production movement authority used by regular animal and cliff-route travel.
-const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt)');
+const moveStart = gameSource.indexOf('function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null)');
 const moveEnd = gameSource.indexOf('\n      // Grid-walkability predicate', moveStart);
 assert(moveStart >= 0 && moveEnd > moveStart, 'the game still exposes one creature movement function for the integration fixture');
 let routeApproach = true; // Switches the real moveCreatureToward between cliff entry and ordinary ground motion.

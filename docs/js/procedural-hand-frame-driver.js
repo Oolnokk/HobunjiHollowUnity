@@ -147,6 +147,8 @@
   }
   function freeRightHandFor(record, toolKey) {
     if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
+    const npcAuthored = record?.avatarRoot?.userData?.proceduralHandFreeRightPose; // Musician carries the real authored right-hand pluck pose, not the player's singleton session.
+    if (toolKey === 'kurraya' && record?.avatarRoot?.userData?.proceduralHandToolHolder?.parent && npcAuthored) return npcAuthored;
     return toolKey === 'kurraya' && (playerKurrayaActive(record) || !!playerKurrayaTarget(record))
       ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Keep the independent free hand in authored Neutral while carrying Kurraya, between and after notes.
   }
@@ -321,6 +323,16 @@
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
     if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply the previous weapon's sweep correction to the flute.
+    const actorHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder === toolHolder; // Bandits own a separate weapon pose; the player's stance snapshot cannot describe their grip.
+    if (actorHolder) {
+      const visibleMesh = toolHolder.children?.[0]; // Bandit's actual weapon child is mirrored across the owner's midline for a Backhand swing.
+      const plane = visibleMesh?.userData?.toolPlane || findToolVisualPlane(toolHolder); // Read after the enemy pose/visual adapter has updated this weapon.
+      const angle = Number(plane?.rotation?.z) || 0; // Enemy Neutral is z=0; a Sweep twists the blade as far as -90 degrees.
+      const mirrorX = Number(visibleMesh?.scale?.x) < 0; // This reflection is not representable by a quaternion; mirror the socket offset separately.
+      if (Math.abs(angle) < 1e-7) return { quaternion: identity, source: mirrorX ? 'actor-mirrored-neutral' : 'actor-neutral', angleDeg: 0, mirrorX };
+      const delta = new Quaternion().setFromAxisAngle(new record.THREE.Vector3(0, 0, 1), angle);
+      return { quaternion: delta, source: mirrorX ? 'actor-mirrored-sweep-plane' : 'actor-visible-sweep-plane', angleDeg: angle * 180 / Math.PI, mirrorX };
+    }
     if (!inAttackEditor() && typeof playerKurrayaTarget === 'function' && playerKurrayaTarget(record)?.holder === toolHolder)
       return { quaternion: identity, source: 'kurraya-authored-basis', angleDeg: 0 }; // A previous weapon sweep must not rotate this thrust-style instrument's grip.
 
@@ -414,6 +426,7 @@
       const p = gripFrame.position || {};
       const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
         .applyQuaternion(visualBasis.quaternion);
+      if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist, so hands must follow that same final handle location.
       if (bakedWorldMatrix) localOffset.applyMatrix4(bakedWorldMatrix);
       else toolHolder.localToWorld(localOffset);
       position = localOffset;

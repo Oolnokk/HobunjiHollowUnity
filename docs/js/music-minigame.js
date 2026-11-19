@@ -28,7 +28,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261110releaseGrid1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261118instrumentLoadout2&overworld=1';
   const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261110releaseGrid1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
@@ -125,6 +125,14 @@
     try { localStorage.setItem(LYRE_APP_SETTINGS_KEY, JSON.stringify({ ...loadLyreAppSettings(), ...patch })); }
     catch {}
   }
+  function gameMusicDevMode() { return document.getElementById('settingDevMode')?.checked === true; } // Game's real Dev Mode setting gates any tuning override.
+  function sharedPerformanceTuningSignature() {
+    if (!gameMusicDevMode()) return '48|Pentatonic Minor'; // Ordinary gameplay never inherits an older saved non-C tuning.
+    const saved = loadLyreAppSettings(); // In Dev Mode the saved Root note / Scale pair remains shared by musicians and player.
+    const tonic = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : 48; // Same C3 default as the performance engine.
+    const scale = FREEPLAY_SCALE_NAMES.includes(saved.scaleName) ? saved.scaleName : 'Pentatonic Minor'; // Single shared default.
+    return `${tonic}|${scale}`;
+  }
   const AUTO_PICK_PATTERNS = [
     ['direct', 'Single Note'],
     ['arp-forward-8', 'Forward Roll · eighths'],
@@ -150,25 +158,7 @@
   const DEFAULT_AUTO_PICK_SLOTS = ['direct', 'arp-forward-reverse-16', 'tremolo-16', 'strum-reggae-8']; // Up, Right, Down, Left — matches lyre-performance.html's own default.
   const AUTO_PICK_SLOT_LABELS = ['Up', 'Right', 'Down', 'Left'];
   function renderPatternLoadoutSettings() {
-    const container = document.getElementById('lyrePatternLoadoutSettings');
-    if (!container) return;
-    container.innerHTML = '';
-    const saved = loadLyreAppSettings();
-    const validIds = new Set(AUTO_PICK_PATTERNS.map(([id]) => id));
-    const slots = Array.from({ length: 4 }, (_, index) => {
-      const candidate = Array.isArray(saved.autoPickSlots) ? saved.autoPickSlots[index] : null;
-      return candidate && validIds.has(candidate) ? candidate : DEFAULT_AUTO_PICK_SLOTS[index];
-    });
-    slots.forEach((currentId, slotIndex) => {
-      const row = document.createElement('div');
-      row.className = 'input-binding-row';
-      row.innerHTML = `<span class="settings-name">${AUTO_PICK_SLOT_LABELS[slotIndex]}</span><select class="settings-select">${AUTO_PICK_PATTERNS.map(([id, label]) => `<option value="${id}"${id === currentId ? ' selected' : ''}>${label}</option>`).join('')}</select>`;
-      row.querySelector('select').addEventListener('change', event => {
-        slots[slotIndex] = event.target.value;
-        saveLyreAppSettings({ autoPickSlots: slots.slice() });
-      });
-      container.appendChild(row);
-    });
+    // Legacy game.js settings-render call: directional patterns now live in Loadout → Instrument.
   }
 
   const FREEPLAY_TONIC_NOTES = [['C',0],['C#',1],['D',2],['D#',3],['E',4],['F',5],['F#',6],['G',7],['G#',8],['A',9],['A#',10],['B',11]];
@@ -178,6 +168,13 @@
     const container = document.getElementById('lyreFreeplayKeySettings');
     if (!container) return;
     container.innerHTML = '';
+    if (!gameMusicDevMode()) {
+      const row = document.createElement('div'); // Read-only confirmation for players; the instrument iframe also enforces the same lock.
+      row.className = 'input-binding-row';
+      row.textContent = 'C · Pentatonic Minor — locked (enable Dev Mode to edit)';
+      container.appendChild(row);
+      return;
+    }
     const saved = loadLyreAppSettings();
     const savedTonicMidi = Number.isFinite(saved.tonicMidi) ? saved.tonicMidi : FREEPLAY_TONIC_BASE_MIDI;
     const currentOffset = ((savedTonicMidi - FREEPLAY_TONIC_BASE_MIDI) % 12 + 12) % 12;
@@ -185,20 +182,24 @@
 
     const keyRow = document.createElement('div');
     keyRow.className = 'input-binding-row';
-    keyRow.innerHTML = `<span class="settings-name">Root note</span><select class="settings-select">${FREEPLAY_TONIC_NOTES.map(([name, offset]) => `<option value="${offset}"${offset === currentOffset ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    keyRow.innerHTML = `<span class="settings-name">Shared root note (player + NPCs)</span><select class="settings-select">${FREEPLAY_TONIC_NOTES.map(([name, offset]) => `<option value="${offset}"${offset === currentOffset ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
     keyRow.querySelector('select').addEventListener('change', event => {
+      if (!gameMusicDevMode()) { renderFreeplayKeySettings(); return; }
       saveLyreAppSettings({ tonicMidi: FREEPLAY_TONIC_BASE_MIDI + Number(event.target.value) });
     });
     container.appendChild(keyRow);
 
     const scaleRow = document.createElement('div');
     scaleRow.className = 'input-binding-row';
-    scaleRow.innerHTML = `<span class="settings-name">Scale</span><select class="settings-select">${FREEPLAY_SCALE_NAMES.map(name => `<option value="${name}"${name === currentScale ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
+    scaleRow.innerHTML = `<span class="settings-name">Shared scale (player + NPCs)</span><select class="settings-select">${FREEPLAY_SCALE_NAMES.map(name => `<option value="${name}"${name === currentScale ? ' selected' : ''}>${name}</option>`).join('')}</select>`;
     scaleRow.querySelector('select').addEventListener('change', event => {
+      if (!gameMusicDevMode()) { renderFreeplayKeySettings(); return; }
       saveLyreAppSettings({ scaleName: event.target.value });
     });
     container.appendChild(scaleRow);
   }
+
+  document.getElementById('settingDevMode')?.addEventListener('change',renderFreeplayKeySettings); // Immediately relock or reveal the settings when Dev Mode changes.
 
   const overlayEl = document.getElementById('musicMinigameOverlay');
   const frameEl = document.getElementById('musicMinigameFrame');
@@ -529,7 +530,7 @@
     frameEl.src = next === 'puzzle'
       ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
         (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
-      : MUSIC_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Performance retains its chords, arpeggios and song controls while the iframe selects the flute's own sound.
+      : MUSIC_MINIGAME_SRC + '&instrument-key=' + encodeURIComponent(playerSession.instrumentKey) + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Player frame loads the equipped instrument's own four slots; NPC frames have none.
     if(next==='puzzle')startPuzzleInputs(); // Capture physical notes immediately; iframe load only attaches/restarts the audible instrument.
     return true;
   }
@@ -769,9 +770,7 @@
         <div class="concertinaGroupHead"><strong>Auto Pick</strong><small>4 slottable modes</small></div>
         <div class="edgeLeftStickRow fourWayAutoPickRow" aria-label="Four-way Auto Pick controls">
           <div class="autoPickCrossWrap">
-            <label style="display:grid;gap:3px;font-size:11px">Plucking pattern
-              <select data-plucking-pattern aria-label="Pattern for selected direction" style="min-width:0;max-width:100%;width:100%;color:inherit;background:#18222c">${AUTO_PICK_PATTERNS.map(([id,label]) => `<option value="${id}">${label}</option>`).join('')}</select>
-            </label>
+            <div class="autoPickLoadoutHint" style="font-size:11px;opacity:.85">Assign patterns in Loadout → Instrument</div>
             <div class="autoPickCross" aria-label="Four-way Auto Pick mode cross">
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="0" aria-label="Select Up Auto Pick mode"><span class="directionGlyph">▲</span><span class="modeText">UP</span></button>
               <button class="edgeControllerBtn autoPickCrossBtn" type="button" data-auto-pick-sector="1" aria-label="Select Right Auto Pick mode"><span class="directionGlyph">▶</span><span class="modeText">RIGHT</span></button>
@@ -1111,11 +1110,6 @@
         () => endVisibleNoteHold(button));
     });
 
-    leftMount.querySelector('[data-plucking-pattern]')?.addEventListener('change', event => {
-      const sector = Number(bridge.getState?.()?.leftStickSector) || 0; // Assigns the chosen figure to the active direction, including every strum.
-      bridge.setAutoPickSlot?.(sector, event.target.value);
-      readMode();
-    });
     leftMount.querySelectorAll('[data-auto-pick-sector]').forEach(button => {
       button.addEventListener('pointerdown', event => {
         event.preventDefault();
@@ -1151,9 +1145,6 @@
         if (modeText) modeText.textContent = String(labels[sector] || `MODE ${sector + 1}`).replace(/\s+/g, ' ').slice(0, 8);
         button.classList.toggle('selected', sector === selectedSector);
       });
-      const patternSelect = leftMount.querySelector('[data-plucking-pattern]'); // Mirrors the selected directional slot without overwriting a user's open picker each frame.
-      const patternId = stateSnapshot.autoPickSlots?.[selectedSector] || DEFAULT_AUTO_PICK_SLOTS[selectedSector]; // Shared slot id from the engine.
-      if (patternSelect && patternSelect.value !== patternId) patternSelect.value = patternId;
       const hint = leftMount.querySelector('[data-auto-pick-hint]');
       if (hint) hint.textContent = activeInputLayout === 'keyboard' ? 'Hold Shift' : (activeInputLayout === 'controller' ? 'Left stick' : 'Tap direction');
     };
@@ -1504,12 +1495,21 @@
     frame.src = MUSIC_MINIGAME_SRC;
   }
 
+  let lastSharedTuningSignature = sharedPerformanceTuningSignature(); // The existing one-second ambient scheduler watches in-game tuning changes without extra timers.
   let _tickAccum = 0;
   function tick(dt) {
     _tickAccum += dt;
     if (_tickAccum < AMBIENT_RECHECK_S) return;
     _tickAccum = 0;
     if (!deps) return;
+    if (playerSession?.instrumentMode === 'performance') bridgeOf(frameEl)?.syncGameplayTuning?.(); // Dev Mode toggling off relocks an already-open player's iframe without another timer.
+    const nextTuningSignature = sharedPerformanceTuningSignature(); // Do not restart NPC audio when unrelated Auto Pick preferences change.
+    if (nextTuningSignature !== lastSharedTuningSignature) {
+      lastSharedTuningSignature = nextTuningSignature;
+      for (const npcId of [...ambientFrames.keys()]) stopAmbientForNpc(npcId); // Hidden NPC iframes hold their original note set; relaunch them in the new key.
+      for (const [area, leader] of leaderByArea) if (leader.type === 'npc') leaderByArea.delete(area); // Never discard the player's own solo leader.
+      window.__farmLog?.(`[music] Shared player/NPC tuning changed to ${nextTuningSignature}; restarting ambient performers`, 'info');
+    }
     const performers = deps.listInstrumentPerformers();
     const performerById = new Map(performers.map(performer => [performer.npcId,performer])); // One linear lookup table replaces an O(N²) schedule scan when multiple hidden NPC frames exist.
     if (playerSession?.instrumentMode === 'puzzle') silenceAmbientForPuzzle(); // Includes NPCs whose schedules become active mid-puzzle.
@@ -1554,6 +1554,7 @@
     renderNoteKeySettings, // Called once at boot by game.js, the same way it calls window.InputSettingsPanel.render().
     renderPatternLoadoutSettings,
     renderFreeplayKeySettings,
+    patternOptions: () => AUTO_PICK_PATTERNS.map(pair => pair.slice()), // Loadout → Instrument reuses the exact existing automatic pattern list.
     get state() { return playerSession; },
     // True while any instrument NPC's ambient audio is sounding, even when
     // the player's own overlay is closed — see updateLyreDucking in
@@ -1563,6 +1564,10 @@
     diagnostics: () => ({latestChange:'Independent instrument audio with NPC-tempo/chord transport follow, mobile drift diagnostics and exclusive action input.',
       controllerOwner:window.ControllerInput?.owner||null,actionLockActive:!!musicActionLock,
       jamFollow:bridgeOf(frameEl)?.jamFollowState?.()||{active:false},
+      sharedTuning:sharedPerformanceTuningSignature(), // On-mobile diagnostics compare the effective key with each musician's actual audible state.
+      musicDevTuning:gameMusicDevMode(),
+      instrumentSlots:window.InstrumentPatternLoadout?.getSlots?.(deps?.getEquippedInstrument?.()) || null,
+      playerTuning:playerSession?.instrumentMode === 'performance' ? (() => { const state = bridgeOf(frameEl)?.getState?.(); return {tonicMidi:state?.tonicMidi,scaleName:state?.scaleName}; })() : null, // On-device key readout without the console.
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,puzzleBeatClock,lastPuzzleInputTiming, // Mobile diagnostics show the actual physical note timing and audio transport.
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,

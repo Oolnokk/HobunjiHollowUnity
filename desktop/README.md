@@ -54,6 +54,51 @@ is nothing for clients to download. Don't publish unrelated GitHub Releases
 as the repository's "latest" release unless they contain compatible Windows
 update artifacts. Release tagging is `desktop-v<version>`.
 
+## Friends Edition: automatically update only after developer approval
+
+The ordinary **Hobunji Hollow** desktop install continues to receive successful
+public releases generated from changes to main. Friends use a separate installer,
+**Hobunji Hollow Tester**, with a distinct Windows app identity, installation
+name and Chromium profile. Both editions bundle the same game from the selected
+source commit; they do not maintain separate gameplay codebases.
+
+A normal push to main **does not publish a Friends update**. To approve the
+current main commit for testers:
+
+1. Open **Actions → Publish approved Friends Windows build** in GitHub.
+2. Choose **Run workflow** on branch **main** and enter **PUBLISH**.
+3. Verify the run passes both jobs. It builds the Friends installer, publishes
+   an explicitly tagged GitHub *prerelease* and only then advances the
+   dedicated update feed in the friends-update-feed branch.
+4. On first installation, give friends the
+   Hobunji-Hollow-Tester-Setup-0.2.<run number>.exe asset from the approved
+   friends-v0.2.<run number> release. Subsequent approved versions install
+   through the existing in-game updater.
+
+Friends' installed copies check their own feed about eight seconds after
+launch and every four hours. They **automatically download an approved update**
+and display the update window. The player selects **Install & Restart** or
+**Later**; updates are never installed silently on quitting. The existing
+save-before-restart / retry / cancel protection is shared by both editions.
+If no Friends release was approved, no new Friends update is available,
+regardless of how many commits were merged into main.
+
+The Friends feed is the public HTTPS
+https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/friends-update-feed/latest.yml.
+It contains a checksum and immutable GitHub Release asset URL. It is deliberately
+**not** the main GitHub releases/latest feed; Friends releases are prereleases
+so they cannot become the normal desktop updater's latest stable build.
+There is no automatic publishing trigger for the Friends workflow. GitHub may
+cache the feed briefly, so publication is not necessarily detected immediately.
+
+The two Windows applications store browser save data and folder permissions in
+separate profiles. To use an existing shared Google Drive save, explicitly select
+and load the intended save folder inside Friends Edition before saving. Do not
+run both editions against the same folder simultaneously. This is a public,
+developer-approved tester distribution, **not access-controlled**: anybody with
+a public release URL can download that installer. Both editions are unsigned;
+Windows SmartScreen warnings remain possible.
+
 ## Using your existing Google Drive save directory
 
 1. Use Google Drive for Desktop to ensure your game save folder is locally
@@ -97,6 +142,10 @@ Do not run simultaneous writes from the browser, desktop app, and another
 machine; Google Drive is not a transactional database and may create conflicts.
 
 ## Checking whether Windows is actually using your GPU
+
+The desktop executable requests Electron's `force_high_performance_gpu` preference before Chromium starts. This is a preference, not a guarantee: Windows graphics settings, display connections, and driver configuration can still select Intel graphics.
+
+**Verify the Renderer field** in View → Graphics Status after restarting. `ANGLE (Intel ...)` means the game still renders through Intel, even if NVIDIA is listed as a detected adapter. `ANGLE (NVIDIA ...)` confirms that the game context uses the NVIDIA GPU. The report also distinguishes the requested preference from the renderer actually selected.
 
 Open **View → Graphics Status** in the installed game (no developer console).
 The report lists the Chromium WebGL acceleration state, detected/active display

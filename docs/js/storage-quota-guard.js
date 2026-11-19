@@ -28,6 +28,9 @@
     'hobunjiSaveCheckpoint.preRestore.v1',
     'hobunjiSaveCheckpoint.manual.v1',
   ]);
+  const SAVE_META_KEY = 'hobunjiSaveMeta'; // The compass tracks this one key without polling its full value.
+  let saveMetaRevision = 0; // Advances whenever the guarded canonical metadata can change.
+  let guardedLocalStorage = null; // Virtual preview storage uses its own methods and must bypass revision caching.
   const stats = { quotaHits: 0, evicted: [], unresolved: 0, lastKey: '' };
   const folderStaging = new Map(); // Canonical values that no longer fit in the browser, read by the existing folder snapshot pipeline.
   let importingFolder = false; // Allows a validated folder import to stage before autosync is armed.
@@ -35,7 +38,7 @@
 
   function canStageForFolder(key) {
     if (browserPersistenceRequired) return false;
-    if (key !== 'hobunjiSaveMeta' && !key.startsWith('hobunji_farm_layout_v3:')) return false;
+    if (key !== SAVE_META_KEY && !key.startsWith('hobunji_farm_layout_v3:')) return false;
     const status = window.LocalSaveFolder?.getStatus?.(); // Only an explicitly armed primary folder permits a transient browser mirror.
     return importingFolder || (status?.state === 'ready' && status?.autoSyncArmed === true);
   }
@@ -68,12 +71,18 @@
     proto.removeItem = function (key) {
       key = String(key);
       const result = originalRemoveItem.call(this, key); // Preserve native errors before changing staged state.
-      if (this === window.localStorage) folderStaging.delete(key);
+      if (this === window.localStorage) {
+        folderStaging.delete(key);
+        if (key === SAVE_META_KEY) saveMetaRevision++;
+      }
       return result;
     };
     if (originalClear) proto.clear = function () {
       const result = originalClear.call(this);
-      if (this === window.localStorage) folderStaging.clear();
+      if (this === window.localStorage) {
+        folderStaging.clear();
+        saveMetaRevision++;
+      }
       return result;
     };
     const guardedSetItem = function hobunjiQuotaGuardedSetItem(key, value) {
@@ -81,7 +90,10 @@
       value = String(value);
       try {
         const result = originalSetItem.call(this, key, value);
-        if (this === window.localStorage) folderStaging.delete(key);
+        if (this === window.localStorage) {
+          folderStaging.delete(key);
+          if (key === SAVE_META_KEY) saveMetaRevision++;
+        }
         return result;
       } catch (error) {
         let local = null;
@@ -96,6 +108,7 @@
           try {
             const result = originalSetItem.call(this, key, value);
             folderStaging.delete(key);
+            if (key === SAVE_META_KEY) saveMetaRevision++;
             console.warn(`[storage-quota] freed space for "${key}" by dropping browser recovery copy "${victim}".`);
             return result;
           } catch (retryError) {
@@ -107,6 +120,7 @@
           // is staging, not durable success: syncSnapshot/syncNow must still
           // finish their actual disk writes before the UI reports a save.
           folderStaging.set(key, value);
+          if (key === SAVE_META_KEY) saveMetaRevision++;
           return;
         }
         stats.unresolved += 1;
@@ -115,6 +129,12 @@
     };
     guardedSetItem.__hobunjiQuotaGuard = true;
     proto.setItem = guardedSetItem;
+    window.addEventListener?.('storage', event => {
+      if (event.storageArea === window.localStorage && (event.key === SAVE_META_KEY || event.key === null)) {
+        saveMetaRevision++;
+      }
+    });
+    try { guardedLocalStorage = window.localStorage; } catch (_) {}
     return true;
   }
 
@@ -123,6 +143,12 @@
     isQuotaError,
     CHECKPOINT_EVICTION_ORDER,
     hasStagedValues: () => folderStaging.size > 0,
+    getSaveMetaRevision() {
+      try {
+        if (guardedLocalStorage && guardedLocalStorage === window.localStorage) return saveMetaRevision;
+      } catch (_) {}
+      return undefined;
+    },
     getWriteFailureCount: () => stats.unresolved,
     requireBrowserPersistence(callback) {
       const previous = browserPersistenceRequired; // Nested synchronous writes retain the caller's durability requirement.

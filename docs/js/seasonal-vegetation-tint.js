@@ -161,6 +161,7 @@
   }
 
   function looksLikeSeasonalLeafCardMaterial(material) {
+    if (material?.userData?.hobunjiFixedBlossomColor) return false; // The Five Blossoms temple-window swatches are decorative and must survive seasonal tint/repair passes.
     if (!material?.isMeshBasicMaterial || !material.map) return false;
     const src = normalizeUrl(textureSourceUrl(material.map));
     if (!/(^|\/)assets\/leaves\//.test(src)) return false;

@@ -156,12 +156,16 @@
       + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
       + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
-      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · nest stays: ' + (flight.nestStays || 0)
-      + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
+      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · no-perch orbits: ' + (flight.orbits || 0)
+      + ' · nest stays: ' + (flight.nestStays || 0) + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
+      + (flight.nestExitProtected ? '<div>Tzatzul nest exit protection active</div>' : '')
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
       + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
       + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
       + ' · last: ' + fmt(wings?.lastCaptiveRestore) + '</div>'
+      + '<div>Portrait offset repairs: ' + (wings?.captivePositionRestores ?? 0)
+      + ' · newer pose retained: ' + (wings?.captivePositionHandoffs ?? 0)
+      + ' · late replay fixed: ' + (wings?.staleCarryPositionCorrections ?? 0) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
@@ -179,6 +183,18 @@
       + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
       + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')
       + '</div>';
+  }
+
+  function renderSkeeriFlightCensus() {
+    const encounter = window.SkeeriRuins?.debugSnapshot?.(); // Reuses current owner records for mobile without opening DevTools.
+    if (!encounter?.active) return '';
+    const escape = value => deps.esc(String(value ?? 'none')); // Reuse the existing escaped mobile debug formatter.
+    const actors = (encounter.actors || []).map(bird =>
+      '<div>' + escape(bird.id) + ' · ' + escape(bird.size) + ' · ' + escape(bird.phase) + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Skeeri aerial combat</div>'
+      + '<div>Living flight actors: ' + (encounter.actors?.length || 0)
+      + ' · no-perch orbits: ' + (encounter.orbits || 0) + '</div>' + actors + '</div>';
   }
 
   function renderPingdortCensus() {
@@ -215,7 +231,7 @@
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderNestingSpeciesAudit() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCloudForestHummingbirdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
+    const censusHtml = renderDenNestCensus() + renderNestingSpeciesAudit() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCloudForestHummingbirdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderSkeeriFlightCensus() + renderPingdortCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;

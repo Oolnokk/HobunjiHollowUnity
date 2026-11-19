@@ -1985,17 +1985,38 @@
     burstEffects.push(fx);
     window.AudioSystem?.playWeaponHitSfx?.('blunt',x*tileSize(),z*tileSize(),area(),undefined,'heavy');
   }
+  // Offsets and dimensions of the fragments, laid low around a larger central chunk.
+  const ROCK_FRAGMENTS=[
+    [0,0,.42,.24,.36],[-.19,-.12,.28,.15,.24],[.16,-.15,.23,.13,.21],[.12,.18,.31,.17,.25],
+  ];
+  function writePileInstances(mesh,index,pile,transform) {
+    const x=pile.x??pile.col+.5,z=pile.z??pile.row+.5; // Preserve actual fruit impact positions.
+    const yaw=(pile.col*1.7+pile.row*2.3)%(Math.PI*2); // Vary stone layout by tile through blasts and save restores.
+    const cos=Math.cos(yaw),sin=Math.sin(yaw); // Rotate the whole rock pile as well as its individual pieces.
+    for(let i=0;i<4;i++){
+      if(pile.kind==='rock'){
+        const [dx,dz,width,height,depth]=ROCK_FRAGMENTS[i]; // Scaled stone blanks always extend a little into the ground.
+        transform.position.set(x+dx*cos-dz*sin,pile.y+height/2-.025,z+dx*sin+dz*cos);
+        transform.rotation.set(0,-yaw+i*1.8,0);
+        transform.scale.set(width,height,depth);
+      }else{
+        transform.position.set(x+Math.cos(i*1.8)*.15,pile.y+.09,z+Math.sin(i*1.8)*.15);
+        transform.rotation.set(0,0,pile.kind==='tree'?1.2+i*.08:0);
+        transform.scale.set(1,1,1);
+      }
+      transform.updateMatrix();
+      mesh.setMatrixAt(index*4+i,transform.matrix);
+    }
+  }
   function syncPileVisuals(rec) {
     if(!rec)return;
-    if(!sharedPileArt?.rock)sharedPileArt={...sharedPileArt,
-      rock:{geometry:new THREE.DodecahedronGeometry(.18,0),
-        material:new THREE.MeshLambertMaterial({color:0x817b74})},
+    if(!sharedPileArt?.tree)sharedPileArt={...sharedPileArt,
       tree:{geometry:new THREE.CylinderGeometry(.045,.065,.55,5),
         material:new THREE.MeshLambertMaterial({color:0x7b5936})},
       fruit:{geometry:new THREE.DodecahedronGeometry(.10,0),
         material:new THREE.MeshLambertMaterial({color:0xd98e3b})},
     }; // Shared geometries/materials are never disposed with an individual pile.
-    const transform=new THREE.Object3D(); // Reused scratch for the complete rebuild, two GPU instance buffers maximum per area.
+    const transform=new THREE.Object3D(); // Reused scratch for the complete rebuild of the per-type instance buffers.
     for(const kind of ['rock','tree','fruit']){
       const piles=[];
       for(const pile of rec.piles.values())if(pile.kind===kind)piles.push(pile);
@@ -2004,25 +2025,20 @@
       if(!state&&needed===0)continue;
       if(!state||needed>state.capacity){
         const capacity=Math.max(16,needed,state?.capacity*2||0); // Doubles only on rare high-count blasts.
-        const mesh=new THREE.InstancedMesh(sharedPileArt[kind].geometry,sharedPileArt[kind].material,capacity);
+        const art=kind==='rock'?window.OreRockTextures.smallStoneArt(THREE):sharedPileArt[kind]; // Use the same textured stone as wilderness cairns.
+        const mesh=new THREE.InstancedMesh(art.geometry,art.material,capacity);
+        if(kind==='rock')mesh.userData.terrainJigsawIgnore=true; // Keep the rock's own UVs.
         mesh.count=0;
         mesh.name='shattercask_'+kind+'_piles_instanced';
-        if(state)state.mesh.parent?.remove(state.mesh);
+        if(state){
+          state.mesh.parent?.remove(state.mesh);
+          state.mesh.dispose?.();
+        }
         rec.scene.add(mesh);
         state={mesh,capacity}; // One persistent mesh per debris type instead of four meshes per destroyed tile.
         rec.pileVisuals.set(kind,state);
       }
-      for(let p=0;p<piles.length;p++){
-        const pile=piles[p];
-        for(let i=0;i<4;i++){
-          transform.position.set((pile.x??pile.col+.5)+Math.cos(i*1.8)*.15,
-            pile.y+.09,(pile.z??pile.row+.5)+Math.sin(i*1.8)*.15);
-          transform.rotation.set(0,0,kind==='tree'?1.2+i*.08:0);
-          transform.scale.set(1,1,1);
-          transform.updateMatrix();
-          state.mesh.setMatrixAt(p*4+i,transform.matrix);
-        }
-      }
+      for(let p=0;p<piles.length;p++)writePileInstances(state.mesh,p,piles[p],transform);
       state.mesh.count=needed;
       state.piles=piles; // Per-type dense visual order enables O(1) swap-removal.
       state.indices=new Map(piles.map((pile,index)=>[pile.id,index])); // Instance-block index lookup for a collected pile.
@@ -2039,15 +2055,7 @@
     if(tail && tail.id!==pile.id){
       state.piles[index]=tail;
       state.indices.set(tail.id,index);
-      const transform=new THREE.Object3D(); // Used only for the four moved tail instances.
-      for(let i=0;i<4;i++){
-        transform.position.set((tail.x??tail.col+.5)+Math.cos(i*1.8)*.15,
-          tail.y+.09,(tail.z??tail.row+.5)+Math.sin(i*1.8)*.15);
-        transform.rotation.set(0,0,pile.kind==='tree'?1.2+i*.08:0);
-        transform.scale.set(1,1,1);
-        transform.updateMatrix();
-        state.mesh.setMatrixAt(index*4+i,transform.matrix);
-      }
+      writePileInstances(state.mesh,index,tail,new THREE.Object3D());
     }
     state.mesh.count=state.piles.length*4;
     state.mesh.instanceMatrix.needsUpdate=true;

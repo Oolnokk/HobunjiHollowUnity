@@ -7,6 +7,7 @@
   const MASTER_WEIGHT = 0.65; // Protecting the master matters more than the pet's personal convenience.
   const ACTIVE_THREAT_MULTIPLIER = 0.67; // Enemies currently attacking the owner outrank passive enemies nearby.
   const APPROACH_RESTART_RATIO = 1.05; // Leave backup early once the target has escaped beyond ordinary reach.
+  const DESCENT_ESCAPE_GRACE_MS = 2000; // After landing, keep following the fleeing owner long enough to leave nearby enemies behind.
 
   function validEnemy(enemy, areaId) {
     return !!enemy && Number(enemy.health) > 0 && !enemy._downed &&
@@ -24,9 +25,33 @@
       (targetingPet ? 0.32 : targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
   }
 
+  // A follower stranded above its owner must descend before defending a cliff-top fight.
+  // The shared terrain and tile size are read-only; no independent pathing or physics is created here.
+  function shouldFollowOwnerDownCliff(companion, master, areaId) {
+    const state = window.CompanionFollowNavigation?.descentState?.(companion, master, areaId);
+    if (!state) return false;
+    const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Same clock as the target-decision lease.
+    if (state.inProgress) return true; // Do not restart combat during a cliff crossing.
+    if (state.above) {
+      companion._companionRetreatUntilMs = nowMs + DESCENT_ESCAPE_GRACE_MS; // Owner is still below.
+      return true;
+    }
+    return companion._followOwnerDownCliff && state.sameTier &&
+      nowMs < (companion._companionRetreatUntilMs || 0); // Post-landing flee grace before re-engaging.
+  }
+
   const TARGET_DECISION_INTERVAL_MS = 140; // Full enemy prioritization runs at ~7Hz; a committed target still fights and moves each frame.
   function shouldReevaluate(companion, master, areaId, alertPx) {
     const nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Time-based cadence independent of rendering speed.
+    const followDown = shouldFollowOwnerDownCliff(companion, master, areaId); // Re-check terrain when the owner lands below a ledge.
+    const descentChanged = followDown !== !!companion._followOwnerDownCliff; // Forces a response immediately on fall or reunion.
+    companion._followOwnerDownCliff = followDown; // The mobile debug snapshot and chooser share this transient priority.
+    if (descentChanged && followDown) {
+      companion._travelPath = null; // Clear the old combat route only ONCE; repeated resets would starve stuck recovery/pathfinding.
+      companion._travelPathTarget = null;
+      companion._travelStuckT = 0;
+    }
+    if (descentChanged) companion._companionDecisionNextAt = 0;
     const target = companion._companionCombatTarget; // Live current target is validated without any roster scan.
     const radius = Math.max(0, Number(alertPx) || 0);
     const lostTarget = !!target && (!validEnemy(target, areaId) ||
@@ -44,6 +69,19 @@
   }
 
   function chooseTarget(companion, master, enemies, areaId, alertPx) {
+    const followDown = shouldFollowOwnerDownCliff(companion, master, areaId); // Falling or jumping below your pet overrides local combat.
+    companion._followOwnerDownCliff = followDown; // Prevent stale combat commitment from hiding a reachable lower landing.
+    if (followDown) {
+      if (companion._companionCombatTarget || companion._animalAttack || companion._stage) {
+        window.Combat?.animalAttacks?.cancel?.(companion); // Stops named lunges before traversal takes movement ownership.
+        companion._stage = null; // The ordinary telegraph/chase state must not reclaim a retreating follower.
+        window.__farmLog?.('[companion-response] ' + (companion.id || companion.creatureKey || 'pet') +
+          ' disengaged to follow owner below cliff', 'combat');
+      }
+      companion._companionCombatTarget = null;
+      companion._companionCombatPriority = null;
+      return null; // Preserve any route the follower calculated after entering escape mode.
+    }
     const radius = Number(alertPx) > 0 ? Number(alertPx) : 0; // Masters' alert radius keeps pets from chasing faraway enemies.
     let chosen = null, chosenScore = Infinity, currentSeen = false; // Keep a stable target without creating a new array of hostile objects every frame.
     const current = companion._companionCombatTarget; // Current committed enemy is retained unless it becomes invalid or an urgent threat supersedes it.
@@ -83,6 +121,19 @@
     return chosen;
   }
 
+  function isRescuing(companion, rescueHost) {
+    if (companion?._followOwnerDownCliff || !rescueHost || !(rescueHost.health > 0)) return false;
+    return !!window.Combat?.attach?.attachersOf?.(rescueHost)?.some(attacker =>
+      window.Combat.attach.isAttached(attacker) && attacker.creatureKey === 'honeyfuzzle'); // A rescue never supersedes following an escaping owner.
+  }
+
+  function prioritizeOwnerRetreat(companion, target, dt, clearTreasureCue, clearWatchIdle) {
+    if (!companion?._followOwnerDownCliff || companion.banditCompanion) return target;
+    if (companion.treasureCue) clearTreasureCue?.(companion, dt, 'following owner below cliff');
+    if (companion.watchPlayerIdle) clearWatchIdle?.(companion, 'following owner below cliff');
+    return null; // Final arbiter runs AFTER Sicced, downed focus and committed-attack targeting.
+  }
+
   function shouldRestartApproach(stage, targetDistance, attackReach, urgent = false) {
     return stage?.mode === 'backingUp' && (urgent ||
       Number(targetDistance) > Math.max(0, Number(attackReach) || 0) * APPROACH_RESTART_RATIO);
@@ -96,9 +147,19 @@
           companion?._honeyfuzzleRescueTarget?.creatureKey || companion?._honeyfuzzleRescueTarget?.name || null), // The player actor has no creature ID; show 'player' during an actual rescue.
       backingUp: companion?._stage?.mode === 'backingUp',
       groundFollow: companion?._companionGroundFollow || null, // Exposes the current ground/route destination to mobile Companion Combat diagnostics.
+      stuckRecovery: companion?._companionStuckRecovery ? {
+        stalledSeconds: Number(companion._companionStuckRecovery.stalled?.toFixed?.(1) || 0),
+        retrySeconds: Number(companion._companionStuckRecovery.retry?.toFixed?.(1) || 0),
+        cooldownSeconds: Number(companion._companionStuckRecovery.cooldown?.toFixed?.(1) || 0),
+      } : null, // Mobile companion diagnostics show why a hidden follower has not teleported yet.
+      recoverySummary: window.CompanionFollowNavigation?.debugSnapshot?.() || null, // Total unseen recoveries and latest refused reason.
+      followingDownCliff: !!companion?._followOwnerDownCliff, // Explains immediate combat disengagement on mobile.
+      escapeGraceRemainingMs: Math.max(0, (companion?._companionRetreatUntilMs || 0) -
+        (typeof performance !== 'undefined' ? performance.now() : Date.now())), // Mobile-readable post-landing combat suppression.
       cooldown: companion?.attackCooldownT ?? null };
   }
 
   window.CompanionCombatResponse = Object.freeze({ chooseTarget, shouldReevaluate, validEnemy, shouldRestartApproach,
-    debugSnapshot, tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
+    debugSnapshot, shouldFollowOwnerDownCliff, isRescuing, prioritizeOwnerRetreat,
+    tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
 })();

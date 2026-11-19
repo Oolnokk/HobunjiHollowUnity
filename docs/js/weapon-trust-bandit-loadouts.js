@@ -89,6 +89,8 @@
     const old = entity?.[field];
     const holder = makeHolder(entity?.scene, itemKey, name, visible);
     if (!holder) return false;
+    holder.userData ||= {};
+    holder.userData.hobunjiHeldPortraitOwner = entity?.avatarRef?.group || null; // A culturally replaced holder must retain the avatar's front-portrait masking owner.
     old?.parent?.remove?.(old);
     entity[field] = holder;
     return true;
@@ -101,7 +103,7 @@
       || [...configuredBanditShapes].find(shapeKey => originalKey?.startsWith?.(`${shapeKey}_`))
       || null;
 
-    if (global.EnemyLoadoutRules?.ruleFor(entity.enemyLoadoutKind)?.weapons || (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'weaponKey'))) {
+    if (entity._banditCaptainArmament || global.EnemyLoadoutRules?.ruleFor(entity.enemyLoadoutKind)?.weapons || (opts?.defOverride && Object.prototype.hasOwnProperty.call(opts.defOverride, 'weaponKey'))) { // A captain already carrying a unique modular weapon must not have it replaced by this later cultural wrapper.
       return { originalKey, finalKey: originalKey, originalShape, finalShape: originalShape, allowed, overridden: true };
     }
     if (!allowed.length || !metalKey || !entity?.def) {
@@ -177,7 +179,7 @@
   function applyCulturalLoadout(entity, gangCfg, rank, opts) {
     if (!entity?.isBandit || !entity?.def || entity?.isMinion || entity?.enemyClass === 'minion') return entity; // Minions own their melee/no-ranged loadout and skip bandit cultural substitutions.
     const speciesId = entity.rosterRecord?.appearance?.speciesId || null;
-    const metalKey = metalKeyFromWeaponKey(entity.def.weaponKey);
+    const metalKey = entity._banditCaptainArmament?.metal || metalKeyFromWeaponKey(entity.def.weaponKey); // Unique modular captain keys retain their original metal for the cultural ranged roll.
     const melee = applyMeleeRoll(entity, speciesId, metalKey, opts);
     const ranged = applyRangedRoll(entity, gangCfg, rank, speciesId, metalKey, opts);
     const speciesByShape = culturalSpeciesByShape();

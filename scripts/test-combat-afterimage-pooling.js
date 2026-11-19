@@ -105,7 +105,17 @@ const combat = {
   update() {}, setMovementSpeedMul() {},
 };
 let canvasId = 0; // Distinguishes independent frozen canvas objects in the fake document.
+const preferenceStorage = new Map(); // Persists the Visual Effects choice independently of the ghost's GPU caches.
+const afterimageToggle = { checked: true, dataset: {}, listeners: {},
+  addEventListener(name, handler) { this.listeners[name] = handler; },
+}; // Synthetic mobile settings checkbox, initially forced wrong to verify startup synchronization.
+const storageStub = {
+  getItem(key) { return preferenceStorage.has(key) ? preferenceStorage.get(key) : null; },
+  setItem(key, value) { preferenceStorage.set(key, value); },
+}; // Tests default-off, opt-in persistence, and opt-out cleanup.
 const documentStub = {
+  readyState: 'complete',
+  getElementById(id) { return id === 'settingCombatAfterimages' ? afterimageToggle : null; },
   createElement() {
     counts.canvases += 1;
     const canvas = { width: 0, height: 0, id: ++canvasId };
@@ -123,13 +133,31 @@ const windowStub = {
   WorldPortraitLife: { setPlayerCombatExpression() {}, isPlayerCombatExpressionApplied: () => true },
   HobunjiSpritePngSurface: { alphaTest: () => 0.001 },
 };
-vm.runInNewContext(source, { window: windowStub, document: documentStub, performance: { now: () => nowMs }, console }, { filename: 'combat-blink-dodge.js' });
+vm.runInNewContext(source, { window: windowStub, document: documentStub, localStorage: storageStub, performance: { now: () => nowMs }, console }, { filename: 'combat-blink-dodge.js' });
 enemyRig.material.alphaMap = enemyRig.material.map; // Both map and alphaMap share one frozen canvas; refreshing must not double-copy it.
 const stats = () => windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages; // Mobile diagnostics used to check pooling without relying on internal module functions.
 const ghosts = () => scene.children.filter(object => object.name === 'combat_portrait_afterimage'); // Currently attached visual snapshots.
+assert.equal(stats().enabled, false, 'combat afterimages are disabled by default when storage is empty');
+assert.equal(afterimageToggle.checked, false, 'Visual Effects checkbox starts unchecked even when markup/default DOM differs');
+assert.equal(typeof afterimageToggle.listeners.change, 'function', 'Visual Effects checkbox is wired across VM realms');
 player.lunging = true;
 enemy._banditLunging = true;
 combat.update(0.016);
+player.x += 64;
+enemy.x += 64;
+nowMs += 60;
+combat.update(0.06);
+assert.equal(stats().active, 0, 'disabled combat never spawns player/enemy ghosts');
+assert.equal(counts.geometry, 0, 'disabled combat never allocates afterimage geometry');
+assert.equal(counts.materials, 0, 'disabled combat never clones portrait materials');
+assert.equal(counts.textures, 0, 'disabled combat never copies textures');
+assert.equal(counts.canvases, 0, 'disabled combat never creates afterimage canvases');
+
+afterimageToggle.checked = true;
+afterimageToggle.listeners.change(); // Mimics the actual on-screen setting being switched on.
+assert.equal(stats().enabled, true, 'opt-in becomes active without reloading');
+assert.equal(preferenceStorage.get('hobunjiCombatAfterimages'), '1', 'opt-in preference is persisted');
+combat.update(0.016); // Seeds movement when the effect becomes active mid-fight.
 player.x += 64;
 enemy.x += 64;
 nowMs += 60;
@@ -200,4 +228,14 @@ for (let sample = 0; sample < 3; sample += 1) {
 assert.equal(stats().active, 3, 'oldest records are removed as new ones enter at the cap');
 assert.equal(stats().entriesCreated, warmCreated, 'pool-at-cap avoids new geometry/material/texture allocations');
 assert.equal(stats().entriesReused, warmReused + 3, 'the three evicted live records are reused immediately');
-console.log('Player/NPC dodge-lunge afterimage pooling regression tests passed.');
+afterimageToggle.checked = false;
+afterimageToggle.listeners.change(); // Disabling during combat must dispose live and detached ghosts right away.
+assert.equal(stats().enabled, false);
+assert.equal(stats().active, 0);
+assert.equal(stats().pooled, 0);
+assert.equal(ghosts().length, 0);
+assert.equal(preferenceStorage.get('hobunjiCombatAfterimages'), '0', 'opt-out remains saved for the next launch');
+const createdBeforeOff = stats().entriesCreated;
+player.x += 64; nowMs += 60; combat.update(0.06);
+assert.equal(stats().entriesCreated, createdBeforeOff, 'subsequent attacks skip all ghost work with the setting off');
+console.log('Player/NPC afterimages are off by default, toggleable, pooled only on opt-in, and disposed on opt-out.');

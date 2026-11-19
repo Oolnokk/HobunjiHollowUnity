@@ -30,7 +30,15 @@ for (const [tier, spec] of Object.entries(SPEC)) {
     assert.equal(plan.floorCount, spec.floors);
     assert.equal(plan.totalWings, spec.wings);
     assert.equal(plan.totalBraziers, spec.wings, 'one brazier per wing, all required for the Great Door');
-    for (const floor of plan.floors) for (const wing of floor.wings) assert.equal(wing.rooms.length, spec.rooms, `${tier}: ${spec.rooms}-room wings`);
+    for (const floor of plan.floors) for (const wing of floor.wings) {
+      assert.equal(wing.rooms.length, spec.rooms, `${tier}: ${spec.rooms}-room wings`);
+      assert.equal(wing.anteroom?.kind,'shaft-antechamber','every shaft-side door leads into an enclosed anteroom');
+      assert.equal(wing.anteroom.w,5);
+      assert.equal(wing.anteroom.d,5);
+      assert(floor.rooms.includes(wing.anteroom),'the anteroom has a first-class story room ID');
+      assert(floor.doorways.some(door=>door.to===wing.anteroom.id
+        && door.point.x===wing.entry.x&&door.point.z===wing.entry.z),'the anteroom door sits flush against the shaft');
+    }
     assert.ok(plan.floors[0].wings.every(w => w.side !== side), 'ground floor keeps the entrance wall free');
   }
   for (const theme of ['tothal', 'hronal', 'kanthic']) for (const entranceSide of SIDES) {

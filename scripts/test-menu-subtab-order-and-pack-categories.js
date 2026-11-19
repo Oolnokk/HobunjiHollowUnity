@@ -107,6 +107,30 @@ const archClassifierSource = archSource.slice(archSource.indexOf('  const CATEGO
 const archCategoryFor = vm.runInNewContext(archClassifierSource + '\ncategoryForDefinition');
 for (const key of literatureKeys) assert.equal(archCategoryFor(key, itemDefs[key]), 'technique', `item arch groups ${key} with Combat Lessons`);
 
+const itemArchJumpSource = between(archSource, '  function nextCategoryIndex(', '  function currentRuntimeOwnedKeys() {'); // Executes the real live-item category jump algorithm.
+const jumpDefinitions = { // A rotated grouped inventory tests the wrap seam and both shortcut directions.
+  seedA:{cat:'seed'}, seedB:{cat:'seed'}, cropA:{cat:'crop'}, cropB:{cat:'crop'}, fishA:{cat:'material',tags:['Fish']},
+};
+const nextItemCategory = vm.runInNewContext(archClassifierSource + '\n' + itemArchJumpSource + '\nitemDeps.ITEM_DEFS = jumpDefinitions; nextCategoryIndex', { jumpDefinitions }); // Reuses the production category resolver.
+const rotatedStacks = ['seedB', 'cropA', 'cropB', 'fishA', 'seedA'].map(key => ({ key })); // Simulates preserve-active-index grouping rotation across the start/end boundary.
+assert.equal(nextItemCategory(rotatedStacks, 0, 1), 1, 'next from the rotated seed tail enters Crops');
+assert.equal(nextItemCategory(rotatedStacks, 0, -1), 3, 'previous from the rotated seed tail enters Fish');
+assert.equal(nextItemCategory(rotatedStacks, 2, -1), 4, 'previous reaches the first Seeds entry across the cyclic seam');
+assert.equal(nextItemCategory(rotatedStacks, 3, 1), 4, 'next wraps from Fish to the first Seeds entry');
+assert.equal(nextItemCategory(rotatedStacks, 4, 1), 1, 'next skips the cyclic continuation of the same Seeds group');
+assert.equal(nextItemCategory(rotatedStacks, 4, -1), 3, 'previous from Seeds reaches Fish');
+assert.equal(nextItemCategory([{key:'cropA'},{key:'cropB'}], 0, 1), -1, 'single-category inventory is a no-op');
+assert.equal(nextItemCategory(rotatedStacks, 99, 1), -1, 'out-of-date inventory indices are safely rejected');
+assert.equal(nextItemCategory([], 0, 1), -1, 'empty inventory never selects an invalid item');
+const archControls = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // Checks desktop/touch button prompts share one real category-jump API.
+const controllerSelector = fs.readFileSync('docs/js/controller-selection-ui.js', 'utf8'); // Guards A/Y selector routing and the release-to-commit contract.
+assert.match(archControls, /jumpItemCategory\(dir\).*_jumpItemCategory\(dir\)/, 'shared wheel exports category-level navigation');
+assert.match(archControls, /item-category-mobile-arrow[\s\S]*@media \(pointer:coarse\)/, 'mobile shows stacked square arrows instead of desktop prompts');
+assert.match(archControls, /document\.addEventListener\('pointerdown'[\s\S]*event\.pointerType !== 'mouse'/, 'desktop mouse buttons are captured only while browsing an item wheel');
+assert.match(controllerSelector, /frame\.pressed\?\.has\?\.\('Button0'\)[\s\S]*frame\.pressed\?\.has\?\.\('Button3'\)/, 'A/Y use press edges rather than per-frame held repeats');
+assert.match(controllerSelector, /!stepItemCategoryButtons\(frame\)[\s\S]*updateArch\(frame, pad, frame\.now\)/, 'category jumps integrate without replacing ordinary analog wheel movement');
+
+
 const mapSource = between(navSource, '  const MENU_SUBTAB_PRIORITY_BY_PANE = Object.freeze({', '  const subtabsByGroup = new Map();'); // Preserves the real per-pane configuration.
 const sorterSource = between(navSource, '  function prioritizeMenuSubtabs(group, sections) {', '  function prepareSubtabs(group, panel, selectedId = null, offset = 0) {'); // Uses the real LB/RB sequence sorter.
 const prioritize = vm.runInNewContext(mapSource + '\n' + sorterSource + '\n prioritizeMenuSubtabs'); // Tests navigation without mounting a browser.
@@ -119,7 +143,8 @@ assert.deepEqual(ordered('mpTasks', ['tasksSectionWanted', 'tasksSectionRumors',
 assert.deepEqual(ordered('mpSettings', ['settingsSection0', 'settingsSection7', 'settingsSectionAudio']), ['settingsSectionAudio', 'settingsSection7', 'settingsSection0']);
 assert.deepEqual(ordered('unknown', ['first', 'second']), ['first', 'second'], 'Unconfigured/dynamic pane orders remain untouched');
 
-const restoreSource = between(navSource, '  function restoreSubtabs(group) {', '  function subtabMemoryKey(group, panel) {'); // Exercise real section cleanup when a pane closes.
+const NAV_VISIBILITY_SHIM = 'function invalidateVisibility() {}\nfunction navClassAdd(node, name) { node.classList.add(name); }\nfunction navClassRemove(node, name) { node.classList.remove(name); }\n'; // Production helpers (visibility memo + class writers) that the sliced nav functions call.
+const restoreSource = NAV_VISIBILITY_SHIM + between(navSource, '  function restoreSubtabs(group) {', '  function subtabMemoryKey(group, panel) {'); // Exercise real section cleanup when a pane closes.
 const memorySource = between(navSource, '  function subtabMemoryKey(group, panel) {', '  function localSubtabs(panel) {'); // Real controller remembered-section selector and entry code.
 const navigation = vm.runInNewContext(`
   const subtabsByGroup = new Map(); // Live group state is discarded on closing a menu.
@@ -181,7 +206,7 @@ const stableControllerContext = vm.createContext({
   clearGroups() {},
   setFocus: node => { stablePageFocused = node.dataset.stableRole; },
 });
-vm.runInContext(stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
+vm.runInContext(NAV_VISIBILITY_SHIM + stableCycleSource + '\nthis.cycleStablePage = cycleTabs', stableControllerContext);
 stableControllerContext.cycleStablePage(1);
 assert.equal(activeStableRole, 'mount', 'controller Next selects the Mounts page through its actual button');
 assert.equal(stablePageFocused, 'mount', 'focus returns to the newly rendered role-page button');

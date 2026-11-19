@@ -594,7 +594,7 @@ now = 10000;
 assert.equal(windowStub.Combat.getMovementSpeedMul(), 1, 'movement weight has no out-of-combat slowdown');
 
 const source = fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8');
-assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[1\]\?\.pattern, debugLabel, width, height\)/, 'overpass clearance uses the same image-relative animal outline width');
+assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[overpassIndex\]\?\.pattern, debugLabel, width, height\)/, 'overpass clearance uses the same image-relative animal outline width');
 assert.match(source, /scaledOutlineWidth\(PATTERN_OUTLINE_WIDTH, active\[0\]\?\.pattern, debugLabel, width, height\)/, 'visible animal pattern outline receives the actual source image dimensions');
 const portraitSource = fs.readFileSync('docs/js/portrait-utils.js', 'utf8'); // Verifies woven portrait state is injected per render rather than shared across WorldPortraitLife's overlapping async NPC refreshes.
 const avatarPreviewSource = fs.readFileSync('docs/js/npc-avatar-preview-utils.js', 'utf8'); // Guards the live world-avatar adapter that survives later portrait-renderer replacement.
@@ -976,7 +976,7 @@ assert.equal(api.__test.directTrimAuthoredOutlinePixel(255, 29), false, 'solid n
   assert.equal(filtered[1 * width + 3], 1, 'trim compositor preserves the interior black separation line away from the garment outline');
 }
 assert.match(source, /const directMaskPass = exactDirectMaskPass\(active\)[\s\S]*?const pad = patternWorkPad\(directMaskPass\)/, 'production compositor routes exact masks through the zero-padding helper');
-assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass(?: \|\| anchored)?\)/, 'production sampling routes exact masks through zero per-cell offset');
+assert.match(source, /const off = patternCellOffset\(cellLabels\[p\], directMaskPass \|\| anchored \|\| options\.continuousSurface === true\)/, 'production sampling preserves exact-mask alignment and opts coat extensions into one atlas origin');
 assert.match(source, /patternGarmentPixelEligible\(shadeSourceData\[i \+ 3\], maxChannel, directMaskPass\)/, 'production trim eligibility uses alpha-only direct-mask semantics instead of the generic darkness gate');
 assert.match(source, /directTrimOutlineSurfacePixelEligible\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim builds a stricter solid non-near-black surface specifically for generated outline geometry');
 assert.match(source, /directTrimAuthoredOutlinePixel\(shadeSourceData\[i \+ 3\], maxChannel\)/, 'production direct trim identifies the sprite existing dark\/anti-aliased border separately from trim fill');

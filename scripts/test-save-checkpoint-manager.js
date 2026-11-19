@@ -63,6 +63,7 @@ const vm = require('node:vm');
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
   let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
+  let recoverySlotReads = 0; // Counts actual recovery reads requested from the folder adapter.
   let hungRecoverySlot = ''; // Simulates a File System Access read that never settles so the recovery UI timeout path is exercised.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
   const documentListeners = new Map(); // Captures lifecycle listeners without a browser DOM.
@@ -87,6 +88,7 @@ const vm = require('node:vm');
     getStatus: () => ({ ...folderStatus }),
     onChange(listener) { folderListeners.push(listener); return () => {}; },
     async readRecoveryCheckpoint(slot) {
+      recoverySlotReads++;
       if (slot === hungRecoverySlot) return new Promise(() => {}); // Intentional never-settling I/O used to prove recovery history fails soft.
       return folderRecovery.has(slot) ? structuredClone(folderRecovery.get(slot)) : null;
     },
@@ -331,6 +333,19 @@ const vm = require('node:vm');
   assert.equal(safeFolderStatus.lastError, null);
   assert.deepEqual(folderRecovery.get('auto').snapshot, currentSnapshot, 'successful canonical autosave advances latest folder recovery');
   assert.ok(folderRecovery.has('autoPrevious'), 'seeded baseline rotates into earlier autosave');
+
+  const readsAfterSave = recoverySlotReads; // Recovery rotation already performed the reads needed for this save.
+  for (let i = 0; i < 60; i++) {
+    for (const listener of folderListeners) listener({ ...folderStatus }, { refreshRecovery: false });
+  }
+  assert.equal(recoverySlotReads, readsAfterSave, 'routine status notifications never sweep recovery files');
+
+  const externalCheckpoint = structuredClone(folderRecovery.get('auto')); // Simulates another device adding a recovery checkpoint.
+  externalCheckpoint.reason = 'externally changed checkpoint';
+  folderRecovery.set('manual', externalCheckpoint);
+  await api.syncRecoveryMirrorsFromFolder();
+  assert.equal(recoverySlotReads - readsAfterSave, 6, 'an explicit refresh still reads every recovery slot');
+  assert.equal(api.getStatus().manual.reason, externalCheckpoint.reason, 'explicit refresh imports externally updated checkpoints');
 
   // Create one known-good manual checkpoint in folder-first mode.
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 5;

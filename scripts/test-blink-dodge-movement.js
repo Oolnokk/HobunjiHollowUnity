@@ -165,6 +165,9 @@ assert.match(source, /entry\.frozenTextures[\s\S]{0,160}texture\?\.dispose/, 'af
 registeredAbility.onHoldEnd();
 assert.equal(movementSpeedFn, null, 'ending Blink Dodge removes its movement-speed modifier');
 
+assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.enabled, false, 'motion effects default off, even while Blink works');
+windowStub.HobunjiDodgeFeedback.setAfterimagesEnabled(true); // Exercise the preserved visual sampler as an explicit opt-in.
+assert.equal(windowStub.HobunjiDodgeFeedback.getDebug().blink.afterimages.enabled, true);
 // The portrait effect is global presentation, not gated by the Blink hold itself:
 // ordinary dodge and melee-lunge state must drive the same sampler even in the
 // no-THREE unit harness (where rendering safely no-ops).

@@ -221,7 +221,8 @@ function fallbackSound(flute) {
 
 (async () => {
   const flute = playerSession('flute'), kurraya = playerSession('kurraya');
-  assert.match(flute.performanceUrl,/lyre-performance\.html\?v=[^&]+&instrument=flute$/);
+  assert.match(flute.performanceUrl,/lyre-performance\.html\?v=[^&]+&overworld=1&instrument-key=flute&instrument=flute$/,'flute performances keep shared tuning and carry their own pattern loadout key');
+  assert.match(kurraya.performanceUrl,/lyre-performance\.html\?v=[^&]+&overworld=1&instrument-key=kurraya$/,'Kurraya performances keep shared tuning and carry their own pattern loadout key');
   assert.doesNotMatch(kurraya.performanceUrl,/instrument=flute/);
   assert.equal(flute.calls.begin,1,'the existing blowgun-mouth-mounted flute stays equipped across both modes');
   assert.equal(flute.calls.end,1);

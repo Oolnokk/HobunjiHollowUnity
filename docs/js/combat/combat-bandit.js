@@ -1202,15 +1202,27 @@
       || target.banditCompanion === true
       || typeof target.creatureKey === 'string'
     ); // Staged swings retain actor identity even if the 5 Hz ecology pass changes c._chunkCombatTarget before impact.
+    const beforeHealth = Number(target?.health); // Enchantment events use the post-mitigation difference, not the telegraph's predicted damage.
+    let outcome;
     if (actorTarget && typeof deps.damageCreature === 'function') {
-      return deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
+      outcome = deps.damageCreature(target, amount, fromX, fromY, knockbackPxS, {
         ...opts,
         friendlyFire: true,
         factionCombat: true,
         attacker: c,
       });
+    } else {
+      outcome = deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
-    return deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
+    if (c?._banditCaptainArmament) {
+      const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.
+      const actualDamage = Number.isFinite(beforeHealth) && Number.isFinite(afterHealth)
+        ? Math.max(0, beforeHealth - afterHealth) : 0;
+      window.BanditCaptainArmaments?.emitHit?.(c, target, actualDamage, opts.enchantmentSlot || 'tap1', {
+        comboFinisher: opts.comboFinisher === true, quickBonusEffectProc: opts.quickBonusEffectProc === true,
+      });
+    }
+    return outcome;
   } // Bandit ability code is shared by bandit-vs-player and chunk-local actor-vs-actor fights.
 
   // Mirrors combat-quickattacks.js's getConditions(), but for a bandit
@@ -1523,7 +1535,7 @@
         if (landed && staged) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         } else if (landed) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
@@ -1534,7 +1546,7 @@
           // player's own combat-combo.js fix, which no longer tags a
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
@@ -1595,7 +1607,7 @@
           const impactTech = window.Combat.buildQuickAttack(techDef, banditQuickAttackConditions(c, targetPlayer), qa.isBonusEffectReady?.(targetPlayer) ?? true); // Target conditions and the shared per-victim bonus cooldown are resolved at actual contact.
           const impactDamage = Math.max(1, Math.round(base.damage * impactTech.damageMul));
           const impactKnockback = base.knockbackPxS * impactTech.knockbackMul * shapeStats.power;
-          damageBanditCombatTarget(c, targetPlayer, impactDamage, c.x, c.y, impactKnockback, { tag: def.attackTag, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, impactDamage, c.x, c.y, impactKnockback, { tag: def.attackTag, enchantmentSlot: 'tap2', quickBonusEffectProc: impactTech.bonusActive, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, impactTech.bonusActive ? 'huge' : 'small');
           if (impactTech.bonusActive) {
             qa.beginBonusEffectCooldown?.(targetPlayer, techDef); // NPC versus player, NPC or animal shares the same target-owned bonus gate.
@@ -1670,7 +1682,7 @@
           techHit = true;
           damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, {
             tag: def.attackTag,
-            heavy: true,
+            heavy: true, enchantmentSlot: 'hold1',
             afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag),
           });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'huge');
@@ -1725,7 +1737,7 @@
         // hardcodes 'sharp' regardless of weapon).
         spawnBanditTrailArc(c, rangePx, halfConeRad, aimAngle, aimPitch);
         if (window.Combat?.meleeHit?.(c, targetPlayer, { rangePx, halfConeRad, yaw: aimAngle, pitch: aimPitch })) {
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'hold2', afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
@@ -2650,6 +2662,7 @@
 
   function updateBanditToolMesh(c) {
     window.GhoulSpecialVariants?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Enchanted-weapon particles for the mine's Shadowknights.
+    if (c?._banditCaptainArmament) window.BanditCaptainArmaments?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Only enchanted captains emit the ordinary fixed-weapon planar particles.
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
     const flaskActive = !!c._banditFlaskActionActive && !!c._banditFlaskToolHolder; // During a staged Flasker throw the held flask replaces the backup melee weapon.
     const useRanged = !flaskActive && !!c._rangedMode && !!c._banditRangedToolHolder;

@@ -257,13 +257,17 @@
     const moveMultiplier = combatMoveMultiplier(entity); // Shared weight penalty applied to every melee and ranged movement path inside the wrapped AI.
     const originalMoveSpeed = entity.def.moveSpeed; // Restored after this frame so authored base stats never drift through repeated multiplication.
     const originalChaseSpeed = entity.def.chaseSpeed; // Restored after this frame so return/patrol code outside combat keeps its original speed.
+    const previousPursuitArmorMul = entity._enemyPursuitArmorMul; // Existing combat-speed penalty forwarded to the shared pursuit floor for this AI call only.
     entity.def.moveSpeed = originalMoveSpeed * moveMultiplier;
     entity.def.chaseSpeed = originalChaseSpeed * moveMultiplier;
+    entity._enemyPursuitArmorMul = moveMultiplier; // Prevents the new enemy chase-speed floor from undoing armor encumbrance.
     try {
       return originalUpdateCombatAI(entity, dt, targetPlayer, ...rest);
     } finally {
       entity.def.moveSpeed = originalMoveSpeed;
       entity.def.chaseSpeed = originalChaseSpeed;
+      if (previousPursuitArmorMul === undefined) delete entity._enemyPursuitArmorMul;
+      else entity._enemyPursuitArmorMul = previousPursuitArmorMul;
     }
   };
 

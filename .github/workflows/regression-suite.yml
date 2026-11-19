@@ -56,6 +56,9 @@ jobs:
       - name: Berry bush geometry and fruit colors against real Three.js r128
         if: steps.select.outputs.needs_deps == 'true'
         run: node scripts/test-berry-bush-three-runtime.js
+      - name: Five wilderness blossom trees against real Three.js r128
+        if: steps.select.outputs.needs_deps == 'true'
+        run: node scripts/test-five-blossom-wilderness-three.js
       - name: Rounded wilderness stone shell layers against real Three.js r128
         # The fast regression suite runs before optional dependencies install; recheck real mesh behavior now that Three.js is present.
         if: steps.select.outputs.needs_deps == 'true'

@@ -96,4 +96,21 @@ assert.match(carrierSource,/generation !== shoulderCarrierGenerationV1553[\s\S]{
 assert.match(html,/const frontSource = canvasVariant\(avatar\.front\);[\s\S]{0,480}const frontTexture = makeRigTexture/,'the normal skinned portrait uses front art without the base texture flip state');
 assert.match(html,/setAnimationAuthorMode = async function\(mode, \.\.\.args\)/,'mode exit clears temporary preview');
 assert.doesNotMatch(html.slice(html.indexOf('// V15.53')),/animationAuthor\.actors\.push\(/,'carrier does not join selectable actors');
+// The carrier perch must come from the same live skinned sourcePixel gameplay pins pets to,
+// un-mirrored for the carrier's never-flipped portrait; stored x/y is only a fallback.
+const resolvePerch=w.AnimationAuthorRigCarrierPreview.resolvePerchFromSourcePixel;
+for(const flipped of [true,false]){
+ const asked=[];
+ const pos={x:9,y:9,z:9,copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;}};
+ const api={getPortraitsFlipped:()=>flipped,resolveSkinnedPortraitRoot:()=>({userData:{sourceCanvas:{width:200}}}),
+  resolveSkinnedPixelWorldPosition:(model,pixel,out)=>{asked.push(pixel);return Object.assign(out,{x:pixel.x/100,y:pixel.y/100,z:.5});}};
+ const visualOffset={worldToLocal:v=>({x:v.x*2,y:v.y*2,z:v.z*2})};
+ assert.equal(resolvePerch({avatarApi:api,model:{},visualOffset,shoulderPerch:{position:pos},sourcePixel:{x:60,y:120},scratch:{copy(){}}}),true);
+ assert.deepEqual(asked,[{x:flipped?140:60,y:120}],'carrier pixel cancels the shared resolver mirror (flipped='+flipped+')');
+ near(pos.x,(flipped?140:60)/50,'perch x moved to skinned pixel');near(pos.y,120/50,'perch y moved to skinned pixel');
+}
+const untouched={x:1,y:2,z:3,copy(){throw Error('must keep stored x/y');}};
+assert.equal(resolvePerch({avatarApi:{resolveSkinnedPixelWorldPosition(){return null;},resolveSkinnedPortraitRoot:()=>({userData:{sourceCanvas:{width:200}}})},model:{},visualOffset:{worldToLocal:v=>v},shoulderPerch:{position:untouched},sourcePixel:{x:1,y:1},scratch:{copy(){}}}),false,'unresolvable pixel keeps stored x/y');
+assert.equal(resolvePerch({avatarApi:{},model:{},visualOffset:{worldToLocal:v=>v},shoulderPerch:{position:untouched},sourcePixel:null,scratch:{copy(){}}}),false,'missing pixel keeps stored x/y');
+assert.match(liveCarrierCall,/resolvePerchFromSourcePixel\?\.\(\{[\s\S]*?shoulderPerch: preview\.perch[\s\S]*?\}\)[\s\S]*?placeNpcAtGrip/,'live carrier resolves the skinned perch before pinning it to the grip');
 console.log('Animation Author inverse grip carrier regression passed');

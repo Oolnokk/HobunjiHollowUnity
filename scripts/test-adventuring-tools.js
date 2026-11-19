@@ -136,6 +136,9 @@ torch.updateThrow({active:true,progress:.57,strikeFrac:.57});
 assert.equal(throws, 1, 'the real Strike boundary launches exactly one projectile');
 assert.equal(lastThrowOptions, torchVisual, 'the strike forwards the exact held-plane sprite and world transform');
 assert.equal(torch.debug.throwLaunchOrigin, 'held-plane', 'mobile diagnostics identify the release-frame transform');
+const lastProjectile = { aimSource: 'camera-reticle', targetPoint: {x:1,y:2,z:3}, visualScale:.68 }; // Mocked ranged launch report follows the real runtime getter shape.
+world.RangedWeapons.lastTorchThrow = lastProjectile;
+assert.equal(torch.debug.lastProjectile, lastProjectile, 'Pixel Probe Adventuring Tools diagnostics expose the ranged throw direction and target');
 assert.equal(torch.debug.throwRecovering, true);
 assert.equal(heldTorchVisible, false, 'spent held torch is hidden while the thrown copy exists');
 assert.equal(torch.isLit(), false);
@@ -159,8 +162,8 @@ torch.stow();
 assert.equal(throwCancelCount, 1, 'stowing cancels a charged throw');
 assert.equal(torch.releaseThrow('stowed').ok, false);
 assert.equal(throws, 1, 'canceling a held throw does not launch a projectile');
-assert.equal(torch.isLit(), false);
-torch.light();
+assert.equal(torch.isLit(), true, 'a charged throw cancels on stow but the flame survives on the belt');
+assert.equal(torch.light(), false, 'stowing does not allow a duplicate relight or reset the clock');
 assert.equal(torch.beginThrow('test-cancel-pending'), true);
 assert.equal(torch.releaseThrow('test-pending-release').ok, true);
 assert.equal(torch.debug.throwPending, true);
@@ -234,8 +237,10 @@ assert.match(game, /adventuring: \['torch_swing', 'torch_throw'\]/);
 assert.match(game, /getTorchProjectileVisual: \(\) =>/, 'game supplies the actual held torch texture and world transform');
 assert.match(rangedCode, /projectileSprite:'assets\/toolsprites\/torch\.png', projectileVisualStyle:'spinningWeapon'/,
   'torch uses the thrown hatchet end-over-end spin');
-assert.match(rangedCode, /textureSource,sourceTransform,preserveSourceOrientation:!!sourceTransform,dungeonFire:true/,
-  'torch shares the thrown-weapon projectile launch with a permanent burning payload');
+assert.match(rangedCode, /textureSource, sourceTransform, visualScale: authoredScale, preserveSourceOrientation: false, dungeonFire: true/,
+  'torch keeps its burning projectile payload while using bounded idle scale and direction-aligned artwork');
+assert.match(rangedCode, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/,
+  'torch uses the held release point without copying the oversized held orientation or geometry');
 assert.match(rangedCode, /heldSpin:true,heldSpinRevolutions:2\.5/, 'torch now shares the thrown hatchet in-hand spin');
 assert.match(rangedCode, /invalidateAimTarget\?\.\('torch-strike-release', true\)/, 'torch samples a fresh strike-frame reticle like the hatchet');
 assert.match(game, /AdventuringTools\.updateThrow\(\{/, "torch projectile commits only from the active pose's strike frame");
@@ -252,7 +257,7 @@ assert.match(arc, /\['adventuringGateway',\.\.\.deps\.WHEEL_SLOTS/);
 assert.match(arc, /_openAdventuringArc\(\)/);
 assert.match(ranged, /function throwAdventuringTorch\(visual = null\)/, 'torch accepts the held sprite snapshot for the hatchet launch path');
 assert.match(ranged, /projectileSprite:'assets\/toolsprites\/torch\.png', projectileVisualStyle:'spinningWeapon'/, 'torch uses the hatchet projectile tumble');
-assert.match(ranged, /dungeonFire:true/);
+assert.match(ranged, /dungeonFire:\s*true/, 'torch remains a permanent burning projectile independent of its aim/visual transform');
 assert.match(ranged, /DevRandomRuinHitPuzzles\?\.contactAdventuringTorchSegment/);
 assert.match(bandits, /igniteTorchSegment\(/);
 assert.match(bandits, /igniteAimedTentWithTorch\(/);

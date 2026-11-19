@@ -28,6 +28,35 @@
     return Math.floor((deps.calendar.day - 1) / 7);
   }
 
+
+  const claimedChestTilesByZone = new Map(); // Keeps this character's claimed chest coordinates alive independently of scene caches and daily respawns.
+  function chestTileKey(placement) {
+    return placement.col + ',' + placement.row;
+  }
+  function activeChestClaims(mapId) {
+    const record = claimedChestTilesByZone.get(mapId); // A new week has fresh treasure; old claims cannot suppress it.
+    return record?.week === weekIndex() ? record : null;
+  }
+  function wasClaimed(mapId, placement) {
+    if (placement.ruinHole) return false;
+    const record = activeChestClaims(mapId); // A chest can move when day-dependent plant/berry exclusions change during a rebuilt scatter.
+    if (!record) return false;
+    // Slots identify the actual weekly chest. Coordinate fallback only applies to old saves
+    // that never recorded slots; a different, unclaimed slot may move onto a claimed tile.
+    return record.slots.size && Number.isInteger(placement.slot)
+      ? record.slots.has(placement.slot)
+      : record.tiles.has(chestTileKey(placement));
+  }
+  function rememberChestClaim(mapId, placement) {
+    let record = activeChestClaims(mapId); // Shared by every rebuild of this zone during this treasure week.
+    if (!record) {
+      record = { week: weekIndex(), tiles: new Set(), slots: new Set() };
+      claimedChestTilesByZone.set(mapId, record);
+    }
+    record.tiles.add(chestTileKey(placement));
+    if (Number.isInteger(placement.slot)) record.slots.add(placement.slot); // Stable ordinal suppresses relocated copies of a previously claimed chest.
+  }
+
   const TREASURE_TIERS = Object.freeze({
     1: { label: 'Weathered', weight: 0.62, extraBars: 0, bonusGold: [0, 0], trinket: 0, scroll: 0, breeding: 0, enchanted: 0 },
     2: { label: 'Reinforced', weight: 0.25, extraBars: 1, bonusGold: [20, 60], trinket: 0.12, scroll: 0.08, breeding: 0.20, enchanted: 0 },
@@ -224,11 +253,11 @@
     const holeChance = Number(window.RuinSites?.treasureHoleChance?.()) || 0; // Rare: the "treasure" is the roof of a buried ruin (js/ruin-sites.js).
     const holeRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-ruin-hole:' + weekIndex())); // Ruin-hole placement stays on its independent world-seeded stream.
     const tierRng = deps._mbRng(deps._seedFromString(mapId + ':treasure-tier:' + weekIndex())); // Tier stream does not alter scatter locations or hole rarity.
-    return spots.map(({ col, row }) => {
+    return spots.map(({ col, row }, slot) => {
       const ruinHole = holeRng() < holeChance; // A buried ruin replaces the chest; don't roll (or serialize) loot that can never be claimed.
-      if (ruinHole) return { col, row, found: false, ruinHole: true };
+      if (ruinHole) return { col, row, slot, found: false, ruinHole: true };
       const tier = rollTreasureTier(tierRng);
-      return { col, row, found: false, tier, loot: _rollTreasureLootBundle(tier) };
+      return { col, row, slot, found: false, tier, loot: _rollTreasureLootBundle(tier) };
     });
   }
 
@@ -320,6 +349,7 @@
       col, row, mesh,
       label: '🗝️ ' + chestLabel,
       getButtons() {
+        if (placement.found || wasClaimed(mapId, placement)) return []; // A rebuilt stale chest offers no interaction.
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) {
           return [{ icon: '🗝️', label: "Buried — dig a trench here to reach it", action: 'obj_open_treasure_chest', style: 'secondary', allowed: false }];
@@ -330,7 +360,7 @@
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
-        if (placement.found) return { ok: false, message: 'Already opened.' }; // Reject stale interaction buttons after the treasure is claimed.
+        if (placement.found || wasClaimed(mapId, placement)) return { ok: false, message: 'Already opened.' }; // Reject stale interaction buttons after the treasure is claimed.
         if (!completingPick) {
           const valid = () => !placement.found && deps.getCurrentArea() === mapId
             && deps._zoneTreasurePersist.get(mapId)?.placements?.includes(placement)
@@ -422,6 +452,7 @@
           }
         }
         placement.found = true;
+        rememberChestClaim(mapId, placement); // The permanent weekly claim survives even if scene disposal loses the placement array.
         window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId });
         deps._zoneScenes.get(mapId)?.scene.remove(mesh);
         const groups = deps._zoneTreasureMeshGroups.get(mapId);
@@ -467,8 +498,11 @@
     let objMap = deps._zoneTreasureObjects.get(mapId);
     if (!objMap) { objMap = new Map(); deps._zoneTreasureObjects.set(mapId, objMap); }
     for (const placement of persisted.placements.slice()) {
-      if (placement.found) continue;
       const key = placement.col + ',' + placement.row;
+      if (placement.found || wasClaimed(mapId, placement)) {
+        objMap.delete(key); // No stale interaction targets after a restored claim.
+        continue;
+      }
       const isDug = zi.grid[placement.row]?.[placement.col]?.type === deps.TileType.TRENCH;
       if (placement.ruinHole) {
         // Digging it out opens a shaft into a fresh ruin instead of a chest.
@@ -500,13 +534,29 @@
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return;
     let persisted = deps._zoneTreasurePersist.get(mapId);
+    let suppressedClaims = 0; // A claim found in a stale placement snapshot forces its meshes to be rebuilt.
     if (persisted?.week === weekIndex()) {
-      const repairedBlockedPlacements = _repairBlockedTreasurePlacements(mapId, persisted); // Used to force a rebuild only when this current-week save contained inaccessible road/water treasure.
-      if (deps._zoneTreasureMeshGroups.has(mapId) && repairedBlockedPlacements === 0) return; // already built for this week
+      const occupiedSlots = new Set(persisted.placements.map(p => p.slot).filter(s => Number.isInteger(s) && s >= 0)); // Legacy saves predate stable weekly scatter slots.
+      let legacySlot = 0; // Assign each remaining legacy chest a distinct ordinal before any future opening can remove it.
+      for (const placement of persisted.placements) {
+        if (Number.isInteger(placement.slot) && placement.slot >= 0) continue;
+        while (occupiedSlots.has(legacySlot)) legacySlot++;
+        placement.slot = legacySlot;
+        occupiedSlots.add(legacySlot++);
+      }
+      const before = persisted.placements.length; // An old state restore cannot reinstate a chest that this character already opened.
+      persisted.placements = persisted.placements.filter(placement => !wasClaimed(mapId, placement));
+      suppressedClaims = before - persisted.placements.length;
+      const repairedBlockedPlacements = _repairBlockedTreasurePlacements(mapId, persisted); // Keep existing road/water relocation logic for unclaimed chests.
+      if (deps._zoneTreasureMeshGroups.has(mapId) && repairedBlockedPlacements === 0 && suppressedClaims === 0) return;
     } else {
-      persisted = { week: weekIndex(), placements: _scatterTreasureForZone(mapId) };
+      const scattered = _scatterTreasureForZone(mapId); // Regeneration may happen after the zone's original placement record was disposed.
+      const placements = scattered.filter(placement => !wasClaimed(mapId, placement)); // Preserve actual weekly respawns while blocking collected locations.
+      suppressedClaims = scattered.length - placements.length;
+      persisted = { week: weekIndex(), placements };
       deps._zoneTreasurePersist.set(mapId, persisted);
     }
+    if (suppressedClaims) deps.debugLog?.(`ensureZoneTreasure(${mapId}): restored ${suppressedClaims} opened chest claim(s)`); // In-game mobile log helps diagnose zone churn.
     _clearZoneTreasureMeshes(mapId);
     const groups = [];
     deps._zoneTreasureObjects.set(mapId, new Map());
@@ -581,14 +631,32 @@
         const { _mesh, ...savedPlacement } = placement || {}; // Runtime Three.js chest mesh is used only for live interaction/rendering and must never enter save JSON.
         return savedPlacement;
       });
-      out[mapId] = { week: v.week, placements };
+      const claims = claimedChestTilesByZone.get(mapId); // Claimed coordinates are saved even though opened placements themselves are removed.
+      out[mapId] = { week: v.week, placements,
+        ...(claims?.week === v.week ? { claimedTiles: [...claims.tiles], claimedSlots: [...claims.slots] } : {}) };
     });
+    for (const [mapId, claims] of claimedChestTilesByZone) {
+      if (!out[mapId] && claims.week === weekIndex() && claims.tiles.size) {
+        out[mapId] = { week: claims.week, claimedTiles: [...claims.tiles], claimedSlots: [...claims.slots] }; // Claim-only entry: a lost placement map must not be serialized as an empty complete scatter.
+      }
+    }
     return out;
   }
   function restoreState(saved) {
+    for (const mapId of [...deps._zoneTreasureMeshGroups.keys()]) _clearZoneTreasureMeshes(mapId); // Quick loads and character changes must not keep an old world's mesh/action cache.
     deps._zoneTreasurePersist.clear();
+    claimedChestTilesByZone.clear(); // Changing character/world must not inherit the previous character's opened chests.
     Object.entries(saved || {}).forEach(([mapId, v]) => {
-      if (v && Array.isArray(v.placements)) deps._zoneTreasurePersist.set(mapId, { week: v.week, placements: v.placements });
+      if (!v || !Number.isInteger(v.week)) return;
+      if (Array.isArray(v.placements)) deps._zoneTreasurePersist.set(mapId, { week: v.week, placements: v.placements });
+      const legacy = (Array.isArray(v.placements) ? v.placements : [])
+        .filter(placement => placement?.found && !placement.ruinHole).map(chestTileKey); // Legacy found=true placements remain valid claim tombstones.
+      const claimedTiles = [...(Array.isArray(v.claimedTiles) ? v.claimedTiles : []), ...legacy]
+        .filter(key => typeof key === 'string' && /^\d+,\d+$/.test(key)); // Reject malformed coordinates in a damaged save.
+      const claimedSlots = (Array.isArray(v.claimedSlots) ? v.claimedSlots : [])
+        .filter(slot => Number.isInteger(slot) && slot >= 0 && slot < 100000); // Ignore invalid scatter-slot values in damaged saves.
+      if (claimedTiles.length || claimedSlots.length)
+        claimedChestTilesByZone.set(mapId, { week: v.week, tiles: new Set(claimedTiles), slots: new Set(claimedSlots) });
     });
   }
 
@@ -679,5 +747,7 @@
     serializeState,
     restoreState,
     updateSparkles,
+    debugClaims: () => Object.fromEntries([...claimedChestTilesByZone].map(([mapId, record]) =>
+      [mapId, { week:record.week, claimed:[...record.tiles], slots:[...record.slots] }])), // In-game/mobile diagnostics show exactly which buried chest tiles cannot respawn.
   };
 })();

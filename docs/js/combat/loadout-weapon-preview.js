@@ -43,7 +43,9 @@
   }
 
   function isVisible() {
-    return !!(host?.isConnected && document.getElementById('mpLoadout')?.classList.contains('active')
+    const pane = document.getElementById('mpLoadout'); // Loadout sub-tab switches share the same menu tab but only Weapon shows this viewport.
+    return !!(host?.isConnected && pane?.classList.contains('active')
+      && !pane?.classList.contains('instrument-subtab')
       && document.getElementById('menuPanel')?.classList.contains('open'));
   }
 

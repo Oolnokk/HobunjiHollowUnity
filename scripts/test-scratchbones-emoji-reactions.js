@@ -16,7 +16,8 @@ for (const icon of ['love', 'disgust', 'alarmed', 'curious', 'gloat_cloud', 'glo
 let now = 0; // Simulated monotonic animation frame clock.
 class Vector3 {
   set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
-  setFromMatrixColumn(matrix, index) { return this.set(index === 0 ? 1 : 0, 0, index === 2 ? 1 : 0); }
+  setFromMatrixColumn(matrix, index) { const elements = matrix.elements; return this.set(elements[index * 4], elements[index * 4 + 1], elements[index * 4 + 2]); }
+  addScaledVector(vector, scale) { this.x += vector.x * scale; this.y += vector.y * scale; this.z += vector.z * scale; return this; }
   normalize() { return this; }
 }
 class Group {
@@ -25,7 +26,7 @@ class Group {
     this.visible = true;
     this.children = [];
     this.position = new Vector3().set(0, 0, 0);
-    this.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0] };
+    this.matrixWorld = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
     this.quaternion = { copy(source) { this.source = source; } };
   }
   add(child) { child.parent = this; this.children.push(child); }
@@ -66,6 +67,7 @@ const win = {
     makeMaterial(THREE, map, name, options) { return Object.assign(new Disposable(), { map, name }, options); },
   },
   RewardReadout: { enqueue() { assert.fail('Reactions must not enter the reward queue'); } },
+  AnimalChatheadFrame: { frameForKind: kind => ({ frame: kind === 'pingdort' ? { x: .76, y: .12, width: .18, height: .28 } : { x: .25, y: .18, width: .30, height: .30 } }) }, // Test crops on opposite halves of the animal sprite.
 };
 const context = { // Runs both production modules with the minimal Three/canvas interface.
   window: win, Image: FakeImage, URL, URLSearchParams,
@@ -108,15 +110,21 @@ function actor() {
   return root;
 }
 function billboard() { return scene.children.find(group => !group.name); }
+function projectedChatheadLeft(actorRoot, frame, width, axisProjection) {
+  const screenCenter = -(frame.x + frame.width / 2 - .5) * width * axisProjection; // Mirrors the source-x direction of both rendered animal faces.
+  const screenHalfWidth = frame.width / 2 * width * Math.abs(axisProjection); // Visible crop width contracts for an edge-on animal.
+  return actorRoot.position.x + screenCenter - screenHalfWidth;
+}
 
 (async () => {
   const livestock = actor(); // Livestock exercises the shared happy-reaction path.
   failNextImage = true;
-  assert.equal(api.trigger(livestock, 'love'), true);
+  const animalOptions = { creatureKind: 'nelk', height: 1.2, width: 1.8 }; // Supplies real farm-animal metadata for the same shared reaction hook.
+  assert.equal(api.trigger(livestock, 'love', animalOptions), true);
   await settle();
   assert.equal(billboard(), undefined, 'missing PNG never creates a blank quad');
   assert.equal(api.debugSnapshot().failedAssets, 1);
-  assert.equal(api.trigger(livestock, 'love', { force: true }), true);
+  assert.equal(api.trigger(livestock, 'love', { ...animalOptions, force: true }), true);
   assert.equal(api.trigger(livestock, 'disgust'), false, 'per-creature cooldown');
   await settle();
   const love = billboard(); // The same render flags as ordinary popup text qualify it for the final overlay.
@@ -131,10 +139,22 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(icon.renderOrder, 1200);
   now = 300;
   livestock.position.set(7, 2, 3);
+  livestock.matrixWorld.elements[8] = 1; livestock.matrixWorld.elements[10] = 0; // Front-facing animal card projects its whole Z-axis sprite width onto camera right.
   step();
-  assert.equal(love.position.x, 7, 'billboard follows the live actor');
-  assert.ok(love.position.y > 3.9, 'anchor remains above the actor');
+  const nelkFrame = win.AnimalChatheadFrame.frameForKind('nelk').frame; // Same species-authored normalized crop as the reaction.
+  const headLeft = projectedChatheadLeft(livestock, nelkFrame, animalOptions.width, 1);
+  assert.ok(love.position.x < headLeft, 'animal emoji sits to the left of its chathead crop');
+  assert.ok(love.position.y > 2 && love.position.y < 2.5, 'animal emoji sits at chathead level, not above the full actor');
+  assert.equal(love.position.z, 3, 'side anchoring must not move the popup toward or away from the camera');
+  assert.equal(api.debugSnapshot().last.side, 'animal-left');
   assert.equal(love.quaternion.source, camera.quaternion);
+  const faceOnOffsetX = love.position.x; // Used to detect head alignment changes after rotating the animal plane.
+  livestock.matrixWorld.elements[8] = 0; livestock.matrixWorld.elements[10] = 1; // Edge-on card projects a narrower head crop.
+  step();
+  assert.ok(love.position.x > faceOnOffsetX && love.position.x < livestock.position.x, 'animal emoji follows projected head width as the sprite turns');
+  livestock.matrixWorld.elements[8] = -1; livestock.matrixWorld.elements[10] = 0; // Fully reverse the visible face, including the texture's horizontal mirroring.
+  step();
+  assert.ok(love.position.x < projectedChatheadLeft(livestock, nelkFrame, animalOptions.width, -1), 'animal emoji stays left of the head when facing is reversed');
   assert.ok(icon.visible && icon.material.opacity > 0);
   const expectedSize = Math.max(.25, Math.min(.62, 1.7 * .38)) / 3; // Actor bounds are 1.7 high in this mock; the reaction is a third of its former size.
   const expectedScale = expectedSize * api.sample('love', now / 1650).scale; // Original animation curves still drive the smaller billboard.
@@ -145,10 +165,39 @@ function billboard() { return scene.children.find(group => !group.name); }
   assert.equal(billboard(), undefined, 'ended reaction removed');
   assert.ok(icon.geometry.disposed && icon.material.disposed && icon.material.map.disposed);
 
+  const rightHeadAnimal = actor(); // An off-center head on the opposite half of a sprite catches incorrect absolute-value shortcuts.
+  const rightHeadOptions = { creatureKind: 'pingdort', width: 2.1, height: 1.1 };
+  assert.equal(api.trigger(rightHeadAnimal, 'curious', rightHeadOptions), true);
+  await settle();
+  now += 200;
+  rightHeadAnimal.matrixWorld.elements[8] = 1; rightHeadAnimal.matrixWorld.elements[10] = 0;
+  step();
+  const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('pingdort').frame;
+  assert.ok(billboard().position.x < projectedChatheadLeft(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, 1),
+    'right-side source crop still gets an emoji left of its visible head');
+  rightHeadAnimal.matrixWorld.elements[8] = -1; rightHeadAnimal.matrixWorld.elements[10] = 0;
+  step();
+  assert.ok(billboard().position.x < projectedChatheadLeft(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, -1),
+    'right-side source crop also stays on screen-left after a full facing reversal');
+  now += 700;
+  step();
+  assert.equal(billboard(), undefined, 'opposite-head crop reaction completes normally');
+
   const npc = actor(); // Dialogue uses the same renderer for the five-ray shock burst.
   assert.equal(api.reactToDialogue(npc, { tone: 'shock' }), true);
   await settle();
   assert.equal(billboard().children.length, 5);
+  now += 300;
+  step();
+  const npcReaction = billboard(); // NPC popups anchor beside the head, not above the character.
+  assert.equal(api.debugSnapshot().last.side, 'npc-right');
+  assert.ok(npcReaction.position.x > npc.position.x, 'NPC emoji is to the right of the head');
+  assert.ok(npcReaction.position.y > .9 && npcReaction.position.y < 1.7, 'NPC emoji is near the head rather than high above it');
+  camera.matrixWorld.elements[0] = 0; camera.matrixWorld.elements[2] = 1; // Turn the camera's right vector onto world Z without rotating the actor.
+  step();
+  assert.equal(npcReaction.position.x, npc.position.x, 'side offset follows camera right, not fixed world X');
+  assert.ok(npcReaction.position.z > npc.position.z, 'NPC emoji remains on the visible right after camera turns');
+  camera.matrixWorld.elements[0] = 1; camera.matrixWorld.elements[2] = 0;
   now += 1600;
   step();
   assert.equal(billboard(), undefined);

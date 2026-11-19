@@ -6,6 +6,7 @@ const vm = require('node:vm'); // Executes the small camera bridge against injec
 
 const lyre = fs.readFileSync('docs/assets/minigames/lyre-performance.html', 'utf8'); // Real hosted Kurraya engine.
 const music = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Real host controls and controller ownership.
+const instrumentLoadoutUI = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Actual pattern selector now lives in Loadout → Instrument.
 const cameraSource = fs.readFileSync('docs/js/camera-look-clamp.js', 'utf8'); // Shared camera clamp + Kurraya gameplay-camera bridge.
 
 for (const patternId of ['strum-down-4', 'strum-alternating-8', 'strum-pop-8']) {
@@ -18,7 +19,9 @@ assert.match(lyre, /function lowKurrayaChordMidis\(midi = rootPadTargetMidi\(\)\
 assert.match(lyre, /return \[root, scaleSafeMidi\(root \+ 7\)\]/, 'the sampled low chord prefers a scale-safe fifth');
 assert.match(lyre, /createVoiceNodes\(pitch, 0\.72 \/ Math\.sqrt\(chordMidis\.length\), now, 1\)/, 'the low chord goes through the ordinary pitch-shifted Kurraya sampler');
 assert.match(lyre, /async useGameplayFootstepMetronome\(urls\)/, 'the hosted bridge can still accept gameplay footstep samples when a host provides them');
-assert.match(music, /setAutoPickSlot\?\.\(sector, (?:event\.target\.)?value\)/, 'the visible plucking-pattern selector edits the selected left-stick sector');
+assert.match(instrumentLoadoutUI, /model\.setSlot\(instrumentKey,index,id\)/, 'the Instrument Loadout sub-tab assigns patterns to the equipped instrument');
+assert.match(music, /Assign patterns in Loadout → Instrument/, 'hosted performance directs players to the loadout rather than editing its own patterns');
+assert.doesNotMatch(music, /data-plucking-pattern/, 'the live performance overlay no longer exposes global pattern editing');
 assert.match(music, /gameplay camera owner reads RS/, 'music keeps right stick reserved for camera look instead of manual strumming');
 assert.doesNotMatch(music, /bridge\.rightStick\(rx, ry, 'host-gamepad-right-stick'\)/, 'controller right stick is not routed back into Kurraya strumming');
 

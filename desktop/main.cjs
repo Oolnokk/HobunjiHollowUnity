@@ -11,6 +11,12 @@ const { configureSaveFolderPermissions } = require('./save-folder-permissions.cj
 const { showGraphicsStatus } = require('./gpu-diagnostics.cjs'); // On-demand native GPU and main-game WebGL reporting, without DevTools.
 const { createWindowCloseGuard } = require('./window-close-guard.cjs'); // Tested native shutdown guard for a renderer that cannot finish saving.
 const { CLOSE_SAVE_SCRIPT } = require('./close-save.cjs'); // Shared, tested final-save policy executed inside the game window.
+const isFriendsEdition = app.getName?.() === 'Hobunji Hollow Tester'; // Packaged product name isolates the tester install and profile.
+const desktopTitle = isFriendsEdition ? 'Hobunji Hollow Tester' : 'Hobunji Hollow'; // Visible edition label for both windows.
+
+// Prefer discrete GPU for the game WebGL context when Windows allows it.
+// Actual selection is still confirmed through View → Graphics Status.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 
 // A secure, standard origin preserves IndexedDB, localStorage and folder-handle permissions.
 protocol.registerSchemesAsPrivileged([{ scheme: GAME_SCHEME, privileges: {
@@ -192,7 +198,7 @@ async function prepareUpdateRestart() {
 
 function createWindow() {
   const win = new BrowserWindow({
-    title: 'Hobunji Hollow', width: 1440, height: 900, minWidth: 900, minHeight: 600,
+    title: desktopTitle, width: 1440, height: 900, minWidth: 900, minHeight: 600,
     show: false, backgroundColor: '#12191b',
     webPreferences: {
       nodeIntegration: false, contextIsolation: true, sandbox: true, backgroundThrottling: false,
@@ -205,7 +211,7 @@ function createWindow() {
     authorizeClose: () => { closeAllowed = true; }, // Only a completed save or deliberate override permits closure.
   });
   win.once('ready-to-show', () => win.show());
-  win.on('page-title-updated', event => { event.preventDefault(); win.setTitle('Hobunji Hollow'); });
+  win.on('page-title-updated', event => { event.preventDefault(); win.setTitle(desktopTitle); });
   win.on('close', event => {
     if (closeAllowed) return;
     event.preventDefault();
@@ -239,7 +245,7 @@ if (!singleInstance) {
     mainWindow.focus();
   });
   app.whenReady().then(() => {
-  app.setAppUserModelId('com.oolnokk.hobunjihollow');
+  app.setAppUserModelId(isFriendsEdition ? 'com.oolnokk.hobunjihollow.tester' : 'com.oolnokk.hobunjihollow');
   registerAssets();
   folderPermissions = configureSaveFolderPermissions({
     session: session.defaultSession, dialog, getGameWindow: () => mainWindow,

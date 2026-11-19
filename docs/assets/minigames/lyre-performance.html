@@ -1466,6 +1466,26 @@
     }
   };
 
+  const GAME_OVERWORLD_MUSIC = new URLSearchParams(location.search).has('overworld'); // Game iframe and standalone Music Lab intentionally use different tuning/persistence rules.
+  const GAME_INSTRUMENT_KEY = GAME_OVERWORLD_MUSIC ? new URLSearchParams(location.search).get('instrument-key') : null; // Player iframe only; NPC performances have no instrument slot.
+  function gameMusicDevMode() {
+    if (!GAME_OVERWORLD_MUSIC) return true;
+    try { return window.parent.document.getElementById('settingDevMode')?.checked === true; } catch (_) { return false; }
+  }
+  function enforceGameMusicKey() {
+    if (!GAME_OVERWORLD_MUSIC || gameMusicDevMode()) return;
+    state.tonicMidi = 48; // C3 is the fixed gameplay tonic in all normal player and NPC performances.
+    state.scaleName = 'Pentatonic Minor'; // Gameplay's five pitch classes are C, Eb, F, G, Bb.
+  }
+  function applyGameInstrumentSlots() {
+    if (!GAME_INSTRUMENT_KEY) return;
+    try {
+      const slots = window.parent.InstrumentPatternLoadout?.getSlots?.(GAME_INSTRUMENT_KEY); // Pulls this character's saved patterns for the currently equipped instrument.
+      if (!Array.isArray(slots)) return;
+      normalizeAutoPickSlots(slots);
+      state.pluckInputMode = state.autoPickSlots[state.leftStickSector] || DEFAULT_AUTO_PICK_SLOTS[0];
+    } catch (_) { /* Same-origin host may be unavailable in standalone previews. */ }
+  }
   const HOSTED_FLUTE_PERFORMANCE = /(?:[?&])instrument=flute(?:&|$)/.test(window.location?.search || ''); // The game's instrument slot selects the performance timbre without changing chords, controls or song scheduling.
   const state = {
     audioContext:null,
@@ -4469,6 +4489,7 @@
   }
 
   function cycleScale(direction = 1) {
+    if (GAME_OVERWORLD_MUSIC && !gameMusicDevMode()) return; // The controller's scale-step shortcut cannot bypass the normal-game C minor lock.
     interruptAutoReleaseTail('note set changed');
     const currentIndex = SCALE_NAMES.indexOf(state.scaleName); // Locates the current note set before moving backward or forward.
     const index = (currentIndex + Math.sign(direction || 1) + SCALE_NAMES.length) % SCALE_NAMES.length; // Wraps D-pad scale navigation at both ends.
@@ -5795,7 +5816,7 @@
   }
 
   function applyPerformanceTonic(tonicMidi, {persist = true} = {}) {
-    const nextTonicMidi = clamp(Math.round(Number(tonicMidi) || 48),24,60); // Used to transpose melody pitches and the fixed chord roots together from one authoritative tonic.
+    const nextTonicMidi = GAME_OVERWORLD_MUSIC && !gameMusicDevMode() ? 48 : clamp(Math.round(Number(tonicMidi) || 48),24,60); // Only Dev Mode can transpose the game away from C3.
     state.tonicMidi = nextTonicMidi;
     if (refs.tonicSelect) refs.tonicSelect.value = String(nextTonicMidi);
     invalidatePitchCache('tonic changed');
@@ -5810,7 +5831,7 @@
   }
 
   function applyPerformanceScale(scaleName, {persist = true} = {}) {
-    const nextScaleName = SCALES[scaleName] ? scaleName : 'Pentatonic Minor'; // Used to remap all melody degrees while the fixed IV–V–iii–vi chord voicings remain unchanged.
+    const nextScaleName = GAME_OVERWORLD_MUSIC && !gameMusicDevMode() ? 'Pentatonic Minor' : SCALES[scaleName] ? scaleName : 'Pentatonic Minor'; // Only Dev Mode can replace the game's five-note set.
     interruptAutoReleaseTail('note set selected in sampler');
     state.scaleName = nextScaleName;
     if (refs.scaleSelect) refs.scaleSelect.value = nextScaleName;
@@ -5832,6 +5853,8 @@
     refs.sampleRoot.addEventListener('change', () => { state.sampleRootMidi = Number(refs.sampleRoot.value); invalidatePitchCache('sample root changed'); schedulePitchCacheBuild(); schedulePersistImportedSample(); updateSampleUI(); saveSettings(); });
     refs.tonicSelect.addEventListener('change', () => applyPerformanceTonic(refs.tonicSelect.value));
     refs.scaleSelect.addEventListener('change', () => applyPerformanceScale(refs.scaleSelect.value));
+    refs.tonicSelect.disabled = GAME_OVERWORLD_MUSIC && !gameMusicDevMode(); // Hosted setup is read-only outside Dev Mode.
+    refs.scaleSelect.disabled = GAME_OVERWORLD_MUSIC && !gameMusicDevMode();
     refs.harmonyProgression.addEventListener('change', () => { state.harmonyPattern = refs.harmonyProgression.value; state.harmonyStartTime = nowMs(); state.lastHarmonyStep = -1;
       state.scheduledRootPadKey = null; state.lastRootPadKey = null; state.lastMetronomeBeat = -1;
       state.scheduledMetronomeBeat = null; updatePitchLabels(); updateHarmonyVisual(true, true); syncRootPad(true); saveSettings(); log('Hidden progression changed', state.harmonyPattern); });
@@ -5919,6 +5942,11 @@
 
   function setupAutoPickSlotUI() {
     normalizeAutoPickSlots();
+    if (GAME_OVERWORLD_MUSIC) {
+      const slotsShortcut = document.querySelector('[data-open-modal="autoPickSlotsModal"]'); // Standalone Music Lab keeps its original pattern editor.
+      if (slotsShortcut) { slotsShortcut.hidden = true; slotsShortcut.style.display = 'none'; } // Author CSS cannot override this hidden gameplay shortcut.
+      $$('[data-auto-pick-slot]').forEach(select => { select.disabled = true; select.title = 'Assign patterns in Loadout → Instrument'; });
+    }
     const selectablePatterns = Object.entries(AUTO_PICK_PATTERN_LIBRARY);
     const selects = $$('[data-auto-pick-slot]');
     const refresh = () => {
@@ -5933,6 +5961,7 @@
       try { parent.postMessage({source:'hobunji-music-minigame',type:'auto-pick-slots'},'*'); } catch (_) {}
     };
     selects.forEach((select,index) => select.addEventListener('change', () => {
+      if (GAME_OVERWORLD_MUSIC) { refresh(); return; } // Even scripted select changes cannot overwrite an equipped instrument's loadout.
       const previousMode = state.autoPickSlots[index];
       const nextMode = AUTO_PICK_PATTERN_LIBRARY[select.value] ? select.value : DEFAULT_AUTO_PICK_SLOTS[index];
       state.autoPickSlots[index] = nextMode;
@@ -5957,6 +5986,17 @@
       layoutPreset:'five-bank-auto', visualPreset:state.visualPreset, timingPromptBeats:state.timingPromptBeats, latchedMiddleOffset:state.latchedMiddleOffset,
       autoPickSlots:normalizeAutoPickSlots(), pluckInputMode:state.pluckInputMode, leftStickSector:state.leftStickSector
     };
+    if (GAME_OVERWORLD_MUSIC) {
+      try {
+        const previous = JSON.parse(localStorage.getItem('musicSystemDemoSettingsV13') || 'null'); // NPC/player iframe saves must not overwrite the legacy Music Lab auto-pick preset.
+        if (Array.isArray(previous?.autoPickSlots)) serializable.autoPickSlots = previous.autoPickSlots;
+        else delete serializable.autoPickSlots;
+        if (!gameMusicDevMode()) {
+          serializable.tonicMidi = previous && Number.isFinite(previous.tonicMidi) ? previous.tonicMidi : 48; // Keep the last developer choice without allowing it to sound in ordinary gameplay.
+          serializable.scaleName = previous && SCALES[previous.scaleName] ? previous.scaleName : 'Pentatonic Minor';
+        }
+      } catch (_) { delete serializable.autoPickSlots; }
+    }
     try { localStorage.setItem('musicSystemDemoSettingsV13', JSON.stringify(serializable)); }
     catch (error) { log('Settings save failed', error.message); }
   }
@@ -7018,6 +7058,7 @@
   }
 
   function startSong(type = state.selectedSong, options = {}) {
+    enforceGameMusicKey(); // Reapply the ordinary-game lock before every song, including NPC procedural loops and legacy saves.
     clearSuccessfulPreviewTimers('new song start');
     state.postSongSilence = false; // A deliberate restart exits the completed-song silent state without changing the selected song.
 
@@ -7033,9 +7074,10 @@
     state.selectedSong = type;
     state.gameplaySelection = type; // V86: a started song is now the active selector mode.
     const melody = getSongDefinition(type);
-    const npcScale = type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
-      ? 'Pentatonic Minor' : null; // Keep the generated lead in the same scale when the player joins it.
-    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
+    const overworldSharedTuning = new URLSearchParams(location.search).has('overworld'); // The shipped game uses one saved root/scale for NPCs and players.
+    const npcScale = !overworldSharedTuning && type === 'when-the-kininjis-bloom' && (options.proceduralAmbient || options.backupAccompaniment)
+      ? 'Pentatonic Minor' : null; // Standalone Music Lab preserves its previous practice-song defaults.
+    const requestedScaleName = options.scaleOverride && SCALES[options.scaleOverride] ? options.scaleOverride : overworldSharedTuning ? null : npcScale || melody?.scaleName; // Used by the scale-audition tool to override the authored Major melody mapping without changing ordinary song starts.
     if (requestedScaleName && state.scaleName !== requestedScaleName) {
       applyPerformanceScale(requestedScaleName,{persist:!npcScale && options.persistScale !== false});
       if (!options.scaleOverride) toast(`${melody.title} switched the note set to ${requestedScaleName}`, 2400);
@@ -7419,7 +7461,7 @@
         // host keeps it selected.
         if (state.game.loopDemo) {
           const proceduralAmbient = !!state.game.proceduralAmbient; // Ambient Foroji performances request a fresh composition each cycle; ordinary successful-preview loops can still repeat deterministically.
-          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor');
+          if (proceduralAmbient && state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(state.scaleName);
           startSong(state.selectedSong, {demoMode:state.ambientOnly ? randomNpcAutoPickPattern() : state.game.demoMode, loopDemo:true, proceduralAmbient});
           updateDebugState();
           requestAnimationFrame(updateGameFrame);
@@ -7555,6 +7597,8 @@
 
   function init() {
     loadSettings();
+    enforceGameMusicKey(); // Runs after restoring the previous user's key; avoids any non-C audio at startup.
+    applyGameInstrumentSlots(); // Per-character instrument patterns override the old global preset only for the player's frame.
     restoreLastSampleFromIndexedDB();
     restoreAuxiliarySamplesFromIndexedDB();
     initSelects();
@@ -7667,6 +7711,16 @@
   // Same-origin host bridge: external gameplay controls call the real music engine
   // during the user's trusted pointer gesture instead of forwarding synthetic DOM events.
   window.HobunjiMusicControlBridge = {
+    syncGameplayTuning() {
+      if (!GAME_OVERWORLD_MUSIC) return false;
+      const locked = !gameMusicDevMode(); // Live Dev Mode changes must also update the embedded setup controls.
+      if (refs.tonicSelect) refs.tonicSelect.disabled = locked;
+      if (refs.scaleSelect) refs.scaleSelect.disabled = locked;
+      if (!locked || state.tonicMidi === 48 && state.scaleName === 'Pentatonic Minor') return false;
+      applyPerformanceTonic(48,{persist:false}); // Restores the fixed key when Dev Mode is turned off during an already-open performance.
+      applyPerformanceScale('Pentatonic Minor',{persist:false});
+      return true;
+    },
     wakeAudio() {
       return ensureAudio();
     },
@@ -7914,6 +7968,7 @@
       return true;
     },
     setAutoPickSlot(sector, mode) {
+      if (GAME_OVERWORLD_MUSIC) return false; // Slot assignments belong to the equipped instrument in the game's Loadout tab.
       if (!Number.isInteger(sector) || sector < 0 || sector > 3 || !AUTO_PICK_PATTERN_LIBRARY[mode]) return false;
       normalizeAutoPickSlots();
       state.autoPickSlots[sector] = mode;
@@ -8144,7 +8199,7 @@
     // at their station. Host tears the whole iframe down to actually stop
     // it (see js/music-minigame.js), same as every other close path.
     ambientPerformanceState() {
-      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
+      return {npcOnly:!!state.ambientOnly,playing:!!state.game.active,tonicMidi:state.tonicMidi,scaleName:state.scaleName,generated:!!state.game.proceduralAmbient,pattern:state.game.demoMode,inputCount:state.inputCount,rootPadEnabled:!!state.rootPadEnabled,rootPadKey:rootPadAudioKey(),rootPadPitch:state.rootPadRootMidi,rootPadVoices:state.rootPadVoices.filter(voice => !voice.stopping && voice.active !== false).length};
     },
     async startAmbientLead(songId, footstepSampleUrl) {
       state.ambientOnly = true; // Set before audio loading so held overworld controls cannot hijack an initializing NPC performance.
@@ -8161,7 +8216,7 @@
       }
       const mode = randomNpcAutoPickPattern(); // NPCs never inherit a player's Single Note/tremolo preference.
       state.rootPadEnabled = true; // An ambient musician always plays the automatic bar-root accompaniment; does not persist over player settings.
-      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody('Pentatonic Minor'); // Foroji begins with a new composition instead of the authored practice melody.
+      if (state.selectedSong === 'when-the-kininjis-bloom') randomizeKurrayaSongMelody(state.scaleName); // Foroji begins with a new composition instead of the authored practice melody.
       startSong(state.selectedSong,{demoMode:mode,loopDemo:true,proceduralAmbient:state.selectedSong === 'when-the-kininjis-bloom'});
       return { started:!!state.game.active, title:songTitle(state.selectedSong), proceduralAmbient:!!state.game.proceduralAmbient };
     },
@@ -8210,6 +8265,7 @@
         heldAutomaticDurationMs: heldAutomaticNote ? Math.max(0, bridgeNow - oldestHeldAt) : 0,
         heldAutomaticNoteCount: heldAutomaticNote ? heldFrets.length : 0,
         pluckInputMode: state.pluckInputMode || 'direct',
+        tonicMidi: state.tonicMidi, scaleName: state.scaleName, // Player-side mobile diagnostics confirm the actual sounding key and scale.
         kurrayaMixLevel:state.kurrayaMixLevel,
         metronomeMixLevel:state.metronomeMixLevel,
         padMixLevel:state.padMixLevel,

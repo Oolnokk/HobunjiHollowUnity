@@ -95,12 +95,7 @@
         const modifiers = mountRidingModifiers(entry);
         const oldAccel = mountDeps.ACCEL;
         const oldClamp = mountDeps.clamp;
-        const oldDef = ride.def;
-        const baseSpeed = Number(oldDef?.mountSpeed);
-        if (Number.isFinite(baseSpeed) && baseSpeed > 0) {
-          // Temporary per-rider definition avoids mutating the shared CREATURE_DB species definition.
-          ride.def = { ...oldDef, mountSpeed: baseSpeed * modifiers.baseSpeed };
-        }
+        // Mounts reads modifiers.baseSpeed itself after the player-running baseline; never modify the species definition.
         if (Number.isFinite(Number(oldAccel))) mountDeps.ACCEL = Number(oldAccel) * modifiers.acceleration;
         if (typeof oldClamp === 'function' && modifiers.maneuverability !== 1) {
           mountDeps.clamp = function stableAnimalManeuverClamp(value, min, max) {
@@ -117,7 +112,6 @@
         finally {
           mountDeps.ACCEL = oldAccel;
           mountDeps.clamp = oldClamp;
-          ride.def = oldDef;
         }
       };
     }

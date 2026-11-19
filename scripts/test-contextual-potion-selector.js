@@ -58,6 +58,7 @@ const defs = {
   strength:{ id:'strength', label:'Potion of Strength', icon:'💪' },
   speed:{ id:'speed', label:'Potion of Speed', icon:'🏃' },
   venom:{ id:'venom', label:'Venom Flask', icon:'☠️' },
+  fire:{ id:'fire', label:'Fire Flask', icon:'🔥' },
 };
 const control = { itemKey:'alchemy_control_p0', payload:{recipeId:'control',potencyTier:0}, recipe:defs.control, count:1 };
 const healing = { itemKey:'alchemy_heal_p0', payload:{recipeId:'heal',potencyTier:0}, recipe:defs.heal, count:2, score:100 };
@@ -66,7 +67,10 @@ const clarity = { itemKey:'alchemy_clarity_p0', payload:{recipeId:'clarity',pote
 const strength = { itemKey:'alchemy_strength_p0', payload:{recipeId:'strength',potencyTier:0}, recipe:defs.strength, count:1 };
 const speed = { itemKey:'alchemy_speed_p0', payload:{recipeId:'speed',potencyTier:0}, recipe:defs.speed, count:1 };
 const venom = { itemKey:'alchemy_venom_p0', payload:{recipeId:'venom',potencyTier:0}, recipe:defs.venom, count:3 };
-const allItems = [control, healing, strength, speed, clarity, stamina, venom];
+const venomStrong = { itemKey:'alchemy_venom_p3', payload:{recipeId:'venom',potencyTier:3}, recipe:defs.venom, count:2 }; // Highest owned Venom potency must win despite appearing after weaker stacks.
+const venomWeak = { itemKey:'alchemy_venom_p1', payload:{recipeId:'venom',potencyTier:1}, recipe:defs.venom, count:8 }; // A larger quantity must not take precedence over stronger potency.
+const fireFlask = { itemKey:'alchemy_fire_p1', payload:{recipeId:'fire',potencyTier:1}, recipe:defs.fire, count:1 }; // Distinct flask recipes must remain independently selectable.
+const allItems = [control, healing, strength, speed, clarity, stamina, venom, venomStrong, venomWeak, fireFlask];
 
 function itemLabel(entry) {
   const tier = Math.max(0, Math.min(4, Number(entry.payload?.potencyTier) || 0));
@@ -296,6 +300,38 @@ assert.strictEqual(heldItemKey, venom.itemKey, 'Flask selection must equip the e
 assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'Flasks must use exact-key routing');
 document.dispatchEvent(new CustomEvent('hobunji-alchemy-change', { detail:{ type:'flask-release', itemKey:venom.itemKey } }));
 assert.strictEqual(activeCombatSlot, 'ranged', 'flask release must restore prior ranged slot');
+
+// Flask choices collapse by recipe, but the exact strongest key must still route
+// through the untouched legacy inventory list (where weaker copies remain).
+flasks = [venom, fireFlask, venomStrong, venomWeak];
+selector.openPotions();
+assert.deepStrictEqual(debug().flasks.map(entry => entry.itemKey), [venomStrong.itemKey, fireFlask.itemKey],
+  'Flask selection shows one strongest owned potency per recipe, preserving type order');
+assert.strictEqual(debug().flaskCandidates, 4, 'diagnostics retain the original weaker flask stack count');
+selector.scrollEntries(1); // Enter Flasks from the root's right side.
+selector.scrollEntries(1); // Highlight strongest Venom rather than the older weak potency.
+assert.strictEqual(debug().active, 'Venom Flask · Potency 4 ×2', 'visible flask label uses actual strongest potency and quantity');
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, venomStrong.itemKey, 'flask commit equips exact strongest owned potion stack');
+assert.strictEqual(debug().lastSelection.commitPath, 'legacy-exact', 'strongest flask still uses exact-key authoritative selection');
+selector.openPotions();
+selector.scrollEntries(1);
+selector.scrollEntries(1);
+selector.scrollEntries(1); // Move past Venom to the other available flask recipe.
+assert.strictEqual(debug().active, 'Fire Flask · Potency 2 ×1', 'second type remains independently selectable');
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, fireFlask.itemKey, 'other flask types still equip their exact item key');
+assert.strictEqual(flasks.length, 4, 'filtering the wheel never removes weaker flasks from inventory');
+venomStrong.count = 0; // Simulates the last strongest flask being thrown while weaker copies are still owned.
+assert.deepStrictEqual(debug().flasks.map(entry => entry.itemKey), [venomWeak.itemKey, fireFlask.itemKey],
+  'when the strongest potency runs out, the next-highest owned flask becomes selectable');
+selector.openPotions();
+selector.scrollEntries(1);
+selector.scrollEntries(1);
+selector.releaseSelection();
+assert.strictEqual(heldItemKey, venomWeak.itemKey, 'fallback flask selects its exact remaining inventory stack');
+venomStrong.count = 2; // Restore the fixture before the original no-flask scenario.
+
 
 // No-useful-medicine layouts retain centered/default Cancel and omit stale hierarchy labels.
 contextual = [];

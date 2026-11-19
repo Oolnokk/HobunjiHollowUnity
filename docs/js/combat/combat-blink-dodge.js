@@ -24,7 +24,7 @@
   const AFTERIMAGE_FORCED_MOVE_INTERVAL_S = 0.055; // Used by updateForcedMovementAfterimages() for the denser short trails on ordinary dodges and melee lunges.
   const AFTERIMAGE_BASE_OPACITY = 0.34; // Used by cloneAfterimageMaterial() as the strongest alpha at spawn before the short fade.
   const AFTERIMAGE_REGULAR_INTENSITY_PER_TILE = 0.5; // Used by rolls and lunges; Blink hops retain full intensity per tile.
-  const afterimageTravelByActor = new WeakMap(); // Stores per-action traveled distance without allocating state every frame.
+  let afterimageTravelByActor = new WeakMap(); // Per-actor movement snapshots; reset when re-enabling so disabled movement never becomes a fake dash.
   const AFTERIMAGE_HOP_SAMPLES = 3; // Used by spawnHopAfterimages() to bridge the instantaneous Blink hop with frozen portraits along its traveled path.
   const AFTERIMAGE_MAX_ACTIVE = 24; // Shared cap sized for simultaneous player/enemy dodge-lunge bursts while still bounding transient portrait GPU objects.
   const AFTERIMAGE_MAX_PER_ROOT = 3; // Live snapshots per actor: with the 0.28 s fade the oldest of five were nearly invisible, yet each is a full portrait mesh in every scene pass.
@@ -32,6 +32,10 @@
   const AFTERIMAGE_MAX_POOLED_ENTRIES = 24; // Maximum detached portrait mesh/material/texture sets retained for reuse between short combat movements.
   const AFTERIMAGE_POOL_IDLE_S = 4; // Maximum time an unused snapshot remains GPU-resident after the last dodge, lunge, or Blink burst.
   const AFTERIMAGE_TEXTURE_SLOTS = ['map', 'alphaMap', 'emissiveMap']; // Shared texture slots checked and refreshed when reusing a frozen portrait.
+  const AFTERIMAGE_SETTING_KEY = 'hobunjiCombatAfterimages'; // Saved by the Visual Effects checkbox; no missing-key migration enables costly ghosts.
+  let afterimagesEnabled = false; // Read once at startup and updated only when the Settings checkbox changes.
+  try { afterimagesEnabled = localStorage.getItem(AFTERIMAGE_SETTING_KEY) === '1'; } catch (_) { /* Private storage/isolated tests: off. */ }
+
 
   const blinkRuntimeDebug = { // Updated by the hold state machine and exposed through HobunjiDodgeFeedback for mobile-readable diagnostics.
     active: false,
@@ -62,7 +66,7 @@
   const afterimageEntryPool = []; // Detached frozen portrait entries reused across player/NPC lunges instead of reallocating meshes, canvases, GPU textures, and materials.
   let lastAfterimagePoolPruneAtS = -Infinity; // Throttles idle-pool disposal to once per second while combat updates are running.
   const cachedAfterimagePortraits = new WeakMap(); // Root -> portrait meshes cache reused by player and humanoid-enemy trail samples without re-traversing unchanged rigs.
-  const enemyAfterimageMotion = new WeakMap(); // Enemy -> last dodge/lunge sample state used to rate-limit hostile portrait trails independently.
+  let enemyAfterimageMotion = new WeakMap(); // Enemy -> independent sample state; reset on preference changes to avoid stale motion.
   let lastMoveAfterimageAtS = -Infinity; // Used by maybeSpawnMovementAfterimage() to rate-limit normal Blink locomotion samples.
   let lastDodgeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit ordinary-dodge portrait snapshots independently of Blink locomotion.
   let lastLungeAfterimageAtS = -Infinity; // Used by updateForcedMovementAfterimages() to rate-limit melee-lunge portrait snapshots independently of Dodge/Blink.
@@ -485,6 +489,7 @@
   }
 
   function spawnAfterimageForRoot(root, reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    if (!afterimagesEnabled) return false; // Disabled means no portrait scans, skinning, geometry, canvas work, or GPU allocations.
     if (!(opacityScale > 0) || !Number.isFinite(opacityScale)) return false; // Stationary or fully blocked actions produce no visible blur.
     const THREE = window.THREE;
     const sources = findPortraitMeshes(root);
@@ -571,6 +576,7 @@
   }
 
   function spawnAfterimage(reason, worldOffsetX = 0, worldOffsetZ = 0, opacityScale = 1) {
+    if (!afterimagesEnabled) return false;
     const portraits = findPlayerPortraitMeshes();
     if (!portraits.length) return false;
     if (afterimageRuntimeDebug.playerCombatFrown && window.WorldPortraitLife?.isPlayerCombatExpressionApplied?.() === false) return false; // Never snapshot the player's pre-frown face during the brief cache/render handoff at combat entry.
@@ -578,6 +584,7 @@
   }
 
   function spawnHopAfterimages(dxWorld, dzWorld) {
+    if (!afterimagesEnabled) return; // Blink locomotion still works, without emitting the three-hop ghost burst.
     const intensity = distanceAfterimageIntensity(Math.hypot(dxWorld, dzWorld), true); // Blink keeps the original full-strength per-tile rate.
     for (let i = 0; i < AFTERIMAGE_HOP_SAMPLES; i += 1) {
       const fraction = i / AFTERIMAGE_HOP_SAMPLES; // Leaves the destination clear for the live player while bridging the instant hop from its origin.
@@ -586,7 +593,7 @@
   }
 
   function maybeSpawnMovementAfterimage(input) {
-    if (!defensiveHoldActive || !input?.active) return;
+    if (!afterimagesEnabled || !defensiveHoldActive || !input?.active) return;
     const t = now();
     if (t - lastMoveAfterimageAtS < AFTERIMAGE_MOVE_INTERVAL_S) return;
     lastMoveAfterimageAtS = t;
@@ -594,6 +601,7 @@
   }
 
   function updateForcedMovementAfterimages() {
+    if (!afterimagesEnabled) return; // Entire opt-in sampler stays off during normal combat.
     const player = window.Combat?.deps?.player;
     if (!player) return;
     const t = now(); // Shared timestamp keeps dodge/lunge sampling deterministic when both state flags change in one combat tick.
@@ -626,7 +634,7 @@
     const player = deps?.player;
     const hostiles = deps?.hostileObjects;
     if (!player || !hostiles) return;
-    const t = now();
+    const t = afterimagesEnabled ? now() : 0; // Clock only needed for opt-in ghost sampling.
     let playerInCombat = false;
     let enemyCombatants = 0;
     for (const entity of hostiles) {
@@ -638,7 +646,7 @@
         enemyCombatants += 1;
       }
       if (entity.isBandit) window.BanditCombat?.setCombatExpression?.(entity, inCombat); // Bandit/Minion/Lich humanoids share this synchronous frown/resting portrait swap.
-      if (!entity.isBandit || entity.health <= 0 || !entity.avatarRef?.group) continue;
+      if (!afterimagesEnabled || !entity.isBandit || entity.health <= 0 || !entity.avatarRef?.group) continue; // Frown processing remains active even with ghosts off.
 
       let motion = enemyAfterimageMotion.get(entity);
       if (!motion) {
@@ -668,6 +676,7 @@
   }
 
   function updateBlinkAfterimages(dt) {
+    if (!afterimagesEnabled) return; // Hidden mode never runs alpha fades or pool maintenance each frame.
     const safeDt = Math.max(0, Number(dt) || 0);
     for (let i = blinkAfterimages.length - 1; i >= 0; i -= 1) {
       const record = blinkAfterimages[i];
@@ -684,6 +693,43 @@
     }
     afterimageRuntimeDebug.active = blinkAfterimages.length;
     pruneAfterimagePool();
+  }
+
+  function setAfterimagesEnabled(enabled) {
+    const next = !!enabled; // Explicit setting choice persisted for later game launches.
+    if (next === afterimagesEnabled) return afterimagesEnabled;
+    afterimagesEnabled = next;
+    try { localStorage.setItem(AFTERIMAGE_SETTING_KEY, next ? '1' : '0'); } catch (_) { /* Storage can be blocked. */ }
+    if (!next) {
+      // Off must release real resources immediately, not merely make existing ghosts invisible.
+      while (blinkAfterimages.length) disposeAfterimage(blinkAfterimages.pop());
+      while (afterimageEntryPool.length) disposeAfterimage({ entries: [afterimageEntryPool.pop()] });
+      afterimageRuntimeDebug.active = 0;
+      afterimageRuntimeDebug.pooled = 0;
+      lastAfterimagePoolPruneAtS = -Infinity;
+    }
+    afterimageTravelByActor = new WeakMap(); // Restart velocity samples without counting all movement while disabled.
+    enemyAfterimageMotion = new WeakMap(); // Restart hostile sample timers after an opt-in change.
+    lastMoveAfterimageAtS = -Infinity;
+    lastDodgeAfterimageAtS = -Infinity;
+    lastLungeAfterimageAtS = -Infinity;
+    dodgeAfterimageWasActive = false;
+    lungeAfterimageWasActive = false;
+    if (typeof document !== 'undefined') {
+      const input = document.getElementById?.('settingCombatAfterimages');
+      if (input && input.checked !== next) input.checked = next;
+    }
+    return next;
+  }
+
+  function bindAfterimageSettings() {
+    if (typeof document === 'undefined') return;
+    const input = document.getElementById?.('settingCombatAfterimages'); // Existing Visual Effects panel; available after parsing.
+    if (!input) return;
+    input.checked = afterimagesEnabled;
+    if (input.dataset?.afterimagePreferenceBound) return;
+    if (input.dataset) input.dataset.afterimagePreferenceBound = '1';
+    input.addEventListener('change', () => setAfterimagesEnabled(input.checked));
   }
 
   function showIframeMissPopup() {
@@ -766,8 +812,10 @@
       originalUpdate(dt);
       updateBaseDodgeEnhancements();
       updateEnemyCombatPresentation();
-      updateForcedMovementAfterimages();
-      updateBlinkAfterimages(dt);
+      if (afterimagesEnabled) {
+        updateForcedMovementAfterimages();
+        updateBlinkAfterimages(dt);
+      } // No snapshot sampling, fading or pooled-geometry pruning when disabled.
     };
     enhancedUpdate.__hobunjiBaseDodgeEnhancements = true;
     window.Combat.update = enhancedUpdate;
@@ -979,6 +1027,8 @@
   }
 
   window.HobunjiDodgeFeedback = Object.freeze({
+    afterimagesEnabled: () => afterimagesEnabled, // Used by Settings and manual mobile performance comparisons.
+    setAfterimagesEnabled, // Toggle without a reload; disabling actively disposes all previous ghosts.
     getDebug() {
       const player = window.Combat?.deps?.player;
       const remainingIframeMs = player
@@ -993,6 +1043,7 @@
           ...blinkRuntimeDebug,
           afterimages: {
             ...afterimageRuntimeDebug,
+            enabled: afterimagesEnabled,
             supported: !!window.THREE,
             motion: {
               dodging: dodgeAfterimageWasActive,
@@ -1025,6 +1076,10 @@
     },
   });
 
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', bindAfterimageSettings, { once: true });
+    else bindAfterimageSettings();
+  }
   installIframeMissFeedback();
   installBaseDodgeEnhancements();
   register();

@@ -271,6 +271,25 @@
     }
     return best;
   }
+  function recordOrbitDive(bird) {
+    const map = rooms.get(bird?.areaId); // The existing nest encounter owns every mother dive, including no-perch returns.
+    if (!map || map.mother !== bird || map.completed) return false;
+    stats.dives++; map.lastEvent = 'mother dived from a no-perch combat orbit';
+    return true; // Mobile diagnostics count aerial fallback attacks alongside standard perch-launched dives.
+  }
+  function clearAirPath(bird, endpoint) {
+    const map = rooms.get(bird?.areaId); // Native arena collision plan, reused before committing an unperchable mother's orbit leg.
+    if (!map || map.mother !== bird || !endpoint || ![endpoint.x, endpoint.y, endpoint.worldY].every(Number.isFinite)) return false;
+    const start = { x: finite(bird.x) / tile(), y: finite(bird.branchSurfaceY, map.floorY + 3),
+      z: finite(bird.y) / tile() }; // Creature plane stores horizontal world pixels; obstacle planner works in tiles.
+    const end = { x: endpoint.x / tile(), y: endpoint.worldY, z: endpoint.y / tile() };
+    const center = map.plan?.arenaCenter || {}; // Arena wall remains solid at every flying elevation, not only near the ground.
+    const radius = Math.max(3, finite(map.plan?.arenaRadiusTiles, 10) - .8);
+    if (Math.hypot(end.x - (finite(center.col) + .5), end.z - (finite(center.row) + .5)) > radius) return false;
+    const half = window.TzatzulFlightRuntime?.flightBodyHalf?.(bird)
+      || { x: .45, y: .55, z: .45 }; // Same torso sweep as the actual dive, independent of wing-tip artwork.
+    return !nearestObstacle(map, start, end, half);
+  }
   function resolveTerrainImpact(bird, previous, current, segment) {
     const map = rooms.get(bird?.areaId);
     if (!map || map.mother !== bird || bird._tzFlight?.phase !== 'swoop' ||
@@ -351,6 +370,6 @@
       complete:room.completed, lastEvent:room.lastEvent,
     })) };
   }
-  window.TzatzulNestEncounter=Object.freeze({init,update,owns,ensure,resolveTerrainImpact,debugSnapshot,buildNest,storeVictim,serialize,restore,
+  window.TzatzulNestEncounter=Object.freeze({init,update,owns,ensure,resolveTerrainImpact,clearAirPath,recordOrbitDive,debugSnapshot,buildNest,storeVictim,serialize,restore,
     __test:Object.freeze({nearestObstacle,impactDamage})});
 })();

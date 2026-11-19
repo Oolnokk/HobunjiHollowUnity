@@ -166,6 +166,13 @@ choose(0, 0); // "Follow me."
 assert.equal(socialReplies.at(-1).accepted,true,'confirmed date acceptance appears as ambient speech');
 assert.equal(W.RomanceSystem.activeDate()?.npcId, 'tooth_hatayap', 'accepting starts the date');
 assert.equal(W.RomanceSystem.dateHoursLeft(), 4, 'dates last the configured in-game hours');
+const normalDateTarget = W.NpcScheduling.resolveNpcScheduleTarget(tooth.rec); // Establish the existing dating precedence before a stage gathering begins.
+assert.equal(normalDateTarget.overrideOwner,'romance','an active date supplies the normal NPC destination');
+W.NpcScheduling.registerTargetOverride('test-five-blossoms-stage',rec =>
+  rec.id === tooth.rec.id ? {area:'town',c:11,r:12,pose:'stand',activity:'watching the crowning'} : null,100); // Temporary ceremony must outrank earlier social providers.
+assert.equal(W.NpcScheduling.resolveNpcScheduleTarget(tooth.rec).overrideOwner,'test-five-blossoms-stage','the ceremony audience overrides an active date');
+W.NpcScheduling.registerTargetOverride('test-five-blossoms-stage',null);
+assert.equal(W.NpcScheduling.resolveNpcScheduleTarget(tooth.rec).overrideOwner,'romance','the NPC resumes the active date when the ceremony releases them');
 
 // ── Likes / non-likes / losses ──────────────────────────────────────────
 const romance = () => W.NpcRapport.getRomance('tooth_hatayap');

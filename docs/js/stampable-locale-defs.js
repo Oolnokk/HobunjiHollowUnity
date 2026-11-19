@@ -31,14 +31,14 @@
         if (override?.locales) return override.locales.filter(isStamped);
       }
       try {
-        const idxRes = await fetch('config/locales/index.json');
+        const idxRes = await fetch('config/locales/index.json?v=20261118goldWesternSlope1');
         if (!idxRes.ok) throw new Error(`HTTP ${idxRes.status}`);
         const idx = await idxRes.json();
         // Fetched in parallel (the boot-time Tothal Shift, and so the first
         // wilderness entry, waits on this); results keep index order.
         const loaded = await Promise.all((idx.locales || []).filter(isStamped).map(async entry => {
           try {
-            const r = await fetch(entry.file);
+            const r = await fetch(entry.file + (entry.id === 'locale_five_blossoms_gold' ? '?v=20261118goldWesternSlope1' : '')); // Gold moved out of the Mire; bypass stale cached locale JSON on existing devices.
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return await r.json();
           } catch (e) { log(`Tothal Shift: locale load failed for ${entry.file}: ${e.message}`, 'warn'); return null; }

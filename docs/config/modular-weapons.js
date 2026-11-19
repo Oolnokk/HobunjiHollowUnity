@@ -2102,7 +2102,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "fishing-mace": {
           "scaleX": 0.5,
@@ -2124,6 +2124,95 @@ window.MODULAR_WEAPON_CONFIG = {
                   "x1": 349,
                   "y1": 1136.5
                 }
+              },
+              {
+                "junction": "band",
+                "x": 209.9,
+                "y": 950.9,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 184.1,
+                "y": 971.1,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 158.2,
+                "y": 991.4,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 132.3,
+                "y": 1011.6,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 106.4,
+                "y": 1031.8,
+                "rotation": 52,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 170,
+                "y": 294,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 196.1,
+                "y": 274.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 222.2,
+                "y": 254.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 248.2,
+                "y": 234.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 274.3,
+                "y": 214.1,
+                "rotation": 232.5,
+                "scale": 0.51,
+                "behind": true
+              },
+              {
+                "even": true,
+                "amount": 0.4
+              },
+              {
+                "clean": true,
+                "smoothing": 3,
+                "speck": 60
               }
             ],
             "outline": 10,
@@ -2134,7 +2223,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-broadsword": {
           "scaleX": 0.6,
@@ -2159,7 +2248,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "harlyao-longsword": {
           "scaleX": 0.8,
@@ -2184,7 +2273,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "hatchet": {
           "scaleX": 0.6,
@@ -2197,7 +2286,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.5,
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
-          "disallow": true
+          "disallow": false
         },
         "kylie": {
           "scaleX": 0.5,
@@ -2267,7 +2356,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "plains-blade": {
           "scaleX": 0.75,
@@ -2293,7 +2382,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "porakaneki-greatclub": {
           "scaleX": 0.8,
@@ -3344,7 +3433,64 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleY": 1.75,
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 612,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 650.6,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 689.3,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 727.9,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 211.5,
+                "y": 766.6,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
@@ -3487,8 +3633,56 @@ window.MODULAR_WEAPON_CONFIG = {
         "fishing-spear": {
           "scaleX": 1.25,
           "x": 5,
-          "y": 30,
-          "layerOrder": "haft-over-head"
+          "y": 60,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 188,
+                "y": 810,
+                "rotation": 270,
+                "scale": 0.75,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 236.3,
+                "y": 810,
+                "rotation": 270,
+                "scale": 0.75,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 284.6,
+                "y": 810,
+                "rotation": 270,
+                "scale": 0.75,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 332.9,
+                "y": 810,
+                "rotation": 270,
+                "scale": 0.75,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "y": 10,
@@ -3633,16 +3827,15 @@ window.MODULAR_WEAPON_CONFIG = {
       "overrides": {
         "dagger-sword": {
           "layerOrder": "head-over-haft",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "dagger": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "fishing-mace": {
-          "scaleX": 0.95,
-          "scaleY": 1.55,
-          "y": 170,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
@@ -3652,12 +3845,14 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "harlyao-longsword": {
           "scaleX": 1.1,
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "hatchet": {
           "scaleX": 0.85,
@@ -3678,16 +3873,19 @@ window.MODULAR_WEAPON_CONFIG = {
         "pick-shovel-pick": {
           "flipY": true,
           "layerOrder": "head-over-haft",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "pickshovel-scoop": {
           "scaleX": 0.9,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "y": -30
         },
         "plains-blade": {
           "scaleY": 0.5,
           "layerOrder": "haft-over-head",
-          "animation": "thrust"
+          "animation": "thrust",
+          "y": -30
         },
         "porakaneki-greatclub": {
           "scaleX": 0.9,
@@ -3698,7 +3896,8 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "war-cleaver": {
           "layerOrder": "haft-over-head",
-          "disallow": false
+          "disallow": false,
+          "y": -30
         },
         "warhammer": {
           "scaleX": 0.82,
@@ -3788,27 +3987,125 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_broadsword.png",
       "overrides": {
         "dagger-sword": {
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "scaleX": 0.5
         },
         "fishing-mace": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "fishing-spear": {
           "scaleY": 1.5,
-          "y": 45,
-          "layerOrder": "haft-over-head"
+          "y": 75,
+          "layerOrder": "haft-over-head",
+          "scaleX": 0.5,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 637,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 659.5,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 682.1,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 704.6,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 727.2,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 749.7,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 772.2,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 794.8,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 817.3,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 193.5,
+                "y": 839.9,
+                "rotation": 0,
+                "scale": 0.35,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
           "disallow": true
         },
         "hatchet": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "hoe": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "kylie": {
@@ -3816,12 +4113,14 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.5,
           "x": -5,
           "y": 40,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pick-shovel-pick": {
           "flipX": true,
           "flipY": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "scaleX": 0.5,
+          "scaleY": 2
         },
         "pickshovel-scoop": {
           "scaleX": 0.6,
@@ -3837,31 +4136,31 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 0.875,
           "x": -5,
           "y": 270,
-          "layerOrder": "head-over-haft"
-        },
-        "war-cleaver": {
-          "scaleY": 2,
-          "x": 30,
-          "y": 45,
           "layerOrder": "haft-over-head"
         },
+        "war-cleaver": {
+          "layerOrder": "haft-over-head",
+          "disallow": true
+        },
         "warhammer": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "work-hammer": {
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "bshuakauitl": {
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleY": 0.85,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "scaleX": 0.5
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "grapple-flail": {
           "disallow": true,
@@ -3900,31 +4199,104 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_longsword.png",
       "overrides": {
         "dagger-sword": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 0.8657,
           "layerOrder": "haft-over-head"
         },
         "dagger": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 1.1,
           "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "fishing-spear": {
-          "scaleX": 0.9,
-          "scaleY": 2,
-          "y": 10,
-          "layerOrder": "haft-over-head"
+          "scaleX": 0.8,
+          "scaleY": 1.7,
+          "y": 60,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 630,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 660.9,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 691.8,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 722.7,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 753.6,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 784.6,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 200.5,
+                "y": 815.5,
+                "rotation": 0,
+                "scale": 0.48,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "harlyao-longsword": {
           "scaleX": 0.9,
@@ -3935,13 +4307,13 @@ window.MODULAR_WEAPON_CONFIG = {
         "hatchet": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "hoe": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "kylie": {
@@ -3949,14 +4321,14 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.6,
           "x": -7,
           "y": 55,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pick-shovel-pick": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 2.2,
           "flipY": true,
           "y": 20,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pickshovel-scoop": {
           "scaleX": 0.9,
@@ -3965,7 +4337,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "plains-blade": {
-          "scaleX": 0.9,
+          "scaleX": 0.63,
           "scaleY": 0.75,
           "x": -6,
           "y": 20,
@@ -3975,30 +4347,28 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.8,
           "x": -7,
           "y": 330,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "war-cleaver": {
-          "scaleY": 2.5,
-          "x": 20,
-          "y": 70,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "disallow": true
         },
         "warhammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "work-hammer": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft",
+          "layerOrder": "haft-over-head",
           "disallow": true
         },
         "bshuakauitl": {
           "scaleX": 0.9,
           "scaleY": 1.1,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "grapple-flail": {
           "disallow": true,
@@ -9334,11 +9704,3965 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "dagger": {
           "layerOrder": "haft-over-head",
-          "disallow": true
+          "disallow": false,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "block",
+                "x": 325,
+                "y": 927.5,
+                "rotation": 0,
+                "scale": 2.5
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    246.5,
+                    880.5
+                  ],
+                  [
+                    244,
+                    880
+                  ],
+                  [
+                    241.5,
+                    879
+                  ],
+                  [
+                    240.5,
+                    878.5
+                  ],
+                  [
+                    239.5,
+                    878
+                  ],
+                  [
+                    239,
+                    877
+                  ],
+                  [
+                    240.5,
+                    877.5
+                  ],
+                  [
+                    242.5,
+                    878.5
+                  ],
+                  [
+                    245.5,
+                    881
+                  ],
+                  [
+                    251.5,
+                    885.5
+                  ],
+                  [
+                    258.5,
+                    890
+                  ],
+                  [
+                    265.5,
+                    893.5
+                  ],
+                  [
+                    276.5,
+                    898
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    265,
+                    922
+                  ],
+                  [
+                    264,
+                    922
+                  ],
+                  [
+                    262.5,
+                    921.5
+                  ],
+                  [
+                    260.5,
+                    920.5
+                  ],
+                  [
+                    259,
+                    920.5
+                  ],
+                  [
+                    257.5,
+                    920
+                  ],
+                  [
+                    256.5,
+                    920
+                  ],
+                  [
+                    255.5,
+                    920
+                  ],
+                  [
+                    257,
+                    921
+                  ],
+                  [
+                    259.5,
+                    922.5
+                  ],
+                  [
+                    266.5,
+                    925
+                  ],
+                  [
+                    274,
+                    928.5
+                  ],
+                  [
+                    280,
+                    931.5
+                  ],
+                  [
+                    286,
+                    934.5
+                  ],
+                  [
+                    292,
+                    937.5
+                  ],
+                  [
+                    298,
+                    941
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    264.5,
+                    954
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    262,
+                    954.5
+                  ],
+                  [
+                    261,
+                    954.5
+                  ],
+                  [
+                    260,
+                    955
+                  ],
+                  [
+                    259,
+                    955.5
+                  ],
+                  [
+                    258.5,
+                    956.5
+                  ],
+                  [
+                    259,
+                    957.5
+                  ],
+                  [
+                    262.5,
+                    960
+                  ],
+                  [
+                    270,
+                    965
+                  ],
+                  [
+                    277.5,
+                    970
+                  ],
+                  [
+                    282.5,
+                    973
+                  ],
+                  [
+                    286.5,
+                    975
+                  ],
+                  [
+                    290,
+                    975.5
+                  ],
+                  [
+                    293,
+                    975.5
+                  ],
+                  [
+                    296,
+                    975
+                  ],
+                  [
+                    300.5,
+                    974
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    287.5,
+                    937
+                  ],
+                  [
+                    286,
+                    937
+                  ],
+                  [
+                    289,
+                    938.5
+                  ],
+                  [
+                    296,
+                    941
+                  ],
+                  [
+                    304.5,
+                    943
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    317,
+                    945
+                  ],
+                  [
+                    320.5,
+                    944.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    965.5
+                  ],
+                  [
+                    295,
+                    965
+                  ],
+                  [
+                    296.5,
+                    965
+                  ],
+                  [
+                    302.5,
+                    964.5
+                  ],
+                  [
+                    312,
+                    964
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    280,
+                    910
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    278.5,
+                    908
+                  ],
+                  [
+                    278.5,
+                    907
+                  ],
+                  [
+                    280,
+                    906.5
+                  ],
+                  [
+                    283,
+                    906
+                  ],
+                  [
+                    290,
+                    905.5
+                  ],
+                  [
+                    299,
+                    907
+                  ],
+                  [
+                    307,
+                    908.5
+                  ],
+                  [
+                    314,
+                    910
+                  ],
+                  [
+                    322,
+                    911
+                  ],
+                  [
+                    330.5,
+                    911
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    289.5,
+                    894
+                  ],
+                  [
+                    289.5,
+                    893
+                  ],
+                  [
+                    291,
+                    892.5
+                  ],
+                  [
+                    293.5,
+                    892
+                  ],
+                  [
+                    300.5,
+                    892.5
+                  ],
+                  [
+                    308,
+                    893.5
+                  ],
+                  [
+                    313,
+                    894
+                  ],
+                  [
+                    317.5,
+                    894
+                  ],
+                  [
+                    323,
+                    894
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    318.5,
+                    967
+                  ],
+                  [
+                    317.5,
+                    965.5
+                  ],
+                  [
+                    317.5,
+                    964.5
+                  ],
+                  [
+                    319.5,
+                    963
+                  ],
+                  [
+                    324.5,
+                    962.5
+                  ],
+                  [
+                    332,
+                    961.5
+                  ],
+                  [
+                    338.5,
+                    962.5
+                  ],
+                  [
+                    343.5,
+                    962.5
+                  ],
+                  [
+                    349,
+                    962
+                  ],
+                  [
+                    356.5,
+                    961
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    332.5,
+                    938
+                  ],
+                  [
+                    333.5,
+                    937.5
+                  ],
+                  [
+                    336.5,
+                    937.5
+                  ],
+                  [
+                    343.5,
+                    938
+                  ],
+                  [
+                    352,
+                    938.5
+                  ],
+                  [
+                    356,
+                    938
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    331.5,
+                    900
+                  ],
+                  [
+                    331.5,
+                    898.5
+                  ],
+                  [
+                    332.5,
+                    898
+                  ],
+                  [
+                    333.5,
+                    896.5
+                  ],
+                  [
+                    338.5,
+                    894
+                  ],
+                  [
+                    345.5,
+                    890.5
+                  ],
+                  [
+                    352.5,
+                    890
+                  ],
+                  [
+                    358.5,
+                    890.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    358.5,
+                    956.5
+                  ],
+                  [
+                    359,
+                    955
+                  ],
+                  [
+                    360.5,
+                    954
+                  ],
+                  [
+                    362,
+                    953
+                  ],
+                  [
+                    363,
+                    951.5
+                  ],
+                  [
+                    367,
+                    947
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    345.5,
+                    928.5
+                  ],
+                  [
+                    344.5,
+                    928
+                  ],
+                  [
+                    344.5,
+                    926.5
+                  ],
+                  [
+                    344.5,
+                    925
+                  ],
+                  [
+                    345.5,
+                    924
+                  ],
+                  [
+                    348.5,
+                    920
+                  ],
+                  [
+                    356,
+                    914.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    350.5,
+                    895
+                  ],
+                  [
+                    349.5,
+                    895.5
+                  ],
+                  [
+                    348,
+                    895.5
+                  ],
+                  [
+                    347,
+                    895.5
+                  ],
+                  [
+                    346,
+                    895.5
+                  ],
+                  [
+                    345,
+                    895
+                  ],
+                  [
+                    347.5,
+                    894
+                  ],
+                  [
+                    355,
+                    892.5
+                  ],
+                  [
+                    360,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    323,
+                    992
+                  ],
+                  [
+                    323,
+                    991
+                  ],
+                  [
+                    322.5,
+                    989
+                  ],
+                  [
+                    321.5,
+                    987.5
+                  ],
+                  [
+                    320.5,
+                    984
+                  ],
+                  [
+                    319,
+                    976.5
+                  ],
+                  [
+                    318.5,
+                    968.5
+                  ],
+                  [
+                    319.5,
+                    961.5
+                  ],
+                  [
+                    320.5,
+                    955
+                  ],
+                  [
+                    322.5,
+                    950
+                  ],
+                  [
+                    324,
+                    945.5
+                  ],
+                  [
+                    326.5,
+                    944.5
+                  ],
+                  [
+                    328,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    281.5,
+                    996
+                  ],
+                  [
+                    282,
+                    995
+                  ],
+                  [
+                    282,
+                    994
+                  ],
+                  [
+                    282,
+                    993
+                  ],
+                  [
+                    281.5,
+                    992
+                  ],
+                  [
+                    281.5,
+                    991
+                  ],
+                  [
+                    281.5,
+                    989.5
+                  ],
+                  [
+                    282,
+                    988
+                  ],
+                  [
+                    282.5,
+                    986
+                  ],
+                  [
+                    283,
+                    984.5
+                  ],
+                  [
+                    283.5,
+                    982.5
+                  ],
+                  [
+                    283.5,
+                    980.5
+                  ],
+                  [
+                    284,
+                    979
+                  ],
+                  [
+                    284,
+                    976.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    266,
+                    974.5
+                  ],
+                  [
+                    266,
+                    973.5
+                  ],
+                  [
+                    265.5,
+                    971.5
+                  ],
+                  [
+                    265,
+                    970
+                  ],
+                  [
+                    264.5,
+                    967
+                  ],
+                  [
+                    263.5,
+                    961
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    265,
+                    951
+                  ],
+                  [
+                    266.5,
+                    949.5
+                  ],
+                  [
+                    269,
+                    947.5
+                  ],
+                  [
+                    271.5,
+                    946.5
+                  ],
+                  [
+                    274.5,
+                    945.5
+                  ],
+                  [
+                    279,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    355,
+                    984.5
+                  ],
+                  [
+                    354.5,
+                    983.5
+                  ],
+                  [
+                    353.5,
+                    981.5
+                  ],
+                  [
+                    353.5,
+                    980
+                  ],
+                  [
+                    353.5,
+                    978
+                  ],
+                  [
+                    353.5,
+                    975.5
+                  ],
+                  [
+                    354.5,
+                    972
+                  ],
+                  [
+                    357,
+                    965.5
+                  ],
+                  [
+                    360.5,
+                    960.5
+                  ],
+                  [
+                    362.5,
+                    958
+                  ],
+                  [
+                    364.5,
+                    955
+                  ],
+                  [
+                    366,
+                    951.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    399,
+                    970.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    396.5,
+                    971
+                  ],
+                  [
+                    395.5,
+                    970.5
+                  ],
+                  [
+                    394.5,
+                    970.5
+                  ],
+                  [
+                    393.5,
+                    969.5
+                  ],
+                  [
+                    392.5,
+                    968
+                  ],
+                  [
+                    392,
+                    967
+                  ],
+                  [
+                    391,
+                    964.5
+                  ],
+                  [
+                    390,
+                    962.5
+                  ],
+                  [
+                    389.5,
+                    960
+                  ],
+                  [
+                    389,
+                    958
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    300,
+                    980
+                  ],
+                  [
+                    298,
+                    979.5
+                  ],
+                  [
+                    297,
+                    978
+                  ],
+                  [
+                    295.5,
+                    977
+                  ],
+                  [
+                    294.5,
+                    976
+                  ],
+                  [
+                    294,
+                    975
+                  ],
+                  [
+                    294,
+                    973.5
+                  ],
+                  [
+                    294,
+                    972
+                  ],
+                  [
+                    294.5,
+                    971
+                  ],
+                  [
+                    295.5,
+                    970
+                  ],
+                  [
+                    297,
+                    968.5
+                  ],
+                  [
+                    298,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    309.5,
+                    950
+                  ],
+                  [
+                    309.5,
+                    949
+                  ],
+                  [
+                    310,
+                    948
+                  ],
+                  [
+                    310.5,
+                    946.5
+                  ],
+                  [
+                    311,
+                    945.5
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    312,
+                    942.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    298,
+                    969
+                  ],
+                  [
+                    297,
+                    968
+                  ],
+                  [
+                    296,
+                    967
+                  ],
+                  [
+                    295,
+                    965.5
+                  ],
+                  [
+                    295,
+                    964
+                  ],
+                  [
+                    295,
+                    963
+                  ],
+                  [
+                    295.5,
+                    962
+                  ],
+                  [
+                    296.5,
+                    961
+                  ],
+                  [
+                    296.5,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    409.5,
+                    968.5
+                  ],
+                  [
+                    408.5,
+                    968
+                  ],
+                  [
+                    407,
+                    967
+                  ],
+                  [
+                    405.5,
+                    967
+                  ],
+                  [
+                    404.5,
+                    965.5
+                  ],
+                  [
+                    403,
+                    964.5
+                  ],
+                  [
+                    401.5,
+                    963
+                  ],
+                  [
+                    400,
+                    962
+                  ],
+                  [
+                    398,
+                    960.5
+                  ],
+                  [
+                    396.5,
+                    959
+                  ],
+                  [
+                    394.5,
+                    958
+                  ],
+                  [
+                    393,
+                    957
+                  ],
+                  [
+                    391,
+                    955.5
+                  ],
+                  [
+                    390,
+                    954.5
+                  ],
+                  [
+                    389,
+                    953.5
+                  ],
+                  [
+                    388,
+                    953
+                  ],
+                  [
+                    388,
+                    952.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    327,
+                    994
+                  ],
+                  [
+                    325,
+                    993
+                  ],
+                  [
+                    323.5,
+                    992
+                  ],
+                  [
+                    321.5,
+                    991
+                  ],
+                  [
+                    320.5,
+                    989.5
+                  ],
+                  [
+                    320,
+                    988
+                  ],
+                  [
+                    320,
+                    986.5
+                  ],
+                  [
+                    320.5,
+                    985.5
+                  ],
+                  [
+                    321.5,
+                    984
+                  ],
+                  [
+                    323,
+                    982.5
+                  ],
+                  [
+                    324,
+                    981
+                  ],
+                  [
+                    325,
+                    980
+                  ],
+                  [
+                    325.5,
+                    978.5
+                  ],
+                  [
+                    326,
+                    976.5
+                  ],
+                  [
+                    326.5,
+                    975.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    326.5,
+                    990
+                  ],
+                  [
+                    325.5,
+                    989
+                  ],
+                  [
+                    324,
+                    988
+                  ],
+                  [
+                    322.5,
+                    986
+                  ],
+                  [
+                    320.5,
+                    984.5
+                  ],
+                  [
+                    319.5,
+                    983
+                  ],
+                  [
+                    318,
+                    981.5
+                  ],
+                  [
+                    317,
+                    981
+                  ],
+                  [
+                    316.5,
+                    980
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    201,
+                    955
+                  ],
+                  [
+                    200,
+                    954
+                  ],
+                  [
+                    199.5,
+                    953
+                  ],
+                  [
+                    200,
+                    952
+                  ],
+                  [
+                    202,
+                    951.5
+                  ],
+                  [
+                    207,
+                    950
+                  ],
+                  [
+                    214.5,
+                    946.5
+                  ],
+                  [
+                    221,
+                    944
+                  ],
+                  [
+                    224.5,
+                    941.5
+                  ],
+                  [
+                    226.5,
+                    937.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    383.5,
+                    978.5
+                  ],
+                  [
+                    382.5,
+                    978
+                  ],
+                  [
+                    381.5,
+                    976.5
+                  ],
+                  [
+                    381,
+                    975
+                  ],
+                  [
+                    380.5,
+                    972.5
+                  ],
+                  [
+                    380.5,
+                    970.5
+                  ],
+                  [
+                    381,
+                    967.5
+                  ],
+                  [
+                    381.5,
+                    965.5
+                  ],
+                  [
+                    381.5,
+                    963.5
+                  ],
+                  [
+                    382,
+                    962
+                  ],
+                  [
+                    382,
+                    961
+                  ],
+                  [
+                    382,
+                    960
+                  ],
+                  [
+                    381.5,
+                    959
+                  ],
+                  [
+                    382,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    311.5,
+                    989
+                  ],
+                  [
+                    311,
+                    988
+                  ],
+                  [
+                    310.5,
+                    987
+                  ],
+                  [
+                    309.5,
+                    985.5
+                  ],
+                  [
+                    309,
+                    984.5
+                  ],
+                  [
+                    308.5,
+                    983
+                  ],
+                  [
+                    308,
+                    981
+                  ],
+                  [
+                    307.5,
+                    979.5
+                  ],
+                  [
+                    307,
+                    977
+                  ],
+                  [
+                    306.5,
+                    975.5
+                  ],
+                  [
+                    307,
+                    974
+                  ],
+                  [
+                    307.5,
+                    972.5
+                  ],
+                  [
+                    307.5,
+                    972
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    390,
+                    963
+                  ],
+                  [
+                    388.5,
+                    963
+                  ],
+                  [
+                    387.5,
+                    962
+                  ],
+                  [
+                    386,
+                    960.5
+                  ],
+                  [
+                    385,
+                    959.5
+                  ],
+                  [
+                    385,
+                    958.5
+                  ],
+                  [
+                    384,
+                    957.5
+                  ],
+                  [
+                    384,
+                    956.5
+                  ],
+                  [
+                    382.5,
+                    955.5
+                  ],
+                  [
+                    382,
+                    954.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    405,
+                    888
+                  ],
+                  [
+                    404,
+                    888
+                  ],
+                  [
+                    401.5,
+                    887
+                  ],
+                  [
+                    399.5,
+                    886.5
+                  ],
+                  [
+                    398,
+                    886
+                  ],
+                  [
+                    396,
+                    886.5
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    393.5,
+                    887.5
+                  ],
+                  [
+                    392,
+                    888
+                  ],
+                  [
+                    391,
+                    889
+                  ],
+                  [
+                    390,
+                    889.5
+                  ],
+                  [
+                    389,
+                    889.5
+                  ],
+                  [
+                    389.5,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    386,
+                    983.5
+                  ],
+                  [
+                    384.5,
+                    983
+                  ],
+                  [
+                    382.5,
+                    982
+                  ],
+                  [
+                    380,
+                    981
+                  ],
+                  [
+                    378,
+                    980
+                  ],
+                  [
+                    376,
+                    979.5
+                  ],
+                  [
+                    374.5,
+                    978
+                  ],
+                  [
+                    373,
+                    976
+                  ],
+                  [
+                    372,
+                    975
+                  ],
+                  [
+                    371,
+                    973.5
+                  ],
+                  [
+                    370,
+                    971.5
+                  ],
+                  [
+                    369,
+                    970.5
+                  ],
+                  [
+                    368,
+                    969
+                  ],
+                  [
+                    367.5,
+                    967.5
+                  ],
+                  [
+                    368,
+                    965.5
+                  ],
+                  [
+                    368.5,
+                    965
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    974
+                  ],
+                  [
+                    305.5,
+                    972
+                  ],
+                  [
+                    305.5,
+                    971
+                  ],
+                  [
+                    305.5,
+                    969
+                  ],
+                  [
+                    305.5,
+                    967.5
+                  ],
+                  [
+                    306.5,
+                    966.5
+                  ],
+                  [
+                    307,
+                    965.5
+                  ],
+                  [
+                    308,
+                    964.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    349,
+                    844
+                  ],
+                  [
+                    348,
+                    844
+                  ],
+                  [
+                    346.5,
+                    844
+                  ],
+                  [
+                    345.5,
+                    844
+                  ],
+                  [
+                    344.5,
+                    845.5
+                  ],
+                  [
+                    344.5,
+                    847
+                  ],
+                  [
+                    344.5,
+                    849.5
+                  ],
+                  [
+                    345,
+                    855
+                  ],
+                  [
+                    346.5,
+                    863
+                  ],
+                  [
+                    349,
+                    868.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    388.5,
+                    838.5
+                  ],
+                  [
+                    387,
+                    839
+                  ],
+                  [
+                    385.5,
+                    840
+                  ],
+                  [
+                    384,
+                    841
+                  ],
+                  [
+                    382,
+                    842.5
+                  ],
+                  [
+                    381,
+                    844
+                  ],
+                  [
+                    380,
+                    846
+                  ],
+                  [
+                    379,
+                    847.5
+                  ],
+                  [
+                    379,
+                    850
+                  ],
+                  [
+                    379,
+                    852.5
+                  ],
+                  [
+                    379,
+                    855
+                  ],
+                  [
+                    379,
+                    858
+                  ],
+                  [
+                    379,
+                    860
+                  ],
+                  [
+                    379.5,
+                    862.5
+                  ],
+                  [
+                    380,
+                    864
+                  ],
+                  [
+                    380.5,
+                    865.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    851.5
+                  ],
+                  [
+                    305.5,
+                    853
+                  ],
+                  [
+                    304.5,
+                    853.5
+                  ],
+                  [
+                    303.5,
+                    855
+                  ],
+                  [
+                    303,
+                    856
+                  ],
+                  [
+                    302.5,
+                    857.5
+                  ],
+                  [
+                    302.5,
+                    859
+                  ],
+                  [
+                    302.5,
+                    860.5
+                  ],
+                  [
+                    303.5,
+                    862
+                  ],
+                  [
+                    304.5,
+                    864
+                  ],
+                  [
+                    306,
+                    865
+                  ],
+                  [
+                    307.5,
+                    867
+                  ],
+                  [
+                    308.5,
+                    868.5
+                  ],
+                  [
+                    309,
+                    869.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    272.5,
+                    851.5
+                  ],
+                  [
+                    272,
+                    852.5
+                  ],
+                  [
+                    271,
+                    853
+                  ],
+                  [
+                    269,
+                    853.5
+                  ],
+                  [
+                    268,
+                    854.5
+                  ],
+                  [
+                    267,
+                    854.5
+                  ],
+                  [
+                    266,
+                    855
+                  ],
+                  [
+                    265,
+                    855.5
+                  ],
+                  [
+                    264,
+                    855.5
+                  ],
+                  [
+                    263,
+                    856
+                  ],
+                  [
+                    262,
+                    856.5
+                  ],
+                  [
+                    261,
+                    857.5
+                  ],
+                  [
+                    260,
+                    858.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    937
+                  ],
+                  [
+                    174,
+                    935.5
+                  ],
+                  [
+                    175,
+                    934
+                  ],
+                  [
+                    176.5,
+                    932.5
+                  ],
+                  [
+                    178,
+                    931.5
+                  ],
+                  [
+                    183,
+                    928.5
+                  ],
+                  [
+                    186.5,
+                    927
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    145,
+                    874
+                  ],
+                  [
+                    146,
+                    874.5
+                  ],
+                  [
+                    148.5,
+                    874.5
+                  ],
+                  [
+                    155.5,
+                    873
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    207,
+                    1001.5
+                  ],
+                  [
+                    208,
+                    1000.5
+                  ],
+                  [
+                    211,
+                    998.5
+                  ],
+                  [
+                    221.5,
+                    995.5
+                  ],
+                  [
+                    229.5,
+                    994
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    990
+                  ],
+                  [
+                    352.5,
+                    990.5
+                  ],
+                  [
+                    350.5,
+                    990.5
+                  ],
+                  [
+                    347,
+                    990
+                  ],
+                  [
+                    338.5,
+                    989
+                  ],
+                  [
+                    329.5,
+                    986.5
+                  ],
+                  [
+                    321,
+                    983.5
+                  ],
+                  [
+                    313,
+                    981
+                  ],
+                  [
+                    305.5,
+                    979.5
+                  ],
+                  [
+                    299,
+                    978
+                  ],
+                  [
+                    293,
+                    976.5
+                  ],
+                  [
+                    287,
+                    976.5
+                  ],
+                  [
+                    282,
+                    976.5
+                  ],
+                  [
+                    278.5,
+                    977.5
+                  ],
+                  [
+                    277.5,
+                    978
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    319.5,
+                    927
+                  ],
+                  [
+                    319.5,
+                    928
+                  ],
+                  [
+                    319.5,
+                    929.5
+                  ],
+                  [
+                    319.5,
+                    930.5
+                  ],
+                  [
+                    319.5,
+                    932
+                  ],
+                  [
+                    320,
+                    933
+                  ],
+                  [
+                    320,
+                    934.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    313,
+                    808.5
+                  ],
+                  [
+                    312,
+                    808.5
+                  ],
+                  [
+                    310,
+                    808
+                  ],
+                  [
+                    309,
+                    808
+                  ],
+                  [
+                    308,
+                    808
+                  ],
+                  [
+                    307.5,
+                    809.5
+                  ],
+                  [
+                    308,
+                    811
+                  ],
+                  [
+                    310.5,
+                    816
+                  ],
+                  [
+                    314,
+                    823.5
+                  ],
+                  [
+                    316,
+                    829.5
+                  ],
+                  [
+                    317.5,
+                    835
+                  ],
+                  [
+                    319.5,
+                    840.5
+                  ],
+                  [
+                    320.5,
+                    844.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    267,
+                    932.5
+                  ],
+                  [
+                    267.5,
+                    934
+                  ],
+                  [
+                    268,
+                    935.5
+                  ],
+                  [
+                    269,
+                    937
+                  ],
+                  [
+                    270,
+                    938.5
+                  ],
+                  [
+                    271,
+                    939.5
+                  ],
+                  [
+                    271.5,
+                    939.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    301,
+                    931
+                  ],
+                  [
+                    301,
+                    932
+                  ],
+                  [
+                    301.5,
+                    933
+                  ],
+                  [
+                    302,
+                    934.5
+                  ],
+                  [
+                    302.5,
+                    936
+                  ],
+                  [
+                    303.5,
+                    937
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    329.5,
+                    937
+                  ],
+                  [
+                    331.5,
+                    937.5
+                  ],
+                  [
+                    334,
+                    937.5
+                  ],
+                  [
+                    338,
+                    937
+                  ],
+                  [
+                    347.5,
+                    936.5
+                  ],
+                  [
+                    355.5,
+                    937
+                  ],
+                  [
+                    359,
+                    937.5
+                  ],
+                  [
+                    362,
+                    938.5
+                  ],
+                  [
+                    368,
+                    941
+                  ],
+                  [
+                    373,
+                    943.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    363.5,
+                    906
+                  ],
+                  [
+                    363,
+                    904.5
+                  ],
+                  [
+                    364,
+                    903.5
+                  ],
+                  [
+                    368.5,
+                    902
+                  ],
+                  [
+                    376,
+                    900
+                  ],
+                  [
+                    384,
+                    900
+                  ],
+                  [
+                    389.5,
+                    901.5
+                  ],
+                  [
+                    394,
+                    902.5
+                  ],
+                  [
+                    396,
+                    903.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    354.5,
+                    937.5
+                  ],
+                  [
+                    354,
+                    938.5
+                  ],
+                  [
+                    354,
+                    939.5
+                  ],
+                  [
+                    356.5,
+                    940.5
+                  ],
+                  [
+                    363.5,
+                    941.5
+                  ],
+                  [
+                    374,
+                    942.5
+                  ],
+                  [
+                    382,
+                    943.5
+                  ],
+                  [
+                    389,
+                    944
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    413.5,
+                    885.5
+                  ],
+                  [
+                    412.5,
+                    886
+                  ],
+                  [
+                    412,
+                    887
+                  ],
+                  [
+                    410.5,
+                    888
+                  ],
+                  [
+                    409,
+                    889.5
+                  ],
+                  [
+                    406.5,
+                    891
+                  ],
+                  [
+                    399.5,
+                    894
+                  ],
+                  [
+                    396,
+                    896.5
+                  ],
+                  [
+                    394.5,
+                    896.5
+                  ],
+                  [
+                    393.5,
+                    897
+                  ],
+                  [
+                    393,
+                    897
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    435.5,
+                    953
+                  ],
+                  [
+                    434.5,
+                    953
+                  ],
+                  [
+                    433,
+                    953
+                  ],
+                  [
+                    431.5,
+                    953.5
+                  ],
+                  [
+                    429.5,
+                    953.5
+                  ],
+                  [
+                    427.5,
+                    953.5
+                  ],
+                  [
+                    425.5,
+                    953
+                  ],
+                  [
+                    423.5,
+                    952.5
+                  ],
+                  [
+                    421.5,
+                    952
+                  ],
+                  [
+                    419.5,
+                    951
+                  ],
+                  [
+                    417.5,
+                    950.5
+                  ],
+                  [
+                    415,
+                    950
+                  ],
+                  [
+                    413,
+                    950
+                  ],
+                  [
+                    411.5,
+                    950
+                  ],
+                  [
+                    410,
+                    950
+                  ],
+                  [
+                    409,
+                    949.5
+                  ],
+                  [
+                    408.5,
+                    949.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    401.5,
+                    973
+                  ],
+                  [
+                    400,
+                    972
+                  ],
+                  [
+                    398.5,
+                    971
+                  ],
+                  [
+                    397,
+                    969
+                  ],
+                  [
+                    394.5,
+                    964
+                  ],
+                  [
+                    393,
+                    956.5
+                  ],
+                  [
+                    393.5,
+                    950
+                  ],
+                  [
+                    395,
+                    945.5
+                  ],
+                  [
+                    396.5,
+                    943.5
+                  ],
+                  [
+                    397.5,
+                    941.5
+                  ],
+                  [
+                    398.5,
+                    939.5
+                  ],
+                  [
+                    399.5,
+                    938
+                  ],
+                  [
+                    400.5,
+                    936.5
+                  ],
+                  [
+                    401.5,
+                    934.5
+                  ],
+                  [
+                    402,
+                    933.5
+                  ],
+                  [
+                    403,
+                    932
+                  ],
+                  [
+                    404,
+                    931.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    995
+                  ],
+                  [
+                    354,
+                    993.5
+                  ],
+                  [
+                    353.5,
+                    992.5
+                  ],
+                  [
+                    353,
+                    991
+                  ],
+                  [
+                    353,
+                    989
+                  ],
+                  [
+                    354,
+                    984.5
+                  ],
+                  [
+                    355,
+                    976
+                  ],
+                  [
+                    355,
+                    969
+                  ],
+                  [
+                    355,
+                    964.5
+                  ],
+                  [
+                    355.5,
+                    962
+                  ],
+                  [
+                    357,
+                    960.5
+                  ],
+                  [
+                    359,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    296.5,
+                    987.5
+                  ],
+                  [
+                    296,
+                    986
+                  ],
+                  [
+                    296.5,
+                    984.5
+                  ],
+                  [
+                    298,
+                    982.5
+                  ],
+                  [
+                    302,
+                    977
+                  ],
+                  [
+                    307,
+                    971.5
+                  ],
+                  [
+                    308.5,
+                    969
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    314,
+                    991
+                  ],
+                  [
+                    313,
+                    989.5
+                  ],
+                  [
+                    313,
+                    988.5
+                  ],
+                  [
+                    313,
+                    986.5
+                  ],
+                  [
+                    313.5,
+                    983.5
+                  ],
+                  [
+                    314,
+                    976.5
+                  ],
+                  [
+                    314.5,
+                    968
+                  ],
+                  [
+                    314.5,
+                    961.5
+                  ],
+                  [
+                    315.5,
+                    957.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    263,
+                    997.5
+                  ],
+                  [
+                    264,
+                    996.5
+                  ],
+                  [
+                    264.5,
+                    995.5
+                  ],
+                  [
+                    265,
+                    993
+                  ],
+                  [
+                    266,
+                    991
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    266.5,
+                    987.5
+                  ],
+                  [
+                    266.5,
+                    986.5
+                  ],
+                  [
+                    266.5,
+                    985.5
+                  ],
+                  [
+                    267,
+                    984.5
+                  ],
+                  [
+                    267,
+                    980
+                  ],
+                  [
+                    266.5,
+                    977
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    426.5,
+                    908
+                  ],
+                  [
+                    425.5,
+                    908.5
+                  ],
+                  [
+                    424.5,
+                    909
+                  ],
+                  [
+                    423.5,
+                    910
+                  ],
+                  [
+                    422.5,
+                    910
+                  ],
+                  [
+                    421.5,
+                    911
+                  ],
+                  [
+                    420,
+                    911
+                  ],
+                  [
+                    417.5,
+                    912.5
+                  ],
+                  [
+                    410.5,
+                    915.5
+                  ],
+                  [
+                    405,
+                    916
+                  ],
+                  [
+                    401,
+                    917
+                  ],
+                  [
+                    398,
+                    916.5
+                  ],
+                  [
+                    395.5,
+                    916.5
+                  ],
+                  [
+                    393.5,
+                    916.5
+                  ],
+                  [
+                    392,
+                    918.5
+                  ],
+                  [
+                    391.5,
+                    920
+                  ]
+                ]
+              },
+              {
+                "shading": true,
+                "tolerance": 0.2,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.12,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 14
+              },
+              {
+                "revertPoint": true
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    261,
+                    990.5
+                  ],
+                  [
+                    259,
+                    989
+                  ],
+                  [
+                    257,
+                    988.5
+                  ],
+                  [
+                    255,
+                    987
+                  ],
+                  [
+                    250.5,
+                    983.5
+                  ],
+                  [
+                    245.5,
+                    978
+                  ],
+                  [
+                    241.5,
+                    972
+                  ],
+                  [
+                    237,
+                    967.5
+                  ],
+                  [
+                    231,
+                    963
+                  ],
+                  [
+                    223.5,
+                    959
+                  ],
+                  [
+                    215.5,
+                    954
+                  ],
+                  [
+                    207.5,
+                    946.5
+                  ],
+                  [
+                    196,
+                    931
+                  ],
+                  [
+                    182,
+                    907
+                  ],
+                  [
+                    174.5,
+                    892.5
+                  ],
+                  [
+                    170.5,
+                    884
+                  ],
+                  [
+                    168.5,
+                    878.5
+                  ],
+                  [
+                    168.5,
+                    874.5
+                  ],
+                  [
+                    168.5,
+                    872
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    321.5,
+                    911.5
+                  ],
+                  [
+                    320.5,
+                    910
+                  ],
+                  [
+                    319,
+                    909.5
+                  ],
+                  [
+                    315.5,
+                    908
+                  ],
+                  [
+                    308.5,
+                    906.5
+                  ],
+                  [
+                    300,
+                    906
+                  ],
+                  [
+                    293,
+                    907
+                  ],
+                  [
+                    286,
+                    907.5
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    270.5,
+                    910
+                  ],
+                  [
+                    262.5,
+                    909.5
+                  ],
+                  [
+                    255,
+                    908
+                  ],
+                  [
+                    246.5,
+                    905.5
+                  ],
+                  [
+                    237,
+                    901.5
+                  ],
+                  [
+                    227.5,
+                    896.5
+                  ],
+                  [
+                    219,
+                    890.5
+                  ],
+                  [
+                    211,
+                    884
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    199.5,
+                    868.5
+                  ],
+                  [
+                    195,
+                    860.5
+                  ],
+                  [
+                    193,
+                    854.5
+                  ],
+                  [
+                    193,
+                    851
+                  ],
+                  [
+                    194,
+                    851
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    906.5
+                  ],
+                  [
+                    291.5,
+                    906
+                  ],
+                  [
+                    290.5,
+                    906
+                  ],
+                  [
+                    288,
+                    906.5
+                  ],
+                  [
+                    281,
+                    905
+                  ],
+                  [
+                    272.5,
+                    903
+                  ],
+                  [
+                    268.5,
+                    903
+                  ],
+                  [
+                    265.5,
+                    902
+                  ],
+                  [
+                    259.5,
+                    899.5
+                  ],
+                  [
+                    253.5,
+                    897
+                  ],
+                  [
+                    248.5,
+                    893
+                  ],
+                  [
+                    243,
+                    887.5
+                  ],
+                  [
+                    237.5,
+                    882.5
+                  ],
+                  [
+                    232,
+                    877
+                  ],
+                  [
+                    226.5,
+                    872
+                  ],
+                  [
+                    221,
+                    867.5
+                  ],
+                  [
+                    215.5,
+                    862.5
+                  ],
+                  [
+                    211,
+                    858
+                  ],
+                  [
+                    208.5,
+                    855.5
+                  ],
+                  [
+                    208,
+                    855
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    243.5,
+                    897.5
+                  ],
+                  [
+                    242,
+                    896.5
+                  ],
+                  [
+                    241,
+                    896.5
+                  ],
+                  [
+                    240,
+                    895.5
+                  ],
+                  [
+                    239,
+                    895
+                  ],
+                  [
+                    237.5,
+                    894
+                  ],
+                  [
+                    233,
+                    890.5
+                  ],
+                  [
+                    227,
+                    886
+                  ],
+                  [
+                    221,
+                    882
+                  ],
+                  [
+                    216,
+                    878.5
+                  ],
+                  [
+                    211,
+                    875.5
+                  ],
+                  [
+                    207,
+                    872
+                  ],
+                  [
+                    203.5,
+                    868.5
+                  ],
+                  [
+                    200,
+                    864
+                  ],
+                  [
+                    197.5,
+                    862
+                  ],
+                  [
+                    196,
+                    860
+                  ],
+                  [
+                    195.5,
+                    859
+                  ],
+                  [
+                    197.5,
+                    856
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1789660542,
+                "points": [
+                  [
+                    131.5,
+                    827.5
+                  ],
+                  [
+                    133,
+                    828.5
+                  ],
+                  [
+                    140.5,
+                    833
+                  ],
+                  [
+                    158.5,
+                    844.5
+                  ],
+                  [
+                    184,
+                    863.5
+                  ],
+                  [
+                    209.5,
+                    890.5
+                  ],
+                  [
+                    233.5,
+                    918.5
+                  ],
+                  [
+                    246.5,
+                    933
+                  ],
+                  [
+                    252,
+                    939
+                  ],
+                  [
+                    252.5,
+                    940
+                  ],
+                  [
+                    251.5,
+                    939
+                  ],
+                  [
+                    239,
+                    929
+                  ],
+                  [
+                    204,
+                    896
+                  ],
+                  [
+                    163.5,
+                    851.5
+                  ],
+                  [
+                    133,
+                    819
+                  ],
+                  [
+                    121,
+                    812
+                  ],
+                  [
+                    121,
+                    814
+                  ],
+                  [
+                    129,
+                    824
+                  ],
+                  [
+                    157,
+                    856.5
+                  ],
+                  [
+                    198,
+                    894
+                  ],
+                  [
+                    231.5,
+                    925.5
+                  ],
+                  [
+                    253.5,
+                    952
+                  ],
+                  [
+                    273,
+                    976.5
+                  ],
+                  [
+                    282.5,
+                    989
+                  ],
+                  [
+                    285,
+                    992.5
+                  ],
+                  [
+                    282,
+                    989.5
+                  ],
+                  [
+                    259,
+                    966.5
+                  ],
+                  [
+                    212,
+                    913
+                  ],
+                  [
+                    168.5,
+                    859
+                  ],
+                  [
+                    154.5,
+                    841.5
+                  ],
+                  [
+                    153,
+                    841
+                  ],
+                  [
+                    153.5,
+                    842.5
+                  ],
+                  [
+                    155.5,
+                    848.5
+                  ],
+                  [
+                    162.5,
+                    862.5
+                  ],
+                  [
+                    190.5,
+                    902
+                  ],
+                  [
+                    247.5,
+                    961
+                  ],
+                  [
+                    303,
+                    1002
+                  ],
+                  [
+                    312.5,
+                    1008.5
+                  ],
+                  [
+                    308.5,
+                    1006.5
+                  ],
+                  [
+                    277,
+                    988.5
+                  ],
+                  [
+                    219.5,
+                    946
+                  ],
+                  [
+                    166.5,
+                    905
+                  ],
+                  [
+                    151,
+                    893.5
+                  ],
+                  [
+                    149.5,
+                    894
+                  ],
+                  [
+                    150.5,
+                    895.5
+                  ],
+                  [
+                    154.5,
+                    905
+                  ],
+                  [
+                    165.5,
+                    928.5
+                  ],
+                  [
+                    194,
+                    967
+                  ],
+                  [
+                    245.5,
+                    1007
+                  ],
+                  [
+                    293.5,
+                    1025
+                  ],
+                  [
+                    306,
+                    1021.5
+                  ],
+                  [
+                    302.5,
+                    1007
+                  ],
+                  [
+                    269.5,
+                    967.5
+                  ],
+                  [
+                    215,
+                    910.5
+                  ],
+                  [
+                    157.5,
+                    861
+                  ],
+                  [
+                    127,
+                    836
+                  ],
+                  [
+                    125.5,
+                    837
+                  ],
+                  [
+                    131,
+                    847.5
+                  ],
+                  [
+                    151,
+                    875.5
+                  ],
+                  [
+                    181.5,
+                    911.5
+                  ],
+                  [
+                    219.5,
+                    944
+                  ],
+                  [
+                    258,
+                    966
+                  ],
+                  [
+                    289,
+                    980
+                  ],
+                  [
+                    300,
+                    983
+                  ],
+                  [
+                    299,
+                    979.5
+                  ],
+                  [
+                    275.5,
+                    957.5
+                  ],
+                  [
+                    207,
+                    900.5
+                  ],
+                  [
+                    151,
+                    854.5
+                  ],
+                  [
+                    140,
+                    848
+                  ],
+                  [
+                    142,
+                    850
+                  ],
+                  [
+                    162,
+                    872
+                  ],
+                  [
+                    203.5,
+                    911.5
+                  ],
+                  [
+                    233,
+                    935
+                  ],
+                  [
+                    238.5,
+                    940
+                  ],
+                  [
+                    236,
+                    939.5
+                  ],
+                  [
+                    210,
+                    925
+                  ],
+                  [
+                    158.5,
+                    878
+                  ],
+                  [
+                    140.5,
+                    855.5
+                  ],
+                  [
+                    145,
+                    852.5
+                  ],
+                  [
+                    162.5,
+                    859.5
+                  ],
+                  [
+                    192.5,
+                    881.5
+                  ],
+                  [
+                    210.5,
+                    900.5
+                  ],
+                  [
+                    220.5,
+                    910
+                  ],
+                  [
+                    228.5,
+                    921.5
+                  ],
+                  [
+                    249,
+                    946.5
+                  ],
+                  [
+                    281,
+                    970.5
+                  ],
+                  [
+                    295.5,
+                    970.5
+                  ],
+                  [
+                    301.5,
+                    963
+                  ],
+                  [
+                    301.5,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 946441564,
+                "points": [
+                  [
+                    190,
+                    832.5
+                  ],
+                  [
+                    188,
+                    834
+                  ],
+                  [
+                    186.5,
+                    837.5
+                  ],
+                  [
+                    182,
+                    846
+                  ],
+                  [
+                    179.5,
+                    855.5
+                  ],
+                  [
+                    180.5,
+                    860
+                  ],
+                  [
+                    183,
+                    863
+                  ],
+                  [
+                    189,
+                    867.5
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    236,
+                    892.5
+                  ],
+                  [
+                    271.5,
+                    906
+                  ],
+                  [
+                    295.5,
+                    914
+                  ],
+                  [
+                    319,
+                    922
+                  ],
+                  [
+                    335,
+                    926.5
+                  ],
+                  [
+                    342,
+                    928.5
+                  ],
+                  [
+                    329.5,
+                    921
+                  ],
+                  [
+                    295,
+                    906
+                  ],
+                  [
+                    260,
+                    892
+                  ],
+                  [
+                    238,
+                    885
+                  ],
+                  [
+                    225.5,
+                    882.5
+                  ],
+                  [
+                    217.5,
+                    882
+                  ],
+                  [
+                    213.5,
+                    882.5
+                  ],
+                  [
+                    212,
+                    882.5
+                  ],
+                  [
+                    214.5,
+                    883.5
+                  ],
+                  [
+                    221.5,
+                    886.5
+                  ],
+                  [
+                    266.5,
+                    907
+                  ],
+                  [
+                    329,
+                    936.5
+                  ],
+                  [
+                    349,
+                    943.5
+                  ],
+                  [
+                    349.5,
+                    942
+                  ],
+                  [
+                    336.5,
+                    933
+                  ],
+                  [
+                    284,
+                    901
+                  ],
+                  [
+                    217.5,
+                    865
+                  ],
+                  [
+                    174,
+                    855.5
+                  ],
+                  [
+                    154.5,
+                    857.5
+                  ],
+                  [
+                    143.5,
+                    862
+                  ],
+                  [
+                    138.5,
+                    865.5
+                  ],
+                  [
+                    140,
+                    869
+                  ],
+                  [
+                    151,
+                    880
+                  ],
+                  [
+                    187,
+                    913
+                  ],
+                  [
+                    234.5,
+                    950
+                  ],
+                  [
+                    255,
+                    961
+                  ],
+                  [
+                    257.5,
+                    962.5
+                  ],
+                  [
+                    251.5,
+                    956.5
+                  ],
+                  [
+                    223.5,
+                    928.5
+                  ],
+                  [
+                    171.5,
+                    872
+                  ],
+                  [
+                    133,
+                    823.5
+                  ],
+                  [
+                    130,
+                    816
+                  ],
+                  [
+                    139.5,
+                    824.5
+                  ],
+                  [
+                    164,
+                    850.5
+                  ],
+                  [
+                    195.5,
+                    885
+                  ],
+                  [
+                    219,
+                    915.5
+                  ],
+                  [
+                    242.5,
+                    946.5
+                  ],
+                  [
+                    258.5,
+                    975.5
+                  ],
+                  [
+                    266,
+                    988
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    256,
+                    981.5
+                  ],
+                  [
+                    221.5,
+                    944
+                  ],
+                  [
+                    179,
+                    890
+                  ],
+                  [
+                    159,
+                    851.5
+                  ],
+                  [
+                    150.5,
+                    829.5
+                  ],
+                  [
+                    150.5,
+                    826
+                  ],
+                  [
+                    151.5,
+                    828
+                  ],
+                  [
+                    157,
+                    842
+                  ],
+                  [
+                    179.5,
+                    883
+                  ],
+                  [
+                    222.5,
+                    944
+                  ],
+                  [
+                    262,
+                    980
+                  ],
+                  [
+                    275,
+                    987.5
+                  ],
+                  [
+                    262,
+                    971
+                  ],
+                  [
+                    217,
+                    916.5
+                  ],
+                  [
+                    169.5,
+                    855.5
+                  ],
+                  [
+                    159.5,
+                    840
+                  ],
+                  [
+                    165.5,
+                    845
+                  ],
+                  [
+                    183,
+                    864
+                  ],
+                  [
+                    213,
+                    898.5
+                  ],
+                  [
+                    240.5,
+                    924.5
+                  ],
+                  [
+                    256.5,
+                    941
+                  ],
+                  [
+                    264,
+                    948.5
+                  ],
+                  [
+                    265.5,
+                    950
+                  ],
+                  [
+                    261,
+                    944
+                  ],
+                  [
+                    235.5,
+                    912.5
+                  ],
+                  [
+                    198.5,
+                    870
+                  ],
+                  [
+                    188.5,
+                    851
+                  ],
+                  [
+                    190,
+                    848.5
+                  ],
+                  [
+                    195,
+                    853.5
+                  ],
+                  [
+                    215,
+                    877.5
+                  ],
+                  [
+                    245.5,
+                    914.5
+                  ],
+                  [
+                    257,
+                    930
+                  ],
+                  [
+                    259.5,
+                    933
+                  ],
+                  [
+                    258.5,
+                    931.5
+                  ],
+                  [
+                    246.5,
+                    913
+                  ],
+                  [
+                    205.5,
+                    862.5
+                  ],
+                  [
+                    177,
+                    834
+                  ],
+                  [
+                    178.5,
+                    838
+                  ],
+                  [
+                    184,
+                    849.5
+                  ],
+                  [
+                    198,
+                    875.5
+                  ],
+                  [
+                    218,
+                    905.5
+                  ],
+                  [
+                    243,
+                    928
+                  ],
+                  [
+                    256.5,
+                    936.5
+                  ],
+                  [
+                    262,
+                    938
+                  ],
+                  [
+                    261.5,
+                    936
+                  ],
+                  [
+                    246.5,
+                    917
+                  ],
+                  [
+                    206,
+                    877
+                  ],
+                  [
+                    182,
+                    857.5
+                  ],
+                  [
+                    184,
+                    860.5
+                  ],
+                  [
+                    190.5,
+                    870.5
+                  ],
+                  [
+                    207,
+                    892.5
+                  ],
+                  [
+                    225,
+                    911.5
+                  ],
+                  [
+                    236.5,
+                    919.5
+                  ],
+                  [
+                    243,
+                    923
+                  ],
+                  [
+                    246.5,
+                    923.5
+                  ],
+                  [
+                    248.5,
+                    922
+                  ],
+                  [
+                    249.5,
+                    918.5
+                  ],
+                  [
+                    242.5,
+                    903
+                  ],
+                  [
+                    215,
+                    870
+                  ],
+                  [
+                    186,
+                    843
+                  ],
+                  [
+                    175.5,
+                    835.5
+                  ],
+                  [
+                    174,
+                    834.5
+                  ],
+                  [
+                    186,
+                    849.5
+                  ],
+                  [
+                    226.5,
+                    889.5
+                  ],
+                  [
+                    262.5,
+                    915.5
+                  ],
+                  [
+                    271.5,
+                    917
+                  ],
+                  [
+                    270.5,
+                    915.5
+                  ],
+                  [
+                    251,
+                    894
+                  ],
+                  [
+                    200,
+                    849.5
+                  ],
+                  [
+                    176.5,
+                    835
+                  ],
+                  [
+                    180.5,
+                    845
+                  ],
+                  [
+                    204.5,
+                    876.5
+                  ],
+                  [
+                    239,
+                    904.5
+                  ],
+                  [
+                    250,
+                    907
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft",
@@ -9350,11 +13674,7919 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
-          "disallow": true
+          "disallow": false,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "block",
+                "x": 325,
+                "y": 927.5,
+                "rotation": 0,
+                "scale": 2.5
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    246.5,
+                    880.5
+                  ],
+                  [
+                    244,
+                    880
+                  ],
+                  [
+                    241.5,
+                    879
+                  ],
+                  [
+                    240.5,
+                    878.5
+                  ],
+                  [
+                    239.5,
+                    878
+                  ],
+                  [
+                    239,
+                    877
+                  ],
+                  [
+                    240.5,
+                    877.5
+                  ],
+                  [
+                    242.5,
+                    878.5
+                  ],
+                  [
+                    245.5,
+                    881
+                  ],
+                  [
+                    251.5,
+                    885.5
+                  ],
+                  [
+                    258.5,
+                    890
+                  ],
+                  [
+                    265.5,
+                    893.5
+                  ],
+                  [
+                    276.5,
+                    898
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    265,
+                    922
+                  ],
+                  [
+                    264,
+                    922
+                  ],
+                  [
+                    262.5,
+                    921.5
+                  ],
+                  [
+                    260.5,
+                    920.5
+                  ],
+                  [
+                    259,
+                    920.5
+                  ],
+                  [
+                    257.5,
+                    920
+                  ],
+                  [
+                    256.5,
+                    920
+                  ],
+                  [
+                    255.5,
+                    920
+                  ],
+                  [
+                    257,
+                    921
+                  ],
+                  [
+                    259.5,
+                    922.5
+                  ],
+                  [
+                    266.5,
+                    925
+                  ],
+                  [
+                    274,
+                    928.5
+                  ],
+                  [
+                    280,
+                    931.5
+                  ],
+                  [
+                    286,
+                    934.5
+                  ],
+                  [
+                    292,
+                    937.5
+                  ],
+                  [
+                    298,
+                    941
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    264.5,
+                    954
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    262,
+                    954.5
+                  ],
+                  [
+                    261,
+                    954.5
+                  ],
+                  [
+                    260,
+                    955
+                  ],
+                  [
+                    259,
+                    955.5
+                  ],
+                  [
+                    258.5,
+                    956.5
+                  ],
+                  [
+                    259,
+                    957.5
+                  ],
+                  [
+                    262.5,
+                    960
+                  ],
+                  [
+                    270,
+                    965
+                  ],
+                  [
+                    277.5,
+                    970
+                  ],
+                  [
+                    282.5,
+                    973
+                  ],
+                  [
+                    286.5,
+                    975
+                  ],
+                  [
+                    290,
+                    975.5
+                  ],
+                  [
+                    293,
+                    975.5
+                  ],
+                  [
+                    296,
+                    975
+                  ],
+                  [
+                    300.5,
+                    974
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    287.5,
+                    937
+                  ],
+                  [
+                    286,
+                    937
+                  ],
+                  [
+                    289,
+                    938.5
+                  ],
+                  [
+                    296,
+                    941
+                  ],
+                  [
+                    304.5,
+                    943
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    317,
+                    945
+                  ],
+                  [
+                    320.5,
+                    944.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    965.5
+                  ],
+                  [
+                    295,
+                    965
+                  ],
+                  [
+                    296.5,
+                    965
+                  ],
+                  [
+                    302.5,
+                    964.5
+                  ],
+                  [
+                    312,
+                    964
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    280,
+                    910
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    278.5,
+                    908
+                  ],
+                  [
+                    278.5,
+                    907
+                  ],
+                  [
+                    280,
+                    906.5
+                  ],
+                  [
+                    283,
+                    906
+                  ],
+                  [
+                    290,
+                    905.5
+                  ],
+                  [
+                    299,
+                    907
+                  ],
+                  [
+                    307,
+                    908.5
+                  ],
+                  [
+                    314,
+                    910
+                  ],
+                  [
+                    322,
+                    911
+                  ],
+                  [
+                    330.5,
+                    911
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    289.5,
+                    894
+                  ],
+                  [
+                    289.5,
+                    893
+                  ],
+                  [
+                    291,
+                    892.5
+                  ],
+                  [
+                    293.5,
+                    892
+                  ],
+                  [
+                    300.5,
+                    892.5
+                  ],
+                  [
+                    308,
+                    893.5
+                  ],
+                  [
+                    313,
+                    894
+                  ],
+                  [
+                    317.5,
+                    894
+                  ],
+                  [
+                    323,
+                    894
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    318.5,
+                    967
+                  ],
+                  [
+                    317.5,
+                    965.5
+                  ],
+                  [
+                    317.5,
+                    964.5
+                  ],
+                  [
+                    319.5,
+                    963
+                  ],
+                  [
+                    324.5,
+                    962.5
+                  ],
+                  [
+                    332,
+                    961.5
+                  ],
+                  [
+                    338.5,
+                    962.5
+                  ],
+                  [
+                    343.5,
+                    962.5
+                  ],
+                  [
+                    349,
+                    962
+                  ],
+                  [
+                    356.5,
+                    961
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    332.5,
+                    938
+                  ],
+                  [
+                    333.5,
+                    937.5
+                  ],
+                  [
+                    336.5,
+                    937.5
+                  ],
+                  [
+                    343.5,
+                    938
+                  ],
+                  [
+                    352,
+                    938.5
+                  ],
+                  [
+                    356,
+                    938
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    331.5,
+                    900
+                  ],
+                  [
+                    331.5,
+                    898.5
+                  ],
+                  [
+                    332.5,
+                    898
+                  ],
+                  [
+                    333.5,
+                    896.5
+                  ],
+                  [
+                    338.5,
+                    894
+                  ],
+                  [
+                    345.5,
+                    890.5
+                  ],
+                  [
+                    352.5,
+                    890
+                  ],
+                  [
+                    358.5,
+                    890.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    358.5,
+                    956.5
+                  ],
+                  [
+                    359,
+                    955
+                  ],
+                  [
+                    360.5,
+                    954
+                  ],
+                  [
+                    362,
+                    953
+                  ],
+                  [
+                    363,
+                    951.5
+                  ],
+                  [
+                    367,
+                    947
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    345.5,
+                    928.5
+                  ],
+                  [
+                    344.5,
+                    928
+                  ],
+                  [
+                    344.5,
+                    926.5
+                  ],
+                  [
+                    344.5,
+                    925
+                  ],
+                  [
+                    345.5,
+                    924
+                  ],
+                  [
+                    348.5,
+                    920
+                  ],
+                  [
+                    356,
+                    914.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    350.5,
+                    895
+                  ],
+                  [
+                    349.5,
+                    895.5
+                  ],
+                  [
+                    348,
+                    895.5
+                  ],
+                  [
+                    347,
+                    895.5
+                  ],
+                  [
+                    346,
+                    895.5
+                  ],
+                  [
+                    345,
+                    895
+                  ],
+                  [
+                    347.5,
+                    894
+                  ],
+                  [
+                    355,
+                    892.5
+                  ],
+                  [
+                    360,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    323,
+                    992
+                  ],
+                  [
+                    323,
+                    991
+                  ],
+                  [
+                    322.5,
+                    989
+                  ],
+                  [
+                    321.5,
+                    987.5
+                  ],
+                  [
+                    320.5,
+                    984
+                  ],
+                  [
+                    319,
+                    976.5
+                  ],
+                  [
+                    318.5,
+                    968.5
+                  ],
+                  [
+                    319.5,
+                    961.5
+                  ],
+                  [
+                    320.5,
+                    955
+                  ],
+                  [
+                    322.5,
+                    950
+                  ],
+                  [
+                    324,
+                    945.5
+                  ],
+                  [
+                    326.5,
+                    944.5
+                  ],
+                  [
+                    328,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    281.5,
+                    996
+                  ],
+                  [
+                    282,
+                    995
+                  ],
+                  [
+                    282,
+                    994
+                  ],
+                  [
+                    282,
+                    993
+                  ],
+                  [
+                    281.5,
+                    992
+                  ],
+                  [
+                    281.5,
+                    991
+                  ],
+                  [
+                    281.5,
+                    989.5
+                  ],
+                  [
+                    282,
+                    988
+                  ],
+                  [
+                    282.5,
+                    986
+                  ],
+                  [
+                    283,
+                    984.5
+                  ],
+                  [
+                    283.5,
+                    982.5
+                  ],
+                  [
+                    283.5,
+                    980.5
+                  ],
+                  [
+                    284,
+                    979
+                  ],
+                  [
+                    284,
+                    976.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    266,
+                    974.5
+                  ],
+                  [
+                    266,
+                    973.5
+                  ],
+                  [
+                    265.5,
+                    971.5
+                  ],
+                  [
+                    265,
+                    970
+                  ],
+                  [
+                    264.5,
+                    967
+                  ],
+                  [
+                    263.5,
+                    961
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    265,
+                    951
+                  ],
+                  [
+                    266.5,
+                    949.5
+                  ],
+                  [
+                    269,
+                    947.5
+                  ],
+                  [
+                    271.5,
+                    946.5
+                  ],
+                  [
+                    274.5,
+                    945.5
+                  ],
+                  [
+                    279,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    355,
+                    984.5
+                  ],
+                  [
+                    354.5,
+                    983.5
+                  ],
+                  [
+                    353.5,
+                    981.5
+                  ],
+                  [
+                    353.5,
+                    980
+                  ],
+                  [
+                    353.5,
+                    978
+                  ],
+                  [
+                    353.5,
+                    975.5
+                  ],
+                  [
+                    354.5,
+                    972
+                  ],
+                  [
+                    357,
+                    965.5
+                  ],
+                  [
+                    360.5,
+                    960.5
+                  ],
+                  [
+                    362.5,
+                    958
+                  ],
+                  [
+                    364.5,
+                    955
+                  ],
+                  [
+                    366,
+                    951.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    399,
+                    970.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    396.5,
+                    971
+                  ],
+                  [
+                    395.5,
+                    970.5
+                  ],
+                  [
+                    394.5,
+                    970.5
+                  ],
+                  [
+                    393.5,
+                    969.5
+                  ],
+                  [
+                    392.5,
+                    968
+                  ],
+                  [
+                    392,
+                    967
+                  ],
+                  [
+                    391,
+                    964.5
+                  ],
+                  [
+                    390,
+                    962.5
+                  ],
+                  [
+                    389.5,
+                    960
+                  ],
+                  [
+                    389,
+                    958
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    300,
+                    980
+                  ],
+                  [
+                    298,
+                    979.5
+                  ],
+                  [
+                    297,
+                    978
+                  ],
+                  [
+                    295.5,
+                    977
+                  ],
+                  [
+                    294.5,
+                    976
+                  ],
+                  [
+                    294,
+                    975
+                  ],
+                  [
+                    294,
+                    973.5
+                  ],
+                  [
+                    294,
+                    972
+                  ],
+                  [
+                    294.5,
+                    971
+                  ],
+                  [
+                    295.5,
+                    970
+                  ],
+                  [
+                    297,
+                    968.5
+                  ],
+                  [
+                    298,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    309.5,
+                    950
+                  ],
+                  [
+                    309.5,
+                    949
+                  ],
+                  [
+                    310,
+                    948
+                  ],
+                  [
+                    310.5,
+                    946.5
+                  ],
+                  [
+                    311,
+                    945.5
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    312,
+                    942.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    298,
+                    969
+                  ],
+                  [
+                    297,
+                    968
+                  ],
+                  [
+                    296,
+                    967
+                  ],
+                  [
+                    295,
+                    965.5
+                  ],
+                  [
+                    295,
+                    964
+                  ],
+                  [
+                    295,
+                    963
+                  ],
+                  [
+                    295.5,
+                    962
+                  ],
+                  [
+                    296.5,
+                    961
+                  ],
+                  [
+                    296.5,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    409.5,
+                    968.5
+                  ],
+                  [
+                    408.5,
+                    968
+                  ],
+                  [
+                    407,
+                    967
+                  ],
+                  [
+                    405.5,
+                    967
+                  ],
+                  [
+                    404.5,
+                    965.5
+                  ],
+                  [
+                    403,
+                    964.5
+                  ],
+                  [
+                    401.5,
+                    963
+                  ],
+                  [
+                    400,
+                    962
+                  ],
+                  [
+                    398,
+                    960.5
+                  ],
+                  [
+                    396.5,
+                    959
+                  ],
+                  [
+                    394.5,
+                    958
+                  ],
+                  [
+                    393,
+                    957
+                  ],
+                  [
+                    391,
+                    955.5
+                  ],
+                  [
+                    390,
+                    954.5
+                  ],
+                  [
+                    389,
+                    953.5
+                  ],
+                  [
+                    388,
+                    953
+                  ],
+                  [
+                    388,
+                    952.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    327,
+                    994
+                  ],
+                  [
+                    325,
+                    993
+                  ],
+                  [
+                    323.5,
+                    992
+                  ],
+                  [
+                    321.5,
+                    991
+                  ],
+                  [
+                    320.5,
+                    989.5
+                  ],
+                  [
+                    320,
+                    988
+                  ],
+                  [
+                    320,
+                    986.5
+                  ],
+                  [
+                    320.5,
+                    985.5
+                  ],
+                  [
+                    321.5,
+                    984
+                  ],
+                  [
+                    323,
+                    982.5
+                  ],
+                  [
+                    324,
+                    981
+                  ],
+                  [
+                    325,
+                    980
+                  ],
+                  [
+                    325.5,
+                    978.5
+                  ],
+                  [
+                    326,
+                    976.5
+                  ],
+                  [
+                    326.5,
+                    975.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    326.5,
+                    990
+                  ],
+                  [
+                    325.5,
+                    989
+                  ],
+                  [
+                    324,
+                    988
+                  ],
+                  [
+                    322.5,
+                    986
+                  ],
+                  [
+                    320.5,
+                    984.5
+                  ],
+                  [
+                    319.5,
+                    983
+                  ],
+                  [
+                    318,
+                    981.5
+                  ],
+                  [
+                    317,
+                    981
+                  ],
+                  [
+                    316.5,
+                    980
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    201,
+                    955
+                  ],
+                  [
+                    200,
+                    954
+                  ],
+                  [
+                    199.5,
+                    953
+                  ],
+                  [
+                    200,
+                    952
+                  ],
+                  [
+                    202,
+                    951.5
+                  ],
+                  [
+                    207,
+                    950
+                  ],
+                  [
+                    214.5,
+                    946.5
+                  ],
+                  [
+                    221,
+                    944
+                  ],
+                  [
+                    224.5,
+                    941.5
+                  ],
+                  [
+                    226.5,
+                    937.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    383.5,
+                    978.5
+                  ],
+                  [
+                    382.5,
+                    978
+                  ],
+                  [
+                    381.5,
+                    976.5
+                  ],
+                  [
+                    381,
+                    975
+                  ],
+                  [
+                    380.5,
+                    972.5
+                  ],
+                  [
+                    380.5,
+                    970.5
+                  ],
+                  [
+                    381,
+                    967.5
+                  ],
+                  [
+                    381.5,
+                    965.5
+                  ],
+                  [
+                    381.5,
+                    963.5
+                  ],
+                  [
+                    382,
+                    962
+                  ],
+                  [
+                    382,
+                    961
+                  ],
+                  [
+                    382,
+                    960
+                  ],
+                  [
+                    381.5,
+                    959
+                  ],
+                  [
+                    382,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    311.5,
+                    989
+                  ],
+                  [
+                    311,
+                    988
+                  ],
+                  [
+                    310.5,
+                    987
+                  ],
+                  [
+                    309.5,
+                    985.5
+                  ],
+                  [
+                    309,
+                    984.5
+                  ],
+                  [
+                    308.5,
+                    983
+                  ],
+                  [
+                    308,
+                    981
+                  ],
+                  [
+                    307.5,
+                    979.5
+                  ],
+                  [
+                    307,
+                    977
+                  ],
+                  [
+                    306.5,
+                    975.5
+                  ],
+                  [
+                    307,
+                    974
+                  ],
+                  [
+                    307.5,
+                    972.5
+                  ],
+                  [
+                    307.5,
+                    972
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    390,
+                    963
+                  ],
+                  [
+                    388.5,
+                    963
+                  ],
+                  [
+                    387.5,
+                    962
+                  ],
+                  [
+                    386,
+                    960.5
+                  ],
+                  [
+                    385,
+                    959.5
+                  ],
+                  [
+                    385,
+                    958.5
+                  ],
+                  [
+                    384,
+                    957.5
+                  ],
+                  [
+                    384,
+                    956.5
+                  ],
+                  [
+                    382.5,
+                    955.5
+                  ],
+                  [
+                    382,
+                    954.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    405,
+                    888
+                  ],
+                  [
+                    404,
+                    888
+                  ],
+                  [
+                    401.5,
+                    887
+                  ],
+                  [
+                    399.5,
+                    886.5
+                  ],
+                  [
+                    398,
+                    886
+                  ],
+                  [
+                    396,
+                    886.5
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    393.5,
+                    887.5
+                  ],
+                  [
+                    392,
+                    888
+                  ],
+                  [
+                    391,
+                    889
+                  ],
+                  [
+                    390,
+                    889.5
+                  ],
+                  [
+                    389,
+                    889.5
+                  ],
+                  [
+                    389.5,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    386,
+                    983.5
+                  ],
+                  [
+                    384.5,
+                    983
+                  ],
+                  [
+                    382.5,
+                    982
+                  ],
+                  [
+                    380,
+                    981
+                  ],
+                  [
+                    378,
+                    980
+                  ],
+                  [
+                    376,
+                    979.5
+                  ],
+                  [
+                    374.5,
+                    978
+                  ],
+                  [
+                    373,
+                    976
+                  ],
+                  [
+                    372,
+                    975
+                  ],
+                  [
+                    371,
+                    973.5
+                  ],
+                  [
+                    370,
+                    971.5
+                  ],
+                  [
+                    369,
+                    970.5
+                  ],
+                  [
+                    368,
+                    969
+                  ],
+                  [
+                    367.5,
+                    967.5
+                  ],
+                  [
+                    368,
+                    965.5
+                  ],
+                  [
+                    368.5,
+                    965
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    974
+                  ],
+                  [
+                    305.5,
+                    972
+                  ],
+                  [
+                    305.5,
+                    971
+                  ],
+                  [
+                    305.5,
+                    969
+                  ],
+                  [
+                    305.5,
+                    967.5
+                  ],
+                  [
+                    306.5,
+                    966.5
+                  ],
+                  [
+                    307,
+                    965.5
+                  ],
+                  [
+                    308,
+                    964.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    349,
+                    844
+                  ],
+                  [
+                    348,
+                    844
+                  ],
+                  [
+                    346.5,
+                    844
+                  ],
+                  [
+                    345.5,
+                    844
+                  ],
+                  [
+                    344.5,
+                    845.5
+                  ],
+                  [
+                    344.5,
+                    847
+                  ],
+                  [
+                    344.5,
+                    849.5
+                  ],
+                  [
+                    345,
+                    855
+                  ],
+                  [
+                    346.5,
+                    863
+                  ],
+                  [
+                    349,
+                    868.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    388.5,
+                    838.5
+                  ],
+                  [
+                    387,
+                    839
+                  ],
+                  [
+                    385.5,
+                    840
+                  ],
+                  [
+                    384,
+                    841
+                  ],
+                  [
+                    382,
+                    842.5
+                  ],
+                  [
+                    381,
+                    844
+                  ],
+                  [
+                    380,
+                    846
+                  ],
+                  [
+                    379,
+                    847.5
+                  ],
+                  [
+                    379,
+                    850
+                  ],
+                  [
+                    379,
+                    852.5
+                  ],
+                  [
+                    379,
+                    855
+                  ],
+                  [
+                    379,
+                    858
+                  ],
+                  [
+                    379,
+                    860
+                  ],
+                  [
+                    379.5,
+                    862.5
+                  ],
+                  [
+                    380,
+                    864
+                  ],
+                  [
+                    380.5,
+                    865.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    851.5
+                  ],
+                  [
+                    305.5,
+                    853
+                  ],
+                  [
+                    304.5,
+                    853.5
+                  ],
+                  [
+                    303.5,
+                    855
+                  ],
+                  [
+                    303,
+                    856
+                  ],
+                  [
+                    302.5,
+                    857.5
+                  ],
+                  [
+                    302.5,
+                    859
+                  ],
+                  [
+                    302.5,
+                    860.5
+                  ],
+                  [
+                    303.5,
+                    862
+                  ],
+                  [
+                    304.5,
+                    864
+                  ],
+                  [
+                    306,
+                    865
+                  ],
+                  [
+                    307.5,
+                    867
+                  ],
+                  [
+                    308.5,
+                    868.5
+                  ],
+                  [
+                    309,
+                    869.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    272.5,
+                    851.5
+                  ],
+                  [
+                    272,
+                    852.5
+                  ],
+                  [
+                    271,
+                    853
+                  ],
+                  [
+                    269,
+                    853.5
+                  ],
+                  [
+                    268,
+                    854.5
+                  ],
+                  [
+                    267,
+                    854.5
+                  ],
+                  [
+                    266,
+                    855
+                  ],
+                  [
+                    265,
+                    855.5
+                  ],
+                  [
+                    264,
+                    855.5
+                  ],
+                  [
+                    263,
+                    856
+                  ],
+                  [
+                    262,
+                    856.5
+                  ],
+                  [
+                    261,
+                    857.5
+                  ],
+                  [
+                    260,
+                    858.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    937
+                  ],
+                  [
+                    174,
+                    935.5
+                  ],
+                  [
+                    175,
+                    934
+                  ],
+                  [
+                    176.5,
+                    932.5
+                  ],
+                  [
+                    178,
+                    931.5
+                  ],
+                  [
+                    183,
+                    928.5
+                  ],
+                  [
+                    186.5,
+                    927
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    145,
+                    874
+                  ],
+                  [
+                    146,
+                    874.5
+                  ],
+                  [
+                    148.5,
+                    874.5
+                  ],
+                  [
+                    155.5,
+                    873
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    207,
+                    1001.5
+                  ],
+                  [
+                    208,
+                    1000.5
+                  ],
+                  [
+                    211,
+                    998.5
+                  ],
+                  [
+                    221.5,
+                    995.5
+                  ],
+                  [
+                    229.5,
+                    994
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    990
+                  ],
+                  [
+                    352.5,
+                    990.5
+                  ],
+                  [
+                    350.5,
+                    990.5
+                  ],
+                  [
+                    347,
+                    990
+                  ],
+                  [
+                    338.5,
+                    989
+                  ],
+                  [
+                    329.5,
+                    986.5
+                  ],
+                  [
+                    321,
+                    983.5
+                  ],
+                  [
+                    313,
+                    981
+                  ],
+                  [
+                    305.5,
+                    979.5
+                  ],
+                  [
+                    299,
+                    978
+                  ],
+                  [
+                    293,
+                    976.5
+                  ],
+                  [
+                    287,
+                    976.5
+                  ],
+                  [
+                    282,
+                    976.5
+                  ],
+                  [
+                    278.5,
+                    977.5
+                  ],
+                  [
+                    277.5,
+                    978
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    319.5,
+                    927
+                  ],
+                  [
+                    319.5,
+                    928
+                  ],
+                  [
+                    319.5,
+                    929.5
+                  ],
+                  [
+                    319.5,
+                    930.5
+                  ],
+                  [
+                    319.5,
+                    932
+                  ],
+                  [
+                    320,
+                    933
+                  ],
+                  [
+                    320,
+                    934.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    313,
+                    808.5
+                  ],
+                  [
+                    312,
+                    808.5
+                  ],
+                  [
+                    310,
+                    808
+                  ],
+                  [
+                    309,
+                    808
+                  ],
+                  [
+                    308,
+                    808
+                  ],
+                  [
+                    307.5,
+                    809.5
+                  ],
+                  [
+                    308,
+                    811
+                  ],
+                  [
+                    310.5,
+                    816
+                  ],
+                  [
+                    314,
+                    823.5
+                  ],
+                  [
+                    316,
+                    829.5
+                  ],
+                  [
+                    317.5,
+                    835
+                  ],
+                  [
+                    319.5,
+                    840.5
+                  ],
+                  [
+                    320.5,
+                    844.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    267,
+                    932.5
+                  ],
+                  [
+                    267.5,
+                    934
+                  ],
+                  [
+                    268,
+                    935.5
+                  ],
+                  [
+                    269,
+                    937
+                  ],
+                  [
+                    270,
+                    938.5
+                  ],
+                  [
+                    271,
+                    939.5
+                  ],
+                  [
+                    271.5,
+                    939.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    301,
+                    931
+                  ],
+                  [
+                    301,
+                    932
+                  ],
+                  [
+                    301.5,
+                    933
+                  ],
+                  [
+                    302,
+                    934.5
+                  ],
+                  [
+                    302.5,
+                    936
+                  ],
+                  [
+                    303.5,
+                    937
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    329.5,
+                    937
+                  ],
+                  [
+                    331.5,
+                    937.5
+                  ],
+                  [
+                    334,
+                    937.5
+                  ],
+                  [
+                    338,
+                    937
+                  ],
+                  [
+                    347.5,
+                    936.5
+                  ],
+                  [
+                    355.5,
+                    937
+                  ],
+                  [
+                    359,
+                    937.5
+                  ],
+                  [
+                    362,
+                    938.5
+                  ],
+                  [
+                    368,
+                    941
+                  ],
+                  [
+                    373,
+                    943.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    363.5,
+                    906
+                  ],
+                  [
+                    363,
+                    904.5
+                  ],
+                  [
+                    364,
+                    903.5
+                  ],
+                  [
+                    368.5,
+                    902
+                  ],
+                  [
+                    376,
+                    900
+                  ],
+                  [
+                    384,
+                    900
+                  ],
+                  [
+                    389.5,
+                    901.5
+                  ],
+                  [
+                    394,
+                    902.5
+                  ],
+                  [
+                    396,
+                    903.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    354.5,
+                    937.5
+                  ],
+                  [
+                    354,
+                    938.5
+                  ],
+                  [
+                    354,
+                    939.5
+                  ],
+                  [
+                    356.5,
+                    940.5
+                  ],
+                  [
+                    363.5,
+                    941.5
+                  ],
+                  [
+                    374,
+                    942.5
+                  ],
+                  [
+                    382,
+                    943.5
+                  ],
+                  [
+                    389,
+                    944
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    413.5,
+                    885.5
+                  ],
+                  [
+                    412.5,
+                    886
+                  ],
+                  [
+                    412,
+                    887
+                  ],
+                  [
+                    410.5,
+                    888
+                  ],
+                  [
+                    409,
+                    889.5
+                  ],
+                  [
+                    406.5,
+                    891
+                  ],
+                  [
+                    399.5,
+                    894
+                  ],
+                  [
+                    396,
+                    896.5
+                  ],
+                  [
+                    394.5,
+                    896.5
+                  ],
+                  [
+                    393.5,
+                    897
+                  ],
+                  [
+                    393,
+                    897
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    435.5,
+                    953
+                  ],
+                  [
+                    434.5,
+                    953
+                  ],
+                  [
+                    433,
+                    953
+                  ],
+                  [
+                    431.5,
+                    953.5
+                  ],
+                  [
+                    429.5,
+                    953.5
+                  ],
+                  [
+                    427.5,
+                    953.5
+                  ],
+                  [
+                    425.5,
+                    953
+                  ],
+                  [
+                    423.5,
+                    952.5
+                  ],
+                  [
+                    421.5,
+                    952
+                  ],
+                  [
+                    419.5,
+                    951
+                  ],
+                  [
+                    417.5,
+                    950.5
+                  ],
+                  [
+                    415,
+                    950
+                  ],
+                  [
+                    413,
+                    950
+                  ],
+                  [
+                    411.5,
+                    950
+                  ],
+                  [
+                    410,
+                    950
+                  ],
+                  [
+                    409,
+                    949.5
+                  ],
+                  [
+                    408.5,
+                    949.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    401.5,
+                    973
+                  ],
+                  [
+                    400,
+                    972
+                  ],
+                  [
+                    398.5,
+                    971
+                  ],
+                  [
+                    397,
+                    969
+                  ],
+                  [
+                    394.5,
+                    964
+                  ],
+                  [
+                    393,
+                    956.5
+                  ],
+                  [
+                    393.5,
+                    950
+                  ],
+                  [
+                    395,
+                    945.5
+                  ],
+                  [
+                    396.5,
+                    943.5
+                  ],
+                  [
+                    397.5,
+                    941.5
+                  ],
+                  [
+                    398.5,
+                    939.5
+                  ],
+                  [
+                    399.5,
+                    938
+                  ],
+                  [
+                    400.5,
+                    936.5
+                  ],
+                  [
+                    401.5,
+                    934.5
+                  ],
+                  [
+                    402,
+                    933.5
+                  ],
+                  [
+                    403,
+                    932
+                  ],
+                  [
+                    404,
+                    931.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    995
+                  ],
+                  [
+                    354,
+                    993.5
+                  ],
+                  [
+                    353.5,
+                    992.5
+                  ],
+                  [
+                    353,
+                    991
+                  ],
+                  [
+                    353,
+                    989
+                  ],
+                  [
+                    354,
+                    984.5
+                  ],
+                  [
+                    355,
+                    976
+                  ],
+                  [
+                    355,
+                    969
+                  ],
+                  [
+                    355,
+                    964.5
+                  ],
+                  [
+                    355.5,
+                    962
+                  ],
+                  [
+                    357,
+                    960.5
+                  ],
+                  [
+                    359,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    296.5,
+                    987.5
+                  ],
+                  [
+                    296,
+                    986
+                  ],
+                  [
+                    296.5,
+                    984.5
+                  ],
+                  [
+                    298,
+                    982.5
+                  ],
+                  [
+                    302,
+                    977
+                  ],
+                  [
+                    307,
+                    971.5
+                  ],
+                  [
+                    308.5,
+                    969
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    314,
+                    991
+                  ],
+                  [
+                    313,
+                    989.5
+                  ],
+                  [
+                    313,
+                    988.5
+                  ],
+                  [
+                    313,
+                    986.5
+                  ],
+                  [
+                    313.5,
+                    983.5
+                  ],
+                  [
+                    314,
+                    976.5
+                  ],
+                  [
+                    314.5,
+                    968
+                  ],
+                  [
+                    314.5,
+                    961.5
+                  ],
+                  [
+                    315.5,
+                    957.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    263,
+                    997.5
+                  ],
+                  [
+                    264,
+                    996.5
+                  ],
+                  [
+                    264.5,
+                    995.5
+                  ],
+                  [
+                    265,
+                    993
+                  ],
+                  [
+                    266,
+                    991
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    266.5,
+                    987.5
+                  ],
+                  [
+                    266.5,
+                    986.5
+                  ],
+                  [
+                    266.5,
+                    985.5
+                  ],
+                  [
+                    267,
+                    984.5
+                  ],
+                  [
+                    267,
+                    980
+                  ],
+                  [
+                    266.5,
+                    977
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    426.5,
+                    908
+                  ],
+                  [
+                    425.5,
+                    908.5
+                  ],
+                  [
+                    424.5,
+                    909
+                  ],
+                  [
+                    423.5,
+                    910
+                  ],
+                  [
+                    422.5,
+                    910
+                  ],
+                  [
+                    421.5,
+                    911
+                  ],
+                  [
+                    420,
+                    911
+                  ],
+                  [
+                    417.5,
+                    912.5
+                  ],
+                  [
+                    410.5,
+                    915.5
+                  ],
+                  [
+                    405,
+                    916
+                  ],
+                  [
+                    401,
+                    917
+                  ],
+                  [
+                    398,
+                    916.5
+                  ],
+                  [
+                    395.5,
+                    916.5
+                  ],
+                  [
+                    393.5,
+                    916.5
+                  ],
+                  [
+                    392,
+                    918.5
+                  ],
+                  [
+                    391.5,
+                    920
+                  ]
+                ]
+              },
+              {
+                "shading": true,
+                "tolerance": 0.2,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.12,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 14
+              },
+              {
+                "revertPoint": true
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    261,
+                    990.5
+                  ],
+                  [
+                    259,
+                    989
+                  ],
+                  [
+                    257,
+                    988.5
+                  ],
+                  [
+                    255,
+                    987
+                  ],
+                  [
+                    250.5,
+                    983.5
+                  ],
+                  [
+                    245.5,
+                    978
+                  ],
+                  [
+                    241.5,
+                    972
+                  ],
+                  [
+                    237,
+                    967.5
+                  ],
+                  [
+                    231,
+                    963
+                  ],
+                  [
+                    223.5,
+                    959
+                  ],
+                  [
+                    215.5,
+                    954
+                  ],
+                  [
+                    207.5,
+                    946.5
+                  ],
+                  [
+                    196,
+                    931
+                  ],
+                  [
+                    182,
+                    907
+                  ],
+                  [
+                    174.5,
+                    892.5
+                  ],
+                  [
+                    170.5,
+                    884
+                  ],
+                  [
+                    168.5,
+                    878.5
+                  ],
+                  [
+                    168.5,
+                    874.5
+                  ],
+                  [
+                    168.5,
+                    872
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    321.5,
+                    911.5
+                  ],
+                  [
+                    320.5,
+                    910
+                  ],
+                  [
+                    319,
+                    909.5
+                  ],
+                  [
+                    315.5,
+                    908
+                  ],
+                  [
+                    308.5,
+                    906.5
+                  ],
+                  [
+                    300,
+                    906
+                  ],
+                  [
+                    293,
+                    907
+                  ],
+                  [
+                    286,
+                    907.5
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    270.5,
+                    910
+                  ],
+                  [
+                    262.5,
+                    909.5
+                  ],
+                  [
+                    255,
+                    908
+                  ],
+                  [
+                    246.5,
+                    905.5
+                  ],
+                  [
+                    237,
+                    901.5
+                  ],
+                  [
+                    227.5,
+                    896.5
+                  ],
+                  [
+                    219,
+                    890.5
+                  ],
+                  [
+                    211,
+                    884
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    199.5,
+                    868.5
+                  ],
+                  [
+                    195,
+                    860.5
+                  ],
+                  [
+                    193,
+                    854.5
+                  ],
+                  [
+                    193,
+                    851
+                  ],
+                  [
+                    194,
+                    851
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    906.5
+                  ],
+                  [
+                    291.5,
+                    906
+                  ],
+                  [
+                    290.5,
+                    906
+                  ],
+                  [
+                    288,
+                    906.5
+                  ],
+                  [
+                    281,
+                    905
+                  ],
+                  [
+                    272.5,
+                    903
+                  ],
+                  [
+                    268.5,
+                    903
+                  ],
+                  [
+                    265.5,
+                    902
+                  ],
+                  [
+                    259.5,
+                    899.5
+                  ],
+                  [
+                    253.5,
+                    897
+                  ],
+                  [
+                    248.5,
+                    893
+                  ],
+                  [
+                    243,
+                    887.5
+                  ],
+                  [
+                    237.5,
+                    882.5
+                  ],
+                  [
+                    232,
+                    877
+                  ],
+                  [
+                    226.5,
+                    872
+                  ],
+                  [
+                    221,
+                    867.5
+                  ],
+                  [
+                    215.5,
+                    862.5
+                  ],
+                  [
+                    211,
+                    858
+                  ],
+                  [
+                    208.5,
+                    855.5
+                  ],
+                  [
+                    208,
+                    855
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    243.5,
+                    897.5
+                  ],
+                  [
+                    242,
+                    896.5
+                  ],
+                  [
+                    241,
+                    896.5
+                  ],
+                  [
+                    240,
+                    895.5
+                  ],
+                  [
+                    239,
+                    895
+                  ],
+                  [
+                    237.5,
+                    894
+                  ],
+                  [
+                    233,
+                    890.5
+                  ],
+                  [
+                    227,
+                    886
+                  ],
+                  [
+                    221,
+                    882
+                  ],
+                  [
+                    216,
+                    878.5
+                  ],
+                  [
+                    211,
+                    875.5
+                  ],
+                  [
+                    207,
+                    872
+                  ],
+                  [
+                    203.5,
+                    868.5
+                  ],
+                  [
+                    200,
+                    864
+                  ],
+                  [
+                    197.5,
+                    862
+                  ],
+                  [
+                    196,
+                    860
+                  ],
+                  [
+                    195.5,
+                    859
+                  ],
+                  [
+                    197.5,
+                    856
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1789660542,
+                "points": [
+                  [
+                    131.5,
+                    827.5
+                  ],
+                  [
+                    133,
+                    828.5
+                  ],
+                  [
+                    140.5,
+                    833
+                  ],
+                  [
+                    158.5,
+                    844.5
+                  ],
+                  [
+                    184,
+                    863.5
+                  ],
+                  [
+                    209.5,
+                    890.5
+                  ],
+                  [
+                    233.5,
+                    918.5
+                  ],
+                  [
+                    246.5,
+                    933
+                  ],
+                  [
+                    252,
+                    939
+                  ],
+                  [
+                    252.5,
+                    940
+                  ],
+                  [
+                    251.5,
+                    939
+                  ],
+                  [
+                    239,
+                    929
+                  ],
+                  [
+                    204,
+                    896
+                  ],
+                  [
+                    163.5,
+                    851.5
+                  ],
+                  [
+                    133,
+                    819
+                  ],
+                  [
+                    121,
+                    812
+                  ],
+                  [
+                    121,
+                    814
+                  ],
+                  [
+                    129,
+                    824
+                  ],
+                  [
+                    157,
+                    856.5
+                  ],
+                  [
+                    198,
+                    894
+                  ],
+                  [
+                    231.5,
+                    925.5
+                  ],
+                  [
+                    253.5,
+                    952
+                  ],
+                  [
+                    273,
+                    976.5
+                  ],
+                  [
+                    282.5,
+                    989
+                  ],
+                  [
+                    285,
+                    992.5
+                  ],
+                  [
+                    282,
+                    989.5
+                  ],
+                  [
+                    259,
+                    966.5
+                  ],
+                  [
+                    212,
+                    913
+                  ],
+                  [
+                    168.5,
+                    859
+                  ],
+                  [
+                    154.5,
+                    841.5
+                  ],
+                  [
+                    153,
+                    841
+                  ],
+                  [
+                    153.5,
+                    842.5
+                  ],
+                  [
+                    155.5,
+                    848.5
+                  ],
+                  [
+                    162.5,
+                    862.5
+                  ],
+                  [
+                    190.5,
+                    902
+                  ],
+                  [
+                    247.5,
+                    961
+                  ],
+                  [
+                    303,
+                    1002
+                  ],
+                  [
+                    312.5,
+                    1008.5
+                  ],
+                  [
+                    308.5,
+                    1006.5
+                  ],
+                  [
+                    277,
+                    988.5
+                  ],
+                  [
+                    219.5,
+                    946
+                  ],
+                  [
+                    166.5,
+                    905
+                  ],
+                  [
+                    151,
+                    893.5
+                  ],
+                  [
+                    149.5,
+                    894
+                  ],
+                  [
+                    150.5,
+                    895.5
+                  ],
+                  [
+                    154.5,
+                    905
+                  ],
+                  [
+                    165.5,
+                    928.5
+                  ],
+                  [
+                    194,
+                    967
+                  ],
+                  [
+                    245.5,
+                    1007
+                  ],
+                  [
+                    293.5,
+                    1025
+                  ],
+                  [
+                    306,
+                    1021.5
+                  ],
+                  [
+                    302.5,
+                    1007
+                  ],
+                  [
+                    269.5,
+                    967.5
+                  ],
+                  [
+                    215,
+                    910.5
+                  ],
+                  [
+                    157.5,
+                    861
+                  ],
+                  [
+                    127,
+                    836
+                  ],
+                  [
+                    125.5,
+                    837
+                  ],
+                  [
+                    131,
+                    847.5
+                  ],
+                  [
+                    151,
+                    875.5
+                  ],
+                  [
+                    181.5,
+                    911.5
+                  ],
+                  [
+                    219.5,
+                    944
+                  ],
+                  [
+                    258,
+                    966
+                  ],
+                  [
+                    289,
+                    980
+                  ],
+                  [
+                    300,
+                    983
+                  ],
+                  [
+                    299,
+                    979.5
+                  ],
+                  [
+                    275.5,
+                    957.5
+                  ],
+                  [
+                    207,
+                    900.5
+                  ],
+                  [
+                    151,
+                    854.5
+                  ],
+                  [
+                    140,
+                    848
+                  ],
+                  [
+                    142,
+                    850
+                  ],
+                  [
+                    162,
+                    872
+                  ],
+                  [
+                    203.5,
+                    911.5
+                  ],
+                  [
+                    233,
+                    935
+                  ],
+                  [
+                    238.5,
+                    940
+                  ],
+                  [
+                    236,
+                    939.5
+                  ],
+                  [
+                    210,
+                    925
+                  ],
+                  [
+                    158.5,
+                    878
+                  ],
+                  [
+                    140.5,
+                    855.5
+                  ],
+                  [
+                    145,
+                    852.5
+                  ],
+                  [
+                    162.5,
+                    859.5
+                  ],
+                  [
+                    192.5,
+                    881.5
+                  ],
+                  [
+                    210.5,
+                    900.5
+                  ],
+                  [
+                    220.5,
+                    910
+                  ],
+                  [
+                    228.5,
+                    921.5
+                  ],
+                  [
+                    249,
+                    946.5
+                  ],
+                  [
+                    281,
+                    970.5
+                  ],
+                  [
+                    295.5,
+                    970.5
+                  ],
+                  [
+                    301.5,
+                    963
+                  ],
+                  [
+                    301.5,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 946441564,
+                "points": [
+                  [
+                    190,
+                    832.5
+                  ],
+                  [
+                    188,
+                    834
+                  ],
+                  [
+                    186.5,
+                    837.5
+                  ],
+                  [
+                    182,
+                    846
+                  ],
+                  [
+                    179.5,
+                    855.5
+                  ],
+                  [
+                    180.5,
+                    860
+                  ],
+                  [
+                    183,
+                    863
+                  ],
+                  [
+                    189,
+                    867.5
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    236,
+                    892.5
+                  ],
+                  [
+                    271.5,
+                    906
+                  ],
+                  [
+                    295.5,
+                    914
+                  ],
+                  [
+                    319,
+                    922
+                  ],
+                  [
+                    335,
+                    926.5
+                  ],
+                  [
+                    342,
+                    928.5
+                  ],
+                  [
+                    329.5,
+                    921
+                  ],
+                  [
+                    295,
+                    906
+                  ],
+                  [
+                    260,
+                    892
+                  ],
+                  [
+                    238,
+                    885
+                  ],
+                  [
+                    225.5,
+                    882.5
+                  ],
+                  [
+                    217.5,
+                    882
+                  ],
+                  [
+                    213.5,
+                    882.5
+                  ],
+                  [
+                    212,
+                    882.5
+                  ],
+                  [
+                    214.5,
+                    883.5
+                  ],
+                  [
+                    221.5,
+                    886.5
+                  ],
+                  [
+                    266.5,
+                    907
+                  ],
+                  [
+                    329,
+                    936.5
+                  ],
+                  [
+                    349,
+                    943.5
+                  ],
+                  [
+                    349.5,
+                    942
+                  ],
+                  [
+                    336.5,
+                    933
+                  ],
+                  [
+                    284,
+                    901
+                  ],
+                  [
+                    217.5,
+                    865
+                  ],
+                  [
+                    174,
+                    855.5
+                  ],
+                  [
+                    154.5,
+                    857.5
+                  ],
+                  [
+                    143.5,
+                    862
+                  ],
+                  [
+                    138.5,
+                    865.5
+                  ],
+                  [
+                    140,
+                    869
+                  ],
+                  [
+                    151,
+                    880
+                  ],
+                  [
+                    187,
+                    913
+                  ],
+                  [
+                    234.5,
+                    950
+                  ],
+                  [
+                    255,
+                    961
+                  ],
+                  [
+                    257.5,
+                    962.5
+                  ],
+                  [
+                    251.5,
+                    956.5
+                  ],
+                  [
+                    223.5,
+                    928.5
+                  ],
+                  [
+                    171.5,
+                    872
+                  ],
+                  [
+                    133,
+                    823.5
+                  ],
+                  [
+                    130,
+                    816
+                  ],
+                  [
+                    139.5,
+                    824.5
+                  ],
+                  [
+                    164,
+                    850.5
+                  ],
+                  [
+                    195.5,
+                    885
+                  ],
+                  [
+                    219,
+                    915.5
+                  ],
+                  [
+                    242.5,
+                    946.5
+                  ],
+                  [
+                    258.5,
+                    975.5
+                  ],
+                  [
+                    266,
+                    988
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    256,
+                    981.5
+                  ],
+                  [
+                    221.5,
+                    944
+                  ],
+                  [
+                    179,
+                    890
+                  ],
+                  [
+                    159,
+                    851.5
+                  ],
+                  [
+                    150.5,
+                    829.5
+                  ],
+                  [
+                    150.5,
+                    826
+                  ],
+                  [
+                    151.5,
+                    828
+                  ],
+                  [
+                    157,
+                    842
+                  ],
+                  [
+                    179.5,
+                    883
+                  ],
+                  [
+                    222.5,
+                    944
+                  ],
+                  [
+                    262,
+                    980
+                  ],
+                  [
+                    275,
+                    987.5
+                  ],
+                  [
+                    262,
+                    971
+                  ],
+                  [
+                    217,
+                    916.5
+                  ],
+                  [
+                    169.5,
+                    855.5
+                  ],
+                  [
+                    159.5,
+                    840
+                  ],
+                  [
+                    165.5,
+                    845
+                  ],
+                  [
+                    183,
+                    864
+                  ],
+                  [
+                    213,
+                    898.5
+                  ],
+                  [
+                    240.5,
+                    924.5
+                  ],
+                  [
+                    256.5,
+                    941
+                  ],
+                  [
+                    264,
+                    948.5
+                  ],
+                  [
+                    265.5,
+                    950
+                  ],
+                  [
+                    261,
+                    944
+                  ],
+                  [
+                    235.5,
+                    912.5
+                  ],
+                  [
+                    198.5,
+                    870
+                  ],
+                  [
+                    188.5,
+                    851
+                  ],
+                  [
+                    190,
+                    848.5
+                  ],
+                  [
+                    195,
+                    853.5
+                  ],
+                  [
+                    215,
+                    877.5
+                  ],
+                  [
+                    245.5,
+                    914.5
+                  ],
+                  [
+                    257,
+                    930
+                  ],
+                  [
+                    259.5,
+                    933
+                  ],
+                  [
+                    258.5,
+                    931.5
+                  ],
+                  [
+                    246.5,
+                    913
+                  ],
+                  [
+                    205.5,
+                    862.5
+                  ],
+                  [
+                    177,
+                    834
+                  ],
+                  [
+                    178.5,
+                    838
+                  ],
+                  [
+                    184,
+                    849.5
+                  ],
+                  [
+                    198,
+                    875.5
+                  ],
+                  [
+                    218,
+                    905.5
+                  ],
+                  [
+                    243,
+                    928
+                  ],
+                  [
+                    256.5,
+                    936.5
+                  ],
+                  [
+                    262,
+                    938
+                  ],
+                  [
+                    261.5,
+                    936
+                  ],
+                  [
+                    246.5,
+                    917
+                  ],
+                  [
+                    206,
+                    877
+                  ],
+                  [
+                    182,
+                    857.5
+                  ],
+                  [
+                    184,
+                    860.5
+                  ],
+                  [
+                    190.5,
+                    870.5
+                  ],
+                  [
+                    207,
+                    892.5
+                  ],
+                  [
+                    225,
+                    911.5
+                  ],
+                  [
+                    236.5,
+                    919.5
+                  ],
+                  [
+                    243,
+                    923
+                  ],
+                  [
+                    246.5,
+                    923.5
+                  ],
+                  [
+                    248.5,
+                    922
+                  ],
+                  [
+                    249.5,
+                    918.5
+                  ],
+                  [
+                    242.5,
+                    903
+                  ],
+                  [
+                    215,
+                    870
+                  ],
+                  [
+                    186,
+                    843
+                  ],
+                  [
+                    175.5,
+                    835.5
+                  ],
+                  [
+                    174,
+                    834.5
+                  ],
+                  [
+                    186,
+                    849.5
+                  ],
+                  [
+                    226.5,
+                    889.5
+                  ],
+                  [
+                    262.5,
+                    915.5
+                  ],
+                  [
+                    271.5,
+                    917
+                  ],
+                  [
+                    270.5,
+                    915.5
+                  ],
+                  [
+                    251,
+                    894
+                  ],
+                  [
+                    200,
+                    849.5
+                  ],
+                  [
+                    176.5,
+                    835
+                  ],
+                  [
+                    180.5,
+                    845
+                  ],
+                  [
+                    204.5,
+                    876.5
+                  ],
+                  [
+                    239,
+                    904.5
+                  ],
+                  [
+                    250,
+                    907
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-longsword": {
           "layerOrder": "haft-over-head",
-          "disallow": true
+          "disallow": false,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "block",
+                "x": 325,
+                "y": 927.5,
+                "rotation": 0,
+                "scale": 2.5
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    246.5,
+                    880.5
+                  ],
+                  [
+                    244,
+                    880
+                  ],
+                  [
+                    241.5,
+                    879
+                  ],
+                  [
+                    240.5,
+                    878.5
+                  ],
+                  [
+                    239.5,
+                    878
+                  ],
+                  [
+                    239,
+                    877
+                  ],
+                  [
+                    240.5,
+                    877.5
+                  ],
+                  [
+                    242.5,
+                    878.5
+                  ],
+                  [
+                    245.5,
+                    881
+                  ],
+                  [
+                    251.5,
+                    885.5
+                  ],
+                  [
+                    258.5,
+                    890
+                  ],
+                  [
+                    265.5,
+                    893.5
+                  ],
+                  [
+                    276.5,
+                    898
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    265,
+                    922
+                  ],
+                  [
+                    264,
+                    922
+                  ],
+                  [
+                    262.5,
+                    921.5
+                  ],
+                  [
+                    260.5,
+                    920.5
+                  ],
+                  [
+                    259,
+                    920.5
+                  ],
+                  [
+                    257.5,
+                    920
+                  ],
+                  [
+                    256.5,
+                    920
+                  ],
+                  [
+                    255.5,
+                    920
+                  ],
+                  [
+                    257,
+                    921
+                  ],
+                  [
+                    259.5,
+                    922.5
+                  ],
+                  [
+                    266.5,
+                    925
+                  ],
+                  [
+                    274,
+                    928.5
+                  ],
+                  [
+                    280,
+                    931.5
+                  ],
+                  [
+                    286,
+                    934.5
+                  ],
+                  [
+                    292,
+                    937.5
+                  ],
+                  [
+                    298,
+                    941
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    264.5,
+                    954
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    262,
+                    954.5
+                  ],
+                  [
+                    261,
+                    954.5
+                  ],
+                  [
+                    260,
+                    955
+                  ],
+                  [
+                    259,
+                    955.5
+                  ],
+                  [
+                    258.5,
+                    956.5
+                  ],
+                  [
+                    259,
+                    957.5
+                  ],
+                  [
+                    262.5,
+                    960
+                  ],
+                  [
+                    270,
+                    965
+                  ],
+                  [
+                    277.5,
+                    970
+                  ],
+                  [
+                    282.5,
+                    973
+                  ],
+                  [
+                    286.5,
+                    975
+                  ],
+                  [
+                    290,
+                    975.5
+                  ],
+                  [
+                    293,
+                    975.5
+                  ],
+                  [
+                    296,
+                    975
+                  ],
+                  [
+                    300.5,
+                    974
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    287.5,
+                    937
+                  ],
+                  [
+                    286,
+                    937
+                  ],
+                  [
+                    289,
+                    938.5
+                  ],
+                  [
+                    296,
+                    941
+                  ],
+                  [
+                    304.5,
+                    943
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    317,
+                    945
+                  ],
+                  [
+                    320.5,
+                    944.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    965.5
+                  ],
+                  [
+                    295,
+                    965
+                  ],
+                  [
+                    296.5,
+                    965
+                  ],
+                  [
+                    302.5,
+                    964.5
+                  ],
+                  [
+                    312,
+                    964
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    280,
+                    910
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    278.5,
+                    908
+                  ],
+                  [
+                    278.5,
+                    907
+                  ],
+                  [
+                    280,
+                    906.5
+                  ],
+                  [
+                    283,
+                    906
+                  ],
+                  [
+                    290,
+                    905.5
+                  ],
+                  [
+                    299,
+                    907
+                  ],
+                  [
+                    307,
+                    908.5
+                  ],
+                  [
+                    314,
+                    910
+                  ],
+                  [
+                    322,
+                    911
+                  ],
+                  [
+                    330.5,
+                    911
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    289.5,
+                    894
+                  ],
+                  [
+                    289.5,
+                    893
+                  ],
+                  [
+                    291,
+                    892.5
+                  ],
+                  [
+                    293.5,
+                    892
+                  ],
+                  [
+                    300.5,
+                    892.5
+                  ],
+                  [
+                    308,
+                    893.5
+                  ],
+                  [
+                    313,
+                    894
+                  ],
+                  [
+                    317.5,
+                    894
+                  ],
+                  [
+                    323,
+                    894
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    318.5,
+                    967
+                  ],
+                  [
+                    317.5,
+                    965.5
+                  ],
+                  [
+                    317.5,
+                    964.5
+                  ],
+                  [
+                    319.5,
+                    963
+                  ],
+                  [
+                    324.5,
+                    962.5
+                  ],
+                  [
+                    332,
+                    961.5
+                  ],
+                  [
+                    338.5,
+                    962.5
+                  ],
+                  [
+                    343.5,
+                    962.5
+                  ],
+                  [
+                    349,
+                    962
+                  ],
+                  [
+                    356.5,
+                    961
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    332.5,
+                    938
+                  ],
+                  [
+                    333.5,
+                    937.5
+                  ],
+                  [
+                    336.5,
+                    937.5
+                  ],
+                  [
+                    343.5,
+                    938
+                  ],
+                  [
+                    352,
+                    938.5
+                  ],
+                  [
+                    356,
+                    938
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    331.5,
+                    900
+                  ],
+                  [
+                    331.5,
+                    898.5
+                  ],
+                  [
+                    332.5,
+                    898
+                  ],
+                  [
+                    333.5,
+                    896.5
+                  ],
+                  [
+                    338.5,
+                    894
+                  ],
+                  [
+                    345.5,
+                    890.5
+                  ],
+                  [
+                    352.5,
+                    890
+                  ],
+                  [
+                    358.5,
+                    890.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    358.5,
+                    956.5
+                  ],
+                  [
+                    359,
+                    955
+                  ],
+                  [
+                    360.5,
+                    954
+                  ],
+                  [
+                    362,
+                    953
+                  ],
+                  [
+                    363,
+                    951.5
+                  ],
+                  [
+                    367,
+                    947
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    345.5,
+                    928.5
+                  ],
+                  [
+                    344.5,
+                    928
+                  ],
+                  [
+                    344.5,
+                    926.5
+                  ],
+                  [
+                    344.5,
+                    925
+                  ],
+                  [
+                    345.5,
+                    924
+                  ],
+                  [
+                    348.5,
+                    920
+                  ],
+                  [
+                    356,
+                    914.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    350.5,
+                    895
+                  ],
+                  [
+                    349.5,
+                    895.5
+                  ],
+                  [
+                    348,
+                    895.5
+                  ],
+                  [
+                    347,
+                    895.5
+                  ],
+                  [
+                    346,
+                    895.5
+                  ],
+                  [
+                    345,
+                    895
+                  ],
+                  [
+                    347.5,
+                    894
+                  ],
+                  [
+                    355,
+                    892.5
+                  ],
+                  [
+                    360,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    323,
+                    992
+                  ],
+                  [
+                    323,
+                    991
+                  ],
+                  [
+                    322.5,
+                    989
+                  ],
+                  [
+                    321.5,
+                    987.5
+                  ],
+                  [
+                    320.5,
+                    984
+                  ],
+                  [
+                    319,
+                    976.5
+                  ],
+                  [
+                    318.5,
+                    968.5
+                  ],
+                  [
+                    319.5,
+                    961.5
+                  ],
+                  [
+                    320.5,
+                    955
+                  ],
+                  [
+                    322.5,
+                    950
+                  ],
+                  [
+                    324,
+                    945.5
+                  ],
+                  [
+                    326.5,
+                    944.5
+                  ],
+                  [
+                    328,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    281.5,
+                    996
+                  ],
+                  [
+                    282,
+                    995
+                  ],
+                  [
+                    282,
+                    994
+                  ],
+                  [
+                    282,
+                    993
+                  ],
+                  [
+                    281.5,
+                    992
+                  ],
+                  [
+                    281.5,
+                    991
+                  ],
+                  [
+                    281.5,
+                    989.5
+                  ],
+                  [
+                    282,
+                    988
+                  ],
+                  [
+                    282.5,
+                    986
+                  ],
+                  [
+                    283,
+                    984.5
+                  ],
+                  [
+                    283.5,
+                    982.5
+                  ],
+                  [
+                    283.5,
+                    980.5
+                  ],
+                  [
+                    284,
+                    979
+                  ],
+                  [
+                    284,
+                    976.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    266,
+                    974.5
+                  ],
+                  [
+                    266,
+                    973.5
+                  ],
+                  [
+                    265.5,
+                    971.5
+                  ],
+                  [
+                    265,
+                    970
+                  ],
+                  [
+                    264.5,
+                    967
+                  ],
+                  [
+                    263.5,
+                    961
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    265,
+                    951
+                  ],
+                  [
+                    266.5,
+                    949.5
+                  ],
+                  [
+                    269,
+                    947.5
+                  ],
+                  [
+                    271.5,
+                    946.5
+                  ],
+                  [
+                    274.5,
+                    945.5
+                  ],
+                  [
+                    279,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    355,
+                    984.5
+                  ],
+                  [
+                    354.5,
+                    983.5
+                  ],
+                  [
+                    353.5,
+                    981.5
+                  ],
+                  [
+                    353.5,
+                    980
+                  ],
+                  [
+                    353.5,
+                    978
+                  ],
+                  [
+                    353.5,
+                    975.5
+                  ],
+                  [
+                    354.5,
+                    972
+                  ],
+                  [
+                    357,
+                    965.5
+                  ],
+                  [
+                    360.5,
+                    960.5
+                  ],
+                  [
+                    362.5,
+                    958
+                  ],
+                  [
+                    364.5,
+                    955
+                  ],
+                  [
+                    366,
+                    951.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    399,
+                    970.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    396.5,
+                    971
+                  ],
+                  [
+                    395.5,
+                    970.5
+                  ],
+                  [
+                    394.5,
+                    970.5
+                  ],
+                  [
+                    393.5,
+                    969.5
+                  ],
+                  [
+                    392.5,
+                    968
+                  ],
+                  [
+                    392,
+                    967
+                  ],
+                  [
+                    391,
+                    964.5
+                  ],
+                  [
+                    390,
+                    962.5
+                  ],
+                  [
+                    389.5,
+                    960
+                  ],
+                  [
+                    389,
+                    958
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    300,
+                    980
+                  ],
+                  [
+                    298,
+                    979.5
+                  ],
+                  [
+                    297,
+                    978
+                  ],
+                  [
+                    295.5,
+                    977
+                  ],
+                  [
+                    294.5,
+                    976
+                  ],
+                  [
+                    294,
+                    975
+                  ],
+                  [
+                    294,
+                    973.5
+                  ],
+                  [
+                    294,
+                    972
+                  ],
+                  [
+                    294.5,
+                    971
+                  ],
+                  [
+                    295.5,
+                    970
+                  ],
+                  [
+                    297,
+                    968.5
+                  ],
+                  [
+                    298,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    309.5,
+                    950
+                  ],
+                  [
+                    309.5,
+                    949
+                  ],
+                  [
+                    310,
+                    948
+                  ],
+                  [
+                    310.5,
+                    946.5
+                  ],
+                  [
+                    311,
+                    945.5
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    312,
+                    942.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    298,
+                    969
+                  ],
+                  [
+                    297,
+                    968
+                  ],
+                  [
+                    296,
+                    967
+                  ],
+                  [
+                    295,
+                    965.5
+                  ],
+                  [
+                    295,
+                    964
+                  ],
+                  [
+                    295,
+                    963
+                  ],
+                  [
+                    295.5,
+                    962
+                  ],
+                  [
+                    296.5,
+                    961
+                  ],
+                  [
+                    296.5,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    409.5,
+                    968.5
+                  ],
+                  [
+                    408.5,
+                    968
+                  ],
+                  [
+                    407,
+                    967
+                  ],
+                  [
+                    405.5,
+                    967
+                  ],
+                  [
+                    404.5,
+                    965.5
+                  ],
+                  [
+                    403,
+                    964.5
+                  ],
+                  [
+                    401.5,
+                    963
+                  ],
+                  [
+                    400,
+                    962
+                  ],
+                  [
+                    398,
+                    960.5
+                  ],
+                  [
+                    396.5,
+                    959
+                  ],
+                  [
+                    394.5,
+                    958
+                  ],
+                  [
+                    393,
+                    957
+                  ],
+                  [
+                    391,
+                    955.5
+                  ],
+                  [
+                    390,
+                    954.5
+                  ],
+                  [
+                    389,
+                    953.5
+                  ],
+                  [
+                    388,
+                    953
+                  ],
+                  [
+                    388,
+                    952.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    327,
+                    994
+                  ],
+                  [
+                    325,
+                    993
+                  ],
+                  [
+                    323.5,
+                    992
+                  ],
+                  [
+                    321.5,
+                    991
+                  ],
+                  [
+                    320.5,
+                    989.5
+                  ],
+                  [
+                    320,
+                    988
+                  ],
+                  [
+                    320,
+                    986.5
+                  ],
+                  [
+                    320.5,
+                    985.5
+                  ],
+                  [
+                    321.5,
+                    984
+                  ],
+                  [
+                    323,
+                    982.5
+                  ],
+                  [
+                    324,
+                    981
+                  ],
+                  [
+                    325,
+                    980
+                  ],
+                  [
+                    325.5,
+                    978.5
+                  ],
+                  [
+                    326,
+                    976.5
+                  ],
+                  [
+                    326.5,
+                    975.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    326.5,
+                    990
+                  ],
+                  [
+                    325.5,
+                    989
+                  ],
+                  [
+                    324,
+                    988
+                  ],
+                  [
+                    322.5,
+                    986
+                  ],
+                  [
+                    320.5,
+                    984.5
+                  ],
+                  [
+                    319.5,
+                    983
+                  ],
+                  [
+                    318,
+                    981.5
+                  ],
+                  [
+                    317,
+                    981
+                  ],
+                  [
+                    316.5,
+                    980
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    201,
+                    955
+                  ],
+                  [
+                    200,
+                    954
+                  ],
+                  [
+                    199.5,
+                    953
+                  ],
+                  [
+                    200,
+                    952
+                  ],
+                  [
+                    202,
+                    951.5
+                  ],
+                  [
+                    207,
+                    950
+                  ],
+                  [
+                    214.5,
+                    946.5
+                  ],
+                  [
+                    221,
+                    944
+                  ],
+                  [
+                    224.5,
+                    941.5
+                  ],
+                  [
+                    226.5,
+                    937.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    383.5,
+                    978.5
+                  ],
+                  [
+                    382.5,
+                    978
+                  ],
+                  [
+                    381.5,
+                    976.5
+                  ],
+                  [
+                    381,
+                    975
+                  ],
+                  [
+                    380.5,
+                    972.5
+                  ],
+                  [
+                    380.5,
+                    970.5
+                  ],
+                  [
+                    381,
+                    967.5
+                  ],
+                  [
+                    381.5,
+                    965.5
+                  ],
+                  [
+                    381.5,
+                    963.5
+                  ],
+                  [
+                    382,
+                    962
+                  ],
+                  [
+                    382,
+                    961
+                  ],
+                  [
+                    382,
+                    960
+                  ],
+                  [
+                    381.5,
+                    959
+                  ],
+                  [
+                    382,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    311.5,
+                    989
+                  ],
+                  [
+                    311,
+                    988
+                  ],
+                  [
+                    310.5,
+                    987
+                  ],
+                  [
+                    309.5,
+                    985.5
+                  ],
+                  [
+                    309,
+                    984.5
+                  ],
+                  [
+                    308.5,
+                    983
+                  ],
+                  [
+                    308,
+                    981
+                  ],
+                  [
+                    307.5,
+                    979.5
+                  ],
+                  [
+                    307,
+                    977
+                  ],
+                  [
+                    306.5,
+                    975.5
+                  ],
+                  [
+                    307,
+                    974
+                  ],
+                  [
+                    307.5,
+                    972.5
+                  ],
+                  [
+                    307.5,
+                    972
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    390,
+                    963
+                  ],
+                  [
+                    388.5,
+                    963
+                  ],
+                  [
+                    387.5,
+                    962
+                  ],
+                  [
+                    386,
+                    960.5
+                  ],
+                  [
+                    385,
+                    959.5
+                  ],
+                  [
+                    385,
+                    958.5
+                  ],
+                  [
+                    384,
+                    957.5
+                  ],
+                  [
+                    384,
+                    956.5
+                  ],
+                  [
+                    382.5,
+                    955.5
+                  ],
+                  [
+                    382,
+                    954.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    405,
+                    888
+                  ],
+                  [
+                    404,
+                    888
+                  ],
+                  [
+                    401.5,
+                    887
+                  ],
+                  [
+                    399.5,
+                    886.5
+                  ],
+                  [
+                    398,
+                    886
+                  ],
+                  [
+                    396,
+                    886.5
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    393.5,
+                    887.5
+                  ],
+                  [
+                    392,
+                    888
+                  ],
+                  [
+                    391,
+                    889
+                  ],
+                  [
+                    390,
+                    889.5
+                  ],
+                  [
+                    389,
+                    889.5
+                  ],
+                  [
+                    389.5,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    386,
+                    983.5
+                  ],
+                  [
+                    384.5,
+                    983
+                  ],
+                  [
+                    382.5,
+                    982
+                  ],
+                  [
+                    380,
+                    981
+                  ],
+                  [
+                    378,
+                    980
+                  ],
+                  [
+                    376,
+                    979.5
+                  ],
+                  [
+                    374.5,
+                    978
+                  ],
+                  [
+                    373,
+                    976
+                  ],
+                  [
+                    372,
+                    975
+                  ],
+                  [
+                    371,
+                    973.5
+                  ],
+                  [
+                    370,
+                    971.5
+                  ],
+                  [
+                    369,
+                    970.5
+                  ],
+                  [
+                    368,
+                    969
+                  ],
+                  [
+                    367.5,
+                    967.5
+                  ],
+                  [
+                    368,
+                    965.5
+                  ],
+                  [
+                    368.5,
+                    965
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    974
+                  ],
+                  [
+                    305.5,
+                    972
+                  ],
+                  [
+                    305.5,
+                    971
+                  ],
+                  [
+                    305.5,
+                    969
+                  ],
+                  [
+                    305.5,
+                    967.5
+                  ],
+                  [
+                    306.5,
+                    966.5
+                  ],
+                  [
+                    307,
+                    965.5
+                  ],
+                  [
+                    308,
+                    964.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    349,
+                    844
+                  ],
+                  [
+                    348,
+                    844
+                  ],
+                  [
+                    346.5,
+                    844
+                  ],
+                  [
+                    345.5,
+                    844
+                  ],
+                  [
+                    344.5,
+                    845.5
+                  ],
+                  [
+                    344.5,
+                    847
+                  ],
+                  [
+                    344.5,
+                    849.5
+                  ],
+                  [
+                    345,
+                    855
+                  ],
+                  [
+                    346.5,
+                    863
+                  ],
+                  [
+                    349,
+                    868.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    388.5,
+                    838.5
+                  ],
+                  [
+                    387,
+                    839
+                  ],
+                  [
+                    385.5,
+                    840
+                  ],
+                  [
+                    384,
+                    841
+                  ],
+                  [
+                    382,
+                    842.5
+                  ],
+                  [
+                    381,
+                    844
+                  ],
+                  [
+                    380,
+                    846
+                  ],
+                  [
+                    379,
+                    847.5
+                  ],
+                  [
+                    379,
+                    850
+                  ],
+                  [
+                    379,
+                    852.5
+                  ],
+                  [
+                    379,
+                    855
+                  ],
+                  [
+                    379,
+                    858
+                  ],
+                  [
+                    379,
+                    860
+                  ],
+                  [
+                    379.5,
+                    862.5
+                  ],
+                  [
+                    380,
+                    864
+                  ],
+                  [
+                    380.5,
+                    865.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    851.5
+                  ],
+                  [
+                    305.5,
+                    853
+                  ],
+                  [
+                    304.5,
+                    853.5
+                  ],
+                  [
+                    303.5,
+                    855
+                  ],
+                  [
+                    303,
+                    856
+                  ],
+                  [
+                    302.5,
+                    857.5
+                  ],
+                  [
+                    302.5,
+                    859
+                  ],
+                  [
+                    302.5,
+                    860.5
+                  ],
+                  [
+                    303.5,
+                    862
+                  ],
+                  [
+                    304.5,
+                    864
+                  ],
+                  [
+                    306,
+                    865
+                  ],
+                  [
+                    307.5,
+                    867
+                  ],
+                  [
+                    308.5,
+                    868.5
+                  ],
+                  [
+                    309,
+                    869.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    272.5,
+                    851.5
+                  ],
+                  [
+                    272,
+                    852.5
+                  ],
+                  [
+                    271,
+                    853
+                  ],
+                  [
+                    269,
+                    853.5
+                  ],
+                  [
+                    268,
+                    854.5
+                  ],
+                  [
+                    267,
+                    854.5
+                  ],
+                  [
+                    266,
+                    855
+                  ],
+                  [
+                    265,
+                    855.5
+                  ],
+                  [
+                    264,
+                    855.5
+                  ],
+                  [
+                    263,
+                    856
+                  ],
+                  [
+                    262,
+                    856.5
+                  ],
+                  [
+                    261,
+                    857.5
+                  ],
+                  [
+                    260,
+                    858.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    937
+                  ],
+                  [
+                    174,
+                    935.5
+                  ],
+                  [
+                    175,
+                    934
+                  ],
+                  [
+                    176.5,
+                    932.5
+                  ],
+                  [
+                    178,
+                    931.5
+                  ],
+                  [
+                    183,
+                    928.5
+                  ],
+                  [
+                    186.5,
+                    927
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    145,
+                    874
+                  ],
+                  [
+                    146,
+                    874.5
+                  ],
+                  [
+                    148.5,
+                    874.5
+                  ],
+                  [
+                    155.5,
+                    873
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    207,
+                    1001.5
+                  ],
+                  [
+                    208,
+                    1000.5
+                  ],
+                  [
+                    211,
+                    998.5
+                  ],
+                  [
+                    221.5,
+                    995.5
+                  ],
+                  [
+                    229.5,
+                    994
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    990
+                  ],
+                  [
+                    352.5,
+                    990.5
+                  ],
+                  [
+                    350.5,
+                    990.5
+                  ],
+                  [
+                    347,
+                    990
+                  ],
+                  [
+                    338.5,
+                    989
+                  ],
+                  [
+                    329.5,
+                    986.5
+                  ],
+                  [
+                    321,
+                    983.5
+                  ],
+                  [
+                    313,
+                    981
+                  ],
+                  [
+                    305.5,
+                    979.5
+                  ],
+                  [
+                    299,
+                    978
+                  ],
+                  [
+                    293,
+                    976.5
+                  ],
+                  [
+                    287,
+                    976.5
+                  ],
+                  [
+                    282,
+                    976.5
+                  ],
+                  [
+                    278.5,
+                    977.5
+                  ],
+                  [
+                    277.5,
+                    978
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    319.5,
+                    927
+                  ],
+                  [
+                    319.5,
+                    928
+                  ],
+                  [
+                    319.5,
+                    929.5
+                  ],
+                  [
+                    319.5,
+                    930.5
+                  ],
+                  [
+                    319.5,
+                    932
+                  ],
+                  [
+                    320,
+                    933
+                  ],
+                  [
+                    320,
+                    934.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    313,
+                    808.5
+                  ],
+                  [
+                    312,
+                    808.5
+                  ],
+                  [
+                    310,
+                    808
+                  ],
+                  [
+                    309,
+                    808
+                  ],
+                  [
+                    308,
+                    808
+                  ],
+                  [
+                    307.5,
+                    809.5
+                  ],
+                  [
+                    308,
+                    811
+                  ],
+                  [
+                    310.5,
+                    816
+                  ],
+                  [
+                    314,
+                    823.5
+                  ],
+                  [
+                    316,
+                    829.5
+                  ],
+                  [
+                    317.5,
+                    835
+                  ],
+                  [
+                    319.5,
+                    840.5
+                  ],
+                  [
+                    320.5,
+                    844.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    267,
+                    932.5
+                  ],
+                  [
+                    267.5,
+                    934
+                  ],
+                  [
+                    268,
+                    935.5
+                  ],
+                  [
+                    269,
+                    937
+                  ],
+                  [
+                    270,
+                    938.5
+                  ],
+                  [
+                    271,
+                    939.5
+                  ],
+                  [
+                    271.5,
+                    939.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    301,
+                    931
+                  ],
+                  [
+                    301,
+                    932
+                  ],
+                  [
+                    301.5,
+                    933
+                  ],
+                  [
+                    302,
+                    934.5
+                  ],
+                  [
+                    302.5,
+                    936
+                  ],
+                  [
+                    303.5,
+                    937
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    329.5,
+                    937
+                  ],
+                  [
+                    331.5,
+                    937.5
+                  ],
+                  [
+                    334,
+                    937.5
+                  ],
+                  [
+                    338,
+                    937
+                  ],
+                  [
+                    347.5,
+                    936.5
+                  ],
+                  [
+                    355.5,
+                    937
+                  ],
+                  [
+                    359,
+                    937.5
+                  ],
+                  [
+                    362,
+                    938.5
+                  ],
+                  [
+                    368,
+                    941
+                  ],
+                  [
+                    373,
+                    943.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    363.5,
+                    906
+                  ],
+                  [
+                    363,
+                    904.5
+                  ],
+                  [
+                    364,
+                    903.5
+                  ],
+                  [
+                    368.5,
+                    902
+                  ],
+                  [
+                    376,
+                    900
+                  ],
+                  [
+                    384,
+                    900
+                  ],
+                  [
+                    389.5,
+                    901.5
+                  ],
+                  [
+                    394,
+                    902.5
+                  ],
+                  [
+                    396,
+                    903.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    354.5,
+                    937.5
+                  ],
+                  [
+                    354,
+                    938.5
+                  ],
+                  [
+                    354,
+                    939.5
+                  ],
+                  [
+                    356.5,
+                    940.5
+                  ],
+                  [
+                    363.5,
+                    941.5
+                  ],
+                  [
+                    374,
+                    942.5
+                  ],
+                  [
+                    382,
+                    943.5
+                  ],
+                  [
+                    389,
+                    944
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    413.5,
+                    885.5
+                  ],
+                  [
+                    412.5,
+                    886
+                  ],
+                  [
+                    412,
+                    887
+                  ],
+                  [
+                    410.5,
+                    888
+                  ],
+                  [
+                    409,
+                    889.5
+                  ],
+                  [
+                    406.5,
+                    891
+                  ],
+                  [
+                    399.5,
+                    894
+                  ],
+                  [
+                    396,
+                    896.5
+                  ],
+                  [
+                    394.5,
+                    896.5
+                  ],
+                  [
+                    393.5,
+                    897
+                  ],
+                  [
+                    393,
+                    897
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    435.5,
+                    953
+                  ],
+                  [
+                    434.5,
+                    953
+                  ],
+                  [
+                    433,
+                    953
+                  ],
+                  [
+                    431.5,
+                    953.5
+                  ],
+                  [
+                    429.5,
+                    953.5
+                  ],
+                  [
+                    427.5,
+                    953.5
+                  ],
+                  [
+                    425.5,
+                    953
+                  ],
+                  [
+                    423.5,
+                    952.5
+                  ],
+                  [
+                    421.5,
+                    952
+                  ],
+                  [
+                    419.5,
+                    951
+                  ],
+                  [
+                    417.5,
+                    950.5
+                  ],
+                  [
+                    415,
+                    950
+                  ],
+                  [
+                    413,
+                    950
+                  ],
+                  [
+                    411.5,
+                    950
+                  ],
+                  [
+                    410,
+                    950
+                  ],
+                  [
+                    409,
+                    949.5
+                  ],
+                  [
+                    408.5,
+                    949.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    401.5,
+                    973
+                  ],
+                  [
+                    400,
+                    972
+                  ],
+                  [
+                    398.5,
+                    971
+                  ],
+                  [
+                    397,
+                    969
+                  ],
+                  [
+                    394.5,
+                    964
+                  ],
+                  [
+                    393,
+                    956.5
+                  ],
+                  [
+                    393.5,
+                    950
+                  ],
+                  [
+                    395,
+                    945.5
+                  ],
+                  [
+                    396.5,
+                    943.5
+                  ],
+                  [
+                    397.5,
+                    941.5
+                  ],
+                  [
+                    398.5,
+                    939.5
+                  ],
+                  [
+                    399.5,
+                    938
+                  ],
+                  [
+                    400.5,
+                    936.5
+                  ],
+                  [
+                    401.5,
+                    934.5
+                  ],
+                  [
+                    402,
+                    933.5
+                  ],
+                  [
+                    403,
+                    932
+                  ],
+                  [
+                    404,
+                    931.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    995
+                  ],
+                  [
+                    354,
+                    993.5
+                  ],
+                  [
+                    353.5,
+                    992.5
+                  ],
+                  [
+                    353,
+                    991
+                  ],
+                  [
+                    353,
+                    989
+                  ],
+                  [
+                    354,
+                    984.5
+                  ],
+                  [
+                    355,
+                    976
+                  ],
+                  [
+                    355,
+                    969
+                  ],
+                  [
+                    355,
+                    964.5
+                  ],
+                  [
+                    355.5,
+                    962
+                  ],
+                  [
+                    357,
+                    960.5
+                  ],
+                  [
+                    359,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    296.5,
+                    987.5
+                  ],
+                  [
+                    296,
+                    986
+                  ],
+                  [
+                    296.5,
+                    984.5
+                  ],
+                  [
+                    298,
+                    982.5
+                  ],
+                  [
+                    302,
+                    977
+                  ],
+                  [
+                    307,
+                    971.5
+                  ],
+                  [
+                    308.5,
+                    969
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    314,
+                    991
+                  ],
+                  [
+                    313,
+                    989.5
+                  ],
+                  [
+                    313,
+                    988.5
+                  ],
+                  [
+                    313,
+                    986.5
+                  ],
+                  [
+                    313.5,
+                    983.5
+                  ],
+                  [
+                    314,
+                    976.5
+                  ],
+                  [
+                    314.5,
+                    968
+                  ],
+                  [
+                    314.5,
+                    961.5
+                  ],
+                  [
+                    315.5,
+                    957.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    263,
+                    997.5
+                  ],
+                  [
+                    264,
+                    996.5
+                  ],
+                  [
+                    264.5,
+                    995.5
+                  ],
+                  [
+                    265,
+                    993
+                  ],
+                  [
+                    266,
+                    991
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    266.5,
+                    987.5
+                  ],
+                  [
+                    266.5,
+                    986.5
+                  ],
+                  [
+                    266.5,
+                    985.5
+                  ],
+                  [
+                    267,
+                    984.5
+                  ],
+                  [
+                    267,
+                    980
+                  ],
+                  [
+                    266.5,
+                    977
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    426.5,
+                    908
+                  ],
+                  [
+                    425.5,
+                    908.5
+                  ],
+                  [
+                    424.5,
+                    909
+                  ],
+                  [
+                    423.5,
+                    910
+                  ],
+                  [
+                    422.5,
+                    910
+                  ],
+                  [
+                    421.5,
+                    911
+                  ],
+                  [
+                    420,
+                    911
+                  ],
+                  [
+                    417.5,
+                    912.5
+                  ],
+                  [
+                    410.5,
+                    915.5
+                  ],
+                  [
+                    405,
+                    916
+                  ],
+                  [
+                    401,
+                    917
+                  ],
+                  [
+                    398,
+                    916.5
+                  ],
+                  [
+                    395.5,
+                    916.5
+                  ],
+                  [
+                    393.5,
+                    916.5
+                  ],
+                  [
+                    392,
+                    918.5
+                  ],
+                  [
+                    391.5,
+                    920
+                  ]
+                ]
+              },
+              {
+                "shading": true,
+                "tolerance": 0.2,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.12,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 14
+              },
+              {
+                "revertPoint": true
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    261,
+                    990.5
+                  ],
+                  [
+                    259,
+                    989
+                  ],
+                  [
+                    257,
+                    988.5
+                  ],
+                  [
+                    255,
+                    987
+                  ],
+                  [
+                    250.5,
+                    983.5
+                  ],
+                  [
+                    245.5,
+                    978
+                  ],
+                  [
+                    241.5,
+                    972
+                  ],
+                  [
+                    237,
+                    967.5
+                  ],
+                  [
+                    231,
+                    963
+                  ],
+                  [
+                    223.5,
+                    959
+                  ],
+                  [
+                    215.5,
+                    954
+                  ],
+                  [
+                    207.5,
+                    946.5
+                  ],
+                  [
+                    196,
+                    931
+                  ],
+                  [
+                    182,
+                    907
+                  ],
+                  [
+                    174.5,
+                    892.5
+                  ],
+                  [
+                    170.5,
+                    884
+                  ],
+                  [
+                    168.5,
+                    878.5
+                  ],
+                  [
+                    168.5,
+                    874.5
+                  ],
+                  [
+                    168.5,
+                    872
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    321.5,
+                    911.5
+                  ],
+                  [
+                    320.5,
+                    910
+                  ],
+                  [
+                    319,
+                    909.5
+                  ],
+                  [
+                    315.5,
+                    908
+                  ],
+                  [
+                    308.5,
+                    906.5
+                  ],
+                  [
+                    300,
+                    906
+                  ],
+                  [
+                    293,
+                    907
+                  ],
+                  [
+                    286,
+                    907.5
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    270.5,
+                    910
+                  ],
+                  [
+                    262.5,
+                    909.5
+                  ],
+                  [
+                    255,
+                    908
+                  ],
+                  [
+                    246.5,
+                    905.5
+                  ],
+                  [
+                    237,
+                    901.5
+                  ],
+                  [
+                    227.5,
+                    896.5
+                  ],
+                  [
+                    219,
+                    890.5
+                  ],
+                  [
+                    211,
+                    884
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    199.5,
+                    868.5
+                  ],
+                  [
+                    195,
+                    860.5
+                  ],
+                  [
+                    193,
+                    854.5
+                  ],
+                  [
+                    193,
+                    851
+                  ],
+                  [
+                    194,
+                    851
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    906.5
+                  ],
+                  [
+                    291.5,
+                    906
+                  ],
+                  [
+                    290.5,
+                    906
+                  ],
+                  [
+                    288,
+                    906.5
+                  ],
+                  [
+                    281,
+                    905
+                  ],
+                  [
+                    272.5,
+                    903
+                  ],
+                  [
+                    268.5,
+                    903
+                  ],
+                  [
+                    265.5,
+                    902
+                  ],
+                  [
+                    259.5,
+                    899.5
+                  ],
+                  [
+                    253.5,
+                    897
+                  ],
+                  [
+                    248.5,
+                    893
+                  ],
+                  [
+                    243,
+                    887.5
+                  ],
+                  [
+                    237.5,
+                    882.5
+                  ],
+                  [
+                    232,
+                    877
+                  ],
+                  [
+                    226.5,
+                    872
+                  ],
+                  [
+                    221,
+                    867.5
+                  ],
+                  [
+                    215.5,
+                    862.5
+                  ],
+                  [
+                    211,
+                    858
+                  ],
+                  [
+                    208.5,
+                    855.5
+                  ],
+                  [
+                    208,
+                    855
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    243.5,
+                    897.5
+                  ],
+                  [
+                    242,
+                    896.5
+                  ],
+                  [
+                    241,
+                    896.5
+                  ],
+                  [
+                    240,
+                    895.5
+                  ],
+                  [
+                    239,
+                    895
+                  ],
+                  [
+                    237.5,
+                    894
+                  ],
+                  [
+                    233,
+                    890.5
+                  ],
+                  [
+                    227,
+                    886
+                  ],
+                  [
+                    221,
+                    882
+                  ],
+                  [
+                    216,
+                    878.5
+                  ],
+                  [
+                    211,
+                    875.5
+                  ],
+                  [
+                    207,
+                    872
+                  ],
+                  [
+                    203.5,
+                    868.5
+                  ],
+                  [
+                    200,
+                    864
+                  ],
+                  [
+                    197.5,
+                    862
+                  ],
+                  [
+                    196,
+                    860
+                  ],
+                  [
+                    195.5,
+                    859
+                  ],
+                  [
+                    197.5,
+                    856
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1789660542,
+                "points": [
+                  [
+                    131.5,
+                    827.5
+                  ],
+                  [
+                    133,
+                    828.5
+                  ],
+                  [
+                    140.5,
+                    833
+                  ],
+                  [
+                    158.5,
+                    844.5
+                  ],
+                  [
+                    184,
+                    863.5
+                  ],
+                  [
+                    209.5,
+                    890.5
+                  ],
+                  [
+                    233.5,
+                    918.5
+                  ],
+                  [
+                    246.5,
+                    933
+                  ],
+                  [
+                    252,
+                    939
+                  ],
+                  [
+                    252.5,
+                    940
+                  ],
+                  [
+                    251.5,
+                    939
+                  ],
+                  [
+                    239,
+                    929
+                  ],
+                  [
+                    204,
+                    896
+                  ],
+                  [
+                    163.5,
+                    851.5
+                  ],
+                  [
+                    133,
+                    819
+                  ],
+                  [
+                    121,
+                    812
+                  ],
+                  [
+                    121,
+                    814
+                  ],
+                  [
+                    129,
+                    824
+                  ],
+                  [
+                    157,
+                    856.5
+                  ],
+                  [
+                    198,
+                    894
+                  ],
+                  [
+                    231.5,
+                    925.5
+                  ],
+                  [
+                    253.5,
+                    952
+                  ],
+                  [
+                    273,
+                    976.5
+                  ],
+                  [
+                    282.5,
+                    989
+                  ],
+                  [
+                    285,
+                    992.5
+                  ],
+                  [
+                    282,
+                    989.5
+                  ],
+                  [
+                    259,
+                    966.5
+                  ],
+                  [
+                    212,
+                    913
+                  ],
+                  [
+                    168.5,
+                    859
+                  ],
+                  [
+                    154.5,
+                    841.5
+                  ],
+                  [
+                    153,
+                    841
+                  ],
+                  [
+                    153.5,
+                    842.5
+                  ],
+                  [
+                    155.5,
+                    848.5
+                  ],
+                  [
+                    162.5,
+                    862.5
+                  ],
+                  [
+                    190.5,
+                    902
+                  ],
+                  [
+                    247.5,
+                    961
+                  ],
+                  [
+                    303,
+                    1002
+                  ],
+                  [
+                    312.5,
+                    1008.5
+                  ],
+                  [
+                    308.5,
+                    1006.5
+                  ],
+                  [
+                    277,
+                    988.5
+                  ],
+                  [
+                    219.5,
+                    946
+                  ],
+                  [
+                    166.5,
+                    905
+                  ],
+                  [
+                    151,
+                    893.5
+                  ],
+                  [
+                    149.5,
+                    894
+                  ],
+                  [
+                    150.5,
+                    895.5
+                  ],
+                  [
+                    154.5,
+                    905
+                  ],
+                  [
+                    165.5,
+                    928.5
+                  ],
+                  [
+                    194,
+                    967
+                  ],
+                  [
+                    245.5,
+                    1007
+                  ],
+                  [
+                    293.5,
+                    1025
+                  ],
+                  [
+                    306,
+                    1021.5
+                  ],
+                  [
+                    302.5,
+                    1007
+                  ],
+                  [
+                    269.5,
+                    967.5
+                  ],
+                  [
+                    215,
+                    910.5
+                  ],
+                  [
+                    157.5,
+                    861
+                  ],
+                  [
+                    127,
+                    836
+                  ],
+                  [
+                    125.5,
+                    837
+                  ],
+                  [
+                    131,
+                    847.5
+                  ],
+                  [
+                    151,
+                    875.5
+                  ],
+                  [
+                    181.5,
+                    911.5
+                  ],
+                  [
+                    219.5,
+                    944
+                  ],
+                  [
+                    258,
+                    966
+                  ],
+                  [
+                    289,
+                    980
+                  ],
+                  [
+                    300,
+                    983
+                  ],
+                  [
+                    299,
+                    979.5
+                  ],
+                  [
+                    275.5,
+                    957.5
+                  ],
+                  [
+                    207,
+                    900.5
+                  ],
+                  [
+                    151,
+                    854.5
+                  ],
+                  [
+                    140,
+                    848
+                  ],
+                  [
+                    142,
+                    850
+                  ],
+                  [
+                    162,
+                    872
+                  ],
+                  [
+                    203.5,
+                    911.5
+                  ],
+                  [
+                    233,
+                    935
+                  ],
+                  [
+                    238.5,
+                    940
+                  ],
+                  [
+                    236,
+                    939.5
+                  ],
+                  [
+                    210,
+                    925
+                  ],
+                  [
+                    158.5,
+                    878
+                  ],
+                  [
+                    140.5,
+                    855.5
+                  ],
+                  [
+                    145,
+                    852.5
+                  ],
+                  [
+                    162.5,
+                    859.5
+                  ],
+                  [
+                    192.5,
+                    881.5
+                  ],
+                  [
+                    210.5,
+                    900.5
+                  ],
+                  [
+                    220.5,
+                    910
+                  ],
+                  [
+                    228.5,
+                    921.5
+                  ],
+                  [
+                    249,
+                    946.5
+                  ],
+                  [
+                    281,
+                    970.5
+                  ],
+                  [
+                    295.5,
+                    970.5
+                  ],
+                  [
+                    301.5,
+                    963
+                  ],
+                  [
+                    301.5,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 946441564,
+                "points": [
+                  [
+                    190,
+                    832.5
+                  ],
+                  [
+                    188,
+                    834
+                  ],
+                  [
+                    186.5,
+                    837.5
+                  ],
+                  [
+                    182,
+                    846
+                  ],
+                  [
+                    179.5,
+                    855.5
+                  ],
+                  [
+                    180.5,
+                    860
+                  ],
+                  [
+                    183,
+                    863
+                  ],
+                  [
+                    189,
+                    867.5
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    236,
+                    892.5
+                  ],
+                  [
+                    271.5,
+                    906
+                  ],
+                  [
+                    295.5,
+                    914
+                  ],
+                  [
+                    319,
+                    922
+                  ],
+                  [
+                    335,
+                    926.5
+                  ],
+                  [
+                    342,
+                    928.5
+                  ],
+                  [
+                    329.5,
+                    921
+                  ],
+                  [
+                    295,
+                    906
+                  ],
+                  [
+                    260,
+                    892
+                  ],
+                  [
+                    238,
+                    885
+                  ],
+                  [
+                    225.5,
+                    882.5
+                  ],
+                  [
+                    217.5,
+                    882
+                  ],
+                  [
+                    213.5,
+                    882.5
+                  ],
+                  [
+                    212,
+                    882.5
+                  ],
+                  [
+                    214.5,
+                    883.5
+                  ],
+                  [
+                    221.5,
+                    886.5
+                  ],
+                  [
+                    266.5,
+                    907
+                  ],
+                  [
+                    329,
+                    936.5
+                  ],
+                  [
+                    349,
+                    943.5
+                  ],
+                  [
+                    349.5,
+                    942
+                  ],
+                  [
+                    336.5,
+                    933
+                  ],
+                  [
+                    284,
+                    901
+                  ],
+                  [
+                    217.5,
+                    865
+                  ],
+                  [
+                    174,
+                    855.5
+                  ],
+                  [
+                    154.5,
+                    857.5
+                  ],
+                  [
+                    143.5,
+                    862
+                  ],
+                  [
+                    138.5,
+                    865.5
+                  ],
+                  [
+                    140,
+                    869
+                  ],
+                  [
+                    151,
+                    880
+                  ],
+                  [
+                    187,
+                    913
+                  ],
+                  [
+                    234.5,
+                    950
+                  ],
+                  [
+                    255,
+                    961
+                  ],
+                  [
+                    257.5,
+                    962.5
+                  ],
+                  [
+                    251.5,
+                    956.5
+                  ],
+                  [
+                    223.5,
+                    928.5
+                  ],
+                  [
+                    171.5,
+                    872
+                  ],
+                  [
+                    133,
+                    823.5
+                  ],
+                  [
+                    130,
+                    816
+                  ],
+                  [
+                    139.5,
+                    824.5
+                  ],
+                  [
+                    164,
+                    850.5
+                  ],
+                  [
+                    195.5,
+                    885
+                  ],
+                  [
+                    219,
+                    915.5
+                  ],
+                  [
+                    242.5,
+                    946.5
+                  ],
+                  [
+                    258.5,
+                    975.5
+                  ],
+                  [
+                    266,
+                    988
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    256,
+                    981.5
+                  ],
+                  [
+                    221.5,
+                    944
+                  ],
+                  [
+                    179,
+                    890
+                  ],
+                  [
+                    159,
+                    851.5
+                  ],
+                  [
+                    150.5,
+                    829.5
+                  ],
+                  [
+                    150.5,
+                    826
+                  ],
+                  [
+                    151.5,
+                    828
+                  ],
+                  [
+                    157,
+                    842
+                  ],
+                  [
+                    179.5,
+                    883
+                  ],
+                  [
+                    222.5,
+                    944
+                  ],
+                  [
+                    262,
+                    980
+                  ],
+                  [
+                    275,
+                    987.5
+                  ],
+                  [
+                    262,
+                    971
+                  ],
+                  [
+                    217,
+                    916.5
+                  ],
+                  [
+                    169.5,
+                    855.5
+                  ],
+                  [
+                    159.5,
+                    840
+                  ],
+                  [
+                    165.5,
+                    845
+                  ],
+                  [
+                    183,
+                    864
+                  ],
+                  [
+                    213,
+                    898.5
+                  ],
+                  [
+                    240.5,
+                    924.5
+                  ],
+                  [
+                    256.5,
+                    941
+                  ],
+                  [
+                    264,
+                    948.5
+                  ],
+                  [
+                    265.5,
+                    950
+                  ],
+                  [
+                    261,
+                    944
+                  ],
+                  [
+                    235.5,
+                    912.5
+                  ],
+                  [
+                    198.5,
+                    870
+                  ],
+                  [
+                    188.5,
+                    851
+                  ],
+                  [
+                    190,
+                    848.5
+                  ],
+                  [
+                    195,
+                    853.5
+                  ],
+                  [
+                    215,
+                    877.5
+                  ],
+                  [
+                    245.5,
+                    914.5
+                  ],
+                  [
+                    257,
+                    930
+                  ],
+                  [
+                    259.5,
+                    933
+                  ],
+                  [
+                    258.5,
+                    931.5
+                  ],
+                  [
+                    246.5,
+                    913
+                  ],
+                  [
+                    205.5,
+                    862.5
+                  ],
+                  [
+                    177,
+                    834
+                  ],
+                  [
+                    178.5,
+                    838
+                  ],
+                  [
+                    184,
+                    849.5
+                  ],
+                  [
+                    198,
+                    875.5
+                  ],
+                  [
+                    218,
+                    905.5
+                  ],
+                  [
+                    243,
+                    928
+                  ],
+                  [
+                    256.5,
+                    936.5
+                  ],
+                  [
+                    262,
+                    938
+                  ],
+                  [
+                    261.5,
+                    936
+                  ],
+                  [
+                    246.5,
+                    917
+                  ],
+                  [
+                    206,
+                    877
+                  ],
+                  [
+                    182,
+                    857.5
+                  ],
+                  [
+                    184,
+                    860.5
+                  ],
+                  [
+                    190.5,
+                    870.5
+                  ],
+                  [
+                    207,
+                    892.5
+                  ],
+                  [
+                    225,
+                    911.5
+                  ],
+                  [
+                    236.5,
+                    919.5
+                  ],
+                  [
+                    243,
+                    923
+                  ],
+                  [
+                    246.5,
+                    923.5
+                  ],
+                  [
+                    248.5,
+                    922
+                  ],
+                  [
+                    249.5,
+                    918.5
+                  ],
+                  [
+                    242.5,
+                    903
+                  ],
+                  [
+                    215,
+                    870
+                  ],
+                  [
+                    186,
+                    843
+                  ],
+                  [
+                    175.5,
+                    835.5
+                  ],
+                  [
+                    174,
+                    834.5
+                  ],
+                  [
+                    186,
+                    849.5
+                  ],
+                  [
+                    226.5,
+                    889.5
+                  ],
+                  [
+                    262.5,
+                    915.5
+                  ],
+                  [
+                    271.5,
+                    917
+                  ],
+                  [
+                    270.5,
+                    915.5
+                  ],
+                  [
+                    251,
+                    894
+                  ],
+                  [
+                    200,
+                    849.5
+                  ],
+                  [
+                    176.5,
+                    835
+                  ],
+                  [
+                    180.5,
+                    845
+                  ],
+                  [
+                    204.5,
+                    876.5
+                  ],
+                  [
+                    239,
+                    904.5
+                  ],
+                  [
+                    250,
+                    907
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "hatchet": {
           "scaleY": 1.2,
@@ -9371,7 +21603,3963 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "pick-shovel-pick": {
           "layerOrder": "head-over-haft",
-          "disallow": true
+          "disallow": false,
+          "flipY": true,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "block",
+                "x": 325,
+                "y": 927.5,
+                "rotation": 0,
+                "scale": 2.5
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    246.5,
+                    880.5
+                  ],
+                  [
+                    244,
+                    880
+                  ],
+                  [
+                    241.5,
+                    879
+                  ],
+                  [
+                    240.5,
+                    878.5
+                  ],
+                  [
+                    239.5,
+                    878
+                  ],
+                  [
+                    239,
+                    877
+                  ],
+                  [
+                    240.5,
+                    877.5
+                  ],
+                  [
+                    242.5,
+                    878.5
+                  ],
+                  [
+                    245.5,
+                    881
+                  ],
+                  [
+                    251.5,
+                    885.5
+                  ],
+                  [
+                    258.5,
+                    890
+                  ],
+                  [
+                    265.5,
+                    893.5
+                  ],
+                  [
+                    276.5,
+                    898
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    265,
+                    922
+                  ],
+                  [
+                    264,
+                    922
+                  ],
+                  [
+                    262.5,
+                    921.5
+                  ],
+                  [
+                    260.5,
+                    920.5
+                  ],
+                  [
+                    259,
+                    920.5
+                  ],
+                  [
+                    257.5,
+                    920
+                  ],
+                  [
+                    256.5,
+                    920
+                  ],
+                  [
+                    255.5,
+                    920
+                  ],
+                  [
+                    257,
+                    921
+                  ],
+                  [
+                    259.5,
+                    922.5
+                  ],
+                  [
+                    266.5,
+                    925
+                  ],
+                  [
+                    274,
+                    928.5
+                  ],
+                  [
+                    280,
+                    931.5
+                  ],
+                  [
+                    286,
+                    934.5
+                  ],
+                  [
+                    292,
+                    937.5
+                  ],
+                  [
+                    298,
+                    941
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    264.5,
+                    954
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    262,
+                    954.5
+                  ],
+                  [
+                    261,
+                    954.5
+                  ],
+                  [
+                    260,
+                    955
+                  ],
+                  [
+                    259,
+                    955.5
+                  ],
+                  [
+                    258.5,
+                    956.5
+                  ],
+                  [
+                    259,
+                    957.5
+                  ],
+                  [
+                    262.5,
+                    960
+                  ],
+                  [
+                    270,
+                    965
+                  ],
+                  [
+                    277.5,
+                    970
+                  ],
+                  [
+                    282.5,
+                    973
+                  ],
+                  [
+                    286.5,
+                    975
+                  ],
+                  [
+                    290,
+                    975.5
+                  ],
+                  [
+                    293,
+                    975.5
+                  ],
+                  [
+                    296,
+                    975
+                  ],
+                  [
+                    300.5,
+                    974
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    287.5,
+                    937
+                  ],
+                  [
+                    286,
+                    937
+                  ],
+                  [
+                    289,
+                    938.5
+                  ],
+                  [
+                    296,
+                    941
+                  ],
+                  [
+                    304.5,
+                    943
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    317,
+                    945
+                  ],
+                  [
+                    320.5,
+                    944.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    965.5
+                  ],
+                  [
+                    295,
+                    965
+                  ],
+                  [
+                    296.5,
+                    965
+                  ],
+                  [
+                    302.5,
+                    964.5
+                  ],
+                  [
+                    312,
+                    964
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    280,
+                    910
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    278.5,
+                    908
+                  ],
+                  [
+                    278.5,
+                    907
+                  ],
+                  [
+                    280,
+                    906.5
+                  ],
+                  [
+                    283,
+                    906
+                  ],
+                  [
+                    290,
+                    905.5
+                  ],
+                  [
+                    299,
+                    907
+                  ],
+                  [
+                    307,
+                    908.5
+                  ],
+                  [
+                    314,
+                    910
+                  ],
+                  [
+                    322,
+                    911
+                  ],
+                  [
+                    330.5,
+                    911
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    289.5,
+                    894
+                  ],
+                  [
+                    289.5,
+                    893
+                  ],
+                  [
+                    291,
+                    892.5
+                  ],
+                  [
+                    293.5,
+                    892
+                  ],
+                  [
+                    300.5,
+                    892.5
+                  ],
+                  [
+                    308,
+                    893.5
+                  ],
+                  [
+                    313,
+                    894
+                  ],
+                  [
+                    317.5,
+                    894
+                  ],
+                  [
+                    323,
+                    894
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    318.5,
+                    967
+                  ],
+                  [
+                    317.5,
+                    965.5
+                  ],
+                  [
+                    317.5,
+                    964.5
+                  ],
+                  [
+                    319.5,
+                    963
+                  ],
+                  [
+                    324.5,
+                    962.5
+                  ],
+                  [
+                    332,
+                    961.5
+                  ],
+                  [
+                    338.5,
+                    962.5
+                  ],
+                  [
+                    343.5,
+                    962.5
+                  ],
+                  [
+                    349,
+                    962
+                  ],
+                  [
+                    356.5,
+                    961
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    332.5,
+                    938
+                  ],
+                  [
+                    333.5,
+                    937.5
+                  ],
+                  [
+                    336.5,
+                    937.5
+                  ],
+                  [
+                    343.5,
+                    938
+                  ],
+                  [
+                    352,
+                    938.5
+                  ],
+                  [
+                    356,
+                    938
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    331.5,
+                    900
+                  ],
+                  [
+                    331.5,
+                    898.5
+                  ],
+                  [
+                    332.5,
+                    898
+                  ],
+                  [
+                    333.5,
+                    896.5
+                  ],
+                  [
+                    338.5,
+                    894
+                  ],
+                  [
+                    345.5,
+                    890.5
+                  ],
+                  [
+                    352.5,
+                    890
+                  ],
+                  [
+                    358.5,
+                    890.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    358.5,
+                    956.5
+                  ],
+                  [
+                    359,
+                    955
+                  ],
+                  [
+                    360.5,
+                    954
+                  ],
+                  [
+                    362,
+                    953
+                  ],
+                  [
+                    363,
+                    951.5
+                  ],
+                  [
+                    367,
+                    947
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    345.5,
+                    928.5
+                  ],
+                  [
+                    344.5,
+                    928
+                  ],
+                  [
+                    344.5,
+                    926.5
+                  ],
+                  [
+                    344.5,
+                    925
+                  ],
+                  [
+                    345.5,
+                    924
+                  ],
+                  [
+                    348.5,
+                    920
+                  ],
+                  [
+                    356,
+                    914.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    350.5,
+                    895
+                  ],
+                  [
+                    349.5,
+                    895.5
+                  ],
+                  [
+                    348,
+                    895.5
+                  ],
+                  [
+                    347,
+                    895.5
+                  ],
+                  [
+                    346,
+                    895.5
+                  ],
+                  [
+                    345,
+                    895
+                  ],
+                  [
+                    347.5,
+                    894
+                  ],
+                  [
+                    355,
+                    892.5
+                  ],
+                  [
+                    360,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    323,
+                    992
+                  ],
+                  [
+                    323,
+                    991
+                  ],
+                  [
+                    322.5,
+                    989
+                  ],
+                  [
+                    321.5,
+                    987.5
+                  ],
+                  [
+                    320.5,
+                    984
+                  ],
+                  [
+                    319,
+                    976.5
+                  ],
+                  [
+                    318.5,
+                    968.5
+                  ],
+                  [
+                    319.5,
+                    961.5
+                  ],
+                  [
+                    320.5,
+                    955
+                  ],
+                  [
+                    322.5,
+                    950
+                  ],
+                  [
+                    324,
+                    945.5
+                  ],
+                  [
+                    326.5,
+                    944.5
+                  ],
+                  [
+                    328,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    281.5,
+                    996
+                  ],
+                  [
+                    282,
+                    995
+                  ],
+                  [
+                    282,
+                    994
+                  ],
+                  [
+                    282,
+                    993
+                  ],
+                  [
+                    281.5,
+                    992
+                  ],
+                  [
+                    281.5,
+                    991
+                  ],
+                  [
+                    281.5,
+                    989.5
+                  ],
+                  [
+                    282,
+                    988
+                  ],
+                  [
+                    282.5,
+                    986
+                  ],
+                  [
+                    283,
+                    984.5
+                  ],
+                  [
+                    283.5,
+                    982.5
+                  ],
+                  [
+                    283.5,
+                    980.5
+                  ],
+                  [
+                    284,
+                    979
+                  ],
+                  [
+                    284,
+                    976.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    266,
+                    974.5
+                  ],
+                  [
+                    266,
+                    973.5
+                  ],
+                  [
+                    265.5,
+                    971.5
+                  ],
+                  [
+                    265,
+                    970
+                  ],
+                  [
+                    264.5,
+                    967
+                  ],
+                  [
+                    263.5,
+                    961
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    265,
+                    951
+                  ],
+                  [
+                    266.5,
+                    949.5
+                  ],
+                  [
+                    269,
+                    947.5
+                  ],
+                  [
+                    271.5,
+                    946.5
+                  ],
+                  [
+                    274.5,
+                    945.5
+                  ],
+                  [
+                    279,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    355,
+                    984.5
+                  ],
+                  [
+                    354.5,
+                    983.5
+                  ],
+                  [
+                    353.5,
+                    981.5
+                  ],
+                  [
+                    353.5,
+                    980
+                  ],
+                  [
+                    353.5,
+                    978
+                  ],
+                  [
+                    353.5,
+                    975.5
+                  ],
+                  [
+                    354.5,
+                    972
+                  ],
+                  [
+                    357,
+                    965.5
+                  ],
+                  [
+                    360.5,
+                    960.5
+                  ],
+                  [
+                    362.5,
+                    958
+                  ],
+                  [
+                    364.5,
+                    955
+                  ],
+                  [
+                    366,
+                    951.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    399,
+                    970.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    396.5,
+                    971
+                  ],
+                  [
+                    395.5,
+                    970.5
+                  ],
+                  [
+                    394.5,
+                    970.5
+                  ],
+                  [
+                    393.5,
+                    969.5
+                  ],
+                  [
+                    392.5,
+                    968
+                  ],
+                  [
+                    392,
+                    967
+                  ],
+                  [
+                    391,
+                    964.5
+                  ],
+                  [
+                    390,
+                    962.5
+                  ],
+                  [
+                    389.5,
+                    960
+                  ],
+                  [
+                    389,
+                    958
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    300,
+                    980
+                  ],
+                  [
+                    298,
+                    979.5
+                  ],
+                  [
+                    297,
+                    978
+                  ],
+                  [
+                    295.5,
+                    977
+                  ],
+                  [
+                    294.5,
+                    976
+                  ],
+                  [
+                    294,
+                    975
+                  ],
+                  [
+                    294,
+                    973.5
+                  ],
+                  [
+                    294,
+                    972
+                  ],
+                  [
+                    294.5,
+                    971
+                  ],
+                  [
+                    295.5,
+                    970
+                  ],
+                  [
+                    297,
+                    968.5
+                  ],
+                  [
+                    298,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    309.5,
+                    950
+                  ],
+                  [
+                    309.5,
+                    949
+                  ],
+                  [
+                    310,
+                    948
+                  ],
+                  [
+                    310.5,
+                    946.5
+                  ],
+                  [
+                    311,
+                    945.5
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    312,
+                    942.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    298,
+                    969
+                  ],
+                  [
+                    297,
+                    968
+                  ],
+                  [
+                    296,
+                    967
+                  ],
+                  [
+                    295,
+                    965.5
+                  ],
+                  [
+                    295,
+                    964
+                  ],
+                  [
+                    295,
+                    963
+                  ],
+                  [
+                    295.5,
+                    962
+                  ],
+                  [
+                    296.5,
+                    961
+                  ],
+                  [
+                    296.5,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    409.5,
+                    968.5
+                  ],
+                  [
+                    408.5,
+                    968
+                  ],
+                  [
+                    407,
+                    967
+                  ],
+                  [
+                    405.5,
+                    967
+                  ],
+                  [
+                    404.5,
+                    965.5
+                  ],
+                  [
+                    403,
+                    964.5
+                  ],
+                  [
+                    401.5,
+                    963
+                  ],
+                  [
+                    400,
+                    962
+                  ],
+                  [
+                    398,
+                    960.5
+                  ],
+                  [
+                    396.5,
+                    959
+                  ],
+                  [
+                    394.5,
+                    958
+                  ],
+                  [
+                    393,
+                    957
+                  ],
+                  [
+                    391,
+                    955.5
+                  ],
+                  [
+                    390,
+                    954.5
+                  ],
+                  [
+                    389,
+                    953.5
+                  ],
+                  [
+                    388,
+                    953
+                  ],
+                  [
+                    388,
+                    952.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    327,
+                    994
+                  ],
+                  [
+                    325,
+                    993
+                  ],
+                  [
+                    323.5,
+                    992
+                  ],
+                  [
+                    321.5,
+                    991
+                  ],
+                  [
+                    320.5,
+                    989.5
+                  ],
+                  [
+                    320,
+                    988
+                  ],
+                  [
+                    320,
+                    986.5
+                  ],
+                  [
+                    320.5,
+                    985.5
+                  ],
+                  [
+                    321.5,
+                    984
+                  ],
+                  [
+                    323,
+                    982.5
+                  ],
+                  [
+                    324,
+                    981
+                  ],
+                  [
+                    325,
+                    980
+                  ],
+                  [
+                    325.5,
+                    978.5
+                  ],
+                  [
+                    326,
+                    976.5
+                  ],
+                  [
+                    326.5,
+                    975.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    326.5,
+                    990
+                  ],
+                  [
+                    325.5,
+                    989
+                  ],
+                  [
+                    324,
+                    988
+                  ],
+                  [
+                    322.5,
+                    986
+                  ],
+                  [
+                    320.5,
+                    984.5
+                  ],
+                  [
+                    319.5,
+                    983
+                  ],
+                  [
+                    318,
+                    981.5
+                  ],
+                  [
+                    317,
+                    981
+                  ],
+                  [
+                    316.5,
+                    980
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    201,
+                    955
+                  ],
+                  [
+                    200,
+                    954
+                  ],
+                  [
+                    199.5,
+                    953
+                  ],
+                  [
+                    200,
+                    952
+                  ],
+                  [
+                    202,
+                    951.5
+                  ],
+                  [
+                    207,
+                    950
+                  ],
+                  [
+                    214.5,
+                    946.5
+                  ],
+                  [
+                    221,
+                    944
+                  ],
+                  [
+                    224.5,
+                    941.5
+                  ],
+                  [
+                    226.5,
+                    937.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    383.5,
+                    978.5
+                  ],
+                  [
+                    382.5,
+                    978
+                  ],
+                  [
+                    381.5,
+                    976.5
+                  ],
+                  [
+                    381,
+                    975
+                  ],
+                  [
+                    380.5,
+                    972.5
+                  ],
+                  [
+                    380.5,
+                    970.5
+                  ],
+                  [
+                    381,
+                    967.5
+                  ],
+                  [
+                    381.5,
+                    965.5
+                  ],
+                  [
+                    381.5,
+                    963.5
+                  ],
+                  [
+                    382,
+                    962
+                  ],
+                  [
+                    382,
+                    961
+                  ],
+                  [
+                    382,
+                    960
+                  ],
+                  [
+                    381.5,
+                    959
+                  ],
+                  [
+                    382,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    311.5,
+                    989
+                  ],
+                  [
+                    311,
+                    988
+                  ],
+                  [
+                    310.5,
+                    987
+                  ],
+                  [
+                    309.5,
+                    985.5
+                  ],
+                  [
+                    309,
+                    984.5
+                  ],
+                  [
+                    308.5,
+                    983
+                  ],
+                  [
+                    308,
+                    981
+                  ],
+                  [
+                    307.5,
+                    979.5
+                  ],
+                  [
+                    307,
+                    977
+                  ],
+                  [
+                    306.5,
+                    975.5
+                  ],
+                  [
+                    307,
+                    974
+                  ],
+                  [
+                    307.5,
+                    972.5
+                  ],
+                  [
+                    307.5,
+                    972
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    390,
+                    963
+                  ],
+                  [
+                    388.5,
+                    963
+                  ],
+                  [
+                    387.5,
+                    962
+                  ],
+                  [
+                    386,
+                    960.5
+                  ],
+                  [
+                    385,
+                    959.5
+                  ],
+                  [
+                    385,
+                    958.5
+                  ],
+                  [
+                    384,
+                    957.5
+                  ],
+                  [
+                    384,
+                    956.5
+                  ],
+                  [
+                    382.5,
+                    955.5
+                  ],
+                  [
+                    382,
+                    954.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    405,
+                    888
+                  ],
+                  [
+                    404,
+                    888
+                  ],
+                  [
+                    401.5,
+                    887
+                  ],
+                  [
+                    399.5,
+                    886.5
+                  ],
+                  [
+                    398,
+                    886
+                  ],
+                  [
+                    396,
+                    886.5
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    393.5,
+                    887.5
+                  ],
+                  [
+                    392,
+                    888
+                  ],
+                  [
+                    391,
+                    889
+                  ],
+                  [
+                    390,
+                    889.5
+                  ],
+                  [
+                    389,
+                    889.5
+                  ],
+                  [
+                    389.5,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    386,
+                    983.5
+                  ],
+                  [
+                    384.5,
+                    983
+                  ],
+                  [
+                    382.5,
+                    982
+                  ],
+                  [
+                    380,
+                    981
+                  ],
+                  [
+                    378,
+                    980
+                  ],
+                  [
+                    376,
+                    979.5
+                  ],
+                  [
+                    374.5,
+                    978
+                  ],
+                  [
+                    373,
+                    976
+                  ],
+                  [
+                    372,
+                    975
+                  ],
+                  [
+                    371,
+                    973.5
+                  ],
+                  [
+                    370,
+                    971.5
+                  ],
+                  [
+                    369,
+                    970.5
+                  ],
+                  [
+                    368,
+                    969
+                  ],
+                  [
+                    367.5,
+                    967.5
+                  ],
+                  [
+                    368,
+                    965.5
+                  ],
+                  [
+                    368.5,
+                    965
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    974
+                  ],
+                  [
+                    305.5,
+                    972
+                  ],
+                  [
+                    305.5,
+                    971
+                  ],
+                  [
+                    305.5,
+                    969
+                  ],
+                  [
+                    305.5,
+                    967.5
+                  ],
+                  [
+                    306.5,
+                    966.5
+                  ],
+                  [
+                    307,
+                    965.5
+                  ],
+                  [
+                    308,
+                    964.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    349,
+                    844
+                  ],
+                  [
+                    348,
+                    844
+                  ],
+                  [
+                    346.5,
+                    844
+                  ],
+                  [
+                    345.5,
+                    844
+                  ],
+                  [
+                    344.5,
+                    845.5
+                  ],
+                  [
+                    344.5,
+                    847
+                  ],
+                  [
+                    344.5,
+                    849.5
+                  ],
+                  [
+                    345,
+                    855
+                  ],
+                  [
+                    346.5,
+                    863
+                  ],
+                  [
+                    349,
+                    868.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    388.5,
+                    838.5
+                  ],
+                  [
+                    387,
+                    839
+                  ],
+                  [
+                    385.5,
+                    840
+                  ],
+                  [
+                    384,
+                    841
+                  ],
+                  [
+                    382,
+                    842.5
+                  ],
+                  [
+                    381,
+                    844
+                  ],
+                  [
+                    380,
+                    846
+                  ],
+                  [
+                    379,
+                    847.5
+                  ],
+                  [
+                    379,
+                    850
+                  ],
+                  [
+                    379,
+                    852.5
+                  ],
+                  [
+                    379,
+                    855
+                  ],
+                  [
+                    379,
+                    858
+                  ],
+                  [
+                    379,
+                    860
+                  ],
+                  [
+                    379.5,
+                    862.5
+                  ],
+                  [
+                    380,
+                    864
+                  ],
+                  [
+                    380.5,
+                    865.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    851.5
+                  ],
+                  [
+                    305.5,
+                    853
+                  ],
+                  [
+                    304.5,
+                    853.5
+                  ],
+                  [
+                    303.5,
+                    855
+                  ],
+                  [
+                    303,
+                    856
+                  ],
+                  [
+                    302.5,
+                    857.5
+                  ],
+                  [
+                    302.5,
+                    859
+                  ],
+                  [
+                    302.5,
+                    860.5
+                  ],
+                  [
+                    303.5,
+                    862
+                  ],
+                  [
+                    304.5,
+                    864
+                  ],
+                  [
+                    306,
+                    865
+                  ],
+                  [
+                    307.5,
+                    867
+                  ],
+                  [
+                    308.5,
+                    868.5
+                  ],
+                  [
+                    309,
+                    869.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    272.5,
+                    851.5
+                  ],
+                  [
+                    272,
+                    852.5
+                  ],
+                  [
+                    271,
+                    853
+                  ],
+                  [
+                    269,
+                    853.5
+                  ],
+                  [
+                    268,
+                    854.5
+                  ],
+                  [
+                    267,
+                    854.5
+                  ],
+                  [
+                    266,
+                    855
+                  ],
+                  [
+                    265,
+                    855.5
+                  ],
+                  [
+                    264,
+                    855.5
+                  ],
+                  [
+                    263,
+                    856
+                  ],
+                  [
+                    262,
+                    856.5
+                  ],
+                  [
+                    261,
+                    857.5
+                  ],
+                  [
+                    260,
+                    858.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    937
+                  ],
+                  [
+                    174,
+                    935.5
+                  ],
+                  [
+                    175,
+                    934
+                  ],
+                  [
+                    176.5,
+                    932.5
+                  ],
+                  [
+                    178,
+                    931.5
+                  ],
+                  [
+                    183,
+                    928.5
+                  ],
+                  [
+                    186.5,
+                    927
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    145,
+                    874
+                  ],
+                  [
+                    146,
+                    874.5
+                  ],
+                  [
+                    148.5,
+                    874.5
+                  ],
+                  [
+                    155.5,
+                    873
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    207,
+                    1001.5
+                  ],
+                  [
+                    208,
+                    1000.5
+                  ],
+                  [
+                    211,
+                    998.5
+                  ],
+                  [
+                    221.5,
+                    995.5
+                  ],
+                  [
+                    229.5,
+                    994
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    990
+                  ],
+                  [
+                    352.5,
+                    990.5
+                  ],
+                  [
+                    350.5,
+                    990.5
+                  ],
+                  [
+                    347,
+                    990
+                  ],
+                  [
+                    338.5,
+                    989
+                  ],
+                  [
+                    329.5,
+                    986.5
+                  ],
+                  [
+                    321,
+                    983.5
+                  ],
+                  [
+                    313,
+                    981
+                  ],
+                  [
+                    305.5,
+                    979.5
+                  ],
+                  [
+                    299,
+                    978
+                  ],
+                  [
+                    293,
+                    976.5
+                  ],
+                  [
+                    287,
+                    976.5
+                  ],
+                  [
+                    282,
+                    976.5
+                  ],
+                  [
+                    278.5,
+                    977.5
+                  ],
+                  [
+                    277.5,
+                    978
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    319.5,
+                    927
+                  ],
+                  [
+                    319.5,
+                    928
+                  ],
+                  [
+                    319.5,
+                    929.5
+                  ],
+                  [
+                    319.5,
+                    930.5
+                  ],
+                  [
+                    319.5,
+                    932
+                  ],
+                  [
+                    320,
+                    933
+                  ],
+                  [
+                    320,
+                    934.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    313,
+                    808.5
+                  ],
+                  [
+                    312,
+                    808.5
+                  ],
+                  [
+                    310,
+                    808
+                  ],
+                  [
+                    309,
+                    808
+                  ],
+                  [
+                    308,
+                    808
+                  ],
+                  [
+                    307.5,
+                    809.5
+                  ],
+                  [
+                    308,
+                    811
+                  ],
+                  [
+                    310.5,
+                    816
+                  ],
+                  [
+                    314,
+                    823.5
+                  ],
+                  [
+                    316,
+                    829.5
+                  ],
+                  [
+                    317.5,
+                    835
+                  ],
+                  [
+                    319.5,
+                    840.5
+                  ],
+                  [
+                    320.5,
+                    844.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    267,
+                    932.5
+                  ],
+                  [
+                    267.5,
+                    934
+                  ],
+                  [
+                    268,
+                    935.5
+                  ],
+                  [
+                    269,
+                    937
+                  ],
+                  [
+                    270,
+                    938.5
+                  ],
+                  [
+                    271,
+                    939.5
+                  ],
+                  [
+                    271.5,
+                    939.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    301,
+                    931
+                  ],
+                  [
+                    301,
+                    932
+                  ],
+                  [
+                    301.5,
+                    933
+                  ],
+                  [
+                    302,
+                    934.5
+                  ],
+                  [
+                    302.5,
+                    936
+                  ],
+                  [
+                    303.5,
+                    937
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    329.5,
+                    937
+                  ],
+                  [
+                    331.5,
+                    937.5
+                  ],
+                  [
+                    334,
+                    937.5
+                  ],
+                  [
+                    338,
+                    937
+                  ],
+                  [
+                    347.5,
+                    936.5
+                  ],
+                  [
+                    355.5,
+                    937
+                  ],
+                  [
+                    359,
+                    937.5
+                  ],
+                  [
+                    362,
+                    938.5
+                  ],
+                  [
+                    368,
+                    941
+                  ],
+                  [
+                    373,
+                    943.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    363.5,
+                    906
+                  ],
+                  [
+                    363,
+                    904.5
+                  ],
+                  [
+                    364,
+                    903.5
+                  ],
+                  [
+                    368.5,
+                    902
+                  ],
+                  [
+                    376,
+                    900
+                  ],
+                  [
+                    384,
+                    900
+                  ],
+                  [
+                    389.5,
+                    901.5
+                  ],
+                  [
+                    394,
+                    902.5
+                  ],
+                  [
+                    396,
+                    903.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    354.5,
+                    937.5
+                  ],
+                  [
+                    354,
+                    938.5
+                  ],
+                  [
+                    354,
+                    939.5
+                  ],
+                  [
+                    356.5,
+                    940.5
+                  ],
+                  [
+                    363.5,
+                    941.5
+                  ],
+                  [
+                    374,
+                    942.5
+                  ],
+                  [
+                    382,
+                    943.5
+                  ],
+                  [
+                    389,
+                    944
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    413.5,
+                    885.5
+                  ],
+                  [
+                    412.5,
+                    886
+                  ],
+                  [
+                    412,
+                    887
+                  ],
+                  [
+                    410.5,
+                    888
+                  ],
+                  [
+                    409,
+                    889.5
+                  ],
+                  [
+                    406.5,
+                    891
+                  ],
+                  [
+                    399.5,
+                    894
+                  ],
+                  [
+                    396,
+                    896.5
+                  ],
+                  [
+                    394.5,
+                    896.5
+                  ],
+                  [
+                    393.5,
+                    897
+                  ],
+                  [
+                    393,
+                    897
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    435.5,
+                    953
+                  ],
+                  [
+                    434.5,
+                    953
+                  ],
+                  [
+                    433,
+                    953
+                  ],
+                  [
+                    431.5,
+                    953.5
+                  ],
+                  [
+                    429.5,
+                    953.5
+                  ],
+                  [
+                    427.5,
+                    953.5
+                  ],
+                  [
+                    425.5,
+                    953
+                  ],
+                  [
+                    423.5,
+                    952.5
+                  ],
+                  [
+                    421.5,
+                    952
+                  ],
+                  [
+                    419.5,
+                    951
+                  ],
+                  [
+                    417.5,
+                    950.5
+                  ],
+                  [
+                    415,
+                    950
+                  ],
+                  [
+                    413,
+                    950
+                  ],
+                  [
+                    411.5,
+                    950
+                  ],
+                  [
+                    410,
+                    950
+                  ],
+                  [
+                    409,
+                    949.5
+                  ],
+                  [
+                    408.5,
+                    949.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    401.5,
+                    973
+                  ],
+                  [
+                    400,
+                    972
+                  ],
+                  [
+                    398.5,
+                    971
+                  ],
+                  [
+                    397,
+                    969
+                  ],
+                  [
+                    394.5,
+                    964
+                  ],
+                  [
+                    393,
+                    956.5
+                  ],
+                  [
+                    393.5,
+                    950
+                  ],
+                  [
+                    395,
+                    945.5
+                  ],
+                  [
+                    396.5,
+                    943.5
+                  ],
+                  [
+                    397.5,
+                    941.5
+                  ],
+                  [
+                    398.5,
+                    939.5
+                  ],
+                  [
+                    399.5,
+                    938
+                  ],
+                  [
+                    400.5,
+                    936.5
+                  ],
+                  [
+                    401.5,
+                    934.5
+                  ],
+                  [
+                    402,
+                    933.5
+                  ],
+                  [
+                    403,
+                    932
+                  ],
+                  [
+                    404,
+                    931.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    995
+                  ],
+                  [
+                    354,
+                    993.5
+                  ],
+                  [
+                    353.5,
+                    992.5
+                  ],
+                  [
+                    353,
+                    991
+                  ],
+                  [
+                    353,
+                    989
+                  ],
+                  [
+                    354,
+                    984.5
+                  ],
+                  [
+                    355,
+                    976
+                  ],
+                  [
+                    355,
+                    969
+                  ],
+                  [
+                    355,
+                    964.5
+                  ],
+                  [
+                    355.5,
+                    962
+                  ],
+                  [
+                    357,
+                    960.5
+                  ],
+                  [
+                    359,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    296.5,
+                    987.5
+                  ],
+                  [
+                    296,
+                    986
+                  ],
+                  [
+                    296.5,
+                    984.5
+                  ],
+                  [
+                    298,
+                    982.5
+                  ],
+                  [
+                    302,
+                    977
+                  ],
+                  [
+                    307,
+                    971.5
+                  ],
+                  [
+                    308.5,
+                    969
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    314,
+                    991
+                  ],
+                  [
+                    313,
+                    989.5
+                  ],
+                  [
+                    313,
+                    988.5
+                  ],
+                  [
+                    313,
+                    986.5
+                  ],
+                  [
+                    313.5,
+                    983.5
+                  ],
+                  [
+                    314,
+                    976.5
+                  ],
+                  [
+                    314.5,
+                    968
+                  ],
+                  [
+                    314.5,
+                    961.5
+                  ],
+                  [
+                    315.5,
+                    957.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    263,
+                    997.5
+                  ],
+                  [
+                    264,
+                    996.5
+                  ],
+                  [
+                    264.5,
+                    995.5
+                  ],
+                  [
+                    265,
+                    993
+                  ],
+                  [
+                    266,
+                    991
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    266.5,
+                    987.5
+                  ],
+                  [
+                    266.5,
+                    986.5
+                  ],
+                  [
+                    266.5,
+                    985.5
+                  ],
+                  [
+                    267,
+                    984.5
+                  ],
+                  [
+                    267,
+                    980
+                  ],
+                  [
+                    266.5,
+                    977
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    426.5,
+                    908
+                  ],
+                  [
+                    425.5,
+                    908.5
+                  ],
+                  [
+                    424.5,
+                    909
+                  ],
+                  [
+                    423.5,
+                    910
+                  ],
+                  [
+                    422.5,
+                    910
+                  ],
+                  [
+                    421.5,
+                    911
+                  ],
+                  [
+                    420,
+                    911
+                  ],
+                  [
+                    417.5,
+                    912.5
+                  ],
+                  [
+                    410.5,
+                    915.5
+                  ],
+                  [
+                    405,
+                    916
+                  ],
+                  [
+                    401,
+                    917
+                  ],
+                  [
+                    398,
+                    916.5
+                  ],
+                  [
+                    395.5,
+                    916.5
+                  ],
+                  [
+                    393.5,
+                    916.5
+                  ],
+                  [
+                    392,
+                    918.5
+                  ],
+                  [
+                    391.5,
+                    920
+                  ]
+                ]
+              },
+              {
+                "shading": true,
+                "tolerance": 0.2,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.12,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 14
+              },
+              {
+                "revertPoint": true
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    261,
+                    990.5
+                  ],
+                  [
+                    259,
+                    989
+                  ],
+                  [
+                    257,
+                    988.5
+                  ],
+                  [
+                    255,
+                    987
+                  ],
+                  [
+                    250.5,
+                    983.5
+                  ],
+                  [
+                    245.5,
+                    978
+                  ],
+                  [
+                    241.5,
+                    972
+                  ],
+                  [
+                    237,
+                    967.5
+                  ],
+                  [
+                    231,
+                    963
+                  ],
+                  [
+                    223.5,
+                    959
+                  ],
+                  [
+                    215.5,
+                    954
+                  ],
+                  [
+                    207.5,
+                    946.5
+                  ],
+                  [
+                    196,
+                    931
+                  ],
+                  [
+                    182,
+                    907
+                  ],
+                  [
+                    174.5,
+                    892.5
+                  ],
+                  [
+                    170.5,
+                    884
+                  ],
+                  [
+                    168.5,
+                    878.5
+                  ],
+                  [
+                    168.5,
+                    874.5
+                  ],
+                  [
+                    168.5,
+                    872
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    321.5,
+                    911.5
+                  ],
+                  [
+                    320.5,
+                    910
+                  ],
+                  [
+                    319,
+                    909.5
+                  ],
+                  [
+                    315.5,
+                    908
+                  ],
+                  [
+                    308.5,
+                    906.5
+                  ],
+                  [
+                    300,
+                    906
+                  ],
+                  [
+                    293,
+                    907
+                  ],
+                  [
+                    286,
+                    907.5
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    270.5,
+                    910
+                  ],
+                  [
+                    262.5,
+                    909.5
+                  ],
+                  [
+                    255,
+                    908
+                  ],
+                  [
+                    246.5,
+                    905.5
+                  ],
+                  [
+                    237,
+                    901.5
+                  ],
+                  [
+                    227.5,
+                    896.5
+                  ],
+                  [
+                    219,
+                    890.5
+                  ],
+                  [
+                    211,
+                    884
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    199.5,
+                    868.5
+                  ],
+                  [
+                    195,
+                    860.5
+                  ],
+                  [
+                    193,
+                    854.5
+                  ],
+                  [
+                    193,
+                    851
+                  ],
+                  [
+                    194,
+                    851
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    906.5
+                  ],
+                  [
+                    291.5,
+                    906
+                  ],
+                  [
+                    290.5,
+                    906
+                  ],
+                  [
+                    288,
+                    906.5
+                  ],
+                  [
+                    281,
+                    905
+                  ],
+                  [
+                    272.5,
+                    903
+                  ],
+                  [
+                    268.5,
+                    903
+                  ],
+                  [
+                    265.5,
+                    902
+                  ],
+                  [
+                    259.5,
+                    899.5
+                  ],
+                  [
+                    253.5,
+                    897
+                  ],
+                  [
+                    248.5,
+                    893
+                  ],
+                  [
+                    243,
+                    887.5
+                  ],
+                  [
+                    237.5,
+                    882.5
+                  ],
+                  [
+                    232,
+                    877
+                  ],
+                  [
+                    226.5,
+                    872
+                  ],
+                  [
+                    221,
+                    867.5
+                  ],
+                  [
+                    215.5,
+                    862.5
+                  ],
+                  [
+                    211,
+                    858
+                  ],
+                  [
+                    208.5,
+                    855.5
+                  ],
+                  [
+                    208,
+                    855
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    243.5,
+                    897.5
+                  ],
+                  [
+                    242,
+                    896.5
+                  ],
+                  [
+                    241,
+                    896.5
+                  ],
+                  [
+                    240,
+                    895.5
+                  ],
+                  [
+                    239,
+                    895
+                  ],
+                  [
+                    237.5,
+                    894
+                  ],
+                  [
+                    233,
+                    890.5
+                  ],
+                  [
+                    227,
+                    886
+                  ],
+                  [
+                    221,
+                    882
+                  ],
+                  [
+                    216,
+                    878.5
+                  ],
+                  [
+                    211,
+                    875.5
+                  ],
+                  [
+                    207,
+                    872
+                  ],
+                  [
+                    203.5,
+                    868.5
+                  ],
+                  [
+                    200,
+                    864
+                  ],
+                  [
+                    197.5,
+                    862
+                  ],
+                  [
+                    196,
+                    860
+                  ],
+                  [
+                    195.5,
+                    859
+                  ],
+                  [
+                    197.5,
+                    856
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1789660542,
+                "points": [
+                  [
+                    131.5,
+                    827.5
+                  ],
+                  [
+                    133,
+                    828.5
+                  ],
+                  [
+                    140.5,
+                    833
+                  ],
+                  [
+                    158.5,
+                    844.5
+                  ],
+                  [
+                    184,
+                    863.5
+                  ],
+                  [
+                    209.5,
+                    890.5
+                  ],
+                  [
+                    233.5,
+                    918.5
+                  ],
+                  [
+                    246.5,
+                    933
+                  ],
+                  [
+                    252,
+                    939
+                  ],
+                  [
+                    252.5,
+                    940
+                  ],
+                  [
+                    251.5,
+                    939
+                  ],
+                  [
+                    239,
+                    929
+                  ],
+                  [
+                    204,
+                    896
+                  ],
+                  [
+                    163.5,
+                    851.5
+                  ],
+                  [
+                    133,
+                    819
+                  ],
+                  [
+                    121,
+                    812
+                  ],
+                  [
+                    121,
+                    814
+                  ],
+                  [
+                    129,
+                    824
+                  ],
+                  [
+                    157,
+                    856.5
+                  ],
+                  [
+                    198,
+                    894
+                  ],
+                  [
+                    231.5,
+                    925.5
+                  ],
+                  [
+                    253.5,
+                    952
+                  ],
+                  [
+                    273,
+                    976.5
+                  ],
+                  [
+                    282.5,
+                    989
+                  ],
+                  [
+                    285,
+                    992.5
+                  ],
+                  [
+                    282,
+                    989.5
+                  ],
+                  [
+                    259,
+                    966.5
+                  ],
+                  [
+                    212,
+                    913
+                  ],
+                  [
+                    168.5,
+                    859
+                  ],
+                  [
+                    154.5,
+                    841.5
+                  ],
+                  [
+                    153,
+                    841
+                  ],
+                  [
+                    153.5,
+                    842.5
+                  ],
+                  [
+                    155.5,
+                    848.5
+                  ],
+                  [
+                    162.5,
+                    862.5
+                  ],
+                  [
+                    190.5,
+                    902
+                  ],
+                  [
+                    247.5,
+                    961
+                  ],
+                  [
+                    303,
+                    1002
+                  ],
+                  [
+                    312.5,
+                    1008.5
+                  ],
+                  [
+                    308.5,
+                    1006.5
+                  ],
+                  [
+                    277,
+                    988.5
+                  ],
+                  [
+                    219.5,
+                    946
+                  ],
+                  [
+                    166.5,
+                    905
+                  ],
+                  [
+                    151,
+                    893.5
+                  ],
+                  [
+                    149.5,
+                    894
+                  ],
+                  [
+                    150.5,
+                    895.5
+                  ],
+                  [
+                    154.5,
+                    905
+                  ],
+                  [
+                    165.5,
+                    928.5
+                  ],
+                  [
+                    194,
+                    967
+                  ],
+                  [
+                    245.5,
+                    1007
+                  ],
+                  [
+                    293.5,
+                    1025
+                  ],
+                  [
+                    306,
+                    1021.5
+                  ],
+                  [
+                    302.5,
+                    1007
+                  ],
+                  [
+                    269.5,
+                    967.5
+                  ],
+                  [
+                    215,
+                    910.5
+                  ],
+                  [
+                    157.5,
+                    861
+                  ],
+                  [
+                    127,
+                    836
+                  ],
+                  [
+                    125.5,
+                    837
+                  ],
+                  [
+                    131,
+                    847.5
+                  ],
+                  [
+                    151,
+                    875.5
+                  ],
+                  [
+                    181.5,
+                    911.5
+                  ],
+                  [
+                    219.5,
+                    944
+                  ],
+                  [
+                    258,
+                    966
+                  ],
+                  [
+                    289,
+                    980
+                  ],
+                  [
+                    300,
+                    983
+                  ],
+                  [
+                    299,
+                    979.5
+                  ],
+                  [
+                    275.5,
+                    957.5
+                  ],
+                  [
+                    207,
+                    900.5
+                  ],
+                  [
+                    151,
+                    854.5
+                  ],
+                  [
+                    140,
+                    848
+                  ],
+                  [
+                    142,
+                    850
+                  ],
+                  [
+                    162,
+                    872
+                  ],
+                  [
+                    203.5,
+                    911.5
+                  ],
+                  [
+                    233,
+                    935
+                  ],
+                  [
+                    238.5,
+                    940
+                  ],
+                  [
+                    236,
+                    939.5
+                  ],
+                  [
+                    210,
+                    925
+                  ],
+                  [
+                    158.5,
+                    878
+                  ],
+                  [
+                    140.5,
+                    855.5
+                  ],
+                  [
+                    145,
+                    852.5
+                  ],
+                  [
+                    162.5,
+                    859.5
+                  ],
+                  [
+                    192.5,
+                    881.5
+                  ],
+                  [
+                    210.5,
+                    900.5
+                  ],
+                  [
+                    220.5,
+                    910
+                  ],
+                  [
+                    228.5,
+                    921.5
+                  ],
+                  [
+                    249,
+                    946.5
+                  ],
+                  [
+                    281,
+                    970.5
+                  ],
+                  [
+                    295.5,
+                    970.5
+                  ],
+                  [
+                    301.5,
+                    963
+                  ],
+                  [
+                    301.5,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 946441564,
+                "points": [
+                  [
+                    190,
+                    832.5
+                  ],
+                  [
+                    188,
+                    834
+                  ],
+                  [
+                    186.5,
+                    837.5
+                  ],
+                  [
+                    182,
+                    846
+                  ],
+                  [
+                    179.5,
+                    855.5
+                  ],
+                  [
+                    180.5,
+                    860
+                  ],
+                  [
+                    183,
+                    863
+                  ],
+                  [
+                    189,
+                    867.5
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    236,
+                    892.5
+                  ],
+                  [
+                    271.5,
+                    906
+                  ],
+                  [
+                    295.5,
+                    914
+                  ],
+                  [
+                    319,
+                    922
+                  ],
+                  [
+                    335,
+                    926.5
+                  ],
+                  [
+                    342,
+                    928.5
+                  ],
+                  [
+                    329.5,
+                    921
+                  ],
+                  [
+                    295,
+                    906
+                  ],
+                  [
+                    260,
+                    892
+                  ],
+                  [
+                    238,
+                    885
+                  ],
+                  [
+                    225.5,
+                    882.5
+                  ],
+                  [
+                    217.5,
+                    882
+                  ],
+                  [
+                    213.5,
+                    882.5
+                  ],
+                  [
+                    212,
+                    882.5
+                  ],
+                  [
+                    214.5,
+                    883.5
+                  ],
+                  [
+                    221.5,
+                    886.5
+                  ],
+                  [
+                    266.5,
+                    907
+                  ],
+                  [
+                    329,
+                    936.5
+                  ],
+                  [
+                    349,
+                    943.5
+                  ],
+                  [
+                    349.5,
+                    942
+                  ],
+                  [
+                    336.5,
+                    933
+                  ],
+                  [
+                    284,
+                    901
+                  ],
+                  [
+                    217.5,
+                    865
+                  ],
+                  [
+                    174,
+                    855.5
+                  ],
+                  [
+                    154.5,
+                    857.5
+                  ],
+                  [
+                    143.5,
+                    862
+                  ],
+                  [
+                    138.5,
+                    865.5
+                  ],
+                  [
+                    140,
+                    869
+                  ],
+                  [
+                    151,
+                    880
+                  ],
+                  [
+                    187,
+                    913
+                  ],
+                  [
+                    234.5,
+                    950
+                  ],
+                  [
+                    255,
+                    961
+                  ],
+                  [
+                    257.5,
+                    962.5
+                  ],
+                  [
+                    251.5,
+                    956.5
+                  ],
+                  [
+                    223.5,
+                    928.5
+                  ],
+                  [
+                    171.5,
+                    872
+                  ],
+                  [
+                    133,
+                    823.5
+                  ],
+                  [
+                    130,
+                    816
+                  ],
+                  [
+                    139.5,
+                    824.5
+                  ],
+                  [
+                    164,
+                    850.5
+                  ],
+                  [
+                    195.5,
+                    885
+                  ],
+                  [
+                    219,
+                    915.5
+                  ],
+                  [
+                    242.5,
+                    946.5
+                  ],
+                  [
+                    258.5,
+                    975.5
+                  ],
+                  [
+                    266,
+                    988
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    256,
+                    981.5
+                  ],
+                  [
+                    221.5,
+                    944
+                  ],
+                  [
+                    179,
+                    890
+                  ],
+                  [
+                    159,
+                    851.5
+                  ],
+                  [
+                    150.5,
+                    829.5
+                  ],
+                  [
+                    150.5,
+                    826
+                  ],
+                  [
+                    151.5,
+                    828
+                  ],
+                  [
+                    157,
+                    842
+                  ],
+                  [
+                    179.5,
+                    883
+                  ],
+                  [
+                    222.5,
+                    944
+                  ],
+                  [
+                    262,
+                    980
+                  ],
+                  [
+                    275,
+                    987.5
+                  ],
+                  [
+                    262,
+                    971
+                  ],
+                  [
+                    217,
+                    916.5
+                  ],
+                  [
+                    169.5,
+                    855.5
+                  ],
+                  [
+                    159.5,
+                    840
+                  ],
+                  [
+                    165.5,
+                    845
+                  ],
+                  [
+                    183,
+                    864
+                  ],
+                  [
+                    213,
+                    898.5
+                  ],
+                  [
+                    240.5,
+                    924.5
+                  ],
+                  [
+                    256.5,
+                    941
+                  ],
+                  [
+                    264,
+                    948.5
+                  ],
+                  [
+                    265.5,
+                    950
+                  ],
+                  [
+                    261,
+                    944
+                  ],
+                  [
+                    235.5,
+                    912.5
+                  ],
+                  [
+                    198.5,
+                    870
+                  ],
+                  [
+                    188.5,
+                    851
+                  ],
+                  [
+                    190,
+                    848.5
+                  ],
+                  [
+                    195,
+                    853.5
+                  ],
+                  [
+                    215,
+                    877.5
+                  ],
+                  [
+                    245.5,
+                    914.5
+                  ],
+                  [
+                    257,
+                    930
+                  ],
+                  [
+                    259.5,
+                    933
+                  ],
+                  [
+                    258.5,
+                    931.5
+                  ],
+                  [
+                    246.5,
+                    913
+                  ],
+                  [
+                    205.5,
+                    862.5
+                  ],
+                  [
+                    177,
+                    834
+                  ],
+                  [
+                    178.5,
+                    838
+                  ],
+                  [
+                    184,
+                    849.5
+                  ],
+                  [
+                    198,
+                    875.5
+                  ],
+                  [
+                    218,
+                    905.5
+                  ],
+                  [
+                    243,
+                    928
+                  ],
+                  [
+                    256.5,
+                    936.5
+                  ],
+                  [
+                    262,
+                    938
+                  ],
+                  [
+                    261.5,
+                    936
+                  ],
+                  [
+                    246.5,
+                    917
+                  ],
+                  [
+                    206,
+                    877
+                  ],
+                  [
+                    182,
+                    857.5
+                  ],
+                  [
+                    184,
+                    860.5
+                  ],
+                  [
+                    190.5,
+                    870.5
+                  ],
+                  [
+                    207,
+                    892.5
+                  ],
+                  [
+                    225,
+                    911.5
+                  ],
+                  [
+                    236.5,
+                    919.5
+                  ],
+                  [
+                    243,
+                    923
+                  ],
+                  [
+                    246.5,
+                    923.5
+                  ],
+                  [
+                    248.5,
+                    922
+                  ],
+                  [
+                    249.5,
+                    918.5
+                  ],
+                  [
+                    242.5,
+                    903
+                  ],
+                  [
+                    215,
+                    870
+                  ],
+                  [
+                    186,
+                    843
+                  ],
+                  [
+                    175.5,
+                    835.5
+                  ],
+                  [
+                    174,
+                    834.5
+                  ],
+                  [
+                    186,
+                    849.5
+                  ],
+                  [
+                    226.5,
+                    889.5
+                  ],
+                  [
+                    262.5,
+                    915.5
+                  ],
+                  [
+                    271.5,
+                    917
+                  ],
+                  [
+                    270.5,
+                    915.5
+                  ],
+                  [
+                    251,
+                    894
+                  ],
+                  [
+                    200,
+                    849.5
+                  ],
+                  [
+                    176.5,
+                    835
+                  ],
+                  [
+                    180.5,
+                    845
+                  ],
+                  [
+                    204.5,
+                    876.5
+                  ],
+                  [
+                    239,
+                    904.5
+                  ],
+                  [
+                    250,
+                    907
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "flipX": true
         },
         "pickshovel-scoop": {
           "layerOrder": "haft-over-head",
@@ -9380,7 +25568,3961 @@ window.MODULAR_WEAPON_CONFIG = {
         "plains-blade": {
           "scaleY": 0.456,
           "layerOrder": "haft-over-head",
-          "disallow": true
+          "disallow": false,
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "block",
+                "x": 325,
+                "y": 927.5,
+                "rotation": 0,
+                "scale": 2.5
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    246.5,
+                    880.5
+                  ],
+                  [
+                    244,
+                    880
+                  ],
+                  [
+                    241.5,
+                    879
+                  ],
+                  [
+                    240.5,
+                    878.5
+                  ],
+                  [
+                    239.5,
+                    878
+                  ],
+                  [
+                    239,
+                    877
+                  ],
+                  [
+                    240.5,
+                    877.5
+                  ],
+                  [
+                    242.5,
+                    878.5
+                  ],
+                  [
+                    245.5,
+                    881
+                  ],
+                  [
+                    251.5,
+                    885.5
+                  ],
+                  [
+                    258.5,
+                    890
+                  ],
+                  [
+                    265.5,
+                    893.5
+                  ],
+                  [
+                    276.5,
+                    898
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    265,
+                    922
+                  ],
+                  [
+                    264,
+                    922
+                  ],
+                  [
+                    262.5,
+                    921.5
+                  ],
+                  [
+                    260.5,
+                    920.5
+                  ],
+                  [
+                    259,
+                    920.5
+                  ],
+                  [
+                    257.5,
+                    920
+                  ],
+                  [
+                    256.5,
+                    920
+                  ],
+                  [
+                    255.5,
+                    920
+                  ],
+                  [
+                    257,
+                    921
+                  ],
+                  [
+                    259.5,
+                    922.5
+                  ],
+                  [
+                    266.5,
+                    925
+                  ],
+                  [
+                    274,
+                    928.5
+                  ],
+                  [
+                    280,
+                    931.5
+                  ],
+                  [
+                    286,
+                    934.5
+                  ],
+                  [
+                    292,
+                    937.5
+                  ],
+                  [
+                    298,
+                    941
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    264.5,
+                    954
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    262,
+                    954.5
+                  ],
+                  [
+                    261,
+                    954.5
+                  ],
+                  [
+                    260,
+                    955
+                  ],
+                  [
+                    259,
+                    955.5
+                  ],
+                  [
+                    258.5,
+                    956.5
+                  ],
+                  [
+                    259,
+                    957.5
+                  ],
+                  [
+                    262.5,
+                    960
+                  ],
+                  [
+                    270,
+                    965
+                  ],
+                  [
+                    277.5,
+                    970
+                  ],
+                  [
+                    282.5,
+                    973
+                  ],
+                  [
+                    286.5,
+                    975
+                  ],
+                  [
+                    290,
+                    975.5
+                  ],
+                  [
+                    293,
+                    975.5
+                  ],
+                  [
+                    296,
+                    975
+                  ],
+                  [
+                    300.5,
+                    974
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    287.5,
+                    937
+                  ],
+                  [
+                    286,
+                    937
+                  ],
+                  [
+                    289,
+                    938.5
+                  ],
+                  [
+                    296,
+                    941
+                  ],
+                  [
+                    304.5,
+                    943
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    317,
+                    945
+                  ],
+                  [
+                    320.5,
+                    944.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    965.5
+                  ],
+                  [
+                    295,
+                    965
+                  ],
+                  [
+                    296.5,
+                    965
+                  ],
+                  [
+                    302.5,
+                    964.5
+                  ],
+                  [
+                    312,
+                    964
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    280,
+                    910
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    278.5,
+                    908
+                  ],
+                  [
+                    278.5,
+                    907
+                  ],
+                  [
+                    280,
+                    906.5
+                  ],
+                  [
+                    283,
+                    906
+                  ],
+                  [
+                    290,
+                    905.5
+                  ],
+                  [
+                    299,
+                    907
+                  ],
+                  [
+                    307,
+                    908.5
+                  ],
+                  [
+                    314,
+                    910
+                  ],
+                  [
+                    322,
+                    911
+                  ],
+                  [
+                    330.5,
+                    911
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    289.5,
+                    894
+                  ],
+                  [
+                    289.5,
+                    893
+                  ],
+                  [
+                    291,
+                    892.5
+                  ],
+                  [
+                    293.5,
+                    892
+                  ],
+                  [
+                    300.5,
+                    892.5
+                  ],
+                  [
+                    308,
+                    893.5
+                  ],
+                  [
+                    313,
+                    894
+                  ],
+                  [
+                    317.5,
+                    894
+                  ],
+                  [
+                    323,
+                    894
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    318.5,
+                    967
+                  ],
+                  [
+                    317.5,
+                    965.5
+                  ],
+                  [
+                    317.5,
+                    964.5
+                  ],
+                  [
+                    319.5,
+                    963
+                  ],
+                  [
+                    324.5,
+                    962.5
+                  ],
+                  [
+                    332,
+                    961.5
+                  ],
+                  [
+                    338.5,
+                    962.5
+                  ],
+                  [
+                    343.5,
+                    962.5
+                  ],
+                  [
+                    349,
+                    962
+                  ],
+                  [
+                    356.5,
+                    961
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    332.5,
+                    938
+                  ],
+                  [
+                    333.5,
+                    937.5
+                  ],
+                  [
+                    336.5,
+                    937.5
+                  ],
+                  [
+                    343.5,
+                    938
+                  ],
+                  [
+                    352,
+                    938.5
+                  ],
+                  [
+                    356,
+                    938
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    331.5,
+                    900
+                  ],
+                  [
+                    331.5,
+                    898.5
+                  ],
+                  [
+                    332.5,
+                    898
+                  ],
+                  [
+                    333.5,
+                    896.5
+                  ],
+                  [
+                    338.5,
+                    894
+                  ],
+                  [
+                    345.5,
+                    890.5
+                  ],
+                  [
+                    352.5,
+                    890
+                  ],
+                  [
+                    358.5,
+                    890.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    358.5,
+                    956.5
+                  ],
+                  [
+                    359,
+                    955
+                  ],
+                  [
+                    360.5,
+                    954
+                  ],
+                  [
+                    362,
+                    953
+                  ],
+                  [
+                    363,
+                    951.5
+                  ],
+                  [
+                    367,
+                    947
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    345.5,
+                    928.5
+                  ],
+                  [
+                    344.5,
+                    928
+                  ],
+                  [
+                    344.5,
+                    926.5
+                  ],
+                  [
+                    344.5,
+                    925
+                  ],
+                  [
+                    345.5,
+                    924
+                  ],
+                  [
+                    348.5,
+                    920
+                  ],
+                  [
+                    356,
+                    914.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    350.5,
+                    895
+                  ],
+                  [
+                    349.5,
+                    895.5
+                  ],
+                  [
+                    348,
+                    895.5
+                  ],
+                  [
+                    347,
+                    895.5
+                  ],
+                  [
+                    346,
+                    895.5
+                  ],
+                  [
+                    345,
+                    895
+                  ],
+                  [
+                    347.5,
+                    894
+                  ],
+                  [
+                    355,
+                    892.5
+                  ],
+                  [
+                    360,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    323,
+                    992
+                  ],
+                  [
+                    323,
+                    991
+                  ],
+                  [
+                    322.5,
+                    989
+                  ],
+                  [
+                    321.5,
+                    987.5
+                  ],
+                  [
+                    320.5,
+                    984
+                  ],
+                  [
+                    319,
+                    976.5
+                  ],
+                  [
+                    318.5,
+                    968.5
+                  ],
+                  [
+                    319.5,
+                    961.5
+                  ],
+                  [
+                    320.5,
+                    955
+                  ],
+                  [
+                    322.5,
+                    950
+                  ],
+                  [
+                    324,
+                    945.5
+                  ],
+                  [
+                    326.5,
+                    944.5
+                  ],
+                  [
+                    328,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    281.5,
+                    996
+                  ],
+                  [
+                    282,
+                    995
+                  ],
+                  [
+                    282,
+                    994
+                  ],
+                  [
+                    282,
+                    993
+                  ],
+                  [
+                    281.5,
+                    992
+                  ],
+                  [
+                    281.5,
+                    991
+                  ],
+                  [
+                    281.5,
+                    989.5
+                  ],
+                  [
+                    282,
+                    988
+                  ],
+                  [
+                    282.5,
+                    986
+                  ],
+                  [
+                    283,
+                    984.5
+                  ],
+                  [
+                    283.5,
+                    982.5
+                  ],
+                  [
+                    283.5,
+                    980.5
+                  ],
+                  [
+                    284,
+                    979
+                  ],
+                  [
+                    284,
+                    976.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    266,
+                    974.5
+                  ],
+                  [
+                    266,
+                    973.5
+                  ],
+                  [
+                    265.5,
+                    971.5
+                  ],
+                  [
+                    265,
+                    970
+                  ],
+                  [
+                    264.5,
+                    967
+                  ],
+                  [
+                    263.5,
+                    961
+                  ],
+                  [
+                    263.5,
+                    954
+                  ],
+                  [
+                    265,
+                    951
+                  ],
+                  [
+                    266.5,
+                    949.5
+                  ],
+                  [
+                    269,
+                    947.5
+                  ],
+                  [
+                    271.5,
+                    946.5
+                  ],
+                  [
+                    274.5,
+                    945.5
+                  ],
+                  [
+                    279,
+                    945
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    355,
+                    984.5
+                  ],
+                  [
+                    354.5,
+                    983.5
+                  ],
+                  [
+                    353.5,
+                    981.5
+                  ],
+                  [
+                    353.5,
+                    980
+                  ],
+                  [
+                    353.5,
+                    978
+                  ],
+                  [
+                    353.5,
+                    975.5
+                  ],
+                  [
+                    354.5,
+                    972
+                  ],
+                  [
+                    357,
+                    965.5
+                  ],
+                  [
+                    360.5,
+                    960.5
+                  ],
+                  [
+                    362.5,
+                    958
+                  ],
+                  [
+                    364.5,
+                    955
+                  ],
+                  [
+                    366,
+                    951.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    399,
+                    970.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    396.5,
+                    971
+                  ],
+                  [
+                    395.5,
+                    970.5
+                  ],
+                  [
+                    394.5,
+                    970.5
+                  ],
+                  [
+                    393.5,
+                    969.5
+                  ],
+                  [
+                    392.5,
+                    968
+                  ],
+                  [
+                    392,
+                    967
+                  ],
+                  [
+                    391,
+                    964.5
+                  ],
+                  [
+                    390,
+                    962.5
+                  ],
+                  [
+                    389.5,
+                    960
+                  ],
+                  [
+                    389,
+                    958
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    300,
+                    980
+                  ],
+                  [
+                    298,
+                    979.5
+                  ],
+                  [
+                    297,
+                    978
+                  ],
+                  [
+                    295.5,
+                    977
+                  ],
+                  [
+                    294.5,
+                    976
+                  ],
+                  [
+                    294,
+                    975
+                  ],
+                  [
+                    294,
+                    973.5
+                  ],
+                  [
+                    294,
+                    972
+                  ],
+                  [
+                    294.5,
+                    971
+                  ],
+                  [
+                    295.5,
+                    970
+                  ],
+                  [
+                    297,
+                    968.5
+                  ],
+                  [
+                    298,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    309.5,
+                    950
+                  ],
+                  [
+                    309.5,
+                    949
+                  ],
+                  [
+                    310,
+                    948
+                  ],
+                  [
+                    310.5,
+                    946.5
+                  ],
+                  [
+                    311,
+                    945.5
+                  ],
+                  [
+                    311.5,
+                    944
+                  ],
+                  [
+                    312,
+                    942.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    298,
+                    969
+                  ],
+                  [
+                    297,
+                    968
+                  ],
+                  [
+                    296,
+                    967
+                  ],
+                  [
+                    295,
+                    965.5
+                  ],
+                  [
+                    295,
+                    964
+                  ],
+                  [
+                    295,
+                    963
+                  ],
+                  [
+                    295.5,
+                    962
+                  ],
+                  [
+                    296.5,
+                    961
+                  ],
+                  [
+                    296.5,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    409.5,
+                    968.5
+                  ],
+                  [
+                    408.5,
+                    968
+                  ],
+                  [
+                    407,
+                    967
+                  ],
+                  [
+                    405.5,
+                    967
+                  ],
+                  [
+                    404.5,
+                    965.5
+                  ],
+                  [
+                    403,
+                    964.5
+                  ],
+                  [
+                    401.5,
+                    963
+                  ],
+                  [
+                    400,
+                    962
+                  ],
+                  [
+                    398,
+                    960.5
+                  ],
+                  [
+                    396.5,
+                    959
+                  ],
+                  [
+                    394.5,
+                    958
+                  ],
+                  [
+                    393,
+                    957
+                  ],
+                  [
+                    391,
+                    955.5
+                  ],
+                  [
+                    390,
+                    954.5
+                  ],
+                  [
+                    389,
+                    953.5
+                  ],
+                  [
+                    388,
+                    953
+                  ],
+                  [
+                    388,
+                    952.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    327,
+                    994
+                  ],
+                  [
+                    325,
+                    993
+                  ],
+                  [
+                    323.5,
+                    992
+                  ],
+                  [
+                    321.5,
+                    991
+                  ],
+                  [
+                    320.5,
+                    989.5
+                  ],
+                  [
+                    320,
+                    988
+                  ],
+                  [
+                    320,
+                    986.5
+                  ],
+                  [
+                    320.5,
+                    985.5
+                  ],
+                  [
+                    321.5,
+                    984
+                  ],
+                  [
+                    323,
+                    982.5
+                  ],
+                  [
+                    324,
+                    981
+                  ],
+                  [
+                    325,
+                    980
+                  ],
+                  [
+                    325.5,
+                    978.5
+                  ],
+                  [
+                    326,
+                    976.5
+                  ],
+                  [
+                    326.5,
+                    975.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    326.5,
+                    990
+                  ],
+                  [
+                    325.5,
+                    989
+                  ],
+                  [
+                    324,
+                    988
+                  ],
+                  [
+                    322.5,
+                    986
+                  ],
+                  [
+                    320.5,
+                    984.5
+                  ],
+                  [
+                    319.5,
+                    983
+                  ],
+                  [
+                    318,
+                    981.5
+                  ],
+                  [
+                    317,
+                    981
+                  ],
+                  [
+                    316.5,
+                    980
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    201,
+                    955
+                  ],
+                  [
+                    200,
+                    954
+                  ],
+                  [
+                    199.5,
+                    953
+                  ],
+                  [
+                    200,
+                    952
+                  ],
+                  [
+                    202,
+                    951.5
+                  ],
+                  [
+                    207,
+                    950
+                  ],
+                  [
+                    214.5,
+                    946.5
+                  ],
+                  [
+                    221,
+                    944
+                  ],
+                  [
+                    224.5,
+                    941.5
+                  ],
+                  [
+                    226.5,
+                    937.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    383.5,
+                    978.5
+                  ],
+                  [
+                    382.5,
+                    978
+                  ],
+                  [
+                    381.5,
+                    976.5
+                  ],
+                  [
+                    381,
+                    975
+                  ],
+                  [
+                    380.5,
+                    972.5
+                  ],
+                  [
+                    380.5,
+                    970.5
+                  ],
+                  [
+                    381,
+                    967.5
+                  ],
+                  [
+                    381.5,
+                    965.5
+                  ],
+                  [
+                    381.5,
+                    963.5
+                  ],
+                  [
+                    382,
+                    962
+                  ],
+                  [
+                    382,
+                    961
+                  ],
+                  [
+                    382,
+                    960
+                  ],
+                  [
+                    381.5,
+                    959
+                  ],
+                  [
+                    382,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    311.5,
+                    989
+                  ],
+                  [
+                    311,
+                    988
+                  ],
+                  [
+                    310.5,
+                    987
+                  ],
+                  [
+                    309.5,
+                    985.5
+                  ],
+                  [
+                    309,
+                    984.5
+                  ],
+                  [
+                    308.5,
+                    983
+                  ],
+                  [
+                    308,
+                    981
+                  ],
+                  [
+                    307.5,
+                    979.5
+                  ],
+                  [
+                    307,
+                    977
+                  ],
+                  [
+                    306.5,
+                    975.5
+                  ],
+                  [
+                    307,
+                    974
+                  ],
+                  [
+                    307.5,
+                    972.5
+                  ],
+                  [
+                    307.5,
+                    972
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    390,
+                    963
+                  ],
+                  [
+                    388.5,
+                    963
+                  ],
+                  [
+                    387.5,
+                    962
+                  ],
+                  [
+                    386,
+                    960.5
+                  ],
+                  [
+                    385,
+                    959.5
+                  ],
+                  [
+                    385,
+                    958.5
+                  ],
+                  [
+                    384,
+                    957.5
+                  ],
+                  [
+                    384,
+                    956.5
+                  ],
+                  [
+                    382.5,
+                    955.5
+                  ],
+                  [
+                    382,
+                    954.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    405,
+                    888
+                  ],
+                  [
+                    404,
+                    888
+                  ],
+                  [
+                    401.5,
+                    887
+                  ],
+                  [
+                    399.5,
+                    886.5
+                  ],
+                  [
+                    398,
+                    886
+                  ],
+                  [
+                    396,
+                    886.5
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    393.5,
+                    887.5
+                  ],
+                  [
+                    392,
+                    888
+                  ],
+                  [
+                    391,
+                    889
+                  ],
+                  [
+                    390,
+                    889.5
+                  ],
+                  [
+                    389,
+                    889.5
+                  ],
+                  [
+                    389.5,
+                    891
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    386,
+                    983.5
+                  ],
+                  [
+                    384.5,
+                    983
+                  ],
+                  [
+                    382.5,
+                    982
+                  ],
+                  [
+                    380,
+                    981
+                  ],
+                  [
+                    378,
+                    980
+                  ],
+                  [
+                    376,
+                    979.5
+                  ],
+                  [
+                    374.5,
+                    978
+                  ],
+                  [
+                    373,
+                    976
+                  ],
+                  [
+                    372,
+                    975
+                  ],
+                  [
+                    371,
+                    973.5
+                  ],
+                  [
+                    370,
+                    971.5
+                  ],
+                  [
+                    369,
+                    970.5
+                  ],
+                  [
+                    368,
+                    969
+                  ],
+                  [
+                    367.5,
+                    967.5
+                  ],
+                  [
+                    368,
+                    965.5
+                  ],
+                  [
+                    368.5,
+                    965
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    974
+                  ],
+                  [
+                    305.5,
+                    972
+                  ],
+                  [
+                    305.5,
+                    971
+                  ],
+                  [
+                    305.5,
+                    969
+                  ],
+                  [
+                    305.5,
+                    967.5
+                  ],
+                  [
+                    306.5,
+                    966.5
+                  ],
+                  [
+                    307,
+                    965.5
+                  ],
+                  [
+                    308,
+                    964.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    349,
+                    844
+                  ],
+                  [
+                    348,
+                    844
+                  ],
+                  [
+                    346.5,
+                    844
+                  ],
+                  [
+                    345.5,
+                    844
+                  ],
+                  [
+                    344.5,
+                    845.5
+                  ],
+                  [
+                    344.5,
+                    847
+                  ],
+                  [
+                    344.5,
+                    849.5
+                  ],
+                  [
+                    345,
+                    855
+                  ],
+                  [
+                    346.5,
+                    863
+                  ],
+                  [
+                    349,
+                    868.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    388.5,
+                    838.5
+                  ],
+                  [
+                    387,
+                    839
+                  ],
+                  [
+                    385.5,
+                    840
+                  ],
+                  [
+                    384,
+                    841
+                  ],
+                  [
+                    382,
+                    842.5
+                  ],
+                  [
+                    381,
+                    844
+                  ],
+                  [
+                    380,
+                    846
+                  ],
+                  [
+                    379,
+                    847.5
+                  ],
+                  [
+                    379,
+                    850
+                  ],
+                  [
+                    379,
+                    852.5
+                  ],
+                  [
+                    379,
+                    855
+                  ],
+                  [
+                    379,
+                    858
+                  ],
+                  [
+                    379,
+                    860
+                  ],
+                  [
+                    379.5,
+                    862.5
+                  ],
+                  [
+                    380,
+                    864
+                  ],
+                  [
+                    380.5,
+                    865.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    306,
+                    851.5
+                  ],
+                  [
+                    305.5,
+                    853
+                  ],
+                  [
+                    304.5,
+                    853.5
+                  ],
+                  [
+                    303.5,
+                    855
+                  ],
+                  [
+                    303,
+                    856
+                  ],
+                  [
+                    302.5,
+                    857.5
+                  ],
+                  [
+                    302.5,
+                    859
+                  ],
+                  [
+                    302.5,
+                    860.5
+                  ],
+                  [
+                    303.5,
+                    862
+                  ],
+                  [
+                    304.5,
+                    864
+                  ],
+                  [
+                    306,
+                    865
+                  ],
+                  [
+                    307.5,
+                    867
+                  ],
+                  [
+                    308.5,
+                    868.5
+                  ],
+                  [
+                    309,
+                    869.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    272.5,
+                    851.5
+                  ],
+                  [
+                    272,
+                    852.5
+                  ],
+                  [
+                    271,
+                    853
+                  ],
+                  [
+                    269,
+                    853.5
+                  ],
+                  [
+                    268,
+                    854.5
+                  ],
+                  [
+                    267,
+                    854.5
+                  ],
+                  [
+                    266,
+                    855
+                  ],
+                  [
+                    265,
+                    855.5
+                  ],
+                  [
+                    264,
+                    855.5
+                  ],
+                  [
+                    263,
+                    856
+                  ],
+                  [
+                    262,
+                    856.5
+                  ],
+                  [
+                    261,
+                    857.5
+                  ],
+                  [
+                    260,
+                    858.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    937
+                  ],
+                  [
+                    174,
+                    935.5
+                  ],
+                  [
+                    175,
+                    934
+                  ],
+                  [
+                    176.5,
+                    932.5
+                  ],
+                  [
+                    178,
+                    931.5
+                  ],
+                  [
+                    183,
+                    928.5
+                  ],
+                  [
+                    186.5,
+                    927
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    145,
+                    874
+                  ],
+                  [
+                    146,
+                    874.5
+                  ],
+                  [
+                    148.5,
+                    874.5
+                  ],
+                  [
+                    155.5,
+                    873
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    207,
+                    1001.5
+                  ],
+                  [
+                    208,
+                    1000.5
+                  ],
+                  [
+                    211,
+                    998.5
+                  ],
+                  [
+                    221.5,
+                    995.5
+                  ],
+                  [
+                    229.5,
+                    994
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    990
+                  ],
+                  [
+                    352.5,
+                    990.5
+                  ],
+                  [
+                    350.5,
+                    990.5
+                  ],
+                  [
+                    347,
+                    990
+                  ],
+                  [
+                    338.5,
+                    989
+                  ],
+                  [
+                    329.5,
+                    986.5
+                  ],
+                  [
+                    321,
+                    983.5
+                  ],
+                  [
+                    313,
+                    981
+                  ],
+                  [
+                    305.5,
+                    979.5
+                  ],
+                  [
+                    299,
+                    978
+                  ],
+                  [
+                    293,
+                    976.5
+                  ],
+                  [
+                    287,
+                    976.5
+                  ],
+                  [
+                    282,
+                    976.5
+                  ],
+                  [
+                    278.5,
+                    977.5
+                  ],
+                  [
+                    277.5,
+                    978
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    319.5,
+                    927
+                  ],
+                  [
+                    319.5,
+                    928
+                  ],
+                  [
+                    319.5,
+                    929.5
+                  ],
+                  [
+                    319.5,
+                    930.5
+                  ],
+                  [
+                    319.5,
+                    932
+                  ],
+                  [
+                    320,
+                    933
+                  ],
+                  [
+                    320,
+                    934.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    313,
+                    808.5
+                  ],
+                  [
+                    312,
+                    808.5
+                  ],
+                  [
+                    310,
+                    808
+                  ],
+                  [
+                    309,
+                    808
+                  ],
+                  [
+                    308,
+                    808
+                  ],
+                  [
+                    307.5,
+                    809.5
+                  ],
+                  [
+                    308,
+                    811
+                  ],
+                  [
+                    310.5,
+                    816
+                  ],
+                  [
+                    314,
+                    823.5
+                  ],
+                  [
+                    316,
+                    829.5
+                  ],
+                  [
+                    317.5,
+                    835
+                  ],
+                  [
+                    319.5,
+                    840.5
+                  ],
+                  [
+                    320.5,
+                    844.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    267,
+                    932.5
+                  ],
+                  [
+                    267.5,
+                    934
+                  ],
+                  [
+                    268,
+                    935.5
+                  ],
+                  [
+                    269,
+                    937
+                  ],
+                  [
+                    270,
+                    938.5
+                  ],
+                  [
+                    271,
+                    939.5
+                  ],
+                  [
+                    271.5,
+                    939.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    301,
+                    931
+                  ],
+                  [
+                    301,
+                    932
+                  ],
+                  [
+                    301.5,
+                    933
+                  ],
+                  [
+                    302,
+                    934.5
+                  ],
+                  [
+                    302.5,
+                    936
+                  ],
+                  [
+                    303.5,
+                    937
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    329.5,
+                    937
+                  ],
+                  [
+                    331.5,
+                    937.5
+                  ],
+                  [
+                    334,
+                    937.5
+                  ],
+                  [
+                    338,
+                    937
+                  ],
+                  [
+                    347.5,
+                    936.5
+                  ],
+                  [
+                    355.5,
+                    937
+                  ],
+                  [
+                    359,
+                    937.5
+                  ],
+                  [
+                    362,
+                    938.5
+                  ],
+                  [
+                    368,
+                    941
+                  ],
+                  [
+                    373,
+                    943.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    363.5,
+                    906
+                  ],
+                  [
+                    363,
+                    904.5
+                  ],
+                  [
+                    364,
+                    903.5
+                  ],
+                  [
+                    368.5,
+                    902
+                  ],
+                  [
+                    376,
+                    900
+                  ],
+                  [
+                    384,
+                    900
+                  ],
+                  [
+                    389.5,
+                    901.5
+                  ],
+                  [
+                    394,
+                    902.5
+                  ],
+                  [
+                    396,
+                    903.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    354.5,
+                    937.5
+                  ],
+                  [
+                    354,
+                    938.5
+                  ],
+                  [
+                    354,
+                    939.5
+                  ],
+                  [
+                    356.5,
+                    940.5
+                  ],
+                  [
+                    363.5,
+                    941.5
+                  ],
+                  [
+                    374,
+                    942.5
+                  ],
+                  [
+                    382,
+                    943.5
+                  ],
+                  [
+                    389,
+                    944
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    413.5,
+                    885.5
+                  ],
+                  [
+                    412.5,
+                    886
+                  ],
+                  [
+                    412,
+                    887
+                  ],
+                  [
+                    410.5,
+                    888
+                  ],
+                  [
+                    409,
+                    889.5
+                  ],
+                  [
+                    406.5,
+                    891
+                  ],
+                  [
+                    399.5,
+                    894
+                  ],
+                  [
+                    396,
+                    896.5
+                  ],
+                  [
+                    394.5,
+                    896.5
+                  ],
+                  [
+                    393.5,
+                    897
+                  ],
+                  [
+                    393,
+                    897
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    435.5,
+                    953
+                  ],
+                  [
+                    434.5,
+                    953
+                  ],
+                  [
+                    433,
+                    953
+                  ],
+                  [
+                    431.5,
+                    953.5
+                  ],
+                  [
+                    429.5,
+                    953.5
+                  ],
+                  [
+                    427.5,
+                    953.5
+                  ],
+                  [
+                    425.5,
+                    953
+                  ],
+                  [
+                    423.5,
+                    952.5
+                  ],
+                  [
+                    421.5,
+                    952
+                  ],
+                  [
+                    419.5,
+                    951
+                  ],
+                  [
+                    417.5,
+                    950.5
+                  ],
+                  [
+                    415,
+                    950
+                  ],
+                  [
+                    413,
+                    950
+                  ],
+                  [
+                    411.5,
+                    950
+                  ],
+                  [
+                    410,
+                    950
+                  ],
+                  [
+                    409,
+                    949.5
+                  ],
+                  [
+                    408.5,
+                    949.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    401.5,
+                    973
+                  ],
+                  [
+                    400,
+                    972
+                  ],
+                  [
+                    398.5,
+                    971
+                  ],
+                  [
+                    397,
+                    969
+                  ],
+                  [
+                    394.5,
+                    964
+                  ],
+                  [
+                    393,
+                    956.5
+                  ],
+                  [
+                    393.5,
+                    950
+                  ],
+                  [
+                    395,
+                    945.5
+                  ],
+                  [
+                    396.5,
+                    943.5
+                  ],
+                  [
+                    397.5,
+                    941.5
+                  ],
+                  [
+                    398.5,
+                    939.5
+                  ],
+                  [
+                    399.5,
+                    938
+                  ],
+                  [
+                    400.5,
+                    936.5
+                  ],
+                  [
+                    401.5,
+                    934.5
+                  ],
+                  [
+                    402,
+                    933.5
+                  ],
+                  [
+                    403,
+                    932
+                  ],
+                  [
+                    404,
+                    931.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    353.5,
+                    995
+                  ],
+                  [
+                    354,
+                    993.5
+                  ],
+                  [
+                    353.5,
+                    992.5
+                  ],
+                  [
+                    353,
+                    991
+                  ],
+                  [
+                    353,
+                    989
+                  ],
+                  [
+                    354,
+                    984.5
+                  ],
+                  [
+                    355,
+                    976
+                  ],
+                  [
+                    355,
+                    969
+                  ],
+                  [
+                    355,
+                    964.5
+                  ],
+                  [
+                    355.5,
+                    962
+                  ],
+                  [
+                    357,
+                    960.5
+                  ],
+                  [
+                    359,
+                    960.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    296.5,
+                    987.5
+                  ],
+                  [
+                    296,
+                    986
+                  ],
+                  [
+                    296.5,
+                    984.5
+                  ],
+                  [
+                    298,
+                    982.5
+                  ],
+                  [
+                    302,
+                    977
+                  ],
+                  [
+                    307,
+                    971.5
+                  ],
+                  [
+                    308.5,
+                    969
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    314,
+                    991
+                  ],
+                  [
+                    313,
+                    989.5
+                  ],
+                  [
+                    313,
+                    988.5
+                  ],
+                  [
+                    313,
+                    986.5
+                  ],
+                  [
+                    313.5,
+                    983.5
+                  ],
+                  [
+                    314,
+                    976.5
+                  ],
+                  [
+                    314.5,
+                    968
+                  ],
+                  [
+                    314.5,
+                    961.5
+                  ],
+                  [
+                    315.5,
+                    957.5
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    263,
+                    997.5
+                  ],
+                  [
+                    264,
+                    996.5
+                  ],
+                  [
+                    264.5,
+                    995.5
+                  ],
+                  [
+                    265,
+                    993
+                  ],
+                  [
+                    266,
+                    991
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    266.5,
+                    987.5
+                  ],
+                  [
+                    266.5,
+                    986.5
+                  ],
+                  [
+                    266.5,
+                    985.5
+                  ],
+                  [
+                    267,
+                    984.5
+                  ],
+                  [
+                    267,
+                    980
+                  ],
+                  [
+                    266.5,
+                    977
+                  ]
+                ]
+              },
+              {
+                "r": 37,
+                "smudge": true,
+                "points": [
+                  [
+                    426.5,
+                    908
+                  ],
+                  [
+                    425.5,
+                    908.5
+                  ],
+                  [
+                    424.5,
+                    909
+                  ],
+                  [
+                    423.5,
+                    910
+                  ],
+                  [
+                    422.5,
+                    910
+                  ],
+                  [
+                    421.5,
+                    911
+                  ],
+                  [
+                    420,
+                    911
+                  ],
+                  [
+                    417.5,
+                    912.5
+                  ],
+                  [
+                    410.5,
+                    915.5
+                  ],
+                  [
+                    405,
+                    916
+                  ],
+                  [
+                    401,
+                    917
+                  ],
+                  [
+                    398,
+                    916.5
+                  ],
+                  [
+                    395.5,
+                    916.5
+                  ],
+                  [
+                    393.5,
+                    916.5
+                  ],
+                  [
+                    392,
+                    918.5
+                  ],
+                  [
+                    391.5,
+                    920
+                  ]
+                ]
+              },
+              {
+                "shading": true,
+                "tolerance": 0.2,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.12,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 5
+              },
+              {
+                "shading": true,
+                "tolerance": 0.05,
+                "pool": 14
+              },
+              {
+                "revertPoint": true
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    261,
+                    990.5
+                  ],
+                  [
+                    259,
+                    989
+                  ],
+                  [
+                    257,
+                    988.5
+                  ],
+                  [
+                    255,
+                    987
+                  ],
+                  [
+                    250.5,
+                    983.5
+                  ],
+                  [
+                    245.5,
+                    978
+                  ],
+                  [
+                    241.5,
+                    972
+                  ],
+                  [
+                    237,
+                    967.5
+                  ],
+                  [
+                    231,
+                    963
+                  ],
+                  [
+                    223.5,
+                    959
+                  ],
+                  [
+                    215.5,
+                    954
+                  ],
+                  [
+                    207.5,
+                    946.5
+                  ],
+                  [
+                    196,
+                    931
+                  ],
+                  [
+                    182,
+                    907
+                  ],
+                  [
+                    174.5,
+                    892.5
+                  ],
+                  [
+                    170.5,
+                    884
+                  ],
+                  [
+                    168.5,
+                    878.5
+                  ],
+                  [
+                    168.5,
+                    874.5
+                  ],
+                  [
+                    168.5,
+                    872
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    321.5,
+                    911.5
+                  ],
+                  [
+                    320.5,
+                    910
+                  ],
+                  [
+                    319,
+                    909.5
+                  ],
+                  [
+                    315.5,
+                    908
+                  ],
+                  [
+                    308.5,
+                    906.5
+                  ],
+                  [
+                    300,
+                    906
+                  ],
+                  [
+                    293,
+                    907
+                  ],
+                  [
+                    286,
+                    907.5
+                  ],
+                  [
+                    278.5,
+                    909
+                  ],
+                  [
+                    270.5,
+                    910
+                  ],
+                  [
+                    262.5,
+                    909.5
+                  ],
+                  [
+                    255,
+                    908
+                  ],
+                  [
+                    246.5,
+                    905.5
+                  ],
+                  [
+                    237,
+                    901.5
+                  ],
+                  [
+                    227.5,
+                    896.5
+                  ],
+                  [
+                    219,
+                    890.5
+                  ],
+                  [
+                    211,
+                    884
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    199.5,
+                    868.5
+                  ],
+                  [
+                    195,
+                    860.5
+                  ],
+                  [
+                    193,
+                    854.5
+                  ],
+                  [
+                    193,
+                    851
+                  ],
+                  [
+                    194,
+                    851
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    293,
+                    906.5
+                  ],
+                  [
+                    291.5,
+                    906
+                  ],
+                  [
+                    290.5,
+                    906
+                  ],
+                  [
+                    288,
+                    906.5
+                  ],
+                  [
+                    281,
+                    905
+                  ],
+                  [
+                    272.5,
+                    903
+                  ],
+                  [
+                    268.5,
+                    903
+                  ],
+                  [
+                    265.5,
+                    902
+                  ],
+                  [
+                    259.5,
+                    899.5
+                  ],
+                  [
+                    253.5,
+                    897
+                  ],
+                  [
+                    248.5,
+                    893
+                  ],
+                  [
+                    243,
+                    887.5
+                  ],
+                  [
+                    237.5,
+                    882.5
+                  ],
+                  [
+                    232,
+                    877
+                  ],
+                  [
+                    226.5,
+                    872
+                  ],
+                  [
+                    221,
+                    867.5
+                  ],
+                  [
+                    215.5,
+                    862.5
+                  ],
+                  [
+                    211,
+                    858
+                  ],
+                  [
+                    208.5,
+                    855.5
+                  ],
+                  [
+                    208,
+                    855
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    243.5,
+                    897.5
+                  ],
+                  [
+                    242,
+                    896.5
+                  ],
+                  [
+                    241,
+                    896.5
+                  ],
+                  [
+                    240,
+                    895.5
+                  ],
+                  [
+                    239,
+                    895
+                  ],
+                  [
+                    237.5,
+                    894
+                  ],
+                  [
+                    233,
+                    890.5
+                  ],
+                  [
+                    227,
+                    886
+                  ],
+                  [
+                    221,
+                    882
+                  ],
+                  [
+                    216,
+                    878.5
+                  ],
+                  [
+                    211,
+                    875.5
+                  ],
+                  [
+                    207,
+                    872
+                  ],
+                  [
+                    203.5,
+                    868.5
+                  ],
+                  [
+                    200,
+                    864
+                  ],
+                  [
+                    197.5,
+                    862
+                  ],
+                  [
+                    196,
+                    860
+                  ],
+                  [
+                    195.5,
+                    859
+                  ],
+                  [
+                    197.5,
+                    856
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1789660542,
+                "points": [
+                  [
+                    131.5,
+                    827.5
+                  ],
+                  [
+                    133,
+                    828.5
+                  ],
+                  [
+                    140.5,
+                    833
+                  ],
+                  [
+                    158.5,
+                    844.5
+                  ],
+                  [
+                    184,
+                    863.5
+                  ],
+                  [
+                    209.5,
+                    890.5
+                  ],
+                  [
+                    233.5,
+                    918.5
+                  ],
+                  [
+                    246.5,
+                    933
+                  ],
+                  [
+                    252,
+                    939
+                  ],
+                  [
+                    252.5,
+                    940
+                  ],
+                  [
+                    251.5,
+                    939
+                  ],
+                  [
+                    239,
+                    929
+                  ],
+                  [
+                    204,
+                    896
+                  ],
+                  [
+                    163.5,
+                    851.5
+                  ],
+                  [
+                    133,
+                    819
+                  ],
+                  [
+                    121,
+                    812
+                  ],
+                  [
+                    121,
+                    814
+                  ],
+                  [
+                    129,
+                    824
+                  ],
+                  [
+                    157,
+                    856.5
+                  ],
+                  [
+                    198,
+                    894
+                  ],
+                  [
+                    231.5,
+                    925.5
+                  ],
+                  [
+                    253.5,
+                    952
+                  ],
+                  [
+                    273,
+                    976.5
+                  ],
+                  [
+                    282.5,
+                    989
+                  ],
+                  [
+                    285,
+                    992.5
+                  ],
+                  [
+                    282,
+                    989.5
+                  ],
+                  [
+                    259,
+                    966.5
+                  ],
+                  [
+                    212,
+                    913
+                  ],
+                  [
+                    168.5,
+                    859
+                  ],
+                  [
+                    154.5,
+                    841.5
+                  ],
+                  [
+                    153,
+                    841
+                  ],
+                  [
+                    153.5,
+                    842.5
+                  ],
+                  [
+                    155.5,
+                    848.5
+                  ],
+                  [
+                    162.5,
+                    862.5
+                  ],
+                  [
+                    190.5,
+                    902
+                  ],
+                  [
+                    247.5,
+                    961
+                  ],
+                  [
+                    303,
+                    1002
+                  ],
+                  [
+                    312.5,
+                    1008.5
+                  ],
+                  [
+                    308.5,
+                    1006.5
+                  ],
+                  [
+                    277,
+                    988.5
+                  ],
+                  [
+                    219.5,
+                    946
+                  ],
+                  [
+                    166.5,
+                    905
+                  ],
+                  [
+                    151,
+                    893.5
+                  ],
+                  [
+                    149.5,
+                    894
+                  ],
+                  [
+                    150.5,
+                    895.5
+                  ],
+                  [
+                    154.5,
+                    905
+                  ],
+                  [
+                    165.5,
+                    928.5
+                  ],
+                  [
+                    194,
+                    967
+                  ],
+                  [
+                    245.5,
+                    1007
+                  ],
+                  [
+                    293.5,
+                    1025
+                  ],
+                  [
+                    306,
+                    1021.5
+                  ],
+                  [
+                    302.5,
+                    1007
+                  ],
+                  [
+                    269.5,
+                    967.5
+                  ],
+                  [
+                    215,
+                    910.5
+                  ],
+                  [
+                    157.5,
+                    861
+                  ],
+                  [
+                    127,
+                    836
+                  ],
+                  [
+                    125.5,
+                    837
+                  ],
+                  [
+                    131,
+                    847.5
+                  ],
+                  [
+                    151,
+                    875.5
+                  ],
+                  [
+                    181.5,
+                    911.5
+                  ],
+                  [
+                    219.5,
+                    944
+                  ],
+                  [
+                    258,
+                    966
+                  ],
+                  [
+                    289,
+                    980
+                  ],
+                  [
+                    300,
+                    983
+                  ],
+                  [
+                    299,
+                    979.5
+                  ],
+                  [
+                    275.5,
+                    957.5
+                  ],
+                  [
+                    207,
+                    900.5
+                  ],
+                  [
+                    151,
+                    854.5
+                  ],
+                  [
+                    140,
+                    848
+                  ],
+                  [
+                    142,
+                    850
+                  ],
+                  [
+                    162,
+                    872
+                  ],
+                  [
+                    203.5,
+                    911.5
+                  ],
+                  [
+                    233,
+                    935
+                  ],
+                  [
+                    238.5,
+                    940
+                  ],
+                  [
+                    236,
+                    939.5
+                  ],
+                  [
+                    210,
+                    925
+                  ],
+                  [
+                    158.5,
+                    878
+                  ],
+                  [
+                    140.5,
+                    855.5
+                  ],
+                  [
+                    145,
+                    852.5
+                  ],
+                  [
+                    162.5,
+                    859.5
+                  ],
+                  [
+                    192.5,
+                    881.5
+                  ],
+                  [
+                    210.5,
+                    900.5
+                  ],
+                  [
+                    220.5,
+                    910
+                  ],
+                  [
+                    228.5,
+                    921.5
+                  ],
+                  [
+                    249,
+                    946.5
+                  ],
+                  [
+                    281,
+                    970.5
+                  ],
+                  [
+                    295.5,
+                    970.5
+                  ],
+                  [
+                    301.5,
+                    963
+                  ],
+                  [
+                    301.5,
+                    958.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 946441564,
+                "points": [
+                  [
+                    190,
+                    832.5
+                  ],
+                  [
+                    188,
+                    834
+                  ],
+                  [
+                    186.5,
+                    837.5
+                  ],
+                  [
+                    182,
+                    846
+                  ],
+                  [
+                    179.5,
+                    855.5
+                  ],
+                  [
+                    180.5,
+                    860
+                  ],
+                  [
+                    183,
+                    863
+                  ],
+                  [
+                    189,
+                    867.5
+                  ],
+                  [
+                    204.5,
+                    877
+                  ],
+                  [
+                    236,
+                    892.5
+                  ],
+                  [
+                    271.5,
+                    906
+                  ],
+                  [
+                    295.5,
+                    914
+                  ],
+                  [
+                    319,
+                    922
+                  ],
+                  [
+                    335,
+                    926.5
+                  ],
+                  [
+                    342,
+                    928.5
+                  ],
+                  [
+                    329.5,
+                    921
+                  ],
+                  [
+                    295,
+                    906
+                  ],
+                  [
+                    260,
+                    892
+                  ],
+                  [
+                    238,
+                    885
+                  ],
+                  [
+                    225.5,
+                    882.5
+                  ],
+                  [
+                    217.5,
+                    882
+                  ],
+                  [
+                    213.5,
+                    882.5
+                  ],
+                  [
+                    212,
+                    882.5
+                  ],
+                  [
+                    214.5,
+                    883.5
+                  ],
+                  [
+                    221.5,
+                    886.5
+                  ],
+                  [
+                    266.5,
+                    907
+                  ],
+                  [
+                    329,
+                    936.5
+                  ],
+                  [
+                    349,
+                    943.5
+                  ],
+                  [
+                    349.5,
+                    942
+                  ],
+                  [
+                    336.5,
+                    933
+                  ],
+                  [
+                    284,
+                    901
+                  ],
+                  [
+                    217.5,
+                    865
+                  ],
+                  [
+                    174,
+                    855.5
+                  ],
+                  [
+                    154.5,
+                    857.5
+                  ],
+                  [
+                    143.5,
+                    862
+                  ],
+                  [
+                    138.5,
+                    865.5
+                  ],
+                  [
+                    140,
+                    869
+                  ],
+                  [
+                    151,
+                    880
+                  ],
+                  [
+                    187,
+                    913
+                  ],
+                  [
+                    234.5,
+                    950
+                  ],
+                  [
+                    255,
+                    961
+                  ],
+                  [
+                    257.5,
+                    962.5
+                  ],
+                  [
+                    251.5,
+                    956.5
+                  ],
+                  [
+                    223.5,
+                    928.5
+                  ],
+                  [
+                    171.5,
+                    872
+                  ],
+                  [
+                    133,
+                    823.5
+                  ],
+                  [
+                    130,
+                    816
+                  ],
+                  [
+                    139.5,
+                    824.5
+                  ],
+                  [
+                    164,
+                    850.5
+                  ],
+                  [
+                    195.5,
+                    885
+                  ],
+                  [
+                    219,
+                    915.5
+                  ],
+                  [
+                    242.5,
+                    946.5
+                  ],
+                  [
+                    258.5,
+                    975.5
+                  ],
+                  [
+                    266,
+                    988
+                  ],
+                  [
+                    266,
+                    989
+                  ],
+                  [
+                    256,
+                    981.5
+                  ],
+                  [
+                    221.5,
+                    944
+                  ],
+                  [
+                    179,
+                    890
+                  ],
+                  [
+                    159,
+                    851.5
+                  ],
+                  [
+                    150.5,
+                    829.5
+                  ],
+                  [
+                    150.5,
+                    826
+                  ],
+                  [
+                    151.5,
+                    828
+                  ],
+                  [
+                    157,
+                    842
+                  ],
+                  [
+                    179.5,
+                    883
+                  ],
+                  [
+                    222.5,
+                    944
+                  ],
+                  [
+                    262,
+                    980
+                  ],
+                  [
+                    275,
+                    987.5
+                  ],
+                  [
+                    262,
+                    971
+                  ],
+                  [
+                    217,
+                    916.5
+                  ],
+                  [
+                    169.5,
+                    855.5
+                  ],
+                  [
+                    159.5,
+                    840
+                  ],
+                  [
+                    165.5,
+                    845
+                  ],
+                  [
+                    183,
+                    864
+                  ],
+                  [
+                    213,
+                    898.5
+                  ],
+                  [
+                    240.5,
+                    924.5
+                  ],
+                  [
+                    256.5,
+                    941
+                  ],
+                  [
+                    264,
+                    948.5
+                  ],
+                  [
+                    265.5,
+                    950
+                  ],
+                  [
+                    261,
+                    944
+                  ],
+                  [
+                    235.5,
+                    912.5
+                  ],
+                  [
+                    198.5,
+                    870
+                  ],
+                  [
+                    188.5,
+                    851
+                  ],
+                  [
+                    190,
+                    848.5
+                  ],
+                  [
+                    195,
+                    853.5
+                  ],
+                  [
+                    215,
+                    877.5
+                  ],
+                  [
+                    245.5,
+                    914.5
+                  ],
+                  [
+                    257,
+                    930
+                  ],
+                  [
+                    259.5,
+                    933
+                  ],
+                  [
+                    258.5,
+                    931.5
+                  ],
+                  [
+                    246.5,
+                    913
+                  ],
+                  [
+                    205.5,
+                    862.5
+                  ],
+                  [
+                    177,
+                    834
+                  ],
+                  [
+                    178.5,
+                    838
+                  ],
+                  [
+                    184,
+                    849.5
+                  ],
+                  [
+                    198,
+                    875.5
+                  ],
+                  [
+                    218,
+                    905.5
+                  ],
+                  [
+                    243,
+                    928
+                  ],
+                  [
+                    256.5,
+                    936.5
+                  ],
+                  [
+                    262,
+                    938
+                  ],
+                  [
+                    261.5,
+                    936
+                  ],
+                  [
+                    246.5,
+                    917
+                  ],
+                  [
+                    206,
+                    877
+                  ],
+                  [
+                    182,
+                    857.5
+                  ],
+                  [
+                    184,
+                    860.5
+                  ],
+                  [
+                    190.5,
+                    870.5
+                  ],
+                  [
+                    207,
+                    892.5
+                  ],
+                  [
+                    225,
+                    911.5
+                  ],
+                  [
+                    236.5,
+                    919.5
+                  ],
+                  [
+                    243,
+                    923
+                  ],
+                  [
+                    246.5,
+                    923.5
+                  ],
+                  [
+                    248.5,
+                    922
+                  ],
+                  [
+                    249.5,
+                    918.5
+                  ],
+                  [
+                    242.5,
+                    903
+                  ],
+                  [
+                    215,
+                    870
+                  ],
+                  [
+                    186,
+                    843
+                  ],
+                  [
+                    175.5,
+                    835.5
+                  ],
+                  [
+                    174,
+                    834.5
+                  ],
+                  [
+                    186,
+                    849.5
+                  ],
+                  [
+                    226.5,
+                    889.5
+                  ],
+                  [
+                    262.5,
+                    915.5
+                  ],
+                  [
+                    271.5,
+                    917
+                  ],
+                  [
+                    270.5,
+                    915.5
+                  ],
+                  [
+                    251,
+                    894
+                  ],
+                  [
+                    200,
+                    849.5
+                  ],
+                  [
+                    176.5,
+                    835
+                  ],
+                  [
+                    180.5,
+                    845
+                  ],
+                  [
+                    204.5,
+                    876.5
+                  ],
+                  [
+                    239,
+                    904.5
+                  ],
+                  [
+                    250,
+                    907
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft",
@@ -9420,7 +29562,7 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       ],
       "maxAttachments": 8,
-      "editorOnly": true,
+      "editorOnly": false,
       "rigRegions": [],
       "shaftArtTransform": {
         "scaleX": 1,
@@ -9452,8 +29594,64 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "y": 25,
-          "layerOrder": "head-over-haft"
+          "y": 55,
+          "layerOrder": "head-over-haft",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 201,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 239.6,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 278.3,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 316.9,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 355.6,
+                "y": 956,
+                "rotation": 270,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
         },
         "harlyao-broadsword": {
           "y": 15,
@@ -11309,7 +31507,56 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "fishing-spear": {
           "flipX": true,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 358.6,
+                "y": 959.3,
+                "rotation": 265.8,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 397.1,
+                "y": 956.5,
+                "rotation": 265.8,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 435.7,
+                "y": 953.7,
+                "rotation": 265.8,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 474.2,
+                "y": 950.9,
+                "rotation": 265.8,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "head-over-haft"
@@ -11321,7 +31568,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "hoe": {
-          "layerOrder": "head-over-haft"
+          "layerOrder": "head-over-haft",
+          "disallow": true
         },
         "pick-shovel-pick": {
           "flipX": true,
@@ -11344,6 +31592,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "warhammer": {
+          "scaleX": 0.5,
+          "scaleY": 2,
           "layerOrder": "head-over-haft"
         },
         "work-hammer": {
@@ -11401,73 +31651,16 @@ window.MODULAR_WEAPON_CONFIG = {
       "overrides": {
         "dagger-sword": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "dagger": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft",
-          "animation": "thrust"
+          "animation": "thrust",
+          "scaleX": 0.8
         },
         "fishing-spear": {
           "layerOrder": "haft-over-head",
@@ -11475,22 +31668,41 @@ window.MODULAR_WEAPON_CONFIG = {
           "bridges": {
             "strokes": [
               {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
+                "junction": "band",
+                "x": 195,
+                "y": 831,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
               },
               {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
+                "junction": "band",
+                "x": 195,
+                "y": 869.6,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 195,
+                "y": 908.3,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "junction": "band",
+                "x": 195,
+                "y": 946.9,
+                "rotation": 0,
+                "scale": 0.6,
+                "behind": true
+              },
+              {
+                "clean": true,
+                "smoothing": 2,
+                "speck": 40
               }
             ],
             "outline": 10,
@@ -11500,73 +31712,16 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          }
+          },
+          "y": 30
         },
         "harlyao-broadsword": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "harlyao-longsword": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "hatchet": {
           "layerOrder": "head-over-haft",
@@ -11578,7 +31733,8 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "kylie": {
           "layerOrder": "head-over-haft",
-          "animation": "thrust"
+          "animation": "thrust",
+          "disallow": true
         },
         "pick-shovel-pick": {
           "layerOrder": "head-over-haft",
@@ -11592,36 +31748,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "plains-blade": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft",
@@ -11629,36 +31756,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "war-cleaver": {
           "layerOrder": "haft-over-head",
-          "animation": "thrust",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 100,
-                  "y0": 748,
-                  "x1": 321,
-                  "y1": 861
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 74.00000000000006,
-                  "y0": 61.500000000000114,
-                  "x1": 381.99999999999994,
-                  "y1": 1124.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "animation": "thrust"
         },
         "warhammer": {
           "layerOrder": "head-over-haft",
@@ -11670,7 +31768,8 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "bshuakauitl": {
           "layerOrder": "head-over-haft",
-          "animation": "thrust"
+          "animation": "thrust",
+          "disallow": true
         },
         "grapple-flail": {
           "disallow": false,
@@ -11681,17 +31780,6 @@ window.MODULAR_WEAPON_CONFIG = {
       "mounts": [
         {
           "type": "eye",
-          "start": {
-            "x": 207,
-            "y": 319
-          },
-          "end": {
-            "x": 207,
-            "y": 239
-          }
-        },
-        {
-          "type": "tang",
           "start": {
             "x": 195,
             "y": 856
@@ -11704,12 +31792,12 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 227,
-            "y": 279
+            "x": 195,
+            "y": 856
           },
           "end": {
-            "x": 187,
-            "y": 279
+            "x": 195,
+            "y": 776
           }
         },
         {
@@ -11847,39 +31935,38 @@ window.MODULAR_WEAPON_CONFIG = {
     "hachutuTorchStaff": {
       "label": "Twin-flamed Torch-shaft",
       "sourceShape": "hachutuTorchStaff",
-      "sprite": "assets/toolsprites/hachutu_torch-staff.png",
+      "sprite": "assets/toolsprites/hachutu_torch-staff_compact.png",
       "overrides": {
         "dagger-sword": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "junction": "band",
                 "x": 185,
-                "y": 246.5,
+                "y": 179.56285457390078,
                 "rotation": 0,
                 "scale": 0.6
               },
               {
                 "junction": "band",
                 "x": 187,
-                "y": 281,
+                "y": 224.4128545739008,
                 "rotation": 0,
                 "scale": 0.6
               },
               {
                 "junction": "band",
                 "x": 193,
-                "y": 987.5,
+                "y": 1009.9422972181422,
                 "rotation": 0,
                 "scale": 0.6
               },
               {
                 "junction": "band",
                 "x": 192.5,
-                "y": 945.5,
+                "y": 955.3422972181421,
                 "rotation": 0,
                 "scale": 0.6
               },
@@ -11889,59 +31976,59 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     191,
-                    945
+                    954.6922972181422
                   ],
                   [
                     190,
-                    945
+                    954.6922972181422
                   ],
                   [
                     188.5,
-                    944.5
+                    954.0422972181422
                   ],
                   [
                     187,
-                    944
+                    953.3922972181421
                   ],
                   [
                     185.5,
-                    944
+                    953.3922972181421
                   ],
                   [
                     184.5,
-                    944
+                    953.3922972181421
                   ],
                   [
                     184,
-                    945
+                    954.6922972181422
                   ],
                   [
                     185.5,
-                    950
+                    961.1922972181422
                   ],
                   [
                     189,
-                    959.5
+                    973.5422972181422
                   ],
                   [
                     192.5,
-                    971
+                    988.4922972181422
                   ],
                   [
                     193,
-                    974.5
+                    993.0422972181422
                   ],
                   [
                     193.5,
-                    978
+                    997.5922972181421
                   ],
                   [
                     194.5,
-                    983
+                    1004.0922972181421
                   ],
                   [
                     194.5,
-                    984
+                    1005.3922972181421
                   ]
                 ]
               },
@@ -11951,43 +32038,43 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     210.5,
-                    943
+                    952.0922972181421
                   ],
                   [
                     210,
-                    944
+                    953.3922972181421
                   ],
                   [
                     209.5,
-                    945
+                    954.6922972181422
                   ],
                   [
                     209.5,
-                    946.5
+                    956.6422972181421
                   ],
                   [
                     209,
-                    948.5
+                    959.2422972181422
                   ],
                   [
                     209,
-                    954
+                    966.3922972181421
                   ],
                   [
                     209,
-                    962
+                    976.7922972181422
                   ],
                   [
                     209.5,
-                    966.5
+                    982.6422972181421
                   ],
                   [
                     210.5,
-                    969.5
+                    986.5422972181422
                   ],
                   [
                     211,
-                    971
+                    988.4922972181422
                   ]
                 ]
               },
@@ -11997,59 +32084,59 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     190,
-                    964.5
+                    980.0422972181422
                   ],
                   [
                     188.5,
-                    965.5
+                    981.3422972181421
                   ],
                   [
                     187.5,
-                    965.5
+                    981.3422972181421
                   ],
                   [
                     186,
-                    966
+                    981.9922972181422
                   ],
                   [
                     185,
-                    966
+                    981.9922972181422
                   ],
                   [
                     183.5,
-                    966.5
+                    982.6422972181421
                   ],
                   [
                     182.5,
-                    967
+                    983.2922972181422
                   ],
                   [
                     181.5,
-                    967
+                    983.2922972181422
                   ],
                   [
                     181.5,
-                    966
+                    981.9922972181422
                   ],
                   [
                     181.5,
-                    967
+                    983.2922972181422
                   ],
                   [
                     181.5,
-                    969
+                    985.8922972181421
                   ],
                   [
                     181.5,
-                    970.5
+                    987.8422972181421
                   ],
                   [
                     182,
-                    972
+                    989.7922972181422
                   ],
                   [
                     182,
-                    972.5
+                    990.4422972181422
                   ]
                 ]
               },
@@ -12059,31 +32146,31 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     189,
-                    255
+                    190.6128545739008
                   ],
                   [
                     188,
-                    256
+                    191.9128545739008
                   ],
                   [
                     187,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     187,
-                    259.5
+                    196.4628545739008
                   ],
                   [
                     187.5,
-                    262
+                    199.7128545739008
                   ],
                   [
                     188,
-                    264
+                    202.31285457390078
                   ],
                   [
                     188.5,
-                    265.5
+                    204.26285457390082
                   ]
                 ]
               },
@@ -12093,59 +32180,59 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     181.5,
-                    242
+                    173.7128545739008
                   ],
                   [
                     180.5,
-                    242
+                    173.7128545739008
                   ],
                   [
                     179.5,
-                    243
+                    175.01285457390082
                   ],
                   [
                     178,
-                    244.5
+                    176.9628545739008
                   ],
                   [
                     177.5,
-                    245.5
+                    178.26285457390082
                   ],
                   [
                     177,
-                    246.5
+                    179.56285457390078
                   ],
                   [
                     176.5,
-                    248
+                    181.51285457390082
                   ],
                   [
                     176,
-                    249.5
+                    183.4628545739008
                   ],
                   [
                     176,
-                    252
+                    186.7128545739008
                   ],
                   [
                     176,
-                    254.5
+                    189.9628545739008
                   ],
                   [
                     176,
-                    256.5
+                    192.56285457390078
                   ],
                   [
                     176.5,
-                    259
+                    195.81285457390078
                   ],
                   [
                     177,
-                    261
+                    198.4128545739008
                   ],
                   [
                     178,
-                    262
+                    199.7128545739008
                   ]
                 ]
               },
@@ -12155,67 +32242,67 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     194,
-                    242
+                    173.7128545739008
                   ],
                   [
                     194,
-                    244
+                    176.31285457390078
                   ],
                   [
                     193.5,
-                    246
+                    178.9128545739008
                   ],
                   [
                     193.5,
-                    248
+                    181.51285457390082
                   ],
                   [
                     193.5,
-                    250.5
+                    184.76285457390082
                   ],
                   [
                     193.5,
-                    253
+                    188.01285457390082
                   ],
                   [
                     193.5,
-                    255
+                    190.6128545739008
                   ],
                   [
                     194,
-                    257
+                    193.2128545739008
                   ],
                   [
                     194.5,
-                    259
+                    195.81285457390078
                   ],
                   [
                     195,
-                    261
+                    198.4128545739008
                   ],
                   [
                     195.5,
-                    262.5
+                    200.3628545739008
                   ],
                   [
                     196.5,
-                    264.5
+                    202.9628545739008
                   ],
                   [
                     196.5,
-                    265.5
+                    204.26285457390082
                   ],
                   [
                     197.5,
-                    268
+                    207.51285457390082
                   ],
                   [
                     197.5,
-                    270
+                    210.1128545739008
                   ],
                   [
                     198.5,
-                    273
+                    214.01285457390082
                   ]
                 ]
               },
@@ -12225,67 +32312,67 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     173.5,
-                    252.5
+                    187.3628545739008
                   ],
                   [
                     172.5,
-                    254.5
+                    189.9628545739008
                   ],
                   [
                     171.5,
-                    256
+                    191.9128545739008
                   ],
                   [
                     171,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     171,
-                    258.5
+                    195.1628545739008
                   ],
                   [
                     171,
-                    259.5
+                    196.4628545739008
                   ],
                   [
                     170.5,
-                    260.5
+                    197.76285457390082
                   ],
                   [
                     170.5,
-                    262
+                    199.7128545739008
                   ],
                   [
                     171,
-                    263
+                    201.01285457390082
                   ],
                   [
                     171,
-                    265.5
+                    204.26285457390082
                   ],
                   [
                     172,
-                    267.5
+                    206.8628545739008
                   ],
                   [
                     173,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     175,
-                    278.5
+                    221.1628545739008
                   ],
                   [
                     175.5,
-                    282
+                    225.7128545739008
                   ],
                   [
                     176,
-                    285
+                    229.6128545739008
                   ],
                   [
                     176,
-                    289.5
+                    235.4628545739008
                   ]
                 ]
               },
@@ -12299,59 +32386,59 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     191,
-                    960.5
+                    974.8422972181421
                   ],
                   [
                     191,
-                    959.5
+                    973.5422972181422
                   ],
                   [
                     190,
-                    958.5
+                    972.2422972181422
                   ],
                   [
                     189,
-                    958
+                    971.5922972181421
                   ],
                   [
                     188,
-                    957.5
+                    970.9422972181422
                   ],
                   [
                     187,
-                    957
+                    970.2922972181422
                   ],
                   [
                     186,
-                    957.5
+                    970.9422972181422
                   ],
                   [
                     186,
-                    958.5
+                    972.2422972181422
                   ],
                   [
                     186,
-                    960
+                    974.1922972181422
                   ],
                   [
                     186.5,
-                    962.5
+                    977.4422972181422
                   ],
                   [
                     188,
-                    967
+                    983.2922972181422
                   ],
                   [
                     192.5,
-                    973.5
+                    991.7422972181422
                   ],
                   [
                     198,
-                    978
+                    997.5922972181421
                   ],
                   [
                     200,
-                    979
+                    998.8922972181421
                   ]
                 ]
               },
@@ -12365,59 +32452,59 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     200.5,
-                    946
+                    955.9922972181422
                   ],
                   [
                     199.5,
-                    945.5
+                    955.3422972181421
                   ],
                   [
                     198.5,
-                    946
+                    955.9922972181422
                   ],
                   [
                     198,
-                    947
+                    957.2922972181422
                   ],
                   [
                     197.5,
-                    948.5
+                    959.2422972181422
                   ],
                   [
                     197.5,
-                    950.5
+                    961.8422972181421
                   ],
                   [
                     197.5,
-                    953
+                    965.0922972181421
                   ],
                   [
                     197.5,
-                    956
+                    968.9922972181422
                   ],
                   [
                     197.5,
-                    958.5
+                    972.2422972181422
                   ],
                   [
                     198,
-                    961
+                    975.4922972181422
                   ],
                   [
                     198.5,
-                    963.5
+                    978.7422972181422
                   ],
                   [
                     199,
-                    965
+                    980.6922972181422
                   ],
                   [
                     199.5,
-                    966.5
+                    982.6422972181421
                   ],
                   [
                     200,
-                    967.5
+                    983.9422972181422
                   ]
                 ]
               },
@@ -12431,83 +32518,83 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     196.5,
-                    948
+                    958.5922972181421
                   ],
                   [
                     195.5,
-                    947.5
+                    957.9422972181422
                   ],
                   [
                     193.5,
-                    946.5
+                    956.6422972181421
                   ],
                   [
                     192.5,
-                    946.5
+                    956.6422972181421
                   ],
                   [
                     191,
-                    946
+                    955.9922972181422
                   ],
                   [
                     190,
-                    946.5
+                    956.6422972181421
                   ],
                   [
                     190,
-                    948.5
+                    959.2422972181422
                   ],
                   [
                     190.5,
-                    950.5
+                    961.8422972181421
                   ],
                   [
                     190.5,
-                    952
+                    963.7922972181422
                   ],
                   [
                     191,
-                    955
+                    967.6922972181422
                   ],
                   [
                     192,
-                    962
+                    976.7922972181422
                   ],
                   [
                     193,
-                    968
+                    984.5922972181421
                   ],
                   [
                     193,
-                    972
+                    989.7922972181422
                   ],
                   [
                     193.5,
-                    976.5
+                    995.6422972181421
                   ],
                   [
                     195,
-                    981.5
+                    1002.1422972181421
                   ],
                   [
                     196.5,
-                    986.5
+                    1008.6422972181421
                   ],
                   [
                     197.5,
-                    991.5
+                    1015.1422972181421
                   ],
                   [
                     199,
-                    995
+                    1019.6922972181422
                   ],
                   [
                     200.5,
-                    998
+                    1023.5922972181423
                   ],
                   [
                     201.5,
-                    997.5
+                    1022.9422972181422
                   ]
                 ]
               },
@@ -12521,63 +32608,63 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     199.5,
-                    937
+                    944.2922972181422
                   ],
                   [
                     198.5,
-                    938
+                    945.5922972181421
                   ],
                   [
                     197.5,
-                    940
+                    948.1922972181422
                   ],
                   [
                     197.5,
-                    941.5
+                    950.1422972181421
                   ],
                   [
                     197.5,
-                    943
+                    952.0922972181421
                   ],
                   [
                     197,
-                    949
+                    959.8922972181421
                   ],
                   [
                     196.5,
-                    957
+                    970.2922972181422
                   ],
                   [
                     196.5,
-                    962.5
+                    977.4422972181422
                   ],
                   [
                     197.5,
-                    967
+                    983.2922972181422
                   ],
                   [
                     199.5,
-                    971
+                    988.4922972181422
                   ],
                   [
                     203,
-                    975
+                    993.6922972181422
                   ],
                   [
                     207,
-                    979
+                    998.8922972181421
                   ],
                   [
                     212,
-                    983
+                    1004.0922972181421
                   ],
                   [
                     216,
-                    988
+                    1010.5922972181421
                   ],
                   [
                     218,
-                    990.5
+                    1013.8422972181421
                   ]
                 ]
               },
@@ -12591,67 +32678,67 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     161,
-                    255.5
+                    191.26285457390082
                   ],
                   [
                     159.5,
-                    256
+                    191.9128545739008
                   ],
                   [
                     158.5,
-                    257
+                    193.2128545739008
                   ],
                   [
                     157.5,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     157,
-                    258.5
+                    195.1628545739008
                   ],
                   [
                     157,
-                    261
+                    198.4128545739008
                   ],
                   [
                     159,
-                    268.5
+                    208.1628545739008
                   ],
                   [
                     164,
-                    279.5
+                    222.4628545739008
                   ],
                   [
                     168.5,
-                    290.5
+                    236.76285457390082
                   ],
                   [
                     173,
-                    300.5
+                    249.76285457390082
                   ],
                   [
                     177.5,
-                    309.5
+                    261.4628545739008
                   ],
                   [
                     181.5,
-                    317
+                    271.2128545739008
                   ],
                   [
                     184.5,
-                    323.5
+                    279.6628545739008
                   ],
                   [
                     188,
-                    329
+                    286.8128545739008
                   ],
                   [
                     193,
-                    334
+                    293.3128545739008
                   ],
                   [
                     199,
-                    337.5
+                    297.8628545739008
                   ]
                 ]
               },
@@ -12665,51 +32752,51 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     207.5,
-                    281
+                    224.4128545739008
                   ],
                   [
                     207,
-                    279.5
+                    222.4628545739008
                   ],
                   [
                     204.5,
-                    275.5
+                    217.26285457390082
                   ],
                   [
                     199.5,
-                    267.5
+                    206.8628545739008
                   ],
                   [
                     195,
-                    258
+                    194.51285457390082
                   ],
                   [
                     193,
-                    249
+                    182.81285457390078
                   ],
                   [
                     191.5,
-                    239
+                    169.81285457390078
                   ],
                   [
                     190.5,
-                    228
+                    155.51285457390082
                   ],
                   [
                     190.5,
-                    216
+                    139.9128545739008
                   ],
                   [
                     191,
-                    204
+                    124.31285457390084
                   ],
                   [
                     192,
-                    191.5
+                    108.06285457390084
                   ],
                   [
                     193,
-                    185
+                    99.61285457390079
                   ]
                 ]
               },
@@ -12723,67 +32810,67 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     199,
-                    905
+                    902.6922972181422
                   ],
                   [
                     198,
-                    905
+                    902.6922972181422
                   ],
                   [
                     198.5,
-                    906
+                    903.9922972181422
                   ],
                   [
                     200,
-                    910.5
+                    909.8422972181421
                   ],
                   [
                     202.5,
-                    922.5
+                    925.4422972181422
                   ],
                   [
                     203.5,
-                    937.5
+                    944.9422972181422
                   ],
                   [
                     203,
-                    952
+                    963.7922972181422
                   ],
                   [
                     203,
-                    967
+                    983.2922972181422
                   ],
                   [
                     204,
-                    979.5
+                    999.5422972181422
                   ],
                   [
                     206.5,
-                    991
+                    1014.4922972181422
                   ],
                   [
                     210.5,
-                    1002
+                    1028.7922972181423
                   ],
                   [
                     215.5,
-                    1013
+                    1043.0922972181424
                   ],
                   [
                     220,
-                    1025.5
+                    1059.3422972181424
                   ],
                   [
                     224.5,
-                    1039
+                    1076.8922972181422
                   ],
                   [
                     229,
-                    1054.5
+                    1097.0422972181423
                   ],
                   [
                     231.5,
-                    1063
+                    1108.0922972181424
                   ]
                 ]
               },
@@ -12795,67 +32882,67 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     157.5,
-                    1012
+                    1041.7922972181423
                   ],
                   [
                     156.5,
-                    1012
+                    1041.7922972181423
                   ],
                   [
                     155.5,
-                    1012
+                    1041.7922972181423
                   ],
                   [
                     154.5,
-                    1011.5
+                    1041.1422972181422
                   ],
                   [
                     153.5,
-                    1009
+                    1037.8922972181422
                   ],
                   [
                     152,
-                    1002
+                    1028.7922972181423
                   ],
                   [
                     150,
-                    991
+                    1014.4922972181422
                   ],
                   [
                     147.5,
-                    979
+                    998.8922972181421
                   ],
                   [
                     143.5,
-                    964.5
+                    980.0422972181422
                   ],
                   [
                     135,
-                    939.5
+                    947.5422972181422
                   ],
                   [
                     127.5,
-                    913.5
+                    913.7422972181422
                   ],
                   [
                     124,
-                    891
+                    884.4922972181422
                   ],
                   [
                     123.5,
-                    872.5
+                    860.4422972181422
                   ],
                   [
                     124.5,
-                    859
+                    842.8922972181422
                   ],
                   [
                     125.5,
-                    846.5
+                    826.6422972181422
                   ],
                   [
                     129,
-                    832
+                    807.7922972181422
                   ]
                 ]
               },
@@ -12867,159 +32954,159 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     172,
-                    997.5
+                    1022.9422972181422
                   ],
                   [
                     170.5,
-                    997.5
+                    1022.9422972181422
                   ],
                   [
                     169.5,
-                    998
+                    1023.5922972181423
                   ],
                   [
                     168,
-                    998.5
+                    1024.242297218142
                   ],
                   [
                     166.5,
-                    999.5
+                    1025.5422972181423
                   ],
                   [
                     165.5,
-                    999.5
+                    1025.5422972181423
                   ],
                   [
                     164.5,
-                    996.5
+                    1021.6422972181421
                   ],
                   [
                     163.5,
-                    989.5
+                    1012.5422972181422
                   ],
                   [
                     163,
-                    980
+                    1000.1922972181422
                   ],
                   [
                     162,
-                    972.5
+                    990.4422972181422
                   ],
                   [
                     161,
-                    966.5
+                    982.6422972181421
                   ],
                   [
                     160,
-                    959
+                    972.8922972181421
                   ],
                   [
                     158.5,
-                    951
+                    962.4922972181422
                   ],
                   [
                     157.5,
-                    943
+                    952.0922972181421
                   ],
                   [
                     156,
-                    935
+                    941.6922972181422
                   ],
                   [
                     154,
-                    927
+                    931.2922972181422
                   ],
                   [
                     152.5,
-                    920
+                    922.1922972181422
                   ],
                   [
                     151,
-                    914
+                    914.3922972181421
                   ],
                   [
                     149.5,
-                    909.5
+                    908.5422972181422
                   ],
                   [
                     149,
-                    904.5
+                    902.0422972181422
                   ],
                   [
                     149,
-                    899.5
+                    895.5422972181422
                   ],
                   [
                     149.5,
-                    895
+                    889.6922972181422
                   ],
                   [
                     149.5,
-                    891.5
+                    885.1422972181422
                   ],
                   [
                     150,
-                    889
+                    881.8922972181422
                   ],
                   [
                     150.5,
-                    887.5
+                    879.9422972181422
                   ],
                   [
                     151,
-                    886.5
+                    878.6422972181422
                   ],
                   [
                     152.5,
-                    898
+                    893.5922972181421
                   ],
                   [
                     156.5,
-                    940
+                    948.1922972181422
                   ],
                   [
                     158.5,
-                    994
+                    1018.3922972181421
                   ],
                   [
                     155.5,
-                    1032
+                    1067.7922972181423
                   ],
                   [
                     151.5,
-                    1060
+                    1104.1922972181424
                   ],
                   [
                     149.5,
-                    1083.5
+                    1134.742297218142
                   ],
                   [
                     150,
-                    1104.5
+                    1162.0422972181423
                   ],
                   [
                     152.5,
-                    1122.5
+                    1185.4422972181424
                   ],
                   [
                     156,
-                    1134.5
+                    1201.0422972181423
                   ],
                   [
                     160,
-                    1143.5
+                    1212.742297218142
                   ],
                   [
                     164,
-                    1151.5
+                    1223.1422972181422
                   ],
                   [
                     168.5,
-                    1156.5
+                    1229.6422972181422
                   ],
                   [
                     171,
-                    1158.5
+                    1232.242297218142
                   ]
                 ]
               },
@@ -13029,15 +33116,15 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     207.5,
-                    277
+                    219.2128545739008
                   ],
                   [
                     209,
-                    278
+                    220.51285457390082
                   ],
                   [
                     210.5,
-                    278
+                    220.51285457390082
                   ]
                 ]
               },
@@ -13047,51 +33134,51 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     221.5,
-                    256.5
+                    192.56285457390078
                   ],
                   [
                     220,
-                    256
+                    191.9128545739008
                   ],
                   [
                     218,
-                    256
+                    191.9128545739008
                   ],
                   [
                     216.5,
-                    256
+                    191.9128545739008
                   ],
                   [
                     215,
-                    256.5
+                    192.56285457390078
                   ],
                   [
                     213,
-                    257
+                    193.2128545739008
                   ],
                   [
                     211.5,
-                    257
+                    193.2128545739008
                   ],
                   [
                     209.5,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     207.5,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     206,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     204.5,
-                    257.5
+                    193.8628545739008
                   ],
                   [
                     204,
-                    257.5
+                    193.8628545739008
                   ]
                 ]
               },
@@ -13101,71 +33188,71 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     224.5,
-                    276
+                    217.9128545739008
                   ],
                   [
                     223.5,
-                    276
+                    217.9128545739008
                   ],
                   [
                     222.5,
-                    276.5
+                    218.56285457390078
                   ],
                   [
                     221.5,
-                    276.5
+                    218.56285457390078
                   ],
                   [
                     220.5,
-                    276.5
+                    218.56285457390078
                   ],
                   [
                     219.5,
-                    277
+                    219.2128545739008
                   ],
                   [
                     217.5,
-                    277.5
+                    219.8628545739008
                   ],
                   [
                     216,
-                    278
+                    220.51285457390082
                   ],
                   [
                     214.5,
-                    278.5
+                    221.1628545739008
                   ],
                   [
                     213,
-                    279
+                    221.81285457390078
                   ],
                   [
                     211.5,
-                    279
+                    221.81285457390078
                   ],
                   [
                     209.5,
-                    279
+                    221.81285457390078
                   ],
                   [
                     208,
-                    279
+                    221.81285457390078
                   ],
                   [
                     206.5,
-                    278.5
+                    221.1628545739008
                   ],
                   [
                     205,
-                    278
+                    220.51285457390082
                   ],
                   [
                     203.5,
-                    277
+                    219.2128545739008
                   ],
                   [
                     202,
-                    276.5
+                    218.56285457390078
                   ]
                 ]
               },
@@ -13177,87 +33264,87 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     270,
-                    272
+                    212.7128545739008
                   ],
                   [
                     269,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     268,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     266.5,
-                    271
+                    211.4128545739008
                   ],
                   [
                     265.5,
-                    271
+                    211.4128545739008
                   ],
                   [
                     263.5,
-                    271
+                    211.4128545739008
                   ],
                   [
                     262.5,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     260.5,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     258,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     256,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     254,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     251.5,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     249.5,
-                    271
+                    211.4128545739008
                   ],
                   [
                     248,
-                    271
+                    211.4128545739008
                   ],
                   [
                     246.5,
-                    271
+                    211.4128545739008
                   ],
                   [
                     245,
-                    271
+                    211.4128545739008
                   ],
                   [
                     244,
-                    271
+                    211.4128545739008
                   ],
                   [
                     240.5,
-                    271.5
+                    212.06285457390078
                   ],
                   [
                     238.5,
-                    272
+                    212.7128545739008
                   ],
                   [
                     236,
-                    272.5
+                    213.3628545739008
                   ],
                   [
                     234,
-                    273
+                    214.01285457390082
                   ]
                 ]
               },
@@ -13269,83 +33356,83 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     255,
-                    265.5
+                    204.26285457390082
                   ],
                   [
                     253.5,
-                    265
+                    203.6128545739008
                   ],
                   [
                     252.5,
-                    264.5
+                    202.9628545739008
                   ],
                   [
                     251.5,
-                    264
+                    202.31285457390078
                   ],
                   [
                     250.5,
-                    264
+                    202.31285457390078
                   ],
                   [
                     249,
-                    263
+                    201.01285457390082
                   ],
                   [
                     247.5,
-                    263
+                    201.01285457390082
                   ],
                   [
                     246,
-                    262.5
+                    200.3628545739008
                   ],
                   [
                     245,
-                    262.5
+                    200.3628545739008
                   ],
                   [
                     243,
-                    263
+                    201.01285457390082
                   ],
                   [
                     242,
-                    263
+                    201.01285457390082
                   ],
                   [
                     240.5,
-                    264
+                    202.31285457390078
                   ],
                   [
                     239,
-                    264.5
+                    202.9628545739008
                   ],
                   [
                     237.5,
-                    265.5
+                    204.26285457390082
                   ],
                   [
                     236,
-                    266
+                    204.9128545739008
                   ],
                   [
                     234.5,
-                    266.5
+                    205.56285457390078
                   ],
                   [
                     233.5,
-                    267
+                    206.2128545739008
                   ],
                   [
                     231.5,
-                    268
+                    207.51285457390082
                   ],
                   [
                     229,
-                    269.5
+                    209.4628545739008
                   ],
                   [
                     229.5,
-                    270
+                    210.1128545739008
                   ]
                 ]
               },
@@ -13357,83 +33444,83 @@ window.MODULAR_WEAPON_CONFIG = {
                 "points": [
                   [
                     247.5,
-                    265
+                    203.6128545739008
                   ],
                   [
                     246.5,
-                    264.5
+                    202.9628545739008
                   ],
                   [
                     245.5,
-                    264
+                    202.31285457390078
                   ],
                   [
                     244.5,
-                    263.5
+                    201.6628545739008
                   ],
                   [
                     243.5,
-                    263.5
+                    201.6628545739008
                   ],
                   [
                     242,
-                    264
+                    202.31285457390078
                   ],
                   [
                     240.5,
-                    264
+                    202.31285457390078
                   ],
                   [
                     239.5,
-                    264.5
+                    202.9628545739008
                   ],
                   [
                     237.5,
-                    265.5
+                    204.26285457390082
                   ],
                   [
                     236,
-                    266
+                    204.9128545739008
                   ],
                   [
                     234.5,
-                    266.5
+                    205.56285457390078
                   ],
                   [
                     233,
-                    267
+                    206.2128545739008
                   ],
                   [
                     231.5,
-                    267.5
+                    206.8628545739008
                   ],
                   [
                     230,
-                    267.5
+                    206.8628545739008
                   ],
                   [
                     229,
-                    267.5
+                    206.8628545739008
                   ],
                   [
                     227.5,
-                    268
+                    207.51285457390082
                   ],
                   [
                     225.5,
-                    269
+                    208.81285457390078
                   ],
                   [
                     223.5,
-                    269.5
+                    209.4628545739008
                   ],
                   [
                     222,
-                    270
+                    210.1128545739008
                   ],
                   [
                     222,
-                    271
+                    211.4128545739008
                   ]
                 ]
               }
@@ -13445,31 +33532,31 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": false
+          }
         },
         "dagger": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
-          "layerOrder": "haft-over-head",
+          "scaleX": 0.85,
+          "scaleY": 0.95,
+          "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-1",
                 "box": {
                   "x0": 160.49999999999997,
-                  "y0": 208.5,
+                  "y0": 130.1628545739008,
                   "x1": 223.00000000000003,
-                  "y1": 323
+                  "y1": 279.0128545739008
                 }
               },
               {
                 "recipe": "recipe-1",
                 "box": {
                   "x0": 159.49999999999997,
-                  "y0": 941,
+                  "y0": 1039.492297218142,
                   "x1": 226.00000000000003,
-                  "y1": 1046.5
+                  "y1": 1086.6422972181422
                 }
               }
             ],
@@ -13480,8 +33567,7 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "fishing-mace": {
           "scaleX": 0.5,
@@ -13489,43 +33575,25 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "scaleX": 0.6,
-          "scaleY": 1.2,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 41,
-                  "y0": 73.5,
-                  "x1": 349,
-                  "y1": 1136.5
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          },
-          "disallow": true
+          "scaleX": 0.85,
+          "scaleY": 1.25,
+          "y": 30,
+          "layerOrder": "head-over-haft",
+          "disallow": false
         },
         "harlyao-broadsword": {
           "scaleX": 0.6,
           "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "tanged-head---sleeved-shaft",
                 "box": {
                   "x0": 39.5,
-                  "y0": 86,
+                  "y0": -29.087145426099255,
                   "x1": 347.5,
-                  "y1": 1119.5
+                  "y1": 1181.5422972181423
                 }
               }
             ],
@@ -13536,21 +33604,21 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "harlyao-longsword": {
           "scaleX": 0.8,
           "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-3",
                 "box": {
                   "x0": 55,
-                  "y0": 129,
+                  "y0": 26.812854573900836,
                   "x1": 257.5,
-                  "y1": 1084.5
+                  "y1": 1136.0422972181423
                 }
               }
             ],
@@ -13561,8 +33629,7 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "hatchet": {
           "scaleX": 0.6,
@@ -13575,7 +33642,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 0.5,
           "scaleY": 0.9,
           "layerOrder": "head-over-haft",
-          "disallow": true
+          "disallow": false
         },
         "kylie": {
           "scaleX": 0.5,
@@ -13584,28 +33651,30 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "pick-shovel-pick": {
-          "scaleX": 0.5,
+          "scaleX": 0.75,
+          "scaleY": 1.25,
           "flipX": true,
           "flipY": true,
           "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-1",
                 "box": {
                   "x0": 166.5,
-                  "y0": 915.5,
+                  "y0": 1006.3422972181421,
                   "x1": 223,
-                  "y1": 1026
+                  "y1": 1059.992297218142
                 }
               },
               {
                 "recipe": "recipe-1",
                 "box": {
                   "x0": 159.5,
-                  "y0": 223,
+                  "y0": 149.01285457390082,
                   "x1": 216,
-                  "y1": 333.5
+                  "y1": 292.6628545739008
                 },
                 "flipX": true
               }
@@ -13617,22 +33686,22 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "pickshovel-scoop": {
           "scaleX": 0.4,
           "scaleY": 1.4,
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-3",
                 "box": {
                   "x0": 55,
-                  "y0": 129,
+                  "y0": 26.812854573900836,
                   "x1": 257.5,
-                  "y1": 1084.5
+                  "y1": 1136.0422972181423
                 }
               }
             ],
@@ -13643,22 +33712,22 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "plains-blade": {
           "scaleX": 0.75,
           "scaleY": 0.5,
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
+          "disallow": false,
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-3",
                 "box": {
                   "x0": 55,
-                  "y0": 129,
+                  "y0": 26.812854573900836,
                   "x1": 257.5,
-                  "y1": 1084.5
+                  "y1": 1136.0422972181423
                 }
               }
             ],
@@ -13669,8 +33738,7 @@ window.MODULAR_WEAPON_CONFIG = {
             ],
             "shade": 0.3,
             "seed": 1
-          },
-          "disallow": true
+          }
         },
         "porakaneki-greatclub": {
           "scaleX": 0.8,
@@ -13682,16 +33750,16 @@ window.MODULAR_WEAPON_CONFIG = {
         "war-cleaver": {
           "scaleX": 0.85,
           "y": -45,
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
           "bridges": {
             "strokes": [
               {
                 "recipe": "recipe-4",
                 "box": {
                   "x0": 30.5,
-                  "y0": 120,
+                  "y0": 15.11285457390079,
                   "x1": 280.5,
-                  "y1": 525
+                  "y1": 541.6128545739009
                 },
                 "flipX": true
               },
@@ -13699,9 +33767,9 @@ window.MODULAR_WEAPON_CONFIG = {
                 "recipe": "recipe-4",
                 "box": {
                   "x0": 96.5,
-                  "y0": 764.5,
+                  "y0": 810.0422972181422,
                   "x1": 346.5,
-                  "y1": 1137
+                  "y1": 1204.2922972181423
                 }
               }
             ],
@@ -13744,44 +33812,44 @@ window.MODULAR_WEAPON_CONFIG = {
           "type": "eye",
           "start": {
             "x": 188.78363094484274,
-            "y": 1002.7014180723676
+            "y": 996.8
           },
           "end": {
             "x": 187.43604165403195,
-            "y": 925.7132111631059
+            "y": 904.414151708886
           }
         },
         {
           "type": "eye",
           "start": {
             "x": 198,
-            "y": 229
+            "y": 207.2
           },
           "end": {
             "x": 198,
-            "y": 309
+            "y": 303.2
           }
         },
         {
           "type": "tang",
           "start": {
             "x": 190.2400880884385,
-            "y": 966.3136175245061
+            "y": 982.4
           },
           "end": {
-            "x": 221.7599119115615,
-            "y": 941.6863824754939
+            "x": 217.81993393367108,
+            "y": 956.5414031985373
           }
         },
         {
           "type": "tang",
           "start": {
             "x": 189.87588007577142,
-            "y": 278.83626571238403
+            "y": 221.60000000000002
           },
           "end": {
-            "x": 158.12411992422858,
-            "y": 303.16373428761597
+            "x": 162.09308994317144,
+            "y": 247.14384200399348
           }
         }
       ],
@@ -13797,11 +33865,11 @@ window.MODULAR_WEAPON_CONFIG = {
       "fireAssembly": "hachutuTorchStaff",
       "rigRegions": [],
       "shaftArtTransform": {
-        "scaleX": 1,
-        "scaleY": 1,
-        "x": 0,
+        "scaleX": 0.85,
+        "scaleY": 1.2,
+        "x": -5,
         "y": 0,
-        "enabled": false
+        "enabled": true
       },
       "attachmentRigTransform": {
         "scaleX": 1,

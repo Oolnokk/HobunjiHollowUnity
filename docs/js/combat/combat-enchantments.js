@@ -180,6 +180,8 @@
   }
 
   function stateFor(key = weaponKey(), create = false) {
+    const enemyState = window.BanditCaptainArmaments?.unlootedEnchantmentState?.(key); // Living enemy magic is not player gear and must never unlock a recipe or enchantment by spawning.
+    if (enemyState) return enemyState;
     const all = store();
     if (all[key]) all[key] = cleanWeaponState(all[key]);
     if (!all[key] && create) all[key] = { base: [], flourishes: {} };

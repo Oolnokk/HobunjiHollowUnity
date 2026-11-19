@@ -15,7 +15,8 @@
 (function () {
   'use strict';
 
-  const CONFIG_BASE = window.__hobunjiFurnitureConfigBase || 'config/furniture-authored/'; // Editor previews resolve the same repository assets from their own document root.
+  const CONFIG_BASE = window.__hobunjiFurnitureConfigBase || 'config/furniture-authored/';
+  const AUTHORED_ASSET_REVISIONS = Object.freeze({ festivalBlossoms:'20261118blossomVases1' }); // Returning players must receive the new petal-free authored vase, not a cached rigid-flower JSON. // Editor previews resolve the same repository assets from their own document root.
   let surfaceBuildAncestors = []; // Scoped synchronous construction context survives existing two-argument furniture/VFX wrappers.
   const _cache = new Map(); // furnitureKey -> Promise<data|null>, .__value set once resolved
 
@@ -29,7 +30,8 @@
 
   function load(furnitureKey) {
     if (_cache.has(furnitureKey)) return _cache.get(furnitureKey);
-    const promise = fetch(CONFIG_BASE + furnitureKey + '.json')
+    const revision = AUTHORED_ASSET_REVISIONS[furnitureKey]; // Only changed assets use a revisioned URL; the ordinary furniture cache stays untouched.
+    const promise = fetch(CONFIG_BASE + furnitureKey + '.json' + (revision ? '?v=' + revision : ''))
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)
       .then((data) => { promise.__value = data; return data; });

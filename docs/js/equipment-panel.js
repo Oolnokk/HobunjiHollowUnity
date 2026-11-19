@@ -230,9 +230,11 @@
   }
 
   function setEquipmentSlot(slot, itemKeyOrNull) {
-    if (slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull) window.MusicMinigame?.close?.();
+    const instrumentChanged = slot === 'instrument' && deps.equipmentSlots[slot] !== itemKeyOrNull; // Signals the loadout picker when its authoritative equipped instrument changes.
+    if (instrumentChanged) window.MusicMinigame?.close?.();
     deps.equipmentSlots[slot] = itemKeyOrNull;
     deps.saveEquipmentSlots();
+    if (instrumentChanged && typeof window.dispatchEvent === 'function' && typeof Event === 'function') window.dispatchEvent(new Event('hobunji-instrument-equipped')); // Browser-only notification; headless equipment tests still persist normally.
   }
 
   function isToolArchived(key, gear = deps?.getGearInventory?.()) {
@@ -611,6 +613,7 @@
   function clothingGearCollectionKey(item) {
     const cosmeticId = item?.cosmeticId; // The original cosmetic type remains the grouping key for unpatterned dyes.
     if (!cosmeticId) return null;
+    if (item?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && item?.uid) return 'annual-prize:' + item.uid; // Each year's earned crown must survive clothing save migration independently.
     return hasIndividualClothingPattern(item) && item.uid
       ? 'woven:' + item.uid : 'cosmetic:' + cosmeticId; // Bandit pattern frames are individual collectibles across saves and equip swaps.
   }
@@ -623,6 +626,7 @@
     const wornUidByCollectionKey = new Map(); // Keeps each retained article's equipped copy when migrating saves.
 
     for (const item of sourceItems) {
+      if (normalizeFiveBlossomCrownArt(item)) changed = true; // Migrate saved headband placeholders before grouping by cosmetic identity.
       if (migrateGearClothingQuality(item)) changed = true;
       if (window.MetalArmorSystem?.normalizeItem?.(item)) changed = true;
       const articleLabel = clothingArticleLabel(item); // Used to clean stale dye prefixes from legacy baseLabel fields while migrating.
@@ -698,10 +702,17 @@
 
   function applyGearClothingToPlayerData(playerData) {
     const gearInventory = deps.getGearInventory();
+    const wornHat = gearInventory?.clothing?.hat; // First avatar rebuild can precede opening Gear; old earned crowns must resolve now.
+    if (normalizeFiveBlossomCrownArt(wornHat)) {
+      const ownedCrown = gearInventory?.clothingItems?.find(item => wornHat.uid && item?.uid === wornHat.uid); // Saves can deserialize worn and owned snapshots into different objects.
+      if (ownedCrown && ownedCrown !== wornHat) normalizeFiveBlossomCrownArt(ownedCrown);
+      deps.saveGearInventory?.(); // One migration write, never on subsequent portrait refreshes.
+    }
     const shopCatalog = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
     const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
     const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
     for (const slot of CLOTHING_SLOTS) {
+      if (slot === 'hat') equippedCosmetics.delete(FIVE_BLOSSOM_CROWN_ID); // Quest-only hats aren't in the shop catalog; remove an old equipped crown on hat swaps.
       // Clear out whatever cosmetic previously occupied this category
       // (character-creation's own pick, or a since-unequipped item)
       // before considering the current gearInventory item — this used to
@@ -879,6 +890,7 @@
     for (const slot of CLOTHING_SLOTS) {
       const worn = gearInventory.clothing[slot];
       if (!worn) continue;
+      if (normalizeFiveBlossomCrownArt(worn)) changed = true; // Worn-only legacy crown saves also need the actual crown cosmetic.
       if (migrateGearClothingQuality(worn)) changed = true;
       const wornEntry = makeClothingGearEntry({ ...worn, slot });
       if (!worn.uid) {
@@ -1635,6 +1647,88 @@
     return mesh?.userData?.itemKey === itemKey ? mesh.userData.toolPlane || null : null;
   }
 
+  const FIVE_BLOSSOM_CROWN_ID = 'appearance::hat::five_blossom_crown'; // Non-shop quest cosmetic distinct from any purchased headband.
+  const FIVE_BLOSSOM_CROWN_ART = Object.freeze({
+    defaultMale:'assets/cosmetics/clothes/hat/flowercrown_m.png',
+    defaultFemale:'assets/cosmetics/clothes/hat/flowercrown_f.png',
+    kenkari:'assets/cosmetics/clothes/hat/kenk_flowercrown_m.png',
+    mashtzarr:'assets/cosmetics/clothes/hat/mashtz_flowercrown_m.png',
+    tletingan:'assets/cosmetics/clothes/hat/tl_flowercrown_m.png'
+  }); // Canonical authored assets; config/cosmetics/five_blossom_crown.json chooses the appropriate head shape.
+  function normalizeFiveBlossomCrownArt(item) {
+    if (!item || (item.prizeCosmeticId !== FIVE_BLOSSOM_CROWN_ID && item.cosmeticId !== FIVE_BLOSSOM_CROWN_ID)) return false;
+    let changed = false; // Persist migration only when an older saved crown still points to headband/unfinished art.
+    for (const [key,value] of [['cosmeticId',FIVE_BLOSSOM_CROWN_ID],['baseCosmeticId',FIVE_BLOSSOM_CROWN_ID],
+      ['slot','hat'],['sprite',FIVE_BLOSSOM_CROWN_ART.defaultMale],['dyeable',false]]) {
+      if (item[key] !== value) { item[key] = value; changed = true; }
+    }
+    for (const oldKey of ['artCandidates','fallbackSprite']) {
+      if (Object.prototype.hasOwnProperty.call(item,oldKey)) {
+        delete item[oldKey]; // These obsolete paths never drove portrait rendering and needn't bloat saved rewards.
+        changed = true;
+      }
+    }
+    return changed;
+  }
+  function beginFiveBlossomCrowning() {
+    const gear = deps?.getGearInventory?.();
+    if (!gear) return null;
+    gear.clothing ||= {};
+    gear.clothingItems ||= [];
+    let oldHat = gear.clothing.hat || null;
+    const oldHood = gear.clothing.hood || null;
+    if (oldHat && !gear.clothingItems.some(item => item === oldHat || (oldHat.uid && item?.uid === oldHat.uid))) {
+      oldHat = oldHat.uid ? oldHat : makeClothingGearEntry({...oldHat,slot:'hat'});
+      if (oldHat) gear.clothingItems.push(oldHat); // Even legacy worn-only hats remain owned when the crown replaces them.
+    }
+    const facewrap = /(?:^|::|_)facewrap(?:$|_)/i.test(String(oldHood?.baseCosmeticId || oldHood?.cosmeticId || ''));
+    gear.clothing.hat = null; // Cosmetic visibility only; the old physical hat remains in the character's gear collection.
+    if (!facewrap) gear.clothing.hood = null; // A facewrap is part of the character's face and stays on.
+    deps.refreshPlayerAvatar?.();
+    return {gear,oldHat,oldHood,facewrap,crowned:false}; // The ceremony completes this transient outfit transaction or rolls it back.
+  }
+  function ownsFiveBlossomCrown(civilYear) {
+    const owned = deps?.getGearInventory?.()?.clothingItems || []; // The persisted Gear collection determines whether a failed quest-save retry needs to replay the stage scene.
+    return Number.isSafeInteger(Number(civilYear)) && owned.some(item =>
+      item?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && item?.awardYear === Number(civilYear));
+  }
+  function awardFiveBlossomCrown(civilYear, ceremony = null) {
+    const gear = deps?.getGearInventory?.();
+    if (!gear || !Number.isSafeInteger(Number(civilYear))) return null;
+    gear.clothing ||= {}; gear.clothingItems ||= [];
+    const oldHat = gear.clothing.hat; // Quiet awards also replace a hat, so protect legacy worn-only clothing just as the stage ceremony does.
+    if (oldHat && !gear.clothingItems.some(item => item === oldHat || (oldHat.uid && item?.uid === oldHat.uid))) {
+      const savedHat = oldHat.uid ? oldHat : makeClothingGearEntry({...oldHat,slot:'hat'}); // Preserve a stable physical garment before the replacement occurs.
+      if (savedHat) gear.clothingItems.push(savedHat);
+    }
+    const uid = 'five_blossom_crown:' + String(civilYear); // Stable per-character/per-year award identity prevents duplicate gear on retries.
+    let item = gear.clothingItems.find(entry => entry?.uid === uid || (entry?.prizeCosmeticId === FIVE_BLOSSOM_CROWN_ID && entry?.awardYear === Number(civilYear)));
+    if (!item) {
+      item = {
+        uid,slot:'hat',cosmeticId:FIVE_BLOSSOM_CROWN_ID,baseCosmeticId:FIVE_BLOSSOM_CROWN_ID,
+        prizeCosmeticId:FIVE_BLOSSOM_CROWN_ID,awardYear:Number(civilYear),label:'Five Blossom Crown',
+        description:'The crown bestowed by Father Hunundi upon a Finder of the Five Blossoms.',
+        sprite:FIVE_BLOSSOM_CROWN_ART.defaultMale,dyeable:false,sellPrice:0
+      }; // The portrait and species-aware Gear icon resolve the five authored variants from the crown's cosmetic config.
+      gear.clothingItems.push(item);
+    }
+    normalizeFiveBlossomCrownArt(item); // A resumed/previously saved award must use the new crown sprites too.
+    gear.clothing.hat = item; // Instant on-stage replacement; the previous hat remains owned in the wardrobe.
+    if (ceremony) ceremony.crowned = true;
+    else deps.saveGearInventory?.(); // During the ceremony, finishFiveBlossomCrowning first restores the temporarily hidden hood before saving.
+    deps.refreshPlayerAvatar?.();
+    if (typeof document !== 'undefined') buildEquipmentSlots();
+    return item;
+  }
+  function finishFiveBlossomCrowning(ceremony, crowned = false) {
+    if (!ceremony?.gear) return;
+    if (!crowned && !ceremony.crowned) ceremony.gear.clothing.hat = ceremony.oldHat; // Failed/skipped scenes cannot steal the original hat.
+    if (!ceremony.facewrap) ceremony.gear.clothing.hood = ceremony.oldHood; // Original non-facewrap hood returns after the announcement.
+    deps.refreshPlayerAvatar?.();
+    if (crowned || ceremony.crowned) deps.saveGearInventory?.(); // Persist the crown and normal hood once, never a temporary bare-headed wardrobe.
+    if (typeof document !== 'undefined') buildEquipmentSlots();
+  }
+
   window.EquipmentPanel = {
     init,
     ensureStarterFlute,
@@ -1671,6 +1765,7 @@
     buildPackClothingSection,
     getPackClothingForWardrobe,
     grantPackClothing, // Quest clothing uses the canonical Pack-to-Gear lifecycle.
+    beginFiveBlossomCrowning, awardFiveBlossomCrown, finishFiveBlossomCrowning, ownsFiveBlossomCrown, FIVE_BLOSSOM_CROWN_ART, FIVE_BLOSSOM_CROWN_ID,
     transferPackClothingToNpcWardrobe,
     previewPackClothingItem: uid => selectPackClothingItem(uid, true), // Clothing detail-only path used by controller focus.
     buildEquipmentSlots,
@@ -1679,6 +1774,7 @@
       const groups = groupClothingForDisplay(items); // Reports only display counts, not private UID metadata.
       return { articles: items.length, visibleTiles: groups.length, stackedTiles: groups.filter(g => g.count > 1).length };
     },
-    __test: { clothingStackSignature, groupClothingForDisplay, ensureUniquePackClothingUids, hasIndividualClothingPattern, clothingGearCollectionKey },
+    __test: { clothingStackSignature,groupClothingForDisplay,ensureUniquePackClothingUids,hasIndividualClothingPattern,clothingGearCollectionKey,normalizeGearClothingItems,
+      setCrownTestDeps: value => { deps = value; } }, // Headless annual award tests use the actual equipment owner without installing a second UI runtime.
   };
 })();

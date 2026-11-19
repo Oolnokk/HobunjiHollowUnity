@@ -30,6 +30,7 @@ assert(recipes.filter(layer=>layer.kind==='roots').every(layer=>layer.radiusScal
 const cells=[];for(let r=1;r<13;r++)for(let c=1;c<17;c++)cells.push([c,r]);
 const meta={gridCols:18,gridRows:14,cellSize:.5,worldWidth:9,worldDepth:7,floorSurfaceY:.06,floorCells:cells};
 const source=JSON.stringify(meta);
+assert(/\{subdivisions,floorProfile:true\}/.test(shared),'playable mapped Stone Age floor must explicitly opt out of outdoor boulder variations');
 const floor=scenery.ruinFloorShell(meta,'game-stoneage-seed');
 assert.equal(JSON.stringify(meta),source,'do not modify the V50 floor footprint');
 assert.equal(floor.topTileCount,cells.length,'every real floor cell must be represented');

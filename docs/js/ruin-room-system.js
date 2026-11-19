@@ -17,8 +17,9 @@
   function planRooms(plan,pitForRoom){
     const rooms=[],doors=[],errors=[],ids=new Set(); // Used to validate all generated room/door identities once per ruin build.
     for(const floor of plan?.floors||[])for(const wing of floor.wings||[]){
-      for(let i=0;i<wing.rooms.length;i++){
-        const source=wing.rooms[i],name=String(source.id||'');
+      const sources=wing.anteroom?[wing.anteroom,...wing.rooms]:wing.rooms; // Reuse the same manifest for the shaft room.
+      for(let i=0;i<sources.length;i++){
+        const source=sources[i],name=String(source.id||'');
         const entry=(floor.doorways||[]).find(port=>port.to===name);
         if(!name||ids.has(name)){errors.push('Duplicate or empty room id: '+name);continue;}
         ids.add(name);
@@ -56,7 +57,7 @@
         rooms.push(room);
         doors.push({id:name+':entry',roomId:name,from:entry.from,to:name,floor:floor.floor,
           x:p.x+.5,z:p.z+.5,y:floor.y,axis:room.entry.axis,span:DOOR_SPAN,
-          initiallyLocked:i>0});
+          initiallyLocked:i>(wing.anteroom?1:0)}); // Anteroom and first puzzle are unlocked; later gates retain progression.
       }
     }
     return {rooms,doors,errors,ok:errors.length===0};
@@ -70,8 +71,8 @@
       const x=originX+Number(raw.col)*cs,z=originZ+Number(raw.row)*cs;
       const w=Number(raw.w)*cs,d=Number(raw.h)*cs;
       if(![x,z,w,d,y].every(Number.isFinite)||w<=0||d<=0)return [];
-      return [{id:prefix+':'+String(raw.id||index),kind:'v50',floor:Math.round(y),theme,
-        y,wingId:null,challenge:null,x,z,w,d,
+      return [{id:prefix+':'+String(raw.id||index),kind:prefix==='v50-ground'?'entrance-chamber':'v50',floor:Math.round(y),theme,
+        y,wingId:null,challenge:null,x,z,w,d, // Native V50 chamber footprints may be irregular; retain their exact native light projection.
         supportYAt:typeof supportYAt==='function'?supportYAt:null, // V50 uses the floor's exact plateau height when deciding which room is awake.
         ambient:{darknessOffset:0,color}}];
     });
@@ -99,7 +100,7 @@
       deliberateVoidTiles:room.w*room.d-expected,ok:missing===0};
   }
 
-  function wallAudit(room,walkable,wallsX,wallsZ){
+  function wallAudit(room,walkable,wallsX,wallsZ,shaftMouth=null){
     const xEdges=new Set((wallsX||[]).map(([x,z])=>x+','+z));
     const zEdges=new Set((wallsZ||[]).map(([x,z])=>x+','+z));
     let exposed=0,missing=0; // Checks the wall faces emitted by the wing mesher, not an unrelated rectangle outline.
@@ -109,6 +110,10 @@
         [0,-1,xEdges,x+.5,z],[0,1,xEdges,x+.5,z+1],
       ]){
         if(walkable.has(key(x+dx,z+dz)))continue; // Adjoining corridors are intentional entrances, not missing masonry.
+        const exitsToShaft=shaftMouth?.has(key(x,z)) && (
+          (room.side==='E'&&dx===-1)||(room.side==='W'&&dx===1)
+          ||(room.side==='S'&&dz===-1)||(room.side==='N'&&dz===1));
+        if(exitsToShaft)continue; // The real three-cell portal is an intentional OPENING into the shaft, not missing stone.
         exposed++;
         if(!edges.has(ex+','+ez))missing++;
       }

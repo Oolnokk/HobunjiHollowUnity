@@ -34,6 +34,9 @@
     'So the people wore silly masks of their own. They mocked the Hachutu’s terrible masks with ridiculous animals and laughter.',
     'They made a joke of what had frightened them, and defeated their enemy with ease. Tonight we laugh, share sweets, and practice meeting a challenge without fear.',
   ];
+  const SHARED_FEAST_IDS = new Set(['gorkunash','five_blossoms']); // Both feasts share serving, social rewards and dance behavior.
+  function sharedFeast() { return SHARED_FEAST_IDS.has(festival()?.id); }
+  function feastServiceId() { return festival()?.id === 'five_blossoms' ? 'five-blossoms-feast' : 'gorkunash-feast'; }
   function festival() { return window.FestivalCalendar.current(); }
   function year() { return window.CalendarSystem.aotYearNumber(); }
   function day() { return year() * 336 + window.FestivalCalendar.ordinal(window.CalendarSystem.monthNumber(), window.CalendarSystem.dayOfMonth()) - 1; }
@@ -150,7 +153,29 @@
     potluckRecoveryPending = retry;
     if (changed) deps.save?.(); // One save after recovery, including overdue claims from previous civil years.
   }
+  const BLOSSOM_DISHES = Object.freeze([ // The same seven real serving-pot positions stay filled for all seven festival days.
+    {id:'petal-roots',label:'Five Blossom Root Medley',keys:['heftroot','ongyums','garlink','greenMustard']},
+    {id:'rain-chowder',label:'Returning-Rain Fish Chowder',keys:['riverFish','puktukMilk','needlegrain','garlink']},
+    {id:'garden-eggs',label:'Garden Egg Scramble',keys:['nelkEggs','greenMustard','blackMustard','garlink']},
+    {id:'hearth-pot',label:'Highland Hearth Pot',keys:['nelkMeat','heftroot','voorgAssMilk','needlegrainFlour']},
+    {id:'spring-noodles',label:'Blossom Garden Noodles',keys:['needlegrainFlour','ongyums','greenMustard','travelSpice']},
+    {id:'sweet-harvest',label:'Sweet Harvest Porridge',keys:['redberryJam','puktukMilk','needlegrain']},
+    {id:'shared-roast',label:'Seven-Hearth Festival Roast',keys:['smokedMeat','nelkMeat','heftroot','cloudSaffron']},
+  ]);
+  function blossomsMenu() {
+    const defs = deps?.getItemDefs?.() || {}; // Ingredient-quality buffs use the same canonical cooking rules as Gorkunash.
+    const key = 'five_blossoms:' + Object.keys(defs).length; // Refresh after item definitions load; not on every game frame.
+    if (feastCache?.key === key) return feastCache.menu;
+    const menu = BLOSSOM_DISHES.map(dish => {
+      const ingredients = dish.keys.map(key => ({key,stars:3,contributesEffects:true}));
+      return {id:'blossoms:'+dish.id,label:dish.label,dish:dish.label,owner:'Town cooks',icon:'🍲',ingredients,
+        foodEffects:window.FestivalPotluckContest?.mealEffects?.(ingredients,defs) || {}};
+    });
+    feastCache = {key,menu};
+    return menu;
+  }
   function feastMenu() {
+    if (festival()?.id === 'five_blossoms') return blossomsMenu();
     if (festival()?.id !== 'gorkunash') return [];
     recoverPotluckEntries();
     const contest = contestData();
@@ -199,6 +224,7 @@
       ingredientDetails:window.FestivalPotluckContest?.ingredientBreakdown?.(meal.ingredients,deps?.getItemDefs?.() || {}) || [] };
   }
   function contestStandings() {
+    if (festival()?.id !== 'gorkunash') return null; // Noncompetitive Five Blossoms and other festivals never generate an unrelated contest.
     const record = contestData();
     if (!record) return null;
     const visibleDay = Math.min(7,Math.max(1,day()-(year()*336+4*28+8-1)+1)); // Current scoreboard cannot reveal future festival entries.
@@ -216,12 +242,12 @@
     const now = worldHour(); // Festival food effects use the same pausable calendar clock as ordinary cooked meals.
     return (state.feastBuffs || []).filter(entry => entry.expiresHour > now).map(entry => ({
       key:`festival-meal:${entry.id}`,label:entry.label,icon:entry.icon||'🍲',
-      sourceLabel:'Gorkunash meal',kind:'boon',stacks:entry.portions,
+      sourceLabel:entry.festivalId === 'five_blossoms' ? 'Five Blossoms meal' : 'Gorkunash meal',kind:'boon',stacks:entry.portions,
       durationS:FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS*3600,remainingS:(entry.expiresHour-now)*3600,
       fractionLabel:`${Math.ceil(entry.expiresHour-now)}h/${FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS}h`,
        description: Object.entries(entry.foodEffects || {}).map(([key, amount]) => `+${amount} ${window.CookingSystem?.effectLabel?.(key) || key} food stacks`).join(', ') || 'Festival meal food benefits remain active until the timer expires.',
     })).concat(currentFullness() ? [{
-      key:'festival-fullness',label:'Fullness',icon:'🥣',kind:'bane',sourceLabel:'Gorkunash',
+      key:'festival-fullness',label:'Fullness',icon:'🥣',kind:'bane',sourceLabel:state.fullness?.festivalId === 'five_blossoms' ? 'Five Blossoms' : 'Gorkunash',
       description:'You are too full to eat more festival servings; fullness wears off over a full in-game day.',
        stacks:currentFullness(),durationS:FULLNESS_DURATION_HOURS*3600,remainingS:Math.max(1,(state.fullness.expiresHour-worldHour())*3600),
     }] : []);
@@ -252,18 +278,18 @@
   }
   function aimedServingObject() {
     const target = window.FurnitureTableSystem?.aimedService?.(deps?.getArea?.(), deps?.getAimPosition?.()); // Actual furniture surface target, shared with ordinary world input.
-    return target?.entry.record.serviceId === 'gorkunash-feast' ? target : null;
+    return sharedFeast() && target?.entry.record.serviceId === feastServiceId() ? target : null;
   }
   function potIndexAtAim() { const target = aimedServingObject(); return target?.placement.service.kind === 'meal' ? Number(target.placement.service.index) : -1; }
   function isDiningSeat(col, row) { return !!window.FurnitureTableSystem?.tableForSeat?.(deps?.getArea?.(), { col, row }); }
   function seatedMealAction() {
     if(deps?.isPlayerSeated?.()===false)return null;
-    if(!heldBowl?.meal || !heldBowl.uses || festival()?.id!=='gorkunash'||!festivalHours())return null;
+    if(!heldBowl?.meal || !heldBowl.uses || heldBowl.festivalId !== festival()?.id || !sharedFeast() || !festivalHours())return null;
     return {icon:'🥣',label:seatedMeal?'Stop eating':`Eat ${heldBowl.meal.label}`,action:'obj_eat_meal',style:'secondary',allowed:true,swigFraction:`${heldBowl.uses}/${MAX_FOOD_PORTIONS}`};
   }
   function toggleSeatedMeal() {
     if(seatedMeal){seatedMeal=null;return commit('Finished eating for now.');}
-    if(!heldBowl?.meal||!heldBowl.uses||!festivalHours()||deps?.isPlayerSeated?.()===false)
+    if(!heldBowl?.meal||!heldBowl.uses||heldBowl.festivalId!==festival()?.id||!sharedFeast()||!festivalHours()||deps?.isPlayerSeated?.()===false)
       return fail('Sit on a chair with a filled bowl to eat.');
     if(currentFullness()>=MAX_FOOD_PORTIONS)return fail('You are already full.');
     seatedMeal={nextAt:0,animating:false}; // The existing drink pose animation commits each individual bite, not the action-button tap.
@@ -281,33 +307,33 @@
   }
   function bowlPileInReach() { return aimedServingObject()?.placement.service.kind === 'bowls'; }
   function takeFestivalBowl() {
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!bowlPileInReach()) return fail('Aim at the stack of bowls to take one.');
+    if (!sharedFeast()||!festivalHours()||!bowlPileInReach()) return fail('Aim at the stack of bowls to take one.');
     discardFestivalBowl('new-bowl');
-    heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:deps?.getActiveItemKey?.()||''};
+    heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,festivalId:festival().id,selectedItemKey:deps?.getActiveItemKey?.()||''};
     deps?.equipFestivalBowl?.();
     return commit('Picked up a bowl. Aim at a serving pot to fill it.');
   }
   function fillFestivalBowl(index) {
-    if (festival()?.id!=='gorkunash'||!festivalHours()||!heldBowl||potIndexAtAim()!==index) return fail('Hold a festival bowl beside the feast table.');
+    if (!sharedFeast()||!festivalHours()||!heldBowl||heldBowl.festivalId!==festival()?.id||potIndexAtAim()!==index) return fail('Hold a festival bowl beside the feast table.');
     const meal=feastMenu()[index];
     if (!meal || meal.id === 'reserved') return fail('That pot is waiting for your contest entry.');
     const selectedItemKey=heldBowl.selectedItemKey;
-    heldBowl={meal,uses:MAX_FOOD_PORTIONS,capacity:MAX_FOOD_PORTIONS,selectedItemKey};
+    heldBowl={meal,uses:MAX_FOOD_PORTIONS,capacity:MAX_FOOD_PORTIONS,festivalId:festival().id,selectedItemKey};
     return commit(`Filled the bowl with ${meal.label} (10/10 portions).`);
   }
   function eatFestivalBowl() {
-    if (!heldBowl?.meal||heldBowl.uses<1||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit on a chair with a filled bowl.');
+    if (!heldBowl?.meal||heldBowl.uses<1||heldBowl.festivalId!==festival()?.id||!sharedFeast()||!festivalHours()||deps?.isPlayerSeated?.()===false) return fail('Sit on a chair with a filled bowl.');
     if (currentFullness()>=MAX_FOOD_PORTIONS) return fail('You are full. The fullness effect fades 24 in-game hours after its first serving.');
     const meal=heldBowl.meal;
     const now=worldHour(); // Every serving transfers all active meal-buff time to the newly eaten food.
     const activeBuffs=(state.feastBuffs||[]).filter(entry=>entry.expiresHour>now);
     const remainingHours=activeBuffs.reduce((total,entry)=>total+Math.max(0,entry.expiresHour-now),0);
     const hours=Math.min(MAX_FOOD_PORTIONS*FOOD_PORTION_HOURS,remainingHours+FOOD_PORTION_HOURS);
-    state.feastBuffs=[{ id:meal.id,label:meal.label,icon:meal.icon,foodEffects:meal.foodEffects,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(hours/FOOD_PORTION_HOURS))),expiresHour:now+hours }];
-    if (!currentFullness()) state.fullness={stacks:0,expiresHour:worldHour()+FULLNESS_DURATION_HOURS,durationHours:FULLNESS_DURATION_HOURS};
+    state.feastBuffs=[{ id:meal.id,festivalId:festival().id,label:meal.label,icon:meal.icon,foodEffects:meal.foodEffects,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(hours/FOOD_PORTION_HOURS))),expiresHour:now+hours }];
+    if (!currentFullness()) state.fullness={stacks:0,festivalId:festival().id,expiresHour:worldHour()+FULLNESS_DURATION_HOURS,durationHours:FULLNESS_DURATION_HOURS};
     state.fullness.stacks++;
     heldBowl.uses--;
-    if (!heldBowl.uses){heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,selectedItemKey:heldBowl.selectedItemKey};seatedMeal=null;}
+    if (!heldBowl.uses){heldBowl={meal:null,uses:0,capacity:MAX_FOOD_PORTIONS,festivalId:festival().id,selectedItemKey:heldBowl.selectedItemKey};seatedMeal=null;}
     const dinerSeat=deps?.getPlayerSeatedSeat?.(); // Normal seating feeds the shared table member array.
     const table=window.FurnitureTableSystem?.tableForSeat?.(deps.getArea(), dinerSeat);
     const diners=table ? (window.FurnitureTableSystem.members(deps.getArea(), table.id) || []).filter(member=>member.id!=='player') : [];
@@ -323,7 +349,7 @@
     return commit(meal.label + ': +' + FOOD_PORTION_HOURS + ' in-game hours of meal effects; fullness ' + currentFullness() + '/10; ' + companions + ' tablemates share a serving.');
   }
   function addFestivalFun(id,amount) {
-    if (!id || !Number.isFinite(amount) || amount <= 0 || festival()?.id !== 'gorkunash') return 0;
+    if (!id || !Number.isFinite(amount) || amount <= 0 || !['gorkunash','five_blossoms'].includes(festival()?.id)) return 0; // Event-scoped eligibility remains self-contained for social gain feedback.
     const key = eventKey() + ':' + id; // Event-scoped cap lets every NPC earn independently across seven days.
     const earned = Math.max(0, Number(state.festivalFunEarned[key]) || 0);
     const credited = Math.min(amount, Math.max(0, GORKUNASH_MAX_FUN - earned)); // Buffet, dance/music and keg share one participation budget.
@@ -385,15 +411,17 @@
     return 'The dance animation is not ready yet. Please try again in a moment.';
   }
   function beginPairedDance(walker) {
-    if(dance||!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return false;
-    dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:walker.rec.id,awardTime:0,awardedSeconds:0};
+    if(dance)return false;
+    const holdTarget={area:walker.area,c:walker.root.position.x-.5,r:walker.root.position.z-.5,pose:'stand'}; // Ordinary NPC planner keeps this partner standing on the original logical tile while the visual roots dance.
+    if(!window.FestivalWheelDanceRuntime?.start?.(walker,deps.getPlayerMesh?.()))return false;
+    dance={propId:null,event:eventKey(),elapsed:0,targetNpcId:walker.rec.id,awardTime:0,awardedSeconds:0,holdTarget};
     window.HobunjiActivityEvents?.emit?.('dance_together',{npcId:walker.rec.id});
     return true;
   }
   function clearPendingDance() { if(!pendingDance)return; pendingDance=null;window.WorldActionInputClaims?.clearClaims?.('dance-invitation');deps?.refreshActions?.(); }
   function askFestivalDance(walker) {
     const id=walker?.rec?.id;
-    if (festival()?.id!=='gorkunash'||!festivalHours()||deps?.isFestivalSuspended?.()||!isRomanceable(walker?.rec)
+    if (!sharedFeast()||!festivalHours()||deps?.isFestivalSuspended?.()||!isRomanceable(walker?.rec)
       ||walker.area!=='town'||!walker.root?.position||!deps?.getPlayerTile?.())return fail('Approach someone you would like to dance with.');
     if(dance||pendingDance)return fail('Finish your current dance invitation first.');
     const player=deps.getPlayerTile(), reach=Number(window.SCRATCHBONES_CONFIG?.game?.movement?.npc?.socialInteractionRadiusTiles)||6;
@@ -412,7 +440,7 @@
     }
     if(!beginPairedDance(walker))return fail(danceStartMessage());
     response?.(walker,{text:'I would be delighted to dance.',accepted:true,reason:'dance'});
-    return commit(`Dancing with ${walker.rec.name||id}: 15 Festival Fun per second while you remain together.`);
+    return commit(`Dancing with ${walker.rec.name||id}: ${GORKUNASH_SOCIAL_FUN_PER_SECOND} Festival Fun per completed second while you remain together.`);
   }
   function updateDanceInvitation(elapsed) {
     if(!pendingDance)return;
@@ -430,7 +458,7 @@
   }
 
   function socialOptionsFor(walker) {
-    return festival()?.id==='gorkunash' && festivalHours() && isRomanceable(walker?.rec) && walker.area==='town'
+    return sharedFeast() && festivalHours() && isRomanceable(walker?.rec) && walker.area==='town'
       ? [{id:'dance-together',icon:'💃',label:'Ask to dance',run:()=>askFestivalDance(walker)}] : [];
   }
   function registerActivity(id, handler) { if (id && typeof handler === 'function') { handlers.set(id, handler); return true; } return false; }
@@ -460,7 +488,7 @@
   }
   function actionButton() {
     if (dance||pendingDance||remembrance) return { icon: '■', label: remembrance?'Stop remembering':pendingDance?'Cancel invitation':'Stop dancing', action: 'festival_stop_dance', allowed: true, style: 'secondary' };
-    if (festival()?.id === 'gorkunash') return null; // Schedules and ordinary objects provide the event; there is no event/activity input.
+    if (sharedFeast()) return null; // Both feasts use ordinary tables and social-wheel dancing, without activity boards.
     const prop = festival()?.id === 'tzizkhanash' ? activityProps().find(p=>p.activity.type !== 'remembrance' && atProp(p)) : nearestActivity(); // Offering remains directly usable even when remembrance radii overlap.
     if (festival()?.id === 'tzizkhanash' && prop?.activity?.type === 'remembrance') return null; // Standing at the shrine automatically joins the observance.
     if (prop?.festivalLocale && ['dance','story','duel','music','remembrance'].includes(prop.activity.type)
@@ -474,7 +502,10 @@
     if (!walker?.rec?.id || deps?.isBlocked?.()) return null;
     // Reuse the existing secondary NPC festival action route; game.js already
     // dispatches festival_npc_gift to receiveNpcReward on every input platform.
-    if(festival()?.id==='gorkunash')return null;
+    if (festival()?.id === 'five_blossoms' && walker.rec.id === 'father_hunundi_hodu'
+      && window.FestivalBlossomHunt?.menuStatus?.().ready)
+      return {icon:'👑',label:'Present Five Blossoms to Father Hunundi',action:'festival_npc_gift',style:'secondary',allowed:true};
+    if(sharedFeast())return null;
     const id = walker.rec.id; // Same annual claims as the gift table, so the two routes cannot duplicate rewards.
     if (festival()?.id === 'mountaindawn' && favorHearts(id) >= 3 && !claimed(`gift:${id}`)) return { icon: '🎁', label: 'Receive Mountaindawn gift', action: 'festival_npc_gift', style: 'secondary', allowed: true };
     if (festival()?.id === 'hachutukara' && residents().some(rec => rec.id === id) && !claimed(`sweet:${id}`)) return { icon: '🍬', label: 'Ask for sweets', action: 'festival_npc_sweet', style: 'secondary', allowed: true };
@@ -484,6 +515,8 @@
     const offer = npcRewardAction(walker); // Do not trust an old action-bar button after a date, NPC, or favor change.
     const position = deps?.getPlayerTile?.();
     if (!offer || offer.action !== action || walker.area !== deps.getArea() || !walker.root?.position || Math.hypot(position.c - walker.root.position.x, position.r - walker.root.position.z) > 3) return fail('Move closer to your friend to receive their gift.');
+    if(festival()?.id==='five_blossoms' && walker.rec.id==='father_hunundi_hodu' && action==='festival_npc_gift')
+      return window.FestivalBlossomHunt?.turnInAtHunundi?.(walker); // Same Action 3/secondary NPC path as the established NPC festival reward.
     if(festival()?.id==='gorkunash'&&action==='festival_npc_gift')return askFestivalDance(walker);
     return handlers.get(action === 'festival_npc_gift' ? 'gifts' : 'sweets')({ npcId: walker.rec.id });
   }
@@ -629,11 +662,11 @@
     window.FestivalLocaleActivities?.clear?.();
     if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.min(GORKUNASH_MAX_FUN,Math.max(0,points));
     if (saved?.festivalFunEarned && typeof saved.festivalFunEarned === 'object')
-      for (const [key, points] of Object.entries(saved.festivalFunEarned)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunEarned[key] = Math.min(GORKUNASH_MAX_FUN, Math.max(0, points));
+      for (const [key, points] of Object.entries(saved.festivalFunEarned)) if (/^\d+:(?:gorkunash|five_blossoms):[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunEarned[key] = Math.min(GORKUNASH_MAX_FUN, Math.max(0, points));
     if (saved?.festivalFunPaid && typeof saved.festivalFunPaid === 'object')
-      for (const [key, points] of Object.entries(saved.festivalFunPaid)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunPaid[key] = Math.min(FESTIVAL_MAX_FAVOR, Math.max(0, points));
+      for (const [key, points] of Object.entries(saved.festivalFunPaid)) if (/^\d+:(?:gorkunash|five_blossoms):[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunPaid[key] = Math.min(FESTIVAL_MAX_FAVOR, Math.max(0, points));
     if (saved?.festivalMealPortions && typeof saved.festivalMealPortions === 'object')
-      for (const [key, count] of Object.entries(saved.festivalMealPortions)) if (/^\d+:gorkunash:\d+:[a-z0-9_-]+$/i.test(key) && Number.isFinite(count)) state.festivalMealPortions[key] = Math.max(0, Math.min(MAX_FOOD_PORTIONS, Math.trunc(count)));
+      for (const [key, count] of Object.entries(saved.festivalMealPortions)) if (/^\d+:(?:gorkunash|five_blossoms):\d+:[a-z0-9_-]+$/i.test(key) && Number.isFinite(count)) state.festivalMealPortions[key] = Math.max(0, Math.min(MAX_FOOD_PORTIONS, Math.trunc(count)));
     if (!saved?.festivalFunEarned && festival()?.id === 'gorkunash') for (const [id, pending] of Object.entries(state.festivalFun)) {
       state.festivalFunEarned[eventKey() + ':' + id] = Math.min(GORKUNASH_MAX_FUN, pending); // Migrated old saves cannot re-earn their still-pending progress.
     }
@@ -642,7 +675,7 @@
       const stacks=Math.max(0,Math.min(10,saved.fullness.stacks));
       const stillActive=saved.fullness.expiresHour>worldHour()&&stacks>0;
       const legacyDuration=Number(saved.fullness.durationHours)!==FULLNESS_DURATION_HOURS;
-      state.fullness={stacks,expiresHour:stillActive&&legacyDuration?worldHour()+FULLNESS_DURATION_HOURS:saved.fullness.expiresHour,durationHours:FULLNESS_DURATION_HOURS};
+      state.fullness={stacks,festivalId:saved.fullness.festivalId,expiresHour:stillActive&&legacyDuration?worldHour()+FULLNESS_DURATION_HOURS:saved.fullness.expiresHour,durationHours:FULLNESS_DURATION_HOURS};
     }
     const now=worldHour(); // Restore exact calendar-hour timers and migrate old 24-hour portions once.
     const savedPortionHours=Number(saved?.feastBuffDurationHours);
@@ -700,7 +733,7 @@
   // The regular town soundtrack gives way to the live band for Gorkunash's gathering hours (15:00 inclusive to 01:00 exclusive).
   function silencesTownMusic(area) {
     if (area !== 'town' && area !== 'map_hobunji_town') return false;
-    return festival()?.id === 'gorkunash' && festivalHours();
+    return sharedFeast() && festivalHours();
   }
   const gatheringAssignments = new Map(); // Stable per-shift destinations avoid aliasing occupied stations or flickering between locales.
   function musicianAbsent(id) { // Dead, or not loaded at all: the other musician must cover so the festival is never silent.
@@ -730,7 +763,7 @@
   }
   // A musician who cannot walk to the stage (blocked route, trapped in a building) is relieved so the festival is never silent.
   function watchStage() {
-    if (festival()?.id !== 'gorkunash') { dutyWatch.clear(); return; }
+    if (!sharedFeast()) { dutyWatch.clear(); return; }
     const now = worldHour();
     for (const id of MUSICIANS) {
       const rec = (deps.getNpcs?.()||[]).find(npc=>npc.id===id), walker = (deps.getWalkers?.()||[]).find(w=>w.rec?.id===id);
@@ -741,14 +774,23 @@
       if (routeFailed || waited > 1.5) { stageFailures.set(id,day()); dutyWatch.delete(id); window.__farmLog?.(`[festival] ${id} cannot reach the bandstand; the other musician covers`,'social'); }
     }
   }
+  function faceFestivalBandToDancefloor(target) {
+    const floor = layout()?.decor?.find(piece => piece?.festivalLocale?.kind === 'dance'); // The movable festival dance locale supplies the audience direction.
+    if (!floor || !target || !Number.isFinite(floor.col) || !Number.isFinite(floor.row)) return target;
+    const dx = floor.col - target.c, dz = floor.row - target.r; // NPC schedule heading: +X = 90°, +Z = 0°.
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx,dz) < 0.2) return target;
+    const rotY = Math.atan2(dx,dz) * 180 / Math.PI; // Body points toward the actual dancefloor instead of a static station angle.
+    return { ...target, rotY, lookAt:{col:floor.col,row:floor.row,height:1.2} }; // Head and body share the audience target.
+  }
   function npcTarget(rec) {
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
     if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
     if (pendingDance?.targetNpcId === rec.id) return window.NpcFollowing?.target?.(rec,pendingDance.followSession,1.5) || pendingDance.waitTarget;
-    if (festival()?.id === 'gorkunash' && stageDuty(rec)) {
+    if (dance?.targetNpcId === rec.id) return dance.holdTarget; // Do not resume dining, mingling or a separate NPC dance under the live paired-pose lock.
+    if (sharedFeast() && stageDuty(rec)) {
       const station = layout()?.npcStations?.find(s=>s.festivalNpcId===rec.id && s.festivalLocaleKind==='bandstand');
       const target = station && window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
-      if (target) { release(); return target; } // Ordinary pathfinding takes the host to the stage during gathering hours.
+      if (target) { release(); return faceFestivalBandToDancefloor(target); } // Keep ordinary stage pathfinding, but face the live dance floor.
     }
     if(!festivalHours()||(rec.id==='spearhead_unumanuk'&&window.CombatTutorial?.active?.()))return release();
     if (festival()?.id === 'gorkunash') {
@@ -758,8 +800,8 @@
         return window.FestivalDialogue?.homeTarget?.(rec) || null;
       }
     }
-    if (festival()?.id === 'gorkunash' && window.NpcSharedMeals) return window.NpcSharedMeals.targetFor(rec); // Cached multi-step meals still use ordinary scheduler/pathfinding targets.
-    if (festival()?.id !== 'gorkunash') {
+    if (sharedFeast() && window.NpcSharedMeals) return window.NpcSharedMeals.targetFor(rec); // Cached multi-step meals still use ordinary scheduler/pathfinding targets.
+    if (!sharedFeast()) {
       const localeTarget = window.FestivalLocaleActivities?.targetFor?.(rec); // Cached, role-specific festival stations instead of generic standing still.
       if (localeTarget) return localeTarget;
     }
@@ -770,14 +812,26 @@
     const preferred=isRomanceable(rec)?['dance','dining','dance','dining'][(Math.floor(shift/2)+index)%4]
       :((index%5===0&&shift%3===1)?'dance':'dining');
     const kinds=isRomanceable(rec)?[preferred,preferred==='dining'?'dance':'dining']:[preferred];
+    let walkersAtDecision=null; // Lazy NPC roster snapshot, shared across station checks and fallback.
+    const snapshotWalkers=()=>walkersAtDecision ?? (walkersAtDecision=deps.getWalkers?.()||[]);
+    let occupiedStations=null; // Other NPCs' station IDs indexed only when first checked.
+    let reservedStations=null; // Current-shift festival reservations, excluding this NPC.
     const taken=station=>{
       const target=window.NpcScheduling?.resolveNpcStationTarget?.(station.id);
       if(target?.pose==='sit' && window.FurnitureTableSystem?.isSeatTaken?.(target.area||'town',target,rec.id))return true;
-      for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope && assignment.stationId===station.id)return true;
-      return (deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id && w.currentScheduleTarget?.stationId===station.id);
+      if(!reservedStations){
+        reservedStations=new Set();
+        for(const [id,assignment] of gatheringAssignments)if(id!==rec.id && assignment.scope===scope)reservedStations.add(assignment.stationId);
+      }
+      if(reservedStations.has(station.id))return true; // Preserve the original reservation-first short circuit.
+      if(!occupiedStations){
+        occupiedStations=new Set();
+        for(const other of snapshotWalkers())if(other?.rec?.id!==rec.id)occupiedStations.add(other?.currentScheduleTarget?.stationId);
+      }
+      return occupiedStations.has(station.id);
     };
     let selected=null;
-    if(festival()?.id==='gorkunash'){
+    if(sharedFeast()){
       const leader=shift<5?'foroji_funji':'kaboku_kunji';
       if(rec.id===leader)selected=stations.find(st=>st.festivalNpcId===rec.id&&st.festivalLocaleKind==='bandstand');
       if(!selected)for(const kind of kinds){
@@ -799,14 +853,26 @@
       return {...target,stationId:target.stationId||selected.id,activity:festival().name};
     }
     release();
-    const walker=(deps.getWalkers?.()||[]).find(w=>w.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
+    const walkers=snapshotWalkers(), walker=walkers.find(w=>w?.rec?.id===rec.id), anchor=stations.find(st=>kinds.includes(st.festivalLocaleKind));
     const x=walker?.area==='town'?walker.root.position.x:(anchor?.col||30)+.5, z=walker?.area==='town'?walker.root.position.z:(anchor?.row||25)+.5;
+    const standingClearance=.6; // Keep the previous strict Euclidean spacing.
+    const blockedStandingTiles=new Set(); // Spatial grid allocated only on fallback, not for normal stations.
+    for(const other of walkers){
+      if(other?.rec?.id===rec.id||other?.area!=='town'||!other?.root?.position)continue;
+      const px=other.root.position.x,pz=other.root.position.z; // World position for nearby town-cell clearance.
+      if(!Number.isFinite(px)||!Number.isFinite(pz))continue;
+      for(let row=Math.floor(pz-.5-standingClearance);row<=Math.floor(pz-.5+standingClearance);row++){
+        for(let col=Math.floor(px-.5-standingClearance);col<=Math.floor(px-.5+standingClearance);col++){
+          if(Math.hypot(px-col-.5,pz-row-.5)<standingClearance)blockedStandingTiles.add(col+','+row);
+        }
+      }
+    }
     for(let radius=0;radius<=4;radius++)for(let dz=-radius;dz<=radius;dz++)for(let dx=-radius;dx<=radius;dx++){
       if(Math.max(Math.abs(dx),Math.abs(dz))!==radius)continue;
       const c=Math.floor(x)+dx,r=Math.floor(z)+dz;
       if(deps.canStandAt?.('town',c,r)===false)continue;
-      if((deps.getWalkers?.()||[]).some(w=>w.rec?.id!==rec.id&&w.area==='town'&&Math.hypot(w.root.position.x-c-.5,w.root.position.z-r-.5)<.6))continue;
-      return {area:'town',c,r,pose:'stand',activity:festival().name}; // No preferred locale has room; wait on clear ground instead of taking an occupied chair.
+      if(blockedStandingTiles.has(c+','+r))continue;
+      return {area:'town',c,r,pose:'stand',activity:festival().name}; // Preserve the original spiral order and area.
     }
     return {area:walker?.area||'town',c:x-.5,r:z-.5,pose:'stand',activity:festival().name};
   }
@@ -838,7 +904,7 @@
     const now = performance.now(); // Called by gameLoop; no independent animation loop.
     settleFestivalFun();
     const vessel = heldCup || heldBowl;
-    if (vessel && (festival()?.id!=='gorkunash'||deps?.getArea?.()!=='town'||(deps?.getHeldMode?.() && deps.getHeldMode()!=='item')
+    if (vessel && (!sharedFeast()||(heldBowl && heldBowl.festivalId !== festival()?.id)||deps?.getArea?.()!=='town'||(deps?.getHeldMode?.() && deps.getHeldMode()!=='item')
       ||(deps?.getActiveItemKey?.() && deps.getActiveItemKey()!==vessel.selectedItemKey)))discardFestivalBowl('left-festival-or-changed-equipment');
     if(seatedMeal && (!heldBowl?.meal || !heldBowl?.uses || deps?.isPlayerSeated?.()===false || !festivalHours()))
       seatedMeal=null;
@@ -855,6 +921,7 @@
     if (now - lastTick < 200) return;
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
+    window.FestivalBlossomHunt?.update?.(); // Share this existing 200ms tick; expiry/trees never add a second frame loop.
     settlePotluckWinnings(); // A finished contest is paid once, after the final festival day, even if no doorstep visit occurs.
     updateDanceInvitation(elapsed);
     registerCupProvider();
@@ -863,7 +930,7 @@
     window.FestivalLocaleActivities?.update?.(); // Same 200ms tick drives other festivals; schedule reads stay cached.
     recoverMissingFestivalGuests(now); // Festival NPCs remain present even after a lazy den/NPC initialization failure.
     const playing = window.SocialActionWheel?.isDancing?.() || window.MusicMinigame?.state?.active; // Both established social paths remain free to start anywhere.
-    if (festival()?.id === 'gorkunash' && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
+    if (sharedFeast() && festivalHours() && deps?.getArea?.() === 'town' && playing && !deps?.socialPaused?.() && !document.hidden) {
       socialParticipationS += elapsed;
       if (socialParticipationS >= 1) {
         const seconds = Math.floor(socialParticipationS), position = deps.getPlayerTile(); // Award only actual played whole seconds with nearby company.
@@ -947,13 +1014,13 @@
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
       claims:claims(),blessing:state.blessing,pendingAnimalReleases:pendingAnimalReleases(),dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,festivalFunEarned:state.festivalFunEarned,festivalFunPaid:state.festivalFunPaid,festivalMealPortions:state.festivalMealPortions,
-      dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
+      dailyFeast:feastMenu().map(m=>({dish:m.label,...(festival()?.id === 'gorkunash' ? {stars:m.score} : {}),ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),feastMode:sharedFeast() ? (festival()?.id === 'gorkunash' ? 'rotating-contest' : 'fixed-noncompetitive') : null,fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
       fortune:state.blessing?{id:state.blessing.stat,bonus:fortuneBonus(state.blessing.stat),target:window.FestivalCalendar?.blessings?.[state.blessing.stat]?.target}:null,
-      latestChange:'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
+      latestChange:festival()?.id === 'five_blossoms' ? 'Five Blossoms shares Gorkunash NPC buffet, tablemate Fun, buffs and paired dances without any contest or activity board.' : 'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
   }
   // The combat loader installs the alcohol bridge asynchronously, so registration is retried until it exists.
   let cupProviderRegistered = false;
@@ -982,6 +1049,7 @@
     lastMissingGuestCheckAt = -Infinity;
     guestRecoveryInFlight.clear(); guestRecoveryCursor = 0; // Reset the resident recovery worker during world switches.
     window.FestivalDialogue?.init?.({ getTownMap: deps.getTownMap });
+    window.FestivalBlossomCeremony?.init?.({getLayout:layout,getWalkers:deps.getWalkers,getArea:deps.getArea}); // Reuses the authored movable festival stage and real NPC walkers.
     window.FestivalPotluckContest?.registerRewardVisit?.(deps,()=>{
       recoverPotluckEntries(); // Farmhouse exits recover overdue donations even after the feast has closed.
       return state.potluckContests;
@@ -1005,7 +1073,7 @@
       resolve:id=>window.NpcScheduling?.resolveNpcStationTarget?.(id),
     });
     window.NpcSharedMeals?.init?.({
-      enabled: () => festival()?.id === 'gorkunash' && festivalHours() && !deps.isFestivalSuspended?.(),
+      enabled: () => sharedFeast() && festivalHours() && !deps.isFestivalSuspended?.(),
       musicOn: musicPlaying,
       getLayout: layout, getWalkers: deps.getWalkers, minutes: () => worldHour()*60, paused: deps.socialPaused,
       owner:'festivals', canStandAt:deps.canStandAt,
@@ -1044,20 +1112,21 @@
       buttons: () => [{icon:'🍺',label:heldCup ? `Refill cup (${heldCup.swigs}/${heldCup.capacity})` : 'Take a cup',action:'obj_take_cup',style:'primary',allowed:!deps?.isBlocked?.()}],
       onAction: action => action === 'obj_take_cup' && festival()?.id === 'gorkunash' && festivalHours() && !deps?.isBlocked?.() ? takeOrRefillCup() : fail('The keg is unavailable.'),
     });
-    window.FurnitureTableSystem?.registerService?.('gorkunash-feast', {
-      enabled: () => festival()?.id === 'gorkunash' && festivalHours(),
+    for (const [eventId, serviceId] of [['gorkunash','gorkunash-feast'],['five_blossoms','five-blossoms-feast']]) {
+    window.FurnitureTableSystem?.registerService?.(serviceId, {
+      enabled: () => festival()?.id === eventId && festivalHours(),
       buttons(target) {
         if (deps?.isBlocked?.()) return [];
         if (target.placement.service.kind === 'bowls') return [{ icon:'🥣', label:'Take bowl', action:'obj_take_bowl', style:'primary', allowed:true }];
         const index = Number(target.placement.service.index), meal = feastMenu()[index]; // Every serving pot carries its own authored menu slot.
-        const buttons = meal ? [{ icon:'🍲', label:heldBowl ? 'Fill bowl: ' + meal.label + (meal.id==='reserved'?'':' · '+meal.score+'★') : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl && meal.id!=='reserved' }] : [];
+        const buttons = meal ? [{ icon:'🍲', label:heldBowl ? 'Fill bowl: ' + meal.label + (eventId==='gorkunash' && meal.id!=='reserved'?' · '+meal.score+'★':'') : 'Take a bowl first', action:'obj_fill_bowl', style:'primary', allowed:!!heldBowl && meal.id!=='reserved' }] : [];
         const held = deps?.getHeldMealChoice?.(); // The normal item wheel determines which dish and quality are donated.
         if (meal?.id !== 'reserved') buttons.push({icon:'📋',label:'Inspect ingredients & effects',action:'obj_inspect_meal',style:'secondary',allowed:true}); // Inspection never consumes a bowl or meal.
-        if (!claimed('potluck') && held && deps.getItemDefs()[held.key]?.isCookedFood) buttons.push({ icon:'🍲',label:'Contribute held meal',action:'obj_contribute_meal',style:'secondary',allowed:true });
+        if (eventId === 'gorkunash' && !claimed('potluck') && held && deps.getItemDefs()[held.key]?.isCookedFood) buttons.push({ icon:'🍲',label:'Contribute held meal',action:'obj_contribute_meal',style:'secondary',allowed:true });
         return buttons;
       },
       onAction(action, target) {
-        if (!festivalHours() || festival()?.id !== 'gorkunash' || deps?.isBlocked?.()) return fail('This serving table is closed.');
+        if (!festivalHours() || festival()?.id !== eventId || deps?.isBlocked?.()) return fail('This serving table is closed.');
         if (action === 'obj_take_bowl' && target.placement.service.kind === 'bowls') return takeFestivalBowl();
         if (action === 'obj_fill_bowl' && target.placement.service.kind === 'meal') return fillFestivalBowl(Number(target.placement.service.index));
         if (action === 'obj_inspect_meal' && target.placement.service.kind === 'meal') {
@@ -1065,7 +1134,7 @@
           return feastDishDetails(index)?.id !== 'reserved' && window.FestivalUI?.openFeast?.(index)
             ? {ok:true} : fail('The dish cannot be inspected right now.');
         }
-        if (action === 'obj_contribute_meal') {
+        if (action === 'obj_contribute_meal' && eventId === 'gorkunash') {
           const held = deps?.getHeldMealChoice?.();
           const stars = held?.stars ?? window.CookingSystem?.peekLowestQuality?.(held?.key); // Uses PackHold's selected tier through the existing quality owner.
           const choice = qualityChoices('potluck').find(item=>item.key===held?.key && item.stars===stars);
@@ -1079,6 +1148,7 @@
         holder.traverse?.(node=>{ if (node.userData?.authoredPart?.kind==='liquidSurface' && node.visible!==available) node.visible=available; });
       },
     });
+    }
     window.NpcWardrobe?.registerAppearanceDecorator('festivals', data => {
       if (festival()?.id !== 'hachutukara' || !residents().some(rec => rec.id === data.id)) return data;
       const index = [...data.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % MASKS.length; // Stable animal mask for each named resident.
@@ -1086,7 +1156,7 @@
     });
     window.NpcScheduling?.registerTargetOverride('festivals', npcTarget);
     window.EffectBuffBar?.registerProvider('festivals', () => [...buffEntries(), ...foodDurationEntries()]);
-    window.CookingSystem?.registerExternalFoodProvider?.('gorkunash-feast', festivalFoodStacks);
+    window.CookingSystem?.registerExternalFoodProvider?.('gorkunash-feast', festivalFoodStacks); // One provider prevents doubling the food buffs when two festival services are registered.
   }
   registerActivity('welcome', () => ({ ok: true }));
   registerActivity('remembrance', (payload, prop) => {

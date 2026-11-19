@@ -4,8 +4,8 @@
   // Farm construction, troughs and the house bootstrap retain their parser order.
   const scriptUrls = [
     "js/farm-buildings.js?v=20261031furniturecontrols1",
-    "js/farm-troughs.js?v=20261117RigMainMerged1",
-    "js/house-pieces.js?v=20261117hcorpse4&surfaceUv=20261113terrainpass2"
+    "js/farm-troughs.js?v=20261118playerRunBase1",
+    "js/house-pieces.js?v=20261118h4e5daac&surfaceUv=20261113terrainpass2"
   ]; // Farm building scripts and their independent cache versions.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   document.write(scriptUrls.map(src => '<script src="' + src.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"><\/script>').join('\n'));
