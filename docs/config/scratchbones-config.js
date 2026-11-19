@@ -85,6 +85,14 @@ window.SCRATCHBONES_CONFIG = {
           {id:'slatewater-blue',name:'Slatewater Blue',hex:'#495769',weight:6},
           {id:'rainpool-blue',name:'Rainpool Blue',hex:'#4d606b',weight:6},
           {id:'fen-teal',name:'Fen Teal',hex:'#426061',weight:6},
+          // Six deeper alternatives: two murky yellows, two moss greens and two blue/teals.
+          // These retain the full older palette and roll at weight 4 each for dark-coat variety.
+          {id:'shadow-mustard',name:'Shadow Mustard',hex:'#4a4735',weight:4},
+          {id:'deep-reed',name:'Deep Reed',hex:'#414939',weight:4},
+          {id:'night-moss',name:'Night Moss',hex:'#2d3d34',weight:4},
+          {id:'black-kelp',name:'Black Kelp',hex:'#33443b',weight:4},
+          {id:'blackwater-blue',name:'Blackwater Blue',hex:'#37414c',weight:4},
+          {id:'deep-fen-teal',name:'Deep Fen Teal',hex:'#304344',weight:4},
         ],
         // Nelk favor pale and middle tones; the darkest coats remain inheritable, but uncommon.
         "nelk": [
