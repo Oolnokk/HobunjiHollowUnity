@@ -412,6 +412,29 @@ narrowRiver.tiles[20][0]={type:'river'};narrowRiver.tiles[38][69]={type:'river'}
 assert.equal(Riddles.generate({zoneId:'map_northern_cliffs',layout:narrowRiver,
   instance:narrowRiver.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true}).ok,false);
 
+
+const excessiveCrossings=layoutFor('cyan',55,35); // River starts should not win just by type when they require far more crossings.
+for(let row=0;row<excessiveCrossings.rows;row++)for(const col of [28,35,42,49])
+  excessiveCrossings.tiles[row][col]={type:'river',elevTier:0};
+excessiveCrossings.tiles[15][15]={type:'river',elevTier:0};
+excessiveCrossings.rivers=[
+  {id:'northern-fork',width:6,nodes:[[0,10],[15,15],[69,15]]},
+  {id:'southern-fork',width:6,nodes:[[0,30],[15,15],[69,15]]}
+];
+const shorterPaintedMarker={kind:'witnessStone',name:'the bright red-marked standing stone',unique:true,
+  source:'generated-year-round-scenery',dyeId:'dye:CLOTH:bright_red',point:{col:39,row:10}};
+const badDetourOptions={zoneId:'map_northern_cliffs',layout:excessiveCrossings,instance:excessiveCrossings.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true,seed:'river-detour-rank'};
+const longRiverLeg=Riddles.generate(badDetourOptions);
+assert.equal(longRiverLeg.evidence.uniqueStart.kind,'riverConfluence');
+const sensibleStart=Riddles.generate({...badDetourOptions,landmarks:[shorterPaintedMarker]});
+assert.equal(sensibleStart.ok,true);
+assert.equal(sensibleStart.evidence.uniqueStart.kind,'witnessStone',
+  'when all direct legs are complex, choose the marker with fewer real obstacles rather than blindly favor a river confluence');
+assert.ok(sensibleStart.evidence.route[0].eventCount < longRiverLeg.evidence.route[0].eventCount,
+  'complex route selection responds to measured extra crossings');
+assert.equal(Riddles.validate(sensibleStart),true,'simpler route preserves the original rhyme contract');
+
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
   targetObjectKey:'blossom-tree', targetKind:'blossom', targetName:'Cyan Blossom',
