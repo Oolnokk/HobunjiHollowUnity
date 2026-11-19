@@ -108,8 +108,9 @@ async function testEntranceCollision() {
     updateMatrixWorld() {}
   }
   class StaticRuinPart {
-    constructor() {
-      this.isMesh = true; this.userData = {}; this.frustumCulled = false; // Deliberately start with culling off to prove the ruin builder re-enables it.
+    constructor(billboard = false) {
+      this.isMesh = true; this.userData = billboard ? { billboardSurface:true } : {};
+      this.frustumCulled = !billboard; // Static stone starts enabled; intentional billboard opt-out remains disabled.
       this.geometry = {
         getAttribute: name => name === 'position' ? { count:8 } : null,
         computeBoundingSphere() { this.boundingSphere = { radius:1 }; }, // Authoring bounds are prepared only once.
@@ -125,7 +126,8 @@ async function testEntranceCollision() {
     THREE: { Group, Box3 },
     RuinSiteLocales: RL,
     AuthoredFurniture: { load: () => Promise.resolve(), peek: key => key === 'ruinTargetPillar', buildGroup: () => {
-      const group = new Group(); group.add(new StaticRuinPart()); return group; // Every authored target includes a real visual descendant.
+      const group = new Group(); group.add(new StaticRuinPart()); group.add(new StaticRuinPart(true));
+      return group; // Each authored target has ordinary masonry and a deliberate camera-facing effect.
     } },
   });
   const context = vm.createContext({ window: world, THREE: world.THREE }); // Only pillar pieces are needed for this collision fixture.
@@ -147,8 +149,13 @@ async function testEntranceCollision() {
   await new Promise(resolve => setImmediate(resolve));
   const ruinParts=[]; scene.traverse(node => { if (node.isMesh) ruinParts.push(node); }); // Inspect real built descendants after the async ruin-site scene publish.
   assert.ok(ruinParts.length>0,'ruin site generated authored visual parts');
-  assert.ok(ruinParts.every(node=>node.frustumCulled===true&&node.userData.hobunjiWildernessDistanceCull===true
-    &&node.geometry.boundingSphere?.radius===1),'all authored ruin parts re-enable camera frustum culling and retain prepared bounds');
+  const stoneParts=ruinParts.filter(node=>!node.userData.billboardSurface);
+  const billboards=ruinParts.filter(node=>node.userData.billboardSurface);
+  assert.ok(stoneParts.length>0 && billboards.length>0,'ruin fixture includes structural masonry and camera-facing overlays');
+  assert.ok(stoneParts.every(node=>node.frustumCulled===true&&node.userData.hobunjiWildernessDistanceCull===true
+    &&node.geometry.boundingSphere?.radius===1),'ordinary ruin masonry has bounded camera and distance culling');
+  assert.ok(billboards.every(node=>node.frustumCulled===false&&!node.userData.hobunjiWildernessDistanceCull),
+    'ruin culling must not override authored billboard no-cull or enrol that visual in the distance pass');
   assert.equal(blockers.blocksBox(zone, 3.9, 4.2), true, 'a pillar spanning a cell boundary blocks a point on the far side');
   assert.equal(blockers.blocksBox(zone, 3.6, 4.3, 0.12), true, 'a body overlap survives the cell boundary');
   assert.equal(blockers.blocksBox(zone, 4.1, 4.3, 0, 3), false, 'height still clears the pillar for projectiles');
