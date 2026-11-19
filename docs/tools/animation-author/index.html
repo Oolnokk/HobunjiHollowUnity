@@ -15782,7 +15782,27 @@ clearAnimationActors = function(...args) {
     const oldRigInspectorV1554 = renderAttachmentRigInspector; // Keep Ground Y offsets editable in Rig Coordinates.
     renderAttachmentRigInspector = function(...args) {
       const result = oldRigInspectorV1554(...args);
-      if (animationAuthor.mode === 'rig') showParityV1554();
+      if (animationAuthor.mode !== 'rig') return result;
+      const actor = selectedAnimationActor();
+      const reset = $('maaResetAllCreaturePlaneScales'); // V15.13 reset used generic (.35/1/1.5) values, not current per-species game scales.
+      const gameplay = actor?.source?.type === 'creature' ? parityV1554.gameplayProfileForKind(actor.source.kind) : null;
+      if (reset && gameplay) {
+        const replacement = reset.cloneNode(true); // Drop the obsolete generic reset listener, but keep the existing button styling and location.
+        reset.replaceWith(replacement);
+        replacement.textContent = 'Reset all three scales to gameplay';
+        replacement.addEventListener('click', () => {
+          const profile = attachmentRigProfileForActor(actor);
+          profile.sizeScales = structuredCloneSafe(gameplay.sizeScales); // Reset only the three size multipliers, NOT ground offsets or rig anchors.
+          profile.sizeScalePercentages = structuredCloneSafe(gameplay.sizeScalePercentages || {});
+          profile.sizeScaleRule = structuredCloneSafe(gameplay.sizeScaleRule || {});
+          for (const other of animationAuthor.actors) if (other.source?.type === 'creature' && other.source.kind === actor.source.kind)
+            applyCreatureSizeClass(other, other.creatureSizeClass, { announce: false, render: false });
+          scheduleAnimationProjectSave();
+          renderAttachmentRigInspector();
+          setAnimationRecentChange('Restored gameplay Small, Medium and Large scales for ' + actor.source.kind + '; authored ground and anchors preserved.');
+        });
+      }
+      showParityV1554();
       return result;
     };
     window.MultiAvatarAnimationAuthor.creatureGameplayParity = parityReadoutV1554;
