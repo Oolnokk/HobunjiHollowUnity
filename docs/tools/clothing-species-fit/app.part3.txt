@@ -254,6 +254,10 @@ function selectedHeadbandWhole(){
 }
 function syncHeadbandWholeControls(){
   const selected=selectedHeadbandWhole(),settings=selected?.entry.settings;
+  for(const [controls,extent] of [[[E.headbandWholeX,E.headbandWholeXNumber],R.body?.width||120],[[E.headbandWholeY,E.headbandWholeYNumber],R.body?.height||120]]){
+    const limit=Math.max(120,Math.round(extent)); // Whole-curve translation works on any native portrait size, not just a 234×173 sprite.
+    for(const control of controls){control.min=String(-limit);control.max=String(limit)}
+  }
   const bindings=[
     [E.headbandWholeX,E.headbandWholeXNumber,settings?.x],
     [E.headbandWholeY,E.headbandWholeYNumber,settings?.y],
