@@ -803,9 +803,21 @@
 
   // Old public debug hooks survive, but their modules have no separate observers, CSS or animation loops.
   window.ItemArchStickyCategoryHeading = { installed: true, refresh: queueRefresh,
-    debugSnapshot: () => ({ ...presentationDebugSnapshot(),
-      stickyVisible: itemArcIsOpen() && Boolean(lastSelected) && Boolean(document.querySelector('.arc-slot.arc-arrow.arc-active')),
-      lastSelected: lastSelected ? { ...lastSelected } : null }) };
+    debugSnapshot: () => {
+      const geometry = sharedGeometry(); // The original sticky debug API reported Potion Select geometry and live slot radii.
+      const slots = realItemSlots(); // Diagnostics only: no additional observer or runtime presentation pass.
+      const itemSelectionRadii = slots.map(slot => Number.parseFloat(slot.dataset.sharedSelectionRadius || '')).filter(Number.isFinite);
+      const labelRadius = geometry.radius + geometry.labelOutsetPx;
+      return { ...presentationDebugSnapshot(),
+        stickyVisible: itemArcIsOpen() && Boolean(lastSelected) && Boolean(document.querySelector('.arc-slot.arc-arrow.arc-active')),
+        lastSelected: lastSelected ? { ...lastSelected } : null,
+        potionGeometry: { ...geometry, buttonSize: window.QuickPotionArcUI?.readGeometry?.().buttonSize || 'clamp(22px,4.25vmin,30px)' },
+        itemSelectionRadii, itemCategoryLabelRadius: labelRadius, potionCategoryLabelRadius: labelRadius,
+        selectionRadiusMatchesPotion: selectionRadiusMatchesPotion(slots, geometry),
+        potionIconCss: { fontSize: '.78em', mediaMaxPx: 18 },
+        parityStyleInstalled: Boolean(document.getElementById('itemArchCategoryColorStyles')),
+      };
+    } };
   window.ItemArchOriginalPresentation = { installed: true, refresh: queueRefresh,
     debugSnapshot: presentationDebugSnapshot };
 
