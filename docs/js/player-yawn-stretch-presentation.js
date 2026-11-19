@@ -10,6 +10,7 @@
   const WEAPON_IDLE_CHANNEL = 'weapon-idle-stance-body-yaw'; // Idle weapon yaw must not compete with the unarmed stretch.
   const hidden = new Map(); // Original held-visual visibility, restored after completion or interruption.
   const handBase = new Map(); // Per-hand pre-stretch transforms avoid accumulating poses across multiple render passes.
+  const shoulderAnchors = { left: null, right: null }; // Rig-local shoulder samples from the gameplay phase, never resolved during a temporary render pose.
   let entry = null; // The active player yawn from NpcYawnRest, or null outside its five-second window.
   let yawnLock = null; // Blocks weapon/tool actions without stopping walking or changing the equipped selection.
   let sentinel = null; // Invisible pre-render mesh that runs after the ordinary procedural hand driver.
@@ -84,7 +85,10 @@
     if (!found) mesh?.traverse?.(node => {
       if (!found && node?.userData?.proceduralHandRig) found = node.userData.proceduralHandRig;
     });
-    if (handRig !== found) { restoreHandPose(); releaseHandOwnership(); handRig = found; handBase.clear(); }
+    if (handRig !== found) {
+      restoreHandPose(); releaseHandOwnership(); handRig = found; handBase.clear();
+      shoulderAnchors.left = null; shoulderAnchors.right = null; // Old avatar's shoulder coordinates must not cross rig replacements.
+    }
     return handRig;
   }
 
@@ -102,6 +106,21 @@
     releaseHandOwnership();
     rig.setPoseProvider(OWNER, owned => owned.useIdlePose?.()); // The native frame driver now chooses neutral hands instead of an invisible weapon's grip.
     ownedHandRig = rig;
+  }
+
+  function captureShoulderAnchors() {
+    const rig = discoverHandRig(); // Only called from gameplay start/update, before the renderer applies temporary body/neck transforms.
+    for (const side of ['left', 'right']) {
+      const socket = rig?.group?.getObjectByName?.(side + '_hand_socket');
+      if (!socket?.position || !rig?.shoulderPositionLocal) { shoulderAnchors[side] = null; continue; }
+      const target = shoulderAnchors[side] || socket.position.clone(); // Allocate at most one 3D shoulder vector per side and avatar.
+      const shoulder = rig.shoulderPositionLocal(side, target); // This resolver may update avatar world matrices: never call it during onBeforeRender.
+      if (!Number.isFinite(shoulder?.x) || !Number.isFinite(shoulder?.y) || !Number.isFinite(shoulder?.z)) {
+        shoulderAnchors[side] = null; continue;
+      }
+      if (shoulder !== target) target.copy(shoulder);
+      shoulderAnchors[side] = target;
+    }
   }
 
   function samePose(actual, expected) {
@@ -146,8 +165,7 @@
       if (!record || record.socket !== socket) {
         record = { socket,
           base: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible },
-          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible },
-          shoulderSample: socket.position.clone() }; // Reused vector passed to the real shoulder-position resolver, no allocation per frame.
+          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible } };
         handBase.set(side, record);
       } else if (!samePose(socket, record.applied)) {
         record.base.position.copy(socket.position);
@@ -159,7 +177,7 @@
       const sign = side === 'left' ? -1 : 1;
       const authoredReach = Number(handRig.armLengthForSide?.(side)); // The species/age-scaled arm length, including very small characters.
       const reach = Number.isFinite(authoredReach) && authoredReach > 0 ? authoredReach : height * 0.29; // Never substitute an oversized minimum.
-      const shoulder = handRig.shoulderPositionLocal?.(side, record.shoulderSample); // Shared with procedural hand IK, dance and editor-authored shoulder positions.
+      const shoulder = shoulderAnchors[side]; // Immutable for all draw passes in this frame; uses hand-IK's authored anchor sampled before rendering.
       const hasAuthoredShoulder = Number.isFinite(shoulder?.x) && Number.isFinite(shoulder?.y) && Number.isFinite(shoulder?.z);
       if (hasAuthoredShoulder) authoredShoulderSamples++;
       const shoulderX = hasAuthoredShoulder ? shoulder.x : record.base.position.x; // Legacy rig fallback stays in its own socket frame.
@@ -252,7 +270,7 @@
       owner: OWNER, reason: 'five-second player yawn and stretch',
       participants: [{ id: 'player', channels: ['tools', 'actions'] }],
     }) || null; // The player may still walk at 25% speed; selection never changes.
-    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); hookPortraitPlanes(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); captureShoulderAnchors(); ensureSentinel(); hookPortraitPlanes(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -260,7 +278,7 @@
   function update(activeYawn, t) {
     if (!entry || entry !== activeYawn) return false;
     progress = clamp01(t);
-    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); ensureSentinel(); }
+    try { patchComposer(); suppressHeldVisuals(); syncHandOwnership(); captureShoulderAnchors(); ensureSentinel(); }
     catch (error) { lastError = String(error?.stack || error); }
     return true;
   }
@@ -269,6 +287,7 @@
     if (entry !== activeYawn) return;
     restoreHandPose();
     releaseHandOwnership();
+    shoulderAnchors.left = null; shoulderAnchors.right = null; // No prior yawn's shoulder samples survive cleanup.
     entry = null;
     progress = 0;
     yawnLock?.release?.();

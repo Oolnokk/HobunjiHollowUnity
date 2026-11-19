@@ -165,14 +165,21 @@ assert.equal(locks.length, 0, 'cancellation releases the action lock');
 assert.equal(rig.getDebug().poseOwner, null, 'completion releases hand pose ownership to the normal grip driver');
 assert.equal(presentation.debugSnapshot().hiddenHeldRoots, 0, 'visibility snapshots are cleared on finish');
 
+let shoulderResolverCalls = 0; // Verifies that the shoulder resolver runs before rendering, never in the temporary body-pose pass.
 rig.shoulderPositionLocal = (side, out) => { // Exercises the real shoulder-aim API with a lateral offset from the neutral hand.
+  shoulderResolverCalls++;
   out.x = side === 'left' ? -0.025 : 0.06; out.y = 0.255; out.z = -0.04;
   return out;
 };
 const authoredYawn = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } };
 presentation.start(authoredYawn);
 assert.equal(rig.applyOwnedPose(), true, 'the native idle pose is still authoritative before authored-shoulder yawn');
-presentation.update(authoredYawn, 0.5); sentinel.onBeforeRender();
+presentation.update(authoredYawn, 0.5);
+const callsBeforeRender = shoulderResolverCalls; // Captured by start/update; renderer must reuse these two anchors without rebuilding matrices.
+assert.ok(callsBeforeRender >= 2);
+sentinel.onBeforeRender();
+assert.equal(shoulderResolverCalls, callsBeforeRender,
+  'final-render stretch must not trigger shoulder scans or recompute the temporarily baked avatar matrices');
 for (const hand of [left, right]) {
   const shoulderX = hand === left ? -0.025 : 0.06;
   assert.ok(Math.hypot(hand.position.x - shoulderX, hand.position.y - 0.255, hand.position.z + 0.04) <= 0.3 * 0.94 + 1e-6,
