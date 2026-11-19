@@ -346,12 +346,18 @@ E.stage.addEventListener('pointerdown',e=>{
     e.preventDefault();return;
   }
   if(mode==='headband'){
-    const record=currentHeadbandViewRecord();
-    if(!record)return;
-    const curve=E.headbandEditCurve.value==='source'?'source':'target';
-    const index=nearest(record[curve],pointer(e)); // Native sprite-space hit testing remains touch friendly at any CSS scale.
-    if(index<0)return;
-    pushUndo();headbandDrag={curve,index};E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
+    const selected=selectedHeadbandWhole();
+    if(!selected)return;
+    const {record,curve,entry}=selected,at=pointer(e);
+    if(E.headbandWholeDrag.checked){
+      pushUndo();
+      headbandDrag={whole:true,curve,start:at,settings:{...entry.settings}}; // One native-space translation moves all seven points.
+    }else{
+      const index=nearest(record[curve],at); // Individual-node dragging still works normally when whole drag is off.
+      if(index<0)return;
+      pushUndo();headbandDrag={curve,index};
+    }
+    E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
   }
   if(mode==='protect'){
     if(!R.body||!R.sourceTorso||!R.targetTorso||!R.cloth)return;
@@ -374,10 +380,23 @@ E.stage.addEventListener('pointermove',e=>{
   if(mode==='headband'&&headbandDrag){
     const p=pointer(e),record=currentHeadbandViewRecord();
     if(!record)return;
-    record[headbandDrag.curve]=window.ClothingHeadbandSpline.dragNode(
-      record[headbandDrag.curve],headbandDrag.index,p.x/Math.max(1,E.stage.width-1),
-      p.y/Math.max(1,E.stage.height-1),E.stage.width,E.stage.height
-    ); // Adjacent x-nodes cannot cross, preventing a folded / mirrored raster.
+    if(headbandDrag.whole){
+      const selected=selectedHeadbandWhole();
+      if(!selected||selected.curve!==headbandDrag.curve)return;
+      const desired={...headbandDrag.settings,
+        x:headbandDrag.settings.x+p.x-headbandDrag.start.x,
+        y:headbandDrag.settings.y+p.y-headbandDrag.start.y};
+      const result=window.ClothingHeadbandSpline.fitWholeTransform(
+        selected.entry.base,selected.entry.settings,desired,R.body.width,R.body.height);
+      record[headbandDrag.curve]=result.nodes;selected.entry.settings=result.settings;
+      R.headbandWholeWarning=result.fraction<.99999?'Whole-curve drag constrained at sprite edge.':'';
+      syncHeadbandWholeControls();
+    }else{
+      record[headbandDrag.curve]=window.ClothingHeadbandSpline.dragNode(
+        record[headbandDrag.curve],headbandDrag.index,p.x/Math.max(1,E.stage.width-1),
+        p.y/Math.max(1,E.stage.height-1),E.stage.width,E.stage.height
+      ); // Individual nodes cannot cross neighbors.
+    }
     queueHeadbandRender();e.preventDefault();return;
   }
   if(mode==='protect'&&contourStroke){
@@ -405,8 +424,11 @@ function endDrag(e){
     log('Committed rear sprite pixels to saved PNG for '+headbandSelectionKey()+'.');
   }
   if(headbandDrag){
+    const record=currentHeadbandViewRecord();
+    if(record&&!headbandDrag.whole)bakeHeadbandWhole(record,headbandDrag.curve); // Individual node edits become the new neutral whole-curve baseline.
+    const movedWhole=headbandDrag.whole;
     headbandDrag=null;saveState();render();syncHeadbandControls();
-    log('Saved seven-point '+E.headbandEditCurve.value+' curve for '+headbandSelectionKey()+'.');
+    log('Saved '+(movedWhole?'whole-spline translation':'seven-point node edit')+' for '+headbandSelectionKey()+'.');
   }
   if(contourStroke){
     saveContourMask();syncContourControls();render(); // 3D rebuild is deferred until the brush is released, not once per touch event.
