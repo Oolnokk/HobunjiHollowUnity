@@ -153,6 +153,7 @@ function readyHunt(){
     assert.equal(W.FestivalBlossomHunt.pickBlossom(id),false,'one blossom per tree/year');
   }
   assert.equal(W.FestivalBlossomHunt.menuStatus().ready,true,'all five real blossoms unlock Father Hunundi turn-in');
+  assert.match(W.FestivalBlossomHunt.menuStatus().statusText,/festival stage/,'the quest shows where to find Hunundi without creating a waypoint');
   area='town';tile={area,col:33,row:40};
 }
 // The production NPC entry route must offer the hunt through normal Talk.

@@ -139,12 +139,12 @@ async function testFestivalRecovery() {
     getVisitorPresence: rec => contextAbsent.has(rec.id) ? {active: false} : null,
   };
   const recover = new Function(
-    'deps', 'residents', 'festivalHours', 'window', 'Promise',
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
     'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
     'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
     festivalSource.slice(start, end) +
     '\nreturn recoverMissingFestivalGuests;'
-  )(deps, () => residents, () => true, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
+  )(deps, () => residents, () => true, () => false, {NpcScheduling: scheduling, __farmLog() {}}, Promise);
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }; // Allows the rejection handler and cleanup microtasks to finish.
   recover(4000);
   await settle();
@@ -168,11 +168,11 @@ async function testFestivalRecovery() {
     ensureNpcWalker(id) {limited.push(id); return new Promise(resolve => pending.push(resolve));},
   };
   const crowded = new Function(
-    'deps', 'residents', 'festivalHours', 'window', 'Promise',
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
     'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
     'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
     festivalSource.slice(start, end) + '\nreturn recoverMissingFestivalGuests;'
-  )(crowdedDeps, () => crowd, () => true, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
+  )(crowdedDeps, () => crowd, () => true, () => false, {NpcScheduling: {getVisitorPresence: () => null}}, Promise);
   crowded(4000);
   assert.equal(limited.length, 3, 'festival recovery must start at most three slow avatar builds');
   crowded(7500);
@@ -181,6 +181,21 @@ async function testFestivalRecovery() {
   await settle();
   crowded(11000);
   assert.equal(limited.length, 4, 'once a build frees capacity, a different waiting resident gets a turn');
+
+  const daylightRequests = []; // Only the ready blossom host is recoverable outside the gathering window.
+  const daylight = new Function(
+    'deps', 'residents', 'festivalHours', 'blossomHostReady', 'window', 'Promise',
+    'let lastMissingGuestCheckAt = -Infinity;\nlet guestRecoveryCursor = 0;\n' +
+    'const guestRecoveryInFlight = new Set();\nconst MAX_PARALLEL_GUEST_RECOVERIES = 3;\n' +
+    festivalSource.slice(start, end) + '\nreturn recoverMissingFestivalGuests;'
+  )({
+    getWalkers: () => [], isFestivalSuspended: () => false,
+    ensureNpcWalker: async id => { daylightRequests.push(id); return true; },
+  }, () => [{id:'father_hunundi_hodu'},{id:'pahu'},{id:'leaf'}], () => false, () => true,
+  {NpcScheduling:{getVisitorPresence:()=>null}}, Promise);
+  daylight(14000);
+  await settle();
+  assert.deepEqual(daylightRequests, ['father_hunundi_hodu'], 'ready Uung daytime hunt recovers only the host, not all sleeping festival guests');
 }
 
 function testWildernessHomeRoutes() {
@@ -223,6 +238,29 @@ function testWildernessHomeRoutes() {
   assert.equal(homeExit.find(link => link.toArea === 'map_eastern_mire')?.spawn.r, 29);
   assert.equal(win.NpcPathfinding.findNpcAreaLink('map_i_swamp_house_leaf', 'map_i_inn')?.toArea, 'map_i_swamp_house');
   assert.equal(win.NpcPathfinding.findNpcAreaLink('town', 'map_i_swamp_house_leaf')?.toArea, 'map_eastern_mire');
+
+  // A blossom host recovered inside his real bedroom must be able to reach town through every authored door.
+  const templeMaps = ['map_i_temple_basement_hunundi','map_i_temple_basement','map_i_temple']; // Actual three-level return path from Hunundi's bedroom.
+  for(const id of templeMaps){
+    const map = JSON.parse(read('docs/config/maps/'+id+'.json')); // Source-authored exits, not a fabricated connected graph.
+    interiors.set(id,{cols:map.cols||20,rows:map.rows||20,transitions:map.exits.map(exit=>{
+      const [c,r] = exit.tiles[0]; // The real entrance tile handed to the NPC graph.
+      return {target:exit.targetMap?'building':'exit_building',targetMapId:exit.targetMap||undefined,
+        col:c,row:r,targetCol:exit.spawnCol,targetRow:exit.spawnRow};
+    })});
+  }
+  const townMap = JSON.parse(read('docs/config/maps/hobunji_hollow_town.map.json')); // The town temple entrance actually authored on the player map.
+  const templeDoor = townMap.transitions.find(t=>t.targetMapId==='map_i_temple');
+  assert(templeDoor,'Hunundi needs a real temple door to return to the festival');
+  town.push({target:'building',targetMapId:'map_i_temple',col:templeDoor.col,row:templeDoor.row});
+  assert.equal(win.NpcPathfinding.findNpcAreaLink('map_i_temple_basement_hunundi','town')?.toArea,
+    'map_i_temple_basement','the real bedroom door leads toward the town, not an off-map fallback');
+  assert.equal(win.NpcPathfinding.findNpcAreaLink('map_i_temple_basement','town')?.toArea,
+    'map_i_temple','Hunundi can climb from the basement to the temple');
+  assert.equal(win.NpcPathfinding.findNpcAreaLink('map_i_temple','town')?.toArea,
+    'town','the authored temple exit connects his walk to the blossom gathering');
+  assert.equal(win.NpcPathfinding.findNpcAreaLink('town','map_i_temple_basement_hunundi')?.toArea,
+    'map_i_temple','ordinary visits back home remain possible after the Feast');
 }
 
 function testUnloadedWildernessTravel() {

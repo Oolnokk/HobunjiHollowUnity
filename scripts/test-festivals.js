@@ -8,13 +8,14 @@ const load = (context, name) => vm.runInContext(fs.readFileSync(`docs/js/${name}
 let civilDay = 1, year = 1155, time = 100, area = 'town', blocked = false; // Deterministic world/civil calendar and action state.
 let hour=12; // Serving tables follow the ordinary evening schedule; other festival fixtures keep noon.
 let position = { c: 0, r: 0 }, saved = 0, dancing = false, duelQuest = null, costume = null; // Observable runtime boundaries.
+const festivalScheduleOverrides = new Map(); // Captures real FestivalSystem destination providers for weekday/daytime host tests.
 const inventory = { meal: 3, keepsake: 2, gold: 500, forbidden: 1, wine: 0 }; // Inventory totals must agree with tracked quality.
 const defs = { meal: { label: 'Feast dish', isCookedFood: true }, keepsake: { label: 'Carved stone' }, gold: { label: 'Gold' }, forbidden: { label: 'Quest item', isQuestItem: true }, wine: { label: 'Wine' } }; // Realistic narrow item metadata.
 const buckets = { meal: { 1: 1, 3: 1, 5: 1 }, keepsake: { 2: 1, 5: 1 } }; // Exact mixed-quality stacks.
 const npcs = [{ id: 'friend', name: 'Friend', homeId: 'inn' }, { id: 'newfriend', homeId: 'temple' }, { id: 'farfriend', homeId: 'elsewhere' }, { id: 'deadfriend', homeId: 'hatayap_clan_deceased' }, { id: 'spearhead_unumanuk', homeId: 'unumanuk_household' }, { id: 'father_hunundi_hodu', homeId: 'temple' }]; // Includes remote and unavailable records.
 const favors = { friend: 120, newfriend: 119, farfriend: 160, deadfriend: 200 }; // Forty Favor per heart, matching NpcFavorBalance.
 const deltas = []; // Records actual favor mutations, not UI promises.
-const window = { InventoryStacks: { MAX_TOTAL: 9999 }, DialogueContent: { getNpcDlgState: id => ({ favor: favors[id] || 0 }), adjustNpcFavor: (id, amount, reason) => deltas.push({ id, amount, reason }) }, NpcGifting: { isItemGiftable: ({ key }) => !!defs[key] }, NpcWardrobe: { registerAppearanceDecorator: (id, fn) => { costume = fn; }, slotForCosmetic: id => id.includes('hood') ? 'hood' : 'body', refreshWalkerAppearance() {} }, NpcScheduling: { registerTargetOverride() {} }, EffectBuffBar: { registerProvider() {}, refresh() {} }, FestivalUI: { close() {}, update() {} }, SocialActionWheel: { startDance: () => (dancing = true), stopDance: () => { dancing = false; }, getDebug: () => ({ dancing }) }, MusicMinigame: { beginPlayerSession() {} }, HobunjiDrunkGameplayBridge: { isAlcoholDef: def => def.label === 'Wine' }, CombatTutorial: { active: () => false, start: quest => { duelQuest = quest; return true; } } }; // Public integrations; production festival logic itself is not mocked.
+const window = { InventoryStacks: { MAX_TOTAL: 9999 }, DialogueContent: { getNpcDlgState: id => ({ favor: favors[id] || 0 }), adjustNpcFavor: (id, amount, reason) => deltas.push({ id, amount, reason }) }, NpcGifting: { isItemGiftable: ({ key }) => !!defs[key] }, NpcWardrobe: { registerAppearanceDecorator: (id, fn) => { costume = fn; }, slotForCosmetic: id => id.includes('hood') ? 'hood' : 'body', refreshWalkerAppearance() {} }, NpcScheduling: { registerTargetOverride(id, provider) { festivalScheduleOverrides.set(id, provider); } }, EffectBuffBar: { registerProvider() {}, refresh() {} }, FestivalUI: { close() {}, update() {} }, SocialActionWheel: { startDance: () => (dancing = true), stopDance: () => { dancing = false; }, getDebug: () => ({ dancing }) }, MusicMinigame: { beginPlayerSession() {} }, HobunjiDrunkGameplayBridge: { isAlcoholDef: def => def.label === 'Wine' }, CombatTutorial: { active: () => false, start: quest => { duelQuest = quest; return true; } } }; // Public integrations; production festival logic itself is not mocked.
 const context = vm.createContext({ window, document: { hidden: false }, performance: { now: () => time }, console }); // No browser or network needed.
 load(context, 'festival-calendar'); load(context, 'map-layout-system');
 window.CalendarSystem = { isInitialized: () => true, monthNumber: () => Math.floor((civilDay - 1) / 28) + 1, dayOfMonth: () => (civilDay - 1) % 28 + 1, aotYearNumber: () => year, getHour: () => hour, currentWeekdayName: () => 'Anan' }; // Assigned after MapLayoutSystem so its real civil bridge isn't installed around a stub.
@@ -172,6 +173,50 @@ assert(api.feastMenu().every(dish=>dish.id.startsWith('blossoms:')),'every pot i
 civilDay+=3;
 assert.equal(JSON.stringify(api.feastMenu().map(dish=>({id:dish.id,label:dish.label,effects:dish.foodEffects}))),fixedMenu,'the buffet never rotates');
 assert.equal(api.claimed('dance'),false,'old marked-dance Favor reward is gone');
+// Uung is the seventh weekday; a completed blossom hunt should not strand Father Hunundi in his temple.
+const host = npcs.find(npc => npc.id === 'father_hunundi_hodu'); // The real festival scheduler sees a temple resident, not a special test-only actor.
+const festivalTarget = festivalScheduleOverrides.get('festivals'); // Registered by production FestivalSystem.init.
+assert.equal(typeof festivalTarget,'function');
+let blossomReady = false; // Simulates the real quest's five packed key items.
+window.FestivalBlossomHunt = {menuStatus:()=>({ready:blossomReady})};
+civilDay = calendar.ordinal(9,21); hour = 8; // Last Feast day is Uung; the evening gathering has not begun.
+assert.equal(api.festival()?.id,'five_blossoms');
+assert.equal(api.festivalHours(),false);
+assert.equal(festivalTarget(host),null,'before collecting all blossoms Hunundi keeps his ordinary morning routine');
+blossomReady = true;
+const morningHost = festivalTarget(host); // The host should be findable in town even before dinner opens.
+assert.equal(morningHost?.area,'town');
+assert.equal(morningHost?.activity,'receiving the Five Blossoms');
+const festivalStage = window.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:civilDay,minutes:8*60,weekday:'Uung'})
+  .decor.find(piece=>piece.key==='festivalStage'&&piece.festivalLocale?.kind==='bandstand'); // The same movable stage used by the crown ceremony.
+assert(festivalStage,'Uung Feast layout includes its bandstand');
+assert(Math.hypot(morningHost.c-festivalStage.col,morningHost.r-festivalStage.row)<6,'the hand-in meeting is near the authored stage');
+// NPC pathfinding (not just general terrain checks) must reject crowded festival furniture.
+const blockedHostCells = new Set(); // Models a bandstand whose nearby tiles are occupied by festival props.
+for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++)
+  blockedHostCells.add((morningHost.c+dc)+','+(morningHost.r+dr));
+let hostCollisionChecks = 0; // Counts narrow NPC walkability probes so this test exercises the real collision API.
+window.NpcPathfinding = {isNpcTileWalkable(area,col,row){
+  assert.equal(area,'town','host probes use the actual town area');
+  hostCollisionChecks++;
+  return !blockedHostCells.has(col+','+row);
+}};
+const clearPlazaHost = festivalTarget(host);
+assert(clearPlazaHost,'a clear plaza spot beyond the nearest two tile rings should still be found');
+assert.equal(Math.max(Math.abs(clearPlazaHost.c-morningHost.c),Math.abs(clearPlazaHost.r-morningHost.r)),3,
+  'the host expands to a collision-clear tile only when the nearby bandstand is obstructed');
+assert(!blockedHostCells.has(clearPlazaHost.c+','+clearPlazaHost.r),'never route Hunundi into an occupied stage tile');
+assert(hostCollisionChecks>9,'the NPC pathfinder is consulted rather than a general canStandAt fallback');
+window.NpcPathfinding = {isNpcTileWalkable:()=>false};
+assert.equal(festivalTarget(host),null,'fully blocked plaza does not assign an impossible NPC target');
+window.NpcPathfinding = null; // Restores the no-pathfinder editor/test fallback for independent festival checks.
+hour = 17;
+assert.equal(festivalTarget(host)?.activity,'receiving the Five Blossoms','Hunundi remains findable during feast hours');
+civilDay = calendar.ordinal(9,22); hour = 8;
+assert.equal(festivalTarget(host),null,'the special attendance ends with the festival');
+civilDay = calendar.ordinal(5,8); hour = 17;
+assert.equal(festivalTarget(host),null,'Gorkunash still sends Hunundi out of town');
+blossomReady = false; window.FestivalBlossomHunt = null; // Restore test defaults for subsequent independent festival checks.
 // Remembrance is a real interrupted/completed local observance, not a no-op menu item.
 area='town'; // The preceding stale-action assertion deliberately left the player in the farm.
 prop = visit('tzizkhanash', 'remembrance');

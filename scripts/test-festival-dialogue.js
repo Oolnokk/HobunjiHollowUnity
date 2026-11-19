@@ -124,4 +124,24 @@ hour=1;
 dialogue.testChoices({choices:[{label:'Shop',actions:[{type:'openShop'}]}]});
 option.onclick();
 assert.deepEqual(shopMenus,['generalStore'],'dialogue restriction releases when gathering ends');
-console.log('Festival dialogue: authored branches, Oliphanti ancestry, nickname tokens, choices, greeting hooks, quest priority, exact hours, home and departure/return passed.');
+
+// End-to-end NPC resolver: the real FestivalSystem override must win over an old Hunundi presence return.
+window.CalendarSystem.__civilMidnightBridgeInstalled = true; // This test's stub already supplies civil days; it lacks the full raw-calendar helpers that the live bridge wraps.
+load('map-layout-system'); // Provide the authored live Five Blossoms layout instead of a hand-written bandstand coordinate.
+let fiveBlossomsReady = true; // Simulates the five saved Key Item checks after the real quest has completed.
+window.FestivalBlossomHunt = {menuStatus:()=>({ready:fiveBlossomsReady})};
+civilDay = window.FestivalCalendar.ordinal(9,21); hour = 8; // Uung morning, before the evening gathering.
+assert.equal(festival.festival()?.id,'five_blossoms');
+const readyHost = scheduling.resolveNpcScheduleTarget(hunundi); // The real priority resolver, not FestivalSystem's provider in isolation.
+assert.equal(readyHost?.overrideOwner,'festivals','the ready hunt owns Hunundi despite the older contextual presence provider');
+assert.equal(readyHost?.area,'town','Hunundi is called out of his temple before gathering hours');
+assert.equal(readyHost?.activity,'receiving the Five Blossoms');
+fiveBlossomsReady = false;
+assert.notEqual(scheduling.resolveNpcScheduleTarget(hunundi)?.overrideOwner,'festivals',
+  'when no blossoms await delivery Hunundi returns to his regular schedule');
+civilDay = window.FestivalCalendar.ordinal(9,22);
+fiveBlossomsReady = true;
+assert.notEqual(scheduling.resolveNpcScheduleTarget(hunundi)?.overrideOwner,'festivals',
+  'the host override releases outside the Feast without trapping Hunundi in town');
+window.FestivalBlossomHunt = null;
+console.log('Festival dialogue: authored branches, Oliphanti ancestry, nickname tokens, choices, greeting hooks, quest priority, exact hours, home, departure/return and Uung host integration passed.');
