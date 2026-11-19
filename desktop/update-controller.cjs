@@ -18,7 +18,7 @@ function clampPercent(value) {
 }
 
 // Keep update state in the main process; the sandboxed screen receives only plain data.
-function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater, getGameWindow, prepareRestart, logger = console, cancelPreparedRestart = () => {} }) {
+function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater, getGameWindow, prepareRestart, desktopIcon = null, logger = console, cancelPreparedRestart = () => {} }) {
   const isFriendsEdition = app.getName?.() === 'Hobunji Hollow Tester'; // Packaged product name determines the approved-release track.
   const releasesUrl = isFriendsEdition ? FRIENDS_RELEASES_URL : RELEASES_URL; // View menu opens the appropriate release list.
   const releaseLabel = isFriendsEdition ? 'approved Friends' : 'main'; // Used in update-window status text.
@@ -55,6 +55,7 @@ function createDesktopUpdates({ app, BrowserWindow, ipcMain, shell, autoUpdater,
     const updateOptions = {
       title: 'Hobunji Hollow — Updates', width: 520, height: 410, minWidth: 460, minHeight: 380,
       show: false, backgroundColor: '#151e23', autoHideMenuBar: true,
+      ...(desktopIcon ? { icon: desktopIcon } : {}),
       webPreferences: {
         preload: path.join(__dirname, 'update-preload.cjs'),
         nodeIntegration: false, contextIsolation: true, sandbox: true,
