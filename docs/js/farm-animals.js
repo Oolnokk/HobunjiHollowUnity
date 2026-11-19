@@ -696,7 +696,101 @@
     animal.wanderWaitT = 0.5 + deps.rnd() * 0.5;
   }
 
+  // Followers use existing tile reservations and farm pathfinding; one refresh
+  // per 0.75 s keeps save-backed breeding pairs out of the per-frame loop.
+  const BREEDING_MATE_GAP_TILES = 1.75; // Minimum rendered separation used by follower movement below.
+  const BREEDING_MATE_CACHE_MS = 750; // Limits pair/animal lookup work during AI ticks.
+  const BREEDING_MATE_PATH_RETRY_MS = 1200; // Prevents pathfinding every AI tick when a pen is blocked.
+  let breedingFollowerById = new Map(); // Live world-only parentB -> parentA map used by the daytime wander override.
+  let breedingFollowerRefreshAt = 0; // Next allowed breeding-map rebuild in milliseconds.
+
+  function invalidateBreedingFollowCache() {
+    breedingFollowerRefreshAt = 0; // Newly paired, sold, or respawned livestock is discovered on its next AI tick.
+    breedingFollowerById.clear();
+  }
+
+  function breedingFollowerMap() {
+    const now = performance.now(); // Stable real-time cache clock; breeding progress itself remains game-hour based.
+    if (now < breedingFollowerRefreshAt) return breedingFollowerById;
+    breedingFollowerRefreshAt = now + BREEDING_MATE_CACHE_MS;
+    const liveById = new Map(); // Indexed once per refresh, instead of scanning live animals per follower.
+    for (const animal of deps.animalObjects) if (animal?.livestockId) liveById.set(animal.livestockId, animal);
+    const followers = new Map(); // Only live farm/world parents can pair-follow; personal Stable companions never do.
+    for (const pair of deps._loadWorldBreedingPairs?.() || []) {
+      if (pair?.parentA?.source !== 'world' || pair?.parentB?.source !== 'world') continue;
+      const leader = liveById.get(pair.parentA.id), follower = liveById.get(pair.parentB.id);
+      if (!leader || !follower || leader === follower || followers.has(follower.livestockId)) continue;
+      followers.set(follower.livestockId, leader);
+    }
+    breedingFollowerById = followers;
+    return followers;
+  }
+
+  function _farmAnimalFollowMateTick(animal, onStep) {
+    const mate = breedingFollowerMap().get(animal.livestockId); // Parent A leads; parent B follows only while both are visible on the farm.
+    if (!mate || mate._barnHome || mate._vatWorkPose || mate._harvestFrozen || mate._dialogueFrozen || !mate.avatarRef?.group?.visible) {
+      if (animal._breedingMateId) {
+        animal._breedingMateId = null;
+        animal._mateFollowPath = null;
+        animal.wanderTargetCol = null; animal.wanderTargetRow = null;
+        animal.wanderWaitT = 0; animal.wanderPhase = 'pick';
+      }
+      return false;
+    }
+    if (animal._breedingMateId !== mate.livestockId) {
+      animal._breedingMateId = mate.livestockId;
+      animal._mateFollowPath = null;
+      animal.wanderTargetCol = null; animal.wanderTargetRow = null;
+      animal.wanderWaitT = 0; animal.wanderPhase = 'following';
+      animal._mateFollowRetryAt = 0;
+    }
+    if (animal._facingPlayer) return true; // Retain existing focused-head pause instead of overriding it.
+    if (Math.hypot(animal.wx - mate.wx, animal.wz - mate.wz) <= BREEDING_MATE_GAP_TILES) {
+      animal._mateFollowPath = null; // Close enough: wait beside the moving mate instead of entering their occupied tile.
+      return true;
+    }
+    if (!_farmAnimalNearTargetTile(animal, FARM_ANIMAL_HOP_CHAIN_TILES)) return true;
+    const leaderTile = mate.col + ',' + mate.row; // Detours must be replanned if the leader moves.
+    if (animal._mateFollowLeaderTile !== leaderTile) animal._mateFollowPath = null;
+    animal._mateFollowLeaderTile = leaderTile;
+    if (animal._mateFollowPath?.length) {
+      const hop = animal._mateFollowPath[0];
+      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, _tileTouchesAnyBarn, false)) {
+        animal._mateFollowPath.shift();
+        return true;
+      }
+      animal._mateFollowPath = null;
+    }
+    if (_farmAnimalStepToward(animal, mate.col, mate.row, onStep, _tileTouchesAnyBarn, false)) return true;
+    const now = performance.now(); // Blocked paths are retried at most once per throttle interval.
+    if (now < (animal._mateFollowRetryAt || 0)) return true;
+    animal._mateFollowRetryAt = now + BREEDING_MATE_PATH_RETRY_MS;
+    const isWalkable = (col, row) => canSpawnAt(col, row) && !_tileTouchesAnyBarn(col, row); // Reuses ordinary farm tile legality.
+    const candidates = []; // Open neighboring tiles keep the destination beside, not inside, the leader.
+    for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) {
+      if (!dc && !dr) continue;
+      const col = mate.col + dc, row = mate.row + dr;
+      if (col >= 0 && col < deps.COLS && row >= 0 && row < deps.ROWS && isWalkable(col, row)) {
+        candidates.push({ col, row, distance: Math.hypot(col - animal.col, row - animal.row) });
+      }
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+    for (const candidate of candidates.slice(0, 3)) {
+      const path = window.TilePathfinding?.findPath?.(animal.col, animal.row, candidate.col, candidate.row, isWalkable, {
+        bounds: window.TilePathfinding.boxAround(animal.col, animal.row, candidate.col, candidate.row, 5),
+      });
+      if (!path?.length) continue;
+      if (_farmAnimalStepToward(animal, path[0].col, path[0].row, onStep, _tileTouchesAnyBarn, false)) {
+        path.shift();
+        animal._mateFollowPath = path;
+        break;
+      }
+    }
+    return true; // Paired animals never drift away to an independent random station while the mate is outdoors.
+  }
+
   function _farmAnimalWanderTick(animal, dt, onStep) {
+    if (_farmAnimalFollowMateTick(animal, onStep)) return;
     if (animal._facingPlayer) return; // Stopped to look at the player: no new hops and the rest timer holds until they look away.
     if (animal.wanderWaitT > 0) {
       animal.wanderPhase = 'rest';
@@ -843,7 +937,14 @@
   function administerBreedingPotion(livestockId, itemKey) {
     const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Permanent brewed potency payload.
     const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authoritative administration mode.
-    if (definition?.useMode !== 'livestock' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if (definition?.useMode !== 'livestock') return { ok: false, message: 'That item cannot be administered to livestock.' };
+    if (definition.application === 'reduceBreedingDays') {
+      const ref = { source: 'world', id: livestockId }; // Farm-world parent reference used by existing breeding-pair identity checks.
+      const pair = deps._loadWorldBreedingPairs().find(entry => refsEqual(entry.parentA, ref) || refsEqual(entry.parentB, ref));
+      if (!pair) return { ok: false, message: 'That animal is not in an active breeding pair.' };
+      return administerFertilityPotion(pair.id, itemKey);
+    }
+    if (definition.application !== 'nextOffspringSize' || !Number.isFinite(definition.sizeShift)) return { ok: false, message: 'That item cannot be administered to livestock.' };
     if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
     const list = deps.loadWorldLivestock();
     const rec = list.find(entry => entry.id === livestockId);
@@ -855,6 +956,33 @@
     deps.saveMemberWorldData?.();
     deps.refreshItemScroll?.();
     return { ok: true, message: `${definition.icon} ${definition.label} will affect ${rec.name || 'this animal'}'s next offspring.` };
+  }
+
+  function administerFertilityPotion(pairId, itemKey) {
+    const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Stored recipe identity, not the bottle's display label.
+    const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authored one-day effect shared by Farm UI and animal interaction.
+    if (definition?.useMode !== 'livestock' || definition.application !== 'reduceBreedingDays' || !(definition.daysReduced > 0)) return { ok: false, message: 'Select a Potion of Fertility.' };
+    if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
+    const pairs = deps._loadWorldBreedingPairs();
+    const pair = pairs.find(entry => entry.id === pairId);
+    if (!pair) return { ok: false, message: 'That breeding pair is no longer active.' };
+    const livestock = deps.loadWorldLivestock();
+    const stableCache = new Map(); // Resolves mixed and Stable parents under the same ownership rules as hourly gestation.
+    const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
+    const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
+    if (!parentA || !parentB) return { ok: false, message: 'A parent in that breeding pair is unavailable.' };
+    const progress = normalizeBreedingProgress(pair); // Migrates older readyDay/startDay pairs without discarding their elapsed time.
+    if (progress >= 1) return { ok: false, message: 'That pair is already ready to give birth.' };
+    const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
+    const dayProgress = (definition.daysReduced / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart); // Equivalent to one full day of current heart-adjusted hourly ticks.
+    pair.progress = Math.min(1, progress + dayProgress);
+    deps._saveWorldBreedingPairs(pairs);
+    deps.inventory[itemKey]--;
+    deps.clampInventoryStack(itemKey);
+    deps.saveMemberWorldData?.();
+    deps.refreshItemScroll?.();
+    if (pair.progress >= 1) window.FarmAnimals.tickBreedingProgress(0); // Immediate birth goes through Nursery's existing wrapper and baby registration.
+    return { ok: true, message: pair.progress >= 1 ? '🥚 The breeding pair is ready!' : '🥚 Breeding time shortened by one in-game day.' };
   }
 
   function makeUumkaoiiAnimal(col, row, livestockId, genotype) {
@@ -1669,9 +1797,17 @@
   // heart-boosted toward rarer traits), spawns the offspring on an open
   // tile, and appends it to world.livestock. Pairs are consumed on
   // resolution — a farmhand must re-pair to breed again.
+  function normalizeBreedingProgress(pair) {
+    if (pair.progress != null && Number.isFinite(Number(pair.progress))) return Math.max(0, Number(pair.progress));
+    const rawDays = Number(pair.readyDay) - Number(pair.startedDay); // Old saves used a fixed readyDay rather than hourly progress.
+    const totalDays = Number.isFinite(rawDays) ? Math.max(1, rawDays) : LIVESTOCK_GESTATION_DAYS;
+    const elapsed = Number(deps.calendar?.day) - Number(pair.startedDay);
+    return Math.min(0.999, (Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0) / totalDays);
+  }
+
   function tickBreedingProgress(dayFraction = 1 / GESTATION_HOURS_PER_DAY) {
     const pairs = deps._loadWorldBreedingPairs();
-    if (!pairs.length || dayFraction <= 0) return;
+    if (!pairs.length || !Number.isFinite(dayFraction) || dayFraction < 0) return;
     const livestock = deps.loadWorldLivestock();
     const stableCache = new Map(); // Persists pending modifiers for stable parents too.
     const remainingPairs = [];
@@ -1682,11 +1818,7 @@
       if (!parentA || !parentB) { changed = true; continue; } // a parent was sold/removed/stable-emptied — pair quietly lapses
       // Migrate a pre-heart-level pair (readyDay, no progress field yet)
       // to an equivalent starting progress instead of losing its head start.
-      if (pair.progress == null) {
-        const totalDays = Math.max(1, Number(pair.readyDay) - Number(pair.startedDay));
-        const elapsedDays = Math.max(0, Number(deps.calendar.day) - Number(pair.startedDay));
-        pair.progress = Math.min(0.999, elapsedDays / totalDays);
-      }
+      pair.progress = normalizeBreedingProgress(pair);
       const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
       pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
       changed = true;
@@ -1729,6 +1861,7 @@
   }
 
   function clearAnimalObjects() {
+    invalidateBreedingFollowCache(); // Farm swaps must never retain references to disposed animal avatars.
     deps.animalObjects.forEach(obj => {
       deps.worldObjects.delete(obj.col + ',' + obj.row);
       obj.reset && obj.reset();
@@ -1889,6 +2022,9 @@
     updateHarvestInteraction,
     addToStable,
     administerBreedingPotion,
+    administerFertilityPotion,
+    invalidateBreedingFollowCache,
+    breedingFollowDebug: () => ({ followers: [...breedingFollowerMap()].map(([followerId, leader]) => ({ followerId, leaderId: leader.livestockId })) }), // Mobile farm-layout debug reads pair movement bindings without DevTools.
     respawnWorldLivestock,
     refsEqual,
     currentCharacterId,
