@@ -262,7 +262,7 @@ try {
 const witnessVerse = Riddles.generate({ zoneId:'map_northern_cliffs',layout:sceneryWorld,instance:sceneryWorld.localeInstances[0],
   targetObjectKey:'blossom-tree',targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route' });
 assert.equal(witnessVerse.ok,true,'unique witness route still passes strict verse rhyme checks');
-assert.match(witnessVerse.text,/^In Northern Cliffs, (?:begin|start|stand) at the bright /,'the first line names the broader zone before the distinctive dyed stone');
+assert.match(witnessVerse.text,/^In Northern Cliffs, in the (?:north|south|east|west|heart)[^,]*, (?:begin|start|stand) at the bright /,'the first line names the zone and the starting stone\'s own sector before its color');
 assert.match(witnessVerse.text,/Northern Cliffs/,'the starting stone identifies its actual zone so reused dyes across zones remain unambiguous');
 assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions contain actual cardinal bearings, including a direct first-line couplet');
 assert.ok(witnessVerse.evidence.route.every(step=>step.terrainEvent==='river-crossing'||step.terrainEvent==='elevation'),'each walking leg commits to one main terrain event');
@@ -365,6 +365,52 @@ assert.ok(pillarWaypoint.evidence.route.every(leg=>leg.eventCount<=1),
   'the route splits the terrain instead of merely concealing multiple river crossings');
 assert.match(pillarWaypoint.text,/bright orange-marked broken pillar/,
   'zone-unique color is actually used to identify the intermediate object');
+
+
+const placedStone=layoutFor('cyan',55,55); // First marker and blossom deliberately occupy different sectors.
+const westStone={...fixedMarker,point:{col:8,row:8}};
+const westOpening=Riddles.generate({...canyonOptions,layout:placedStone,instance:placedStone.localeInstances[0],landmarks:[westStone],seed:'start-not-target-sector'});
+assert.equal(westOpening.ok,true);
+assert.match(westOpening.text,/^In Northern Cliffs, in the northwest sector,/,'the first line locates the actual starting stone in the northwest');
+assert.equal(westOpening.evidence.uniqueStart.sector,'the northwest sector');
+assert.match(westOpening.facts[0].value,/bright violet/,'a positional qualifier does not erase the colored mark');
+const riverNetwork=layoutFor('cyan',54,43); // Independent exported broad centerlines meet at a verified water tile.
+riverNetwork.rivers=[
+  {id:'north-fork',width:6,nodes:[[0,20],[18,20],[35,35],[69,35]]},
+  {id:'south-fork',width:6,nodes:[[0,50],[18,50],[35,35],[69,35]]}
+];
+for(const [col,row] of [[0,20],[0,50],[35,35],[69,35]])riverNetwork.tiles[row][col]={type:'river'};
+const riverStart=Riddles.generate({zoneId:'map_northern_cliffs',layout:riverNetwork,instance:riverNetwork.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true,seed:'river-confluence'});
+assert.equal(riverStart.ok,true,'a measured confluence can start the hunt even without a painted stone');
+assert.equal(riverStart.evidence.uniqueStart.kind,'riverConfluence','two distinct broad centerlines identify a real meeting');
+assert.match(riverStart.text,/^In Northern Cliffs, in the heart of the zone, (?:begin|start|stand) at the meeting of two broad rivers/);
+assert.ok(riverStart.evidence.uniqueStart.coordinate,'river landmark includes a reachable dry-bank coordinate');
+const riverEnd=layoutFor('cyan',54,43); // An unambiguous map-edge river end is another valid starting landmark.
+riverEnd.rivers=[{id:'one-main-channel',width:6,nodes:[[0,20],[20,20],[40,38],[69,38]]}];
+for(const [col,row] of [[0,20],[20,20],[40,38],[69,38]])riverEnd.tiles[row][col]={type:'river'};
+const riverEndVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:riverEnd,instance:riverEnd.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true,seed:'river-at-zone-rim'});
+assert.equal(riverEndVerse.ok,true,'a single main river meeting the border gives a grounded start');
+assert.equal(riverEndVerse.evidence.uniqueStart.kind,'riverEnd');
+assert.match(riverEndVerse.text,/the broad river where it meets the (?:west|east) edge/);
+assert.match(riverEndVerse.text,/^In Northern Cliffs, in /,'river anchors also announce their position within the zone');
+for(let seed=0;seed<50;seed++){
+  const poem=Riddles.generate({zoneId:'map_northern_cliffs',layout:riverNetwork,instance:riverNetwork.localeInstances[0],
+    targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true,seed:'river-seed-'+seed});
+  assert.equal(poem.ok,true,'river junction openings preserve valid rhymes across seeds');
+  assert.equal(Riddles.validate(poem),true);
+}
+const removedWater=layoutFor('cyan',54,43); // River metadata alone does not prove the channel still exists after a Shift.
+removedWater.rivers=riverNetwork.rivers;
+const staleRiver=Riddles.generate({zoneId:'map_northern_cliffs',layout:removedWater,instance:removedWater.localeInstances[0],
+  targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true});
+assert.equal(staleRiver.ok,false,'dry tiles reject stale river centerlines rather than inventing an anchor');
+const narrowRiver=layoutFor('cyan',54,43); // A narrow stream must not be described as a massive river.
+narrowRiver.rivers=[{id:'small-water',width:2,nodes:[[0,20],[20,20],[40,38],[69,38]]}];
+narrowRiver.tiles[20][0]={type:'river'};narrowRiver.tiles[38][69]={type:'river'};
+assert.equal(Riddles.generate({zoneId:'map_northern_cliffs',layout:narrowRiver,
+  instance:narrowRiver.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',requireUniqueStart:true}).ok,false);
 
 const cliffDoorClue = Riddles.generate({
   zoneId:'map_northern_cliffs', layout:layoutFor('cyan'), instance:layoutFor('cyan').localeInstances[0],
