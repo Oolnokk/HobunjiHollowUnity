@@ -72,9 +72,11 @@ function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,
     overrides.set(key,canvas);
     const result={...target,url:key};
     const behindSprite=source?._layers?.find(item=>item.name===sprite.name+'.behindImage');
-    if(behindSprite){
+    const authoredRear=fitRegion()==='headwear'&&R.headbandRearCanvas&&i===sourceLayers.findIndex(pair=>pair.sprite.view==='front')
+      ?headwearWarpForView('back') : null; // Custom rear art takes priority over existing behindImage only for the selected front headband layer.
+    if(behindSprite||authoredRear){
       const behindKey=`${target.behindUrl||meta.behindUrl||target.url}#fit-behind-${previewTag}-${i}`;
-      const rear=warpClothing(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height);
+      const rear=authoredRear||warpClothing(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height);
       const rearCanvas=document.createElement('canvas');rearCanvas.width=rear.width;rearCanvas.height=rear.height;
       const rearCtx=rearCanvas.getContext('2d',{alpha:true});rearCtx.globalAlpha=opacity;rearCtx.drawImage(rear,0,0);
       rearCanvas.naturalWidth=rearCanvas.width;rearCanvas.naturalHeight=rearCanvas.height;
@@ -140,7 +142,8 @@ async function composeRuntimePortrait(){
       if(!cloth)return;
       const back=cloth._back?(warp?currentWarp(cloth._back):cloth._back):null;
       const front=cloth._front?(warp?currentWarp(cloth._front):cloth._front):null;
-      const behindView=cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null;
+      const customRear=warp&&R.headbandRearCanvas?headwearWarpForView('back'):null;
+      const behindView=customRear||(cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null); // The authored behindImage replaces fallback mirrored front art.
       if(back){
         const rearLayer=await rawGarmentToRuntimeLayer(back,opacity);
         if(rearLayer){
