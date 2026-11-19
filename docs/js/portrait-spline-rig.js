@@ -196,60 +196,94 @@
 
   function fitHood(hood, rig, beardCanvases = []) {
     if (!hood) return null;
-    const context = hood.getContext('2d');
-    const image = context.getImageData(0, 0, MASK_SIZE, MASK_SIZE);
-    const opening = decodePixelMask(rig.hoodOpeningMask);
-    if (opening.includes(1)) {
-      const beardAlpha = beardCanvases.map(canvas => {
-        if (canvas.width === MASK_SIZE && canvas.height === MASK_SIZE) {
-          return canvas.getContext('2d').getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
-        }
-        const aligned = document.createElement('canvas'); // Sample alternate portrait sizes in the same mask UVs.
-        aligned.width = aligned.height = MASK_SIZE;
-        const draw = aligned.getContext('2d', { willReadFrequently: true });
-        draw.drawImage(canvas, 0, 0, MASK_SIZE, MASK_SIZE);
-        return draw.getImageData(0, 0, MASK_SIZE, MASK_SIZE).data;
-      });
-      for (let i = 0; i < opening.length; i++) {
-        if (opening[i] && !beardAlpha.some(pixels => pixels[i * 4 + 3] >= 8)) opening[i] = 0;
+    const ctx=hood.getContext('2d'),image=ctx.getImageData(0,0,MASK_SIZE,MASK_SIZE);
+    const source=new Uint8ClampedArray(image.data); // The original hood colors remain the warp source, never already-cleared pixels.
+    const painted=decodePixelMask(rig.hoodOpeningMask);
+    const aperture=new Uint8Array(MASK_SIZE*MASK_SIZE); // Actual elastic hole, exported for GPU clipping and motion pinning.
+    const hair=new Uint8Array(aperture.length); // Union of all beard layers in portrait UVs; no canvas size assumptions.
+    const stretch=clamp(Math.round(finite(rig.hoodStretchPx,12)),0,32);
+    for(const canvas of beardCanvases){
+      if(!canvas)continue;
+      let reference=canvas;
+      if(canvas.width!==MASK_SIZE||canvas.height!==MASK_SIZE){
+        reference=document.createElement('canvas');reference.width=reference.height=MASK_SIZE;
+        reference.getContext('2d').drawImage(canvas,0,0,MASK_SIZE,MASK_SIZE);
+      }
+      const pixels=reference.getContext('2d').getImageData(0,0,MASK_SIZE,MASK_SIZE).data;
+      for(let i=0;i<hair.length;i++)if(pixels[i*4+3]>=8)hair[i]=1;
+    }
+    const queue=new Uint16Array(aperture.length),distance=new Uint8Array(aperture.length);
+    distance.fill(255);
+    let tail=0,head=0;
+    for(let i=0;i<painted.length;i++){
+      if(!painted[i])continue;
+      // Authored openings are seeds, not arbitrary transparent cuts through the hood.
+      // A clicked transparent hole may sit one or two pixels beside the beard's edge.
+      if(hair[i]){distance[i]=0;aperture[i]=1;queue[tail++]=i;continue;}
+      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+        if(Math.abs(dx)+Math.abs(dy)>2)continue;
+        const xx=x+dx,yy=y+dy;
+        if(xx<0||yy<0||xx>=MASK_SIZE||yy>=MASK_SIZE)continue;
+        const at=yy*MASK_SIZE+xx;
+        if(hair[at]&&distance[at]===255){distance[at]=0;aperture[at]=1;queue[tail++]=at;}
       }
     }
-    const hasOpening = opening.includes(1);
-    if (hasOpening) {
-      const source = new Uint8ClampedArray(image.data); // Sample the original cloth throughout the opening deformation.
-      const reach = 3; // Pull the nearby cloth rim outward around the painted opening.
-      const nearest = new Int32Array(opening.length).fill(-1);
-      const distance = new Uint8Array(opening.length).fill(reach * reach + 1);
-      for (let i = 0; i < opening.length; i++) {
-        if (!opening[i]) continue;
-        const x = i % MASK_SIZE, y = Math.floor(i / MASK_SIZE);
-        for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
-          const px = x + dx, py = y + dy, d = dx * dx + dy * dy;
-          if (px < 0 || py < 0 || px >= MASK_SIZE || py >= MASK_SIZE || d > reach * reach) continue;
-          const at = py * MASK_SIZE + px;
-          if (d < distance[at]) { distance[at] = d; nearest[at] = i; }
-        }
-      }
-      for (let i = 0; i < opening.length; i++) {
-        if (opening[i]) { image.data[i * 4 + 3] = 0; continue; }
-        const edge = nearest[i];
-        if (edge < 0 || distance[i] >= reach * reach) continue;
-        const x = i % MASK_SIZE, y = Math.floor(i / MASK_SIZE);
-        const dx = x - edge % MASK_SIZE, dy = y - Math.floor(edge / MASK_SIZE);
-        const pull = (reach - Math.sqrt(distance[i])) / reach;
-        const sample = Math.round(y - dy * pull) * MASK_SIZE + Math.round(x - dx * pull);
-        image.data.set(source.subarray(sample * 4, sample * 4 + 4), i * 4);
+    // A four-connected flood across *real hair pixels* expands the opening into an
+    // elastic fit around its silhouette, bounded so it never carves a remote hole.
+    for(;head<tail;head++){
+      const i=queue[head],next=distance[i]+1;
+      if(next>stretch)continue;
+      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+      for(const at of [x?i-1:-1,x<MASK_SIZE-1?i+1:-1,y?i-MASK_SIZE:-1,y<MASK_SIZE-1?i+MASK_SIZE:-1]){
+        if(at<0||!hair[at]||distance[at]<=next)continue;
+        distance[at]=next;aperture[at]=1;queue[tail++]=at;
       }
     }
-    if (hasOpening) context.putImageData(image, 0, 0);
-    const overlap = decodePixelMask(rig.hoodOverlapMask);
-    const rigidOverlap = decodePixelMask(rig.hoodRigidOverlapMask);
-    const coverage = new Uint8Array(opening.length); // Per-pixel hood coverage in the posed portrait coordinate space.
-    for (let i = 0; i < coverage.length; i++) {
-      coverage[i] = image.data[i * 4 + 3] >= 8 ? 1 : 0;
-      overlap[i] = coverage[i] ? (rigidOverlap[i] ? 2 : overlap[i]) : 0;
+    const core=aperture.slice();
+    // One-pixel clearance prevents bilinear sampling of a black hood edge across a beard pixel.
+    for(let i=0;i<core.length;i++)if(core[i]){
+      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+      if(x)aperture[i-1]=1;
+      if(x<MASK_SIZE-1)aperture[i+1]=1;
+      if(y)aperture[i-MASK_SIZE]=1;
+      if(y<MASK_SIZE-1)aperture[i+MASK_SIZE]=1;
     }
-    return { canvas: hood, coverage, overlap };
+    let stretchedPixels=0,openingPixels=0;
+    for(let i=0;i<aperture.length;i++){
+      if(!aperture[i])continue;
+      image.data[i*4+3]=0;openingPixels++;
+    }
+    // Draw a continuous cloth rim around the reshaped hole: pixels still owned
+    // by the hood can sample neighboring original cloth, but never sample the new void.
+    const rim=4;
+    for(let i=0;i<aperture.length;i++){
+      if(aperture[i]||source[i*4+3]<8)continue;
+      const x=i%MASK_SIZE,y=(i/MASK_SIZE)|0;
+      let nearest=-1,best=rim*rim+1;
+      for(let dy=-rim;dy<=rim;dy++)for(let dx=-rim;dx<=rim;dx++){
+        const px=x+dx,py=y+dy,d=dx*dx+dy*dy;
+        if(px<0||py<0||px>=MASK_SIZE||py>=MASK_SIZE||d>=best||d>rim*rim)continue;
+        const j=py*MASK_SIZE+px;
+        if(aperture[j]){best=d;nearest=j;}
+      }
+      if(nearest<0||best===0)continue;
+      const dx=x-nearest%MASK_SIZE,dy=y-((nearest/MASK_SIZE)|0);
+      const distanceFromRim=Math.sqrt(best),pull=(rim-distanceFromRim)/rim;
+      const sx=clamp(Math.round(x-dx*pull*.7),0,MASK_SIZE-1);
+      const sy=clamp(Math.round(y-dy*pull*.7),0,MASK_SIZE-1);
+      const at=sy*MASK_SIZE+sx;
+      if(source[at*4+3]<8)continue; // Never smear transparent black into the resized aperture.
+      image.data.set(source.subarray(at*4,at*4+4),i*4);stretchedPixels++;
+    }
+    if(openingPixels||stretchedPixels)ctx.putImageData(image,0,0);
+    const overlap=decodePixelMask(rig.hoodOverlapMask),rigidOverlap=decodePixelMask(rig.hoodRigidOverlapMask);
+    const coverage=new Uint8Array(aperture.length);
+    for(let i=0;i<coverage.length;i++){
+      coverage[i]=image.data[i*4+3]>=8?1:0;
+      overlap[i]=coverage[i]?(rigidOverlap[i]?2:overlap[i]):0;
+    }
+    return {canvas:hood,coverage,overlap,aperture,openingPixels,stretchedPixels};
   }
 
   function hoodOcclusion(THREE, material) {
@@ -549,7 +583,8 @@
       for (let i = 0; i < rest.count; i++) {
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
         if (frontMotion[i] === 0) continue; // Fixed vertices were initialized directly from the portrait plane.
-        const p=deformPosition(rig,posed.points,u,v,width,height,false,frontMotion[i],hoodFit?.overlap[frontPixels[i]]);
+        const motion=hoodFit?.aperture?.[frontPixels[i]]?0:frontMotion[i]; // The strand at the elastic hood opening stays seated even in a gust.
+        const p=deformPosition(rig,posed.points,u,v,width,height,false,motion,hoodFit?.overlap[frontPixels[i]]);
         rest.setXYZ(i,p.x,p.y,p.z);
       }
       if(rearPositions) for (let i = 0; i < rearPositions.count; i++) {
