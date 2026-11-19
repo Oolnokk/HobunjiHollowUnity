@@ -61,7 +61,7 @@ window.SCRATCHBONES_CONFIG = {
           {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
           {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
         ],
-        // Small forest/mire hunters: deep, muted mossy greens, blue-moss and greener bog-olive are common,
+        // Small forest/mire hunters: deep, muted yellow, green and blue marsh pigments lead,
         // while brown/grey coats remain possible. Weights feed wild nests, fertile eggs and breeding.
         "pingdort": [
           {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:5},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
@@ -74,6 +74,17 @@ window.SCRATCHBONES_CONFIG = {
           {id:'lichen',name:'Lichen Green',hex:'#a3a77e',weight:4},{id:'deep-pine',name:'Deep Pine',hex:'#354b3f',weight:1},
           {id:'blue-moss',name:'Blue Moss',hex:'#4a5d61',weight:8},
           {id:'bog-olive',name:'Bog Olive',hex:'#687149',weight:8},
+          // More marsh pigments: three muted yellow, three green and three blue/teal options;
+          // weight 6 keeps each common while the three established reference coats retain weight 8.
+          {id:'peat-mustard',name:'Peat Mustard',hex:'#786947',weight:6},
+          {id:'reed-yellow',name:'Reed Yellow',hex:'#7b8155',weight:6},
+          {id:'silt-ochre',name:'Silt Ochre',hex:'#5b6546',weight:6},
+          {id:'dusk-moss',name:'Dusk Moss',hex:'#344d43',weight:6},
+          {id:'kelp-green',name:'Kelp Green',hex:'#4e6958',weight:6},
+          {id:'marsh-sage',name:'Marsh Sage',hex:'#66745d',weight:6},
+          {id:'slatewater-blue',name:'Slatewater Blue',hex:'#495769',weight:6},
+          {id:'rainpool-blue',name:'Rainpool Blue',hex:'#4d606b',weight:6},
+          {id:'fen-teal',name:'Fen Teal',hex:'#426061',weight:6},
         ],
         // Nelk favor pale and middle tones; the darkest coats remain inheritable, but uncommon.
         "nelk": [
