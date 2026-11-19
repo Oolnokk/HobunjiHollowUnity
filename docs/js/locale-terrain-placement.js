@@ -686,6 +686,8 @@
         if (Math.abs(tileTier(context, c, r) - targetTier) > 0.05) continue;
         if ((context.workspace.localeInstances || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7)) continue;
         if ((context.workspace.rootTotems || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 4)) continue;
+        if ((context.workspace.localeInstances || []).some(other => other.blossomStartLandmark &&
+          Math.hypot(c - other.blossomStartLandmark.col, r - other.blossomStartLandmark.row) < 5)) continue; // Distinct patterned debris cannot overlap another blossom's reserved physical marker.
         const steps = Math.ceil(distance); // Reject a direct opening leg cut by a river, canyon, cliff, or unwalkable boundary.
         let connected = true;
         for (let step = 1; step < steps; step++) {
@@ -898,7 +900,12 @@
     const blossomStartLandmark = chooseBlossomStartLandmark(context, compiled, search.best); // Saved beside the stamped tree; no waypoint or extra full-map pass.
     if (blossomStartLandmark?.replacedTree) clearNativeTreeCircle(context, blossomStartLandmark.col, blossomStartLandmark.row, 0); // Debris replaces, never overlaps, its original tree.
     context.claimed = context.claimed || new Set(); // Footprints and claimed clue sites prevent later terrain-aware locales from overwriting earlier placements.
-    if (blossomStartLandmark) context.claimed.add(sourceKey(blossomStartLandmark.col, blossomStartLandmark.row)); // Reserve this physical marker before the next blossom or cave is placed.
+    if (blossomStartLandmark) {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const c = blossomStartLandmark.col + dc, r = blossomStartLandmark.row + dr; // One-tile clearance around each persistent boulder or authored pillar.
+        if (tileRecord(context.root, c, r)) context.claimed.add(sourceKey(c, r)); // Later locale footprints cannot stamp over visible engraving.
+      }
+    }
     for (const cell of compiled.tiles.values()) paintLocaleTile(context, compiled, search.best, cell);
     for (const cell of compiled.tiles.values()) context.claimed.add(sourceKey(search.best.anchorC + cell.c, search.best.anchorR + cell.r));
     const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
