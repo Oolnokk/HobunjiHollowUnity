@@ -1209,6 +1209,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/animal-chathead-frame.js?v=20261116skeeriChathead2"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261108kiss5"></script>
+<script src="../../js/animation-author-creature-gameplay-parity.js?v=20261118nativeSizeFloor1"></script> <!-- Shared game creature dimensions and floor solver. -->
 <script src="rig-preview-species.js?v=20261117mootMother1"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261116gripPose1"></script>
 <script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script>
@@ -13510,7 +13511,9 @@ function syncCreatureGroundReferenceV1543(actor, sizeClass) {
   actor.visualOffset.updateMatrixWorld(true);
   const visualWorld = new THREE.Vector3(); // Fixed animal preview origin after suppressing only its saved Y correction.
   actor.visualOffset.getWorldPosition(visualWorld);
-  const offset = creatureGroundOffsetV1542(actor, sizeClass);
+  const offset = window.AnimationAuthorCreatureGameplayParity?.placement(
+    attachmentRigProfileForActor(actor), sizeClass, actor.shoulderRestModelDimensions?.modelHeight)?.groundLift
+    ?? creatureGroundOffsetV1542(actor, sizeClass); // Auto/0 uses half the scaled model height.
   const groundWorldY = visualWorld.y - offset; // The authored value is the full distance from this fixed creature origin down to its floor reference.
   const groundLocal = visualWorld.clone();
   rigRoot.worldToLocal(groundLocal);
@@ -13686,7 +13689,7 @@ serializeAttachmentRigLibrary = function() {
   data.schema = animationAuthor.attachmentRigSchema;
   data.creatureGroundOffsetSemantics = {
     profileField: 'profiles.creatures.<kind>.groundOffsets.<small|medium|large>',
-    coordinateSpace: 'world/gameplay Y correction added after automatic sprite grounding',
+    coordinateSpace: 'absolute floor-to-creature-origin lift replacing automatic half-height grounding',
     runtimeUnit: 'world units',
     preview: 'animal remains fixed while the ground-reference plane moves by the inverse offset',
   };
@@ -15589,6 +15592,128 @@ clearAnimationActors = function(...args) {
   }); // Inspector diagnostics are readable directly from mobile without a browser console.
   log('Belt-stowed Rig Coordinates installed: species/gender save and export, move/rotate gizmo, scale, torch preview.');
 })();
+
+  // V15.54: scale and ground parity between gameplay and both creature authoring workspaces.
+  const parityV1554 = window.AnimationAuthorCreatureGameplayParity; // Standalone module reads the live game rig master rather than another editor snapshot.
+  if (parityV1554) {
+    const profileCountV1554 = parityV1554.installRepositoryDefaults(DEFAULT_ATTACHMENT_RIG_PROFILE_LIBRARY_V1516); // Reset values always match the game.
+    parityV1554.installRepositoryDefaults(animationAuthor.attachmentRigProfiles); // Replace stale V15.24 animal defaults before the async project load.
+    for (const kind of Object.keys(animationAuthor.attachmentRigProfiles.creatures)) syncCreatureTransformGroundOffsetsFromRigV1544(kind);
+
+    const oldNormalizeV1554 = normalizedRigProfileLibrary; // Preserve all existing import migrations, including belts.
+    normalizedRigProfileLibrary = function(source = {}) {
+      return parityV1554.normalizeImported(oldNormalizeV1554(source), source);
+    };
+    function layoutV1554(actor, sizeClass = actor?.creatureSizeClass) {
+      if (actor?.source?.type !== 'creature') return null;
+      const modelHeight = Number(actor.shoulderRestModelDimensions?.modelHeight)
+        || Number(actor.model?.userData?.modelHeight) || 0; // Unscaled native PNG height, fixed when the actor is created.
+      return parityV1554.placement(attachmentRigProfileForActor(actor), sizeClass, modelHeight);
+    }
+    const oldScaleV1554 = applyCreaturePlaneScaleV1513; // Existing anchor sockets and plane parent are retained.
+    applyCreaturePlaneScaleV1513 = function(actor, sizeClass = actor?.creatureSizeClass) {
+      const result = oldScaleV1554(actor, sizeClass);
+      const layout = layoutV1554(actor, sizeClass);
+      if (!result || !layout || !actor.creaturePlaneScaleRoot) return result;
+      actor.creaturePlaneScaleRoot.scale.set(1, layout.heightScale, layout.widthScale); // The ±90° animal planes display group Z as WIDTH, not X (depth).
+      actor.creaturePlaneScaleRoot.updateMatrixWorld(true);
+      updateActorRigAttachmentSocketsV1513(actor);
+      actor.model.userData.creatureBillboardScale = { ...layout.groupScale }; // Actual Three.js axes, separate from authored PNG X/Y input semantics.
+      return result;
+    };
+    const oldClassV1554 = applyCreatureSizeClass; // Original control still chooses the class and handles gizmos/attachments.
+    applyCreatureSizeClass = function(actor, sizeClass, options = {}) {
+      const result = oldClassV1554(actor, sizeClass, options);
+      const layout = layoutV1554(actor, sizeClass);
+      if (!result || !layout) return result;
+      actor.visualOffset.position.y = layout.groundLift; // Authored floor-to-origin height REPLACES Auto half-height, never stacks onto it.
+      actor.visualOffset.updateMatrixWorld(true);
+      if (actor.attachment?.enabled) updateActorAttachmentAlignment(actor);
+      actor.model.userData.creatureGameplayPreview = layout; // Render-time values for the mobile status panel.
+      animationAuthor.selectionBox?.update();
+      return result;
+    };
+    const oldGridV1554 = syncAnimationAuthorFloorGridV1538; // Only the flat multi-avatar world has its old -0.55 floor corrected.
+    syncAnimationAuthorFloorGridV1538 = function() {
+      if (animationAuthor.mode !== 'multi') return oldGridV1554();
+      if (state.three.grid) { state.three.grid.position.y = 0; state.three.grid.updateMatrixWorld?.(true); }
+      return 0;
+    };
+    const oldAddV1554 = addCreatureAnimationActor; // Native species dimensions, compositing and head rigs stay unchanged.
+    addCreatureAnimationActor = async function(kind, frame = 'idle', options = {}) {
+      const actor = await oldAddV1554(kind, frame, options);
+      applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
+      return actor;
+    };
+    const oldImportV1554 = importAnimationProjectData; // A late saved-project transform cannot undo the game dimensions.
+    importAnimationProjectData = async function(data, options = {}) {
+      const result = await oldImportV1554(data, options);
+      for (const actor of animationAuthor.actors) if (actor.source?.type === 'creature')
+        applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
+      syncAnimationAuthorFloorGridV1538();
+      return result;
+    };
+    const oldModeV1554 = setAnimationAuthorMode; // Reapply cached actor transforms on mode return.
+    setAnimationAuthorMode = async function(mode, ...args) {
+      const result = await oldModeV1554(mode, ...args);
+      for (const actor of animationAuthor.actors) if (actor.source?.type === 'creature')
+        applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
+      syncAnimationAuthorFloorGridV1538();
+      return result;
+    };
+    function parityReadoutV1554(actor = selectedAnimationActor()) {
+      if (actor?.source?.type !== 'creature') return null;
+      const profile = attachmentRigProfileForActor(actor);
+      const height = actor.shoulderRestModelDimensions?.modelHeight;
+      const gameProfile = parityV1554.canonicalCreatures()?.[actor.source.kind];
+      const layout = layoutV1554(actor);
+      return {
+        species: actor.source.kind, sizeClass: layout.sizeClass, effective: layout,
+        game: gameProfile ? parityV1554.placement(gameProfile, actor.creatureSizeClass, height) : null,
+        previewOriginY: actor.visualOffset?.position.y,
+        billboardScale: actor.creaturePlaneScaleRoot?.scale ? { ...actor.creaturePlaneScaleRoot.scale } : null,
+      }; // Public mobile-friendly debug with game values and actual rendered transforms.
+    }
+    function showParityV1554() {
+      const actor = selectedAnimationActor();
+      const inspector = $('maaInspector');
+      if (!inspector || actor?.source?.type !== 'creature') return;
+      const profile = attachmentRigProfileForActor(actor);
+      const rows = ['small', 'medium', 'large'].map(size => {
+        const info = parityV1554.placement(profile, size, actor.shoulderRestModelDimensions?.modelHeight);
+        return (size === actor.creatureSizeClass ? '● ' : '') + size + ': width '
+          + (info.widthScale * 100).toFixed(1) + '%, height ' + (info.heightScale * 100).toFixed(1)
+          + '%, ground ' + info.groundLift.toFixed(3) + ' (' + info.groundMode + ')';
+      }); // All class values are inspected in one view without modifying the actor.
+      const card = document.createElement('div'); // Existing scrollable inspector means no console/devtools are required on mobile.
+      card.className = 'maaRigStatus';
+      card.style.marginTop = '8px';
+      const title = document.createElement('b');
+      title.textContent = 'Gameplay size / ground parity';
+      const detail = document.createElement('div');
+      detail.className = 'maaSmall';
+      detail.style.whiteSpace = 'pre-line';
+      detail.textContent = rows.join('\n');
+      card.append(title, detail);
+      inspector.appendChild(card);
+    }
+    const oldMultiInspectorV1554 = renderAnimationInspector; // Keep the editor's existing animation controls intact.
+    renderAnimationInspector = function(...args) {
+      const result = oldMultiInspectorV1554(...args);
+      if (animationAuthor.mode === 'multi') showParityV1554();
+      return result;
+    };
+    const oldRigInspectorV1554 = renderAttachmentRigInspector; // Keep Ground Y offsets editable in Rig Coordinates.
+    renderAttachmentRigInspector = function(...args) {
+      const result = oldRigInspectorV1554(...args);
+      if (animationAuthor.mode === 'rig') showParityV1554();
+      return result;
+    };
+    window.MultiAvatarAnimationAuthor.creatureGameplayParity = parityReadoutV1554;
+    window.MultiAvatarAnimationAuthor.canonicalCreatureProfileCount = profileCountV1554;
+    syncAnimationAuthorFloorGridV1538();
+    log('V15.54 animal parity: ' + profileCountV1554 + ' canonical game profiles, billboard Z-width, authored/Auto floor lifts.');
+  } else log('Creature gameplay parity script missing; preview size and floor cannot be verified.', 'warn');
 
 })();
 </script>
