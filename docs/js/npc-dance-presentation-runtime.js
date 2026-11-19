@@ -393,10 +393,10 @@
     const scratch = document.createElement('canvas');
     scratch.width = source.width;
     scratch.height = source.height;
-    await preview.renderProfileToCanvas(scratch, profile, {
+    if (await preview.renderProfileToCanvas(scratch, profile, {
       seatId,
       forceEyesOpen: true,
-    });
+    }) === false) throw new Error('NPC dance expression renderer declined the draw.');
     return scratch;
   }
 
@@ -442,6 +442,7 @@
         const desired = record.desired;
         const generation = record.generation;
         const walker = record.walker;
+        const profileAtStart = walker?.profile; // Prevent an old smile bake from overwriting a wardrobe refresh.
         const seatId = `world-dance:${record.id}`;
         let scratch;
         try {
@@ -454,7 +455,8 @@
         }
         // A dance may have ended/restarted while portrait assets were loading.
         // Never commit an obsolete expression frame to the live texture.
-        if (generation !== record.generation || desired !== record.desired || walker !== record.walker) continue;
+        if (generation !== record.generation || desired !== record.desired || walker !== record.walker
+            || walker?.profile !== profileAtStart) continue; // Profile identity changes only after the current outfit was committed.
         if (!commitExpressionCanvas(walker, scratch)) {
           record.lastError = 'PNGPlaneAvatar refresh failed';
           record.nextRetryAt = nowMs() + 1200;

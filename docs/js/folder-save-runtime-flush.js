@@ -24,10 +24,10 @@
   function persistMemberIfInventoryChanged() {
     const nextFingerprint = inventoryFingerprint(); // Snapshot of live bag contents after the livestock operation.
     if (!nextFingerprint || nextFingerprint === lastInventoryFingerprint) return;
-    lastInventoryFingerprint = nextFingerprint;
     if (typeof saveMemberWorldData !== 'function') return;
     try {
-      saveMemberWorldData();
+      if (saveMemberWorldData() === false) throw new Error('Member inventory serializer rejected livestock inventory write.');
+      lastInventoryFingerprint = nextFingerprint; // Advance only after persistence succeeds; an unchanged bag must retry after a failure.
       livestockInventoryFlushCount++;
       lastError = '';
     } catch (error) {
@@ -104,8 +104,10 @@
       // saveMemberWorldData is the canonical write of the live general bag,
       // relationships, quest/world-member state, etc. The folder mirror must
       // never run first or it can faithfully copy an older localStorage image.
-      window.CharacterMetaSave?.flush?.();
-      if (typeof saveMemberWorldData === 'function') saveMemberWorldData();
+      if (window.CharacterMetaSave?.flush?.() === false) throw new Error('Character metadata flush rejected the write.');
+      if (typeof saveMemberWorldData === 'function' && saveMemberWorldData() === false) {
+        throw new Error('Member save serializer rejected the write; browser/folder sync was not completed.');
+      }
       if (typeof saveFarmLayout === 'function' && saveFarmLayout() === false) {
         // FarmEditor returns false when its restore guard rejects an unsafe snapshot.
         // Never report a successful quit/explicit folder sync based on the member save alone.

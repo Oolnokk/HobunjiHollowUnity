@@ -125,4 +125,14 @@ assert.ok(!baseFrame(renderer, scene).map(p => p.name).includes('plate-score-ink
 // 7. The structure-epoch wrappers keep returning the wrapped method's own result.
 { const fresh = new Scene(); assert.equal(fresh.add(), fresh, 'wrapped add() still returns what the original returned'); assert.equal(fresh.remove(), fresh); assert.equal(fresh.clear(), fresh); }
 
+// Unrelated scenes and detached staging groups cannot invalidate this scene's cache.
+const existingScans = traversals;
+const unrelatedScene = makeScene([]);
+const detachedGroup = new Object3D();
+detachedGroup.add(popup('detached'));
+unrelatedScene.add(popup('another-world'));
+detachedGroup.clear();
+baseFrame(renderer, scene);
+assert.equal(traversals, existingScans, 'unrelated and detached graph mutations do not rescan the active world');
+
 console.log('World text overlay scan cache checks passed.');

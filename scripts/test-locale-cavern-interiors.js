@@ -132,7 +132,10 @@ assert(!gameIndexSource.includes('id="npcPortraitCanvas"') && !gameIndexSource.i
 assert(!dialogueStyleSource.includes('#npcPortraitCanvas') && !dialogueStyleSource.includes('#npcPortraitWrap'), 'legacy screen-space NPC portrait CSS must be removed');
 assert(!gameSource.includes('_npcPortraitCanvas'), 'game runtime must not retain a viewport portrait canvas handle');
 assert(!dialogueSource.includes('_npcPortraitCanvas'), 'dialogue renderer must not draw expressions into a viewport portrait canvas');
-assert(dialogueSource.includes('renderProfileToCanvas(walker.avatarFrontCanvas'), 'dialogue expression/yap rendering must update the existing world-space NPC avatar');
+assert(dialogueSource.includes('renderProfileToCanvas(slot.canvas, profile, renderOptions)') &&
+  dialogueSource.includes('ctx.drawImage(slot.canvas, 0, 0)') &&
+  dialogueSource.includes('refreshSinglePlaneAvatarModel(group, live)'),
+  'dialogue expression/yap rendering must stage privately, then promote into the existing world-space NPC avatar');
 assert(gameIndexSource.indexOf('js/cinematic-camera-runtime.js') < gameIndexSource.indexOf('js/dialogue-content.js'), 'world-space camera runtime must load before dialogue content');
 assert(gameSource.includes('function _namedAnimalFaceWorldPosition(walker)') && gameSource.includes('headBone.localToWorld(face)'), 'named-animal dialogue targeting must resolve the live transformed face rather than unscaled standing height');
 assert(gameSource.includes('resolveSkinnedPixelWorldPosition(walker.avatarGroup, centroid)'), 'humanoid dialogue targeting must resolve the live skinned head centroid');

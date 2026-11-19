@@ -239,7 +239,7 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
  assert(choreographyOffset>game.indexOf('function updatePlayerMesh(dt)'), 'paired pose runs after the player mesh update function is defined');
  assert(game.lastIndexOf("window.RuntimeFrameScheduler.checkpoint('pre-render');",choreographyOffset)<choreographyOffset,'paired dance must run AFTER ordinary pre-render subscribers');
  assert(game.indexOf('renderWorldPasses(now);',choreographyOffset)>choreographyOffset,'paired dance must run BEFORE the actual world render');
- const a=game.indexOf('      function computeActionButtonsImpl() {'),b=game.indexOf('\n      // Fallback anchor',a);
+ const a=game.indexOf('      function computeActionButtonsImpl(context = null) {'),b=game.indexOf('\n      // Fallback anchor',a);
  const context=vm.createContext({window:{FestivalWheelDanceRuntime:{isActive:()=>true,cameraButton:()=>({action:'festival_dance_view',inputAction:'action2'})},FestivalSystem:{actionButton:()=>({action:'festival_stop_dance'})}}});
  vm.runInContext(game.slice(a,b),context);
  assert.deepEqual(Array.from(context.computeActionButtonsImpl(),b=>b.action),['festival_stop_dance','festival_dance_view']);

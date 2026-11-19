@@ -27692,10 +27692,10 @@
       // it. This wrapper measures computeActionButtons()'s own real call
       // frequency directly instead of guessing further from a 40+-call-site
       // trace through the file.
-      function computeActionButtons() {
+      function computeActionButtons(context = null) {
         const _cabStart = performance.now();
         try {
-          const buttons = computeActionButtonsImpl(); // Ripe crops claim the primary world-action slot even while food or a flask is held.
+          const buttons = computeActionButtonsImpl(context); // Ripe crops claim the primary world-action slot even while food or a flask is held.
           const harvestIndex = buttons.findIndex(button => button.action === 'harvest' && button.allowed); // Used to move only an actionable crop ahead of held-item defaults.
           if (harvestIndex > 0) buttons.unshift(buttons.splice(harvestIndex, 1)[0]);
           return buttons;
@@ -27705,6 +27705,11 @@
       }
       function eligibleWorldButtons(buttons) {
         return (buttons || []).filter(button => window.GameplayInputRouter?.canOfferWorldAction?.(button) !== false); // Combat-ineligible holds must relinquish their action slot to the normal weapon/tool actions.
+      }
+      function buttonsForWorldObject(object, reticle, context) {
+        const buttons = object?.getButtons?.(reticle) || []; // One provider invocation per action-bar refresh.
+        if (context?.objectActionIds) for (const button of buttons) context.objectActionIds.add(button.action);
+        return eligibleWorldButtons(buttons);
       }
       function adventuringToolActionButtons() {
         const reticle = getReticleTile(); // Independent of the targeted world object or an underground floor tile.
@@ -27748,7 +27753,7 @@
         }, nearbyActions[0]]; // Campfire takes only Action 2, never Action 1.
       }
 
-      function computeActionButtonsImpl() {
+      function computeActionButtonsImpl(context = null) {
         const farmworkActions = window.FarmworkUI?.actionButtons?.();
         if (farmworkActions) return farmworkActions;
         if(window.FestivalWheelDanceRuntime?.isActive?.())return [window.FestivalSystem?.actionButton?.(),window.FestivalWheelDanceRuntime.cameraButton()].filter(Boolean); // Paired dance owns Stop and View before furniture/NPC targeting can replace them.
@@ -28006,7 +28011,7 @@
           return [];
         }
 
-        const reticle = getReticleTile();
+        const reticle = context?.reticle || getReticleTile();
 
         // Farm/zone: show spot transition button (house entrance, town exit, etc.)
         if ((currentArea === 'farm' || _isZoneArea(currentArea)) && _pendingSpotTransition) {
@@ -28015,8 +28020,8 @@
           const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
-          const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
-          if (obj2) eligibleWorldButtons(obj2.getButtons(reticle)).forEach(b => btnsSpot.push(b));
+          const obj2 = context?.aimedObject !== undefined ? context.aimedObject : getAimedFarmInteractionObject(reticle.col, reticle.row);
+          if (obj2) buttonsForWorldObject(obj2, reticle, context).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
 
@@ -28119,11 +28124,8 @@
         // live in _buildingInteractables instead, same as building interiors.
         const obj = currentArea === 'town'
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
-          : getAimedFarmInteractionObject(reticle.col, reticle.row);
-        if (obj) {
-          const objBtns = eligibleWorldButtons(obj.getButtons(reticle));
-          objBtns.forEach(b => btns.push(b));
-        }
+          : context?.aimedObject !== undefined ? context.aimedObject : getAimedFarmInteractionObject(reticle.col, reticle.row);
+        if (obj) buttonsForWorldObject(obj, reticle, context).forEach(b => btns.push(b));
 
         // 0b. Harvest, same priority tier as a world object (a ready crop
         // should behave exactly like picking a wild herb/berry: available
@@ -28250,12 +28252,13 @@
         const selectedItem = getActiveInventoryItem(stacks);
         const selectedItemKey = selectedItem?.key || '';
         const selectedItemCount = selectedItemKey ? (inventory[selectedItemKey] || 0) : 0;
-        const btns = computeActionButtons();
+        const actionContext = { reticle, aimedObject: obj, objectActionIds: new Set() }; // Pass aimed object and provider responses through this one action-bar refresh.
+        const btns = computeActionButtons(actionContext);
         const archLayout = window.ActionPromptUI.createActionArchLayout(btns, heldMode, sitInteraction); // Shared physical placement also drives floating prompt inputs.
         const { nonClimbBtns } = archLayout; // Kept for activeAction selection even when the DOM arch needs no rebuild.
         // Every action supplied by an aimed world object is a world
         // interaction even if its id predates the obj_* naming convention.
-        const objectActionIds = new Set((obj?.getButtons?.(reticle) || []).map(button => button.action));
+        const objectActionIds = actionContext.objectActionIds; // Already captured during computeActionButtons; do not call getButtons a second time.
         const isWorldInteraction = button => button?.worldInteraction
           || button?.contextualHeldItem
           || objectActionIds.has(button?.action)
@@ -34733,7 +34736,7 @@
           return d <= step;
         };
 
-        const finish = message => {
+        const finish = (message, failure = null) => {
           if (!running) return;
           running = false;
           if (dialogueOpen) closeLine();
@@ -34763,7 +34766,7 @@
           }
           if (!liveMode) { furniturePlayback?.restore(); for (const entity of entities.values()) window.NpcHeldEquipment?.detachCutsceneWalker?.(entity.walker); }
           releaseLiveLock();
-          resolveCompletion?.({ ok: true, title: payload.title || 'Cutscene', restoredArea: previousArea });
+          resolveCompletion?.({ ok: !failure, reason: failure ? String(failure?.message || failure) : null, title: payload.title || 'Cutscene', restoredArea: previousArea });
         };
 
         let dialogueAddressedActorId = null; // Seated speakers look at the addressed actor; listeners look at the current speaker.
@@ -34949,8 +34952,20 @@
           openLine(speakerEntity, speakerName, stage.text, { node: stage });
           cutscenePreviewAdvance = () => {
             if (!running || !dialogueOpen) return;
-            runtimeOptions.onDialogueContinue?.(stage); // Lets authored stories persist milestones only when the player continues the displayed dialogue.
-            continueTo(getResolvedNext(stage.id, stage.next));
+            const proceed = () => continueTo(getResolvedNext(stage.id, stage.next));
+            try {
+              const callback = runtimeOptions.onDialogueContinue?.(stage, entities); // Async rewards/portrait updates complete before their reveal stage.
+              if (callback && typeof callback.then === 'function') {
+                cutscenePreviewAdvance = () => {}; // Multiple presses cannot complete the same reward twice.
+                Promise.resolve(callback).then(proceed, error => {
+                  window.__farmLog?.('[cutscene] continuation failed: ' + String(error?.message || error), 'error');
+                  finish('Cutscene step failed', error);
+                });
+              } else proceed();
+            } catch (error) {
+              window.__farmLog?.('[cutscene] continuation failed: ' + String(error?.message || error), 'error');
+              finish('Cutscene step failed', error);
+            }
           };
         }
 

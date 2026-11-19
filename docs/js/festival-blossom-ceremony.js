@@ -87,6 +87,18 @@
         {id:'blossom_crown_end',type:'fade',direction:'out',duration:0.9,next:'__end__'}
       ]}; // Supported Director stage types and camera fields mirror RomanceWedding.
   }
+  async function refreshCrownedStandIn(entities, profile) {
+    const actor = entities?.get?.('player'); // The cutscene player is a synthetic NPC, separate from live gameplay gear.
+    if (!actor?.walker || !window.NpcWardrobe?.refreshWalkerAppearance) throw new Error('The crowned actor cannot refresh its portrait.');
+    const gear = window.EquipmentPanel?.applyGearClothingToPlayerData?.(window.__hobunjiPlayerProfile || profile);
+    if (!gear?.appearance) throw new Error('The crowned outfit cannot be resolved.');
+    actor.rec.appearance = gear.appearance;
+    actor.rec.equippedCosmetics = gear.equippedCosmetics || [];
+    actor.rec.appliedDyes = gear.appliedDyes || {};
+    const refreshed = await window.NpcWardrobe.refreshWalkerAppearance(actor.walker, { strict: true });
+    if (!refreshed) throw new Error('The crowned portrait could not be uploaded.');
+    actor.profile = actor.walker.profile; // Keep the stand-in's visible texture and metadata in sync.
+  }
   function cheer() {
     for(const walker of livingVillagers().slice(0,16)) window.AmbientDialogue?.cheer?.(walker.root);
   }
@@ -110,13 +122,14 @@
       };
       if (window.CalendarSystem?.runScreenTransition) await window.CalendarSystem.runScreenTransition(gather);
       else await gather(); // Fallback for author previews that lack the world-transition iris.
-      await runtime.run(scene,{placePlayerAtFinalPosition:true,onDialogueContinue(step) {
+      const outcome = await runtime.run(scene,{placePlayerAtFinalPosition:true,async onDialogueContinue(step, entities) {
         if(step.id!=='blossom_crown_proclaim' || awarded)return;
-        const result=onProclaim();
-        if(!result)throw new Error('Could not award Five Blossom Crown');
+        if(!onProclaim())throw new Error('Could not award Five Blossom Crown');
         awarded=true;
+        await refreshCrownedStandIn(entities,profile); // Redraw both portrait planes before the reveal caption.
         cheer(); // Crowd cheer accompanies the crown reveal rather than the opening caption.
       }});
+      if (outcome?.ok === false) throw new Error(outcome.reason || 'The Five Blossoms cutscene could not complete.');
       if(!awarded) awarded=!!onProclaim(); // Skip/fast-forward still grants the same crown, never twice.
       return {ok:awarded,first:true,crowd:lastCast.length};
     }catch(error){lastError=String(error?.message||error);window.__farmLog?.('[five-blossom-crowning] '+lastError,'error');return {ok:false,reason:lastError,awarded};}

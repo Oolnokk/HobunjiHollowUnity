@@ -41,7 +41,7 @@ vm.runInContext(fs.readFileSync('docs/js/world-action-input-claims.js', 'utf8'),
 vm.runInContext(fs.readFileSync('docs/js/combat/combat-input.js', 'utf8'), context);
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Read the production world-action selection helper instead of duplicating its filter logic.
 const helperStart = game.indexOf('      function eligibleWorldButtons(');
-const helperEnd = game.indexOf('      function computeActionButtonsImpl()', helperStart);
+const helperEnd = game.indexOf('      function computeActionButtonsImpl(context = null)', helperStart);
 assert(helperStart >= 0 && helperEnd > helperStart, 'combat world-hold filtering is installed ahead of action selection');
 vm.runInContext(game.slice(helperStart, helperEnd), context);
 const router = window.GameplayInputRouter; // Single authority exported alongside the legacy provider alias.
