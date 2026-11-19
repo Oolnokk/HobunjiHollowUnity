@@ -15,6 +15,7 @@ function section(begin, end) {
 
 const customBeforeDraw = function customBeforeDraw() {}; // Hook that recognizes colorWrite:false as a depth replay.
 const originalBeforeDraw = function originalBeforeDraw() {}; // Object3D default, not an authored callback.
+const customAfterDraw = function customAfterDraw() {}; // A draw-end-only observer still needs material.colorWrite=false.
 const dependency = {
   objectProto: { onBeforeRender: originalBeforeDraw },
   hasLayer: (object, layer) => !!(object.layers.mask & (1 << layer)),
@@ -47,6 +48,7 @@ const opaque = { colorWrite: true, depthWrite: true, alphaTest: 0 };
 const cutout = { colorWrite: true, depthWrite: false, alphaTest: 0.35 };
 const covered = { colorWrite: true, depthWrite: false, alphaTest: 0 };
 const hooked = { colorWrite: true, depthWrite: true, alphaTest: 0 };
+const afterOnly = { colorWrite: true, depthWrite: true, alphaTest: 0 }; // No custom before hook; the existing depth-only signal must survive.
 const star = { colorWrite: true, depthWrite: false, alphaTest: 0 };
 const sky = { isSprite: true, visible: true, layers: { mask: 1 }, material: star,
   onBeforeRender: originalBeforeDraw, userData: { hobunjiNoOutline: true } };
@@ -55,6 +57,7 @@ const nodes = [
   makeMesh(cutout, { layers: { mask: 1 | (1 << 4) } }),
   makeMesh(covered, { kind: 'cover' }),
   makeMesh(hooked, { onBeforeRender: customBeforeDraw }),
+  makeMesh(afterOnly, { onAfterRender: customAfterDraw }),
   sky,
 ];
 const scene = { visible: true, traverseVisible(callback) {
@@ -75,12 +78,13 @@ assert.equal(cutout.depthWrite, true, 'PNG cutout still blocks held parts');
 assert.equal(cutout.cutoutSeen, true, 'sprite cutout mask policy still runs');
 assert.equal(covered.depthWrite, true, 'protected covers still write depth');
 assert.equal(covered.depthOnly, true, 'surface depth-only shader still runs');
-assert.equal(hooked.colorWrite, false, 'custom rendering hooks still see colorWrite:false');
+assert.equal(hooked.colorWrite, false, 'custom before-render hooks still see colorWrite:false');
+assert.equal(afterOnly.colorWrite, false, 'custom after-render hooks still see colorWrite:false');
 assert.equal(runtime.counts().shellOpaqueMaterialWritesAvoided, 2);
 restore(fast);
 
 const legacy = runtime.prepareNonGroundDepthMaterials(scene, nodes);
-assert(legacy.has(opaque) && legacy.has(star), 'unsupported GPUs retain every original material transaction');
+assert(legacy.has(opaque) && legacy.has(star) && legacy.has(afterOnly), 'unsupported GPUs retain every original material transaction');
 assert.equal(opaque.colorWrite, false);
 assert.equal(star.colorWrite, false);
 restore(legacy);
@@ -104,6 +108,16 @@ assert.throws(() => runtime.withShellDepthColorMask(color, () => { throw Error('
 assert.equal(mask, true, 'GPU color writes restored after an exception');
 assert.equal(locked, false, 'GPU color state unlocked after an exception');
 assert.equal(runtime.withShellDepthColorMask(null, () => 'fallback'), 'fallback');
+const lockFailure = {
+  setMask(value) { mask = value; },
+  setLocked(value) {
+    if (value) throw Error('locking failed'); // Simulates a state manager error before drawing starts.
+    locked = value;
+  },
+};
+assert.throws(() => runtime.withShellDepthColorMask(lockFailure, () => { throw Error('must not draw'); }), /locking failed/);
+assert.equal(mask, true, 'failed GPU lock still restores color writes');
+assert.equal(locked, false, 'failed GPU lock still restores unlocked state');
 assert.equal(runtime.counts().shellMaskedDepthDraws, 1, 'only completed GPU-masked draws increment the counter');
 
 const shell = section('  function replayShellOutlineXray(', '  function wrappedRender(');
