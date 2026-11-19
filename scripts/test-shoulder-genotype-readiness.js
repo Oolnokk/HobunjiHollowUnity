@@ -34,7 +34,10 @@ const deps = {
   },
 };
 vm.createContext(harness);
-vm.runInContext(source.slice(start, end) + '\nthis.present = ensureShoulderPetPresentationFrame;', harness);
+const mapStart = source.indexOf('  function shoulderFrameMap('); // Read the real texture even during wireframe.
+const mapEnd = source.indexOf('  function shoulderTextureIsBound(', mapStart);
+assert(mapStart >= 0 && mapEnd > mapStart);
+vm.runInContext(source.slice(mapStart, mapEnd) + source.slice(start, end) + '\nthis.present = ensureShoulderPetPresentationFrame;', harness);
 assert.equal(harness.present(companion, deps), true);
 assert.equal(attempts, 1);
 assert.equal(companion.currentFrameUrl, 'wolf_idle.png', 'a plain fallback can be bound before its colored frame arrives');

@@ -168,11 +168,15 @@
     }
   }
 
+  function shoulderFrameMap(plane) {
+    return (window.PNGPlaneAvatar?.meshBudget?.originalPortraitMaterial?.(plane) || plane?.material)?.map || null;
+  }
+
   function shoulderTextureIsBound(companion, url, binding) {
     const avatar = companion?.avatarRef; // Compare actual rendered maps, not just a URL string that animation may leave unchanged.
     if (!binding || binding.url !== url || binding.avatar !== avatar || companion.currentFrameUrl !== url) return false;
-    return (avatar?.frontPlane?.material?.map || null) === binding.frontMap
-      && (avatar?.backPlane?.material?.map || null) === binding.backMap;
+    return shoulderFrameMap(avatar?.frontPlane) === binding.frontMap
+      && shoulderFrameMap(avatar?.backPlane) === binding.backMap;
   }
   function bindShoulderTexture(companion, combatDeps, url, binding, spriteWarp = null) {
     companion.avatarRef?.setAnimalSpriteWarp?.(spriteWarp); // Keep cached and rebuilt avatars aligned with the frame being bound.
@@ -190,8 +194,8 @@
     companion.currentFrameUrl = url;
     binding.url = url;
     binding.avatar = companion.avatarRef;
-    binding.frontMap = companion.avatarRef?.frontPlane?.material?.map || null;
-    binding.backMap = companion.avatarRef?.backPlane?.material?.map || null;
+    binding.frontMap = shoulderFrameMap(companion.avatarRef?.frontPlane);
+    binding.backMap = shoulderFrameMap(companion.avatarRef?.backPlane);
     return true;
   }
   function needsSmallPetHead(companion, combatDeps) {
@@ -282,7 +286,8 @@
       if (existing.pending) return true; // One in-flight composition per selected appearance.
       if (Date.now() < (existing.retryAt || 0)) return true; // Failed assets retry after cooldown, not on every render tick.
     }
-    const entry = { key, url: null, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
+    const previousUrl = existing?.url || existing?.previousUrl; // Keep the currently displayed blob reachable through retries.
+    const entry = { key, url: null, previousUrl, pending: true }; // Owns completion; stale async callbacks cannot repaint a newer frame.
     smallPetHeadFrameCache.set(companion, entry);
     Promise.resolve().then(async () => {
       const warp = window.BabyAnimalHeadWarp;
@@ -327,7 +332,8 @@
         bindShoulderTexture(companion, combatDeps, url, entry, entry.spriteWarp); // Keep a reference to the maps actually bound, not just their URL.
         recordSingleShoulderFrame(companion, url, frameName); // Newly completed sprites are observable immediately, without a second render/provider tick.
       }
-      if (existing?.url && existing.url !== url) releasePetSpriteUrl(existing.url); // A genotype/proportions change replaces the prior encoded portrait.
+      if (entry.previousUrl && entry.previousUrl !== url) releasePetSpriteUrl(entry.previousUrl);
+      entry.previousUrl = null; // A genotype/proportions change replaces the prior encoded portrait.
     }).catch(error => {
       if (smallPetHeadFrameCache.get(companion) !== entry) return;
       entry.pending = false;
@@ -461,19 +467,21 @@
 
   function ensureSplitShoulderFrame(companion, combatDeps, rest) {
     const key = splitFrameKey(companion, combatDeps, rest);
-    if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) {
+    const request = companion.__hobunjiShoulderSplitRequest; // In-flight work and the last completed frame have separate lifetimes.
+    if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl) {
+      companion.__hobunjiShoulderSplitRequest = null; // Reverting a change cancels the obsolete composition.
       return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl, companion.__hobunjiShoulderSplitWarp);
     }
-    if (companion.__hobunjiShoulderSplitKey === key) {
-      if (companion.__hobunjiShoulderSplitPromise) return true;
-      if (Date.now() < (companion.__hobunjiShoulderSplitRetryAt || 0)) return true; // Avoid per-frame retries when source art temporarily fails.
+    if (companion.__hobunjiShoulderSplitUrl) {
+      // Keep the previous pair and its skin together while the new pair is being prepared or retried.
+      applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl, companion.__hobunjiShoulderSplitWarp);
     }
+    if (request?.key === key && (request.pending || Date.now() < request.retryAt)) return true;
 
-    companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
-    companion.__hobunjiShoulderSplitBinding = null; // A newly authored split must not accept the previous split's GPU map as current.
-    companion.__hobunjiShoulderSplitKey = key;
-    companion.__hobunjiShoulderSplitPromise = splitFrameLayers(companion, combatDeps, rest).then(async layers => {
-      if (companion.__hobunjiShoulderSplitKey !== key) return null;
+    const next = { key, pending: true, retryAt: 0 }; // Check request identity to handle A→B→A changes during PNG encoding.
+    companion.__hobunjiShoulderSplitRequest = next;
+    splitFrameLayers(companion, combatDeps, rest).then(async layers => {
+      if (companion.__hobunjiShoulderSplitRequest !== next) return null;
       if (!layers) throw new Error('Shoulder split pose sources unavailable; retrying after asset recovery');
       const rightUrl = await canvasAsSpriteUrl(layers.rightCanvas);
       const layered = typeof companion.avatarRef?.setShoulderSplitOverlayCanvas === 'function';
@@ -481,18 +489,19 @@
       let fallbackUrl = rightUrl;
       try { if (fallbackCanvas) fallbackUrl = await canvasAsSpriteUrl(fallbackCanvas); }
       catch (error) { releasePetSpriteUrl(rightUrl); throw error; }
-      if (companion.__hobunjiShoulderSplitKey !== key) {
+      if (companion.__hobunjiShoulderSplitRequest !== next) {
         releasePetSpriteUrl(rightUrl);
         if (fallbackUrl !== rightUrl) releasePetSpriteUrl(fallbackUrl);
         return null;
       }
       const previousRightUrl = companion.__hobunjiShoulderSplitUrl;
       const previousFallbackUrl = companion.__hobunjiShoulderSplitFallbackUrl;
+      companion.__hobunjiShoulderSplitKey = key; // Publish the key, art and warp together.
       companion.__hobunjiShoulderSplitUrl = rightUrl;
       companion.__hobunjiShoulderSplitFallbackUrl = fallbackUrl;
       companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
       companion.__hobunjiShoulderSplitWarp = layers.spriteWarp;
-      companion.__hobunjiShoulderSplitPromise = null;
+      companion.__hobunjiShoulderSplitRequest = null;
       const stillShouldered = companion?.health > 0
         && companion.stableRole === 'shoulderPet'
         && (companion.master || combatDeps?.player) === combatDeps?.player;
@@ -504,9 +513,9 @@
         releasePetSpriteUrl(previousFallbackUrl);
       return rightUrl;
     }).catch(error => {
-      if (companion.__hobunjiShoulderSplitKey !== key) return null; // An old rejected request cannot alter newer split ownership.
-      companion.__hobunjiShoulderSplitPromise = null;
-      companion.__hobunjiShoulderSplitRetryAt = Date.now() + 2000; // Retry without permanently accepting a plain split frame.
+      if (companion.__hobunjiShoulderSplitRequest !== next) return null; // An old rejected request cannot alter newer split ownership.
+      next.pending = false;
+      next.retryAt = Date.now() + 2000; // Retry without permanently accepting a plain split frame.
       reportShoulderHeadFailure(genotypeKindFor(companion, combatDeps), error); // Failed two-layer art can retry after asset recovery.
       return null;
     });
@@ -521,6 +530,7 @@
       if (companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) return true;
       if (needsSmallPetHead(companion, combatDeps)) return true; // Pending split owns both head-warped layers; do not compose a redundant single frame.
     } else {
+      companion.__hobunjiShoulderSplitRequest = null;
       companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     }
 
@@ -544,8 +554,8 @@
     const geneticRenderer = window.CreatureGeneticsRender; // Determines whether this shoulder frame needs a composed CanvasTexture, not merely a loaded plain PNG.
     const expectsGenotype = !!(companion.genotype && geneticRenderer?.SPECIES?.[selected.genotypeKind]); // Only species with a registered compositor need a ready check.
     const signature = expectsGenotype ? geneticRenderer.genotypeSignature?.(selected.genotypeKind, companion.genotype) : null; // Color Pools/pattern mutations invalidate the same-URL shoulder frame.
-    const currentMap = companion.avatarRef?.frontPlane?.material?.map; // The actual display texture, not the requested source sprite URL.
-    const currentBackMap = companion.avatarRef?.backPlane?.material?.map; // Prevent an independent back-card overwrite from going unnoticed.
+    const currentMap = shoulderFrameMap(companion.avatarRef?.frontPlane); // The actual display texture, not the requested source sprite URL.
+    const currentBackMap = shoulderFrameMap(companion.avatarRef?.backPlane); // Prevent an independent back-card overwrite from going unnoticed.
     const composedReady = !expectsGenotype || (currentMap?.isCanvasTexture === true && companion._shoulderPresentedSignature === signature);
     const mapsUnchanged = companion._shoulderPresentedAvatar === companion.avatarRef
       && companion._shoulderPresentedFrontMap === (currentMap || null)
@@ -553,7 +563,7 @@
     if (companion.currentFrameUrl === frameUrl && composedReady && mapsUnchanged) return true;
     if (expectsGenotype && Date.now() < (companion._shoulderGenotypeRetryAt || 0)) return true; // Retry cold genotypes at a bounded cadence, not every render frame.
     const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
-    const actualMap = companion.avatarRef?.frontPlane?.material?.map; // Refresh after the authoritative game texture swap.
+    const actualMap = shoulderFrameMap(companion.avatarRef?.frontPlane); // Refresh after the authoritative game texture swap.
     const fullAppearance = !expectsGenotype || (applied !== false && actualMap?.isCanvasTexture === true); // A declined swap may leave an older tinted canvas bound; it is not proof the requested genotype arrived.
     companion._shoulderGenotypeRetryAt = expectsGenotype && !fullAppearance ? Date.now() + 150 : 0; // Plain fallbacks are temporary even when setCreatureFrame returned success.
     if (applied !== false) companion.currentFrameUrl = frameUrl; // A deferred genotype frame must never be marked complete.
@@ -561,7 +571,7 @@
       companion._shoulderPresentedSignature = signature;
       companion._shoulderPresentedAvatar = companion.avatarRef;
       companion._shoulderPresentedFrontMap = actualMap || null;
-      companion._shoulderPresentedBackMap = companion.avatarRef?.backPlane?.material?.map || null;
+      companion._shoulderPresentedBackMap = shoulderFrameMap(companion.avatarRef?.backPlane);
     }
     return applied !== false;
   }
@@ -578,7 +588,8 @@
     companion.__hobunjiShoulderIdleFrame = null;
     companion.__hobunjiShoulderRestFrame = null;
     companion.__hobunjiShoulderSplitFrame = null;
-    releasePetSpriteUrl(smallPetHeadFrameCache.get(companion)?.url); // Blob URLs are external browser resources, not reclaimed by a WeakMap alone.
+    const cachedHead = smallPetHeadFrameCache.get(companion); // A retry can still own the previously displayed blob.
+    releasePetSpriteUrl(cachedHead?.url || cachedHead?.previousUrl); // Blob URLs are external browser resources, not reclaimed by a WeakMap alone.
     releasePetSpriteUrl(companion.__hobunjiShoulderSplitUrl);
     if (companion.__hobunjiShoulderSplitFallbackUrl !== companion.__hobunjiShoulderSplitUrl)
       releasePetSpriteUrl(companion.__hobunjiShoulderSplitFallbackUrl);
@@ -592,7 +603,7 @@
     companion.__hobunjiShoulderSplitFallbackUrl = null;
     companion.__hobunjiShoulderSplitLeftCanvas = null;
     companion.__hobunjiShoulderSplitWarp = null;
-    companion.__hobunjiShoulderSplitPromise = null;
+    companion.__hobunjiShoulderSplitRequest = null;
     smallPetHeadFrameCache.delete(companion); // Invalidate callbacks when an animal leaves the shoulder.
     smallPetAppearanceKeys.delete(companion);
     smallPetEligibility.delete(companion);

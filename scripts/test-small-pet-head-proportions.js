@@ -45,6 +45,7 @@ function companion(kind, size) {
     def: { sprites: { idle: 'base-idle.png', run: ['base-run1.png'] } },
     avatarRef: {
       group: { kind }, setShoulderRestEnabled() {},
+      setAnimalSpriteWarp(mapping) { this.spriteWarp = mapping; },
       frontPlane: { material: { map: null } }, // The actual GPU map may be changed without updating the actor's frame URL.
       backPlane: { material: { map: null } }, // Mirror of the current bound portrait for overwrite recovery tests.
       setShoulderSplitOverlayCanvas(image, visible) { overlays.push({ image, visible }); },
@@ -99,6 +100,7 @@ const warp = {
     warped.push({ input, kind });
     return canvas({ composedFrom: input });
   },
+  rigWarpForCanvas: output => output.composedFrom || null, // Each completed frame has a distinct mapping for ownership assertions.
   debugSnapshot: () => ({ lastError: null }),
 };
 const win = {
@@ -152,6 +154,17 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(warped.length, 1, 'repair reuses the completed head warp rather than regenerating the sprite');
   provider();
   assert.equal(frameSwaps.length, swapCount + 1, 'stable map ownership avoids per-frame texture churn');
+  mediumSpeciesPet.genotype = { ...mediumSpeciesPet.genotype, color: 'gold' };
+  maskUnavailable = true;
+  provider();
+  await flush();
+  assert.equal(mediumSpeciesPet.currentFrameUrl, grownUrl, 'failed single-frame replacement leaves the last grown art visible');
+  mediumSpeciesPet.stableRole = 'companion';
+  provider();
+  assert(releasedTemporarySprites.includes(grownUrl), 'unequipping during a single-frame retry releases the previously displayed blob');
+  assert.equal(mediumSpeciesPet.avatarRef.spriteWarp, null, 'single-frame rig also restores adult coordinates');
+  maskUnavailable = false;
+
 
   // The naturally Small adult Pingdort does not get the juvenile-looking head.
   const naturallySmall = companion('pingdort', 'small');
@@ -206,6 +219,28 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await flush();
   await flush();
   assert.equal(warped.length, 5, 'new genotype regenerates both enlarged shoulder layers');
+  const visibleSplitUrl = splitPet.currentFrameUrl;
+  const visibleSplitWarp = splitPet.avatarRef.spriteWarp;
+  const previousKey = splitPet.__hobunjiShoulderSplitKey;
+  splitPet.genotype = { ...splitPet.genotype, color: 'gold' };
+  maskUnavailable = true;
+  provider();
+  await flush();
+  assert.equal(splitPet.__hobunjiShoulderSplitKey, previousKey, 'a failed request cannot relabel the old frame as the new appearance');
+  assert.equal(splitPet.currentFrameUrl, visibleSplitUrl);
+  assert.equal(splitPet.avatarRef.spriteWarp, visibleSplitWarp, 'cached art and skin remain paired while retrying');
+  const retryCount = composited.length;
+  provider();
+  await flush();
+  assert.equal(composited.length, retryCount, 'cached art remains visible during retry cooldown');
+  maskUnavailable = false;
+  fakeClock.now += 2100;
+  provider();
+  await flush();
+  await flush();
+  assert.notEqual(splitPet.currentFrameUrl, visibleSplitUrl, 'a failed update with an existing frame retries after recovery');
+  assert.notEqual(splitPet.avatarRef.spriteWarp, visibleSplitWarp, 'new art publishes with its own skin mapping');
+
   const swapBeforeRigRebuild = frameSwaps.length;
   splitPet.avatarRef = companion('grehlr', 'small').avatarRef; // Runtime LOD/equip can replace the avatar without changing animal identity.
   const overlaysBeforeRigRebuild = overlays.filter(event => event.image).length;
@@ -218,6 +253,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   splitPet.stableRole = 'companion';
   provider();
   assert.equal(win.PlayerBodyAttachmentBridge.getDebug().smallPetHead.active, 0);
+  assert.equal(splitPet.avatarRef.spriteWarp, null, 'leaving the shoulder resets the skin to its unwarped state');
   assert(releasedTemporarySprites.some(url => url.startsWith('blob:shoulder-test-')),
     'unequipping the pet invokes the game-owned GPU texture cleanup for unique generated sprite URLs');
   assert(revokedBlobs.some(url => releasedTemporarySprites.includes(url)),

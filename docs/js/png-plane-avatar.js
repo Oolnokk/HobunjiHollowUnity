@@ -567,6 +567,8 @@
   let portraitWireframeEnabled = false; // Session-only diagnostic used by the game and Animation Author, never saved.
   const portraitWireframeOriginals = new WeakMap(); // Original materials/temporary diagnostic materials for registered skinned portraits.
 
+  const wireframeAnimalMaterials = new WeakMap(); // Frame updates target the real animal material while diagnostics are drawn.
+
   function applyPortraitWireframe(mesh, THREE) {
     if (!mesh?.isSkinnedMesh) return;
     const previous = portraitWireframeOriginals.get(mesh);
@@ -578,6 +580,19 @@
       transparent: true, opacity: 0.9, depthTest: false, depthWrite: false,
       side: THREE.DoubleSide, skinning: true, toneMapped: false,
     })); // Opaque grid lines include transparent PNG areas, revealing the actual full-plane topology.
+    if (mesh.userData?.hobunjiAnimalHeadRig) {
+      debugMaterials.forEach((debugMaterial, index) => {
+        const creatureMaterial = materials[index]; // The latest frame should be visible immediately when leaving wireframe.
+        wireframeAnimalMaterials.set(debugMaterial, creatureMaterial);
+        Object.defineProperty(debugMaterial, 'map', {
+          get: () => null, // The diagnostic shader always draws the entire mesh.
+          set(map) {
+            if (!!creatureMaterial.map !== !!map) creatureMaterial.needsUpdate = true;
+            creatureMaterial.map = map;
+          },
+        });
+      });
+    }
     portraitWireframeOriginals.set(mesh, { original: mesh.material, debugMaterials });
     mesh.material = Array.isArray(mesh.material) ? debugMaterials : debugMaterials[0];
   }
@@ -1120,7 +1135,8 @@
   // The map a back-plane material should bind for a {front, back} pair.
   function backMapFor(material, pair) {
     if (!pair) return null;
-    if (pair.front && sharedFaceMirrorMaterials.has(material)) {
+    const textureMaterial = wireframeAnimalMaterials.get(material) || material; // Preserve the rear shader mirror for frame swaps during wireframe.
+    if (pair.front && sharedFaceMirrorMaterials.has(textureMaterial)) {
       sharedFaceTextures.add(pair.front);
       return pair.front;
     }
