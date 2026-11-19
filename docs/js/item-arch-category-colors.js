@@ -242,7 +242,7 @@
         background-position:center !important;
         background-repeat:no-repeat !important;
       }
-/* Translate is independent from the shared selector's left/top/scale
+      /* Translate is independent from the shared selector's left/top/scale
          animation, so this changes only Item Select's visual radius. */
       html body .arc-slot.item-select-radius-inset[data-item-category] {
         translate:var(--item-select-inset-x, 0px) var(--item-select-inset-y, 0px) !important;
@@ -357,10 +357,7 @@
       // Shared arc uses x = cx + cos(a)r, y = cy - sin(a)r; the opposite vector moves inward.
       const dx = -Math.cos(angle) * ITEM_RADIUS_INSET_PX;
       const dy = Math.sin(angle) * ITEM_RADIUS_INSET_PX;
-      // This runs only in the one bounded item-arch presentation loop
-      // for as long as the item wheel is open, so unconditional writes here
-      // are a real, continuous cost even though the values are frequently
-      // unchanged frame to frame for a stationary wheel.
+      // Compare before writing: the single UI-open RAF may see identical slot geometry across many frames.
       if (!slot.classList.contains('item-select-radius-inset')) slot.classList.add('item-select-radius-inset');
       const insetX = `${dx.toFixed(3)}px`, insetY = `${dy.toFixed(3)}px`;
       if (slot.style.getPropertyValue('--item-select-inset-x') !== insetX) slot.style.setProperty('--item-select-inset-x', insetX);
@@ -496,6 +493,8 @@
   }
 
   function mutationTouchesArc(mutation) {
+    // A recycled slot may update only its label's text children; its own arc node need not be reinserted.
+    if (mutation.target?.nodeType === 1 && mutation.target.closest?.('.arc-slot')) return true;
     const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
     return nodes.some(node => node?.nodeType === 1
       && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot')));
