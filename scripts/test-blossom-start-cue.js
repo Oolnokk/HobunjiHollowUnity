@@ -90,20 +90,22 @@ assert.equal(cue.debugSnapshot().voiceActive,false,'a river bank across a chunk 
 cue.update({...riverOptions,anchor:edgeRiver,tile:{area:blossom.zoneId,col:16,row:9}});
 assert.equal(cue.debugSnapshot().voiceActive,true,'the verified central water tile owns the audible chunk even when the bank differs');
 cue.update(riverOptions); // Restore the original ring and voice for the normal Perception and Shift lifecycle checks.
-assert.equal(ring.visible,true,'area decal appears only in Perception Mode');
+assert.equal(ring.parent,null,'cross-chunk anchor switches dispose the prior area decal');
+const restoredRing = cue.senseTargets(scene)[0].root; // The new anchor owns a new decal; stale, disposed meshes are never sampled again.
+assert.equal(restoredRing.visible,true,'area decal appears only in Perception Mode');
 perception=false;
 cue.update(riverOptions);
-assert.equal(ring.visible,false,'area marker is invisible without Perception Mode');
+assert.equal(restoredRing.visible,false,'area marker is invisible without Perception Mode');
 assert.equal(cue.senseTargets(scene).length,0);
 perception=true;
 cue.update(riverOptions);
 muted=true;
 cue.update(riverOptions);
 assert.equal(cue.debugSnapshot().voiceActive,false,'muted SFX immediately stop synthesizer voices');
-assert.equal(cue.senseTargets(scene)[0].root,ring,'muting audio does not suppress the visual clue');
+assert.equal(cue.senseTargets(scene)[0].root,restoredRing,'muting audio does not suppress the visual clue');
 muted=false;
 cue.update({...riverOptions,shift:13});
-assert.equal(ring.parent,null,'a new Shift releases the previous area decal');
+assert.equal(restoredRing.parent,null,'a new Shift releases the previous area decal');
 assert.equal(cue.debugSnapshot().voiceActive,true);
 cue.update({...riverOptions,active:false});
 assert.equal(cue.senseTargets(scene).length,0,'quest expiry removes current perception target');
