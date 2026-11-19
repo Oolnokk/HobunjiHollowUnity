@@ -191,5 +191,15 @@ presentation.end(koma);
 assert.equal(invisibleTool.visible, false, 'previously hidden equipment stays hidden on cleanup');
 assert.equal(locks.length, 1, 'presentation may not release the independent Koma lock');
 locks.pop();
+rig.armLengthForSide = () => 0.04; // Simulates a tiny character whose authored arms are much shorter than the former 0.1-unit minimum.
+const tiny = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } }; // Separate yawn must recapture normal hand sockets.
+presentation.start(tiny); presentation.update(tiny, 0.5); sentinel.onBeforeRender();
+for (const hand of [left, right]) {
+  const idleX = hand === left ? -0.15 : 0.15;
+  assert.ok(Math.hypot(hand.position.x - idleX, hand.position.y - 0.04 * 0.82, hand.position.z) <= 0.04 * 0.94 + 1e-6,
+    'small characters use their real arm length without the oversized old minimum');
+}
+assert.ok(presentation.debugSnapshot().constrainedHandSamples > 0, 'mobile diagnostics report a wrist reach clamp');
+presentation.end(tiny);
 assert.equal(presentation.debugSnapshot().lastError, null);
 console.log('Player yawn stretch, held visuals, final-render pose, Koma, and cleanup: OK');

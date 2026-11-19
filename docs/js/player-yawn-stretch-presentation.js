@@ -18,6 +18,8 @@
   let ownedHandRig = null; // A temporary idle-pose provider makes the ordinary hand driver release weapon grips before the stretch.
   let progress = 0; // Five-second normalized yawn clock, read by the final-render hand pose.
   let handApplications = 0; // Mobile-readable count of successful final-render stretch samples.
+  let constrainedHandSamples = 0; // Mobile diagnostic count of reach-limited wrist poses.
+  let greatestWristReachFraction = 0; // Highest actual shoulder-to-wrist fraction seen in the current yawn.
   let lastError = null; // Mobile diagnostics when a late-created dependency is unavailable.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -153,7 +155,8 @@
       socket.position.copy(record.base.position);
       socket.quaternion.copy(record.base.quaternion);
       const sign = side === 'left' ? -1 : 1;
-      const reach = Math.max(0.1, Number(handRig.armLengthForSide?.(side)) || height * 0.29);
+      const authoredReach = Number(handRig.armLengthForSide?.(side)); // The species/age-scaled arm length, including very small characters.
+      const reach = Number.isFinite(authoredReach) && authoredReach > 0 ? authoredReach : height * 0.29; // Never substitute an oversized minimum.
       const shoulderY = reach * 0.82; // Approximate shoulder height above the idle hand in local rig units.
       const maxReach = reach * 0.94; // Keep the elbows slightly bent instead of hyperextending.
       const dx = sign * reach * 0.14 * stretch; // Sideward wrist displacement from its neutral grip.
@@ -161,6 +164,8 @@
       const dz = height * 0.045 * stretch; // Forward wrist displacement also counts against the arm's reach.
       const distance = Math.hypot(dx, dy - shoulderY, dz);
       const ratio = distance > maxReach ? maxReach / distance : 1; // Project the wrist onto its authored arm-length sphere.
+      if (ratio < 1) constrainedHandSamples++;
+      greatestWristReachFraction = Math.max(greatestWristReachFraction, Math.min(distance, maxReach) / reach); // Inspect reach limits without devtools.
       socket.position.x += dx * ratio;
       socket.position.y += shoulderY + (dy - shoulderY) * ratio;
       socket.position.z += dz * ratio;
@@ -234,6 +239,7 @@
     if (entry) end(entry);
     entry = activeYawn;
     progress = 0;
+    constrainedHandSamples = 0; greatestWristReachFraction = 0; // Reset diagnostics for the new yawn, not for each render pass.
     yawnLock = window.CharacterActionLocks?.acquire?.({
       owner: OWNER, reason: 'five-second player yawn and stretch',
       participants: [{ id: 'player', channels: ['tools', 'actions'] }],
@@ -266,7 +272,7 @@
     version: 1, start, update, end, actionBlocked,
     debugSnapshot: () => ({
       active: !!entry, progress, hasHandRig: !!handRig, sentinelAttached: !!sentinel?.parent,
-      handApplications, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
+      handApplications, constrainedHandSamples, greatestWristReachFraction, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
     }),
     _test: Object.freeze({ applyStretch, suppressHeldVisuals, restoreHandPose, heldRoots }),
   });
