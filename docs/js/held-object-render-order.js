@@ -1984,24 +1984,23 @@
     // The shell replay needs a second list of its depth/outline participants.
     // Derive that list from the SAME live scene walk used by scissor culling,
     // retaining only meshes that will survive the temporary hideObjects step.
-    const remember = (object) => {
-      if (!visibleSnapshot) return;
+    const remember = visibleSnapshot ? (object) => {
       const isMesh = !!object?.isMesh;
       if (isMesh || (object?.isSprite && object.userData?.hobunjiNoOutline === true)) visibleSnapshot.depth.push(object);
       if (isMesh && hasLayer(object, SHELL_LAYER)) visibleSnapshot.shell.push(object);
-    };
+    } : null; // Ordinary held replays skip all candidate-recording work.
     lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || hasAlternateReplayPose(object)) { remember(object); return; }
+      if (keep.has(object) || hasAlternateReplayPose(object)) { if (remember) remember(object); return; }
       if (isDepthReplayInert(object, allowFarOnly)) { culled.push(object); lastReplayInertCount++; return; }
       const instanceSphere = instancedReplaySphere(object); // Reused for the intersection test below.
       const instanced = !!instanceSphere || hasAuthoredInstanceBounds(object);
-      if (!instanced && !isReplayCullable(object)) { remember(object); return; }
+      if (!instanced && !isReplayCullable(object)) { if (remember) remember(object); return; }
       if (instanceSphere) instancedReplaySphereReuses++;
       const inside = replayFrustumIntersects(object, instanceSphere);
       if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
-        remember(object);
+        if (remember) remember(object);
         kept++;
         groupCandidates?.push(object);
         boundedKept?.push(object);
