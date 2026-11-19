@@ -162,6 +162,107 @@ for(const [button,axis] of [[E.headbandFlipH,'horizontal'],[E.headbandFlipV,'ver
     record[curve]=window.ClothingHeadbandSpline.flipNodes(record[curve],axis);
   },'Flipped '+headbandView()+' '+E.headbandEditCurve.value+' curve '+axis+' around its own bounds.');
 }
+let rearBrushAction='draw'; // Current paint, erase or sample operation for the separately authored back sprite.
+let rearStroke=null; // Last touch location; interpolates fast pointer movements without holes.
+let rearRenderQueued=false; // Limit backplane paint preview to one update per animation frame.
+function queueRearRender(){
+  if(rearRenderQueued)return;
+  rearRenderQueued=true;
+  requestAnimationFrame(()=>{rearRenderQueued=false;if(mode==='rear-paint'&&R.body)render(false)});
+}
+function setRearPaintTool(action){
+  rearBrushAction=action;mode='rear-paint';E.headbandView.value='back';
+  saveState();syncHeadbandControls();render(false);
+  for(const [button,name] of [[E.headbandRearDraw,'draw'],[E.headbandRearErase,'erase'],[E.headbandRearSample,'sample']])
+    button.setAttribute('aria-pressed',String(name===action));
+}
+function installRearCanvas(canvas,message){
+  if(!canvas||!R.body||canvas.width!==R.body.width||canvas.height!==R.body.height)
+    throw Error('Rear art must match the native portrait width and height.');
+  pushUndo();R.headbandRearCanvas=copyHeadbandCanvas(canvas);R.headbandRearKey=headbandSelectionKey();
+  saveHeadbandRearArt();E.exportHeadwearBack.disabled=false;
+  E.clothPng.textContent='Export fitted front + authored back ZIP';
+  E.headbandView.value='back';setRearPaintTool('draw');render();
+  log(message);
+}
+E.headbandRearFromFront.onclick=()=>{
+  const front=headwearWarpForView('front');
+  if(front)installRearCanvas(flipCanvasX(front),'Copied the fitted front headband into independent rear art.');
+};
+E.headbandRearFromExisting.onclick=()=>{
+  const existing=R.cloth?._behindView||R.cloth?._back||R.cloth?._front;
+  if(!existing||!R.body)return;
+  const raw=warpClothing(existing,warpGridForMode(),R.body.width,R.body.height);
+  installRearCanvas(flipCanvasX(raw),'Copied existing cosmetic rear image into editable backplane art.');
+};
+E.headbandRearBlank.onclick=()=>{
+  if(!R.body)return;
+  installRearCanvas(Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height}),
+    'Created a transparent rear headband sprite.');
+};
+E.headbandRearRemove.onclick=()=>{
+  if(!R.headbandRearCanvas)return;
+  pushUndo();R.headbandRearCanvas=null;saveHeadbandRearArt();
+  E.exportHeadwearBack.disabled=!(R.cloth?._behindView||R.cloth?._back);
+  if(mode==='rear-paint')mode='headband';
+  E.clothPng.textContent=(R.cloth?._layers?.length||0)>1?'Export fitted layers ZIP':'Export fitted headwear PNG';
+  render();log('Removed painted back sprite; original cosmetic rear fallback restored.');
+};
+E.headbandRearImport.onchange=async()=>{
+  const file=E.headbandRearImport.files?.[0]||null;
+  E.headbandRearImport.value='';
+  if(!file||!R.body)return;
+  const key=headbandSelectionKey(),generation=R.assetGeneration;
+  try{
+    const image=await loadLocalImage(file);
+    if(key!==headbandSelectionKey()||generation!==R.assetGeneration)return;
+    if(image.width!==R.body.width||image.height!==R.body.height)
+      throw Error('Rear PNG is '+image.width+'×'+image.height+' but this portrait is '+R.body.width+'×'+R.body.height+'.');
+    const native=Object.assign(document.createElement('canvas'),{width:image.width,height:image.height});
+    native.getContext('2d',{alpha:true}).drawImage(image.img,0,0);
+    installRearCanvas(flipCanvasX(native),'Imported rear PNG '+file.name+' (converted into screen-facing backplane orientation).');
+  }catch(error){E.headbandRearStatus.textContent='Import failed: '+error.message;log('Rear PNG ERROR '+error.message)}
+};
+E.headbandRearExport.onclick=()=>{
+  const native=headwearWarpForView('back',true);
+  if(!native)return;
+  const stem=safeName(E.garment.value)+'_'+safeName(E.species.value)+'_'+E.gender.value;
+  downloadCanvas(native,stem+'_behind.png');
+  log('Exported game-oriented behindImage PNG: '+stem);
+};
+E.headbandRearEdit.onclick=()=>setRearPaintTool('draw');
+E.headbandRearDraw.onclick=()=>setRearPaintTool('draw');
+E.headbandRearErase.onclick=()=>setRearPaintTool('erase');
+E.headbandRearSample.onclick=()=>setRearPaintTool('sample');
+E.headbandRearFullPlane.onchange=()=>render(false);
+function paintRearPoint(point){
+  const canvas=R.headbandRearCanvas;if(!canvas)return;
+  const ctx=canvas.getContext('2d',{alpha:true}),radius=Math.max(1,Math.round(+E.headbandRearBrush.value||1));
+  const x=Math.round(point.x),y=Math.round(point.y);
+  if(rearBrushAction==='sample'){
+    if(x>=0&&x<canvas.width&&y>=0&&y<canvas.height){
+      const rgba=ctx.getImageData(x,y,1,1).data;
+      if(rgba[3])E.headbandRearColor.value='#'+[rgba[0],rgba[1],rgba[2]].map(n=>n.toString(16).padStart(2,'0')).join('');
+    }
+    rearBrushAction='draw';return;
+  }
+  ctx.fillStyle=E.headbandRearColor.value; // Author PNG pixels at full opacity, without raster interpolation.
+  for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+    if(dx*dx+dy*dy>radius*radius)continue;
+    const px=x+dx,py=y+dy;
+    if(px<0||py<0||px>=canvas.width||py>=canvas.height)continue;
+    if(rearBrushAction==='erase')ctx.clearRect(px,py,1,1);
+    else ctx.fillRect(px,py,1,1);
+  }
+}
+function paintRearAt(point){
+  const last=rearStroke;
+  if(last){
+    const dx=point.x-last.x,dy=point.y-last.y,steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)));
+    for(let i=1;i<=steps;i++)paintRearPoint({x:last.x+dx*i/steps,y:last.y+dy*i/steps});
+  }else paintRearPoint(point);
+  rearStroke=point;queueRearRender();
+}
 let transformDrag=null;
 E.stage.addEventListener('pointerdown',e=>{
   if(mode==='headband'){
