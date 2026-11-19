@@ -558,6 +558,11 @@
         disposeObject(root);
         continue;
       }
+      // A completed hallway grid has stable instance positions. Tag it for the existing
+      // renderer-only InstancedMeshViewCull instead of enabling r128's incorrect geometry-only culling.
+      // Both slabs and emissive runes share the same tight hallway bounds, not an entire ruin floor.
+      window.InstancedMeshBounds?.tag?.(plateBatch);
+      if (runeBatch) window.InstancedMeshBounds?.tag?.(runeBatch);
 
       const entryDoorRaw=(context.meta?.doorways||[]).find(door=>String(door?.to)===String(hall.id))
         ||(context.meta?.doorways||[]).find(door=>String(door?.from)===String(hall.id)||String(door?.to)===String(hall.id));
