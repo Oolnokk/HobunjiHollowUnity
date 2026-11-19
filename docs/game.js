@@ -31749,6 +31749,8 @@
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
+        getCloudForestFogRadiusTiles: () => s_cloudForestCullRadiusTiles, // Uses the same live value for near/far baked trees as the editor slider.
+        getVegetationCullMode: () => s_cloudForestShortCull ? 'short-camera' : 'normal-camera', // Recomputes baked visibility when the A/B mode changes.
         isVegetationChunkInView: (sphere, wasVisible) => vegetationCorridorContains(sphere, wasVisible, zoneVegetationCullBasis()), // Baked-tree visibility cannot override the procedural vegetation gate.
       });
 
