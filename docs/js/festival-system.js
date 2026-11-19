@@ -782,9 +782,29 @@
     const rotY = Math.atan2(dx,dz) * 180 / Math.PI; // Body points toward the actual dancefloor instead of a static station angle.
     return { ...target, rotY, lookAt:{col:floor.col,row:floor.row,height:1.2} }; // Head and body share the audience target.
   }
+  function blossomHostReady() {
+    return festival()?.id === 'five_blossoms' && window.FestivalBlossomHunt?.menuStatus?.().ready === true; // Completed flower hunts need an accessible host throughout the festival week, including daylight before the evening gathering.
+  }
+  function blossomHostTownTarget() {
+    const stage = layout()?.decor?.find(piece => piece?.festivalLocale?.kind === 'bandstand' && piece.key === 'festivalStage'); // The movable festival bandstand provides a stable, authored meeting spot.
+    if (!stage || !Number.isFinite(Number(stage.col)) || !Number.isFinite(Number(stage.row))) return null;
+    const size = deps?.getDecorSize?.(stage.key) || {}; // Share FestivalSystem's existing furniture footprint adapter.
+    const c = Math.floor(Number(stage.col) + (Number(stage.postX) || 0) + (Number(size.fw) || 2) / 2);
+    const r = Math.floor(Number(stage.row) + (Number(stage.postZ) || 0) + (Number(size.fd) || 2) + 1);
+    const offsets = [[0,0],[-1,0],[1,0],[0,1],[-2,0],[2,0],[-1,1],[1,1],[0,2]]; // Small bounded fallback search, run only on Hunundi's schedule decisions.
+    for (const [dx,dr] of offsets) {
+      if (deps?.canStandAt?.('town',c+dx,r+dr) === false) continue;
+      return {area:'town',c:c+dx,r:r+dr,pose:'stand',activity:'receiving the Five Blossoms'}; // Ordinary NPC movement brings the real Hunundi walker to the plaza; no duplicate actor or waypoint.
+    }
+    return null;
+  }
   function npcTarget(rec) {
     const release=()=>{gatheringAssignments.delete(rec.id);window.FurnitureTableSystem?.setSeatTarget?.(rec.id,null);return null;};
     if(!deps||!festival()||deps.isFestivalSuspended?.()||!HOME_IDS.has(rec.homeId)||rec.deceased||rec.dead||rec.visitorPresence)return release();
+    if (rec.id === 'father_hunundi_hodu' && blossomHostReady()) {
+      const meeting = blossomHostTownTarget();
+      if (meeting) { release(); return meeting; } // Hand-in takes priority over ordinary temple and banquet stations; existing ceremony override still wins during crowning.
+    }
     if (pendingDance?.targetNpcId === rec.id) return window.NpcFollowing?.target?.(rec,pendingDance.followSession,1.5) || pendingDance.waitTarget;
     if (dance?.targetNpcId === rec.id) return dance.holdTarget; // Do not resume dining, mingling or a separate NPC dance under the live paired-pose lock.
     if (sharedFeast() && stageDuty(rec)) {
@@ -884,13 +904,15 @@
     dance=null;
   }
   function recoverMissingFestivalGuests(now) {
-    if (!deps?.ensureNpcWalker || !festivalHours() || deps?.isFestivalSuspended?.()) return;
+    const hostWaiting = blossomHostReady(); // Rebuild just the host when all flowers are ready, even outside gathering hours.
+    if (!deps?.ensureNpcWalker || (!festivalHours() && !hostWaiting) || deps?.isFestivalSuspended?.()) return;
     if (now - lastMissingGuestCheckAt < 3000) return;
     lastMissingGuestCheckAt = now;
     const present = new Set((deps.getWalkers?.() || []).filter(walker => !walker._doorstepVisitor).map(walker => walker.rec?.id)); // Existing source walkers never need rebuilding.
     const roster = residents(); // Uses the hydrated resident list without reloading portraits for visitors.
     for (let step = 0; step < roster.length && guestRecoveryInFlight.size < MAX_PARALLEL_GUEST_RECOVERIES; step++) {
       const rec = roster[(guestRecoveryCursor + step) % roster.length];
+      if (!festivalHours() && rec.id !== 'father_hunundi_hodu') continue; // Daytime hand-in must not rebuild the entire sleeping festival crowd.
       const absence = window.NpcScheduling?.getVisitorPresence?.(rec); // Current absence, rather than existence of any contextual attendance rule.
       if (rec.visitorPresence || (absence && !absence.active) || present.has(rec.id) || guestRecoveryInFlight.has(rec.id)) continue;
       guestRecoveryInFlight.add(rec.id);
@@ -1019,6 +1041,7 @@
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
       festivalDialogue:window.FestivalDialogue?.diagnostics?.(),sharedMeals:window.NpcSharedMeals?.diagnostics?.(),
       gatheringActive:festivalHours(),gatheringHours:gatheringHoursLabel(),shopsClosed:!deps?.isFestivalSuspended?.() && festivalHours(),
+      blossomHost:festival()?.id === 'five_blossoms' ? {ready:blossomHostReady(),target:blossomHostReady()?blossomHostTownTarget():null,walkers:(deps?.getWalkers?.()||[]).filter(w=>w.rec?.id==='father_hunundi_hodu').map(w=>({area:w.area,x:w.root?.position?.x,z:w.root?.position?.z}))} : null, // Dev Companion: determine whether the real host is absent, indoors, or walking to the movable stage.
       fortune:state.blessing?{id:state.blessing.stat,bonus:fortuneBonus(state.blessing.stat),target:window.FestivalCalendar?.blessings?.[state.blessing.stat]?.target}:null,
       latestChange:festival()?.id === 'five_blossoms' ? 'Five Blossoms shares Gorkunash NPC buffet, tablemate Fun, buffs and paired dances without any contest or activity board.' : 'Targeted fortune blessings use exact genotype offering selection and the existing festival save/expiry authority.' };
   }
