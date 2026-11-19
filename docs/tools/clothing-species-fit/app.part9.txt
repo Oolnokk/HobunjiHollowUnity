@@ -53,9 +53,11 @@ async function updateThreePreview(){
 
     const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
-    if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
-      const reference=canonicalHeadReference(avatar.headOnlyFront);
-      if(reference){R.headReference=reference;render(false)}
+    if(fitRegion()==='headwear'){
+      if(avatar.headOnlyFront&&!R.headReference?._canonical)R.headReference=canonicalHeadReference(avatar.headOnlyFront);
+      if(avatar.headOnlyBack)R.headReferenceBack=canonicalHeadReference(avatar.headOnlyBack); // Actual behind portrait, never a mirrored front head.
+      if(avatar.back)R.backplaneReference=projectRuntimeFrontToFittingCanvas(avatar.back); // Optional full-body guide uses the game's bare rear portrait.
+      render(false);
     }
     const THREE=window.THREE;
     disposeRuntimeRig();
@@ -127,11 +129,14 @@ async function updateThreePreview(){
     // a differently tinted, layered character from raw PNGs.
     R.three.matchedFront2D={
       canvas:projectRuntimeFrontToFittingCanvas(avatar.frontComposed),
-      buildGeneration:buildId,
-      assetGeneration:R.assetGeneration,
-      species:E.species.value,
-      gender:E.gender.value
+      buildGeneration:buildId,assetGeneration:R.assetGeneration,
+      species:E.species.value,gender:E.gender.value
     };
+    R.three.matchedBack2D=avatar.backComposed?{
+      canvas:projectRuntimeFrontToFittingCanvas(avatar.backComposed),
+      buildGeneration:buildId,assetGeneration:R.assetGeneration,
+      species:E.species.value,gender:E.gender.value
+    }:null; // Both directions compare against exact game output.
     render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
     const garmentParity=avatar.canonicalGarmentPreview?'canonical game clothing renderer'
       :R.patchWorkflow.active?'custom patch overlay (approximate garment layering)'
@@ -144,7 +149,7 @@ async function updateThreePreview(){
     try{if(pendingAvatarModel)window.PNGPlaneAvatar?.disposeAvatarModel?.(pendingAvatarModel)}catch{}
     if(pendingRigGroup)disposeObjectTree(pendingRigGroup);
     disposeRuntimeRig(); // Never leave the last successful character visible after a failed new garment build.
-    R.three.matchedFront2D=null;
+    R.three.matchedFront2D=null;R.three.matchedBack2D=null;
     render(false); // Repaint the raw 2D fallback without triggering another failed 3D attempt.
     console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;
     if(E.match3D.checked)E.match3DStatus.textContent='Game-matched portrait unavailable; showing raw artwork. '+error.message;
@@ -159,7 +164,7 @@ function render(scheduleRig=true){
   if(!R.body)return;
   if(scheduleRig!==false){
     R.three.buildGeneration++; // Invalidate any in-flight portrait before an edit changes its visual inputs; avoids reinstalling an older wearer/garment during the debounce.
-    R.three.matchedFront2D=null;
+    R.three.matchedFront2D=null;R.three.matchedBack2D=null;
   }
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
   const matched=mode!=='protect'&&mode!=='headband'&&E.match3D.checked&&E.showBody.checked&&
