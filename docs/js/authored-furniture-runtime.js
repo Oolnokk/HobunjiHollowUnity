@@ -93,7 +93,7 @@
     const pivot = new Three.Group(); // Parent transform follows arbitrary wall yaw and support adjustment.
     pivot.name = 'wall_torch_handheld_sprite';
     pivot.position.set(Number(origin[0])||0,Number(origin[1])||0,Number(origin[2])||0);
-    pivot.rotation.x = .23; // Upper tip leans slightly outward from the mounting plate toward the room.
+    pivot.rotation.x = Math.PI / 6; // 30° outward from vertical; the wooden socket below uses the same X-axis tilt.
     pivot.scale.setScalar(scale);
     const png = new Three.Mesh(shared.geometry,shared.material);
     png.name = 'wall_torch_actual_handheld_png';
