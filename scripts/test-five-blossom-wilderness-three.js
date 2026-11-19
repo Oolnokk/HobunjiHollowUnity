@@ -169,6 +169,9 @@ let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){pa
 }});
 assert.ok(paintedPillars>0,'even a small generated area renders colored full-surface pillar patterns');
 assert.ok(scenery.debugSnapshot().patternedPillarParts>paintedPillars,'mobile debug counts multi-part masonry patterns');
+assert.deepEqual(scenery.debugSnapshot().pillarPatterns,{
+  ready:scenery.debugSnapshot().patternedPillarParts,loading:0,failed:0,missing:0
+},'mobile debug verifies *visible* atlases on every authored stone, with no missing or failed surfaces');
 assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
 assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
