@@ -897,8 +897,9 @@
     clearBlossomOverlappingTrees(context, compiled, search.best); // A permanent quest canopy cannot spawn inside the ordinary forest canopy.
     const blossomStartLandmark = chooseBlossomStartLandmark(context, compiled, search.best); // Saved beside the stamped tree; no waypoint or extra full-map pass.
     if (blossomStartLandmark?.replacedTree) clearNativeTreeCircle(context, blossomStartLandmark.col, blossomStartLandmark.row, 0); // Debris replaces, never overlaps, its original tree.
+    context.claimed = context.claimed || new Set(); // Footprints and claimed clue sites prevent later terrain-aware locales from overwriting earlier placements.
+    if (blossomStartLandmark) context.claimed.add(sourceKey(blossomStartLandmark.col, blossomStartLandmark.row)); // Reserve this physical marker before the next blossom or cave is placed.
     for (const cell of compiled.tiles.values()) paintLocaleTile(context, compiled, search.best, cell);
-    context.claimed = context.claimed || new Set(); // Footprints placed earlier in this pass; evaluateCandidate rejects any overlap.
     for (const cell of compiled.tiles.values()) context.claimed.add(sourceKey(search.best.anchorC + cell.c, search.best.anchorR + cell.r));
     const instance = localeInstance(compiled, search.best); // Runtime consumes the same localeInstances shape used by legacy stamped locales.
     if (blossomStartLandmark) instance.blossomStartLandmark = blossomStartLandmark; // TothalZoneCache already persists complete locale instances.
