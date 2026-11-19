@@ -126,7 +126,7 @@ function queueHeadbandRender(){
   requestAnimationFrame(()=>{headbandRenderQueued=false;if(R.body&&mode==='headband')render(false)});
 }
 function updateHeadbandRecord(mutator,description){
-  const record=currentHeadbandRecord();
+  const record=currentHeadbandViewRecord();
   if(!record)return;
   pushUndo();mutator(record);saveState();syncHeadbandControls();render();log(description);
 }
@@ -136,26 +136,36 @@ E.headbandEnabled.onchange=()=>updateHeadbandRecord(
 );
 E.headbandEditCurve.onchange=()=>{saveState();render(false)}; // Switches selected handles without altering either saved curve.
 E.headbandTraceSource.onclick=()=>updateHeadbandRecord(record=>{
-  const traced=autoHeadbandSourceNodes();
+  const traced=autoHeadbandSourceNodes(headbandView());
   if(traced)record.source=traced;
 },'Re-traced seven points along the donor headband artwork.');
 E.headbandTraceTarget.onclick=()=>updateHeadbandRecord(record=>{
-  const traced=autoHeadbandTargetNodes();
+  const traced=autoHeadbandTargetNodes(headbandView());
   if(traced)record.target=traced;
 },'Traced seven target points from the authored target-species headband.');
 E.headbandCopy.onclick=()=>updateHeadbandRecord(record=>{
   record.target=record.source.map(point=>({...point}));
 },'Copied source spline onto target (neutral spline warp).');
 E.headbandReset.onclick=()=>updateHeadbandRecord(record=>{
-  const traced=autoHeadbandSourceNodes();
+  const traced=autoHeadbandSourceNodes(headbandView());
   if(!traced)return;
   record.source=traced;
   record.target=autoHeadbandTargetNodes()||traced.map(point=>({...point}));
 },'Reset both spline mappings to the visible headband artwork.');
+E.headbandView.onchange=()=>{
+  if(headbandView()==='front'&&mode==='rear-paint')mode='headband';
+  saveState();syncHeadbandControls();render(false); // Change the displayed head plane without overwriting either curve.
+};
+for(const [button,axis] of [[E.headbandFlipH,'horizontal'],[E.headbandFlipV,'vertical']]){
+  button.onclick=()=>updateHeadbandRecord(record=>{
+    const curve=E.headbandEditCurve.value==='source'?'source':'target';
+    record[curve]=window.ClothingHeadbandSpline.flipNodes(record[curve],axis);
+  },'Flipped '+headbandView()+' '+E.headbandEditCurve.value+' curve '+axis+' around its own bounds.');
+}
 let transformDrag=null;
 E.stage.addEventListener('pointerdown',e=>{
   if(mode==='headband'){
-    const record=currentHeadbandRecord();
+    const record=currentHeadbandViewRecord();
     if(!record)return;
     const curve=E.headbandEditCurve.value==='source'?'source':'target';
     const index=nearest(record[curve],pointer(e)); // Native sprite-space hit testing remains touch friendly at any CSS scale.
@@ -178,7 +188,7 @@ E.stage.addEventListener('pointerdown',e=>{
 });
 E.stage.addEventListener('pointermove',e=>{
   if(mode==='headband'&&headbandDrag){
-    const p=pointer(e),record=currentHeadbandRecord();
+    const p=pointer(e),record=currentHeadbandViewRecord();
     if(!record)return;
     record[headbandDrag.curve]=window.ClothingHeadbandSpline.dragNode(
       record[headbandDrag.curve],headbandDrag.index,p.x/Math.max(1,E.stage.width-1),
