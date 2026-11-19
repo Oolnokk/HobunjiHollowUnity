@@ -104,6 +104,21 @@ const server=http.createServer((req,res)=>{
       'manual JSON must not be erased by live WebGL redraws');
     assert.match(await page.locator('#jsonDraftStatus').innerText(),/Unapplied JSON/,
       'mobile authors should see when typed JSON is not yet applied');
+    const originalStyle=await page.locator('#cosmeticSelect').inputValue();
+    const alternateStyle=await page.locator('#cosmeticSelect option').evaluateAll((options,current)=>
+      options.find(option=>option.value&&option.value!==current)?.value||null,originalStyle);
+    if(alternateStyle){
+      await page.locator('#cosmeticSelect').selectOption(alternateStyle);
+      assert((await debug()).jsonDraft.savedIndexedDrafts>0,
+        'changing indexed cosmetics caches the un-applied original style JSON');
+      await page.locator('#cosmeticSelect').selectOption(originalStyle);
+      assert.equal(await page.locator('#json').inputValue(),'{"draft":',
+        'returning to an indexed style restores its unpublished JSON text');
+      await page.waitForFunction(()=>{
+        const state=window.HobunjiSplineAuthorDiagnostics?.();
+        return state?.viewer?.hairLoaded && state?.regionMasks?.front>0;
+      },null,{timeout:30000});
+    }
     await page.locator('#download').click();
     assert.match(await page.locator('#catalogStatus').innerText(),/Apply rig JSON before exporting/,
       'export cannot silently discard unapplied JSON changes');
