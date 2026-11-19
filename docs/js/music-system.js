@@ -1701,7 +1701,7 @@
         filterFallback: _weatherBgsFilters.get(snd)?.failed === true, // Mobile diagnostics distinguish an audible unfiltered fallback from a working low-pass.
       },
     ])); // Captures weather-layer actual/target levels without relying on desktop devtools.
-    return { area, weatherRegion: weatherRegionForArea(area), precipitation: weatherRegionForArea(area) === 'map_western_slope' ? 'blizzard' : 'rain', indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
+    return { area, weatherRegion: weatherRegionForArea(area), precipitation: weatherRegionForArea(area) === 'map_western_slope' ? 'blizzard' : 'rain', wind: window.WeatherWind?.getDebugState?.(weatherRegionForArea(area)) || null, indoors: acoustics.indoors, volumeScale: acoustics.volume, cutoffHz: acoustics.cutoffHz, contextState: _musicAudioCtx?.state || 'none', loops };
   }
 
   function setLoopingBgs(id, url, volume, indoors = false) {
@@ -1758,11 +1758,13 @@
     }
     setLoopingBgs('birds', bgs.birds, exterior && !night && !rainy ? (bgs.birdsVolume ?? 0.25) : 0);
     setLoopingBgs('nightbugs', bgs.nightbugs, exterior && night && !rainy ? (bgs.nightbugsVolume ?? 0.34) : 0);
-    const weatherAudible = exterior || acoustics.indoors; // Wind travels through buildings but never leaks into unrelated underground areas.
-    const blizzard = deps.calendar.isRaining && weatherRegionForArea(currentArea) === 'map_western_slope'; // Region remains the same inside its caves/buildings.
-    const wind01 = weatherAudible ? (blizzard ? 1 : Math.max(0, Math.min(1, (deps.calendar.rainStrength || 0) / 3))) : 0;
-    setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.35) / 0.65 * acoustics.volume, acoustics.indoors);
-    setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * (weatherAudible ? Math.max(0.15, wind01 * 0.75) : 0) * acoustics.volume, acoustics.indoors);
+    const weatherAudible = exterior || acoustics.indoors; // Wind crosses building entrances with the existing low-pass / attenuation, never leaking into unrelated dungeons.
+    const windRegion = weatherRegionForArea(currentArea); // Uses the same parent-zone mapping as Western Slope snow and indoor blizzard audio.
+    const actualWind = window.WeatherWind?.getStrengthForArea?.(windRegion, deps.calendar);
+    const wind01 = weatherAudible ? Math.max(0, Math.min(1, Number.isFinite(actualWind) ? actualWind : (deps.calendar.isRaining && windRegion === 'map_western_slope' ? 1 : (deps.calendar.isRaining ? (deps.calendar.rainStrength || 0) / 3 : 0)))) : 0;
+    // Existing two recordings now crossfade with real regional wind (including clear dry katabatic wind), not just rainfall.
+    setLoopingBgs('wind1', bgs.wind1, (bgs.wind1Volume ?? 0.20) * Math.max(0, wind01 - 0.38) / 0.62 * acoustics.volume, acoustics.indoors);
+    setLoopingBgs('wind2', bgs.wind2, (bgs.wind2Volume ?? 0.18) * wind01 * 0.8 * acoustics.volume, acoustics.indoors);
   }
 
   // ── Layered rain audio ──────────────────────────────────────────────

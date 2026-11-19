@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // Southern Cloud Forest mist + non-invasive sky/lighting integration.
+  // Southern Cloud Forest mist (also reused for Western Slope blowing snow) + non-invasive sky/lighting integration.
   // The original skydome/material rendering paths remain authoritative.
   // The outline pass uses the existing world depth; its mist redraw needs only the three cylinders.
   const MIST_REDRAW_LAYER = 5;
@@ -33,6 +33,13 @@
   // from LAYER_CONFIG (which stays the fixed startup defaults) so a
   // Settings-tab slider can change these without touching the defaults.
   const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
+  const WESTERN_SLOPE_ID = 'map_western_slope'; // Enables the existing three mist cylinders for outdoor blowing snow, not for Slope interiors.
+  const SLOPE_FADE_SECONDS = 0.7; // Eases the snow haze as wind and precipitation change without sudden white walls.
+  let slopeOpacityScale = 0; // Multiples each Cloud Forest layer opacity; 1 is the absolute Slope blizzard cap.
+  let slopeTargetScale = 0; // Last sampled weather/wind target for the mobile diagnostic snapshot.
+  let slopeGustStrength = 0; // Shared WeatherWind gust component, exposed for mobile weather diagnostics.
+  let slopeWindStrength = 0; // Actual 0..1 wind strength used for lifting snow and shared with wind SFX.
+  let slopePrecipitationStrength = 0; // Active snowfall intensity read from WeatherFX, not the daily forecast label.
   const ATMOSPHERE_CONFIG_PATH = './config/atmosphere-lighting.json';
   // Mines, animal dens and the Kanthic ruin borrow the Cloud Forest's
   // midnight look instead of a flat near-black overlay: the skydome's deepest
@@ -338,51 +345,86 @@
     if (scene.background?.isColor) scene.background = scene.background.clone();
   }
 
+  function westernSlopeSnowOpacity(precipitation, windStrength) {
+    const snow = Math.max(0, finiteOr(precipitation, 0));
+    if (snow >= 3) return 1; // Full blizzard cannot exceed the Cloud Forest per-layer opacity ceiling.
+    // At lower wind strengths the loose snow stays on the ground. Wind lifts
+    // more of it continuously, even in clear weather, without artificial gusts.
+    const liftedSnow = clamp01((windStrength - 0.68) / 0.27);
+    const fallingSnow = clamp01(snow / 3);
+    return Math.min(0.88, liftedSnow * (0.58 + 0.15 * fallingSnow)
+      + (snow > 0 ? fallingSnow * 0.13 : 0));
+  }
+
   function update(dt) {
     if (!deps || !group) return;
-    const currentArea = deps.getCurrentArea?.(); // One area read determines both lighting and whether 3D mist is appropriate.
+    const currentArea = deps.getCurrentArea?.(); // One area read determines both lighting and which 3D mist policy applies.
     const cloudForest = deps.isCloudForestArea();
-    const underground = !cloudForest && isUndergroundFogArea(currentArea);
-    const active = cloudForest || underground;
+    const westernSlope = currentArea === WESTERN_SLOPE_ID;
+    const underground = !cloudForest && !westernSlope && isUndergroundFogArea(currentArea);
+    const active = cloudForest || underground || westernSlope;
     const mistActive = active && currentArea !== 'map_i_dev_random_ruin'; // Kanthic keeps screen-space darkness but no player-following mist tunnels.
+    if (westernSlope) {
+      const snowStrength = window.WeatherFX?.getPrecipitationStrength?.();
+      slopePrecipitationStrength = Number.isFinite(snowStrength) ? snowStrength
+        : (deps.calendar?.isRaining ? Math.max(0, Number(deps.calendar.rainStrength) || 0) : 0);
+      slopeWindStrength = clamp01(window.WeatherWind?.getStrengthForArea?.(WESTERN_SLOPE_ID) ?? 0);
+      slopeGustStrength = clamp01(window.WeatherWind?.gustForArea?.(WESTERN_SLOPE_ID) ?? 0);
+      slopeTargetScale = westernSlopeSnowOpacity(slopePrecipitationStrength, slopeWindStrength);
+      const elapsed = Math.max(0, Math.min(0.25, Number(dt) || 0)); // Clamp long tab-resume frames; never overshoot the Cloud Forest cap.
+      slopeOpacityScale += (slopeTargetScale - slopeOpacityScale) * (1 - Math.exp(-elapsed / SLOPE_FADE_SECONDS));
+      if (Math.abs(slopeOpacityScale - slopeTargetScale) < 0.0005) slopeOpacityScale = slopeTargetScale;
+    } else {
+      slopeOpacityScale = slopeTargetScale = slopeGustStrength = slopeWindStrength = slopePrecipitationStrength = 0;
+    }
+
     const activeScene = active ? deps.getActiveScene() : null;
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
       activeScene?.add(group);
       attachedScene = activeScene;
     }
-    syncUndergroundFog(underground && mistActive ? activeScene : null); // Kanthic uses only viewport darkness; a depth-based 3D fog gradient would still move with the camera.
-    group.visible = mistActive;
-    if (!active) return;
+    syncUndergroundFog(underground && mistActive ? activeScene : null); // Never replace the Western Slope's or Cloud Forest's native depth fog.
+    group.visible = mistActive && (!westernSlope || slopeOpacityScale > 0.002);
+    if (!active || (westernSlope && !group.visible)) return; // Calm air skips lighting colors as well as all geometry/outline work.
 
     if (cloudForest) {
       const skyRoot = namedInScene(activeScene, 'hobunji_dynamic_skydome');
       if (skyRoot) skyRoot.visible = false;
       updateFogLighting(activeScene);
+    } else if (westernSlope) {
+      // Snow is illuminated by the same outdoor day/night palette; unlike Cloud Forest
+      // lighting, this must NOT change the Slope's scene fog, sky or background.
+      const light = getFullDayLighting();
+      fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
+      fogResultColor.set(0xffffff).lerp(fogTimeColor, 0.3);
+      for (const layer of layers) layer.material.color.copy(fogResultColor);
     } else {
-      updateFogLighting(activeScene, undergroundLightingForArea(deps.getCurrentArea?.()));
+      updateFogLighting(activeScene, undergroundLightingForArea(currentArea));
     }
 
-    if (!mistActive) return; // Kanthic still receives the fog palette above, without any geometry animation.
+    if (!group.visible) return; // Clear calm weather submits no mist meshes or outline redraw.
     const px = deps.player.x / deps.TILE;
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
+    const strengthScale = westernSlope ? slopeOpacityScale : 1;
+    const driftScale = westernSlope ? 1.5 + slopeWindStrength * 2.5 + (slopePrecipitationStrength >= 3 ? 2.5 : 0) : 1;
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
-      // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity);
+      // Layer tuning still controls both biomes; no Western Slope layer may exceed its Cloud Forest opacity.
+      const opacity = clamp01(live.opacity) * strengthScale;
       material.opacity = opacity;
-      mesh.visible = opacity > 0;
+      mesh.visible = opacity > 0.002;
       if (!mesh.visible) continue;
 
       const radius = Math.max(0.1, live.radiusTiles);
       mesh.position.set(px, groundY + config.height * 0.5, pz);
       mesh.scale.set(radius, config.height, radius);
       mesh.rotation.y = t * config.spinSpeed;
-      material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed) % 1;
-      material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6) % 1;
+      material.map.offset.x = (material.map.offset.x + dt * config.driftSpeed * driftScale) % 1;
+      material.map.offset.y = (material.map.offset.y + dt * config.driftSpeed * 0.6 * driftScale) % 1;
     }
   }
 
@@ -1261,7 +1303,7 @@
   }
 
   window.CloudForestFog = {
-    __test: Object.freeze({ undergroundLightingForArea, enclosedDarknessOverlayAlpha }), // Pure policy checks; the production overlay and mobile diagnostics use these same functions.
+    __test: Object.freeze({ undergroundLightingForArea, enclosedDarknessOverlayAlpha, westernSlopeSnowOpacity }), // Pure policy checks; the production overlay and mobile diagnostics use these same functions.
     init,
     update,
     renderOutlineMist,
@@ -1285,10 +1327,20 @@
     isActive: () => !!(group?.visible && attachedScene),
     getDebugState: () => {
       const debugScene = skyPolicyDeps?.getActiveScene?.(); // Used below to expose the actual runtime player-lantern light state for mobile QA.
-      const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? null; // Used below to show which underground-area rule is currently active.
+      const debugArea = skyPolicyDeps?.getCurrentArea?.() ?? deps?.getCurrentArea?.() ?? null; // Falls back to fog's own injected area if RainPlanes has not initialized its sky-policy hook.
       return {
         active: !!deps?.isCloudForestArea?.(),
         undergroundFog: isUndergroundFogArea(debugArea) && !!(group?.visible && attachedScene),
+        westernSlopeSnow: {
+          active: debugArea === WESTERN_SLOPE_ID && !!group?.visible,
+          gustStrength: slopeGustStrength,
+          windStrength: slopeWindStrength,
+          precipitationStrength: slopePrecipitationStrength,
+          targetScale: slopeTargetScale,
+          opacityScale: slopeOpacityScale,
+          cap: 'Cloud Forest per-layer opacity',
+          meshCount: group?.visible ? layers.filter(layer => layer.mesh.visible).length : 0,
+        }, // Phone-readable gust/storm transition and no-draw clear-weather checks.
         area: debugArea,
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),

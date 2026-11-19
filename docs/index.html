@@ -715,7 +715,8 @@
        order relative to the other systems above doesn't matter; must load
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
-  <script src="js/weather-fx.js?v=20261109festivalMerge2"></script>
+  <script src="js/weather-fx.js?v=20261118slopeSnow1"></script>
+  <script src="js/weather-wind.js?v=20261119katabaticWind1"></script> <!-- Authoritative per-zone wind strength shared by fog, foliage and BGS. -->
   <script src="js/emissive-light-orbs.js?v=20261104hc955306"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
@@ -723,11 +724,10 @@
   <script src="js/house-window-linkage.js?v=20261101interiorfixture1"></script>
   <script src="js/daylight-window-overlay-scheduler.js?v=20260926rebase1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="weather-surfaces"></script> <!-- Rain sheets (which load the sky dome) and outdoor snow/slush surfaces -->
-  <!-- Player-centered white mist cylinders, shown only in the Southern
-       Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
-       fogDensity/vegCullRadiusTiles comments in game.js for why. -->
+  <!-- Shared Cloud Forest mist cylinders: always in the forest, and wind-driven
+       blowing snow on Western Slope. The zone's native sky/depth fog is unchanged. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261118h80c5057"></script>
+  <script src="js/cloud-forest-fog.js?v=20261119katabaticSnow2"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -1868,7 +1868,7 @@
           <label data-dev-only class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Cloud Forest Mist</div>
-              <div class="settings-desc">Player-centered fog cylinders shown only in the Southern Cloud Forest</div>
+              <div class="settings-desc">Cloud Forest fog layers become blowing snow in the Western Slope (clear calm = invisible; blizzard = full density).</div>
             </div>
             <span class="settings-toggle"><input type="checkbox" id="settingCloudForestFog" checked><span class="toggle-slider"></span></span>
           </label>
@@ -2934,7 +2934,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261119cfShortCull1"></script>
+  <script src="game.js?v=20261119windSwayRebased1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

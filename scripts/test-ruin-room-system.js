@@ -228,7 +228,9 @@ assert.deepEqual(kanthicSession.snapshot().localLightBoundary,
 kanthicSession.dispose();
 assert.match(fogSource,/const mistActive = active && currentArea !== 'map_i_dev_random_ruin'/,
   'Kanthic must not render a moving 3D mist cylinder');
-assert.match(fogSource,/group\.visible = mistActive;/,'Kanthic hides all mist layers');
-assert.match(fogSource,/if \(!mistActive\) return;/,'Kanthic skips world-space mist updates');
+assert.match(fogSource,/group\.visible = mistActive && \(!westernSlope \|\| slopeOpacityScale > 0\.002\);/,
+  'Kanthic hides all mist layers while clear Western Slope weather also skips fog');
+assert.match(fogSource,/if \(!group\.visible\) return;/,
+  'Kanthic and calm Western Slope skip world-space mist updates');
 assert.doesNotMatch(fogSource,/ruinMistFade|inRuinShaft/,'old shaft-centered mist animation must not return');
 console.log('ruin-room-system: enclosure, stable Kanthic overlay, physical walls and enemy resets OK');
