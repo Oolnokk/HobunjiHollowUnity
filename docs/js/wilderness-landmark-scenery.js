@@ -320,8 +320,23 @@ function objectAt(zoneId,targetScene,point){
  const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
  const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
  const pillars=group?.children?.filter(node=>node.userData?.wildernessDyeId)||[]; // On-demand mobile diagnostics, never traversed in the render loop.
+ const pillarPatterns={ready:0,loading:0,failed:0,missing:0}; // Detect visible/pending/error atlas states on *every* authored stone, not just geometry ownership.
+ for(const pillar of pillars){
+  const parts=pillar.userData?.meshById;
+  const meshes=[...(parts?.values?.()||[])].filter(mesh=>mesh?.isMesh&&mesh.geometry);
+  for(const mesh of meshes){
+   const overlays=mesh.children.filter(child=>child.userData?.furniturePattern?.mode==='engraving');
+   if(!overlays.length){pillarPatterns.missing++;continue;}
+   for(const overlay of overlays){
+    const status=overlay.userData.furniturePattern.status;
+    if(status==='ready'&&overlay.visible)pillarPatterns.ready++;
+    else if(status==='loading')pillarPatterns.loading++;
+    else pillarPatterns.failed++;
+   }
+  }
+ } // Never touch these part maps during ordinary rendering; mobile debugging should reveal invisible pattern atlases.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
-  patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),
+  patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),pillarPatterns,
   dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
    motif:marker?.userData?.witnessDye?.motifUrl||null,patternId:marker?.userData?.witnessDye?.patternId||null,
    engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
