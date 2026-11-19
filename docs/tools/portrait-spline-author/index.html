@@ -151,6 +151,7 @@ let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGe
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
 let jsonHasUnappliedEdits=false; // Keeps manually typed rig JSON intact until the user explicitly applies it.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
+const rawJsonDrafts=new Map(); // Stores unapplied textarea edits separately from valid runtime rigs for each indexed style.
 const hoodMaskKeys={opening:'hoodOpeningMask',overlap:'hoodOverlapMask',rigid:'hoodRigidOverlapMask'}; // Both hood masks use front portrait UVs.
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
@@ -189,6 +190,8 @@ $('cosmeticFile').addEventListener('change',async e=>{
 
 function rememberDraft(){
   if(activeDraftKey){
+    if(jsonHasUnappliedEdits)rawJsonDrafts.set(activeDraftKey,$('json').value);
+    else rawJsonDrafts.delete(activeDraftKey);
     const valid=Rig.normalize(rig);
     if(valid)rigDrafts.set(activeDraftKey,valid); // Keep this style's current knots/deadzones while switching species or cosmetics.
   }
@@ -462,7 +465,9 @@ async function selectIndexedStyle(){
   const stored=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig);
   rig=stored||makeRig();
   autoLayoutPending=!stored; // Generate initial rest geometry from real head/hair pixels only for newly rigged cosmetics.
-  maskUndo=null;selectedKnot=1;selectedSegment=0;syncRigJson(true);controls();
+  maskUndo=null;selectedKnot=1;selectedSegment=0;syncRigJson(true);
+  if(rawJsonDrafts.has(draftKey)){$('json').value=rawJsonDrafts.get(draftKey);jsonHasUnappliedEdits=true;syncRigJson();}
+  controls();
   images.front=null;images.rear=null;markRegionDirty();render();
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
   $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
@@ -759,7 +764,7 @@ $('resetRig').onclick=()=>{
   const reset=makeRig(points||undefined);
   rig={...rig,points:reset.points,segments:reset.segments,width:reset.width,windResponse:reset.windResponse,tipFollow:reset.tipFollow};
   autoLayoutPending=!points;
-  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();syncRigJson(true);controls();render();
+  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();
 };
 $('autoMask').onclick=()=>{
   const view=activeView(),sprite=images[view],head=regionHead(view);
@@ -784,7 +789,7 @@ $('generateBlend').onclick=()=>{
   controls();render();
   message('Generated six natural wind directions for the current strand. Bottom knot leads the middle, with the head anchored.');
 };
-$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;syncRigJson(true);controls();render();message('Applied edited rig JSON.');}catch(error){message('JSON error: '+error.message);}};
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();message('Applied edited rig JSON.');}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before copying the runtime rig; unapplied changes are still in the editor.');return;}const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before exporting; your manual JSON edits are not applied yet.');return;}const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
  const result=JSON.parse(JSON.stringify(cosmetic));
@@ -837,6 +842,7 @@ window.HobunjiSplineAuthorDiagnostics=()=>({
   hood:{equipped:hoodOption?.id||null,hidden:!!hoodPortrait?.hidden,ready:!!hoodPortrait,
     opening:rig.hoodOpeningMask?.runs.reduce((n,p)=>n+p[1],0)||0,overlap:rig.hoodOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,rigid:rig.hoodRigidOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,brush:overlapBrush},
   pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
+  jsonDraft:{unapplied:jsonHasUnappliedEdits,savedIndexedDrafts:rawJsonDrafts.size},
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
   try{await navigator.clipboard.writeText(value);message('Copied 3D viewer and rig diagnostics.');}
