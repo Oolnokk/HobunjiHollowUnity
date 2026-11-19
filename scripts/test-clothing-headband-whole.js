@@ -85,4 +85,32 @@ assert(core.includes('headbandWholeDrag.checked') && core.includes('headbandDrag
   'Whole-curve pointer mode must move the entire curve rather than one node');
 assert(core.includes('headbandSplines:A.headbandSplines'),
   'Saved grid JSON must carry the per-view whole-spline settings');
+// Donor switching must never reuse a different starting species' whole-spline settings.
+function editorFunction(start,end,globals,values){
+  const a=core.indexOf(start),b=core.indexOf(end,a);
+  assert(a>=0&&b>a,'Missing editor helper '+start);
+  return new Function(...globals,core.slice(a,b)+'\nreturn '+start.match(/^function ([^(]+)/)[1]+';')(...values);
+}
+const ui={sourceSpecies:{value:'mao-ao'},sourceGender:{value:'male'},garment:{value:'headband'}};
+const legacyKey='headwear::kenkari_male::headband';
+const legacy={enabled:true,source:original.map(p=>({...p})),target:original.map(p=>({...p}))};
+const state={headbandSplines:{[legacyKey]:legacy}};
+const key=editorFunction('function headbandSelectionKey()','function traceHeadbandCanvas(',
+  ['E','contourSelectionKey'],[ui,()=>legacyKey]);
+const getRecord=editorFunction('function currentHeadbandRecord()','function currentHeadbandViewRecord()',
+  ['R','A','fitRegion','headbandSelectionKey','contourSelectionKey','window','clone',
+    'autoHeadbandSourceNodes','autoHeadbandTargetNodes','E'],
+  [{body:{width,height},cloth:{}},state,()=>'headwear',key,()=>legacyKey,host.window,
+    value=>JSON.parse(JSON.stringify(value)),()=>original.map(p=>({...p})),()=>original.map(p=>({...p})),ui]);
+const donorOne=getRecord();
+assert.notStrictEqual(donorOne,legacy,'Existing target-only curves are migrated by copy, not overwritten');
+donorOne.target[0].y=.72;
+ui.sourceSpecies.value='tletingan';
+const donorTwo=getRecord();
+assert.notStrictEqual(donorTwo,donorOne,'Another donor species receives an independent curve record');
+near(donorTwo.target[0].y,legacy.target[0].y,'New donor starts from legacy mapping rather than other donor edits');
+assert.notEqual(key().indexOf('tletingan'),-1,'Persistence key contains the source species');
+ui.sourceSpecies.value='mao-ao';
+assert.strictEqual(getRecord(),donorOne,'Switching donors back restores its separately authored settings');
+
 console.log('OK: whole-spline position, independent scales, rotation, constraints, save/undo integration and controls');
