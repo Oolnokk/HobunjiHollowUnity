@@ -170,7 +170,7 @@ const originalMarked=decoratedFor().length; // The planned dye-bearing objects a
 const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
 let first=witnessFor();
 assert.ok(first?.isMesh,'the physically rendered dyed stone exists inside the live wilderness scene');
-assert.ok(decorations>originalMarked,'major parts of broken pillars each receive their own ruin pattern, not just one front decal');
+assert.ok(decorations>originalMarked,'major parts of broken pillars each receive their own ruin pattern, not just one front decal; diagnostics: '+JSON.stringify({decorations,originalMarked,lastError:scenery.debugSnapshot().lastError,markedKinds:decoratedFor().map(site=>site.kind),pillarCount:scenery.debugSnapshot().patternedPillarParts}));
 const firstCycleDecorations=decorations; // Used to verify cleanup and exactly one rebuild per new Shift.
 assert.equal(first.userData.witnessDye.unique,true);
 assert.equal(first.children.some(child=>child.userData?.ruinStoneSignalGlyph),false,'the witness has no rune decal');
