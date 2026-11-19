@@ -48,6 +48,7 @@
           <button data-mode="preview">Preview</button>
           <button data-mode="protect">Protect pixels</button>
           <button data-mode="headband">Band spline</button>
+          <button data-mode="rear-paint">Paint rear</button>
         </div>
         <div id="help" class="help" style="margin-top:6px"></div>
       </section>
@@ -108,8 +109,22 @@
         <div class="field"><label for="headbandEditCurve">Drag which seven nodes?</label>
           <select id="headbandEditCurve"><option value="source">Map original band (orange)</option><option value="target" selected>Shape fitted band (cyan)</option></select>
         </div>
+        <div class="field"><label for="headbandView">Head plane to edit</label><select id="headbandView"><option value="front">Front head</option><option value="back">Backplane head (rear)</option></select></div>
+        <div class="row"><button type="button" id="headbandFlipH">Flip selected curve horizontally</button><button type="button" id="headbandFlipV">Flip selected curve vertically</button></div>
         <div class="row"><button type="button" id="headbandTraceSource">Auto-map original</button><button type="button" id="headbandTraceTarget">Trace authored target</button></div>
         <div class="row"><button type="button" id="headbandCopy">Copy original to target</button><button type="button" id="headbandReset">Reset both curves</button></div>
+        <div id="headbandRearSection" hidden>
+          <h2>Backplane sprite authoring</h2>
+          <div class="row"><button type="button" id="headbandRearFromFront">Create rear from fitted front</button><button type="button" id="headbandRearFromExisting">Copy existing rear sprite</button></div>
+          <div class="row"><button type="button" id="headbandRearBlank">Blank rear canvas</button><button type="button" id="headbandRearRemove">Remove authored rear</button></div>
+          <div class="field"><label for="headbandRearImport">Import existing rear PNG (native game orientation)</label><input type="file" id="headbandRearImport" accept="image/png"></div>
+          <div class="row"><button type="button" id="headbandRearExport">Export rear PNG (game orientation)</button><button type="button" id="headbandRearEdit">Paint rear pixels</button></div>
+          <div class="row"><button type="button" id="headbandRearDraw">Draw</button><button type="button" id="headbandRearErase">Erase</button><button type="button" id="headbandRearSample">Pick color</button></div>
+          <div class="row"><label class="small">Brush color <input id="headbandRearColor" type="color" value="#a8d0a7" aria-label="Rear sprite paint color"></label><label class="small">Brush radius <input id="headbandRearBrush" type="range" min="1" max="18" step="1" value="2" aria-label="Rear sprite brush radius"></label></div>
+          <div class="row"><label class="small"><input type="checkbox" id="headbandRearFullPlane"> Show full backplane body reference</label></div>
+          <div id="headbandRearStatus" class="small" aria-live="polite">The actual game back-facing head is the tracing reference. Create or import a rear sprite to paint.</div>
+          <div class="small">Painting is in the *visible backplane* orientation. Export reverses the game's behind-view horizontal flip automatically. A distinct <code>behindImage</code> is included in the fitted layers ZIP and the 3D preview. The front image remains unchanged. Use Backplane + Band spline to shape its own seven-node rear curve; use Paint rear to edit unwarped pixels.</div>
+        </div>
         <div id="headbandStatus" class="small" aria-live="polite">Choose a headband, then drag seven points in Band spline mode.</div>
         <div class="small">Start with the normal 6×6 transform, then switch to <b>Band spline</b>. Map seven orange points across the original band or crown, then drag seven cyan points into the desired curved position. The whole sprite bends with the spline, preserving its transparency and pixel-art edges. Source and target curves are saved independently for each garment/species pair. Works for headbands, flower crowns and other narrow headwear; ordinary hats and hoods retain their existing grid fitting unless explicitly enabled.</div>
       </section>
