@@ -52,6 +52,8 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Test generated Hobunji Windows icon
+        run: node desktop/test-icon.cjs
       - name: Set an increasing version for published main builds
         if: github.event_name == 'push'
         working-directory: desktop
@@ -66,6 +68,7 @@ jobs:
         run: |
           $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
           if (-not (Test-Path "desktop/dist/Hobunji-Hollow-Setup-$version.exe")) { throw "Installer missing" }
+          if (-not (Test-Path "desktop/build/icon.png")) { throw "Generated Hobunji Windows icon missing" }
           if (-not (Test-Path "desktop/dist/latest.yml")) { throw "Updater metadata missing" }
           if (-not (Test-Path "desktop/dist/win-unpacked/resources/app-update.yml")) { throw "Packaged app has no update feed configuration" }
           $feed = Get-Content "desktop/dist/win-unpacked/resources/app-update.yml" -Raw
