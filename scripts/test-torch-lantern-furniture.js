@@ -44,7 +44,8 @@ assert.equal(sourceLamp.lightSource.enabled, true, 'existing toggle-light and fu
 assert.deepEqual([...torchParts.keys()], ['wall_torch_plate','wall_torch_arm','wall_torch_rest'],
   'wall torch JSON has only the mounting perch, never the old geometry torch and fake flames');
 assert.equal(torchParts.get('wall_torch_arm').transform.z,.145,'arm reaches the painted handle');
-assert.equal(torchParts.get('wall_torch_rest').transform.z,.31,'rest is directly beneath the sprite handle');
+assert.equal(torchParts.get('wall_torch_rest').transform.z,.34,'30° socket sits along the torch centerline');
+assert.equal(torchParts.get('wall_torch_rest').transform.rx,30,'authored socket pitches 30° outward to match the PNG');
 const authoredTorchSource=read('docs/js/authored-furniture-runtime.js'); // Validate the art bridge for rendered authored furniture.
 const fallbackTorchSource=read('docs/js/wall-ornament-placement.js'); // JSON-cold fallback must match the authored version.
 const houseTorchSource=read('docs/js/house-wall-fixtures.js'); // Older house fixtures must not use cubes.
@@ -60,6 +61,12 @@ assert.ok(houseTorchSource.includes('AuthoredFurniture?.attachWallTorchSprite?.(
   'house fixtures use the shared sprite where available');
 assert.ok(houseTorchSource.includes('art.rotation.z=Math.PI'),
   'isolated house editor fallback flips the sprite too');
+assert.ok(fallbackTorchSource.includes("rx: 30, ry: 0, rz: 0"),
+  'procedural wall socket uses the same thirty-degree X-axis tilt');
+assert.ok(houseTorchSource.includes('handleRest.rotation.x=Math.PI/6'),
+  'house wall support surface rotates to align with the handheld torch');
+assert.ok(houseTorchSource.includes('tilt.rotation.x=Math.PI/6'),
+  'isolated house editor art tilts outward too');
 assert.ok(!fallbackTorchSource.includes("id: 'wall_torch_shaft'"),
   'procedural fallback never recreates the unwanted cylinder shaft');
 assert.equal(torch.wallOrnament.attachmentSurfaceId, 'wall_torch_plate:surface:4', 'wall attachment contract remains stable');
@@ -110,6 +117,7 @@ assert.equal(loadedTorchTextures.length,1,'all mounted sprites share the same lo
 const paintedSprite=sprite1.children.find(child=>child.name==='wall_torch_actual_handheld_png');
 assert.ok(paintedSprite,'one handheld torch PNG plane is attached to the perch');
 assert.equal(paintedSprite.rotation.z,Math.PI,'painted down points up in world space');
+assert.equal(sprite1.rotation.x,Math.PI/6,'torch leans exactly thirty degrees toward the room');
 assert.equal(paintedSprite.geometry.width,.26,'wall sprite maintains the intended narrow handheld proportions');
 assert.equal(paintedSprite.geometry.height,.70,'wall sprite maintains the original elongated torch aspect');
 assert.equal(registeredTorchLights.length,2,'one light source per mounted torch, not per primitive flame');
