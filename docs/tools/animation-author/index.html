@@ -15695,6 +15695,43 @@ clearAnimationActors = function(...args) {
       detail.style.whiteSpace = 'pre-line';
       detail.textContent = rows.join('\n');
       card.append(title, detail);
+      const gameProfile = parityV1554.canonicalCreatures()?.[actor.source.kind]; // Live game baseline for the selected species, not a historical editor snapshot.
+      if (gameProfile) {
+        const matches = ['small', 'medium', 'large'].every(size => {
+          const authored = parityV1554.placement(profile, size, actor.shoulderRestModelDimensions?.modelHeight);
+          const gameplay = parityV1554.placement(gameProfile, size, actor.shoulderRestModelDimensions?.modelHeight);
+          return Math.abs(authored.widthScale - gameplay.widthScale) < 1e-8
+            && Math.abs(authored.heightScale - gameplay.heightScale) < 1e-8
+            && Math.abs(authored.groundLift - gameplay.groundLift) < 1e-8
+            && authored.groundMode === gameplay.groundMode;
+        }); // Compare all three classes so an off-screen custom row cannot be missed.
+        const status = document.createElement('div');
+        status.className = 'maaSmall maaMuted';
+        status.textContent = matches ? 'All three classes match the live gameplay profile.'
+          : 'Saved project sizes/ground values differ from gameplay. Other rig anchors are unaffected.';
+        card.appendChild(status);
+        if (!matches) {
+          const reset = document.createElement('button'); // Explicit non-destructive recovery for old imported projects on mobile.
+          reset.type = 'button';
+          reset.className = 'secondary';
+          reset.style.marginTop = '7px';
+          reset.textContent = 'Use game size and ground values';
+          reset.addEventListener('click', () => {
+            profile.sizeScales = structuredCloneSafe(gameProfile.sizeScales);
+            profile.groundOffsets = structuredCloneSafe(gameProfile.groundOffsets);
+            profile.sizeScaleRule = structuredCloneSafe(gameProfile.sizeScaleRule || {});
+            profile.sizeScalePercentages = structuredCloneSafe(gameProfile.sizeScalePercentages || {});
+            syncCreatureTransformGroundOffsetsFromRigV1544(actor.source.kind); // Legacy Y mirror must not undo the new canonical ground lifts.
+            for (const candidate of animationAuthor.actors)
+              if (candidate.source?.type === 'creature' && candidate.source.kind === actor.source.kind)
+                applyCreatureSizeClass(candidate, candidate.creatureSizeClass, { announce: false, render: false });
+            scheduleAnimationProjectSave();
+            renderAllAnimationUi();
+            setAnimationRecentChange('Restored gameplay size and ground values for ' + actor.source.kind + '; saddle and shoulder grip preserved.');
+          });
+          card.appendChild(reset);
+        }
+      }
       inspector.appendChild(card);
     }
     const oldMultiInspectorV1554 = renderAnimationInspector; // Keep the editor's existing animation controls intact.
