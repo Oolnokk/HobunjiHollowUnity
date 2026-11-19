@@ -355,6 +355,7 @@
 
   function disposeFallbackVisual(root) {
     root?.traverse?.((object) => {
+      if (object.userData?.hobunjiSharedWallTorchArt) return; // Several wall torches reuse one cached PNG geometry/material; an upgrade must not dispose the other torches' GPU resources.
       object.geometry?.dispose?.();
       for (const material of (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean)) {
         // Textures in ProceduralFurniture are cached/shared; disposing a material
