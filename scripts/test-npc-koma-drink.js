@@ -15,7 +15,12 @@ const THREE = {};
 class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(other) { return this.set(other.x, other.y, other.z); }
+  sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+  multiply(other) { this.x *= other.x; this.y *= other.y; this.z *= other.z; return this; }
+  applyQuaternion() { return this; } // Minimal test quaternion is identity; real Three.js rotates the grip offset into holder space.
   applyMatrix4() { return this; }
+  lerp(other, amount) { this.x += (other.x - this.x) * amount; this.y += (other.y - this.y) * amount; this.z += (other.z - this.z) * amount; return this; }
 }
 class Quat {
   setFromAxisAngle() { return this; }
@@ -35,6 +40,9 @@ class Group {
     if (index >= 0) this.children.splice(index, 1);
     if (child.parent === this) child.parent = null;
   }
+  localToWorld(v) { return v; } // Identity world transform for this rig-free Node test.
+  worldToLocal(v) { return v; } // Identity root transform for held-item local coordinates.
+  updateWorldMatrix() { return this; }
 }
 class PlaneGeometry {
   constructor(width, height) { this.parameters = { width, height }; }
@@ -99,12 +107,18 @@ assert.equal(loadedTextures.length, 1);
 assert.equal(loadedTextures[0], 'assets/leaves/koma_leaf.png');
 assert.equal(drink.heldItemTarget(walker.root)?.holder?.name, undefined,
   'private autonomous drink holder may remain unnamed');
+const komaHolder = drink.heldItemTarget(walker.root).holder; // Actual leaf prop; its first frame must coincide with the idle hand.
+assert.equal(komaHolder.position.x, -0.2, 'Koma leaf begins at the idle hand X anchor');
+assert.equal(komaHolder.position.y, 0.4, 'Koma leaf begins at the idle hand height, not on the ground');
+assert.ok(Math.abs(komaHolder.position.z + 0.02) < 1e-6, 'leaf-holder origin is offset so its neck grip, rather than its centre, begins at the wrist');
+assert.equal(drink.getDebug()[0]?.idleHandStart, true, 'mobile diagnostics identify the corrected idle start');
 assert.ok(drink.heldItemTarget(handParent), 'direct NPC hand parent must resolve the leaf; querying only the outer world root does not suffice');
 assert.ok(locks.isLocked('npc:longoran-test', 'tools'), 'the Koma animation locks other tools');
 assert.equal(locks.isLocked('npc:longoran-test', 'movement'), false, 'the yawn movement speed modifier remains authoritative');
 walker._moveSpeedTiles = 0.6;
 walker.root.rotation.y = 1.2; // The walker changed direction while slowly moving through its Koma ceremony.
 drink.update(0.2);
+assert.ok(komaHolder.position.y > 0.35, 'the first leaf lift stays near the resting hand');
 assert.equal(walker.root.rotation.y, 1.2, 'the ceremonial drink must respect current pathing facing, not the pre-yawn facing');
 walker._moveSpeedTiles = 0;
 drink.update(2.85);
@@ -118,7 +132,21 @@ assert.equal(drink.heldItemTarget(handParent), null, 'completed leaf releases ne
 assert.equal(drink.heldItemTarget(walker.root), null, 'completed leaf releases world-root hand target');
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
 assert.equal(disposals, 2, 'completion disposes its geometry and material, retaining the shared PNG');
+const rigIdle = walker.avatarGroup.userData.proceduralHandRig; // Existing rig exposes a pure, read-only neutral-position provider.
+rigIdle.idlePositionLocal = (side, out) => out.set(-0.24, 0.52, 0.03);
+assert.equal(drink.playDailyKoma(walker, () => toasts.push('rig-interrupted'), 5), 5000);
+assert.equal(drink.getDebug()[0]?.idleHandSource, 'authored-rig-idle',
+  'Koma uses the actual shoulder/posterior resting wrist without a stale held-tool pose');
+assert.equal(drink.heldItemTarget(walker.root).holder.position.y, 0.52,
+  'Koma starts at the rig-neutral hand height when no editor-saved rest exists');
+drink.stopAutonomous(walker, '__daily_koma_leaf__');
+assert.equal(toasts.length, 1, 'interrupting the rig-neutral leaf applies no chew');
+delete rigIdle.idlePositionLocal;
+walker.avatarGroup.userData.gameFreeHandRest = { right: { hand: { x: -0.3, y: 0.55, z: 0.1 } } }; // An editor-authored rest overrides a stale held-tool wrist.
 assert.equal(drink.playDailyKoma(walker, () => toasts.push('late'), 5), 5000);
+assert.equal(drink.getDebug()[0]?.idleHandSource, 'authored-avatar-rest', 'the next Koma uses the rigger-authored free-hand rest point');
+const authoredLeaf = drink.heldItemTarget(walker.root).holder; // Real leaf remains on the same held-item pathway.
+assert.equal(authoredLeaf.position.y, 0.55, 'the leaf appears at its authored idle wrist rather than using the old bottle neutral');
 assert.equal(loadedTextures.length, 1, 'texture must be shared between consecutive daily rituals');
 assert.ok(drink.heldItemTarget(handParent));
 drink.stopAutonomous(walker, '__daily_koma_leaf__');
@@ -127,7 +155,7 @@ assert.equal(drink.heldItemTarget(handParent), null, 'interruption clears hand a
 assert.equal(drink.heldItemTarget(walker.root), null);
 assert.equal(drink.getDebug().length, 0);
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
-assert.equal(disposals, 4, 'interruption disposes both transient per-actor resources');
+assert.equal(disposals, 6, 'interruption of both neutral-start variations disposes their per-actor resources');
 
 // Player Koma reuses the same leaf/drink and may walk at 25% speed during a yawn.
 // Only tools/actions are locked; movement and the player's camera-relative facing stay authoritative.
@@ -156,6 +184,6 @@ drink.update(2);
 assert.equal(playerRoot.rotation.y, 2.2, 'finishing the drink does not restore an obsolete player facing');
 assert.equal(locks.isLocked('player', 'actions'), false, 'the player is never stranded in a locked control state');
 assert.equal(drink.heldItemTarget(playerRoot), null);
-assert.equal(disposals, 6, 'player ritual also disposes its own geometry/material');
+assert.equal(disposals, 8, 'player ritual also disposes its own geometry/material');
 
 console.log('Daily Koma: NPC and moving player hand grips, true action locks, facing, strike and cleanup OK');
