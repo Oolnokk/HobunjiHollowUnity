@@ -1,5 +1,39 @@
 # Performance investigation log
 
+## 18 Nov 2026: Southern Cloud Forest short camera corridor
+
+The Cloud Forest's historical `vegCullRadiusTiles: 30` switched
+`updateZoneVegetationCulling` from the ordinary 42-forward / 30-wide /
+2-rear camera-aligned corridor to a player-centered 30-tile **circle**.
+At similar vegetation density, that permits many off-axis and behind-camera
+trees into the draw list. This was a confirmed code-path difference, not a
+measurement of total frame-time contribution.
+
+The Cloud Forest now defaults to a **shorter, narrower directional corridor**
+(30-tile slider -> 21 tiles forward / 19.2 wide / 2 rear). The ordinary zone
+numbers are unchanged. Cloud Forest bounds conservatively expand with the
+XZ canopy/grass chunk radius rather than the much larger vertical bounding
+sphere, so tall trees do not inflate their horizontal visibility area.
+The existing hysteresis and tree fade/outline envelopes use the same
+camera-aligned corridor. The Settings toggle now compares the new short
+corridor against the ordinary corridor instead of restoring the old radial
+mode. The slider also feeds the live baked-tree rendering dependency.
+
+**Later overwrite repaired:** `cloud-forest-tree-batcher.js` deliberately
+reasserted its own independent radial+frustum decision on every fog update,
+undoing `updateZoneVegetationCulling`'s visibility toggle. It now uses the
+same game-owned directional gate, plus its tighter existing actual frustum
+test, and invalidates the cache when the developer toggles cull modes.
+The procedural and baked sources retain their separate gameplay ownership.
+
+**Validation:** executable compact-corridor test exercises normal-zone
+parity, camera turns, 30->10 slider changes, canopy XZ bounds, edge
+hysteresis and tree opacity/outline thresholds. The baked-tree regression
+covers externally hidden chunks and a stationary cull-mode toggle.
+No real-device FPS gain has been measured yet; compare matched camera
+paths and `CloudForestTreeBatcher.getDebugState()` with the settings A/B
+toggle before making any numeric performance claim.
+
 ## 18 Nov 2026: dense Cloud Forest steady rendering
 
 - The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
