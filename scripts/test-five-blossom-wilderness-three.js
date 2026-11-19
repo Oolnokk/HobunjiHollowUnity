@@ -63,7 +63,7 @@ const worldLayout = {
 }; // A flat generated wilderness still needs one deterministic, uniquely dyed route anchor.
 const zoneId='map_northern_cliffs';
 const zoneLayouts=new Map([[zoneId,worldLayout]]);
-const scene=new THREE.Group(); // Same active scene persists when the Tothal cycle is forcibly advanced.
+const scene=new THREE.Scene(); // A real Scene allows the actual InstancedMeshViewCull renderer scope to be checked.
 let cycle='1156',decorations=0,signals=0;
 const sharedStoneArt={geometry:new THREE.CylinderGeometry(.46,.5,1,6),material:new THREE.MeshLambertMaterial({color:0x85857c})};
 let sharedStoneDisposed=false; // The real OreRockTextures.smallStoneArt resource is shared by all wilderness cairns.
@@ -81,15 +81,21 @@ window.HobunjiSurfaceStretchUV={mapMesh(mesh){
   mesh.geometry=mesh.geometry.clone();cliffUnwraps++;
   return {patchCount:8}; // Six polygon walls and two caps use independent full-PNG texture islands.
 }};
-window.InstancedMeshBounds={tag(mesh){
+require('../docs/js/instanced-mesh-bounds.js'); // Use actual r128-compatible local instance bounds, not a tag-only mock.
+const realInstanceBounds=window.InstancedMeshBounds;
+window.InstancedMeshBounds={...realInstanceBounds,tag(mesh){
   assert.ok(mesh.isInstancedMesh,'only spatial cairn chunks enter the instanced cull registry');
-  mesh.userData.hobunjiInstanceBounds=true;cullRegistrations++;return mesh;
-}};
+  cullRegistrations++;return realInstanceBounds.tag(mesh);
+}}; // Retain the production culler and count its registrations for mobile diagnostics.
+require('../docs/js/instanced-mesh-view-cull.js'); // Exercises the real render-only visibility/restore scope.
 window.GridTileAccessors={getActiveScene:()=>scene};
 window.AuthoredFurniture={
   async load(key){return {key};}, // Simulate the real asynchronous furniture data load.
   buildGroup(def){const root=new THREE.Group(),shaft=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());
-    root.userData.meshById=new Map([['stump',shaft]]);root.add(shaft);return root;} // A real mesh owns the pillar's inscribed shaft.
+    const billboard=new THREE.Mesh(new THREE.PlaneGeometry(.4,.4),new THREE.MeshBasicMaterial());
+    billboard.userData.billboardSurface=true;billboard.frustumCulled=false; // The source author intentionally exempts camera-facing artwork.
+    root.userData.meshById=new Map([['stump',shaft]]);root.add(shaft);root.add(billboard);return root;
+  } // A real mesh owns the pillar's shaft; an independent billboard tests the no-cull exception.
 };
 window.ClimbSystem={groundYAt:()=>1.25};
 window.FurniturePatternSurfaces={
@@ -142,6 +148,19 @@ assert.ok(cairnGroup.children.every(mesh=>mesh.userData.hobunjiInstanceBounds===
   &&mesh.userData.hobunjiWildernessDistanceCull===true&&mesh.frustumCulled===false),
   'custom instance bounds control frustum/distance culling without unsafe Three r128 geometry-only culling');
 assert.equal(cullRegistrations,cairnGroup.children.length,'every spatial chunk is enrolled in the render-only frustum culler');
+scene.updateMatrixWorld(true);
+const firstStone=plannedCairns[0].point; // Camera aims at one generated cairn while other spatial batches are outside its view.
+const camera=new THREE.PerspectiveCamera(48,1,.1,30); // The test camera has a tightly bounded near view, unlike the whole-zone instance union.
+camera.position.set(firstStone.col+.5,10,firstStone.row+13);
+camera.lookAt(firstStone.col+.5,1,firstStone.row+.5);
+const restoreCull=window.InstancedMeshViewCull.suspendForRender(scene,camera);
+const hiddenChunks=cairnGroup.children.filter(mesh=>mesh.visible===false);
+assert.ok(hiddenChunks.length>0,'the actual view frustum hides at least one off-camera cairn batch');
+assert.ok(cairnGroup.children.some(mesh=>mesh.visible!==false),'nearby visible cairn chunks remain drawn');
+assert.ok(hiddenChunks.every(mesh=>!window.InstancedMeshBounds.worldSphere(mesh,new THREE.Sphere())
+  ||mesh.userData.hobunjiInstanceBounds),'offscreen hides operate on tracked instance spheres');
+restoreCull?.();
+assert.ok(cairnGroup.children.every(mesh=>mesh.visible===true),'temporary render culling restores all instance visibility for gameplay');
 assert.equal(cliffNaturalizations,1,'cliff material assigned once and shared across chunks');
 assert.equal(cliffUnwraps,1,'individual rock faces unwrapped once and shared across all chunk instances');
 assert.equal(scenery.debugSnapshot().cairnRendering.frustumTracked,expectedBuckets.size,'mobile diagnostics show registered frustum chunks');
@@ -152,10 +171,17 @@ let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){pa
     'the real authored pillar shaft receives the existing ruin pattern overlay');
 }});
 assert.ok(paintedPillars>0,'even a small generated area renders colored pillar inscriptions');
+let preservedBillboards=0; // Count deliberately non-culled special effects that remain attached to debris.
 scene.traverse(node=>{if(node.name==='wilderness-broken-stone-pillar')node.traverse(part=>{
-  if(part.isMesh)assert.ok(part.frustumCulled&&part.userData.hobunjiWildernessDistanceCull,
-    'debris-ifier ruin parts get independent frustum and distance culling');
+  if(!part.isMesh)return;
+  if(part.userData?.billboardSurface){
+    preservedBillboards++;
+    assert.equal(part.frustumCulled,false,'authored camera-facing debris artwork keeps its no-cull override');
+    assert.equal(part.userData.hobunjiWildernessDistanceCull,undefined,'billboards do not enter the distance pass');
+  }else assert.ok(part.frustumCulled&&part.userData.hobunjiWildernessDistanceCull,
+    'ordinary debris-ifier stone geometry receives independent camera and distance culling');
 });});
+assert.ok(preservedBillboards>0,'debris fixture includes camera-facing visuals as well as masonry');
 assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
 assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
