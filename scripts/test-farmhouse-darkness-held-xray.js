@@ -119,6 +119,10 @@ assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin ston
 const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
+const changedMaterialGround = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true }); // A truly walkable floor retains its identity after a textured material change.
+assert.equal(xray.classify(changedMaterialGround).ground, true,
+  'terrain material replacement may not hide procedural hand colors while their shell x-ray stays');
 const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
 const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
 for (const kind of ['grass', 'rock', ...wildernessTypes]) {

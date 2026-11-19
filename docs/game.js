@@ -24558,6 +24558,7 @@
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
       // Full authored duration in seconds, used to convert dt into animation progress.
       let _heldDrinkAnimDuration = 0;
+      const _heldDrinkIdleStart = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3(), active: false }; // Saved visible carry transform used by drinking and processor insertion.
 
       function heldActionPoseAt(animation, progress) {
         const windupFrac = window.FormatUtils.clamp(Number(animation.windupFrac) || 0.38, 0.01, 0.97);
@@ -24665,7 +24666,7 @@
         _toolAttachJob.scale = scale; _toolAttachJob.aperture = aperture; _toolAttachJob.stamp = _toolAttachStamp;
       }
       let _heldAttachStamp = 0; // Bumped once per updateHeldItemHolder.
-      const _heldAttachJob = { stamp: -1, scale: 0.5, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
+      const _heldAttachJob = { stamp: -1, scale: 0.5, idleBlend: 1, pose: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 } }; // Same replay for the held drink bottle.
       const _attachSaved = { toolPos: new THREE.Vector3(), toolQuat: new THREE.Quaternion(), toolScale: 1, heldPos: new THREE.Vector3(), heldQuat: new THREE.Quaternion(), heldScale: 1, tool: false, held: false };
       function _restoreHeadAttachments() { // Restores gameplay-time transforms after the draw so logic never reads the render-time pose.
         if (_attachSaved.tool) { toolHolder.position.copy(_attachSaved.toolPos); toolHolder.quaternion.copy(_attachSaved.toolQuat); toolHolder.scale.setScalar(_attachSaved.toolScale); _attachSaved.tool = false; }
@@ -24700,6 +24701,7 @@
         }
         if (heldActive) {
           SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, _heldAttachJob.pose, _heldAttachJob.scale, heldItemAperture(), playerMesh);
+          blendHeldDrinkFromIdle(_heldAttachJob.idleBlend); // Post-head-aim placement must preserve the opening idle-to-drink transition.
           cache.heldPos.copy(heldItemHolder.position); cache.heldQuat.copy(heldItemHolder.quaternion); cache.heldScale = heldItemHolder.scale.x;
         }
         _headFrame.cameraPosition = null;
@@ -24714,14 +24716,25 @@
         const height = (Number(_heldItemPlane.geometry.parameters.height) || HELD_ITEM_PLANE_WIDTH) * (_heldItemPlane.scale.y || 1);
         return _heldAperture.set(0, height / 2, 0).applyMatrix4(_heldItemPlane.matrix);
       }
+      function blendHeldDrinkFromIdle(blend) {
+        if (!_heldDrinkIdleStart.active || blend >= 1) return;
+        const idleWeight = Math.max(0, Math.min(1, 1 - blend)); // Remaining weight of the idle grip during the opening gesture.
+        heldItemHolder.position.lerp(_heldDrinkIdleStart.position, idleWeight);
+        heldItemHolder.quaternion.slerp(_heldDrinkIdleStart.quaternion, idleWeight);
+        heldItemHolder.scale.lerp(_heldDrinkIdleStart.scale, idleWeight);
+      }
       function applyHeldDrinkPose(animation, progress) {
         const pose = heldActionPoseAt(animation, progress);
+        const windupFrac = Math.max(0.01, Number(animation.windupFrac) || 0.38); // Transition completes at the original authored windup.
+        const t = Math.max(0, Math.min(1, progress / windupFrac));
+        const idleBlend = t * t * (3 - 2 * t); // Smooth wrist ascent from the actual idle hand position.
         playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(pose.bodyYaw); // Before the head frame reads the skinned head, so the mouth and rotation include this body turn.
         if (_heldItemPlane) _heldItemPlane.rotation.x = Math.PI / 2;
         if (pose.headRelative && SharedAttackPose.headFrame(_headFrame, playerAvatarGroup)) {
           SharedAttackPose.placeAtMouth(heldItemHolder, _headFrame, pose, 0.5, heldItemAperture(), playerMesh); // Bottle opening mates with the mouth; rotation/scale come from the head.
           Object.assign(_heldAttachJob.pose, { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll });
           _heldAttachJob.stamp = _heldAttachStamp; // Replayed against the drawn head by the composer's post-head-aim hook.
+          _heldAttachJob.idleBlend = idleBlend; // The render-time head correction uses the same neutral-start blend.
         } else {
           heldItemHolder.position.set(playerToolBaseX + pose.x, playerToolBaseY + pose.y, pose.z);
           heldItemHolder.scale.setScalar(0.5);
@@ -24730,6 +24743,7 @@
           _qRoll.setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(pose.roll));
           heldItemHolder.quaternion.copy(_qToolYaw).multiply(_qAnim).multiply(_qRoll);
         }
+        blendHeldDrinkFromIdle(idleBlend);
         _heldItemHandMode = 'bottle';
       }
 
@@ -24766,7 +24780,11 @@
         // Consumption calls this before the next render update, so retain the
         // plane that was visibly held instead of rebuilding from a newly
         // selected stack after the consumed item reaches zero.
-        if (!_heldItemPlane || _heldItemKey !== itemKey) return false;
+        if (!_heldItemPlane || _heldItemKey !== itemKey || _heldDrinkPhase) return false;
+        _heldDrinkIdleStart.position.copy(heldItemHolder.position);
+        _heldDrinkIdleStart.quaternion.copy(heldItemHolder.quaternion);
+        _heldDrinkIdleStart.scale.copy(heldItemHolder.scale);
+        _heldDrinkIdleStart.active = true; // Capture the existing idle grip before the shared drink animation takes ownership.
         _heldDrinkAnimDuration = Math.max(0.1, Number(animation.durationS) || 0.95);
         _heldDrinkProgress = 0;
         _heldDrinkPhase = 'toWindup';
@@ -24803,6 +24821,7 @@
         _heldDrinkProgress = 0;
         _heldDrinkApply = null;
         _heldDrinkApplied = true;
+        _heldDrinkIdleStart.active = false; // Aborted holds must not reuse a previous item's grip.
       }
 
       function getPlayerDrinkSourceTransform(itemKey, neutralPose) {
@@ -24867,7 +24886,7 @@
             _heldDrinkProgress = Math.max(0, _heldDrinkProgress - rate);
             applyHeldDrinkPose(animation, _heldDrinkProgress);
             heldItemHolder.visible = true;
-            if (_heldDrinkProgress <= 0) _heldDrinkPhase = null;
+            if (_heldDrinkProgress <= 0) { _heldDrinkPhase = null; _heldDrinkIdleStart.active = false; }
             return;
           }
           if (_heldDrinkPhase === 'pausedAtWindup') {
@@ -24892,6 +24911,7 @@
             if (!_heldDrinkApplied) { _heldDrinkApplied = true; _heldDrinkApply?.(); }
             _heldDrinkPhase = null;
             _heldDrinkApply = null;
+            _heldDrinkIdleStart.active = false; // Next action captures a fresh idle pose.
           }
           return;
         }

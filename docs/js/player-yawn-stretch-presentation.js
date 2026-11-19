@@ -154,9 +154,16 @@
       socket.quaternion.copy(record.base.quaternion);
       const sign = side === 'left' ? -1 : 1;
       const reach = Math.max(0.1, Number(handRig.armLengthForSide?.(side)) || height * 0.29);
-      socket.position.x += sign * reach * 0.15 * stretch;
-      socket.position.y += reach * (1.76 + 0.10 * Math.sin(progress * Math.PI * 4)) * stretch;
-      socket.position.z += height * 0.045 * stretch;
+      const shoulderY = reach * 0.82; // Approximate shoulder height above the idle hand in local rig units.
+      const maxReach = reach * 0.94; // Keep the elbows slightly bent instead of hyperextending.
+      const dx = sign * reach * 0.14 * stretch; // Sideward wrist displacement from its neutral grip.
+      const dy = reach * (1.70 + 0.04 * Math.sin(progress * Math.PI * 4)) * stretch; // Overhead target before reach limiting.
+      const dz = height * 0.045 * stretch; // Forward wrist displacement also counts against the arm's reach.
+      const distance = Math.hypot(dx, dy - shoulderY, dz);
+      const ratio = distance > maxReach ? maxReach / distance : 1; // Project the wrist onto its authored arm-length sphere.
+      socket.position.x += dx * ratio;
+      socket.position.y += shoulderY + (dy - shoulderY) * ratio;
+      socket.position.z += dz * ratio;
       socket.rotateX?.(-0.28 * stretch);
       socket.rotateZ?.(sign * 0.13 * stretch);
       socket.visible = true;

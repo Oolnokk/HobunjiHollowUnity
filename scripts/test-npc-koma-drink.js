@@ -16,6 +16,7 @@ class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
   applyMatrix4() { return this; }
+  lerp(other, amount) { this.x += (other.x - this.x) * amount; this.y += (other.y - this.y) * amount; this.z += (other.z - this.z) * amount; return this; }
 }
 class Quat {
   setFromAxisAngle() { return this; }
@@ -99,12 +100,17 @@ assert.equal(loadedTextures.length, 1);
 assert.equal(loadedTextures[0], 'assets/leaves/koma_leaf.png');
 assert.equal(drink.heldItemTarget(walker.root)?.holder?.name, undefined,
   'private autonomous drink holder may remain unnamed');
+const komaHolder = drink.heldItemTarget(walker.root).holder; // Actual leaf prop; its first frame must coincide with the idle hand.
+assert.equal(komaHolder.position.x, -0.2, 'Koma leaf begins at the idle hand X anchor');
+assert.equal(komaHolder.position.y, 0.4, 'Koma leaf begins at the idle hand height, not on the ground');
+assert.equal(drink.getDebug()[0]?.idleHandStart, true, 'mobile diagnostics identify the corrected idle start');
 assert.ok(drink.heldItemTarget(handParent), 'direct NPC hand parent must resolve the leaf; querying only the outer world root does not suffice');
 assert.ok(locks.isLocked('npc:longoran-test', 'tools'), 'the Koma animation locks other tools');
 assert.equal(locks.isLocked('npc:longoran-test', 'movement'), false, 'the yawn movement speed modifier remains authoritative');
 walker._moveSpeedTiles = 0.6;
 walker.root.rotation.y = 1.2; // The walker changed direction while slowly moving through its Koma ceremony.
 drink.update(0.2);
+assert.ok(komaHolder.position.y > 0.35, 'the first leaf lift stays near the resting hand');
 assert.equal(walker.root.rotation.y, 1.2, 'the ceremonial drink must respect current pathing facing, not the pre-yawn facing');
 walker._moveSpeedTiles = 0;
 drink.update(2.85);

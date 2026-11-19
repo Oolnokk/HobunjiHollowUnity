@@ -135,6 +135,12 @@ const sentinel = playerMesh.children.find(node => node.name === 'player_yawn_str
 assert.ok(sentinel?.onBeforeRender, 'hands are posed by the same final-render pattern as the punch dance');
 sentinel.onBeforeRender();
 assert.ok(left.position.y > 0.48 && right.position.y > 0.48, 'both arms stretch overhead at mid-yawn');
+for (const hand of [left, right]) {
+  const idleX = hand === left ? -0.15 : 0.15; // Neutral wrist X for this test avatar.
+  const shoulderY = 0.3 * 0.82; // Same unrigged shoulder offset as the playable yawn.
+  assert.ok(Math.hypot(hand.position.x - idleX, hand.position.y - shoulderY, hand.position.z) <= 0.3 * 0.94 + 1e-6,
+    'both yawn hands remain inside their authored shoulder-to-wrist reach');
+}
 const leftHigh = left.position.y;
 sentinel.onBeforeRender();
 assert.equal(left.position.y, leftHigh, 'second render pass must not accumulate hand offsets');
@@ -178,6 +184,8 @@ assert.equal(rig.getDebug().poseOwner, null, 'daily Koma keeps the natural right
 assert.ok(left.position.y > 0.48 && left.position.y < 0.65,
   'the free arm stretches from neutral, not a hidden two-hand weapon grip');
 assert.equal(right.position.y, 0.20, 'the Koma leaf retains its own right-hand chewing pose');
+assert.ok(Math.hypot(left.position.x + 0.15, left.position.y - 0.3 * 0.82, left.position.z) <= 0.3 * 0.94 + 1e-6,
+  "Koma's free arm stays within reach without disturbing its leaf grip");
 assert.equal(presentation.actionBlocked(koma), false, 'the yawn and its Koma-owned action lock coexist');
 presentation.end(koma);
 assert.equal(invisibleTool.visible, false, 'previously hidden equipment stays hidden on cleanup');

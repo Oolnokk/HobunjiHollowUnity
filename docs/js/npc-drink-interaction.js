@@ -286,6 +286,26 @@
     return totalDurationMs;
   }
 
+  function idleHandStart(interaction) {
+    const start = new deps.THREE.Vector3(interaction.hand.x, interaction.hand.y, 0); // Existing right-hand anchor if the procedural socket is unavailable.
+    const socket = interaction.avatarGroup?.userData?.proceduralHandRig?.group?.getObjectByName?.('right_hand_socket');
+    if (socket?.getWorldPosition && interaction.holder.parent?.worldToLocal) {
+      socket.updateWorldMatrix?.(true, false);
+      interaction.holder.parent.updateWorldMatrix?.(true, false);
+      socket.getWorldPosition(start);
+      interaction.holder.parent.worldToLocal(start); // Use the real resting wrist in the held object's coordinate frame.
+    }
+    return start;
+  }
+
+  function blendAutonomousIdleStart(interaction) {
+    if (!interaction?.idleHandStart) return;
+    const windup = Math.max(0.01, Number(deps.getDrinkAnimation?.()?.windupFrac) || 0.38); // End this transition at the original windup keyframe.
+    const t = Math.max(0, Math.min(1, interaction.elapsed / (interaction.durationS * windup)));
+    const eased = t * t * (3 - 2 * t);
+    interaction.holder.position.lerp(interaction.idleHandStart, 1 - eased); // No low-ground starting pose for Koma or autonomous eating.
+  }
+
   function playAutonomous(walker, itemKey, onDrink, options = {}) {
     const animation = deps?.getDrinkAnimation?.(), itemDef = options.plane ? { key: itemKey } : deps?.getItemDef?.(itemKey); // A ceremonial PNG can share the authored drink clip without becoming an inventory item.
     const participantId = options.participantId || npcParticipantId(walker); // Player ceremonies reuse the same drink clip with the real player action-lock owner.
@@ -303,7 +323,11 @@
       allowWalking: !!options.allowWalking, // Only NPC Koma ceremonies allow slow walking; the player stays still while chewing.
       preserveFacing: !!options.preserveFacing, // Player aiming/facing remains owned by the normal player movement system.
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
-    applyHolderPose(interaction,deps.poseAt(animation,0)); activeInteractions.add(interaction);
+    interaction.avatarGroup = walker.avatarGroup; // The same portrait whose procedural wrist animates the real leaf.
+    interaction.idleHandStart = idleHandStart(interaction); // Capture the neutral wrist before moving the prop toward the mouth.
+    applyHolderPose(interaction,deps.poseAt(animation,0));
+    blendAutonomousIdleStart(interaction);
+    activeInteractions.add(interaction);
     publishHandTarget(walker.root, holder, bottlePlane, walker.avatarGroup);
     return interaction.durationS*1000;
   }
@@ -365,6 +389,7 @@
       const progress = deps.clamp(interaction.elapsed / interaction.durationS, 0, 1);
       const pose = deps.poseAt(animation, progress);
       applyHolderPose(interaction, pose);
+      if (interaction.autonomous) blendAutonomousIdleStart(interaction); // Continue the native-idle lift through windup.
       if (!interaction.preserveFacing) {
         if (interaction.allowWalking && interaction.walker._moveSpeedTiles > 0.05) {
           interaction.baseNpcFacing = interaction.walker.root.rotation.y; // Follow real NPC movement facing; never restore the stale pre-Koma direction.
@@ -385,6 +410,7 @@
       progress: interaction.phase === 'handoff'
         ? deps.clamp(interaction.elapsed / HANDOFF_DURATION_S, 0, 1)
         : deps.clamp(interaction.elapsed / interaction.durationS, 0, 1),
+      idleHandStart: !!interaction.idleHandStart, // Mobile-readable native idle starting-pose diagnostic.
     }));
   }
 
