@@ -69,6 +69,22 @@ const sharedStoneArt={geometry:new THREE.CylinderGeometry(.46,.5,1,6),material:n
 let sharedStoneDisposed=false; // The real OreRockTextures.smallStoneArt resource is shared by all wilderness cairns.
 sharedStoneArt.geometry.addEventListener('dispose',()=>{sharedStoneDisposed=true;});
 window.OreRockTextures={smallStoneArt:()=>sharedStoneArt}; // Renderer-provided shared rock art is required for both cairns and the newly engraved witness.
+const cliffMaterial=new THREE.MeshBasicMaterial({color:0xffffff,map:new THREE.Texture()}); // Unique proxy for the configured cliff-tinted material.
+let cliffNaturalizations=0,cliffUnwraps=0,cullRegistrations=0; // Count one shared UV solve and per-chunk cull registration across scene rebuilds.
+window.NaturalSurfaceMaterials={naturalizeMesh(mesh,surface){
+  assert.equal(surface,'cliffs','cairns request the same natural-surface classification as wilderness cliffs');
+  assert.notEqual(mesh.geometry,sharedStoneArt.geometry,'cliff UVs must never mutate the shared quarry/witness geometry');
+  mesh.material=cliffMaterial;mesh.userData.naturalSurface=surface;cliffNaturalizations++;return mesh;
+}};
+window.HobunjiSurfaceStretchUV={mapMesh(mesh){
+  assert.equal(mesh.userData.naturalSurface,'cliffs','the cliff material is assigned before surface-island unwrapping');
+  mesh.geometry=mesh.geometry.clone();cliffUnwraps++;
+  return {patchCount:8}; // Six polygon walls and two caps use independent full-PNG texture islands.
+}};
+window.InstancedMeshBounds={tag(mesh){
+  assert.ok(mesh.isInstancedMesh,'only spatial cairn chunks enter the instanced cull registry');
+  mesh.userData.hobunjiInstanceBounds=true;cullRegistrations++;return mesh;
+}};
 window.GridTileAccessors={getActiveScene:()=>scene};
 window.AuthoredFurniture={
   async load(key){return {key};}, // Simulate the real asynchronous furniture data load.
@@ -114,12 +130,32 @@ assert.equal(first.userData.witnessDye.unique,true);
 assert.equal(first.children.find(child=>child.userData?.ruinStoneSignalGlyph)?.position.z,.57,
   'the dyed rune is outside the irregular stone instead of buried inside its geometry');
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
+const cairnGroup=scene.getObjectByName('wilderness-stone-cairns'); // Spatial instances are the render-only cull granularity, not one wilderness-wide draw.
+const plannedCairns=scenery.planForLayout(zoneId,worldLayout,'test-world:'+cycle).filter(site=>site.kind==='stoneCairn');
+const expectedBuckets=new Set(plannedCairns.map(site=>Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)));
+assert.ok(plannedCairns.length>0,'fixture includes actual normal cairns, not only the marked witness stone');
+assert.equal(cairnGroup.children.length,expectedBuckets.size,'one independently cullable instance batch per occupied 24-tile cell');
+assert.equal(cairnGroup.children.reduce((n,mesh)=>n+mesh.count,0),plannedCairns.length*4,'four stones survive for each cairn');
+assert.ok(cairnGroup.children.every(mesh=>mesh.material===cliffMaterial&&mesh.geometry!==sharedStoneArt.geometry),
+  'each cairn chunk shares the cliff material and its own mapped geometry, never the quarry geometry');
+assert.ok(cairnGroup.children.every(mesh=>mesh.userData.hobunjiInstanceBounds===true
+  &&mesh.userData.hobunjiWildernessDistanceCull===true&&mesh.frustumCulled===false),
+  'custom instance bounds control frustum/distance culling without unsafe Three r128 geometry-only culling');
+assert.equal(cullRegistrations,cairnGroup.children.length,'every spatial chunk is enrolled in the render-only frustum culler');
+assert.equal(cliffNaturalizations,1,'cliff material assigned once and shared across chunks');
+assert.equal(cliffUnwraps,1,'individual rock faces unwrapped once and shared across all chunk instances');
+assert.equal(scenery.debugSnapshot().cairnRendering.frustumTracked,expectedBuckets.size,'mobile diagnostics show registered frustum chunks');
+assert.equal(scenery.debugSnapshot().cairnRendering.cliffMappedFaces,8,'mobile diagnostics show separate face mapping');
 assert.equal(scenery.debugSnapshot().plan.marked.length,originalMarked,'mobile diagnostics enumerate every marked object');
 let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){paintedPillars++;
   assert.ok(node.userData.meshById.get('stump').children.some(part=>part.userData?.furniturePattern),
     'the real authored pillar shaft receives the existing ruin pattern overlay');
 }});
 assert.ok(paintedPillars>0,'even a small generated area renders colored pillar inscriptions');
+scene.traverse(node=>{if(node.name==='wilderness-broken-stone-pillar')node.traverse(part=>{
+  if(part.isMesh)assert.ok(part.frustumCulled&&part.userData.hobunjiWildernessDistanceCull,
+    'debris-ifier ruin parts get independent frustum and distance culling');
+});});
 assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
 assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
@@ -134,6 +170,8 @@ const nextMarked=decoratedFor().length; // The next Shift may distribute a diffe
 assert.notEqual(witnessFor(),first,'a new Tothal generation rebuilds the marker even with the same zone object and scene');
 assert.ok(disposed,'the old marker-owned engraving geometry is disposed on Shift');
 assert.equal(sharedStoneDisposed,false,'Shift must not dispose shared stone geometry');
+assert.equal(cliffNaturalizations,1,'Tothal rebuilds reuse the same cached cliff material');
+assert.equal(cliffUnwraps,1,'Tothal rebuilds reuse the same per-face UV geometry');
 assert.equal(decorations,originalMarked+nextMarked,'the new cycle decorates each new marked object exactly once');
 const second=witnessFor();
 zoneLayouts.set(zoneId,{...worldLayout}); // Same cycle but forced regeneration replaces the workspace object.
