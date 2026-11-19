@@ -68,6 +68,17 @@
     copy[index] = { x: clamp(x, Math.min(low, high), Math.max(low, high)), y: clamp(y, 0, 1) };
     return valid(copy) ? copy : nodes.map(p => ({ ...p }));
   }
+  function flipNodes(nodes, axis) {
+    if (!valid(nodes) || !['horizontal', 'vertical'].includes(axis))
+      throw new Error('Flip requires seven ordered nodes and a horizontal or vertical axis.');
+    // Reflect around the curve's own bounding box, not the full portrait.
+    const minX = nodes[0].x, maxX = nodes[NODES - 1].x;
+    const ys = nodes.map(p => p.y), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const result = axis === 'horizontal'
+      ? nodes.slice().reverse().map(p => ({ x: minX + maxX - p.x, y: p.y }))
+      : nodes.map(p => ({ x: p.x, y: minY + maxY - p.y }));
+    return valid(result) ? result : nodes.map(p => ({ ...p }));
+  }
   function warp(rgba, width, height, source, target) {
     if (!rgba || rgba.length !== width * height * 4 || width < 2 || height < 2 ||
       !valid(source) || !valid(target)) throw new Error('Invalid headband image or seven-point curves.');
@@ -110,5 +121,5 @@
     }
     return out; // Nearest-neighbour sampling preserves the authored pixel art and alpha exactly.
   }
-  global.ClothingHeadbandSpline = Object.freeze({ NODES, valid, trace, curveAt, dragNode, warp });
+  global.ClothingHeadbandSpline = Object.freeze({ NODES, valid, trace, curveAt, dragNode, flipNodes, warp });
 })(typeof window !== 'undefined' ? window : globalThis);
