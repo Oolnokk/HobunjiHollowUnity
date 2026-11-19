@@ -1,5 +1,20 @@
 # Performance investigation log
 
+## 19 Nov 2026: precipitation row matching and weather lighting
+
+- Rain and Western Slope blizzard now match pooled sheets to rows only when the
+  row window changes. Position, opacity, and UV animation still update each
+  frame. The existing RainPlanes snapshot exposes `rowWindowRebuilds`.
+- Fog lighting reads lunar illumination directly from SkyDome, eliminating a
+  full diagnostic snapshot per lighting sample. SkyDome reuses its static
+  lighting stops and skips overcast easing on frames where the value has settled.
+- The rain harness verifies one row-window match over 122 stationary frames,
+  then covers movement, camera projection, spacing, mode, and scene changes.
+  Mist tests reject calls to the diagnostic snapshot during lighting updates.
+  A 280-frame Three.js r128 comparison against the previous implementation
+  matched sheet transforms, opacity, UV offsets, and sky lighting values.
+  Device frame times have yet to be measured.
+
 ## 19 Nov 2026: actual Chrome CPU profile — repeated scene traversals
 
 Inspected the attached `Trace-20261118T215416.json.gz` as a sampled Chrome

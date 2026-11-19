@@ -109,6 +109,7 @@ let state = rain.getDebugState();
 assert.equal(state.layerPoolSize, 17);
 assert.equal(state.rowAssignmentScratchSize, 17);
 assert.equal(state.rowReassignments, 17);
+assert.equal(state.rowWindowRebuilds, 1, 'the first rainy frame matches the visible row window');
 const rainTexture = group.children[0].material.map; // Original rain map used to check weather-content swaps.
 const initialUvY = rainTexture.offset.y; // UV movement must remain active on a reused mesh.
 rain.update(1 / 60);
@@ -119,6 +120,26 @@ for (let frame = 0; frame < 120; frame++) rain.update(1 / 60); // Exercise two s
 assert.equal(temporarySetCreations, 0, 'steady rain must not allocate transient Sets for row matching');
 assert.equal(rain.getDebugState().rowAssignmentScratchSize, 17, 'row assignment storage stays bounded after 120 frames');
 assert.equal(rain.getDebugState().rowReassignments, 17, 'stationary rain must not cause row-pool churn');
+assert.equal(rain.getDebugState().rowWindowRebuilds, 1, '122 stationary frames run row matching once');
+const gridOffset = deps.player.y; // Restored after checking movement within a row window.
+deps.player.y += 5;
+rain.update(1 / 60);
+const movingState = rain.getDebugState(); // Used to verify that movement changes once-per-frame projection, not just row identities.
+const movingRowOpacity = group.children[0].material.opacity; // Confirms the cached row still updates its fade while walking.
+assert.equal(movingState.rowWindowRebuilds, 2, 'leaving an exact lattice boundary changes the nearest row');
+deps.player.y += 5;
+rain.update(1 / 60);
+assert.equal(rain.getDebugState().rowWindowRebuilds, movingState.rowWindowRebuilds,
+  'walking within one row window keeps using the matched planes');
+// A lateral camera shift still updates placement with the cached row topology.
+camera.position.x += 1;
+rain.update(1 / 60);
+assert.ok(group.children[0].visible);
+assert.equal(group.children[0].position.x, camera.position.x);
+assert.notEqual(group.children[0].material.opacity, movingRowOpacity);
+camera.position.x -= 1;
+deps.player.y = gridOffset;
+rain.update(1 / 60);
 
 // The old renderer identifies a row by side + world coordinate, NOT by the
 // index within a spacing preset. +5 units is the same row in both presets.
@@ -177,6 +198,9 @@ assert.equal(rain.getDebugState().layerCount, 3, 'camera-sheet test mode only sh
 rain.setSettings({ mode: 'rows', frontCount: 0, behindCount: 0 });
 rain.update(1 / 60);
 assert.equal(rain.getDebugState().layerCount, 0, 'zero row counts do not leave stale pool meshes visible');
+const emptyWindowRebuilds = rain.getDebugState().rowWindowRebuilds; // Zero rows is itself a reusable window.
+rain.update(1 / 60);
+assert.equal(rain.getDebugState().rowWindowRebuilds, emptyWindowRebuilds);
 rain.setSettings({ frontCount: 5, behindCount: 12 });
 area = 'farm';
 rain.update(1 / 60);
@@ -186,7 +210,9 @@ assert.equal(geometryCreations, 1, 'mode switches never allocate duplicate plane
 
 const nextScene = new Group(); // Another outdoor map scene, to verify precipitation is transferred rather than duplicated.
 activeScene = nextScene;
+const preTransitionRebuilds = rain.getDebugState().rowWindowRebuilds; // A different scene must reset row tracking.
 rain.update(1 / 60);
+assert.equal(rain.getDebugState().rowWindowRebuilds, preTransitionRebuilds + 1);
 assert.equal(scene.children.includes(group), false, 'scene transitions detach the previous precipitation group');
 assert.equal(nextScene.children.filter(node => node.name === 'world_rain_planes').length, 1,
   'the new scene receives exactly one reused precipitation group');
