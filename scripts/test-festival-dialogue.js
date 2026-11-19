@@ -126,6 +126,7 @@ option.onclick();
 assert.deepEqual(shopMenus,['generalStore'],'dialogue restriction releases when gathering ends');
 
 // End-to-end NPC resolver: the real FestivalSystem override must win over an old Hunundi presence return.
+window.CalendarSystem.__civilMidnightBridgeInstalled = true; // This test's stub already supplies civil days; it lacks the full raw-calendar helpers that the live bridge wraps.
 load('map-layout-system'); // Provide the authored live Five Blossoms layout instead of a hand-written bandstand coordinate.
 let fiveBlossomsReady = true; // Simulates the five saved Key Item checks after the real quest has completed.
 window.FestivalBlossomHunt = {menuStatus:()=>({ready:fiveBlossomsReady})};
