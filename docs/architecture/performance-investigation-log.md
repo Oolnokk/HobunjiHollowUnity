@@ -1,5 +1,18 @@
 # Performance investigation log
 
+## 18 Nov 2026: dense Cloud Forest steady rendering
+
+- The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
+  mist's geometry, materials, world transforms and fog, and blends against the current world target's
+  depth. It no longer submits the whole forest scene for this pass.
+- Trees whose fade has settled leave the animation set, including those that remain partially faded.
+  At full opacity the tree draws with its original materials again. Fade copies are reused until
+  their tree unloads. The mobile lighting snapshot includes `outlineMistRedrawLayers` and
+  `treeFade.animating`.
+- The Three.js regression verifies the mist pass's inputs, render state restoration and three-mesh
+  scene. The fade test verifies zero opacity writes across 60 settled frames, material restoration
+  and chunk teardown's cleanup method. No physical-device frame-time measurement yet.
+
 ## 18 Nov 2026: Southern Cloud Forest short camera corridor
 
 The Cloud Forest's historical `vegCullRadiusTiles: 30` switched
@@ -33,19 +46,6 @@ covers externally hidden chunks and a stationary cull-mode toggle.
 No real-device FPS gain has been measured yet; compare matched camera
 paths and `CloudForestTreeBatcher.getDebugState()` with the settings A/B
 toggle before making any numeric performance claim.
-
-## 18 Nov 2026: dense Cloud Forest steady rendering
-
-- The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
-  mist's geometry, materials, world transforms and fog, and blends against the current world target's
-  depth. It no longer submits the whole forest scene for this pass.
-- Trees whose fade has settled leave the animation set, including those that remain partially faded.
-  At full opacity the tree draws with its original materials again. Fade copies are reused until
-  their tree unloads. The mobile lighting snapshot includes `outlineMistRedrawLayers` and
-  `treeFade.animating`.
-- The Three.js regression verifies the mist pass's inputs, render state restoration and three-mesh
-  scene. The fade test verifies zero opacity writes across 60 settled frames, material restoration
-  and chunk teardown's cleanup method. No physical-device frame-time measurement yet.
 
 ## 18 Nov 2026: redundant primary-folder recovery scans
 
