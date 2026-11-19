@@ -177,7 +177,7 @@ function paintContourOverlay(ctx){
   ctx.drawImage(R.contourMaskOverlay,0,0);
 }
 
-function headbandSelectionKey(){return contourSelectionKey()} // Per garment, donor, target and gender.
+function headbandSelectionKey(){return contourSelectionKey()+'::donor::'+E.sourceSpecies.value+'_'+E.sourceGender.value} // Each donor/target, garment and gender pair has independent whole and per-node fitting.
 function traceHeadbandCanvas(canvas){
   if(!canvas)return null;
   const data=canvas.getContext('2d',{alpha:true}).getImageData(0,0,canvas.width,canvas.height);
@@ -206,7 +206,12 @@ function autoHeadbandTargetNodes(view='front'){
 function currentHeadbandRecord(){
   if(!R.body||!R.cloth||fitRegion()!=='headwear')return null;
   A.headbandSplines ||= {}; // Persistent source/target maps are isolated from the normal 6x6 grid.
-  const key=headbandSelectionKey(),saved=A.headbandSplines[key],valid=window.ClothingHeadbandSpline.valid;
+  const key=headbandSelectionKey(),valid=window.ClothingHeadbandSpline.valid;
+  if(!A.headbandSplines[key]){
+    const previous=A.headbandSplines[contourSelectionKey()]; // Old releases keyed headwear only by target. Copy rather than mutate that legacy record.
+    if(previous&&valid(previous.source)&&valid(previous.target))A.headbandSplines[key]=clone(previous);
+  }
+  const saved=A.headbandSplines[key];
   if(saved&&valid(saved.source)&&valid(saved.target))return saved;
   const source=autoHeadbandSourceNodes();
   if(!source)return null;
