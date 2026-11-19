@@ -28,6 +28,8 @@
   let clueTarget = null; // Tracks the next blossom whose saved clue was last reconciled.
   let clueLayout = null; // Tracks that target's workspace object, so same-cycle forced regeneration invalidates the saved clue.
   let clueSynced = false; // Recheck saved clues on member/world load and while generated terrain is incomplete.
+  let cueGeneratedFor = ''; // Associates the retained unique-start evidence with its exact active blossom.
+  let cueGeneratedLayout = null; // Blocks stale sound/glow when a Tothal Shift swaps out the terrain.
 
   function year() { return Number(window.CalendarSystem?.aotYearNumber?.()); }
   function active() { return window.FestivalCalendar?.current?.()?.id === 'five_blossoms'; }
@@ -73,12 +75,14 @@
   }
   function descriptor(founds = [], shift = null) {
     const remaining = targetFor(founds); // The first undiscovered blossom supplies the active clue without invalidating other discoveries.
+    if (!remaining) { cueGeneratedFor = ''; cueGeneratedLayout = null; lastGenerated = null; }
     if (!remaining) return { kind:'story', provider:'blossomHunt', icon:'🌸', title:TITLE, npcName:'Father Hunundi Hodu',
       objective:'Present all five hand-picked blossoms to Father Hunundi Hodu in town.',
       detail:'All five blossoms are in your Pack. Speak with Father Hunundi before the Feast ends to claim the Five Blossom Crown.',
       found:founds.slice(0,5), ready:true, year:year(), shiftYear:shift };
     const clue = clueFor(remaining);
     lastGenerated = clue;
+    cueGeneratedFor = remaining.id; cueGeneratedLayout = zoneLayout(remaining.zoneId);
     lastStatus = clue.ok ? `Generated clue for ${remaining.id} from ${clue.facts.length} verified descriptors` : clue.reason;
     return {
       kind: 'story', provider: 'blossomHunt', icon: '🌸', title: TITLE,
@@ -170,7 +174,11 @@
     }
   }
   function clearTrees() {
-    for (const node of visibleTrees.values()) node.parent?.remove?.(node);
+    const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // The same vegetation registry is updated when the quest changes scenes.
+    for (const node of visibleTrees.values()) {
+      node.parent?.remove?.(node);
+      if (zone?.cullables) { const index = zone.cullables.indexOf(node); if (index >= 0) zone.cullables.splice(index,1); }
+    }
     visibleTrees.clear();
     visibleScene = null;
     visibleZone = '';
@@ -185,14 +193,14 @@
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
       const instance = localeFor(blossom);
-      const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // Full green three-tier tree; tabletop one-rung flowers are a separate builder.
+      const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // The region's own native tree shape, with tiny colored leaf bunches among its branches.
       if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
       const p = window.LocaleRiddleGenerator?.positionOf?.(instance, 'blossom-tree');
       if (!Number.isFinite(p?.col) || !Number.isFinite(p?.row)) continue;
       const color = blossomColor(blossom); // Never duplicate the temple's live colour-fill palette in an event renderer.
-      const tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, color); // Public builder reuses cached Three.js geometry/materials; one cheap instance per active scene.
+      const tree = foliage(blossom.localeId + ':' + p.col + ':' + p.row, color, area); // Public builder reuses cached Three.js geometry/materials; one cheap instance per active scene.
       if (!tree) continue;
-      // The dedicated wilderness builder already normalizes its outer bounds to a 2×2×2-tile silhouette.
+      // Native trees keep their normal zone proportions, bark and foliage; the authored locale owns their solid trunk.
       tree.traverse?.(child => { if (child.geometry) child.userData.festivalSharedFoliage = true; }); // Zone teardown must not dispose the foliage generator's globally shared GPU buffers.
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color, localeId: blossom.localeId };
@@ -202,6 +210,18 @@
       const plantingOffset = Number(tree.position?.y) || 0; // Wilderness builder seats the generated roots at local ground level after normalizing the full tree bounds.
       tree.position.set(p.col + .5, (rawHeight != null && Number.isFinite(height) ? height : 0) + plantingOffset, p.row + .5); // Preserve the builder's root contact while honoring the sampled plateau height.
       scene.add(tree);
+      const THREE = window.THREE; // Same Box3→cullSphere registration used for ordinary and Dev Arena vegetation.
+      const zoneInfo = window.GridTileAccessors?.getZoneSceneInfo?.(area);
+      if (THREE?.Box3 && THREE?.Sphere && zoneInfo?.scene === scene) {
+        const box = new THREE.Box3().setFromObject(tree); // Computed once per scene creation, never inside the vegetation frame loop.
+        if (!box.isEmpty()) {
+          const sphere = box.getBoundingSphere(new THREE.Sphere());
+          tree.userData.cullSphere = {x:sphere.center.x,z:sphere.center.z,radius:sphere.radius,
+            xzRadius:Math.hypot((box.max.x-box.min.x)/2,(box.max.z-box.min.z)/2)};
+          zoneInfo.cullables ||= [];
+          if (!zoneInfo.cullables.includes(tree)) zoneInfo.cullables.push(tree); // Uses the native directional (or Cloud Forest radial) culling/fade path.
+        }
+      }
       visibleTrees.set(blossom.localeId, tree);
     }
   }
@@ -248,14 +268,30 @@
       onPress:() => pickBlossom(target.id)
     }]); // One native arch slot on touch, keyboard and controller; no separate positioned DOM button.
   }
+  function syncStartCue() {
+    const live = state(); // Only a saved active quest may reveal its currently displayed route start.
+    const found = Array.isArray(live?.progress?.found) ? live.progress.found : [];
+    const target = targetFor(found); // Opportunistic pickups advance the hint without reusing old landmark evidence.
+    window.FestivalBlossomStartCue?.update?.({
+      active: active() && live?.status === 'active' && !!target &&
+        cueGeneratedFor === target.id && cueGeneratedLayout === zoneLayout(target.zoneId) && lastGenerated?.ok === true,
+      blossom: target, anchor: lastGenerated?.evidence?.uniqueStart || null,
+      tile: window.PlayerTileEvents?.current?.(), scene: window.GridTileAccessors?.getActiveScene?.(),
+      color: target ? blossomColor(target) : null,
+      shift: mapDeps?.currentTothalYear?.(), tilePixels: mapDeps?.TILE
+    });
+  }
   function onTile() {
     syncCalendar();
     buildVisibleTrees();
+    syncStartCue();
     syncPickPrompt(); // Moving near a blossom only makes Pick available: never automatically collects a flower.
   }
   function init(deps) {
     mapDeps = deps;calendarKey = '';retrySaveAfter = 0;registeredYear = null;turnInRunning = false;lastTurnIn = null;
     clueTarget = null; clueLayout = null; clueSynced = false; // Do not inherit the previous member/world's saved-clue state.
+    lastGenerated = null; cueGeneratedFor = ''; cueGeneratedLayout = null;
+    window.FestivalBlossomStartCue?.reset?.(); // Release prior character's hum, decal and scene root.
     unsubTile?.();
     unsubTile = window.PlayerTileEvents?.subscribe?.(onTile) || null;
     const router = window.GameplayInputRouter || window.WorldActionInputClaims;
@@ -265,9 +301,9 @@
     clearTrees(); registerItems(); syncPickPrompt();
     window.DevCompanion?.registerStateProvider?.('fiveBlossomsHunt',debugSnapshot);
   }
-  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;clueTarget = null;clueLayout = null;clueSynced = false;registerItems(); }
+  function bindQuestDeps(deps) { questDeps = deps;calendarKey = '';retrySaveAfter = 0;clueTarget = null;clueLayout = null;clueSynced = false;cueGeneratedFor = '';cueGeneratedLayout = null;lastGenerated = null;window.FestivalBlossomStartCue?.reset?.();registerItems(); }
   function update() {
-    syncCalendar();buildVisibleTrees();syncPickPrompt(); // Uses the existing festival low-frequency tick; never scans other zones per frame.
+    syncCalendar();buildVisibleTrees();syncStartCue();syncPickPrompt(); // Reuses the existing 200-ms festival tick: no new per-frame landmark search.
   }
   function menuStatus() {
     const live = state();
@@ -338,7 +374,8 @@
       displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
       savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
       nearbyPick:nearbyTree()?.id || null,advertisedPick,usesNativeArch:true,registeredYear,turnInRunning,lastTurnIn,
-      clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false
+      clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false,
+      startCue: window.FestivalBlossomStartCue?.debugSnapshot?.() || null
     };
   }
   window.FestivalBlossomHunt = Object.freeze({ init,bindQuestDeps,update,menuStatus,debugSnapshot,BLOSSOMS,
