@@ -12,12 +12,12 @@ recursion under names like `At`. No FPS estimate is possible from them.
 
 Observed call-chain contributors included:
 - `held-object-render-order.js` shell scissor
-  `collectReplayCulled` (~430 inclusive samples) and held
-  `collectBoundedReplayObjects` (~211).
-- `outline-render-performance.js` world-text overlay search (~213).
+  `collectReplayCulled` (448 stack-presence samples) and held
+  `collectBoundedReplayObjects` (211).
+- `outline-render-performance.js` world-text overlay search (220).
 - `held-object-render-order.js` periodic `scanScene -> classifyTree`
-  (~237), currently a 750 ms fallback for post-add tags; retained.
-- `crop-sprite-art.js` placeholder discovery (~156), currently a
+  (241 containing `classifyTree`, 245 containing `scanScene`), currently a 750 ms fallback for post-add tags; retained.
+- `crop-sprite-art.js` placeholder discovery (156), currently a
   250 ms fallback for newly planted crops; retained.
 
 **Changed here:** `outline-render-performance.js` now handles attachments
