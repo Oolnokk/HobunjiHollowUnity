@@ -176,58 +176,107 @@ function paintContourOverlay(ctx){
   }
   ctx.drawImage(R.contourMaskOverlay,0,0);
 }
-function headbandSelectionKey(){
-  return contourSelectionKey(); // Both maps belong to one exact starting garment/source/target pairing.
-}
+
+function headbandSelectionKey(){return contourSelectionKey()} // Per garment, donor, target and gender.
 function traceHeadbandCanvas(canvas){
   if(!canvas)return null;
   const data=canvas.getContext('2d',{alpha:true}).getImageData(0,0,canvas.width,canvas.height);
   return window.ClothingHeadbandSpline.trace(data.data,canvas.width,canvas.height);
 }
-function headbandSourceCanvas(){
-  return R.cloth?._front||R.cloth; // Headband cosmetic variants generally author their visible arch on the front plane.
+function copyHeadbandCanvas(source){
+  if(!source)return null;
+  const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
+  out.getContext('2d',{alpha:true}).drawImage(source,0,0);
+  return out; // Frozen rear pixels for exports and undo.
 }
-function autoHeadbandSourceNodes(){
-  if(!R.body||!headbandSourceCanvas())return null;
-  const base=cachedHeadbandGridWarp(headbandSourceCanvas(),targetGrid(),R.body.width,R.body.height);
-  return traceHeadbandCanvas(base);
+function headbandView(){return E.headbandView.value==='back'?'back':'front'}
+function headbandSourceCanvas(view='front'){return view==='back'?R.headbandRearCanvas:(R.cloth?._front||R.cloth)}
+function autoHeadbandSourceNodes(view='front'){
+  const art=headbandSourceCanvas(view);
+  if(!R.body||!art)return null;
+  return traceHeadbandCanvas(view==='back'?art:cachedHeadbandGridWarp(art,targetGrid(),R.body.width,R.body.height));
 }
-function autoHeadbandTargetNodes(){
+function autoHeadbandTargetNodes(view='front'){
+  if(view==='back'){
+    const art=R.authoredTargetCloth?._behindView||R.authoredTargetCloth?._front;
+    return art?traceHeadbandCanvas(flipCanvasX(art)):null; // Original PNG orientation differs from visible backplane.
+  }
   return traceHeadbandCanvas(R.authoredTargetCloth?._front||R.authoredTargetCloth);
 }
 function currentHeadbandRecord(){
   if(!R.body||!R.cloth||fitRegion()!=='headwear')return null;
-  A.headbandSplines ||= {}; // Source and target nodes are persistent authoring data, not runtime avatar state.
+  A.headbandSplines ||= {}; // Persistent source/target maps are isolated from the normal 6x6 grid.
   const key=headbandSelectionKey(),saved=A.headbandSplines[key],valid=window.ClothingHeadbandSpline.valid;
   if(saved&&valid(saved.source)&&valid(saved.target))return saved;
   const source=autoHeadbandSourceNodes();
   if(!source)return null;
-  const target=autoHeadbandTargetNodes()||source.map(point=>({...point}));
-  const record={enabled:/headband|flower.?crown|blossom.?crown|wreath/i.test(E.garment.value),source,target};
-  A.headbandSplines[key]=record;
-  return record;
+  const target=autoHeadbandTargetNodes()||source.map(p=>({...p}));
+  return A.headbandSplines[key]={enabled:/headband|flower.?crown|blossom.?crown|wreath/i.test(E.garment.value),source,target};
+}
+function currentHeadbandViewRecord(){
+  const record=currentHeadbandRecord();
+  if(!record)return null;
+  if(headbandView()==='front')return record;
+  if(!R.headbandRearCanvas)return null;
+  const valid=window.ClothingHeadbandSpline.valid;
+  if(!valid(record.back?.source)||!valid(record.back?.target)){
+    const source=autoHeadbandSourceNodes('back');if(!source)return null;
+    record.back={enabled:false,source,target:autoHeadbandTargetNodes('back')||source.map(p=>({...p}))};
+  }
+  return record.back; // Rear curve never changes the front seven-node mapping.
+}
+async function hydrateHeadbandRearArt(){
+  const record=currentHeadbandRecord(),key=headbandSelectionKey(),generation=R.assetGeneration;
+  R.headbandRearCanvas=null;R.headbandRearKey=null;
+  if(!record?.rearArtPng)return;
+  const img=await loadImage(record.rearArtPng); // Data-URL PNG is decoded once, not on each drag.
+  if(generation!==R.assetGeneration||key!==headbandSelectionKey()||!R.body)return;
+  if(img.naturalWidth!==R.body.width||img.naturalHeight!==R.body.height)throw Error('Saved rear sprite size differs from the target portrait.');
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+  canvas.getContext('2d',{alpha:true}).drawImage(img,0,0);
+  R.headbandRearCanvas=canvas;R.headbandRearKey=key;
+}
+function saveHeadbandRearArt(){
+  const record=currentHeadbandRecord();
+  if(!record||!R.body)return;
+  record.rearArtPng=R.headbandRearCanvas?.toDataURL('image/png')||null; // Compact PNG saved only on commit, never on each pointer move.
+  R.headbandRearKey=R.headbandRearCanvas?headbandSelectionKey():null;
+  if(!record.rearArtPng)record.back=null;
+  saveState();syncHeadbandControls();
+}
+function headbandRearDisplay(state=null){
+  const art=state?.rearCanvas||R.headbandRearCanvas,record=state||currentHeadbandRecord();
+  if(!art)return null;
+  return applyHeadbandSplineWarp(art,record?.back,art.width,art.height);
 }
 function captureHeadbandState(){
   const record=currentHeadbandRecord();
-  return record ? {
-    enabled:!!record.enabled,
-    source:record.source.map(point=>({...point})),
-    target:record.target.map(point=>({...point}))
-  }:null; // Export snapshots never retain a mutable pointer into live drag nodes.
+  return record?{
+    enabled:!!record.enabled,source:record.source.map(p=>({...p})),target:record.target.map(p=>({...p})),
+    back:record.back?{enabled:!!record.back.enabled,source:record.back.source.map(p=>({...p})),target:record.back.target.map(p=>({...p}))}:null,
+    rearCanvas:R.headbandRearKey===headbandSelectionKey()?copyHeadbandCanvas(R.headbandRearCanvas):null
+  }:null; // Immutable front/back snapshots for asynchronous PNG exports.
 }
 function syncHeadbandControls(){
-  const record=currentHeadbandRecord(),ready=!!record;
-  E.headbandEnabled.disabled=!ready;E.headbandEnabled.checked=!!record?.enabled;
+  const active=currentHeadbandViewRecord(),ready=!!active,back=headbandView()==='back';
+  E.headbandRearSection.hidden=!back;
+  E.headbandEnabled.disabled=!ready;E.headbandEnabled.checked=!!active?.enabled;
   E.headbandTraceSource.disabled=!ready;
-  E.headbandTraceTarget.disabled=!ready||!autoHeadbandTargetNodes();
+  E.headbandTraceTarget.disabled=!ready||!autoHeadbandTargetNodes(headbandView());
   E.headbandCopy.disabled=!ready;E.headbandReset.disabled=!ready;E.headbandEditCurve.disabled=!ready;
+  E.headbandFlipH.disabled=!ready;E.headbandFlipV.disabled=!ready;
+  for(const control of [E.headbandRearDraw,E.headbandRearErase,E.headbandRearSample,E.headbandRearExport,E.headbandRearEdit])
+    control.disabled=!R.headbandRearCanvas;
+  E.headbandRearRemove.disabled=!R.headbandRearCanvas;
+  E.headbandRearStatus.textContent=R.headbandRearCanvas
+    ?'Rear art ready. Paint visible backplane pixels or switch to Band spline to shape the independent rear curve.'
+    :'No authored rear PNG yet. Copy fitted front, copy existing rear, import PNG or create a blank image.';
   E.headbandStatus.textContent=ready
-    ?'Seven source nodes + seven target nodes ready for '+E.garment.value+'. '+(record.enabled?'Spline deformation ON.':'Spline deformation OFF (enable above).')
-    :'No traceable front headband pixels. Choose headwear with a visible sprite.';
+    ?'Seven source and target points for '+(back?'rear':'front')+'. '+(active.enabled?'Spline ON.':'Spline OFF.')
+    :back?'Create a rear sprite to map seven independent back nodes.':'No traceable headband pixels.';
 }
 function drawHeadbandOverlay(ctx){
-  const record=currentHeadbandRecord();
-  if(!record)return;
+  const record=currentHeadbandViewRecord();if(!record)return;
   const width=E.stage.width,height=E.stage.height,active=E.headbandEditCurve.value==='source'?'source':'target';
   const colors={source:'#ffaf50',target:'#4ff1ed'};
   ctx.save();
@@ -239,15 +288,12 @@ function drawHeadbandOverlay(ctx){
       if(i===0)ctx.moveTo(p.x*(width-1),p.y*(height-1));
       else ctx.lineTo(p.x*(width-1),p.y*(height-1));
     }
-    ctx.lineWidth=kind===active?2.25:1;
-    ctx.strokeStyle=colors[kind];ctx.globalAlpha=kind===active?1:.65;
-    ctx.setLineDash(kind===active?[]:[3,3]);
-    ctx.stroke();ctx.setLineDash([]);
-    if(kind!==active)continue; // Only the editable curve has handles; overlapping source/target handles remain selectable.
+    ctx.lineWidth=kind===active?2.25:1;ctx.strokeStyle=colors[kind];ctx.globalAlpha=kind===active?1:.65;
+    ctx.setLineDash(kind===active?[]:[3,3]);ctx.stroke();ctx.setLineDash([]);
+    if(kind!==active)continue;
     ctx.font='8px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.globalAlpha=1;
     nodes.forEach((p,index)=>{
-      const x=p.x*(width-1),y=p.y*(height-1);
-      ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);
+      const x=p.x*(width-1),y=p.y*(height-1);ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);
       ctx.fillStyle='#101820';ctx.fill();ctx.lineWidth=1.8;ctx.strokeStyle=colors[kind];ctx.stroke();
       ctx.fillStyle=colors[kind];ctx.fillText(String(index+1),x,y);
     });
