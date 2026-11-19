@@ -15626,7 +15626,7 @@ clearAnimationActors = function(...args) {
       const result = oldClassV1554(actor, sizeClass, options);
       const layout = layoutV1554(actor, sizeClass);
       if (!result || !layout) return result;
-      actor.visualOffset.position.y = layout.groundLift; // Authored floor-to-origin height REPLACES Auto half-height, never stacks onto it.
+      actor.visualOffset.position.y = animationAuthor.mode === 'rig' ? 0 : layout.groundLift; // Multi mode uses gameplay lift; Rig mode fixes the animal and moves its blue floor reference instead.
       actor.visualOffset.updateMatrixWorld(true);
       if (actor.attachment?.enabled) updateActorAttachmentAlignment(actor);
       actor.model.userData.creatureGameplayPreview = layout; // Render-time values for the mobile status panel.
