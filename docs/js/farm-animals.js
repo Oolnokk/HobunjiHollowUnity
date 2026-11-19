@@ -911,7 +911,11 @@
     const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
     const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
     if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
-      buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
+      const canFertilize = heldRecipe.application !== 'reduceBreedingDays' || deps._loadWorldBreedingPairs?.().some(pair => // Fertility only targets a real active pair; no misleading button on unpaired animals.
+        refsEqual(pair.parentA, { source: 'world', id: animal.livestockId }) || refsEqual(pair.parentB, { source: 'world', id: animal.livestockId }));
+      if (canFertilize && deps.hasFarmPermission?.('livestock') !== false) {
+        buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
+      }
     }
     return buttons;
   }
@@ -975,6 +979,7 @@
     const payload = window.AlchemySystem?.POTION_ITEMS?.[itemKey] || window.AlchemySystem?.parseBrewedItemKey?.(itemKey); // Stored recipe identity, not the bottle's display label.
     const definition = payload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[payload.recipeId]; // Authored one-day effect shared by Farm UI and animal interaction.
     if (definition?.useMode !== 'livestock' || definition.application !== 'reduceBreedingDays' || !(definition.daysReduced > 0)) return { ok: false, message: 'Select a Potion of Fertility.' };
+    if (deps.hasFarmPermission?.('livestock') === false) return { ok: false, message: 'You cannot manage breeding livestock on this farm.' };
     if ((deps.inventory[itemKey] || 0) < 1) return { ok: false, message: 'That potion is no longer in your bag.' };
     const pairs = deps._loadWorldBreedingPairs();
     const pair = pairs.find(entry => entry.id === pairId);
