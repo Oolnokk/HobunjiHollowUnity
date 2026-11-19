@@ -1132,41 +1132,33 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     return tree; // Instancing clones meshes only: variant BufferGeometries and materials remain cached.
   }
 
-  const WILDERNESS_BLOSSOM_BASE = Object.freeze({ // A short shadewood-like tree, independent of the one-tier tabletop flowers.
-    ...TREE_PRESETS.shadewood,
-    variantCount:2, vinesEnabled:false, climbBranchChance:0, rootsEnabled:true,
-    trunkLength:4.3, trunkRadius:0.19, trunkBend:0.24, trunkWonk:0.24, trunkTwist:0.2,
-    trunkNoise:0.25, trunkNoiseOctaves:2, rootCount:5, rootLength:0.5, rootRadius:0.08,
-    knotAt:0.42, knotTiers:3, knotTierSpacing:0.2, knotCount:5,
-    knotLength:1.95, knotLengthJitter:0.25, knotRadius:0.095, knotUpDownBias:0.18,
-    knotCurl:0.35, knotWonk:0.2, knotTierLengthDelta:-0.25, knotTierRadiusDelta:-0.2,
-    branchArchExtra:0.15,
-    leafWidth:1.3, leafOffsetY:-0.12, leafAlong01:0.78, leafPrismLengthOffset:0.15,
-    leafTexture:TREE_PRESETS.shadewood.leafTexture, leafTintH:115, leafTintS:0.55, leafTintL:0.35,
-    blossomSprigsPerBranch:2, blossomSize:0.16, scaleMul:1
+  const WILDERNESS_BLOSSOM_NATIVE = Object.freeze({ // The hunt grows on the same species already native to each generated region.
+    map_northern_cliffs: Object.freeze({ species:'crownedPine', blossomSize:0.16 }),
+    map_western_slope: Object.freeze({ species:'deadTree', blossomSize:0.15 }), // Winter-bare limbs develop only the small magical leaf bunches.
+    map_southern_cloud_forest: Object.freeze({ species:'shadewood', blossomSize:0.50 })
   });
-  const wildernessBlossomPresets = new Map(); // Reuses seeded branch geometry for every wilderness tree sharing a temple swatch.
-  function buildWildernessBlossomTreeMesh(seed, blossomColorHex) {
+  const wildernessBlossomPresets = new Map(); // Each zone/swatch pair reuses real native tree variant geometry.
+  function buildWildernessBlossomTreeMesh(seed, blossomColorHex, zoneId = 'map_southern_cloud_forest') {
     const hex = typeof blossomColorHex === 'string' && /^#[0-9a-f]{6}$/i.test(blossomColorHex)
-      ? blossomColorHex.toLowerCase() : '#ffb3b3'; // Invalid swatches fall back to a stable, cached rose preset.
-    let preset = wildernessBlossomPresets.get(hex);
+      ? blossomColorHex.toLowerCase() : '#ffb3b3'; // Malformed colors cannot produce unbounded shader variants.
+    const native = WILDERNESS_BLOSSOM_NATIVE[zoneId] || WILDERNESS_BLOSSOM_NATIVE.map_southern_cloud_forest; // Preview/editor calls without a region retain a known species.
+    const key = native.species + ':' + hex; // Species and live festival tint independently determine the cached geometry/material.
+    let preset = wildernessBlossomPresets.get(key);
     if (!preset) {
-      preset = Object.freeze({ ...WILDERNESS_BLOSSOM_BASE, blossomColorHex:hex });
-      wildernessBlossomPresets.set(hex,preset);
+      preset = Object.freeze({
+        ...TREE_PRESETS[native.species], blossomColorHex:hex,
+        blossomSprigsPerBranch:2, blossomSize:native.blossomSize,
+        climbBranchChance:0 // This is a permanent story locale, not a harvestable/climbable resource-tree registry entry.
+      });
+      wildernessBlossomPresets.set(key,preset);
     }
-    const tree = buildTreeInstance('wildernessBlossom:' + hex,preset,xfnv1a('wildernessBlossom:' + String(seed)));
-    const bounds = new T.Box3().setFromObject(tree); // Measure each seeded variant once per placed tree before enforcing the tile footprint.
-    const size = bounds.getSize(new T.Vector3()); // Used only to normalize the final 2x2x2-tile envelope, not to rebuild geometry.
-    const radialScale = 2 / Math.max(size.x,size.z,0.001);
-    const heightScale = 2 / Math.max(size.y,0.001);
-    tree.scale.x *= radialScale;tree.scale.z *= radialScale;tree.scale.y *= heightScale;
-    const finalBounds = new T.Box3().setFromObject(tree);
-    tree.position.y -= finalBounds.min.y; // The roots sit on the sampled ground rather than straddling the wilderness floor.
+    const tree = buildTreeInstance('wildernessBlossom:' + key,preset,xfnv1a('wildernessBlossom:' + String(seed)));
     tree.userData.wildernessBlossom = {
-      seed:String(seed),blossomColor:hex,foliageColor:'green',
-      branchTiers:3,branchesPerTier:5,blossomSprigsPerBranch:2,
-      footprintTiles:2,heightTiles:2,sharedGeometry:true
-    }; // Mobile inspector and regression harness can distinguish these trees from decorative single-tier flowers.
+      seed:String(seed),blossomColor:hex,foliageColor:native.species==='deadTree'?'bare':'native',
+      nativeSpecies:native.species,zoneId,branchTiers:preset.knotTiers,branchesPerTier:preset.knotCount,
+      blossomSprigsPerBranch:preset.blossomSprigsPerBranch,sharedGeometry:true,unfellable:true
+    }; // Existing native branch, bark and leaf materials remain intact; only the small sprigs acquire a blossom color.
+    tree.userData.unfellableStoryTree = true; // Quest foliage never enters the tile-resource tree/felling registry.
     return tree;
   }
 
@@ -3104,9 +3096,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       return buildWeedsGroup(seedU32);
     },
     pottedBlossomRecipe:POTTED_BLOSSOM_BASE, // Table flowers retain their original single-rung green-stem/color-filled-petal design.
-    wildernessBlossomRecipe:WILDERNESS_BLOSSOM_BASE, // Separate three-tier short-tree specification, independent of festival pottery.
-    buildWildernessBlossomTreeMesh(seed, blossomColorHex) {
-      return buildWildernessBlossomTreeMesh(seed,blossomColorHex);
+    wildernessBlossomRecipe:WILDERNESS_BLOSSOM_NATIVE, // Separate three-tier short-tree specification, independent of festival pottery.
+    buildWildernessBlossomTreeMesh(seed, blossomColorHex, zoneId) {
+      return buildWildernessBlossomTreeMesh(seed,blossomColorHex,zoneId);
     },
     buildPottedBlossomTreeMesh(seed, leafColorHex) {
       return buildPottedBlossomTreeMesh(seed, leafColorHex); // Public generator entry for festival vases, including editor previews.
