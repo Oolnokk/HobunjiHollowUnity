@@ -268,9 +268,10 @@ function syncHeadbandControls(){
   for(const control of [E.headbandRearDraw,E.headbandRearErase,E.headbandRearSample,E.headbandRearExport,E.headbandRearEdit])
     control.disabled=!R.headbandRearCanvas;
   E.headbandRearRemove.disabled=!R.headbandRearCanvas;
-  E.headbandRearStatus.textContent=R.headbandRearCanvas
+  const rearGuide=R.headReferenceBack?'Actual game back-facing head reference loaded.':'Game rear-head reference pending; use Retry runtime if it remains blank.';
+  E.headbandRearStatus.textContent=(R.headbandRearCanvas
     ?'Rear art ready. Paint visible backplane pixels or switch to Band spline to shape the independent rear curve.'
-    :'No authored rear PNG yet. Copy fitted front, copy existing rear, import PNG or create a blank image.';
+    :'No authored rear PNG yet. Copy fitted front, copy existing rear, import PNG or create a blank image.')+' '+rearGuide;
   E.headbandStatus.textContent=ready
     ?'Seven source and target points for '+(back?'rear':'front')+'. '+(active.enabled?'Spline ON.':'Spline OFF.')
     :back?'Create a rear sprite to map seven independent back nodes.':'No traceable headband pixels.';
