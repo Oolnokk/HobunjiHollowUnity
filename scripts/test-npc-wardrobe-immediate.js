@@ -62,7 +62,7 @@ const fallbackRec = {
   appliedDyes: { TORSO: 'dye:CLOTH:legacy_torso' },
   gifts: { loved: ['style:test'], liked: [], disliked: [], hated: [] },
 };
-const stubCanvas = () => ({ width: 16, height: 16, getContext: () => ({ clearRect() {}, drawImage() {} }) }); // Test live canvases support staged portrait uploads.
+const stubCanvas = () => { const canvas = { width: 16, height: 16, lastPaint: null }; canvas.getContext = () => ({ clearRect() {}, drawImage(source) { canvas.lastPaint = source.lastPaint; } }); return canvas; }; // Live canvas mimics the pixels copied from a completed private render.
 const walker = {
   rec,
   profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } }, // Deliberately wrong stale profile reproduces the Teacup species bug if refresh reads profile.appearance.
