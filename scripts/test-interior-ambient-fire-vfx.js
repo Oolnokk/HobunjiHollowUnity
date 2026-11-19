@@ -138,13 +138,16 @@ assert.equal(setEnabledCalls.filter(c => c.id === 'interior-ambient-vfx').length
 // furniture catalog entry: its real tilted tip still gets the player's campfire
 // particle VFX, and the same ambient subscriber disposes it on removal.
 const torchAnchor = {}; // The authored-furniture runtime positions this under the handheld sprite pivot.
+const replacementAnchor = {}; // Simulates a newly authored sprite replacing a provisional procedural fallback.
+const torchVisuals = []; // Tracks every emitter to ensure a replacement disposes its predecessor exactly once.
 let torchOpts = null; // Confirm a size-only adaptation, not a new flame renderer.
-const torchVisual = { updates: [], disposed: false, update(dt, lit) { this.updates.push({ dt, lit }); }, dispose() { this.disposed = true; } };
 context.PersistentGroundFire = {
   attachCampfireFlame(anchor, options) {
-    assert.equal(anchor, torchAnchor, 'the shared campfire helper attaches to the authored torch tip');
+    assert([torchAnchor, replacementAnchor].includes(anchor), 'fire only attaches to one of the live torch tip anchors');
     torchOpts = options;
-    return torchVisual;
+    const visual = { anchor, updates: [], disposed: false, update(dt, lit) { this.updates.push({ dt, lit }); }, dispose() { this.disposed = true; } };
+    torchVisuals.push(visual);
+    return visual;
   },
 };
 const torchGroup = { userData: { wallTorchFireAnchor: torchAnchor }, parent: {} };
@@ -152,10 +155,20 @@ context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wal
 assert(torchOpts && torchOpts.scale > 0 && torchOpts.rateScale > 0, 'wall torch asks the existing campfire VFX renderer for a smaller flame');
 assert.equal(context.InteriorFireFloorRuntime.debugSnapshot().lastAmbientKey, 'wallTorch', 'mobile ambient snapshot identifies torches');
 tick({ timestamp: 40 });
-assert.equal(torchVisual.updates.length, 1, 'wall torch receives the same scheduler update as all ambient flames');
+assert.equal(torchVisuals[0].updates.length, 1, 'wall torch receives the same scheduler update as all ambient flames');
+torchGroup.userData.wallTorchFireAnchor = replacementAnchor;
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wallTorch');
+assert.equal(torchVisuals.length, 2, 'upgrading a fallback torch rebinds its flame to the newly authored tip');
+assert.equal(torchVisuals[0].disposed, true, 'the orphaned fallback-anchor emitter is disposed on upgrade');
+assert.equal(torchVisuals[1].anchor, replacementAnchor, 'the replacement uses the new authored tip rather than the removed sprite');
+assert.equal(context.InteriorFireFloorRuntime.debugSnapshot().ambientGroups, 1, 'a live torch upgrade must keep only one ambient record');
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wallTorch');
+assert.equal(torchVisuals.length, 2, 'repeat notifications for the same tip never double-attach flames');
+tick({ timestamp: 50 });
+assert.equal(torchVisuals[1].updates.length, 1, 'the live replacement flame receives scheduled ticks');
 torchGroup.parent = null;
 tick({ timestamp: 56 });
-assert.equal(torchVisual.disposed, true, 'removed torches dispose their shared campfire emitter');
+assert.equal(torchVisuals[1].disposed, true, 'removing the upgraded torch disposes its live campfire emitter');
 assert.equal(entry.options.enabled, false, 'torch removal releases the ambient subscriber when no other flames remain');
 
 // The stand-alone interior editor may load furniture before the game scheduler.
