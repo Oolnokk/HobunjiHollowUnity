@@ -15669,9 +15669,28 @@ clearAnimationActors = function(...args) {
       applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
       return actor;
     };
-    const oldImportV1554 = importAnimationProjectData; // A late saved-project transform cannot undo the game dimensions.
+    const oldImportV1554 = importAnimationProjectData; // V15.24's fromAutosave migration still force-replaces entire creature profiles.
     importAnimationProjectData = async function(data, options = {}) {
       const result = await oldImportV1554(data, options);
+      if (options.fromAutosave && data?.attachmentRigProfiles?.creatures) {
+        const source = data.attachmentRigProfiles; // Use the exact saved profile, not the prior V15.24 generic approved snapshot.
+        const repaired = parityV1554.normalizeImported({
+          characters: {},
+          creatures: structuredCloneSafe(source.creatures),
+        }, source).creatures; // Shared game guard repairs only recognized stale size and floor tuples.
+        for (const [kind, stored] of Object.entries(source.creatures)) {
+          const target = animationAuthor.attachmentRigProfiles?.creatures?.[kind]; // The older importer may have replaced this with defaults.
+          const recovered = repaired?.[kind]; // Approved legacy migration plus authored current values, without changing unrelated anchors.
+          if (!target || !recovered) continue;
+          if (stored.sizeScales) target.sizeScales = structuredCloneSafe(recovered.sizeScales);
+          if (stored.groundOffsets) target.groundOffsets = structuredCloneSafe(recovered.groundOffsets);
+          if (stored.sizeScales || stored.groundOffsets) {
+            target.sizeScaleRule = structuredCloneSafe(recovered.sizeScaleRule || target.sizeScaleRule || {});
+            target.sizeScalePercentages = structuredCloneSafe(recovered.sizeScalePercentages || target.sizeScalePercentages || {});
+            syncCreatureTransformGroundOffsetsFromRigV1544(kind);
+          }
+        }
+      }
       for (const actor of animationAuthor.actors) if (actor.source?.type === 'creature')
         applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
       syncAnimationAuthorFloorGridV1538();
