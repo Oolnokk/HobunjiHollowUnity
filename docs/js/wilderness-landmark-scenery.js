@@ -70,10 +70,10 @@ const WITNESS_DYES = Object.freeze([
  }
 ]); // Thirteen real bright cloth dye swatches; each can occur at most once per zone.
 const WITNESS_MOTIFS = Object.freeze([
- 'assets/patterns/motif_harlyao_glyph_entropy.png',
- 'assets/patterns/motif_harlyao_glyph_ignorance.png',
- 'assets/patterns/motif_harlyao_glyph_servitude.png'
-]); // Three existing ruin engraving motifs, deterministically shuffled per Tothal zone; never invent a pattern filename.
+ {id:'harlyao_glyph_entropy',url:'assets/patterns/motif_harlyao_glyph_entropy.png'},
+ {id:'harlyao_glyph_ignorance',url:'assets/patterns/motif_harlyao_glyph_ignorance.png'},
+ {id:'harlyao_glyph_servitude',url:'assets/patterns/motif_harlyao_glyph_servitude.png'}
+]); // Canonical collectible ruin wall motifs and their fallback image paths, selected deterministically per Tothal zone.
 function witnessDyes(seed) {
  const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []; // The authored in-game dye catalog is the color/name authority.
  const dyes=WITNESS_DYES.map(choice=>{
@@ -140,9 +140,10 @@ function planForLayout(zoneId,layout,identity='world:shift'){
    const original=sites[index],pillar=original.kind==='brokenPillar';
    const kind=starting?'witnessStone':pillar?'brokenPillar':'markedBoulder';
    const object=starting?'standing stone':pillar?'broken pillar':'boulder';
+   const motif=WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length]; // Both the ruin pattern ID and the debug URL must describe the same engraving.
    sites[index]={...original,kind,name:'the '+dye.name+'-marked '+object,
     dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
-    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length],
+    patternId:motif.id,patternUrl:motif.url,
     unique:true,marked:true,source:'generated-year-round-scenery'}; // Every dyed object has a unique swatch within the zone.
   };
   let firstIndex=-1;
@@ -162,10 +163,11 @@ function planForLayout(zoneId,layout,identity='world:shift'){
    const isBoulder=start.replacedTree; // A real copse becomes a patterned boulder; open ground receives an authored broken pillar.
    const kind=isBoulder?'markedBoulder':'brokenPillar';
    const id=zoneId+':blossom-start:'+start.id;
+   const motif=WITNESS_MOTIFS[hash(key+'|motif|'+id)%WITNESS_MOTIFS.length]; // The relocated hunt anchor uses the exact same ruin motif pool as ordinary landmarks.
    sites.push({id,kind,name:'the '+dye.name+'-marked '+(isBoulder?'boulder':'broken pillar'),
     point:{col:start.col,row:start.row},yaw:hash(key+'|yaw|'+id)/4294967296*Math.PI*2,size:1,
     dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
-    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+id)%WITNESS_MOTIFS.length],
+    patternId:motif.id,patternUrl:motif.url,
     unique:true,marked:true,blossomNear:start.id,treeReplaced:isBoulder,source:'generated-year-round-scenery'});
   }
  }
@@ -200,17 +202,21 @@ function cairns(T,host,sites){
  mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
 }
 function engrave(mesh,site,stone=false) {
- const surface=root.FurniturePatternSurfaces; // Reuse ruin surface projection and its cached GPU atlas.
- mesh.userData.ownsWildernessWitnessBuffers=true; // Cleanup owns just the marker's decal buffers, not the original geometry.
- mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true};
- surface?.applyPart?.(mesh,{patternSurfaces:[{
-  slot:'sides',selector:'sides',mode:'engraving',scale:.9,opacity:.9,glowIntensity:.15,
-  pattern:{motifUrl:site.patternUrl,motifScale:.75,tiling:false},
-  palette:['#e6e0d1',site.ink],glowColor:site.ink,maxAtlasPx:256,tilePx:128
- }]});
- const rune=surface?.attachStoneSignal?.(mesh,{face:'front',width:.45,height:.5,idleColor:site.ink});
- if(stone&&rune?.glyph?.position)rune.glyph.position.z=.57; // Natural irregular rock requires clearance beyond its facets.
+ const surface=root.FurniturePatternSurfaces; // The exact ruin-wall surface compositor handles UVs, authored Harlyao lattice and opacity.
+ if(!surface?.applyPart){error='FurniturePatternSurfaces unavailable for wilderness engraving';return false;}
+ mesh.userData.ownsWildernessWitnessBuffers=true; // Only these projected surface children are disposable; source quarry/pillar geometry is shared.
+ mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,patternId:site.patternId,unique:true};
+ const pattern={
+  slot:'wilderness-ruin-masonry',selector:'all',mode:'engraving',patternId:site.patternId,
+  scale:.65,opacity:.9,engravingCoreOpacity:.85,glowIntensity:0,glowPulseDepth:0,
+  layerTransforms:[{tiling:true,scale:1,motifScale:1,rotationDeg:0,offsetX:0,offsetY:0}],
+  palette:['#e6e0d1',site.ink],maxAtlasPx:256,tilePx:128
+ }; // Repeat the original ruin-wall motif across the *whole* visible stone surface; never add a glowing rune decal.
+ surface.applyPart(mesh,{...(mesh.userData?.authoredPart||{}),kind:stone?'sphere':mesh.userData?.authoredPart?.kind||'box',patternSurfaces:[pattern]});
+ return mesh.children.some(child=>child.userData?.furniturePattern?.mode==='engraving');
 }
+const PATTERNED_PILLAR_PARTS=Object.freeze(['base','stump','stub','fallen','cap']); // Only major masonry receives full face projection; chips stay bare to limit draw calls.
+
 function witnessStone(T,host,sites){
  for(const site of sites.filter(s=>s.kind==='witnessStone'||s.kind==='markedBoulder')){
   const art=root.OreRockTextures?.smallStoneArt?.(T); // Use the same permanent quarry PNG mesh as wilderness rubble.
@@ -248,9 +254,11 @@ async function debris(host,sites,ticket,zoneId){
    built.userData.wildernessLandmarkSitePoint={...site.point}; // The authored pillar, not a proxy, is the sense target.
    if(site.marked){
     const parts=built.userData?.meshById;
-    const shaft=parts?.get?.('stump')||parts?.get?.('stub')||parts?.get?.('base'); // Actual authored pillar shaft receives the engraving.
-    if(shaft)engrave(shaft,site,false);
-    built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can name the color on a given pillar.
+    const targets=[...new Set(PATTERNED_PILLAR_PARTS.map(id=>parts?.get?.(id)).filter(mesh=>mesh?.isMesh))]; // Resolve authored parts before attaching any overlay children.
+    if(!targets.length)built.traverse?.(mesh=>{if(mesh.isMesh&&PATTERNED_PILLAR_PARTS.includes(mesh.userData?.authoredPart?.id))targets.push(mesh);}); // Support older builders without meshById.
+    built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can identify the ink of the entire broken pillar.
+    built.userData.wildernessPatternedParts=targets.filter(mesh=>engrave(mesh,site)).length; // Mark the shaft, fallen pieces and base, not just one small front-facing decal.
+    if(!built.userData.wildernessPatternedParts)error='No stone faces were available for '+site.id;
    }
    ignoreHits(built);host.add(built);
   }
@@ -258,7 +266,7 @@ async function debris(host,sites,ticket,zoneId){
 }
 function clear(){
  serial++;
- const witness=[]; // Every scene-local painted rock and pillar owns disposable engraving atlas children.
+ const witness=[]; // Every scene-local engraved rock and pillar owns disposable projected surface atlases.
  group?.traverse?.(node=>{
   if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
  });
@@ -295,9 +303,14 @@ function objectAt(zoneId,targetScene,point){
  function debugSnapshot(){
  const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
  const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
+ const pillars=group?.children?.filter(node=>node.userData?.wildernessDyeId)||[]; // On-demand mobile diagnostics, never traversed in the render loop.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
+  patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),
   dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
-   motif:marker?.userData?.witnessDye?.motifUrl||null,engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
+   motif:marker?.userData?.witnessDye?.motifUrl||null,patternId:marker?.userData?.witnessDye?.patternId||null,
+   engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
+   fullSurface:engraving?.userData?.furniturePattern?.slot==='wilderness-ruin-masonry',
+   nonGlowing:!engraving?.userData?.engravingGlowMesh,
    runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
 }
 function init(injected){clear();deps=injected;error=null;root.DevCompanion?.registerStateProvider?.('wildernessLandmarkScenery',debugSnapshot);}
