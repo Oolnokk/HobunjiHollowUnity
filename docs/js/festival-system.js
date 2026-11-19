@@ -793,7 +793,7 @@
     const r = Math.floor(Number(stage.row) + (Number(stage.postZ) || 0) + (Number(size.fd) || 2) + 1);
     const canStandNpc = window.NpcPathfinding?.isNpcTileWalkable; // NPC-sized collision includes furniture, unlike the general terrain-only standing probe.
     for (let radius = 0; radius <= 4; radius++) { // The plaza can be crowded; expand beyond the original nine cells without a new pathfinding pass.
-      for (let dr = 0; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = radius; dr >= -radius; dr--) for (let dc = -radius; dc <= radius; dc++) { // Prefer south of the bandstand, but try the other sides if the plaza is occupied.
         if (Math.max(Math.abs(dc), dr) !== radius) continue;
         const col = c + dc, row = r + dr; // Candidate tile in the existing town pathfinding grid.
         const clear = typeof canStandNpc === 'function'
