@@ -755,6 +755,8 @@
       || (col !== animal.col && row !== animal.row
         && (!canSpawnAt(col, animal.row) || !canSpawnAt(animal.col, row)
           || _tileTouchesAnyBarn(col, animal.row) || _tileTouchesAnyBarn(animal.col, row))); // Prevent diagonal corner clipping, as the shared A* planner already does.
+    const takePlannedHop = hop => _farmAnimalStepToward(animal, hop.col, hop.row, onStep,
+      (col, row) => col !== hop.col || row !== hop.row || mateHopBlocked(col, row), false); // Never silently substitute an axis hop for a blocked diagonal A* waypoint.
     if (Math.hypot(animal.wx - mate.wx, animal.wz - mate.wz) <= BREEDING_MATE_GAP_TILES) {
       animal._mateFollowPath = null; // Close enough: wait beside the moving mate instead of entering their occupied tile.
       return true;
@@ -765,7 +767,7 @@
     animal._mateFollowLeaderTile = leaderTile;
     if (animal._mateFollowPath?.length) {
       const hop = animal._mateFollowPath[0];
-      if (_farmAnimalStepToward(animal, hop.col, hop.row, onStep, mateHopBlocked, false)) {
+      if (takePlannedHop(hop)) {
         animal._mateFollowPath.shift();
         return true;
       }
@@ -791,7 +793,7 @@
         maxNodes: 200, // A bounded local search keeps even blocked pens safe on lower-end phones.
       });
       if (!path?.length) continue;
-      if (_farmAnimalStepToward(animal, path[0].col, path[0].row, onStep, mateHopBlocked, false)) {
+      if (takePlannedHop(path[0])) {
         path.shift();
         animal._mateFollowPath = path;
         break;
