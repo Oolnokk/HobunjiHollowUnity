@@ -363,7 +363,12 @@ const waterfallVerse=Riddles.generate({zoneId:'map_northern_cliffs',layout:water
   instance:waterfallTerrain.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',
   landmarks:waterfallSites,seed:'no-map-wide-superlatives'});
 assert.equal(waterfallVerse.ok,true);
-assert.equal(waterfallVerse.evidence.uniqueStart.kind,'witnessStone','only the painted starting stone is trusted, regardless of falls');
+const waterfallStart=waterfallSites.find(site=>site.marked && site.dyeId===waterfallVerse.evidence.uniqueStart.dyeId);
+assert.ok(waterfallStart,'the waterfall route starts at a genuinely rendered uniquely painted landmark, not an invented superlative');
+assert.deepEqual(waterfallVerse.evidence.uniqueStart.coordinate,waterfallStart.point,
+  'the first clue uses the painted debris actual coordinates rather than an arbitrary waterfall');
+assert.ok(waterfallVerse.evidence.uniqueStart.distanceToBlossom<=20,
+  'nearby painted rock or pillar wins over a distant standing stone');
 assert.doesNotMatch(waterfallVerse.text,/tallest|longest|highest|northernmost|westernmost/i,
   'landmark names never assume a whole map can be exhaustively surveyed');
 const boundaryTerrain=layoutFor('cyan',25,20);
