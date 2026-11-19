@@ -640,7 +640,7 @@
     let spawnAccum = 0;
 
     function update(dt, active, override) {
-      const live = Object.assign({}, emitter, override || {});
+      const live = override ? { ...emitter, ...override } : emitter; // Most ambient campfire emitters have no per-frame override; avoid allocating a copy every tick.
       const rate = active && live.enabled !== false ? (live.rate || 0) : 0;
       mat.size = Math.max(.01, live.size || .05);
       colorA.set(live.colorA || '#ffffff'); colorB.set(live.colorB || '#ffffff');
@@ -674,8 +674,11 @@
         if (i < particles.length) {
           const p = particles[i];
           posAttr.setXYZ(i, p.x, p.y, p.z);
-          const c = colorA.clone().lerp(colorB, p.age / p.life);
-          colorAttr.setXYZ(i, c.r, c.g, c.b);
+          const fade = p.age / p.life; // Reuse the authored campfire gradient without allocating a THREE.Color per particle per frame.
+          colorAttr.setXYZ(i,
+            colorA.r + (colorB.r - colorA.r) * fade,
+            colorA.g + (colorB.g - colorA.g) * fade,
+            colorA.b + (colorB.b - colorA.b) * fade);
         } else {
           posAttr.setXYZ(i, 0, -9999, 0);
         }
