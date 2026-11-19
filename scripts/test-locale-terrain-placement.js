@@ -150,4 +150,19 @@ assert.equal(crowdedBlossom.objects.some(o=>o.id==='landmark-tree'),false,'repla
 assert.equal(distantTile.floraKind,'copse','ordinary trees outside the clearance radius are preserved');
 assert.equal(crowdedBlossom.objects.some(o=>o.id==='distant-tree'),true,'distant native trees are not disturbed');
 
+const sharedBlossomZone=blossomWorkspace(); // Two blossoms sharing one real zone must not reserve the same future debris tile.
+const secondBlossom={...blossomTemplate,id:'locale_five_blossoms_gold',festivalBlossom:{id:'gold'}};
+Placement.placeTerrainAwareLocales(sharedBlossomZone,[blossomTemplate,secondBlossom],{seed:'blossom-paired',scale:1});
+const pairedStartSites=sharedBlossomZone.localeInstances.map(instance=>instance.blossomStartLandmark); // Both markers must survive sequential placement.
+assert.equal(pairedStartSites.length,2,'both same-zone blossom locales can be stamped on one generated map');
+assert.ok(pairedStartSites.every(Boolean),'each blossom has a nearby start despite previously claimed marker tiles');
+assert.notDeepEqual(
+  {col:pairedStartSites[0].col,row:pairedStartSites[0].row},
+  {col:pairedStartSites[1].col,row:pairedStartSites[1].row},
+  'a later blossom may never overwrite or reuse the earlier uniquely painted start');
+assert.ok(pairedStartSites.every((site,i)=>{
+  const tree=sharedBlossomZone.localeInstances[i].objects[0];
+  return Math.hypot(site.col-tree.x,site.row-tree.y)<=18;
+}),'both blossom clues are independently anchored near their actual tree');
+
 console.log('locale-terrain-placement tests passed');
