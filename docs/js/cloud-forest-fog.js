@@ -35,6 +35,8 @@
   const layerLive = LAYER_CONFIG.map(cfg => ({ radiusTiles: cfg.defaultRadiusTiles, opacity: cfg.defaultOpacity }));
   const WESTERN_SLOPE_ID = 'map_western_slope'; // Enables the existing three mist cylinders for outdoor blowing snow, not for Slope interiors.
   const SLOPE_FADE_SECONDS = 0.7; // Eases the snow haze as wind and precipitation change without sudden white walls.
+  const SLOPE_TINT_REFRESH_SECONDS = 0.2; // Daylight tint changes slowly, so five refreshes/second avoid costly sky diagnostics every frame.
+  let lastSlopeTintSeconds = -Infinity; // Updated only when snow is visible, reset when leaving the Western Slope.
   let slopeOpacityScale = 0; // Multiples each Cloud Forest layer opacity; 1 is the absolute Slope blizzard cap.
   let slopeTargetScale = 0; // Last sampled weather/wind target for the mobile diagnostic snapshot.
   let slopeGustStrength = 0; // Shared WeatherWind gust component, exposed for mobile weather diagnostics.
@@ -376,6 +378,7 @@
       if (Math.abs(slopeOpacityScale - slopeTargetScale) < 0.0005) slopeOpacityScale = slopeTargetScale;
     } else {
       slopeOpacityScale = slopeTargetScale = slopeGustStrength = slopeWindStrength = slopePrecipitationStrength = 0;
+      lastSlopeTintSeconds = -Infinity; // Entering the Slope again must refresh its sky-lit mist immediately.
     }
 
     const activeScene = active ? deps.getActiveScene() : null;
@@ -393,12 +396,17 @@
       if (skyRoot) skyRoot.visible = false;
       updateFogLighting(activeScene);
     } else if (westernSlope) {
-      // Snow is illuminated by the same outdoor day/night palette; unlike Cloud Forest
-      // lighting, this must NOT change the Slope's scene fog, sky or background.
-      const light = getFullDayLighting();
-      fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
-      fogResultColor.set(0xffffff).lerp(fogTimeColor, 0.3);
-      for (const layer of layers) layer.material.color.copy(fogResultColor);
+      // Snow uses the outdoor day/night palette, but sky state and lunar
+      // diagnostics are too expensive to re-query at every rendered frame.
+      // The Slope's own scene fog, skydome and background remain untouched.
+      const tintSeconds = performance.now() / 1000;
+      if (tintSeconds - lastSlopeTintSeconds >= SLOPE_TINT_REFRESH_SECONDS) {
+        lastSlopeTintSeconds = tintSeconds;
+        const light = getFullDayLighting();
+        fogTimeColor.setRGB(clamp01(light.r / 255), clamp01(light.g / 255), clamp01(light.b / 255));
+        fogResultColor.set(0xffffff).lerp(fogTimeColor, 0.3);
+        for (const layer of layers) layer.material.color.copy(fogResultColor);
+      }
     } else {
       updateFogLighting(activeScene, undergroundLightingForArea(currentArea));
     }
