@@ -81,7 +81,12 @@ assert.equal(parity.opaqueIdleBottomRatio({ width: 0, height: 0 }), 1, 'missing 
 
 const index = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
 assert.match(index, /src="\.\.\/\.\.\/js\/animation-author-creature-gameplay-parity\.js\?v=/, 'editor loads the helper');
-assert.match(index, /creaturePlaneScaleRoot\.scale\.set\(1, layout\.heightScale, layout\.widthScale\)/, 'width uses rotated billboard Z');
+assert.match(index, /anchorScaleRoot\.scale\.set\(scale\.x, scale\.y, 1\)/, 'gameplay-authored rig anchors keep PNG-local X/Y size');
+assert.match(index, /record\.object\.scale\.set\(record\.baseScale\.x \* scale\.x, record\.baseScale\.y \* scale\.y, record\.baseScale\.z\)/,
+  'visible animal faces receive size directly on their own PNG-local X/Y');
+assert.doesNotMatch(index, /creaturePlaneScaleRoot\.scale\.set\(1, layout\.heightScale, layout\.widthScale\)/,
+  'new parity code must not rescale the retired group hierarchy a second time');
+assert.match(index, /Reset all three scales to gameplay/, 'reset scales uses per-species gameplay values, not generic editor fallbacks');
 assert.match(index, /animationAuthor\.mode === 'rig' \? 0 : layout\.groundLift/, 'rig floor calibrator remains fixed');
 assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue floor uses the real Auto lift');
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
