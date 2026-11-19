@@ -229,6 +229,35 @@ const olderMotion = plain(api.getConfig()); // Older exports still receive the a
 api.replace(olderMotion);
 assert.equal(api.settings('fishing-spear', 'dagger').animation, 'thrust');
 assert.equal(api.settings('fishing-spear', 'warhammer').animation, 'sweep');
+const angledMotion = plain(api.getConfig()); // Emulate a saved pair override that selects thrust for a sideways-mounted thrusting blade.
+for (const shaft of ['fishing-mace', 'bshuakauitl', 'hachutuTorchStaff'])
+  angledMotion.shafts[shaft].overrides.dagger = { ...angledMotion.shafts[shaft].overrides.dagger, animation: 'thrust' };
+angledMotion.shafts['fishing-mace'].overrides.warhammer = { ...angledMotion.shafts['fishing-mace'].overrides.warhammer, animation: 'thrust' };
+api.replace(angledMotion); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
+for (const shaft of ['fishing-mace', 'bshuakauitl', 'hachutuTorchStaff']) {
+  const assembled = api.itemKey(shaft, 'dagger', 'nativeCopper'); // The dagger is normally thrusting, but its blade points sideways from this sweeping haft.
+  assert.equal(api.isDisallowed(shaft, 'dagger'), false, 'Side-mounted blade test must be a forgeable pair');
+  assert.equal(api.settings(shaft, 'dagger').animation, 'thrust', 'Authoring data remains untouched by the effective attack choice');
+  assert.equal(defs[assembled].animStyle, 'sweep', shaft + ' must sweep with a sideways tang');
+  assert.equal(defs[assembled].comboStyle, 'sweep', shaft + ' must select the matching sweeping combo');
+}
+assert.equal(defs[api.itemKey('fishing-mace', 'warhammer', 'nativeCopper')].animStyle, 'thrust',
+  'Weighted heads on an eye mount do not inherit the sideways-tang restriction');
+assert.equal(defs[api.itemKey('fishing-spear', 'dagger', 'nativeCopper')].animStyle, 'thrust',
+  'Straight tangs retain their authored thrust, even on normally sweeping hafts');
+const straightened = plain(angledMotion); // Changing the effective tang direction must change the resulting animation.
+const maceTang = straightened.shafts['fishing-mace'].mounts.find(mount => mount.type === 'tang'); // Only this head attachment is straightened.
+maceTang.end = { x: maceTang.start.x, y: maceTang.start.y - 40 };
+api.replace(straightened); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
+assert.equal(defs[api.itemKey('fishing-mace', 'dagger', 'nativeCopper')].animStyle, 'thrust',
+  'Straightening an angled tang restores its explicit thrust animation');
+const thrustHaft = plain(angledMotion); // Thrusting donors are intentionally exempt from the sweeping-haft policy.
+const daggerTang = thrustHaft.shafts.dagger.mounts.find(mount => mount.type === 'tang'); // Rotate this test-only dagger attachment sideways.
+daggerTang.end = { x: daggerTang.start.x + 40, y: daggerTang.start.y };
+api.replace(thrustHaft); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']);
+assert.equal(defs[api.itemKey('dagger', 'dagger-sword', 'nativeCopper')].animStyle, 'thrust',
+  'A naturally thrusting haft remains thrusting even if its tang turns sideways');
+api.replace(olderMotion); api.registerDefinitions(defs, shapes, metals, ['nativeCopper']); // Restore the real catalog for the remaining Foundry transaction.
 const spearInventory = { gold: 100, pineLog: 20, bar_nativeCopper: 10 }, spearGear = { tools: {} }; // The allowed spear/hammer path must actually craft, not merely appear unlocked.
 const spearWithEye = plain(api.getConfig()); // Give this thrusting haft an additional sleeve for hammer heads.
 spearWithEye.shafts['fishing-spear'].mounts.push({ type: 'eye', start: { x: 199, y: 834 }, end: { x: 199, y: 754 } });
