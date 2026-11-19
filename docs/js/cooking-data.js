@@ -1091,6 +1091,46 @@
         "Implied"
       ]
     },
+    "mootMilk": {
+      "id": "mootMilk",
+      "name": "Moot Milk",
+      "categories": ["whiteMilk", "dairy"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "fortitude",
+      "tags": ["Milk", "Moot", "Live-Birth Animal"]
+    },
+    "nazgrakuMilk": {
+      "id": "nazgrakuMilk",
+      "name": "Nazgraku Milk",
+      "categories": ["whiteMilk", "dairy"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "speed",
+      "tags": ["Milk", "Nazgraku", "Live-Birth Animal"]
+    },
+    "pingdortMeat": {
+      "id": "pingdortMeat",
+      "name": "Pingdort Meat",
+      "categories": ["poultry", "meat"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "speed",
+      "tags": ["Poultry", "Meat", "Pingdort"]
+    },
+    "tzatzulMeat": {
+      "id": "tzatzulMeat",
+      "name": "Tzatzul Meat",
+      "categories": ["poultry", "meat"],
+      "quality": 3,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "strength",
+      "tags": ["Poultry", "Meat", "Tzatzul"]
+    },
     "puktukMilk": {
       "id": "puktukMilk",
       "name": "Puktuk Milk",

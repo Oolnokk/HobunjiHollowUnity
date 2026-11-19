@@ -36,6 +36,7 @@
       attackDamage:6,attackTag:'sharp',attackCooldownS:2.4,
       attackRangePx:(Number(injected.TILE)||64)*3.5,
       isFlyingSpecies:true,attacks:['pingdortBoulderBomb'],
+      lootPool:'creature_pingdort', // Wild Pingdorts drop their own meat and skin, never inherited Gar-wolf loot.
       sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
     // Wild flocks override their own attack dispatch; personal companions use this special.
     if(render)render[KIND]={...(render[KIND]||{}),prefix:KIND,
@@ -51,7 +52,14 @@
         icon:'🥚',cat:'ingredient',sellPrice:8,tags:['Egg','Pingdort','Unfertilized'],
         desc:'An ordinary edible egg laid by a housed Pingdort. Cannot hatch.'};
     }
-    const inventoryItems=injected.inventoryItems; // Inventory item wheel recognizes both egg kinds even with older item-index saves.
+    const products={ // Shared normal carcass products, awarded by the authored creature_pingdort loot pool.
+      pingdortMeat:{label:'Pingdort Meat',icon:'🥩',cat:'ingredient',sellPrice:12,tags:['Meat','Poultry','Pingdort']},
+      pingdortHide:{label:'Pingdort Hide',icon:'🟫',cat:'material',sellPrice:18,tags:['Material','Hide','Pingdort']},
+    };
+    if(items)for(const [key,spec] of Object.entries(products))items[key]={...spec,...(items[key]||{})};
+    const inventoryItems=injected.inventoryItems; // Inventory item wheel recognizes live offspring and all ordinary wild products.
+    if(Array.isArray(inventoryItems))for(const key of Object.keys(products))
+      if(!inventoryItems.some(item=>item?.key===key))inventoryItems.push({key,icon:products[key].icon,label:products[key].label.toUpperCase(),max:99});
     if(Array.isArray(inventoryItems))for(const key of [FERTILE_EGG,FARM_EGG])
       if(!inventoryItems.some(item=>item?.key===key))inventoryItems.push({
         key,icon:'🥚',label:key===FERTILE_EGG?'FERTILE PINGDORT EGG':'PINGDORT EGG',max:99,

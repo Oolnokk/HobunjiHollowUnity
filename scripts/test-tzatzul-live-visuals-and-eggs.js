@@ -31,8 +31,11 @@ const db = { grehlr: { maxHealth: 60 } };
 assert(dataWorld.window.TzatzulRegistration.register({ CREATURE_DB: db, TILE: 64 }));
 assert.equal(db.tzatzul.lootPool, 'mixedCrateTreasurePuzzle', 'adult remains get the full mixed loot source');
 assert.equal(db['tzatzul-hatchling'].lootPool, 'creature_tzatzul_hatchling', 'hatchlings do not replicate adult hoards');
+assert.equal(db.tzatzul.bonusLootPool, 'creature_tzatzul', 'adult hoard retains independent meat and hide rewards');
+assert.equal(db['tzatzul-hatchling'].bonusLootPool, null, 'hatchlings never inherit adult bonus carcass rolls');
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json'));
-assert.equal(loot.pools.creature_tzatzul_hatchling.entries.length, 0);
+assert.deepEqual(loot.pools.creature_tzatzul_hatchling.entries.map(entry => entry.itemKey),
+  ['tzatzulMeat', 'tzatzulHide'], 'hatchlings grant only small butcher products without a treasure hoard');
 assert.deepEqual(Array.from(loot.pools.mixedCrateTreasurePuzzle.sourcePools, s => s.poolId),
   ['crateJunk', 'treasureChest', 'puzzleCave']);
 assert(loot.pools.puzzleCave.entries.length > 0, 'mixed remains include the merged puzzle-cave reward pool');

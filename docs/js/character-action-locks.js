@@ -111,9 +111,9 @@
   if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname || '')) return;
   const src = document.currentScript?.src || '';
   const base = src ? new URL('.', src).href : 'js/';
-  const chathead = new URL('animal-chathead-frame.js?v=20261116skeeriChathead2', base).href;
+  const chathead = new URL('animal-chathead-frame.js?v=20261119dairyWild2', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
-  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20261115hposelease08', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
+  const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20261119dairyWild1', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20261117hd8e73f5', base).href;
   const socialArchAdapter = new URL('social-action-wheel-arch-adapter.js?v=20260905social17', base).href; // Keeps the centered wheel while sharing selection-arch hold/wheel/release controls and HUD styling.
   const controllerSelectionUi = new URL('controller-selection-ui.js?v=20261118categoryJump1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.

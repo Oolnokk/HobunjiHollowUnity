@@ -2326,10 +2326,90 @@
       ],
       "entries": []
     },
+    "creature_nazgraku": {
+      "label": "Nazgraku",
+      "entries": [
+        {
+          "id": "meat",
+          "itemKey": "nazgrakuMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "nazgrakuHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
+      ]
+    },
+    "creature_pingdort": {
+      "label": "Pingdort",
+      "entries": [
+        {
+          "id": "meat",
+          "itemKey": "pingdortMeat",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "pingdortHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
+      ]
+    },
+    "creature_tzatzul": {
+      "label": "Tzatzul body products (adult; hoard awarded separately)",
+      "entries": [
+        {
+          "id": "meat",
+          "itemKey": "tzatzulMeat",
+          "min": 3,
+          "max": 5,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "tzatzulHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
+      ]
+    },
     "creature_tzatzul_hatchling": {
       "label": "Tzatzul Hatchling",
-      "note": "Empty until hatchling-specific drops are authored. The mother's treasure hoard belongs only to the adult corpse.",
-      "entries": []
+      "note": "Only small body products. The mother's treasure hoard belongs exclusively to the adult corpse.",
+      "entries": [
+        {
+          "id": "meat",
+          "itemKey": "tzatzulMeat",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "tzatzulHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
+      ]
     },
     "creature_moot": {
       "label": "Moot",

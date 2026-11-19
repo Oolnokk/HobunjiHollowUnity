@@ -135,7 +135,7 @@
     if (harvestClipCache.has(key)) return harvestClipCache.get(key);
     const anchorOffset = AUTHORED_MILKING_RUNTIME.animalAnchorTransform.position;
     let clip = null;
-    if (key === 'gar-wolf') {
+    if (key === 'gar-wolf' || key === 'moot' || key === 'nazgraku') { // Shared 2-actor milking clip; no duplicate animation asset needed.
       clip = {
         key: 'milking',
         duration: AUTHORED_MILKING_RUNTIME.duration,

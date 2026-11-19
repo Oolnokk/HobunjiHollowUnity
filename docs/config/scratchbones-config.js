@@ -163,6 +163,9 @@ window.SCRATCHBONES_CONFIG = {
         "drenkirra": { "itemKey": "drenkirraEgg", "cooldownDays": 1 },
         "nelk": { "itemKey": "nelkEggs", "cooldownDays": 1 },
         "nazgraku": { "itemKey": "nazgrakuEggs", "cooldownDays": 2 }
+      },
+      "additionalResources": {
+        "nazgraku": [{ "itemKey": "nazgrakuMilk", "cooldownDays": 1, "verb": "Milk", "interactive": true }] // An independent dairy cycle alongside the existing egg resource.
       }
     },
     "debug": {

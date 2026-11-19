@@ -12,6 +12,7 @@
     puktukHide: { label: 'Puktuk Hide', icon: '🟫', cat: 'material', sellPrice: 24, tags: ['Material', 'Hide', 'Puktuk'], desc: 'A Puktuk hide preserving its original inherited fur for leatherworking.' },
     voorgAssHide: { label: 'Voorg-Ass Hide', icon: '🟫', cat: 'material', sellPrice: 24, tags: ['Material', 'Hide', 'Voorg-Ass'], desc: 'A Voorg-Ass hide whose natural coat can be made into a fur hood.' },
     nelkHide: { label: 'Nelk Hide', icon: '🟫', cat: 'material', sellPrice: 26, tags: ['Material', 'Hide', 'Nelk'], desc: 'A Nelk hide, suitable for a natural-color fur hood.' },
+    nazgrakuHide: { label: 'Nazgraku Hide', icon: '🟫', cat: 'material', sellPrice: 28, tags: ['Material', 'Hide', 'Nazgraku'], desc: 'A Nazgraku hide retaining its inherited coat pattern.' },
     uumkaoiiShell: { label: "Uumkao'ii Shell", icon: '🐚', cat: 'material', sellPrice: 18, tags: ['Material', 'Shell', "Uumkao'ii"], desc: "A hard shell recovered from a wild Uumkao'ii; not a fur hide." },
   });
 
@@ -116,6 +117,8 @@
     const nelk = injectedDeps?.CREATURE_DB?.nelk; // Live Nelk species definition owns the corpse's lootPool selection.
     if (!nelk) return false;
     nelk.lootPool = 'creature_nelk'; // Register at species-init time, before creatures are spawned; no per-creature mutation.
+    const nazgraku = injectedDeps?.CREATURE_DB?.nazgraku; // The other wild Northern Cliffs forager must not inherit its baseline creature's drops.
+    if (nazgraku) nazgraku.lootPool = 'creature_nazgraku';
     return true;
   }
 

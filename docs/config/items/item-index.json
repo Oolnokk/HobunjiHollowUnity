@@ -1127,6 +1127,12 @@
     "icon": "🥩",
     "cat": "ingredient"
   },
+  "mootMilk": {
+    "key": "mootMilk",
+    "label": "Moot Milk",
+    "icon": "🥛",
+    "cat": "ingredient"
+  },
   "mulch": {
     "key": "mulch",
     "label": "Mulch",
@@ -1151,6 +1157,12 @@
     "icon": "🥚",
     "cat": "ingredient"
   },
+  "nazgrakuHide": {
+    "key": "nazgrakuHide",
+    "label": "Nazgraku Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
   "nazgrakuMayonnaise": {
     "key": "nazgrakuMayonnaise",
     "label": "Nazgraku Mayonnaise",
@@ -1161,6 +1173,12 @@
     "key": "nazgrakuMeat",
     "label": "Nazgraku Meat",
     "icon": "🍗",
+    "cat": "ingredient"
+  },
+  "nazgrakuMilk": {
+    "key": "nazgrakuMilk",
+    "label": "Nazgraku Milk",
+    "icon": "🥛",
     "cat": "ingredient"
   },
   "needlegrain": {
@@ -1282,6 +1300,18 @@
     "label": "Pine Log",
     "icon": "🪵",
     "cat": "material"
+  },
+  "pingdortHide": {
+    "key": "pingdortHide",
+    "label": "Pingdort Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "pingdortMeat": {
+    "key": "pingdortMeat",
+    "label": "Pingdort Meat",
+    "icon": "🥩",
+    "cat": "ingredient"
   },
   "puktukHide": {
     "key": "puktukHide",
@@ -1431,6 +1461,18 @@
     "key": "travelSpice",
     "label": "Trader-Sloth Spice",
     "icon": "🌶️",
+    "cat": "ingredient"
+  },
+  "tzatzulHide": {
+    "key": "tzatzulHide",
+    "label": "Tzatzul Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "tzatzulMeat": {
+    "key": "tzatzulMeat",
+    "label": "Tzatzul Meat",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "uumkaoiiButter": {
