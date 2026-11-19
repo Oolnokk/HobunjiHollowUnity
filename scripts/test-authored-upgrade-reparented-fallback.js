@@ -105,4 +105,30 @@ const countVisualRoots = root => { let n = 0; root.traverse(node => { if (node.n
     'direct fallback children are replaced on the root and caller-added helpers survive');
 }
 
+// Wall-torch procedural fallback and authored replacement both use a shared
+// cached PNG mesh/material. Discarding one fallback must not dispose the GPU
+// resources that every other wall torch still references.
+{
+  let disposedGeometry = 0, disposedMaterial = 0; // Assert resource ownership, not merely retained graph structure.
+  const runtime = loadRuntime(() => {
+    const authored = new Object3D('authored_wallTorch');
+    authored.add(new Object3D('new_pivot'));
+    authored.userData.wallTorchFireAnchor = { id: 'authored-tip' }; // Moved into the live host by adoptAuthoredVisual.
+    return authored;
+  });
+  const root = new Object3D('fallback_wallTorch');
+  const fallbackPivot = new Object3D('old_pivot');
+  const png = new Object3D('shared_torch_png');
+  png.geometry = { dispose() { disposedGeometry++; } };
+  png.material = { dispose() { disposedMaterial++; } };
+  png.userData.hobunjiSharedWallTorchArt = true;
+  fallbackPivot.add(png);
+  root.add(fallbackPivot);
+  assert.strictEqual(runtime.adoptAuthoredVisual(root, [fallbackPivot], { key: 'wallTorch' }, 0), true);
+  assert.strictEqual(disposedGeometry, 0, 'shared wall-torch geometry survives fallback replacement');
+  assert.strictEqual(disposedMaterial, 0, 'shared wall-torch material survives fallback replacement');
+  assert.strictEqual(root.userData.wallTorchFireAnchor.id, 'authored-tip', 'live host receives the authored flame anchor');
+  assert.strictEqual(png.parent, fallbackPivot, 'discarded visual is detached without damaging the shared art cache');
+}
+
 console.log('authored upgrade of re-parented fallback: PASS');
