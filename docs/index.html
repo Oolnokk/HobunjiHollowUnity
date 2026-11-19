@@ -1874,15 +1874,15 @@
           </label>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Cloud Forest Wide Vegetation Cull</div>
-              <div class="settings-desc">Off: falls back to the normal camera-forward cull box every other zone uses. On: a circle around the player, sized by the radius slider below</div>
+              <div class="settings-name">Cloud Forest Short Directional Cull</div>
+              <div class="settings-desc">On: a narrower, shorter camera-forward vegetation corridor. Off: use the ordinary wilderness corridor for comparison</div>
             </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestWideCull" checked><span class="toggle-slider"></span></span>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestShortCull" checked><span class="toggle-slider"></span></span>
           </label>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Tree Cull Radius</div>
-              <div class="settings-desc">How far (in tiles) around the player vegetation stays loaded while Wide Vegetation Cull is on</div>
+              <div class="settings-name">Tree Cull Reach</div>
+              <div class="settings-desc">Adjusts the short corridor: at 30, trees extend 21 tiles forward and 9.6 tiles to either side of the camera</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <input type="range" id="settingCloudForestCullRadius" min="5" max="40" step="1" value="30" style="align-self:center">
