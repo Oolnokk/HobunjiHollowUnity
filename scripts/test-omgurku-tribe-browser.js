@@ -89,10 +89,32 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     },entryZone);
     assert.equal(await page.evaluate(()=>window.GridTileAccessors.getCurrentArea()),entryZone,
       'zone transition completes after startup wilderness generation');
-    await page.waitForFunction(()=>[window.PorakanekiCamps,window.OmgurkuCamps].every(api=>{
-      const snapshot=api?.debugSnapshot(); // Camp initialization requires both locale definitions as well as config.
-      return snapshot?.configReady&&snapshot.localesReady&&snapshot.combatDepsReady;
-    }),null,{timeout:60000,polling:250});
+    const campReadiness=()=>page.evaluate(()=>{ // Mobile/CI-safe snapshot isolates a stuck config load from a missed combat initialization hook.
+      const describe=api=>{
+        if(!api)return{exists:false};
+        try {
+          const s=api.debugSnapshot();
+          return{exists:true,configReady:s.configReady,localesReady:s.localesReady,
+            combatDepsReady:s.combatDepsReady,schedulingDepsReady:s.schedulingDepsReady,
+            updateTicks:s.updateTicks,lastReason:s.lastReason,zoneCount:Object.keys(s.zones||{}).length};
+        }catch(error){return{exists:true,error:String(error)};}
+      };
+      return{area:window.GridTileAccessors?.getCurrentArea?.(),
+        porakaneki:describe(window.PorakanekiCamps),omgurku:describe(window.OmgurkuCamps),
+        registeredTribes:window.TribeCamps?.list?.().map(tribe=>tribe.tribeId)||[],
+        failedScriptGroups:window.HobunjiClassicScriptGroups?.failedGroups||[]};
+    });
+    console.log('Omgurku camp readiness on entry:',JSON.stringify(await campReadiness()));
+    try {
+      await page.waitForFunction(()=>[window.PorakanekiCamps,window.OmgurkuCamps].every(api=>{
+        const snapshot=api?.debugSnapshot(); // Both real camp networks must load config, locales and combat dependencies.
+        return snapshot?.configReady&&snapshot.localesReady&&snapshot.combatDepsReady;
+      }),null,{timeout:60000,polling:250});
+    }catch(error){
+      console.error('Omgurku camp readiness timeout:',JSON.stringify(await campReadiness()));
+      console.error('Browser page errors:',JSON.stringify(errors.slice(-12)));
+      throw error; // Never turn an actual missing network into a green test.
+    }
     const camps=await page.evaluate(zones=>{
       const pora=window.PorakanekiCamps,omg=window.OmgurkuCamps; // Read the real networks against generated layouts.
       pora.ensureWorldCamps();
