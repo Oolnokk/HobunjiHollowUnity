@@ -60,7 +60,21 @@
     return library;
   }
 
+  function opaqueIdleBottomRatio(canvas) {
+    const width = Number(canvas?.width), height = Number(canvas?.height); // The idle alpha canvas uses the same source-opaque foot baseline as CreatureGroundAnchor in game.
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) return 1;
+    try {
+      const pixels = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+      for (let y = height - 1; y >= 0; y--) {
+        for (let x = 0; x < width; x++) {
+          if (pixels[(y * width + x) * 4 + 3] === 255) return (y + 1) / height;
+        }
+      }
+    } catch (_) { /* A security-tainted source uses the same no-correction fallback as gameplay. */ }
+    return 1;
+  }
+
   window.AnimationAuthorCreatureGameplayParity = Object.freeze({
-    validClass, placement, canonicalCreatures, installRepositoryDefaults, normalizeImported,
+    validClass, placement, canonicalCreatures, installRepositoryDefaults, normalizeImported, opaqueIdleBottomRatio,
   });
 })();
