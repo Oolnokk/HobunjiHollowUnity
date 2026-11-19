@@ -101,7 +101,7 @@ assert.equal(win._desktopSelectionArc.recallLastTool(), 'shovel');
 assert.equal(gameContext.activeTool, 'shovel');
 assert.match(arch, /if \(deps\.WHEEL_SLOTS\.includes\(slot\.data\)\) deps\.setLastHeldFarmTool\(slot\.data\)/, 'wheel-selected weapons cannot clobber selected tools');
 
-const doorFunction = sourceBetween(game, '      function adventuringToolActionButtons() {', '\n      function computeActionButtonsImpl()'); // The canonical action-provider function, including its reticle context.
+const doorFunction = sourceBetween(game, '      function adventuringToolActionButtons() {', '\n      function computeActionButtonsImpl(context = null)'); // The canonical action-provider function, including its reticle context.
 const wood = { getButtons: () => [
   { action: 'obj_door_toggle', label: 'Open Door', allowed: true },
   { action: 'obj_process_furnace', label: 'Cook', allowed: true },

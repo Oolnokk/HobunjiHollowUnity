@@ -523,10 +523,10 @@
         }
         if (!attached) continue;
         let cached = scoreActorMeshCache.get(root);
-        if (!cached || cached.epoch !== structureEpoch) {
+        if (!cached || cached.epoch !== sceneStructureEpoch(scene)) {
           const meshes = []; // Include hidden branches; visibility can change without a scene graph mutation.
           root.traverse(node => { if (node?.isMesh) meshes.push(node); });
-          cached = { epoch: structureEpoch, meshes };
+          cached = { epoch: sceneStructureEpoch(scene), meshes };
           scoreActorMeshCache.set(root, cached);
         }
         for (const node of cached.meshes) {
