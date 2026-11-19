@@ -127,6 +127,10 @@ const unqualifiedRaisedGround = mesh(exterior, { userData: { terrainKey: 'rock' 
   { hobunjiGroundSurface: true }); // A generic ground tag alone also appears on raised obstacles.
 assert.equal(xray.classify(unqualifiedRaisedGround).ground, false,
   'a raised rock surface must not be made transparent just because it shares a ground tag');
+const batchedRockMound = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true, terrainRenderChunk: true }); // The terrain batcher may propagate generic ground labels onto a solid rock bucket.
+assert.equal(xray.classify(batchedRockMound).ground, false,
+  'even a spatially batched rock mound must occlude hands and shell outlines instead of becoming x-ray ground');
 const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
 const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
 for (const kind of ['grass', 'rock', ...wildernessTypes]) {

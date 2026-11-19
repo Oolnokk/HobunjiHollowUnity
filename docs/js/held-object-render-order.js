@@ -330,7 +330,9 @@
     // ROCK material bucket holds solid mounds, so that one stays an occluder
     // along with untagged rock props and cave walls.
     surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
-      || (data.hobunjiGroundSurface === true && (data.terrainRenderChunk === true || data.terrainRenderChunkSource === true || data.terrainJigsawBaked === true)) // Require known render-pipeline floor provenance; generic raised meshes must remain solid.
+      || (data.hobunjiGroundSurface === true
+        && (data.terrainRenderChunk === true || data.terrainRenderChunkSource === true || data.terrainJigsawBaked === true)
+        && !(Array.isArray(object.material) ? object.material : [object.material]).some(material => material?.userData?.terrainKey === 'rock')) // Rendered floor only: rock material buckets are solid mounds even when a generic ground tag survives batching.
       || data.hobunjiGroundXray === true // Explicit mesa terrain retains ground identity when Jigsaw replaces its grass material slot.
       || (isTerrainSurface(object) && (
         (data.mapEditorTerrain != null && object.material?.userData?.terrainKey !== 'rock')
