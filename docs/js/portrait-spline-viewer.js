@@ -1,6 +1,5 @@
-// True WebGL authoring view for portrait spline appendages.
-// Uses the SAME pinned Three.js modules and PortraitSplineRig.posePoints/deformPosition as the game.
-// Only the wind-facing pose is edited here; neutral (u,v) placement remains in the 2D rigger.
+// True WebGL authoring view for one root-to-tip portrait hair bone.
+// Shares the same texture, single-joint pose and hood aperture clipping as gameplay.
 (() => {
   'use strict';
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -150,7 +149,8 @@
         const u=original[i*3]+.5,v=.5-original[i*3+1];
         const uvX=rear?1-u:u; // Mirrored back texture uses rear portrait UVs.
         const pinned=window.PortraitSplineRig.isPinnedPixel(pins,uvX,v);
-        const motion=window.PortraitSplineRig.attachmentMotion(pins,uvX,v);
+        const baseMotion=window.PortraitSplineRig.attachmentMotion(pins,uvX,v);
+        const motion=!rear&&hoodFit?.aperture?.[Math.min(39999,Math.max(0,Math.floor(v*200)*200+Math.floor(u*200)))]?0:baseMotion; // Hold hair firmly in the cut hood opening.
         const overlap=window.PortraitSplineRig.sampleHoodOverlap(hoodFit,u,v);
         if(pinned)anchored++;
         const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,pinned,motion,overlap);
@@ -231,7 +231,7 @@
         hoodClip?.update(next.hoodFit,1,1);
         lastHoodFit=next.hoodFit;
       }
-      const geometryKey=JSON.stringify([rig.points,rig.segments,rig.tipFollow,rig.regionMasks,rig.hoodOverlapMask,rig.hoodRigidOverlapMask,
+      const geometryKey=JSON.stringify([rig.points,rig.bone,rig.regionMasks,rig.hoodOverlapMask,rig.hoodRigidOverlapMask,
         rig.width,rig.segmentsX,rig.segmentsY,next.wind]); // Mask edits and hierarchical pose strength must invalidate the live 3D ribbon.
       if(geometryKey!==lastGeometryKey||hoodChanged){
         deformMesh(hairPlane,rig,posed.points,false,next.hoodFit);
@@ -259,10 +259,10 @@
       update({...state,selectedKnot:index});
     }
     function readPose(axis){
-      const segment=state?.rig?.segments?.[selectedIndex-1];
-      const pose=segment?.poses?.[state.direction];
-      if(!pose)return 0;
-      return mode==='translate' ? Number(pose.translate?.[axis]||0) : Number(pose[POSE_ROTATIONS[axis]]||0);
+      const rig=state?.rig;if(!rig)return 0;
+      if(mode==='rotate')return Number(rig.bone?.[POSE_ROTATIONS[axis]]||0);
+      const p=rig.points?.[1]; // Gizmo arrows place the single free tip in head-local coordinates.
+      return p?(axis==='x'?p.u-.5:axis==='y'?.5-p.v:p.depth):0;
     }
     function pointerDown(e){
       if(disposed||!state||state.editKnots===false)return;
@@ -297,7 +297,7 @@
       if(mode==='translate'){
         // Project the true world axis into the viewport so dragging an X/Y/Z arrow only changes that component.
         const scale=(dx*drag.px+dy*drag.py)/Math.max(16,drag.screenLenSq);
-        value=clamp(drag.base+scale*.15,-.35,.35);
+        value=clamp(drag.base+scale*.15,drag.axis==='z'?.003:-.5,drag.axis==='z'?.35:.5);
       }else{
         const c=coordinate(e);ndc.set(c.x,c.y);raycaster.setFromCamera(ndc,camera);
         const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(drag.unit,drag.origin);
@@ -306,10 +306,10 @@
           const current=point.sub(drag.origin).normalize();
           const signed=Math.atan2(drag.unit.dot(new THREE.Vector3().crossVectors(drag.baseVector,current)),
             drag.baseVector.dot(current));
-          value=clamp(drag.base+signed*180/Math.PI,-85,85);
+          value=clamp(drag.base+signed*180/Math.PI,0,65);
         }else {
           // Edge-on rotation rings still work on touchscreens and oblique camera angles.
-          value=clamp(drag.base+(dx-dy)*.55,-85,85);
+          value=clamp(drag.base+(dx-dy)*.55,0,65);
         }
       }
       handlers.onEdit?.({index:selectedIndex,mode,axis:drag.axis,rotationKey:POSE_ROTATIONS[drag.axis],value});
@@ -428,11 +428,12 @@
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
         pinnedFrontVertices:hairPlane.userData.pinnedVertices||0,
         pinnedRearVertices:rearPlane.userData.pinnedVertices||0,
-        seamlessSingleMesh:true, // Unlike the previous split, hair and beard have one artwork texture and one vertex grid per view.
+        seamlessSingleMesh:true,singleBone:true, // One joint and an uncut art texture per view.
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,headRear:rearHeadPlane.userData.pixelStats||null,
           hair:hairPlane.userData.pixelStats||null,rear:rearPlane.userData.pixelStats||null},
         hoodCoveragePixels:lastHoodFit?.coverage.reduce((total,value)=>total+value,0)||0,
+        hoodOpeningPixels:lastHoodFit?.openingPixels||0,hoodRimStretchPixels:lastHoodFit?.stretchedPixels||0,
         hoodOverlapPixels:lastHoodFit?.overlap.reduce((total,value)=>total+value,0)||0,
         gpuTextureCount:renderer.info.memory.textures,
         textureErrors:Object.fromEntries(textureFailures), // Mobile-accessible reason, including SecurityError on a tainted canvas.
