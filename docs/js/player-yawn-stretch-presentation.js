@@ -20,6 +20,7 @@
   let handApplications = 0; // Mobile-readable count of successful final-render stretch samples.
   let constrainedHandSamples = 0; // Mobile diagnostic count of reach-limited wrist poses.
   let greatestWristReachFraction = 0; // Highest actual shoulder-to-wrist fraction seen in the current yawn.
+  let authoredShoulderSamples = 0; // Counts use of the existing species/rig shoulder anchors instead of a guessed shoulder.
   let lastError = null; // Mobile diagnostics when a late-created dependency is unavailable.
 
   const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -145,7 +146,8 @@
       if (!record || record.socket !== socket) {
         record = { socket,
           base: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible },
-          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible } };
+          applied: { position: socket.position.clone(), quaternion: socket.quaternion.clone(), visible: socket.visible },
+          shoulderSample: socket.position.clone() }; // Reused vector passed to the real shoulder-position resolver, no allocation per frame.
         handBase.set(side, record);
       } else if (!samePose(socket, record.applied)) {
         record.base.position.copy(socket.position);
@@ -157,18 +159,24 @@
       const sign = side === 'left' ? -1 : 1;
       const authoredReach = Number(handRig.armLengthForSide?.(side)); // The species/age-scaled arm length, including very small characters.
       const reach = Number.isFinite(authoredReach) && authoredReach > 0 ? authoredReach : height * 0.29; // Never substitute an oversized minimum.
-      const shoulderY = reach * 0.82; // Approximate shoulder height above the idle hand in local rig units.
-      const maxReach = reach * 0.94; // Keep the elbows slightly bent instead of hyperextending.
-      const dx = sign * reach * 0.14 * stretch; // Sideward wrist displacement from its neutral grip.
-      const dy = reach * (1.70 + 0.04 * Math.sin(progress * Math.PI * 4)) * stretch; // Overhead target before reach limiting.
-      const dz = height * 0.045 * stretch; // Forward wrist displacement also counts against the arm's reach.
-      const distance = Math.hypot(dx, dy - shoulderY, dz);
-      const ratio = distance > maxReach ? maxReach / distance : 1; // Project the wrist onto its authored arm-length sphere.
+      const shoulder = handRig.shoulderPositionLocal?.(side, record.shoulderSample); // Shared with procedural hand IK, dance and editor-authored shoulder positions.
+      const hasAuthoredShoulder = Number.isFinite(shoulder?.x) && Number.isFinite(shoulder?.y) && Number.isFinite(shoulder?.z);
+      if (hasAuthoredShoulder) authoredShoulderSamples++;
+      const shoulderX = hasAuthoredShoulder ? shoulder.x : record.base.position.x; // Legacy rig fallback stays in its own socket frame.
+      const shoulderY = hasAuthoredShoulder ? shoulder.y : record.base.position.y + reach * 0.82;
+      const shoulderZ = hasAuthoredShoulder ? shoulder.z : record.base.position.z;
+      const targetX = record.base.position.x + sign * reach * 0.14 * stretch; // Animated wrist target, always relative to native idle.
+      const targetY = record.base.position.y + reach * (1.70 + 0.04 * Math.sin(progress * Math.PI * 4)) * stretch;
+      const targetZ = record.base.position.z + height * 0.045 * stretch;
+      const dx = targetX - shoulderX, dy = targetY - shoulderY, dz = targetZ - shoulderZ;
+      const distance = Math.hypot(dx, dy, dz);
+      const maxReach = reach * (1 - 0.06 * stretch); // Exact rest reach at onset; a slight elbow bend only during extension.
+      const ratio = stretch > 0.000001 && distance > maxReach ? maxReach / distance : 1; // Clamp about the real shoulder, never an imagined wrist-relative origin.
       if (ratio < 1) constrainedHandSamples++;
-      greatestWristReachFraction = Math.max(greatestWristReachFraction, Math.min(distance, maxReach) / reach); // Inspect reach limits without devtools.
-      socket.position.x += dx * ratio;
-      socket.position.y += shoulderY + (dy - shoulderY) * ratio;
-      socket.position.z += dz * ratio;
+      greatestWristReachFraction = Math.max(greatestWristReachFraction, distance * ratio / reach); // Mobile-readable bound for this species.
+      socket.position.x = shoulderX + dx * ratio;
+      socket.position.y = shoulderY + dy * ratio;
+      socket.position.z = shoulderZ + dz * ratio;
       socket.rotateX?.(-0.28 * stretch);
       socket.rotateZ?.(sign * 0.13 * stretch);
       socket.visible = true;
@@ -239,7 +247,7 @@
     if (entry) end(entry);
     entry = activeYawn;
     progress = 0;
-    constrainedHandSamples = 0; greatestWristReachFraction = 0; // Reset diagnostics for the new yawn, not for each render pass.
+    constrainedHandSamples = 0; greatestWristReachFraction = 0; authoredShoulderSamples = 0; // Reset per-yawn reach/anchor diagnostics.
     yawnLock = window.CharacterActionLocks?.acquire?.({
       owner: OWNER, reason: 'five-second player yawn and stretch',
       participants: [{ id: 'player', channels: ['tools', 'actions'] }],
@@ -272,7 +280,7 @@
     version: 1, start, update, end, actionBlocked,
     debugSnapshot: () => ({
       active: !!entry, progress, hasHandRig: !!handRig, sentinelAttached: !!sentinel?.parent,
-      handApplications, constrainedHandSamples, greatestWristReachFraction, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
+      handApplications, constrainedHandSamples, greatestWristReachFraction, authoredShoulderSamples, neutralHandPoseOwned: !!ownedHandRig, hiddenHeldRoots: hidden.size, actionLocked: !!yawnLock, lastError,
     }),
     _test: Object.freeze({ applyStretch, suppressHeldVisuals, restoreHandPose, heldRoots }),
   });

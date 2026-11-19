@@ -287,13 +287,29 @@
   }
 
   function idleHandStart(interaction) {
-    const start = new deps.THREE.Vector3(interaction.hand.x, interaction.hand.y, 0); // Existing right-hand anchor if the procedural socket is unavailable.
-    const socket = interaction.avatarGroup?.userData?.proceduralHandRig?.group?.getObjectByName?.('right_hand_socket');
-    if (socket?.getWorldPosition && interaction.holder.parent?.worldToLocal) {
+    const start = new deps.THREE.Vector3(interaction.hand.x, interaction.hand.y, 0); // Legacy hand attachment when no rig/editor neutral exists.
+    const avatar = interaction.avatarGroup;
+    const rest = avatar?.userData?.gameFreeHandRest?.right?.hand; // Animation Author's neutral wrist, independent of any previously held weapon or tool.
+    const parent = interaction.holder.parent;
+    if (rest && Number.isFinite(rest.x) && Number.isFinite(rest.y) && Number.isFinite(rest.z)
+        && avatar?.localToWorld && parent?.worldToLocal) {
+      start.set(rest.x, rest.y, rest.z);
+      avatar.updateWorldMatrix?.(true, false);
+      avatar.localToWorld(start);
+      parent.updateWorldMatrix?.(true, false);
+      parent.worldToLocal(start);
+      interaction.idleHandSource = 'authored-avatar-rest';
+      return start;
+    }
+    const socket = avatar?.userData?.proceduralHandRig?.group?.getObjectByName?.('right_hand_socket');
+    if (socket?.getWorldPosition && parent?.worldToLocal) {
       socket.updateWorldMatrix?.(true, false);
-      interaction.holder.parent.updateWorldMatrix?.(true, false);
+      parent.updateWorldMatrix?.(true, false);
       socket.getWorldPosition(start);
-      interaction.holder.parent.worldToLocal(start); // Use the real resting wrist in the held object's coordinate frame.
+      parent.worldToLocal(start); // Fallback: current physical wrist, already transformed into the item's parent frame.
+      interaction.idleHandSource = 'procedural-socket';
+    } else {
+      interaction.idleHandSource = 'hand-attachment';
     }
     return start;
   }
@@ -303,7 +319,12 @@
     const windup = Math.max(0.01, Number(deps.getDrinkAnimation?.()?.windupFrac) || 0.38); // End this transition at the original windup keyframe.
     const t = Math.max(0, Math.min(1, interaction.elapsed / (interaction.durationS * windup)));
     const eased = t * t * (3 - 2 * t);
-    interaction.holder.position.lerp(interaction.idleHandStart, 1 - eased); // No low-ground starting pose for Koma or autonomous eating.
+    const holder = interaction.holder;
+    const height = (Number(interaction.bottlePlane?.geometry?.parameters?.height) || 0.2)
+      * (Number(interaction.bottlePlane?.scale?.y) || 1); // Matches heldItemTarget's real neck-grip height.
+    interaction.idleGripOffset.set(0, 0, height * 0.2).multiply(holder.scale).applyQuaternion(holder.quaternion);
+    interaction.idleHolderStart.copy(interaction.idleHandStart).sub(interaction.idleGripOffset); // Keep the *hand*, not the holder origin, on its original wrist.
+    holder.position.lerp(interaction.idleHolderStart, 1 - eased); // Koma/food lift starts with the actual gripping hand at rest.
   }
 
   function playAutonomous(walker, itemKey, onDrink, options = {}) {
@@ -325,6 +346,8 @@
       hand:npcHandAnchor(walker),baseNpcFacing:walker.root.rotation.y,poseQuaternion:makePoseQuaternion(deps.THREE) }; // Shared update/strike/cleanup contract.
     interaction.avatarGroup = walker.avatarGroup; // The same portrait whose procedural wrist animates the real leaf.
     interaction.idleHandStart = idleHandStart(interaction); // Capture the neutral wrist before moving the prop toward the mouth.
+    interaction.idleGripOffset = new deps.THREE.Vector3(); // Reused local prop-neck offset, converted to the holder's space every frame.
+    interaction.idleHolderStart = new deps.THREE.Vector3(); // Reused holder-position target that puts the real hand exactly on idle.
     applyHolderPose(interaction,deps.poseAt(animation,0));
     blendAutonomousIdleStart(interaction);
     activeInteractions.add(interaction);
@@ -411,6 +434,7 @@
         ? deps.clamp(interaction.elapsed / HANDOFF_DURATION_S, 0, 1)
         : deps.clamp(interaction.elapsed / interaction.durationS, 0, 1),
       idleHandStart: !!interaction.idleHandStart, // Mobile-readable native idle starting-pose diagnostic.
+      idleHandSource: interaction.idleHandSource || null, // Explains authored rest / procedural socket / static fallback on mobile.
     }));
   }
 

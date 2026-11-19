@@ -15,6 +15,10 @@ const THREE = {};
 class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
   set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  copy(other) { return this.set(other.x, other.y, other.z); }
+  sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+  multiply(other) { this.x *= other.x; this.y *= other.y; this.z *= other.z; return this; }
+  applyQuaternion() { return this; } // Minimal test quaternion is identity; real Three.js rotates the grip offset into holder space.
   applyMatrix4() { return this; }
   lerp(other, amount) { this.x += (other.x - this.x) * amount; this.y += (other.y - this.y) * amount; this.z += (other.z - this.z) * amount; return this; }
 }
@@ -36,6 +40,9 @@ class Group {
     if (index >= 0) this.children.splice(index, 1);
     if (child.parent === this) child.parent = null;
   }
+  localToWorld(v) { return v; } // Identity world transform for this rig-free Node test.
+  worldToLocal(v) { return v; } // Identity root transform for held-item local coordinates.
+  updateWorldMatrix() { return this; }
 }
 class PlaneGeometry {
   constructor(width, height) { this.parameters = { width, height }; }
@@ -103,6 +110,7 @@ assert.equal(drink.heldItemTarget(walker.root)?.holder?.name, undefined,
 const komaHolder = drink.heldItemTarget(walker.root).holder; // Actual leaf prop; its first frame must coincide with the idle hand.
 assert.equal(komaHolder.position.x, -0.2, 'Koma leaf begins at the idle hand X anchor');
 assert.equal(komaHolder.position.y, 0.4, 'Koma leaf begins at the idle hand height, not on the ground');
+assert.ok(Math.abs(komaHolder.position.z + 0.02) < 1e-6, 'leaf-holder origin is offset so its neck grip, rather than its centre, begins at the wrist');
 assert.equal(drink.getDebug()[0]?.idleHandStart, true, 'mobile diagnostics identify the corrected idle start');
 assert.ok(drink.heldItemTarget(handParent), 'direct NPC hand parent must resolve the leaf; querying only the outer world root does not suffice');
 assert.ok(locks.isLocked('npc:longoran-test', 'tools'), 'the Koma animation locks other tools');
@@ -124,7 +132,11 @@ assert.equal(drink.heldItemTarget(handParent), null, 'completed leaf releases ne
 assert.equal(drink.heldItemTarget(walker.root), null, 'completed leaf releases world-root hand target');
 assert.equal(locks.isLocked('npc:longoran-test', 'tools'), false);
 assert.equal(disposals, 2, 'completion disposes its geometry and material, retaining the shared PNG');
+walker.avatarGroup.userData.gameFreeHandRest = { right: { hand: { x: -0.3, y: 0.55, z: 0.1 } } }; // An editor-authored rest overrides a stale held-tool wrist.
 assert.equal(drink.playDailyKoma(walker, () => toasts.push('late'), 5), 5000);
+assert.equal(drink.getDebug()[0]?.idleHandSource, 'authored-avatar-rest', 'the next Koma uses the rigger-authored free-hand rest point');
+const authoredLeaf = drink.heldItemTarget(walker.root).holder; // Real leaf remains on the same held-item pathway.
+assert.equal(authoredLeaf.position.y, 0.55, 'the leaf appears at its authored idle wrist rather than using the old bottle neutral');
 assert.equal(loadedTextures.length, 1, 'texture must be shared between consecutive daily rituals');
 assert.ok(drink.heldItemTarget(handParent));
 drink.stopAutonomous(walker, '__daily_koma_leaf__');
