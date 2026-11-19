@@ -232,7 +232,9 @@ assert.equal(geometryReads,beforeGeometryReads,'valid Potion Select geometry avo
 seed.classList.delete('arc-active'); edge.classList.add('arc-active');
 send('pointermove'); step(); step();
 assert.equal(heading.querySelector('textPath').textContent, 'Seeds', 'edge sentinel retains last real category');
+assert.equal(window.ItemArchStickyCategoryHeading.debugSnapshot().stickyVisible,true,'compatibility diagnostic identifies sentinel-held heading');
 berry.classList.add('arc-active'); edge.classList.delete('arc-active');
+assert.equal(window.ItemArchStickyCategoryHeading.debugSnapshot().stickyVisible,false,'normal item selection is no longer sticky');
 send('pointermove'); step(); step();
 assert.equal(heading.querySelector('textPath').textContent, 'Berries');
 assert.equal(api.debugSnapshot().presentation.fixedHeadingText, 'Berries');
