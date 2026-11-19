@@ -15,7 +15,7 @@
     "js/festival-blossom-hunt.js?v=20261119petalSceneAudit5",
     "js/festival-blossom-start-cue.js?v=20261119swatchDecal3",
     "js/festival-blossom-ceremony.js?v=20261119h8503bae",
-    "js/festival-system.js?v=20261118crownTurnIn1",
+    "js/festival-system.js?v=20261119hunundiPresence1",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"
 ]; // Independently versioned modules loaded before game.js.
