@@ -157,8 +157,9 @@ for(const name of names)for(const key of [name,name+'Number']){
 const begin=core.indexOf('const wholeBindings=['),finish=core.indexOf('E.headbandWholeReset.onclick=',begin);
 assert(begin>=0&&finish>begin,'Whole controls event bindings exist');
 const changes=[];let commits=0;
-new Function('E','changeHeadbandWhole','finishHeadbandWholeGesture','syncHeadbandWholeControls',
-  core.slice(begin,finish))(controlE,(field,value)=>changes.push([field,value]),()=>{commits++},()=>{});
+new Function('E','changeHeadbandWhole','finishHeadbandWholeGesture','syncHeadbandWholeControls','selectedHeadbandWhole',
+  core.slice(begin,finish))(controlE,(field,value)=>changes.push([field,value]),()=>{commits++},()=>{},
+  ()=>({entry:{settings:{x:-10.5,y:0,scaleX:1,scaleY:1,rotation:0}}}));
 const listeners=eventMap.get(numeric);
 assert(!listeners.keyup,'Number input must not commit and create undo history after every digit');
 numeric.value='-1';listeners.input[0]();numeric.value='-12.5';listeners.input[0]();
@@ -166,5 +167,6 @@ assert.equal(commits,0,'Multi-digit numeric edits remain part of one continuous 
 assert.equal(changes.at(-1)[1],-12.5,'Live numeric input edits still change the model');
 listeners.change[0]();
 assert.equal(commits,1,'Numeric editing commits once when the number is finalized');
+assert.equal(numeric.value,'-10.5','Constraint-limited numeric edits display the applied value on commit');
 
 console.log('OK: whole-spline position, independent scales, rotation, constraints, save/undo integration and controls');
