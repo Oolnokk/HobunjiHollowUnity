@@ -937,7 +937,7 @@
       const lines = window.AnimalVocalizations?.dialogueLinesFor?.(animal) || [];
       const line = lines.length ? lines[Math.floor(deps.rnd() * lines.length)] : '...';
       const opened = deps.openLivestockDialogue?.(animal, rec, [line]); // Only a successfully started livestock conversation triggers curiosity.
-      if (opened) window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'curious', { height: animal.modelHeight, width: animal.modelWidth, creatureKind: animal.animalKey });
+      if (opened) window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'curious', { avatarRef: animal.avatarRef, height: animal.modelHeight, width: animal.modelWidth, creatureKind: animal.animalKey });
       return { ok: true }; // Preserve the preexisting contextual action result contract.
     }
     if (action === 'obj_alchemy_' + animal.id) return administerBreedingPotion(animal.livestockId, deps.getHeldItemKey?.());
@@ -949,7 +949,7 @@
         deps.saveWorldLivestock(list);
       }
       window.HobunjiActivityEvents?.emit('animal_petted', { farm: true, kind: rec?.kind || null, livestockId: animal.livestockId });
-      window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'love', { height: animal.modelHeight, width: animal.modelWidth, creatureKind: animal.animalKey }); // Petting animates the animal rather than an unrelated HUD icon.
+      window.HobunjiEmojiReactions?.trigger?.(animal.avatarRef?.group, 'love', { avatarRef: animal.avatarRef, height: animal.modelHeight, width: animal.modelWidth, creatureKind: animal.animalKey }); // Petting animates the animal rather than an unrelated HUD icon.
       return { ok: true, message: `🤚 You give ${rec?.name || 'them'} a good scratch. They lean right into it.` };
     }
     if (action === 'obj_collect_' + animal.id) {

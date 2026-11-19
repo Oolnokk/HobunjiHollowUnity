@@ -428,7 +428,7 @@
     return null;
   }
 
-  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, size, loadParts, sample, onDispose }) {
+  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, getSide, size, loadParts, sample, onDispose }) {
     const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
     const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
     const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
@@ -440,7 +440,7 @@
     const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
     plane.visible = false;
     const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
-      height, offsetX, headOffset, size, sample, onDispose, lifetimeMs: duration, startedAt: null };
+      height, offsetX, headOffset, getSide, size, sample, onDispose, animalSide: -1, lifetimeMs: duration, startedAt: null };
     state.active.push(event);
     Promise.resolve().then(loadParts).then(parts => {
       if (event.cancelled) return;
@@ -489,14 +489,22 @@
     const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
     const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
     plane.position.y += event.height * scaleY;
-    let sideOffset = event.offsetX * scaleX; // Default camera-facing displacement works for humanoids and non-animal icons.
+    let mirror = event.getSide?.() === -1 ? -1 : 1; // Read the live setting so in-flight reactions move with a portrait flip.
+    let sideOffset = event.offsetX * scaleX * mirror; // Default camera-facing displacement works for humanoids and non-animal icons.
     if (event.headOffset) {
-      const axisProjection = matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z; // Signed projected card axis: mirrored animal faces must move the head center in opposite screen directions.
-      const signedWidth = Number.isFinite(axisProjection) ? axisProjection : 0; // An invalid rotation falls back to the root with a visible left-side gutter.
       const head = event.headOffset; // Reuses the source-space chathead center and half-width captured when the reaction started.
-      const headCenterScreenX = -head.centerX * head.width * signedWidth; // Both animal faces map source-image right to negative local Z because the reverse texture is mirrored.
+      const frontPlane = head.avatarRef?.frontPlane; // The actual card can turn separately from the root during the camera deadzone correction.
+      frontPlane?.updateWorldMatrix(true, false);
+      const card = frontPlane?.matrixWorld.elements; // The back card maps the same source X direction through its mirrored texture.
+      const axisProjection = card
+        ? card[0] * cameraRight.x + card[1] * cameraRight.y + card[2] * cameraRight.z
+        : -(matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z);
+      const signedWidth = Number.isFinite(axisProjection) ? axisProjection : 0; // Zero-width cards retain the last side until the other face becomes visible.
+      const headCenterScreenX = head.centerX * head.width * signedWidth; // Places the crop center relative to the animal root along the projected sprite width.
       const headHalfScreenWidth = head.halfWidth * head.width * Math.abs(signedWidth); // Head crop always extends equally left and right of its projected center.
-      sideOffset = headCenterScreenX - headHalfScreenWidth - head.gap * scaleX; // Sit left of the *visible* head after either facing reversal.
+      if (Math.abs(signedWidth) > 1e-6) event.animalSide = signedWidth < 0 ? -1 : 1;
+      sideOffset = headCenterScreenX + event.animalSide * (headHalfScreenWidth + head.gap * scaleX);
+      mirror = -event.animalSide; // The original animal animation played on the left side.
     }
     plane.position.addScaledVector(cameraRight, sideOffset); // Horizontal displacement remains in screen space rather than world X.
     plane.quaternion.copy(camera.quaternion);
@@ -505,10 +513,10 @@
       const pose = event.sample(progress, item.part, item.index); // The reaction owns its source choreography.
       const mesh = item.mesh;
       mesh.visible = pose.alpha > 0.001;
-      mesh.position.set(pose.x * size * scaleX, pose.y * size * scaleY, 0);
+      mesh.position.set(pose.x * size * scaleX * mirror, pose.y * size * scaleY, 0);
       mesh.scale.set(size * scaleX * pose.scale * item.widthScale, size * scaleY * pose.scale * item.heightScale, 1);
       mesh.material.opacity = pose.alpha;
-      mesh.rotation.z = pose.rotation * Math.PI / 180;
+      mesh.rotation.z = pose.rotation * Math.PI / 180 * mirror;
     }
     return true;
   }
