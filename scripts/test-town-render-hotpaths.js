@@ -890,7 +890,7 @@ assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
   'the renderer has a dedicated shell x-ray replay');
 const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
 const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMaterials, group)');
-const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth)');
+const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth, canMaskShellColor)');
 const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
 const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell)');
 const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
