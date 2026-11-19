@@ -20,7 +20,34 @@ for(const [id,hex] of Object.entries(popularPingdortCoats)){
 }
 const totalPingdortWeight=palettes.pingdort.reduce((sum,color)=>sum+color.weight,0); // Denominator for actual weighted spawn odds.
 const popularPingdortWeight=palettes.pingdort.filter(color=>popularPingdortCoats[color.id]).reduce((sum,color)=>sum+color.weight,0); // Combined requested hues must be easy to encounter.
-assert(popularPingdortWeight/totalPingdortWeight>=.28,'Moss/blue-moss/bog-olive Pingdorts should be common together');
+// Additional shades widen the palette, but the approved three still retain their weight-8 advantage.
+assert(popularPingdortWeight/totalPingdortWeight>=.15,'Approved Pingdort coats should remain common after adding deeper pigments');
+const newPingdortCoats={
+  'peat-mustard':'#786947','reed-yellow':'#7b8155','silt-ochre':'#5b6546',
+  'dusk-moss':'#344d43','kelp-green':'#4e6958','marsh-sage':'#66745d',
+  'slatewater-blue':'#495769','rainpool-blue':'#4d606b','fen-teal':'#426061',
+}; // Exact new muted-pigment genes shared by wild nests, eggs and breeding.
+const shadowPingdortCoats={
+  'shadow-mustard':{hex:'#4a4735',parent:'peat-mustard'},
+  'deep-reed':{hex:'#414939',parent:'reed-yellow'},
+  'night-moss':{hex:'#2d3d34',parent:'dusk-moss'},
+  'black-kelp':{hex:'#33443b',parent:'kelp-green'},
+  'blackwater-blue':{hex:'#37414c',parent:'slatewater-blue'},
+  'deep-fen-teal':{hex:'#304344',parent:'fen-teal'},
+}; // Deep, low-saturation variants with a named brighter counterpart for regression checks.
+const marshCoatIds=new Set([
+  'olive-grey','moss','sage','fern','lichen','deep-pine','blue-moss','bog-olive',
+  ...Object.keys(newPingdortCoats),...Object.keys(shadowPingdortCoats),
+]); // All author-approved swamp greens, muted yellows and blue-teals; excludes mammalian earth/grey coats.
+const marshCoatWeight=palettes.pingdort.filter(entry=>marshCoatIds.has(entry.id)).reduce((sum,entry)=>sum+entry.weight,0); // Weighted probability of a freshly generated Pingdort having a swamp-coloured coat.
+assert(marshCoatWeight/totalPingdortWeight>=.75,'Marsh coats must remain dominant over mammalian browns and greys');
+assert.equal(palettes.pingdort.length,33,'Keep all 27 existing Pingdort coats and add six darker variants');
+assert.equal(new Set(palettes.pingdort.map(entry=>entry.id)).size,palettes.pingdort.length,'All Pingdort gene ids must be unique');
+for(const [id,hex] of Object.entries(newPingdortCoats)){
+  const entry=palettes.pingdort.find(candidate=>candidate.id===id); // Verify that each new allele is rollable in the existing weighted picker.
+  assert(entry&&entry.hex===hex&&entry.weight>=6,'Missing, recoloured or uncommon new Pingdort coat: '+id);
+}
+
 const previousPingdortCoats={moss:'#536747','blue-moss':'#587a80','bog-olive':'#9b9845'}; // Baseline hues from the prior PR, used to catch accidental brightness or saturation regressions.
 const pigmentRgb=hex=>[1,3,5].map(index=>parseInt(hex.slice(index,index+2),16)); // Converts authored swatches into numeric channels for relative tone checks.
 const coatTone=hex=>{ // Rejects coats that are lighter or more saturated than the requested muted reference.
@@ -32,6 +59,20 @@ for(const [id,hex] of Object.entries(popularPingdortCoats)){
   const previousTone=coatTone(previousPingdortCoats[id]),currentTone=coatTone(hex); // Compare the actual shipped swatches, not descriptive names.
   assert(currentTone.brightness<previousTone.brightness,'Pingdort coat should be darker: '+id);
   assert(currentTone.saturation<previousTone.saturation,'Pingdort coat should be less saturated: '+id);
+}
+for(const [id,hex] of Object.entries(newPingdortCoats)){
+  const {brightness,saturation}=coatTone(hex); // Keep each added pigment deep and earthy rather than saturated tropical.
+  assert(brightness<=130&&saturation<=.42,'New Pingdort coat too bright or saturated: '+id);
+}
+for(const [id,variant] of Object.entries(shadowPingdortCoats)){
+  const entry=palettes.pingdort.find(candidate=>candidate.id===id); // The shared weighted picker should give each darker coat a distinct inheritable allele.
+  assert(entry&&entry.hex===variant.hex&&entry.weight===4,'Missing or incorrectly weighted dark Pingdort coat: '+id);
+  const parent=palettes.pingdort.find(candidate=>candidate.id===variant.parent); // Verifies the existing lighter coat was preserved and remains the comparison anchor.
+  assert(parent,'Dark Pingdort coat needs its unchanged parent colour: '+id);
+  const previousTone=coatTone(parent.hex),currentTone=coatTone(variant.hex); // Compare actual luminance and saturation rather than trusting a shade's name.
+  assert(currentTone.brightness<previousTone.brightness,'Shadow variant should be darker: '+id);
+  assert(currentTone.saturation<previousTone.saturation,'Shadow variant should be less saturated: '+id);
+  assert(currentTone.brightness<=80,'Dark Pingdort variant is too bright: '+id);
 }
 const [bogRed,bogGreen,bogBlue]=pigmentRgb(popularPingdortCoats['bog-olive']); // Verify the mustard-olive coat leans green without becoming neon.
 const [oldBogRed,oldBogGreen]=pigmentRgb(previousPingdortCoats['bog-olive']); // Only Bog Olive must explicitly shift toward green.
@@ -55,6 +96,12 @@ for(const kind of ['pingdort','nelk']){
     assert(allowed.has(mother.base.color)&&allowed.has(father.base.color)&&allowed.has(offspring.base.color));
     assert.equal(offspring.sizeClass,mother.sizeClass,'identical parental size classes remain inheritable');
   }
+}
+// Same-colour parents must pass each new coat through the existing blend/quantization genetics.
+for(const [id,hex] of [...Object.entries(newPingdortCoats),...Object.entries(shadowPingdortCoats).map(([id,entry])=>[id,entry.hex])]){
+  const parent={base:{color:hex,copies:2,inheritance:'dominant'},sizeClass:'small'}; // An existing-style Pingdort genotype, supplied to the real breeding function.
+  const offspring=geneticsHost.CreatureGenetics.crossOffspring(parent,parent,'pingdort',0); // No mutation: inheritance must preserve a naturally matching new coat.
+  assert.equal(offspring.base.color,hex,'New Pingdort coat should breed true: '+id);
 }
 assert.equal(palettes.drenkirra.length,12,'Unrelated bright Drenkirra colors stay unchanged');
 for(const species of ['skeeri','pingdort']){
@@ -178,9 +225,9 @@ async function check(){
   const materials=Object.fromEntries(['flying','perched','wings'].map(p=>[p,{color:makeColor(),map:null}])); // Actual pose material ownership, including the perched gripping alias.
   w.FlyingAnimalRig={normalize:value=>value,create:(_settings,images)=>{for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
     return {root:{},bodyMaterials:materials,dispose(){}};}}; // Only geometry and GPU upload are stubbed, not Pingdort's pixel recolor or map-swapping code.
-  const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#536747'}});
+  const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#485543'}});
   for(const material of Object.values(materials)){
-    assert.deepEqual([...material.map.image.pixels.slice(0,3)],[83,103,71],'Only green plumage is recolored');
+    assert.deepEqual([...material.map.image.pixels.slice(0,3)],[72,85,67],'Only approved moss-green plumage is recolored');
     assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye remains white');
     assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'The black outline remains black');
   }
@@ -194,7 +241,7 @@ async function check(){
   assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
   assert.equal(materials.wings.color.value,'ffffff');
   assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
-  for(const hex of ['#4a5d61','#687149']){
+  for(const hex of ['#4a5d61','#687149',...Object.values(newPingdortCoats),...Object.values(shadowPingdortCoats).map(entry=>entry.hex)]){
     assert.equal(tintedRig.restoreTint(hex),true,'New Pingdort coat should recolor the live flight rig');
     const rgb=renderColors.hexToRgb(hex); // Native blue-moss and bog-olive textures use the shared shade fill, not flat material multiplication.
     for(const material of Object.values(materials)){
@@ -203,7 +250,7 @@ async function check(){
       assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'Ink outlines stay black');
     }
   }
-  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,4,'Both new tones update cached pose textures exactly once');
+  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,19,'Every new and deeper coat swaps all three flight textures once');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('create(appearance)'),'Native bird owner passes Pingdort genotype to rig constructor');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner restores after damage or genetic edits');
   assert(db.pingdort.modelWidth<db.drenkirra.modelWidth);
