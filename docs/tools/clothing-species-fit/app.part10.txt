@@ -16,6 +16,7 @@ function refreshDebug(){
     `micro triangles: ${MICRO_TRIANGLE_COUNT}`,
     `mode: ${mode}`,
     `headband spline: ${JSON.stringify({selection:headbandSelectionKey(),enabled:currentHeadbandRecord()?.enabled||false,edit:E.headbandEditCurve.value,sourceNodes:currentHeadbandRecord()?.source?.length||0,targetNodes:currentHeadbandRecord()?.target?.length||0})}`, // Mobile diagnostics show whether both seven-point curves are mapped.
+    `headband backplane: ${JSON.stringify({view:headbandView(),paintMode:mode==='rear-paint',hasPaintedRear:!!R.headbandRearCanvas,storedRear:!!currentHeadbandRecord()?.rearArtPng,backSplineEnabled:!!currentHeadbandRecord()?.back?.enabled,backHeadReady:!!R.headReferenceBack,fullBackplaneReady:!!R.backplaneReference})}`, // Mobile user can diagnose rear reference and saved PNG without console access.
     `contour fit: ${JSON.stringify({selection:contourSelectionKey(),enabled:currentContourRecord().enabled,strength:currentContourRecord().strength,feather:currentContourRecord().feather,protectedPixels:fitRegion()==='body'&&R.body?currentContourMask().reduce((n,v)=>n+v,0):0,donorTorso:!!R.sourceTorso,targetTorso:!!R.targetTorso,lastFit:R.contourLastFit})}`, // Mask fit and missing torso diagnostics are visible on mobile.
     `fit region: ${fitRegion()}`, // Included in pasted diagnostics so body/headwear calibrations cannot be confused.
     `target grid: ${fitRegion()==='headwear'?'headwear::':''}${E.species.value}_${E.gender.value}`, // Keep diagnostics parsing compatible with the original source-neutral target label.
