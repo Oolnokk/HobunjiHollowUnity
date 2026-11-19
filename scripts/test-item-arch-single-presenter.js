@@ -20,6 +20,7 @@ for (const shim of legacy) {
   assert.doesNotMatch(shim, /MutationObserver|requestAnimationFrame|addEventListener/);
 }
 
+let geometryReads = 0; // Counts synchronous DOM layout measurements under valid Potion Select diagnostics.
 class Style {
   constructor() {
     this.values = new Map(); // Records style changes so idle RAF frames can be checked for no redundant writes.
@@ -84,7 +85,7 @@ class Element {
     for (let node = this; node; node = node.parentElement) if (node.matches(selector)) return node;
     return null;
   }
-  getBoundingClientRect() { return {left:190, top:190, width:20, height:20}; }
+  getBoundingClientRect() { geometryReads++; return {left:190, top:190, width:20, height:20}; }
 }
 
 const root = new Element('html'); // In-game document root, including external SVG overlays.
@@ -223,8 +224,10 @@ assert.ok(has(seed,'item-select-radius-inset'));
 assert.equal(root.children.filter(el => el.id === 'itemArchFixedCategoryHeading').length,1);
 const heading = byId('itemArchFixedCategoryHeading');
 const beforeWrites = seed.style.writes + berry.style.writes + heading.writes;
+const beforeGeometryReads = geometryReads;
 for (let i=0;i<5;i++) step();
 assert.equal(seed.style.writes + berry.style.writes + heading.writes,beforeWrites, 'steady open frames do not rewrite unchanged styles/SVG attributes');
+assert.equal(geometryReads,beforeGeometryReads,'valid Potion Select geometry avoids per-frame synchronous layout reads');
 
 seed.classList.delete('arc-active'); edge.classList.add('arc-active');
 send('pointermove'); step(); step();
@@ -233,6 +236,13 @@ berry.classList.add('arc-active'); edge.classList.delete('arc-active');
 send('pointermove'); step(); step();
 assert.equal(heading.querySelector('textPath').textContent, 'Berries');
 assert.equal(api.debugSnapshot().presentation.fixedHeadingText, 'Berries');
+
+seed.dataset.sharedSelectionRadius = '100'; berry.dataset.sharedSelectionRadius = '100';
+step(); step(); step();
+assert.equal(window.QuickPotionArcUI.calls, 1, 'mismatched wheel geometry requests one canonical selector refresh');
+seed.dataset.sharedSelectionRadius = '120'; berry.dataset.sharedSelectionRadius = '120';
+step();
+assert.equal(api.debugSnapshot().presentation.selectionRadiusMatchesPotion, true);
 
 const headingBefore = heading.getAttribute('viewBox');
 assert.equal(headingBefore, '0 0 1000 800');
