@@ -411,7 +411,7 @@ const eightSource=part(8);
 const canonicalFns=sourceBetween(eightSource,'function canonicalPreviewSlot(', 'async function composeRuntimePortrait()');
 let fittedColor=null,backOption=null;
 const canonicalHarness=new Function('R','E','document','window','garmentRecord','mode',
-  'routedPatchIsBody','warpClothing','warpGridForMode','fittedSourceCanvasForLayer',
+  'routedPatchIsBody','warpClothing','warpGridForMode','fittedSourceCanvasForLayer','fitRegion','headwearWarpForView',
   canonicalFns+'\nreturn {canonicalPreviewGarmentOption,canonicalFittedGarmentPortrait};');
 const fineMeta=[
   {url:'cosmetics/clothes/hood/tl_finehood-base.png',pos:'front',paletteColorKey:'A'},
@@ -444,7 +444,8 @@ const renderer={
 };
 const canonical=canonicalHarness(previewR,previewE,{createElement:paintCanvas},renderer,
   ()=>({id:'fine_hood',slot:'hood'}),'fit',()=>false,
-  (source)=>({width:234,height:173,id:source.id}),()=>Array(36).fill({x:0,y:0}),s=>s);
+  (source)=>({width:234,height:173,id:source.id}),()=>Array(36).fill({x:0,y:0}),s=>s,
+   ()=> 'headwear',()=>null);
 const made=await canonical.canonicalFittedGarmentPortrait({profile:{bodyColors:{}},front:{width:200},back:{width:200}});
 assert(made.canonicalGarmentPreview,'Canonical renderer replaced the manual headwear painter');
 assert.equal(portraitCalls.length,2,'The game renders both front and back portraits');
