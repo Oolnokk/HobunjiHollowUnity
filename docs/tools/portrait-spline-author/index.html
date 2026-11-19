@@ -43,7 +43,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js?v=20261113h3f54fed"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261113hdac556d"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261119reuse1"></script>
 </head>
 <body>
 <header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">Beard and hood masks</span></header>
@@ -126,7 +126,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 <output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
 <details style="margin-top:12px"><summary>Rig JSON and mobile debug</summary><p>JSON shown here is the exact authored property added to the exported cosmetic. You can also paste a rig JSON and choose Apply.</p>
-<textarea id="json"></textarea><div class="buttons"><button id="applyJson">Apply rig JSON</button><button id="copyDiagnostics">Copy 3D diagnostics</button></div></details>
+<textarea id="json"></textarea><output id="jsonDraftStatus" role="status" aria-live="polite"></output><div class="buttons"><button id="applyJson">Apply rig JSON</button><button id="copyDiagnostics">Copy 3D diagnostics</button></div><textarea id="diagnosticsJson" readonly hidden aria-label="Diagnostics to copy manually"></textarea></details>
 </section>
 </main>
 <footer>Existing flat hairstyles remain unchanged. Facewraps continue hiding beards. Pixel regions are saved per cosmetic and per front/rear view.</footer>
@@ -149,17 +149,24 @@ let regionOverlayCache=null,regionSourcesCache=null; // Cached bitmap and 3D tex
 let autoLayoutPending=false; // A newly selected unrigged cosmetic receives one art-fitted default spline, never overwriting manual knot edits.
 let catalog=null,styles=[],hoods=[],activeStyle=null,activeDraftKey=null,styleGeneration=0,assetGeneration=0,hoodGeneration=0,indexGeneration=0;
 let manualSelected=false; // Explicit file import is not silently replaced by a concurrent index fetch.
+let jsonHasUnappliedEdits=false; // Keeps manually typed rig JSON intact until the user explicitly applies it.
 const rigDrafts=new Map(); // Per-cosmetic/per-species unsaved edits survive dropdown switching until the author page closes.
 const hoodMaskKeys={opening:'hoodOpeningMask',overlap:'hoodOverlapMask',rigid:'hoodRigidOverlapMask'}; // Both hood masks use front portrait UVs.
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const numeric=(x,defaultValue=0)=>Number.isFinite(Number(x))?Number(x):defaultValue;
+function syncRigJson(force=false){
+  if(force||!jsonHasUnappliedEdits){$('json').value=JSON.stringify(rig,null,2);jsonHasUnappliedEdits=false;}
+  $('jsonDraftStatus').textContent=jsonHasUnappliedEdits?'Unapplied JSON changes · choose Apply rig JSON before export.':'';
+}
+$('json').addEventListener('input',()=>{jsonHasUnappliedEdits=true;syncRigJson();});
 function message(value){$('catalogStatus').textContent=value;} // Source loading and error messages must remain visible alongside pose diagnostics.
 function imageInput(id,key){$(id).addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
-  const url=URL.createObjectURL(file),img=new Image();
-  img.onload=()=>{URL.revokeObjectURL(url);if(key==='head')headGeneration++;images[key]=img;
+  const url=URL.createObjectURL(file),img=new Image(),generation=assetGeneration; // A delayed manual image decode must not replace a different indexed cosmetic.
+  img.onload=()=>{URL.revokeObjectURL(url);if(generation!==assetGeneration)return;
+    if(key==='head')headGeneration++;images[key]=img;
     markRegionDirty();maybeInitializeMasks();render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
-  img.onerror=()=>{URL.revokeObjectURL(url);message('Could not decode '+file.name);};
+  img.onerror=()=>{URL.revokeObjectURL(url);if(generation===assetGeneration)message('Could not decode '+file.name);};
   img.src=url;
 });}
 imageInput('frontFile','front');imageInput('rearFile','rear');imageInput('hoodFile','hood');imageInput('headFile','head');
@@ -174,7 +181,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
     rig=Rig.normalize(parsed.portraitSplineRig) || makeRig(); // Preserve authored rigid/flexible masks alongside poses and spline knots.
     autoLayoutPending=!Rig.normalize(parsed.portraitSplineRig); // A manually imported unrigged style may be fitted after its reference PNG arrives.
     images.front=null;images.rear=null; // Never auto-classify an imported cosmetic using the previously selected style's artwork.
-    maskUndo=null;markRegionDirty();maybeInitializeMasks();
+    maskUndo=null;markRegionDirty();maybeInitializeMasks();syncRigJson(true);
     $('sourcePath').textContent='Local import: '+file.name;
     selectedKnot=1;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
@@ -455,7 +462,7 @@ async function selectIndexedStyle(){
   const stored=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig);
   rig=stored||makeRig();
   autoLayoutPending=!stored; // Generate initial rest geometry from real head/hair pixels only for newly rigged cosmetics.
-  maskUndo=null;selectedKnot=1;selectedSegment=0;controls();
+  maskUndo=null;selectedKnot=1;selectedSegment=0;syncRigJson(true);controls();
   images.front=null;images.rear=null;markRegionDirty();render();
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
   $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
@@ -590,7 +597,7 @@ function controls(){
   for(const key of ['x','y','z'])holder.append(field('Translate '+key.toUpperCase(),slot.poses[direction].translate[key],-.35,.35,.005,v=>slot.poses[direction].translate[key]=v));
   for(const key of ['x','y','z'])holder.append(field('Deadzone '+key+'°',slot.deadzone[key],0,44,1,v=>slot.deadzone[key]=v));
   holder.append(field('Knot depth',rig.points[selectedKnot].depth,.003,.35,.005,v=>rig.points[selectedKnot].depth=v));
-  $('json').value=JSON.stringify(rig,null,2);
+  syncRigJson();
 }
 function wind(){
   const v=numeric($('testStrength').value,1),axes={x:0,y:0,z:0};
@@ -642,7 +649,7 @@ function render(){
     '\nSelected: knot '+(selectedKnot+1)+', segment '+(selectedSegment+1)+', '+direction+
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
     '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
-  $('json').value=JSON.stringify(rig,null,2);
+  syncRigJson();
   if(viewer && previewPointer?.mode!=='paint' && previewPointer?.mode!=='erase'){
     // Keep mobile brush strokes responsive: recompute binary pinned mesh vertices only when the stroke ends, without re-uploading any sprite textures.
     const sources=viewerRegionSources();
@@ -669,7 +676,11 @@ function paint(p){
     if(kind==='overlap')apply('rigid',strokeMode==='paint'&&brushMode==='rigid');
     lastPaint=p;
   }else{
-    rig.points[selectedKnot].u=p.u;rig.points[selectedKnot].v=p.v;
+    const start=previewPointer.startKnot,from=previewPointer.dragStart; // Preserve the original knot offset instead of jumping to the first finger touch.
+    if(start&&from){
+      rig.points[selectedKnot].u=clamp(start.u+p.u-from.u,0,1);
+      rig.points[selectedKnot].v=clamp(start.v+p.v-from.v,0,1);
+    }
   }
   render();
 }
@@ -689,15 +700,23 @@ $('preview').addEventListener('pointerdown',e=>{
     render();message('Added '+selected.added+' pixels from the enclosed hood opening.');
     return;
   }
+  if(mode==='move'){
+    let best=Infinity,index=0;
+    rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;index=i;}});
+    const bounds=$('preview').getBoundingClientRect();
+    if(best>Math.max(.035,24/Math.max(1,Math.min(bounds.width,bounds.height)))){
+      message('Touch or click near a yellow knot to move it; empty space does not move the nearest knot.');
+      return;
+    }
+    autoLayoutPending=false;
+    selectedKnot=index;selectedSegment=clamp(index-1,0,rig.segments.length-1);
+    previewPointer={id:e.pointerId,mode,dragStart:p,startKnot:{...rig.points[index]}};
+    $('preview').setPointerCapture(e.pointerId);
+    controls();render();return; // Selection alone never changes its neutral coordinates.
+  }
   previewPointer={id:e.pointerId,view:activeView(),kind:activeMask(),overlapBrush,mode};
   $('preview').setPointerCapture(e.pointerId);
-  if(mode==='move'){
-    autoLayoutPending=false; // An author moving knots explicitly owns their placement; do not auto-fit it later.
-    let best=Infinity;
-    rig.points.forEach((m,i)=>{const d=Math.hypot(m.u-p.u,m.v-p.v);if(d<best){best=d;selectedKnot=i;}});
-    selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);controls();
-  }else recordMaskUndo();
-  paint(p);
+  recordMaskUndo();paint(p);
 });
 $('preview').addEventListener('pointermove',e=>{if(previewPointer?.id===e.pointerId){e.preventDefault();paint(pick(e));}});
 for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview').addEventListener(event,e=>{
@@ -708,8 +727,16 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview
 $('moveMode').onclick=()=>{mode='move';render();};
 $('maskMode').onclick=()=>{mode=maskTool;render();};
 for(const tool of ['paint','erase','wand'])$(tool+'Mode').onclick=()=>{mode=maskTool=tool;render();};
-$('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});selectedKnot=i+1;updateKnots();};
-$('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}rig.points.splice(selectedKnot,1);selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);updateKnots();};
+$('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};
+  const original=rig.segments[i]; // New interval inherits the authored motion of the segment it splits.
+  rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});
+  rig.segments.splice(i,0,original?JSON.parse(JSON.stringify(original)):Rig.makeDefaultSegments(rig.points)[i]||makeSegment());
+  selectedKnot=i+1;selectedSegment=i;updateKnots();};
+$('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}
+  rig.segments.splice(Math.max(0,selectedKnot-1),1); // Preserve the downstream segment poses when deleting an interior knot.
+  rig.points.splice(selectedKnot,1);
+  selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);
+  selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);updateKnots();};
 $('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
 for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
 $('testStrength').oninput=render;$('viewSelect').onchange=render;
@@ -732,7 +759,7 @@ $('resetRig').onclick=()=>{
   const reset=makeRig(points||undefined);
   rig={...rig,points:reset.points,segments:reset.segments,width:reset.width,windResponse:reset.windResponse,tipFollow:reset.tipFollow};
   autoLayoutPending=!points;
-  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();controls();render();
+  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();syncRigJson(true);controls();render();
 };
 $('autoMask').onclick=()=>{
   const view=activeView(),sprite=images[view],head=regionHead(view);
@@ -757,9 +784,9 @@ $('generateBlend').onclick=()=>{
   controls();render();
   message('Generated six natural wind directions for the current strand. Bottom knot leads the middle, with the head anchored.');
 };
-$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;controls();render();}catch(error){message('JSON error: '+error.message);}};
-$('copyRig').onclick=async()=>{const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
-$('download').onclick=()=>{const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;syncRigJson(true);controls();render();message('Applied edited rig JSON.');}catch(error){message('JSON error: '+error.message);}};
+$('copyRig').onclick=async()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before copying the runtime rig; unapplied changes are still in the editor.');return;}const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
+$('download').onclick=()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before exporting; your manual JSON edits are not applied yet.');return;}const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
  const result=JSON.parse(JSON.stringify(cosmetic));
   if(activeStyle?.scope.variant){
     const key=activeStyle.scope.key; // Existing species-specific sprite keeps its own rig; no other gender is changed.
@@ -813,7 +840,7 @@ window.HobunjiSplineAuthorDiagnostics=()=>({
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
   try{await navigator.clipboard.writeText(value);message('Copied 3D viewer and rig diagnostics.');}
-  catch(_){$('json').value=value;$('json').select();message('Clipboard unavailable; select diagnostics from the text area.');}};
+  catch(_){$('diagnosticsJson').hidden=false;$('diagnosticsJson').value=value;$('diagnosticsJson').select();message('Clipboard unavailable; select diagnostics from the separate diagnostic text area.');}};
 void init3D();
 initCatalog(); // Indexed cosmetics are the default; file import is only a fallback for unindexed WIP art.
 })();
