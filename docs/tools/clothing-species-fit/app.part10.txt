@@ -135,32 +135,34 @@ E.headbandEnabled.onchange=()=>updateHeadbandRecord(
   record=>{record.enabled=E.headbandEnabled.checked;},
   'Updated seven-point spline '+(E.headbandEnabled.checked?'enabled':'disabled')+'.'
 );
-E.headbandEditCurve.onchange=()=>{saveState();render(false)}; // Switches selected handles without altering either saved curve.
+E.headbandEditCurve.onchange=()=>{R.headbandWholeWarning='';saveState();syncHeadbandControls();render(false)}; // Switch source/target controls with the active seven-node curve.
 E.headbandTraceSource.onclick=()=>updateHeadbandRecord(record=>{
   const traced=autoHeadbandSourceNodes(headbandView());
-  if(traced)record.source=traced;
+  if(traced){record.source=traced;bakeHeadbandWhole(record,'source')}
 },'Re-traced seven points along the donor headband artwork.');
 E.headbandTraceTarget.onclick=()=>updateHeadbandRecord(record=>{
   const traced=autoHeadbandTargetNodes(headbandView());
-  if(traced)record.target=traced;
+  if(traced){record.target=traced;bakeHeadbandWhole(record,'target')}
 },'Traced seven target points from the authored target-species headband.');
 E.headbandCopy.onclick=()=>updateHeadbandRecord(record=>{
-  record.target=record.source.map(point=>({...point}));
+  record.target=record.source.map(point=>({...point}));bakeHeadbandWhole(record,'target');
 },'Copied source spline onto target (neutral spline warp).');
 E.headbandReset.onclick=()=>updateHeadbandRecord(record=>{
   const traced=autoHeadbandSourceNodes(headbandView());
   if(!traced)return;
   record.source=traced;
-  record.target=autoHeadbandTargetNodes()||traced.map(point=>({...point}));
+  record.target=autoHeadbandTargetNodes(headbandView())||traced.map(point=>({...point}));
+  bakeHeadbandWhole(record,'source');bakeHeadbandWhole(record,'target');
 },'Reset both spline mappings to the visible headband artwork.');
 E.headbandView.onchange=()=>{
   if(headbandView()==='front'&&mode==='rear-paint')mode='headband';
-  saveState();syncHeadbandControls();render(false); // Change the displayed head plane without overwriting either curve.
+  R.headbandWholeWarning='';saveState();syncHeadbandControls();render(false); // View switches update whole-spline settings without touching either curve.
 };
 for(const [button,axis] of [[E.headbandFlipH,'horizontal'],[E.headbandFlipV,'vertical']]){
   button.onclick=()=>updateHeadbandRecord(record=>{
     const curve=E.headbandEditCurve.value==='source'?'source':'target';
     record[curve]=window.ClothingHeadbandSpline.flipNodes(record[curve],axis);
+    bakeHeadbandWhole(record,curve); // Reflect the current curve; start any later whole transform from its new shape.
   },'Flipped '+headbandView()+' '+E.headbandEditCurve.value+' curve '+axis+' around its own bounds.');
 }
 let rearBrushAction='draw'; // Current paint, erase or sample operation for the separately authored back sprite.
