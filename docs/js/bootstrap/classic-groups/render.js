@@ -11,6 +11,7 @@
     "js/character-visuals.js?v=20261119charVisuals1", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
     "js/world-render-pipeline.js?v=20261119visualCore1", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
+    "js/render-ab-benchmark.js?v=20261119abBench1", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
     "js/farm-tile-render-batches.js?v=20261119h71de730",
     "js/zone-prop-render-batches.js?v=20261119hsettledEligibility2",

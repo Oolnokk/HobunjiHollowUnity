@@ -251,6 +251,8 @@ RenderHooks.getDebug()                       // hooks in order: calls/applies/sk
 CharacterVisuals.audit('map_western_slope')  // characters by kind + which visual systems cover them
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
+RenderABBenchmark.run()                      // ON-DEVICE: ~18 s, as shipped vs hooks-per-pass vs outlines off: fps, p90, render JS
+                                             // (also Settings → Dev Tools → "Render A/B benchmark", copies the report)
 RenderHooks.setTiming(true)                  // per-hook ms
 RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names

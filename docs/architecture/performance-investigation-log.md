@@ -47,7 +47,14 @@ frame scope on vs off differs in ~1,300–1,400 of 129,600 px, all at the player
 feet/leg edges where the old per-pass recomposition left the PNG-depth and x-ray replay
 passes with a slightly different pose than the main pass; frame-scope vs frame-scope is
 0 px. **Not measured:** real-device FPS. On a phone the JS saving should scale with CPU
-speed; compare with `RenderHooks.setFrameScopeEnabled(false)` on the same view.
+speed; compare with `RenderHooks.setFrameScopeEnabled(false)` on the same view, or run Settings → Dev Tools →
+"Render A/B benchmark" (`js/render-ab-benchmark.js`), which interleaves as-shipped / hooks-per-pass /
+outlines-off for ~18 s on the device and copies fps, p90 frame time and render JS per variant.
+Headless runs of that tool (Western Slope, 2 rounds × 40 frames) are noisy: frame scope off cost +0.1 ms
+render JS in one run (6.01 → 6.12) and +1.4 ms in another (5.23 → 6.64); outlines off gave ~+27% fps
+(10.5 → 13.4 fps, software GL). So the share of the saving due to frame scope alone versus the shorter
+wrapper chain is unresolved headless; run the benchmark on the device. Frame scope's other value is that
+every pass draws the same pose.
 
 **Leads not taken:** `refreshActionBar` runs every frame by design and rebuilds inventory
 stacks (~0.5 ms here); the held-object replays remain the largest extra draw source; 15

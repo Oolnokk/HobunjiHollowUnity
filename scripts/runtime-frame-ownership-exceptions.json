@@ -646,5 +646,14 @@
     "reason": "After a ◀/▶ press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
     "migrationStage": "not-planned",
     "line": 233
+  },
+  {
+    "file": "docs/js/render-ab-benchmark.js",
+    "owner": "RenderABBenchmark",
+    "classification": "bounded-animation",
+    "function": "nextFrame (benchmark measurement windows)",
+    "reason": "Developer-triggered on-device benchmark: awaits a fixed number of real animation frames (rounds x variants x (warmup + measured frames)) to time real frame intervals, then stops; it never reschedules itself or runs without an explicit Settings/console request.",
+    "migrationStage": "not-planned",
+    "line": 24
   }
 ]

@@ -47,6 +47,8 @@ Serve this repository as static files and load portrait scripts from `docs/js/` 
 
 [docs/architecture/visual-render-pipeline.md](docs/architecture/visual-render-pipeline.md) is the map of a frame: every pass in order, who owns each visual system, the named layer registry (`js/render-layers.js`), render-time presentation hooks (`js/render-hooks.js`, which replaced ten of the ~25 `renderer.render` monkey-patches; the rest are listed there) and render scopes (`js/world-render-pipeline.js`). `WorldRenderPipeline.captureFrame()` then `.lastCapture()` lists every native render of a frame with its pass, layers, target and draw count.
 
+Character visuals (held items, hands, pants, shoulder pets, terrain and weather response) are written for every character — player, NPCs, enemies, creatures, companions — through `js/character-visuals.js` (enumeration + coverage table, `CharacterVisuals.audit()`) and `js/character-held-tools.js` (weapons use the holder's own mastery and metal). To measure rendering on a real device, use Settings → Dev Tools → **Render A/B benchmark** (copies fps and render time for as-shipped / hooks-per-pass / outlines-off).
+
 ## Rendering: ground x-ray and translucent water (regression contract)
 Shell outlines for registered held/foot x-ray objects inherit the same ground-visibility exception: they can show through classified walkable ground, while walls, furniture, rocks, snow and water remain occluders. The shell replay restores the ordinary depth buffer before later outline passes.
 
