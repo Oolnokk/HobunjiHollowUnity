@@ -122,7 +122,23 @@ context.DevSpawner.init({ grantLoot: loot => { grants.push(plain(loot)); return 
   const instance = workspace.localeInstances.find(locale => locale.localeId === camp.id);
   assert.equal(instance.objects.filter(object => object.key === 'artifactPedestal').length, 3);
   const structure = instance.objects.find(object => object.id === 'obj_structure');
+  const tentPiece = JSON.parse(fs.readFileSync('docs/config/pieces/researchers-tent.json', 'utf8')); // Independent rendered-mesh footprint for doorway alignment.
+  const tentCells = tentPiece.footprint.cells; // Actual authored shell cells, not the scaled wilderness clearing.
+  const tentWidth = Math.max(...tentCells.map(cell => cell.x)) - Math.min(...tentCells.map(cell => cell.x)) + 1; // Visible shell width.
+  const tentHeight = Math.max(...tentCells.map(cell => cell.y)) - Math.min(...tentCells.map(cell => cell.y)) + 1; // Visible shell depth.
+  assert.equal(structure.w, tentWidth, 'exported tent width must match the rendered piece, not the scaled clearing');
+  assert.equal(structure.h, tentHeight, 'exported tent depth must match the rendered piece, not the scaled clearing');
+  assert.equal(instance.connectors[0].side, 'east', 'the east-facing flap defines the entrance side');
+  const entranceCol = structure.x + structure.w; // The runtime's east-facing door trigger sits just beyond the tent shell.
+  const entranceRow = structure.y + Math.round(structure.h / 2); // The runtime offsets this tile along the flap.
+  assert.equal(entranceCol, structure.x + tentWidth, 'door trigger must be directly outside the rendered east gable');
+  assert(entranceRow >= structure.y && entranceRow < structure.y + tentHeight, 'door trigger must be in front of the tent, not off its corner');
   const merged = terrain.buildMergedZoneGrid(workspace, workspace.maps[0].id);
-  for (let row = structure.y; row < structure.y + structure.h; row++) for (let col = structure.x; col < structure.x + structure.w; col++) assert.notEqual(merged.tiles.get(`${col},${row}`).type, 'rock', 'tent metadata does not export as random rock terrain');
+  const entranceGround = merged.tiles.get(`${entranceCol},${entranceRow}`); // Verifies the destination is valid terrain, not a rock obstacle.
+  assert(entranceGround && entranceGround.type !== 'rock', 'tent entrance must remain on open ground');
+  const generatedShell = camp.objects.find(object => object.id === 'obj_structure'); // Preserve the full old scaled-terrain regression area.
+  for (let row = structure.y; row < structure.y + generatedShell.h * generator.generationTileScale; row++)
+    for (let col = structure.x; col < structure.x + generatedShell.w * generator.generationTileScale; col++)
+      assert.notEqual(merged.tiles.get(`${col},${row}`).type, 'rock', 'tent metadata does not export as random rock terrain');
   console.log('Artifact collection: donations, world persistence, milestones, dialogue, tier loot and guaranteed chest fallback passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
