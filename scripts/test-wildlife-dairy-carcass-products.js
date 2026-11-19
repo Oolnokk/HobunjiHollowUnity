@@ -68,6 +68,24 @@ assert.equal(config.game.livestock.resources.moot.itemKey, 'mootMilk');
 assert.equal(config.game.livestock.resources.moot.verb, 'Milk');
 assert.equal(config.game.livestock.resources.nazgraku.itemKey, 'nazgrakuEggs', 'Nazgraku eggs must not be removed');
 
+// Species registration is the bridge between authored pools and the live corpse's def.
+vm.runInContext(read('docs/js/pingdort-registration.js'), context, { filename: 'pingdort-registration.js' });
+vm.runInContext(read('docs/js/tzatzul-registration.js'), context, { filename: 'tzatzul-registration.js' });
+const creatureDb = { 'gar-wolf': { lootPool: 'creature_gar-wolf' }, grehlr: { lootPool: 'creature_grehlr' } }; // Predators are baselines, not loot sources for these birds.
+const liveItems = {}; // Game-owned inventory registry at wildlife initialization.
+const inventoryWheel = []; // New loot keys must appear in the item arch.
+const injected = { CREATURE_DB: creatureDb, ITEM_DEFS: liveItems, inventoryItems: inventoryWheel, TILE: 64 }; // Same shape passed by production wildlife registration.
+assert(W.PingdortRegistration.register(injected));
+assert(W.TzatzulRegistration.register(injected));
+assert.equal(creatureDb.pingdort.lootPool, 'creature_pingdort');
+assert.equal(creatureDb.tzatzul.lootPool, 'mixedCrateTreasurePuzzle', 'Adult Tzatzul must retain hoard');
+assert.equal(creatureDb.tzatzul.bonusLootPool, 'creature_tzatzul');
+assert.equal(creatureDb['tzatzul-hatchling'].bonusLootPool, null);
+for (const key of ['pingdortMeat', 'pingdortHide', 'tzatzulMeat', 'tzatzulHide']) {
+  assert(liveItems[key], key + ' has no live inventory definition');
+  assert(inventoryWheel.some(entry => entry.key === key), key + ' is absent from the item wheel');
+}
+
 const farmSource = read('docs/js/farm-animals.js');
 assert(farmSource.trimEnd().endsWith('})();'), 'FarmAnimals must retain its isolated module closure');
 const farmUnderTest = farmSource.replace(/\}\)\(\);\s*$/,
