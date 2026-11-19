@@ -203,3 +203,61 @@ deps.calendar = regionalCalendar;
 music.updateExteriorBgs(); music.updateRainAudio();
 check(regionalCalendar.isRaining && regionalCalendar.rainStrength === 0.5, 'native blizzard mixer uses read-only calendar state');
 console.log('Area-specific weather lookups and read-only calendar routing passed.');
+
+
+// The real wind authority, not precipitation, now drives both existing wind SFX recordings.
+const windWindow = { WeatherFX: { getProjection: () => ({ calendar: deps.calendar }) } }; // Mocks the normal WeatherFX calendar dependency for this isolated audio runtime.
+new Function('window', 'performance', read('docs/js/weather-wind.js'))(windWindow, performance);
+musicWindow.WeatherWind = windWindow.WeatherWind;
+deps.calendar = { isRaining: false, rainStrength: 0 };
+deps._isZoneArea = id => ['wild', 'map_western_slope', 'map_northern_cliffs', 'map_southern_cloud_forest'].includes(id);
+area = 'map_western_slope';
+music.updateExteriorBgs();
+let drySlopeMix = music.getWeatherAudioDebugState(); // Captures actual BGS target volumes with no snow falling.
+check(drySlopeMix.wind.strength > 0.5, 'dry Western Slope reports strong katabatic wind');
+check(drySlopeMix.loops.wind1.target > 0 && drySlopeMix.loops.wind2.target > 0,
+  'both authored wind SFX recordings play during clear highland weather');
+const drySlopeWind = drySlopeMix.loops.wind1.target + drySlopeMix.loops.wind2.target; // Benchmarks the outdoor wind mix before sheltering.
+
+area = 'map_northern_cliffs';
+music.updateExteriorBgs();
+const dryNorthMix = music.getWeatherAudioDebugState(); // Confirms the second funnel region without requiring precipitation.
+check(dryNorthMix.wind.strength > 0.6 && dryNorthMix.loops.wind1.target > 0,
+  'Northern Cliffs also have persistent strong wind and its SFX');
+
+area = 'map_southern_cloud_forest';
+music.updateExteriorBgs();
+const forestWindMix = music.getWeatherAudioDebugState();
+check(forestWindMix.loops.wind1.target === 0 && forestWindMix.loops.wind2.target < drySlopeWind,
+  'sheltered Cloud Forest remains substantially quieter than the highlands');
+
+area = 'map_i_slope_house';
+weatherRegion = 'map_western_slope';
+music.updateExteriorBgs();
+const indoorWindMix = music.getWeatherAudioDebugState();
+check(indoorWindMix.indoors && indoorWindMix.wind.strength > 0.5,
+  'slope interiors inherit regional wind, not generic interior wind');
+check(indoorWindMix.loops.wind1.target > 0 && indoorWindMix.loops.wind1.filtered,
+  'dry katabatic wind stays audible but muffled through an interior wall');
+check(indoorWindMix.loops.wind1.target < drySlopeMix.loops.wind1.target,
+  'indoors attenuates the same outdoor wind recording');
+
+deps.calendar = { isRaining: true, rainStrength: 3 };
+area = 'map_western_slope';
+music.updateExteriorBgs();
+check(music.getWeatherAudioDebugState().wind.strength === 1,
+  'a proper blizzard raises wind SFX to the normalized cap without new audio loops');
+check(music.getWeatherAudioDebugState().loops.wind1.target === 0.20,
+  'blizzard reaches the full authored strong-wind volume');
+// BGS mixer runs every frame; diagnostics must not build seven verbose
+// state strings each frame when their existing throttle will discard them.
+let audioReadyReads = 0; // Counts evaluation of the costly debug-only ready-state label.
+Object.defineProperty(MockAudio.prototype, 'readyState', {
+  configurable: true, get() { audioReadyReads++; return 4; },
+});
+const startReadyReads = audioReadyReads; // Separates this performance check from earlier mobile diagnostic snapshots.
+for (let frame = 0; frame < 20; frame++) music.updateExteriorBgs();
+check(audioReadyReads - startReadyReads < 50,
+  'weather mixing skips most debug-only readiness inspections between five-second trace samples');
+
+console.log('Regional wind SFX passed: dry katabatic wind, sheltered zones, indoor filtering and blizzards.');

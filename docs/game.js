@@ -27097,9 +27097,8 @@
 
           // Wind animation on vegetation
           const windTime = performance.now() / 1000;
-          const windStrBase = calendar.isRaining
-            ? (calendar.rainStrength >= 3 ? 0.10 : 0.06)
-            : 0.03;
+          const windStrBase = window.WeatherWind?.vegetationSwayForArea?.(currentArea, calendar)
+            ?? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03); // Farm vegetation now shares the region/weather wind used by outdoor SFX.
           const _playerTX = player.x / TILE;
           const _playerTZ = player.y / TILE;
           for (const vm of window.VegetationCropRendering.vegMeshes) {
@@ -27143,7 +27142,19 @@
             // them swaying too — farm's block above only runs while on the farm.
             const windTime = performance.now() / 1000;
             grassBillboardMat.uniforms.uTime.value     = windTime;
-            grassBillboardMat.uniforms.uStrength.value = s_billWind ? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03) : 0;
+            grassBillboardMat.uniforms.uStrength.value = s_billWind
+              ? (window.WeatherWind?.vegetationSwayForArea?.(currentArea, calendar)
+                ?? (calendar.isRaining ? (calendar.rainStrength >= 3 ? 0.10 : 0.06) : 0.03))
+              : 0; // Town grass follows the same wind authority as the farm and weather audio.
+          }
+        }
+        if (_isZoneArea(currentArea)) {
+          const zoneGrassWindMat = window.VegetationCropRendering.getGrassBillboardMat(); // Shared wilderness grass material receives the current biome's wind every outdoor frame.
+          if (zoneGrassWindMat?.uniforms?.uTime && zoneGrassWindMat.uniforms.uStrength) {
+            zoneGrassWindMat.uniforms.uTime.value = performance.now() / 1000;
+            zoneGrassWindMat.uniforms.uStrength.value = s_billWind
+              ? (window.WeatherWind?.vegetationSwayForArea?.(currentArea, calendar) ?? 0.03)
+              : 0; // One material update covers all billboard grass batches; no per-tree/per-chunk wind traversal.
           }
         }
 
