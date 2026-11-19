@@ -265,6 +265,13 @@ function paintRearAt(point){
 }
 let transformDrag=null;
 E.stage.addEventListener('pointerdown',e=>{
+  if(mode==='rear-paint'){
+    if(!R.headbandRearCanvas||headbandView()!=='back')return;
+    if(rearBrushAction!=='sample')pushUndo();
+    rearStroke=null;paintRearAt(pointer(e));
+    if(rearBrushAction!=='sample')E.stage.setPointerCapture(e.pointerId);
+    e.preventDefault();return;
+  }
   if(mode==='headband'){
     const record=currentHeadbandViewRecord();
     if(!record)return;
@@ -288,6 +295,9 @@ E.stage.addEventListener('pointerdown',e=>{
   dragIndex=index;dragSnapshotTaken=false;E.stage.setPointerCapture(e.pointerId);e.preventDefault();
 });
 E.stage.addEventListener('pointermove',e=>{
+  if(mode==='rear-paint'&&rearStroke){
+    paintRearAt(pointer(e));e.preventDefault();return;
+  }
   if(mode==='headband'&&headbandDrag){
     const p=pointer(e),record=currentHeadbandViewRecord();
     if(!record)return;
@@ -317,6 +327,10 @@ E.stage.addEventListener('pointermove',e=>{
   saveState();render();e.preventDefault();
 });
 function endDrag(e){
+  if(rearStroke){
+    rearStroke=null;saveHeadbandRearArt();render();
+    log('Committed rear sprite pixels to saved PNG for '+headbandSelectionKey()+'.');
+  }
   if(headbandDrag){
     headbandDrag=null;saveState();render();syncHeadbandControls();
     log('Saved seven-point '+E.headbandEditCurve.value+' curve for '+headbandSelectionKey()+'.');
