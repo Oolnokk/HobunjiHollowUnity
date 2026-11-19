@@ -495,15 +495,6 @@
     requestAnimationFrame(frame);
   }
 
-  function queueRefresh() {
-    if (refreshQueued) return;
-    refreshQueued = true;
-    requestAnimationFrame(() => {
-      refreshQueued = false;
-      if (updateOpenPresentation()) startFrameLoop();
-    });
-  }
-
   function mutationTouchesArc(mutation) {
     const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
     return nodes.some(node => node?.nodeType === 1
