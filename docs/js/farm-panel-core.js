@@ -1519,9 +1519,9 @@
         `<span class="farm-row-name" style="padding:2px 4px;flex:1 0 100%">${_pairParentLabel(pair.parentA, livestock)} × ${_pairParentLabel(pair.parentB, livestock)}</span>` +
         `<div style="flex:1 0 100%;display:flex;align-items:center;gap:6px;padding:0 4px 2px;">` +
           `<div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;"><div style="width:${pct}%;height:100%;background:#e08a3c;"></div></div>` +
-          `<span class="farm-note" style="white-space:nowrap">${pct >= 100 ? 'Ready — resolves this hour' : pct + '%'}</span>` +
+          `<span class="farm-note" style="white-space:nowrap">${Number(pair.progress) >= 1 ? 'Ready — resolves this hour' : pct >= 100 ? 'Almost ready' : pct + '%'}</span>` +
         `</div>`;
-      if (fertilityKey && pct < 100) {
+      if (fertilityKey && !(Number(pair.progress) >= 1)) { // Do not hide Fertility when 99.5%+ merely rounds to 100%.
         const button = document.createElement('button'); // Pair-specific Farm action avoids requiring a physically spawned parent, including for Stable pairings.
         button.type = 'button';
         button.className = 'settings-small-btn';
