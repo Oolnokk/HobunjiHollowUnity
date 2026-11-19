@@ -15,77 +15,52 @@ const Rig = env.window.PortraitSplineRig;
 assert(Rig, 'portrait spline runtime exports a reusable rig');
 
 function makeRig() {
-  // Authoring reference used for wind/collision and hot-swapped mesh tests.
+  // One physical joint: anchored root, free tip and three directional swing magnitudes.
   return {
-    version: 1,
-    enabled: true,
-    points: [{ u: .5, v: .3, depth: .02 }, { u: .51, v: .48, depth: .028 }, { u: .54, v: .7, depth: .035 }],
-    segments: [
-      { deadzone: { x: 5, y: 8, z: 12 }, poses: { right: { yaw: 60, pitch: 35, roll: 25 }, left: { yaw: -55 } } },
-      { deadzone: { x: 4, y: 7, z: 11 }, poses: { right: { yaw: 65, pitch: 35, roll: 15 }, away: { pitch: 50 } } },
-    ],
-    regionMasks: { front: { size: 200, runs: [[123, 10]] } }, // Explicit rigid region remains pixel-accurate on export.
-    rearOffset: { u: .015, v: -.02 },
+    version:2,enabled:true,
+    points:[{u:.5,v:.3,depth:.02},{u:.54,v:.7,depth:.035}],
+    bone:{yaw:8,pitch:12,roll:18},
+    regionMasks:{front:{size:200,runs:[[123,10]]}},
+    hoodStretchPx:12,rearOffset:{u:.015,v:-.02},
   };
 }
-const normalized = Rig.normalize(makeRig());
-assert(normalized && normalized.points.length === 3);
-assert.equal(normalized.regionMasks.front.runs[0][1], 10, 'rigid mask pixels survive cosmetic normalization');
-assert.equal(normalized.segments[0].deadzone.z, 12, 'per-axis rotation deadzone survives');
-assert.equal(Rig.normalize({ enabled: true, points: [] }), null, 'malformed rig stays unrigged');
-assert.equal(Rig.resolveOptionRig(null, null), null, 'ordinary hairstyles remain flat');
-const chosen = Rig.resolveOptionRig({ splineRig: makeRig() }, { speciesId: 'mao-ao', gender: 'male' });
-assert(chosen, 'opted-in cosmetic activates its rig');
-const rest = Rig.posePoints(normalized);
-const moved = Rig.posePoints(normalized, { x: 1, y: .4, z: -.9 });
-assert.equal(rest.points.length, 3);
-assert(moved.points.every(p => p.z >= .002999), 'every wind-blown segment must remain in front of the portrait');
-assert(moved.points.some((p, i) => Math.abs(p.x - rest.points[i].x) > .01), 'wind must move the authored points');
-assert.deepEqual(JSON.parse(JSON.stringify(Rig.blendSegment(normalized.segments[0], { x: 0, y: 0, z: 0 }))),
-  { yaw: 0, pitch: 0, roll: 0 }, 'the neutral pose is wind-free');
-// Hierarchy regression: an authored tip gust should pull the middle, never the head; editing the middle must not move the tip.
-const restingPoints=[{u:.5,v:.3,depth:.02},{u:.5,v:.5,depth:.03},{u:.5,v:.7,depth:.04}];
-const endPose=translate=>({deadzone:{x:0,y:0,z:0},poses:{right:{translate}}});
-const tipDriven=Rig.normalize({points:restingPoints,segments:[endPose({x:0}),endPose({x:.1})],tipFollow:.58});
-const upperOnly=Rig.normalize({points:restingPoints,segments:[endPose({x:.1}),endPose({x:0})],tipFollow:.58});
-const tipNeutral=Rig.posePoints(tipDriven).points,tipWind=Rig.posePoints(tipDriven,{x:1}).points;
-const upperWind=Rig.posePoints(upperOnly,{x:1}).points;
-assert.equal(tipWind[0].x,tipNeutral[0].x,'head attachment is immovable regardless of gust direction');
-assert(Math.abs((tipWind[1].x-tipNeutral[1].x)-.058)<1e-9,'bottom knot drives 58% of its displacement into the middle');
-assert(Math.abs((tipWind[2].x-tipNeutral[2].x)-.1)<1e-9,'bottom knot receives its own authored displacement');
-assert(Math.abs(upperWind[2].x-tipNeutral[2].x)<1e-9,'changing only the middle never drags the bottom tip');
-assert(Math.abs((upperWind[1].x-tipNeutral[1].x)-.1)<1e-9,'middle knot retains independently authored local motion');
-const natural=Rig.makeDefaultSegments(restingPoints);
-const naturalRig=Rig.normalize({points:restingPoints,segments:natural});
-assert(natural.some(segment=>Math.abs(segment.poses.left.translate.x)>.005),'natural default responds to a left gust');
-assert(natural.some(segment=>Math.abs(segment.poses.right.translate.x)>.005),'natural default responds to a right gust');
-assert(natural.some(segment=>Math.abs(segment.poses.up.translate.y)>.005),'natural default responds to an updraft');
-assert(natural.some(segment=>Math.abs(segment.poses.down.translate.y)>.005),'natural default responds to downward wind');
-assert(natural.some(segment=>Math.abs(segment.poses.toward.translate.z)>.005),'natural default responds to wind toward the camera');
-assert(natural.some(segment=>Math.abs(segment.poses.away.translate.z)>.005),'natural default responds to wind away from the camera');
-assert(natural[0].poses.right.translate.x<natural[1].poses.right.translate.x,
-  'default upper strand is stiffer and the bottom tip is the leading wind parent');
-const naturalRest=Rig.posePoints(naturalRig).points,naturalGust=Rig.posePoints(naturalRig,{x:1}).points;
-assert(naturalGust[1].x-naturalRest[1].x<naturalGust[2].x-naturalRest[2].x,
-  'default side gust never makes the middle outrun the tip');
-assert(Rig.normalize({points:restingPoints}).segments[1].poses.right.translate.x>0,
-  'a newly normalized, unrigged style receives useful default poses');
-const neutralDepth=Rig.posePoints(naturalRig).points.at(-1).z;
-assert(Rig.posePoints(naturalRig,{z:1}).points.at(-1).z>neutralDepth,
-  'auto-generated toward wind moves a hanging strand toward the camera, not behind its head');
-assert(Rig.posePoints(naturalRig,{z:-1}).points.at(-1).z<neutralDepth,
-  'auto-generated away wind tilts a hanging strand behind its neutral tip instead of reversing direction');
-const midpoint = Rig.curvePoint(rest.points, 0, .5);
-assert(midpoint.z > 0, 'smooth neutral strand interpolation preserves outward depth');
-const join = Rig.curvePoint(rest.points, 0, 1);
-const left = Rig.curvePoint(rest.points, 0, .999);
-const right = Rig.curvePoint(rest.points, 1, .001);
-const leftSlope = (join.x - left.x) / .001, rightSlope = (right.x - join.x) / .001; // Adjacent cubic segments must meet with a continuous tangent.
-assert(Math.abs(leftSlope - rightSlope) < .002, 'neighboring spline segments meet smoothly without a visible kink');
-const extreme = Rig.normalize({ ...makeRig(), points: [{u: .5,v:.3,depth:.002},{u:.5,v:.5,depth:.002}], segments: [{ poses: { away: { pitch: 85 } } }] });
-assert(Rig.posePoints(extreme, { z: -1 }).points[1].z >= .002999, 'an authored inward pose clamps against the portrait');
-const warped = Rig.deformPosition(normalized, moved.points, .52, .58, 1, 1);
-assert(warped.z >= .003, 'deformed sprite vertices also respect the portrait depth guard');
+const normalized=Rig.normalize(makeRig());
+assert(normalized&&normalized.points.length===2,'one joint has exactly two handles');
+assert.equal(normalized.version,2,'old pose tables are removed from normalized data');
+assert(!('segments' in normalized)&&!('tipFollow' in normalized),'there is no six-direction blend space');
+assert.equal(normalized.regionMasks.front.runs[0][1],10,'head masks survive normalization');
+assert.equal(normalized.hoodStretchPx,12,'the elastic hood expansion radius is persisted');
+const old=Rig.normalize({...makeRig(),version:1,points:[{u:.5,v:.3,depth:.02},{u:.51,v:.48,depth:.03},{u:.54,v:.7,depth:.04}],
+  segments:[{poses:{right:{roll:75}}},{poses:{left:{roll:-90}}}]});
+assert.equal(old.points.length,2,'legacy three-knot rigs migrate to a single root and tip');
+assert(!('segments' in old),'legacy directional poses are discarded, not blended');
+assert.equal(Rig.normalize({points:[]}),null,'malformed rigs stay unrigged');
+assert.equal(Rig.resolveOptionRig(null,null),null,'unconverted flat hair remains flat');
+assert(Rig.resolveOptionRig({splineRig:makeRig()},{speciesId:'mao-ao',gender:'male'}),
+  'opted-in cosmetics use a single bone');
+const rest=Rig.posePoints(normalized),right=Rig.posePoints(normalized,{x:1}),left=Rig.posePoints(normalized,{x:-1});
+assert.equal(rest.points.length,2,'one bone has root and tip');
+assert.deepEqual(JSON.parse(JSON.stringify(right.points[0])),JSON.parse(JSON.stringify(rest.points[0])),
+  'the root remains immobile in a gust');
+assert(right.points[1].x>rest.points[1].x&&left.points[1].x<rest.points[1].x,
+  'the one bone swings in both horizontal directions');
+assert(rest.points.every(p=>p.z>=.003)&&right.points.every(p=>p.z>=.003),
+  'no wind drives the joint behind the portrait');
+const neutralDepth=rest.points[1].z;
+assert(Rig.posePoints(normalized,{z:1}).points[1].z>neutralDepth,
+  'a toward-view gust moves hanging hair forward');
+assert(Rig.posePoints(normalized,{z:-1}).points[1].z<neutralDepth,
+  'an away-view gust moves hanging hair backward');
+const midpoint=Rig.curvePoint(rest.points,0,.5);
+assert(Math.abs(midpoint.x-(rest.points[0].x+rest.points[1].x)/2)<1e-9,
+  'single-bone interpolation is linear without hidden middle knots');
+const extreme=Rig.normalize({...makeRig(),bone:{yaw:65,pitch:65,roll:65},
+  points:[{u:.5,v:.3,depth:.003},{u:.5,v:.7,depth:.003}]});
+assert(Rig.posePoints(extreme,{z:-1}).points[1].z>=.003,
+  'maximum swing collides safely with the portrait plane');
+const warped=Rig.deformPosition(normalized,right.points,.52,.58,1,1);
+assert(warped.z>=.003&&Number.isFinite(warped.x),
+  'the live sprite deformation uses the same single bone as the editor');
 
 class FakeGeometry {
   constructor(width = 1, height = 1, nx = 4, ny = 4) {
@@ -178,6 +153,6 @@ assert(!portrait.includes("warpHoodCanvas?.(") && !portrait.includes("paintSeamB
   'new masks do not carve hood pixels or paint artificial seam bridges');
 assert(html.includes('portrait-spline-rig.js'), 'game loads the spline runtime');
 assert(studio.includes('portrait-spline-rig.js'), 'Character Studio loads the same runtime');
-assert(editor.includes('id="paintMode"') && editor.includes('id="eraseMode"') && editor.includes('segmentSelect'),
-  'mobile editor exposes rigid brush, flexible eraser, and per-segment pose controls');
-console.log('Portrait spline rig: 22 regression assertions passed.');
+assert(editor.includes('id="paintMode"')&&editor.includes('id="eraseMode"')&&editor.includes('id="boneRoll"')&&editor.includes('id="hoodStretchPx"'),
+  'mobile editor exposes one bone and a dedicated elastic hood opening control');
+console.log('Portrait hair bone: root/tip migration, single-joint wind, head collision and cosmetic hot-swaps pass.');
