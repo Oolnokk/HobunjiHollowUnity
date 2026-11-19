@@ -850,7 +850,7 @@
       return collectResource(animal.livestockId);
     }
     const collectPrefix = 'obj_collect_' + animal.id + ':'; // Distinguishes a secondary product without changing old action identifiers.
-    if (action.startsWith(collectPrefix)) {
+    if (typeof action === 'string' && action.startsWith(collectPrefix)) { // Ignore malformed/controller-canceled inputs safely.
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
       const itemKey = action.slice(collectPrefix.length); // Only exact authored secondary resource keys may be harvested.
       const extraDef = additionalResourceDefs(rec?.kind).find(def => def.itemKey === itemKey);
