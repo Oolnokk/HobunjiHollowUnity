@@ -15600,6 +15600,22 @@ clearAnimationActors = function(...args) {
     parityV1554.installRepositoryDefaults(animationAuthor.attachmentRigProfiles); // Replace stale V15.24 animal defaults before the async project load.
     for (const kind of Object.keys(animationAuthor.attachmentRigProfiles.creatures)) syncCreatureTransformGroundOffsetsFromRigV1544(kind);
 
+    const oldProfileV1554 = attachmentRigProfileForActor; // Existing species/anchor creation, V15.13 scales and belt hooks stay authoritative.
+    attachmentRigProfileForActor = function(actor, options = {}) {
+      const kind = actor?.source?.type === 'creature' ? actor.source.kind : null;
+      const hadOwnProfile = !!(kind && animationAuthor.attachmentRigProfiles?.creatures?.[kind]); // A saved custom variant profile must not be replaced.
+      const profile = oldProfileV1554(actor, options);
+      if (kind && profile && !hadOwnProfile && !parityV1554.canonicalCreatures()?.[kind]) {
+        const inherited = parityV1554.gameplayProfileForKind(kind); // Gameplay aliases alpha/den/herd animals to the base species for size and floor.
+        if (inherited) {
+          profile.sizeScales = structuredCloneSafe(inherited.sizeScales);
+          profile.groundOffsets = structuredCloneSafe(inherited.groundOffsets);
+          profile.sizeScaleRule = structuredCloneSafe(inherited.sizeScaleRule || {});
+          profile.sizeScalePercentages = structuredCloneSafe(inherited.sizeScalePercentages || {});
+        } // Preserve independently authored saddle and shoulder grips for the variant.
+      }
+      return profile;
+    };
     const oldNormalizeV1554 = normalizedRigProfileLibrary; // Preserve all existing import migrations, including belts.
     normalizedRigProfileLibrary = function(source = {}) {
       return parityV1554.normalizeImported(oldNormalizeV1554(source), source);
@@ -15675,7 +15691,7 @@ clearAnimationActors = function(...args) {
       if (actor?.source?.type !== 'creature') return null;
       const profile = attachmentRigProfileForActor(actor);
       const height = actor.shoulderRestModelDimensions?.modelHeight;
-      const gameProfile = parityV1554.canonicalCreatures()?.[actor.source.kind];
+      const gameProfile = parityV1554.gameplayProfileForKind(actor.source.kind);
       const layout = layoutV1554(actor);
       return {
         species: actor.source.kind, sizeClass: layout.sizeClass, effective: layout,
@@ -15707,7 +15723,7 @@ clearAnimationActors = function(...args) {
         + Number(actor.model?.userData?.creatureOpaqueFootRatio ?? 1).toFixed(4)
         + ' · art padding shift: ' + Number(actor.model?.userData?.creatureOpaquePaddingCorrectionY ?? 0).toFixed(4);
       card.append(title, detail);
-      const gameProfile = parityV1554.canonicalCreatures()?.[actor.source.kind]; // Live game baseline for the selected species, not a historical editor snapshot.
+      const gameProfile = parityV1554.gameplayProfileForKind(actor.source.kind); // Live game baseline for the selected species, not a historical editor snapshot.
       if (gameProfile) {
         const matches = ['small', 'medium', 'large'].every(size => {
           const authored = parityV1554.placement(profile, size, actor.shoulderRestModelDimensions?.modelHeight);
