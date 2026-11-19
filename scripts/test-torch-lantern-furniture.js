@@ -128,6 +128,12 @@ assert.equal(paintedSprite.rotation.z,Math.PI,'painted down points up in world s
 assert.equal(sprite1.rotation.x,Math.PI/6,'torch leans exactly thirty degrees toward the room');
 assert.equal(paintedSprite.geometry.width,.26,'wall sprite maintains the intended narrow handheld proportions');
 assert.equal(paintedSprite.geometry.height,.70,'wall sprite maintains the original elongated torch aspect');
+const canonicalFlameAnchor=sprite1.children.find(child=>child.name==='wall_torch_campfire_flame_anchor'); // Real campfire particles, not a painted glow sprite, now occupy the torch tip.
+assert.ok(canonicalFlameAnchor,'wall torch exposes a tilted campfire-emitter attachment point');
+assert.equal(firstMount.userData.wallTorchFireAnchor,canonicalFlameAnchor,'ambient furniture VFX resolves the same tip anchor as the authored sprite');
+assert.ok(!sprite1.children.some(child=>child.name==='wall_torch_flame_sprite'),'obsolete gradient-flame sprite is not rendered');
+assert.ok(!authoredTorchSource.includes('new Three.SpriteMaterial('),'wall torches do not synthesize a second flame renderer');
+
 assert.equal(registeredTorchLights.length,2,'one light source per mounted torch, not per primitive flame');
 assert.equal(artWindow.AuthoredFurniture.attachWallTorchSprite(firstMount,fakeThree),sprite1,
   'repeated attachments never duplicate the torch or its light');
