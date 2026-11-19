@@ -50,6 +50,7 @@
     let hoodClip=null,lastHoodFit=null; // Created lazily when a preview equips a hood.
     let lastGeometryKey=''; // Only rebuild the deformable ribbon when its points/pose/wind/UV settings actually change.
     let selectedIndex=1, dots=[], handles=[], drag=null;
+    let markerRebuilds=0,gizmoRebuilds=0; // Exposed in mobile diagnostics to catch per-frame mesh allocation regressions.
     const raycaster=new THREE.Raycaster(); // Used only for direct pointer selection and gizmo manipulation.
     const ndc=new THREE.Vector2();
     const axisUnit=axis=>new THREE.Vector3(...AXES[axis]);
@@ -165,38 +166,48 @@
     }
     function makeMaterial(color){return new THREE.MeshBasicMaterial({color,depthTest:false,transparent:true,opacity:.95});}
     function addKnots(points){
-      clearChildren(markers);dots=[];pickable.length=0;
-      const sphere=new THREE.SphereGeometry(.014,12,8);
+      if(dots.length!==points.length){
+        clearChildren(markers);dots=[];markerRebuilds++;
+        // Keep the WebGL meshes alive while posing; this avoids allocating a sphere per touch move.
+        for(let i=0;i<points.length;i++){
+          const dot=new THREE.Mesh(new THREE.SphereGeometry(.014,12,8),makeMaterial(0x6de8eb));
+          dot.userData.knotIndex=i;dot.renderOrder=20;markers.add(dot);dots.push(dot);
+        }
+      }
       for(let i=0;i<points.length;i++){
-        const dot=new THREE.Mesh(sphere.clone(),makeMaterial(i===selectedIndex?0xffee91:0x6de8eb));
-        dot.position.copy(new THREE.Vector3(points[i].x,points[i].y,points[i].z));
-        dot.userData.knotIndex=i;dot.renderOrder=20;markers.add(dot);dots.push(dot);pickable.push(dot);
+        dots[i].position.set(points[i].x,points[i].y,points[i].z);
+        dots[i].material.color.setHex(i===selectedIndex?0xffee91:0x6de8eb);
+        pickable.push(dots[i]);
       }
     }
     function addGizmo(points){
-      clearChildren(gizmo);handles=[];
       selectedIndex=clamp(selectedIndex,0,points.length-1);
-      if(selectedIndex===0){gizmo.visible=false;return;} // Root knot remains attached to the head; place it in the 2D editor.
+      if(selectedIndex===0){gizmo.visible=false;return;} // The first knot is moved only in the 2D resting spline.
       gizmo.visible=true;
       const p=points[selectedIndex];gizmo.position.set(p.x,p.y,p.z);
-      const colors={x:0xff626b,y:0x5bed9d,z:0x70b2ff};
-      for(const axis of ['x','y','z']){
-        const material=makeMaterial(colors[axis]),v=axisUnit(axis);
-        if(mode==='translate'){
-          const stem=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,.135,10),material);
-          stem.position.copy(v.clone().multiplyScalar(.077));
-          stem.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v);
-          const tip=new THREE.Mesh(new THREE.ConeGeometry(.02,.041,12),makeMaterial(colors[axis]));
-          tip.position.copy(v.clone().multiplyScalar(.162));
-          tip.quaternion.copy(stem.quaternion);
-          for(const piece of [stem,tip]){piece.userData.axis=axis;piece.renderOrder=22;gizmo.add(piece);handles.push(piece);pickable.push(piece);}
-        }else{
-          const ring=new THREE.Mesh(new THREE.TorusGeometry(.16,.014,8,48),material);
-          if(axis==='x')ring.rotation.y=Math.PI/2;
-          else if(axis==='y')ring.rotation.x=Math.PI/2;
-          ring.userData.axis=axis;ring.renderOrder=22;gizmo.add(ring);handles.push(ring);pickable.push(ring);
+      if(gizmo.userData.mode!==mode||!handles.length){
+        clearChildren(gizmo);handles=[];gizmoRebuilds++;
+        const colors={x:0xff626b,y:0x5bed9d,z:0x70b2ff};
+        for(const axis of ['x','y','z']){
+          const v=axisUnit(axis);
+          if(mode==='translate'){
+            const stem=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,.135,10),makeMaterial(colors[axis]));
+            stem.position.copy(v.clone().multiplyScalar(.077));
+            stem.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v);
+            const tip=new THREE.Mesh(new THREE.ConeGeometry(.02,.041,12),makeMaterial(colors[axis]));
+            tip.position.copy(v.clone().multiplyScalar(.162));
+            tip.quaternion.copy(stem.quaternion);
+            for(const piece of [stem,tip]){piece.userData.axis=axis;piece.renderOrder=22;gizmo.add(piece);handles.push(piece);}
+          }else{
+            const ring=new THREE.Mesh(new THREE.TorusGeometry(.16,.014,8,48),makeMaterial(colors[axis]));
+            if(axis==='x')ring.rotation.y=Math.PI/2;
+            else if(axis==='y')ring.rotation.x=Math.PI/2;
+            ring.userData.axis=axis;ring.renderOrder=22;gizmo.add(ring);handles.push(ring);
+          }
         }
+        gizmo.userData.mode=mode;
       }
+      for(const piece of handles)pickable.push(piece); // Refresh raycast targets without reallocating meshes.
     }
     function update(next){
       if(disposed||!next)return;
@@ -232,9 +243,9 @@
         rearPlane.position.y=next.rearAligned?0:-rig.rearOffset.v; // Masked rear artwork is already shifted before its pixels are partitioned.
       }
       if(next.editKnots!==false){
-        addKnots(posed.points);addGizmo(posed.points);
+        pickable.length=0;addKnots(posed.points);addGizmo(posed.points);
       }else{
-        clearChildren(markers);clearChildren(gizmo);
+        if(dots.length||handles.length){clearChildren(markers);clearChildren(gizmo);}
         dots=[];handles=[];pickable.length=0;
       }
       const blocked=posed.collisions;
@@ -413,6 +424,7 @@
         });
       return {
         webgl:true,mode,selectedKnot:selectedIndex,knots:dots.length,handles:handles.length,
+        markerRebuilds,gizmoRebuilds, // Stable during drags: only changing point count or gizmo mode should allocate.
         ribbonVertices:hairPlane.geometry?.attributes?.position?.count||0,
         pinnedFrontVertices:hairPlane.userData.pinnedVertices||0,
         pinnedRearVertices:rearPlane.userData.pinnedVertices||0,
