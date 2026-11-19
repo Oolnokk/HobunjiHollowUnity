@@ -516,7 +516,8 @@
         const bracket=new THREE.MeshLambertMaterial({color:0x554332}); // Simple support, no faux torch/flame cubes.
         addBox(0,-h*.38,.018,w*.76,h*.23,.04,wood); // Plate attaches to the wall.
         addBox(0,-h*.39,.11,w*.21,h*.09,.21,bracket); // Perch projects toward the room.
-        addBox(0,-h*.40,.21,w*.55,h*.075,.08,bracket); // Little rest cups the painted torch handle.
+        const handleRest=addBox(0,-h*.40,.21,w*.55,h*.16,.08,bracket); // Solid 3D socket supports the leaning handle.
+        handleRest.rotation.x=Math.PI/6; // Match the torch's 30° outward lean, not a flat ledge.
         const spriteOptions={position:[0,-h*.42,.23],scale:h/.72}; // Keeps the tip within the saved fixture's height.
         if(!global.AuthoredFurniture?.attachWallTorchSprite?.(mount,THREE,spriteOptions)){
           // House Piece Author may not load AuthoredFurniture; use the same torch.png and inverted sprite directly.
@@ -530,9 +531,14 @@
                 side:THREE.DoubleSide,depthWrite:true,toneMapped:false}));
             art.name='wall_torch_actual_handheld_png';
             art.rotation.z=Math.PI; // Burning end is PNG -Y; flip to world +Y.
-            art.position.set(0,0,.235);
+            const tilt=new THREE.Group(); // The standalone House Editor follows the same tilted grip as AuthoredFurniture.
+            tilt.name='wall_torch_handheld_sprite';
+            tilt.position.set(0,-h*.42,.23);
+            tilt.rotation.x=Math.PI/6; // +X pitches the torch's upper end outward toward the room.
+            art.position.set(0,h*.49,.005); // Rotating around the bottom handle keeps it seated in its 3D socket.
             art.raycast=()=>{};
-            mount.add(art);
+            tilt.add(art);
+            mount.add(tilt);
           }
         }
       }
