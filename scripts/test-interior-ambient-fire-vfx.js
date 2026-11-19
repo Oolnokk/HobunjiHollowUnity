@@ -137,8 +137,8 @@ assert.equal(setEnabledCalls.filter(c => c.id === 'interior-ambient-vfx').length
 // A house or inventory wall torch may be assembled independently of an ordinary
 // furniture catalog entry: its real tilted tip still gets the player's campfire
 // particle VFX, and the same ambient subscriber disposes it on removal.
-const torchAnchor = {}; // The authored-furniture runtime positions this under the handheld sprite pivot.
-const replacementAnchor = {}; // Simulates a newly authored sprite replacing a provisional procedural fallback.
+const torchAnchor = { add() {} }; // The authored-furniture runtime positions this real Three.Group-like anchor under the handheld sprite pivot.
+const replacementAnchor = { add() {} }; // Simulates a newly authored sprite replacing a provisional procedural fallback.
 const torchVisuals = []; // Tracks every emitter to ensure a replacement disposes its predecessor exactly once.
 let torchOpts = null; // Confirm a size-only adaptation, not a new flame renderer.
 context.PersistentGroundFire = {
