@@ -9579,20 +9579,17 @@
               elevTier: tentElevTier, footprintW: 3, footprintD: 3,
             }] : [];
             // The locale's connector marks where the wilderness path enters
-            // the *locale* (see stampLocale's pathAnchor use of it) -- it can
-            // sit several tiles from the tent itself (room for a clearing/
-            // desk/statues in between), so using it directly as the "enter
-            // the tent" trigger tile used to put that trigger nowhere near
-            // the actual door, making the transition seem unresponsive. The
-            // real door tile is one step off whichever edge of the
-            // structure's footprint TENT_DOOR_ROTATION_BY_SIDE turns to
-            // face, so derive it from tentStructureObj's own (already
-            // locale-scaled) position + size instead.
-            const TENT_DOOR_TILE_OFFSET_BY_SIDE = tentStructureObj ? {
-              south: { dx: Math.round(tentStructureObj.w / 2), dz: tentStructureObj.h },
-              east:  { dx: tentStructureObj.w, dz: Math.round(tentStructureObj.h / 2) },
-              north: { dx: Math.round(tentStructureObj.w / 2), dz: -1 },
-              west:  { dx: -1, dz: Math.round(tentStructureObj.h / 2) },
+            // the clearing, not the tent. The generated structure's footprint
+            // is doubled for terrain reservation and cached-rock cleanup,
+            // but HousePieceGen renders the tent using its authored 3x3 shell.
+            // Calculate the entrance from the visible building footprint:
+            // one tile outside the front gable, centered on the flap.
+            const tentEntranceFootprint = tentBuilding[0] || null; // The rendered dimensions are the door trigger's unscaled source of truth.
+            const TENT_DOOR_TILE_OFFSET_BY_SIDE = tentEntranceFootprint ? {
+              south: { dx: Math.floor(tentEntranceFootprint.footprintW / 2), dz: tentEntranceFootprint.footprintD },
+              east:  { dx: tentEntranceFootprint.footprintW, dz: Math.floor(tentEntranceFootprint.footprintD / 2) },
+              north: { dx: Math.floor(tentEntranceFootprint.footprintW / 2), dz: -1 },
+              west:  { dx: -1, dz: Math.floor(tentEntranceFootprint.footprintD / 2) },
             }[tentDoorSide] : null;
             const tentTransitions = (tentInstance && tentStructureObj && TENT_DOOR_TILE_OFFSET_BY_SIDE) ? [{
               id: 'sp_ncl_tent', label: "Researcher's Tent",
