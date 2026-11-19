@@ -13,7 +13,7 @@ const root = path.resolve(__dirname, '..'); // Loads the current checkout rather
 const movementModule = fs.readFileSync(path.join(root, 'docs/js/farm-animals.js'), 'utf8'); // Real world-livestock follow/tile-hop implementation.
 const hookAnchor = '    updateAnimalMeshes,\n'; // Injects a private tick export only into this test's isolated evaluation.
 assert(movementModule.includes(hookAnchor), 'farm-animal export hook moved; update the test integration point');
-const instrumentedModule = movementModule.replace(hookAnchor, hookAnchor + '    __testWanderTick: _farmAnimalWanderTick,\n');
+const instrumentedModule = movementModule.replace(hookAnchor, hookAnchor + '    __testWanderTick: _farmAnimalWanderTick,\n    __testActiveBreedingParent: isActiveWorldBreedingParent,\n');
 const pathfinderModule = fs.readFileSync(path.join(root, 'docs/js/tile-pathfinding.js'), 'utf8'); // Real A* (including diagonal-corner restrictions).
 
 let clock = 1000; // Advances the same performance.now() clock as the production mate cache and path retry throttles.
@@ -101,5 +101,7 @@ const mixed = fixture([7, 4], [1, 4]);
 mixed.breedingPairs[0].parentA = { source: 'stable', id: 'a', characterId: 'owner' };
 animals.invalidateBreedingFollowCache();
 assert.equal(animals.breedingFollowDebug().followers.length, 0, 'a personal-Stable pairing never enrolls a farm follower');
+assert.equal(animals.__testActiveBreedingParent('b'), true, 'a world parent paired with a Stable parent remains a valid direct Fertility target');
+assert.equal(animals.__testActiveBreedingParent('a'), false, 'a personal-Stable parent never acquires a world-animal prompt');
 
 console.log('farm breeding mate following: real pathfinding, separation, harvest/barn pause, path handoff, corners and Stable exclusion passed');
