@@ -1547,6 +1547,18 @@
       if (!externalFootTargets) state.motionMode = 'idle'; // Normal gait resumes on the next update.
     }
 
+    function releaseExternalFootTargets(targets, restoreGroundedPose = false) {
+      if (!targets || targets !== externalFootTargets) return false;
+      setExternalFootTargets(null);
+      if (restoreGroundedPose) {
+        prepareLegSolve();
+        placeIdleTarget('left', state.leftContactY);
+        placeIdleTarget('right', state.rightContactY);
+        publishSolvedLegPose(); // Replace the world-contact pose before gait or pants read the leg chain again.
+      }
+      return true;
+    }
+
     function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
       dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
@@ -1804,7 +1816,7 @@
     }
 
     return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets,
+      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
       hasExternalFootTargets: () => !!externalFootTargets, // Cliff crawl must not overwrite a live grapple/mount/paired-action leg contact.
       captureMotionState: () => ({ // Render-scoped cliff IK must not persist its temporary foot targets into the next gait solve.
         leftTarget: state.leftTarget.clone(), rightTarget: state.rightTarget.clone(),

@@ -537,6 +537,7 @@
     if (!old) return false;
     active = null;
     let poseRelease = null; // Used in the last-result mobile diagnostic to reveal displaced transform owners.
+    let releasedFootTargets = false; // Pixel Probe records whether teardown removed an active kiss foot anchor.
     try {
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
@@ -568,12 +569,10 @@
       }
       if (playerRestored) {
         old.playerHands?.useIdlePose?.(); // A displaced player's newer grip must not be replaced with the spouse's old idle pose.
-        old.playerLegs?.setExternalFootTargets?.(null);
         old.playerLegs?.setStanceDrop?.(0, true);
         old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
       }
       if (npcRestored) {
-        old.npcLegs?.setExternalFootTargets?.(null);
         if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
         old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
       } else {
@@ -592,12 +591,16 @@
         if (old.playerNeck?.position && old.originalPlayerNeckPosition) old.playerNeck.position.copy(old.originalPlayerNeckPosition);
         if (old.npcNeck?.position && old.originalNpcNeckPosition) old.npcNeck.position.copy(old.originalNpcNeckPosition);
       }
+      const shortLegs = old.height.taller === 'first' ? old.npcLegs : old.playerLegs; // Only the hopping partner ever receives the kiss's foot targets.
+      const shortRootRestored = old.height.taller === 'first' ? npcRestored : playerRestored; // Grounded IK is safe only after restoring the actor's root.
+      releasedFootTargets = shortLegs?.releaseExternalFootTargets?.(old.footScratch.targets, shortRootRestored) === true;
+      if (releasedFootTargets && shortRootRestored) shortLegs.pants?.update?.();
     } finally {
       old.lock?.release?.();
       window.WorldActionInputClaims?.clearClaims?.(SOURCE);
     }
     lastResult = { reason, npcId: old.walker?.rec?.id || null, touched: old.touched, height: old.height, elapsedS: old.elapsed,
-      renderPoseCount: old.renderPoseCount, poseRelease }; // Mobile evidence includes render checkpoints and skipped restores after a takeover.
+      renderPoseCount: old.renderPoseCount, poseRelease, releasedFootTargets }; // Mobile evidence includes render checkpoints, skipped restores and detached feet.
     return true;
   }
 
@@ -815,6 +818,7 @@
         session.playerModel?.userData?.proceduralHandRig !== session.playerHands ||
         session.walker?.root?.parent !== session.npcParent ||
         session.composer?.getPlayerMesh?.() !== session.player ||
+        session.composer?.getPlayerLegHandle?.() !== session.playerLegs ||
         session.walker.legs !== session.npcLegs ||
         (window.__hobunjiPlayerProfile?.characterId || null) !== session.characterId ||
         (Number.isFinite(Number(window.Combat?.deps?.player?.health)) && Number(window.Combat.deps.player.health) <= 0) ||
@@ -881,8 +885,12 @@
       const tallLegs = playerIsTaller ? session.playerLegs : session.npcLegs;
       session.footScratch.composerLift = false; // Festival-style live hop translates the real shorter-root and its leg group.
       const footTargets = posteriorStraddleFootTargets(window.THREE, tallLegs, shortLegs, session.height, jumpBlend, session.footScratch);
-      shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Two real legs bend onto the taller partner's individual left/right pelvis landmarks.
-      if (footTargets) shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
+      if (footTargets) {
+        shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Both feet follow their individual pelvis landmarks during the hop.
+        shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
+      } else if (shortLegs.releaseExternalFootTargets?.(session.footScratch.targets, true)) {
+        shortLegs.pants?.update?.(); // Replace the last hop pose on the landing frame, before renderer skinning.
+      }
     }
     session.playerHands?.applyOwnedPose?.(); // Immediately drive the real GLB sockets, as festival dance drives both hand pairs.
     session.lastLipContact = syncMouthContact(session.playerModel, session.walker.avatarGroup,
