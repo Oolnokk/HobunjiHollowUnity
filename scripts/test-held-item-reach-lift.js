@@ -99,4 +99,69 @@ const close = (actual, expected, label) => assert(Math.abs(actual - expected) < 
   close(f.holder.position.y, 0.25, 'external holder pose is never restored to a stale baseline');
 }
 
+// Exercise the real frame-scheduler owner, not only the isolated reach helper.
+// The previous implementation forgot to undo the visual lift when a held item
+// disappeared before the next hand sync or when the rig became offscreen.
+{
+  const updateStart = source.indexOf('  function updateManagedRigs() {');
+  const updateEnd = source.indexOf('  // Discovery/attachment', updateStart);
+  assert(updateStart > end && updateEnd > updateStart, 'production hand-sync owner must remain accessible');
+  const f = fixture({ mode: 'large' });
+  f.record.avatarRoot = { userData: { proceduralHandRig: f.record.rig } };
+  let carried = f.target; // Current carried-item source used by the production hand-sync owner.
+  let offscreen = false; // Simulates a hidden/disposed player rig after a carry.
+  let actionOwnsHands = false; // Simulates a yawn or other named pose taking over the hand rig.
+  let handOwner = null; // Captures which hand-placement path the production owner actually selected.
+  f.record.rig.applyOwnedPose = () => {
+    if (actionOwnsHands) close(f.holder.position.y, -0.2, 'named pose must receive the unshifted item position');
+    return actionOwnsHands;
+  };
+  const runtime = vm.runInNewContext(
+    `(function() { ${source.slice(start, end)}
+      ${source.slice(updateStart, updateEnd)}
+      return { updateManagedRigs }; })()`,
+    {
+      managed: new Set([f.record]),
+      ensureSyncSentinel() {},
+      disposeSyncSentinel() {},
+      rigRecentlyRendered: () => !offscreen,
+      updateFallbackMotion() {},
+      inHandCalibrationMode: () => false,
+      heldItemTarget: () => carried,
+      currentToolHolder: () => ({ visible: true }),
+      syncRigToHeldItem(record, target) {
+        handOwner = 'held';
+        liftHeldItemIntoReach(record, target, record.heldItemScratch);
+      },
+      syncRigToTool() { handOwner = 'tool'; },
+      syncCalibrationWorkspace() {},
+      applyFallbackBoth() { handOwner = 'free'; },
+      publishHandSolvedBases() {},
+      HELD_LARGE_EDGE_MARGIN: 0.02,
+      gripModeTransformForRecord: () => ({ position: { x: 0, y: 0, z: 0 } }),
+      hierarchyWorldQuaternion: (_record, _holder, output) => output,
+      inAttackEditor: () => false,
+    },
+  );
+  runtime.updateManagedRigs();
+  close(f.holder.position.y, 0.15, 'frame owner applies held-item lift');
+  assert.equal(handOwner, 'held');
+  carried = null;
+  runtime.updateManagedRigs();
+  close(f.holder.position.y, -0.2, 'frame owner releases lift before gripping a tool');
+  assert.equal(handOwner, 'tool');
+
+  carried = f.target;
+  runtime.updateManagedRigs();
+  actionOwnsHands = true;
+  runtime.updateManagedRigs();
+  close(f.holder.position.y, -0.2, 'named action releases held-object lift');
+  actionOwnsHands = false;
+
+  runtime.updateManagedRigs();
+  offscreen = true;
+  runtime.updateManagedRigs();
+  close(f.holder.position.y, -0.2, 'offscreen rigs restore their held object');
+}
+
 console.log('Held-item anatomical reach lift and restoration tests passed.');
