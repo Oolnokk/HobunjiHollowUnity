@@ -496,6 +496,7 @@
       const frontPlane = head.avatarRef?.frontPlane; // The actual card can turn separately from the root during the camera deadzone correction.
       frontPlane?.updateWorldMatrix(true, false);
       const card = frontPlane?.matrixWorld.elements; // The back card maps the same source X direction through its mirrored texture.
+      if (card) plane.position.y = card[13] + event.height * card[5]; // Anchor to the rendered card's center after its ground-padding adjustment.
       const axisProjection = card
         ? card[0] * cameraRight.x + card[1] * cameraRight.y + card[2] * cameraRight.z
         : -(matrix[8] * cameraRight.x + matrix[9] * cameraRight.y + matrix[10] * cameraRight.z);
@@ -941,6 +942,7 @@
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
+    camera.updateMatrixWorld?.(); // Apply this frame's camera turn before reading its screen-right axis.
     if (!_updateScratch.right) { _updateScratch.right = new state.deps.THREE.Vector3(); _updateScratch.forward = new state.deps.THREE.Vector3(); }
     const cameraRight = _updateScratch.right.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // Reused per frame (was a new Vector3 every frame).
     const cameraBack = _updateScratch.forward.setFromMatrixColumn(camera.matrixWorld, 2).normalize(); // Camera looks down -Z, so view depth is minus the dot with this axis.

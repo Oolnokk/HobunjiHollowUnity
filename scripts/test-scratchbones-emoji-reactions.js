@@ -187,10 +187,13 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   await settle();
   now += 200;
   frontPlane.matrixWorld.elements[0] = -1;
+  frontPlane.matrixWorld.elements[13] = .4; // The renderer shifts the card up to compensate for authored ground padding.
   step();
   const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('pingdort').frame;
   assert.ok(billboard().position.x < projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, 1, -1),
     'right-side source crop still gets an emoji left of its visible head');
+  assert.ok(Math.abs(billboard().position.y - (.4 + (0.5 - rightHeadFrame.y - rightHeadFrame.height * .5 + .045) * rightHeadOptions.height)) < 1e-9,
+    'animal reaction follows the card’s rendered height after ground padding');
   const cardOffset = billboard().position.x - rightHeadAnimal.position.x; // Root orientation stays fixed during this billboard turn.
   frontPlane.matrixWorld.elements[0] = 1;
   step();
