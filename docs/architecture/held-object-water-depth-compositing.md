@@ -108,8 +108,8 @@ owner portrait stage:
 
 | Shoulder pet orientation | Pet front vs. owner front | Pet back vs. owner back |
 | --- | --- | --- |
-| Facing the owner's midline (180° local turn) | Behind owner front sprites | Above owner back sprites |
-| Facing away from the owner's midline (0° local turn) | Above owner front sprites | Behind owner back sprites |
+| Facing the owner's midline (180° local turn) | Above owner front sprites | Behind owner back sprites |
+| Facing away from the owner's midline (0° local turn) | Behind owner front sprites | Above owner back sprites |
 
 An active pet and its owner remain a single depth-tested,
 depth-write-free portrait stack, preventing the intersecting cards from clipping
@@ -122,8 +122,8 @@ player-over/pet-over/world-depth diagnostic mode.
 When the optional owner-front weapon stencil is enabled (its shipped default
 is **off**), the player's front portrait participates even though it does not
 write normal color-pass depth. **Only the pet face above its matching owner
-face**, and its same-face split copy, joins that private mask: back when
-looking inward, front when looking away. The other face never masks the owner's
+face**, and its same-face split copy, joins that private mask: front when
+looking inward, back when looking away. The other face never masks the owner's
 held gear. An enabled mask also runs on maps without nearby classified ground,
 floors or water; stencil owner IDs are not shared with unrelated NPCs.
 
@@ -477,7 +477,7 @@ partial tint.
 
 ## Shell outlines inherit the source object's ground-x-ray visibility
 
-Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. The held renderer removes accidental layer-1 membership from authored weapon planes while retaining their held-object x-ray and water mask layers. The shell replayer also filters authored planes defensively.
+Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. Render classification removes accidental layer-1 membership from authored planes when they join the scene, including art outside the held-object registry. Their other render layers are retained. Held-object enforcement and shell replay also check authored art.
 
 The occluder depth material transaction is prepared **once per shell replay**, not once per elevation group: each group updates only ground tile/elevation uniforms. The final full-depth restore uses that same material transaction, and the outer `finally` restores material/camera/renderer flags even if a draw throws.
 

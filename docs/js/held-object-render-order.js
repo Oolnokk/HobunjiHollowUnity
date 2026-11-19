@@ -461,11 +461,11 @@
       return 'pet-' + petFace; // Pet split copies always remain in their source face stage.
     }
     if (mesh === state.frontMesh || mesh === state.backMesh) {
-      const materialName = String(item.material?.name || '').toLowerCase();
-      const face = /(?:^|_)back(?:_|$)/.test(materialName) ? 'back'
-        : /(?:^|_)front(?:_|$)/.test(materialName) ? 'front'
-          : mesh === state.backMesh && mesh !== state.frontMesh ? 'back' : 'front';
-      return 'owner-' + face; // One skinned player mesh can contain BOTH portrait sides.
+      if (state.frontMesh !== state.backMesh) return mesh === state.frontMesh ? 'owner-front' : 'owner-back';
+      if (item.material === state.backMaterial) return 'owner-back';
+      if (item.material === state.frontMaterial) return 'owner-front';
+      // Fallback for a skinned material swapped after the gameplay update.
+      return /(?:^|_)back(?:_|$)/i.test(item.material?.name || '') ? 'owner-back' : 'owner-front';
     }
     const overlay = /^player_avatar_(front|back)_.+(?:plane|overlay)$/i.exec(String(mesh.name || ''));
     return overlay ? 'owner-' + overlay[1].toLowerCase() : null; // Same-owner hat/portrait helpers; never unrelated NPCs.
@@ -477,8 +477,8 @@
     switch (face) {
       case 'owner-front': return SHOULDER_PET_RENDER_ORDERS.front;
       case 'owner-back': return SHOULDER_PET_RENDER_ORDERS.back;
-      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontBehind : SHOULDER_PET_RENDER_ORDERS.frontAbove;
-      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backAbove : SHOULDER_PET_RENDER_ORDERS.backBehind;
+      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontAbove : SHOULDER_PET_RENDER_ORDERS.frontBehind;
+      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backBehind : SHOULDER_PET_RENDER_ORDERS.backAbove;
       default: return null;
     }
   }
@@ -587,8 +587,9 @@
     }
     previouslyPresentedPet = pet;
     const inward = pet.__hobunjiShoulderFacingInward === true; // The existing animation alone decides when the two stages swap.
-    const frontOrder = inward ? SHOULDER_PET_RENDER_ORDERS.frontBehind : SHOULDER_PET_RENDER_ORDERS.frontAbove;
-    const backOrder = inward ? SHOULDER_PET_RENDER_ORDERS.backAbove : SHOULDER_PET_RENDER_ORDERS.backBehind;
+    const frontOrder = shoulderPetFaceSortRank('pet-front', inward); // Shared with the transparent sorter.
+    const backOrder = shoulderPetFaceSortRank('pet-back', inward);
+    const frontForeground = frontOrder > SHOULDER_PET_RENDER_ORDERS.front; // The same draw decision selects the held-gear mask.
     const avatar = pet.avatarRef;
 
     // Draw the owner/pet as one depth-tested, depth-write-free portrait stack.
@@ -622,11 +623,11 @@
       if (!frontPortraitRegistry.has(state.frontMesh)) frontPortraitRegistry.add(state.frontMesh);
     }
     // Only the pet face actually ABOVE its matching owner face contributes to the private owner mask.
-    syncPetForegroundStencil(pet, inward ? 'back' : 'front');
+    syncPetForegroundStencil(pet, frontForeground ? 'front' : 'back');
     window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar); // The split halves inherit face-specific render order, material and stencil in the same frame.
     lastShoulderPetDecision = {
       active: true, mode: 'owner-portrait-stages', inwardFrontPose: inward,
-      frontForeground: !inward, backForeground: inward,
+      frontForeground, backForeground: !frontForeground,
       petFrontOrder: frontOrder, petBackOrder: backOrder,
       ownerFrontOrder: SHOULDER_PET_RENDER_ORDERS.front, ownerBackOrder: SHOULDER_PET_RENDER_ORDERS.back,
       ownerDepthWrite: false, petDepthWrite: false,
@@ -638,7 +639,7 @@
       avatar.group.userData.hobunjiShoulderPetLayering = {
         ...lastShoulderPetDecision, xrayEnabled: true,
         depthMode: 'depth-tested-owner-portrait-stage-xray',
-        recentChange: 'Observation turns now pair 180-degree inward art with rear-foreground x-ray and outward art with front-foreground x-ray; physical world depth is unchanged.',
+        recentChange: 'The pet front draws above the owner front during the inward pose. The pet back draws above the owner back during the outward pose.',
       };
     }
   }
@@ -1218,6 +1219,8 @@
     if (!object) return;
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
+    // The normal shell pass uses layer membership directly, even for art that never joins held replay.
+    if (hasLayer(object, SHELL_LAYER) && isAuthoredInkPlane(object)) object.layers.disable(SHELL_LAYER);
     if (isPresentationBackdrop(object)) backgroundDepthRegistry.add(object); // Registered once, looked up only in the current scene.
     if (isLegacyHeldPlane(object)) markHeldPlane(object);
     if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);

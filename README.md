@@ -117,8 +117,9 @@ into it instead of staying a crisp black line poking through.
 
 Two other, separate outline sources existed alongside the shell pass:
 
-- **Depth-edge outlines** (`s_depthOutlines`, Settings → Visual Effects →
-  "Depth Outlines") — already off by default; unchanged.
+- **Screen-space depth-edge outlines** were removed in September 2026.
+  The PNG occluder pass writes silhouettes into the depth buffer so 3D
+  shells behind sprites are hidden. It has no color output.
 - **Furniture material-seam outlines** (`_markFurnitureEdgeId`/the
   composite shader's `idEdge` — catches boundaries between two touching
   parts of the same furniture group, e.g. a chair leg against its seat) had
@@ -131,11 +132,10 @@ Two other, separate outline sources existed alongside the shell pass:
   `uSeamOutlinesOn` uniform zeroes its contribution in the composite shader
   regardless of that buffer's contents.
 
-All three outline sources' numeric/color tuning — shell/target-highlight line
+Outline numeric/color tuning — shell/target-highlight line
 thickness, the ally/hostile highlight colors, the furniture-seam ID palette
 (hue step/saturation/lightness), the seam color-distance and occlusion-depth
-thresholds, and the depth-edge base threshold plus the sensitivity slider's
-min/max threshold-scale bounds — now lives in
+thresholds — now lives in
 `docs/config/outline-rendering.json` instead of being baked into the shader/
 material literals, following the same pattern `atmosphere-lighting.json`
 uses for `CloudForestFog`: `docs/game.js` creates every outline material with
