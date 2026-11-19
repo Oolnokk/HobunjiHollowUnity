@@ -1008,6 +1008,7 @@
       await window.BabyAnimalHeadWarp?.ensureIdleMask?.(slot.baby.kind, composed);
       if (!sleepingBabies.has(key)) return;
       const canvas = window.BabyAnimalHeadWarp?.applyToCanvas(composed, slot.baby.kind) || composed; // Baby-only warp preserves the adult genotype canvas.
+      avatarRef.setAnimalSpriteWarp?.(window.BabyAnimalHeadWarp?.rigWarpForCanvas?.(canvas));
       const front = new THREE.CanvasTexture(canvas); // Front genotype texture.
       const back = new THREE.CanvasTexture(canvas); // Mirrored back genotype texture.
       if ('colorSpace' in front && THREE.SRGBColorSpace) { front.colorSpace = THREE.SRGBColorSpace; back.colorSpace = THREE.SRGBColorSpace; }

@@ -119,6 +119,7 @@
     const geometry = mesh?.geometry;
     const uv = geometry?.getAttribute?.('uv');
     const skinWeight = geometry?.getAttribute?.('skinWeight');
+    const sourceUv = geometry?.getAttribute?.('hobunjiRigSourceUv'); // Original paint coordinates after a baby sprite warp.
     if (!uv || !skinWeight || skinWeight.itemSize < 2 || uv.count !== skinWeight.count) return null;
     const count = uv.count;
     const baseHeadWeights = new Float32Array(count); // Immutable runtime Influence baseline; response changes never accumulate drift.
@@ -130,8 +131,8 @@
       const sourceTopV = 1 - uv.getY(i); // Author maps use top-left origin; Three UVs use bottom-left origin.
       const base = clamp(skinWeight.getY(i), 0, 1);
       baseHeadWeights[i] = base;
-      compressibilityWeights[i] = sampleMaterialMap(decoded.compressibility, decoded.influence, sourceU, sourceTopV, base);
-      stretchabilityWeights[i] = sampleMaterialMap(decoded.stretchability, decoded.influence, sourceU, sourceTopV, base);
+      compressibilityWeights[i] = sampleMaterialMap(decoded.compressibility, decoded.influence, sourceUv?.getX(i) ?? sourceU, sourceUv?.getY(i) ?? sourceTopV, base);
+      stretchabilityWeights[i] = sampleMaterialMap(decoded.stretchability, decoded.influence, sourceUv?.getX(i) ?? sourceU, sourceUv?.getY(i) ?? sourceTopV, base);
       sourceTopVs[i] = sourceTopV;
     }
     return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, mirrorX, lastAppliedDeg: NaN, lastAppliedYawDeg: NaN };
@@ -198,8 +199,9 @@
         && Number.isFinite(debug.lastYawDeg)
         && Math.abs(debug.lastAngleDeg - angleDeg) <= RESPONSE_EPSILON
         && Math.abs(debug.lastYawDeg - yawDeg) <= RESPONSE_EPSILON) return { angleDeg, yawDeg };
-      debug.lastFront = applyMeshResponse(front, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5), yawDeg);
-      debug.lastBack = applyMeshResponse(back, angleDeg, finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5), yawDeg);
+      const pivotTopV = state.spritePivot?.y ?? finite(rawRig?.pivot?.y, state.rig?.pivot?.y ?? 0.5); // Bend sides follow the actual rendered pivot.
+      debug.lastFront = applyMeshResponse(front, angleDeg, pivotTopV, yawDeg);
+      debug.lastBack = applyMeshResponse(back, angleDeg, pivotTopV, yawDeg);
       debug.lastAngleDeg = angleDeg;
       debug.lastYawDeg = yawDeg;
       return { angleDeg, yawDeg };

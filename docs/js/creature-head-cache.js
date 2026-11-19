@@ -56,7 +56,7 @@
     if (document.querySelector('script[data-animal-head-material-response]')) return;
     const script = document.createElement('script'); // Loads the decoupled material-response math/runtime without adding it to game.js.
     const source = document.currentScript?.src || (typeof location !== 'undefined' ? location.href : ''); // Resolves next to this module both on GitHub Pages and commit-pinned GitHack builds.
-    script.src = new URL('animal-head-material-response.js?v=20261117animalDensity40', source).href;
+    script.src = new URL('animal-head-material-response.js?v=20261119h6825099', source).href;
     script.async = false;
     script.dataset.animalHeadMaterialResponse = '1';
     script.addEventListener('error', () => window.__farmLog?.('[head-rig] Could not load animal-head-material-response.js', 'warn'));

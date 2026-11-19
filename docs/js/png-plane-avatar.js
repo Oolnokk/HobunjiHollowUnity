@@ -1873,7 +1873,7 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}, gridOverride = null) {
+  function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}, gridOverride = null, spriteWarp = null) {
     const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
     const width = finite(params.width, finite(fallbackDimensions.width, 1));
     const height = finite(params.height, finite(fallbackDimensions.height, 1));
@@ -1883,19 +1883,35 @@
     const segmentsX = grid?.segmentsX ?? (mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect)));
     const segmentsY = grid?.segmentsY ?? (mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg);
     const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Paint and shoulder maps sample unchanged normalized UVs at the smaller grid.
+    const indices = geometry.index?.array; // Mirror the quad diagonals along with UVs so both faces interpolate the same skin.
+    if (mirrorX && indices) {
+      for (let i = 0; i < indices.length; i += 6) {
+        const a = indices[i], c = indices[i + 4]; // Three PlaneGeometry emits [a,b,d, b,c,d].
+        indices[i + 2] = c;
+        indices[i + 3] = a;
+      }
+    }
     const uv = geometry.getAttribute('uv');
     const skinIndices = new Uint16Array(uv.count * 4); // Root/head bone indices for every plane vertex.
     const skinWeights = new Float32Array(uv.count * 4); // Complementary body/head weights sampled from the paint map.
+    const sourceCoordinates = spriteWarp ? new Float32Array(uv.count * 2) : null; // Keep original rig-paint UVs alongside the rendered sprite UVs.
+    const source = {}; // Reused for each vertex when sampling the baby pixel warp.
     for (let i = 0; i < uv.count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples the horizontally mirrored authored map.
       const sourceTopV = 1 - uv.getY(i); // Author coordinates start at sprite top-left; Three UVs start bottom-left.
-      const headWeight = sampleWeight(rig, sourceU, sourceTopV);
+      if (sourceCoordinates) {
+        spriteWarp.sourceAt(sourceU, sourceTopV, source);
+        sourceCoordinates[i * 2] = source.x;
+        sourceCoordinates[i * 2 + 1] = source.y;
+      }
+      const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV);
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
       skinWeights[offset] = 1 - headWeight;
       skinWeights[offset + 1] = headWeight;
     }
+    if (sourceCoordinates) geometry.setAttribute('hobunjiRigSourceUv', new THREE.Float32BufferAttribute(sourceCoordinates, 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
     geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeights, 4));
     geometry.computeBoundingBox();
@@ -2048,25 +2064,51 @@
       return applyDegrees(state.currentDeg);
     };
 
+    let disposed = false; // A creature can be retired by both the wildlife despawner and the save/load teardown.
+    let spriteWarp = null; // Per-avatar mapping, activated only when warped artwork is bound.
+    let pivotTranslation; // Updates the stored inverse bind without resetting animated head angles.
+    function refreshDependentGeometry() {
+      avatarRef.refreshShoulderRestGeometry?.();
+      avatarRef.refreshHeadMaterialGeometry?.();
+    }
+    function rebuildFace(sourcePlane, mirrorX, grid) {
+      return buildAnimalWeightedGeometry(THREE, sourcePlane.geometry, rig, mirrorX, canonicalDimensions, grid, spriteWarp);
+    }
+    avatarRef.setAnimalSpriteWarp = warp => {
+      const next = warp || null;
+      if (spriteWarp === next || disposed) return false;
+      spriteWarp = next;
+      const pivot = next?.destinationFor(rig.pivot) || rig.pivot;
+      pivotTranslation ||= new THREE.Matrix4();
+      state.spritePivot = next ? pivot : null; // Head material response uses the current rendered pivot for pitch.
+      for (const [face, sourcePlane, mirrorX] of [[front, frontPlane, false], [back, backPlane, true]]) {
+        const head = face.headBone;
+        const x = ((mirrorX ? 1 - pivot.x : pivot.x) - 0.5) * canonicalDimensions.width;
+        const y = (0.5 - pivot.y) * canonicalDimensions.height;
+        face.skeleton.boneInverses[1].premultiply(pivotTranslation.makeTranslation(head.position.x - x, head.position.y - y, 0));
+        head.position.set(x, y, 0);
+        const previous = face.mesh.geometry;
+        face.mesh.geometry = rebuildFace(sourcePlane, mirrorX, resolveGrid());
+        previous.dispose();
+      }
+      refreshDependentGeometry();
+      return true;
+    };
+
     const meshBudget = window.PNGPlaneAvatar?.meshBudget; // Shared developer density and weak tracking also own the animal head-rig mesh lifecycle.
     const sourceAspect = rig.weightMap ? rig.weightMap.width / Math.max(1, rig.weightMap.height)
       : canonicalDimensions.width / Math.max(0.0001, canonicalDimensions.height); // Same source aspect used by buildAnimalWeightedGeometry.
     const resolveGrid = () => meshBudget?.animalGrid?.(rig.meshResolution, sourceAspect); // Recomputed when the slider changes, without reauthoring the rig.
     meshBudget?.registerExternalSkinnedPortrait?.(front.mesh, {
       THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
-      buildGeometry: grid => buildAnimalWeightedGeometry(THREE, frontPlane.geometry, rig, false, canonicalDimensions, grid),
-      afterGeometryChange() {
-        // The controller swaps BOTH faces before invoking hooks; rebuild dependent shoulder/paint state once, in that order.
-        avatarRef.refreshShoulderRestGeometry?.();
-        avatarRef.refreshHeadMaterialGeometry?.();
-      },
+      buildGeometry: grid => rebuildFace(frontPlane, false, grid),
+      afterGeometryChange: refreshDependentGeometry,
       onWireframeChanged(enabled) { avatarRef.refreshAnimalWireframe?.(enabled); },
     });
     meshBudget?.registerExternalSkinnedPortrait?.(back.mesh, {
       THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
-      buildGeometry: grid => buildAnimalWeightedGeometry(THREE, backPlane.geometry, rig, true, canonicalDimensions, grid),
+      buildGeometry: grid => rebuildFace(backPlane, true, grid),
     });
-    let disposed = false; // A creature can be retired by both the wildlife despawner and the save/load teardown.
     avatarRef.dispose = () => {
       if (disposed) return;
       disposed = true;

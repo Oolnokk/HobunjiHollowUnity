@@ -461,6 +461,7 @@
     record.alphaSource = canvas;
     record.hitPlanes = hitPlanes;
     record.alphaReady = hitPlanes.length > 0;
+    if (record.alphaReady) record.avatarRef?.setAnimalSpriteWarp?.(window.BabyAnimalHeadWarp?.rigWarpForCanvas?.(canvas));
     if (!record.alphaReady) {
       front.dispose?.(); back.dispose?.();
       _nestContentDebug.lastError = `Baby ${record.id} had no front/back sprite planes to target.`;

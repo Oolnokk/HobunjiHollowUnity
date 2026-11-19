@@ -40,8 +40,8 @@
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20261117RigMainMerged1', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20261117RigMainMerged1', 'animal-shoulder-spline');
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
@@ -174,7 +174,8 @@
     return (avatar?.frontPlane?.material?.map || null) === binding.frontMap
       && (avatar?.backPlane?.material?.map || null) === binding.backMap;
   }
-  function bindShoulderTexture(companion, combatDeps, url, binding) {
+  function bindShoulderTexture(companion, combatDeps, url, binding, spriteWarp = null) {
+    companion.avatarRef?.setAnimalSpriteWarp?.(spriteWarp); // Keep cached and rebuilt avatars aligned with the frame being bound.
     if (shoulderTextureIsBound(companion, url, binding)) return false;
     if (binding.url === url && binding.avatar === companion.avatarRef) {
       smallPetHeadDebug.overwritesRestored++;
@@ -274,7 +275,7 @@
     const existing = smallPetHeadFrameCache.get(companion);
     if (existing?.key === key) {
       if (existing.url) {
-        bindShoulderTexture(companion, combatDeps, existing.url, existing); // Recovers if animation or a rig rebuild replaced the actual GPU map.
+        bindShoulderTexture(companion, combatDeps, existing.url, existing, existing.spriteWarp); // Recovers if animation or a rig rebuild replaced the actual GPU map.
         recordSingleShoulderFrame(companion, existing.url, frameName); // Cache hits and fresh async completion publish the same presentation metadata.
         return true;
       }
@@ -317,12 +318,13 @@
         return;
       }
       entry.url = url;
+      entry.spriteWarp = window.BabyAnimalHeadWarp?.rigWarpForCanvas?.(enlarged); // Preserve the mapping after the temporary canvas is freed.
       entry.pending = false;
       smallPetHeadDebug.applied++;
       const owner = combatDeps?.player;
       if (companion.health > 0 && companion.stableRole === 'shoulderPet'
         && (companion.master || owner) === owner && !effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
-        bindShoulderTexture(companion, combatDeps, url, entry); // Keep a reference to the maps actually bound, not just their URL.
+        bindShoulderTexture(companion, combatDeps, url, entry, entry.spriteWarp); // Keep a reference to the maps actually bound, not just their URL.
         recordSingleShoulderFrame(companion, url, frameName); // Newly completed sprites are observable immediately, without a second render/provider tick.
       }
       if (existing?.url && existing.url !== url) releasePetSpriteUrl(existing.url); // A genotype/proportions change replaces the prior encoded portrait.
@@ -396,6 +398,7 @@
     return {
       leftCanvas,
       rightCanvas,
+      spriteWarp: window.BabyAnimalHeadWarp?.rigWarpForCanvas?.(rightSource), // Both split halves share the pose dimensions and warp.
       width,
       height,
       rightUsesIdle,
@@ -431,7 +434,7 @@
     return `${kind || ''}|${idle}|${right}|${rightUsesIdle ? 'idle-right' : 'run1-right'}|${split}|zr${rotation}|${genotypeKey}|${smallHead}`;
   }
 
-  function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null) {
+  function applySplitLayers(companion, combatDeps, rightUrl, leftCanvas, fallbackUrl = null, spriteWarp = null) {
     if (!rightUrl || !leftCanvas || !companion?.avatarRef) return false;
     const layered = typeof companion.avatarRef.setShoulderSplitOverlayCanvas === 'function';
     const frameUrl = layered ? rightUrl : (fallbackUrl || rightUrl);
@@ -451,7 +454,7 @@
     companion.__hobunjiShoulderRestFrame = null;
     if (typeof combatDeps?.setCreatureFrame === 'function') {
       const binding = companion.__hobunjiShoulderSplitBinding || (companion.__hobunjiShoulderSplitBinding = {}); // Retains the expected GPU maps across split-animation and blink updates.
-      bindShoulderTexture(companion, combatDeps, frameUrl, binding);
+      bindShoulderTexture(companion, combatDeps, frameUrl, binding, spriteWarp);
     }
     return true;
   }
@@ -459,7 +462,7 @@
   function ensureSplitShoulderFrame(companion, combatDeps, rest) {
     const key = splitFrameKey(companion, combatDeps, rest);
     if (companion.__hobunjiShoulderSplitKey === key && companion.__hobunjiShoulderSplitUrl && companion.__hobunjiShoulderSplitLeftCanvas) {
-      return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl);
+      return applySplitLayers(companion, combatDeps, companion.__hobunjiShoulderSplitUrl, companion.__hobunjiShoulderSplitLeftCanvas, companion.__hobunjiShoulderSplitFallbackUrl, companion.__hobunjiShoulderSplitWarp);
     }
     if (companion.__hobunjiShoulderSplitKey === key) {
       if (companion.__hobunjiShoulderSplitPromise) return true;
@@ -488,12 +491,13 @@
       companion.__hobunjiShoulderSplitUrl = rightUrl;
       companion.__hobunjiShoulderSplitFallbackUrl = fallbackUrl;
       companion.__hobunjiShoulderSplitLeftCanvas = layers.leftCanvas;
+      companion.__hobunjiShoulderSplitWarp = layers.spriteWarp;
       companion.__hobunjiShoulderSplitPromise = null;
       const stillShouldered = companion?.health > 0
         && companion.stableRole === 'shoulderPet'
         && (companion.master || combatDeps?.player) === combatDeps?.player;
       if (stillShouldered && effectiveShoulderRest(companion, combatDeps)?.splitFrame) {
-        applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl);
+        applySplitLayers(companion, combatDeps, rightUrl, layers.leftCanvas, fallbackUrl, layers.spriteWarp);
       }
       if (previousRightUrl && previousRightUrl !== rightUrl) releasePetSpriteUrl(previousRightUrl);
       if (previousFallbackUrl && previousFallbackUrl !== previousRightUrl && previousFallbackUrl !== fallbackUrl)
@@ -532,6 +536,7 @@
       // A rare genetically Small pet gets the same head pixels as a baby. Naturally Small adults skip this entire branch.
       return ensureSmallPetHeadFrame(companion, combatDeps, frameName);
     }
+    companion.avatarRef?.setAnimalSpriteWarp?.(null);
     companion.__hobunjiShoulderFrame = frameUrl;
     companion.__hobunjiShoulderIdleFrame = frameName === 'idle' ? frameUrl : null;
     companion.__hobunjiShoulderRestFrame = frameName === 'run1' ? frameUrl : null;
@@ -562,6 +567,7 @@
   }
 
   function restoreAfterShoulderPet(companion, combatDeps) {
+    companion.avatarRef?.setAnimalSpriteWarp?.(null);
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     const idle = shoulderIdleFrame(companion, combatDeps);
     if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
@@ -585,6 +591,7 @@
     companion.__hobunjiShoulderSplitUrl = null;
     companion.__hobunjiShoulderSplitFallbackUrl = null;
     companion.__hobunjiShoulderSplitLeftCanvas = null;
+    companion.__hobunjiShoulderSplitWarp = null;
     companion.__hobunjiShoulderSplitPromise = null;
     smallPetHeadFrameCache.delete(companion); // Invalidate callbacks when an animal leaves the shoulder.
     smallPetAppearanceKeys.delete(companion);
@@ -662,6 +669,7 @@
         shoulderSplitIdleRight: activeShoulderPets.filter(companion => !!effectiveShoulderRest(companion, window.Combat?.deps)?.splitRightUsesIdle).length,
         shoulderSplineActive: activeShoulderPets.filter(companion => companion?.avatarRef?.shoulderRest?.enabled).length,
         shoulderDiagonalSeparators: activeShoulderPets.filter(companion => Math.abs(Number(effectiveShoulderRest(companion, window.Combat?.deps)?.separatorRotationDeg) || 0) > 0.001).length,
+        babifiedSkins: activeShoulderPets.filter(companion => companion.avatarRef?.headRig?.spritePivot).length, // Pixel Probe confirms that the rig follows the warped art.
         smallPetHead: { ...smallPetHeadDebug, active: activeShoulderPets.filter(companion => needsSmallPetHead(companion, window.Combat?.deps)).length }, // Debug overlay distinguishes eligibility from texture-read failures.
       };
     },

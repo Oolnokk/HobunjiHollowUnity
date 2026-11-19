@@ -424,11 +424,12 @@
     back.name = name + '_back';
     front.needsUpdate = true;
     back.needsUpdate = true;
-    return { front, back };
+    return { front, back, spriteWarp: window.BabyAnimalHeadWarp?.rigWarpForCanvas?.(canvas) };
   }
 
   function applyTexturePair(agent, pair) {
     if (!agent?.avatarRef?.group || !pair) return;
+    agent.avatarRef.setAnimalSpriteWarp?.(pair.spriteWarp); // Idle, run and blink each carry the rig mapping for their texture.
     agent.avatarRef.group.traverse(child => {
       if (!child?.material) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];

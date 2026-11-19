@@ -74,6 +74,17 @@ assert.equal(overlays.length,2,'two skinned split-frame overlays');
 avatar.setShoulderRestEnabled(true);avatar.setShoulderSplitOverlayEnabled(true);
 assert.equal(avatar.shoulderRest.enabled,true);
 assert(overlays.every(mesh=>mesh.visible),'split halves visible on shoulder');
+const sharedBackMaps = new WeakSet(); // The real renderer uses this registry to activate its shared-face mirror shader.
+windowStub.PNGPlaneAvatar.backMapFor = (material, pair) => {
+  assert.equal(material, overlays[1].material);
+  sharedBackMaps.add(pair.front);
+  return pair.front;
+};
+const splitCanvas = {};
+assert(avatar.setShoulderSplitOverlayCanvas(splitCanvas, true));
+assert(!sharedBackMaps.has(overlays[0].material.map), 'front split texture retains original handedness');
+assert(sharedBackMaps.has(overlays[1].material.map), 'reverse split texture activates the same shader mirror as its base face');
+
 const rightTop=front.geometry.getAttribute('position').array[12*3+1];
 assert(Math.abs(rightTop-.5)>1e-3,'authored shoulder spline deforms right-side position');
 

@@ -413,10 +413,13 @@
   function buildMeshState(mesh, normalizedRig, rest, mirrorX) {
     const geometry = mesh?.geometry, position = geometry?.getAttribute?.('position'), uv = geometry?.getAttribute?.('uv');
     if (!position || !uv || position.count !== uv.count) return null;
+    const sourceUv = geometry.getAttribute('hobunjiRigSourceUv'); // Original paint coordinates corresponding to the rendered baby vertices.
     const dimensions = dimensionsForGeometry(geometry), basePositions = new Float32Array(position.array), headInfluences = new Float32Array(position.count), canonicalPoints = new Float32Array(position.count * 2);
     for (let i = 0; i < position.count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i), sourceTopV = 1 - uv.getY(i);
-      canonicalPoints[i * 2] = sourceU; canonicalPoints[i * 2 + 1] = sourceTopV; headInfluences[i] = sampleHeadInfluence(normalizedRig, sourceU, sourceTopV);
+      const paintU = sourceUv?.getX(i) ?? sourceU, paintV = sourceUv?.getY(i) ?? sourceTopV;
+      canonicalPoints[i * 2] = paintU; canonicalPoints[i * 2 + 1] = paintV;
+      headInfluences[i] = sampleHeadInfluence(normalizedRig, paintU, paintV);
     }
     return { mesh, position, basePositions, headInfluences, canonicalPoints, dimensions, rest, mirrorX };
   }
@@ -427,8 +430,10 @@
       const offset = i * position.itemSize, baseX = basePositions[offset], baseY = basePositions[offset + 1];
       let x = baseX, y = baseY;
       if (enabled && rest.useSpline) {
-        const source = { x: canonicalPoints[i * 2], y: canonicalPoints[i * 2 + 1] }, target = deformWeightedPoint(source, headInfluences[i], rest), targetLocalU = mirrorX ? 1 - target.x : target.x;
-        x = (targetLocalU - 0.5) * dimensions.width; y = (0.5 - target.y) * dimensions.height;
+        const source = { x: canonicalPoints[i * 2], y: canonicalPoints[i * 2 + 1] };
+        const target = deformWeightedPoint(source, headInfluences[i], rest); // Apply the authored offset to the rendered vertex, in its corresponding source region.
+        x += (target.x - source.x) * dimensions.width * (mirrorX ? -1 : 1);
+        y -= (target.y - source.y) * dimensions.height;
       }
       position.array[offset] = x; position.array[offset + 1] = y; if (position.itemSize > 2) position.array[offset + 2] = basePositions[offset + 2];
     }
@@ -468,12 +473,27 @@
     if (!texture || !template) return texture;
     texture.wrapS = template.wrapS; texture.wrapT = template.wrapT; texture.magFilter = template.magFilter; texture.minFilter = template.minFilter; texture.flipY = template.flipY; texture.premultiplyAlpha = template.premultiplyAlpha; texture.generateMipmaps = template.generateMipmaps; texture.anisotropy = template.anisotropy; texture.rotation = template.rotation || 0; texture.repeat?.copy?.(template.repeat); texture.offset?.copy?.(template.offset); texture.center?.copy?.(template.center); if ('colorSpace' in template) texture.colorSpace = template.colorSpace; if ('encoding' in template) texture.encoding = template.encoding; texture.needsUpdate = true; return texture;
   }
-  function setLayerCanvas(THREE, layer, canvas) {
+  function setLayerCanvas(THREE, layer, canvas, mirrored = false) {
     if (!layer || !canvas) return false;
     const materials = materialsFor(layer);
     if (layer.canvas === canvas && layer.textures.length === materials.length) return true; // Never dispose/recreate/upload textures for an unchanged split sprite every render pass.
     for (const old of layer.textures) old?.dispose?.(); layer.textures.length = 0;
-    for (const material of materials) { const texture = copyTextureTransform(new THREE.CanvasTexture(canvas), material?.map); material.map = texture; material.needsUpdate = true; layer.textures.push(texture); }
+    for (const material of materials) {
+      const texture = copyTextureTransform(new THREE.CanvasTexture(canvas), material?.map);
+      if (mirrored) {
+        // A cloned back material keeps the mirror shader, but a fresh CanvasTexture must be registered with it.
+        texture.repeat?.set?.(1, 1);
+        texture.offset?.set?.(0, 0);
+        if (!window.PNGPlaneAvatar?.backMapFor?.(material, { front: texture })) {
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.repeat?.set?.(-1, 1);
+          texture.offset?.set?.(1, 0);
+        }
+      }
+      material.map = texture;
+      material.needsUpdate = true;
+      layer.textures.push(texture);
+    }
     layer.canvas = canvas; // Cached canvas identity is shared by both front and back overlay instances.
     return true;
   }
@@ -519,7 +539,7 @@
       if (!enabled) avatarRef.setShoulderSplitOverlayEnabled?.(false); return next;
     };
     avatarRef.setShoulderSplitOverlayCanvas = (canvas, visible = true) => {
-      const appliedFront = setLayerCanvas(THREE, frontOverlay, canvas), appliedBack = setLayerCanvas(THREE, backOverlay, canvas), next = !!visible && !!canvas && appliedFront && appliedBack;
+      const appliedFront = setLayerCanvas(THREE, frontOverlay, canvas), appliedBack = setLayerCanvas(THREE, backOverlay, canvas, true), next = !!visible && !!canvas && appliedFront && appliedBack;
       debug.splitOverlayVisible = next;
       avatarRef.refreshAnimalWireframe?.(window.PNGPlaneAvatar?.meshBudget?.wireframeEnabled?.() === true);
       return next;
