@@ -16,6 +16,8 @@
   let unsubTile = null; // Released on world/character reinit so duplicate listeners cannot award a find twice.
   let visibleScene = null; // Scene owner of the five-tree renderer; replaced cleanly on zone transitions.
   let visibleZone = ''; // Active map ID used to avoid scanning inactive wilderness zones per frame.
+  let visibleLayout = null; // A same-scene Tothal rebuild must move its blossom foliage to the newly stamped locale.
+  const visibleCullRegistries = new Map(); // Tracks each added tree's original cullables owner across scene/zone replacements.
   let visibleTrees = new Map(); // Per-locale Three.js roots attached to the currently active scene.
   let calendarKey = ''; // Day/year/Shift change gate; ordinary animation frames do not touch quest saves.
   let retrySaveAfter = 0; // A failed member write retries on a later calendar tick, rather than disabling the quest for the whole festival.
@@ -174,22 +176,29 @@
     }
   }
   function clearTrees() {
-    const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // The same vegetation registry is updated when the quest changes scenes.
+    const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // A fresh zone build may already own a different culling registry.
     for (const node of visibleTrees.values()) {
       node.parent?.remove?.(node);
-      if (zone?.cullables) { const index = zone.cullables.indexOf(node); if (index >= 0) zone.cullables.splice(index,1); }
+      for (const registry of new Set([visibleCullRegistries.get(node), zone?.cullables])) {
+        if (!registry) continue;
+        const index = registry.indexOf(node);
+        if (index >= 0) registry.splice(index, 1); // Remove both old and currently active references without touching other foliage.
+      }
     }
+    visibleCullRegistries.clear();
     visibleTrees.clear();
     visibleScene = null;
     visibleZone = '';
+    visibleLayout = null;
   }
   function buildVisibleTrees() {
     const area = mapDeps?.getCurrentArea?.();
     if (!BLOSSOMS.some(item => item.zoneId === area)) { if (visibleTrees.size) clearTrees(); return; } // Blossom locales exist all year; only collecting them is festival-limited.
     const scene = window.GridTileAccessors?.getActiveScene?.();
     if (!scene) return;
-    if (visibleScene !== scene || visibleZone !== area) clearTrees();
-    visibleScene = scene; visibleZone = area;
+    const layout = zoneLayout(area); // O(1) identity test catches forced Shift regeneration without recreating the Three.js scene.
+    if (visibleScene !== scene || visibleZone !== area || visibleLayout !== layout) clearTrees();
+    visibleScene = scene; visibleZone = area; visibleLayout = layout;
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area || visibleTrees.has(blossom.localeId)) continue;
       const instance = localeFor(blossom);
@@ -220,6 +229,7 @@
             xzRadius:Math.hypot((box.max.x-box.min.x)/2,(box.max.z-box.min.z)/2)};
           zoneInfo.cullables ||= [];
           if (!zoneInfo.cullables.includes(tree)) zoneInfo.cullables.push(tree); // Uses the native directional (or Cloud Forest radial) culling/fade path.
+          visibleCullRegistries.set(tree, zoneInfo.cullables); // The original registry must be cleaned even after scene replacement.
         }
       }
       visibleTrees.set(blossom.localeId, tree);
