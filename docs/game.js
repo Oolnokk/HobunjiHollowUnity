@@ -26515,7 +26515,7 @@
           input.value = input.defaultValue;
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+        debugLog('Cloud Forest development sliders restored (short cull: 21 forward by 19.2 wide at reach 30).', 'info');
       });
       // FPS Counter's checkbox is owned entirely by js/performance-debug.js
       // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
