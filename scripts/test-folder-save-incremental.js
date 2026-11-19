@@ -137,7 +137,10 @@ async function main() {
   const saveLayout = () => localStorage.setItem('hobunji_farm_layout_v3:world', JSON.stringify(layout));
   saveMeta(); saveLayout();
 
+  let lastChange = null; // Captures whether a status notification requests a recovery refresh.
+  window.LocalSaveFolder.onChange((_status, change) => { lastChange = change; });
   const initial = await window.LocalSaveFolder.syncNow({ automatic: false });
+  assert.equal(lastChange?.refreshRecovery, true, 'first save that arms a folder requests a recovery refresh');
   assert.equal(initial.lastError, null, 'first folder commit succeeds');
   assert.equal(initial.saveFileWork.written, 3, 'first save writes character, world and layout files');
   const firstStamp = JSON.parse(await (await folder.files.get('manifest.json').getFile()).text()).writerProvenance;
@@ -146,6 +149,7 @@ async function main() {
   assert.equal(JSON.parse(characterBytes).folderSaveProvenance.lastWriterDeviceId, 'incremental-test-device');
   const repeatExplicit = await window.LocalSaveFolder.syncNow({ automatic: false });
   assert.equal(repeatExplicit.lastError, null);
+  assert.equal(lastChange?.refreshRecovery, false, 'routine explicit save already handled its recovery slots');
   assert.equal(repeatExplicit.saveFileWork.written, 0, 'explicit save no longer rewrites unchanged character/world files to timestamp them');
   assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
     'an explicit save preserves exact character bytes when no character data changed');
@@ -165,6 +169,7 @@ async function main() {
   jsonVisits.character = 0; jsonVisits.world = 0;
   const idle = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(idle.lastAction, 'autosync-skipped-unchanged');
+  assert.equal(lastChange?.refreshRecovery, false, 'unchanged autosave only publishes status');
   assert.equal(counters.writes.length, writesBeforeIdle, 'identical autosave does not rewrite files or manifest');
   assert.deepEqual(jsonVisits, { character: 1, world: 1 },
     'unchanged autosave serializes each entity once, not once for provenance and again for the folder digest');
@@ -188,6 +193,7 @@ async function main() {
   saveMeta();
   const worldUpdate = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(worldUpdate.lastError, null);
+  assert.equal(lastChange?.refreshRecovery, false, 'changed autosave already handled its recovery slots');
   assert.equal(worldUpdate.saveFileWork.written, 1, 'one edited world writes only its own canonical file');
   assert.equal(worldUpdate.saveFileWork.unchanged, 2, 'unchanged character and layout keep their original files');
   assert.equal(await (await folder.folders.get('characters').files.get('farmer-char.json').getFile()).text(), characterBytes,
@@ -274,6 +280,7 @@ async function main() {
   counters.fail = true;
   const failed = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(failed.lastAction, 'save-error');
+  assert.equal(lastChange?.refreshRecovery, true, 'failed writes still request a recovery refresh');
   counters.fail = false;
   const retried = await window.LocalSaveFolder.syncNow({ automatic: true });
   assert.equal(retried.lastError, null);
@@ -332,6 +339,7 @@ async function main() {
   });
   assert.equal(quick.lastError, null, 'first-failure character-only folder commit succeeds');
   assert.equal(quick.lastAction, 'autosaved-lock-progress');
+  assert.equal(lastChange?.refreshRecovery, false, 'lock-only save changes no recovery slot');
   assert.equal(quick.saveFileWork.written, 1, 'only the character canonical JSON is rewritten');
   assert.equal(quick.recoveryRefreshPending, true, 'full recovery refresh remains scheduled for the next ordinary autosave');
   assert.deepEqual(counters.writes.slice(quickWritesBefore),

@@ -1297,8 +1297,8 @@
     if (window.__hobunjiGameStarted === true) onPlayerReady();
   }, { once: true });
 
-  folderApi()?.onChange?.(status => {
-    if (status?.state === 'ready' && status?.autoSyncArmed) syncRecoveryMirrorsFromFolder().catch(() => {});
+  folderApi()?.onChange?.((status, { refreshRecovery = true } = {}) => {
+    if (refreshRecovery && status?.state === 'ready' && status?.autoSyncArmed) syncRecoveryMirrorsFromFolder().catch(() => {});
   });
 
   const existingAuto = readSlot('auto');
@@ -1360,7 +1360,7 @@
       browserCheckpointParses,
       cachedBrowserCheckpoints: browserRecordCache.size,
       lastBrowserMirrorWarning: lastBrowserMirrorWarning || null,
-      latestChange: 'Folder recovery writes survive a full browser quota; folder-only checkpoints remain available for recovery and rotation.',
+      latestChange: 'Routine folder saves skip the full recovery scan. Opening Recovery still checks disk for newer checkpoints.',
       folderBaselineSeeds,
       restoreRollbacks,
       hasManual: !!readSlot('manual'),
