@@ -274,7 +274,8 @@ function syncHeadbandWholeControls(){
     slider.disabled=!settings;number.disabled=!settings;
     if(!settings)continue;
     const formatted=String(Math.round(value*1000)/1000);
-    slider.value=formatted;number.value=formatted;
+    slider.value=formatted;
+    if(document.activeElement!==number)number.value=formatted; // Preserve an in-progress negative/decimal value and its cursor on mobile.
   }
   for(const button of [E.headbandWholeReset,E.headbandWholeBake])button.disabled=!settings;
   E.headbandWholeDrag.disabled=!settings;
