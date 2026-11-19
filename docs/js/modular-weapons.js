@@ -1061,6 +1061,18 @@
     if (canvases.size > 64) canvases.delete(canvases.keys().next().value);
     return task;
   }
+  const SIDE_TANG_SLOPE = Math.tan(Math.PI / 6); // A tang leaning at least 30° from the haft's vertical axis is a sideways blade mount.
+  function effectiveAttackAnimation(shaftKey, headKey, source) {
+    const animation = settings(shaftKey, headKey).animation; // Preserve authored pair choices for straight-mounted weapons.
+    const shaft = config.shafts[shaftKey], head = config.heads[headKey]; // Resolve the physical mounting geometry for this assembled weapon.
+    if (animation !== 'thrust' || source?.animStyle !== 'sweep' || head?.mount?.type !== 'blade'
+        || shaft?.flailAssembly || head?.flailAssembly) return animation;
+    // A normally sweeping haft cannot thrust with a blade set across its length, regardless of the head donor's style.
+    return matchingMounts(shaft, head).some(mount => {
+      const dx = mount.end.x - mount.start.x, dy = mount.end.y - mount.start.y; // Effective tang direction after authored rig adjustments.
+      return Math.abs(dx) >= Math.abs(dy) * SIDE_TANG_SLOPE;
+    }) ? 'sweep' : animation;
+  }
   function registerDefinitions(defs, shapes, metals, metalKeys) {
     for (const [shaftKey, shaft] of Object.entries(config.shafts)) {
       if (shaft.editorOnly) continue; // Incomplete upload previews cannot create forgeable weapon items.
@@ -1068,7 +1080,7 @@
       for (const [headKey, head] of Object.entries(config.heads)) for (const metalKey of metalKeys) {
         if (head.editorOnly) continue; // Uncalibrated previews lack definitions; craftDisabled heads retain definitions for existing saved weapons.
         const key = itemKey(shaftKey, headKey, metalKey); // Pre-register metadata only; no image loads for unowned combinations.
-        const animation = settings(shaftKey, headKey).animation; // Authored pair override or shaft default drives attacks and combo selection.
+        const animation = effectiveAttackAnimation(shaftKey, headKey, source); // Angled tangs on sweeping hafts cannot inherit an axial thrust.
         const toolSlots = shaft.toolWorthy === true ? (head.toolSlots || []).filter(slot => UTILITY_SLOTS.has(slot)) : []; // Ordinary tool roles still require a tool-worthy haft and matching head.
         if (shaft.toolWorthy === true && shaftKey === 'pick-shovel') toolSlots.push('pick'); // Its reversible working end makes any compatible mounted head a mining pick, independent of head toolSlots.
         const assembly = flailRecipe(shaftKey, headKey); // Dynamic head/rope config rides the existing gameplay and editor renderer.
