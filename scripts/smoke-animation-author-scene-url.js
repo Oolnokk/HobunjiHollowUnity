@@ -411,6 +411,44 @@ async function main() {
         contact: contact.find(actor => actor.name === 'Pahu')?.preview };
     });
     console.log('Shorter initiator posterior hop PASS:', JSON.stringify(shortInitiatorHop));
+
+    // Exercise the actual creature PNG meshes, not just the pure profile math.
+    // Public addCreature previously captured an obsolete method before V15.54 installed.
+    const creatureParity = await page.evaluate(async () => {
+      const api = window.MultiAvatarAnimationAuthor;
+      const actor = await api.addCreature('grehlr', 'idle', { creatureSizeClass: 'medium' });
+      if (!actor?.id) throw Error('Live Animation Author did not create a Grehlr actor');
+      const results = [];
+      for (const cls of ['small', 'medium', 'large']) {
+        if (!api.setCreatureSizeClass(actor.id, cls)) throw Error('Could not choose Grehlr class ' + cls);
+        const report = api.creatureGameplayParity();
+        if (!report || report.sizeClass !== cls || report.species !== 'grehlr') {
+          throw Error('Selected creature parity diagnostics are stale for ' + cls + ': ' + JSON.stringify(report));
+        }
+        const expected = report.game;
+        const actual = report.effective;
+        const plane = report.planeLocalScale?.[0];
+        const anchor = report.anchorScale;
+        if (!expected || !actual || !plane || !anchor) throw Error('Missing live PNG/anchor scales for ' + cls);
+        const near = (first, second) => Math.abs(first - second) <= 0.00001;
+        if (!near(actual.widthScale, expected.widthScale) ||
+            !near(actual.heightScale, expected.heightScale) ||
+            !near(actual.groundLift, expected.groundLift) ||
+            !near(plane.x, plane.nativeX * expected.widthScale) ||
+            !near(plane.y, plane.nativeY * expected.heightScale) ||
+            !near(anchor.x, expected.widthScale) ||
+            !near(anchor.y, expected.heightScale) ||
+            !near(anchor.z, 1) ||
+            !near(report.previewOriginY, expected.groundLift)) {
+          throw Error('Live Grehlr PNG/rig/floor mismatch for ' + cls + ': ' + JSON.stringify(report));
+        }
+        results.push({ size: cls, pngWidth: plane.x, pngHeight: plane.y,
+          anchorX: anchor.x, anchorY: anchor.y, groundY: report.previewOriginY,
+          authoredGround: expected.groundLift });
+      }
+      return results;
+    });
+    console.log('Live Grehlr three-class gameplay parity PASS:', JSON.stringify(creatureParity));
   } catch (error) {
     let snapshot;
     try {
