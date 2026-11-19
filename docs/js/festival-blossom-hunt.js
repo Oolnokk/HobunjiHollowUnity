@@ -79,8 +79,8 @@
     const remaining = targetFor(founds); // The first undiscovered blossom supplies the active clue without invalidating other discoveries.
     if (!remaining) { cueGeneratedFor = ''; cueGeneratedLayout = null; lastGenerated = null; }
     if (!remaining) return { kind:'story', provider:'blossomHunt', icon:'🌸', title:TITLE, npcName:'Father Hunundi Hodu',
-      objective:'Present all five hand-picked blossoms to Father Hunundi Hodu in town.',
-      detail:'All five blossoms are in your Pack. Speak with Father Hunundi before the Feast ends to claim the Five Blossom Crown.',
+      objective:'Present all five hand-picked blossoms to Father Hunundi Hodu beside the town festival stage.',
+      detail:'All five blossoms are in your Pack. Speak with Father Hunundi beside the festival stage before the Feast ends to claim the Five Blossom Crown.',
       found:founds.slice(0,5), ready:true, year:year(), shiftYear:shift };
     const clue = clueFor(remaining);
     lastGenerated = clue;
@@ -271,7 +271,7 @@
       return false;
     }
     mapDeps.showToast?.(next.length === BLOSSOMS.length
-      ? 'Five blossoms picked! Return to Father Hunundi Hodu in town to present them.'
+      ? 'Five blossoms picked! Find Father Hunundi Hodu beside the festival stage to present them.'
       : blossom.name+' picked and added to Pack. Your next riddle awaits ('+next.length+'/5).',true);
     lastStatus = 'Picked '+blossom.id+' by interaction ('+next.length+'/5)'; syncPickPrompt();
     return true;
@@ -334,7 +334,7 @@
     const ready = inProgress && !upcoming && BLOSSOMS.every(b=>window.KeyItemSystem?.has?.(itemKey(b.id)));
     const liveClue = inProgress && upcoming ? clueFor(upcoming) : null;
     return { active: inProgress,ready,objective:live?.progress?.objective || '',
-      statusText: inProgress ? (ready?'All 5 collected — return to Father Hunundi in town.' : found.length+' of 5 picked — festival time is limited.') : null,
+      statusText: inProgress ? (ready?'All 5 collected — find Father Hunundi beside the festival stage.' : found.length+' of 5 picked — festival time is limited.') : null,
       detail: inProgress && upcoming ? (liveClue?.ok ? liveClue.text : 'Seek '+upcoming.name+' in '+(window.LocaleRiddleGenerator?.ZONES?.[upcoming.zoneId] || upcoming.zoneId)+'. '+(liveClue?.reason || 'Clue unavailable.')) : live?.progress?.detail || '' };
   }
   async function turnInAtHunundi(walker) {
