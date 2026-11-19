@@ -9,6 +9,12 @@
   const canonicalCreatures = () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures
     || window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures || {}; // Live gameplay profiles win over the frozen default master.
   const validClass = sizeClass => CLASSES.includes(sizeClass) ? sizeClass : 'medium'; // Prevents a missing class from indexing unrelated profile entries.
+  function gameplayProfileForKind(kind) {
+    const profiles = canonicalCreatures(); // Live owned profiles must win over any inherited/mirrored species profile.
+    if (profiles?.[kind]) return profiles[kind];
+    const mirroredFrom = window.HobunjiRigPreviewSpecies?.baseSpecies?.(kind); // Same variant art parent used for alpha, nestmother and herd-mother animals.
+    return mirroredFrom && mirroredFrom !== kind ? profiles?.[mirroredFrom] || null : null;
+  }
 
   function placement(profile, sizeClass, modelHeight) {
     const key = validClass(sizeClass); // Uses the same Small/Medium/Large row for both rendered proportions and ground contact.
@@ -52,6 +58,14 @@
       if (!original.sizeScales) profile.sizeScales = clone(gameplayProfile.sizeScales);
       if (!original.groundOffsets) profile.groundOffsets = clone(gameplayProfile.groundOffsets);
     }
+    for (const [kind, profile] of Object.entries(library.creatures)) {
+      if (canonical[kind]) continue;
+      const inherited = gameplayProfileForKind(kind); // Variant fallback is identical to game's genotype-species alias when no variant-specific rig exists.
+      const original = imported[kind]; // Missing legacy fields may be filled; explicit user-authored variant edits are never overwritten.
+      if (!inherited || !original) continue;
+      if (!original.sizeScales) profile.sizeScales = clone(inherited.sizeScales);
+      if (!original.groundOffsets) profile.groundOffsets = clone(inherited.groundOffsets);
+    }
     const guard = window.HOBUNJI_ATTACHMENT_RIG_MASTER_GUARD;
     if (typeof guard?.reconcileProfiles === 'function') {
       const repaired = guard.reconcileProfiles({ creatures: library.creatures })?.creatures;
@@ -75,6 +89,6 @@
   }
 
   window.AnimationAuthorCreatureGameplayParity = Object.freeze({
-    validClass, placement, canonicalCreatures, installRepositoryDefaults, normalizeImported, opaqueIdleBottomRatio,
+    validClass, placement, canonicalCreatures, gameplayProfileForKind, installRepositoryDefaults, normalizeImported, opaqueIdleBottomRatio,
   });
 })();
