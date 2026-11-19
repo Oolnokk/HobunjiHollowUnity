@@ -37,16 +37,16 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 @media(max-width:760px){main{display:block;padding:8px}section{margin-bottom:10px}header{padding:10px}#preview{max-width:360px}#view3d{height:320px}}
 </style>
 <script src="../../js/tap-reliability.js?v=20261110portraitSpline1"></script>
-<script src="../../js/portrait-spline-rig.js?v=20261113hab9122b"></script>
+<script src="../../js/portrait-spline-rig.js?v=20261119singleBone1"></script>
 <script src="../../js/portrait-spline-catalog.js?v=20261110splineHead3"></script>
 <script src="../../config/scratchbones-config.js?v=20261110spline3d1"></script>
 <script src="../../js/color-fill.js?v=20260923colorfill7"></script>
 <script src="../../js/portrait-utils.js?v=20261113h3f54fed"></script>
 <script src="../../js/npc-avatar-preview-utils.js?v=20261110splineCanon1"></script>
-<script src="../../js/portrait-spline-viewer.js?v=20261119reuse1"></script>
+<script src="../../js/portrait-spline-viewer.js?v=20261119singleBone1"></script>
 </head>
 <body>
-<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Side Hair Spline Author</h1><span class="hint">Beard and hood masks</span></header>
+<header><a href="../character-studio/">Character Studio</a><h1>Beard &amp; Hair Bone Author</h1><span class="hint">Single bone · elastic hood opening</span></header>
 <main>
 <section>
 <h2>Portrait authoring</h2>
@@ -85,22 +85,23 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <p id="maskHelp">Cyan pixels stay fixed to the head. Purple pixels follow the spline.</p>
   <div class="row"><label for="showRegions"><input id="showRegions" type="checkbox" checked> Show mask overlay</label></div>
   <div class="buttons"><button id="autoMask">Reset from head overlap</button><button id="undoMask">Undo mask edit</button><button id="clearMask">Clear mask</button></div>
+<div class="entry"><label for="hoodStretchPx">Hood-hole stretch (px)</label><input id="hoodStretchPx" type="range" min="0" max="32" step="1" value="12"></div>
+<output id="hoodStretchStatus" role="status" aria-live="polite">Select a hood and paint its opening to preview the stretch.</output>
+<p>Paint or wand-select a small opening. Cloth stretches around the connected hair silhouette, with one-pixel edge clearance. Facewraps still hide the beard entirely.</p>
 </div>
 <div id="splineTools">
-<div class="buttons"><button id="addPoint">Add knot</button><button id="removePoint">Remove knot</button></div>
-<p>Yellow knots set the rest spline. The cyan curve shows its 3D pose.</p>
+<p>Exactly one root-to-tip bone. Yellow shows rest, cyan shows motion. Drag either endpoint in 2D or the tip with the 3D arrows.</p>
 <div class="entry"><label for="rearU">Rear X offset</label><input id="rearU" type="number" min="-.25" max=".25" step=".005" value="0"></div>
 <div class="entry"><label for="rearV">Rear Y offset</label><input id="rearV" type="number" min="-.25" max=".25" step=".005" value="0"></div>
-<div class="entry"><label for="strandWidth">Spline width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
+<div class="entry"><label for="strandWidth">Hair influence width</label><input id="strandWidth" type="number" min=".01" max=".5" step=".01" value=".1"></div>
 <div class="entry"><label for="response">Wind response</label><input id="response" type="number" min="0" max="5" step=".1" value="1"></div>
-<div class="entry"><label for="tipFollow">Bottom leads middle</label><input id="tipFollow" type="range" min="0" max=".9" step=".01" value=".58" aria-label="How much the bottom knot pulls the middle knot"></div>
-
-<div class="buttons"><button id="resetRig">New 3-knot spline</button></div>
+<div class="buttons"><button id="resetRig">Fit one bone to the hair artwork</button></div>
 </div>
+
 </section>
 <section>
 <h2>3D preview</h2>
-<p id="poseHelp">Place resting knots on the left in 2D, then choose a wind direction and manipulate its 3D pose here. Tap a knot sphere to select it. Drag a colored axis gizmo to <strong>translate</strong> its endpoint or a colored ring to <strong>rotate</strong> that segment. Drag empty space to orbit the camera. The first knot is anchored to the head.</p>
+<p id="poseHelp">One bone runs from its anchored root to its free tip. XYZ arrows position the tip in 3D; rings adjust its maximum wind swing. Hair passing through the hood opening stays seated. Drag empty space to orbit.</p>
 <canvas id="view3d" width="540" height="380" aria-label="Interactive 3D head and hair viewer with knot translation and rotation gizmos"></canvas>
 <output id="viewerStatus" role="status" aria-live="polite">Loading 3D viewer…</output>
 <div id="poseActions">
@@ -109,21 +110,19 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
   <button data-camera="side">Side</button><button data-camera="rear">Rear</button>
 </div>
 <div id="poseTools">
-<div id="poseMatrix">
-<button data-direction="up">↑ Up</button><button data-direction="toward">⊙ Toward viewer</button><button data-direction="away">⊗ Away from viewer</button>
-<button data-direction="left">← Left</button><button data-direction="down">↓ Down</button><button data-direction="right">Right →</button>
+<div class="entry"><label for="boneYaw">Yaw swing (°)</label><input id="boneYaw" type="number" min="0" max="65" step="1" value="8"></div>
+<div class="entry"><label for="bonePitch">Pitch swing (°)</label><input id="bonePitch" type="number" min="0" max="65" step="1" value="10"></div>
+<div class="entry"><label for="boneRoll">Roll swing (°)</label><input id="boneRoll" type="number" min="0" max="65" step="1" value="18"></div>
 </div>
-<div class="entry"><label for="segmentSelect">Selected 3D knot</label><select id="segmentSelect"></select></div>
-<div id="segmentEditor"></div>
-<div class="buttons"><button id="generateBlend" type="button">Generate natural 6-direction poses</button></div>
-<p>Default wind poses are calculated from the current strand length, orientation, and knot position. Regenerating replaces only directional poses and deadzones; it keeps your pixel masks and resting knots.</p>
-</div>
-<h3>Preview the directional wind</h3>
-<div class="entry"><label for="testStrength">Gust strength</label><input type="range" id="testStrength" min="0" max="1" value="1" step=".01"></div>
-<div class="row"><label for="testStrength">Blend:</label><span id="windName">Right · 100%</span></div>
-<p><strong>Translation XYZ</strong> uses portrait-local axes. The bottom knot leads the middle one, with declining influence toward the fixed root. Directional rotations and translations blend with deadzones; the collision solver prevents crossing the portrait plane.</p>
+<h3>Preview wind on the single bone</h3>
+<div class="entry"><label for="windX">Side gust X</label><input type="range" id="windX" min="-1" max="1" value="1" step=".01"></div>
+<div class="entry"><label for="windY">Vertical gust Y</label><input type="range" id="windY" min="-1" max="1" value="0" step=".01"></div>
+<div class="entry"><label for="windZ">Depth gust Z</label><input type="range" id="windZ" min="-1" max="1" value="0" step=".01"></div>
+<output id="windName">X +1.00 · Y 0.00 · Z 0.00</output>
+<p>Wind inputs are live axes, not directional pose assets. Neutral wind leaves the bone at rest, and cloth fits the actual artwork.</p>
+
 <h3>Pixel region and collision checks</h3>
-<output id="status" role="status" aria-live="polite">No cosmetic loaded. The default 3-knot spline is editable.</output>
+<output id="status" role="status" aria-live="polite">No cosmetic loaded. The default single bone is editable.</output>
 <div class="buttons" style="margin-top:10px"><button id="download">Export updated cosmetic JSON</button><button id="copyRig">Copy rig JSON</button></div>
 <details style="margin-top:12px"><summary>Rig JSON and mobile debug</summary><p>JSON shown here is the exact authored property added to the exported cosmetic. You can also paste a rig JSON and choose Apply.</p>
 <textarea id="json"></textarea><output id="jsonDraftStatus" role="status" aria-live="polite"></output><div class="buttons"><button id="applyJson">Apply rig JSON</button><button id="copyDiagnostics">Copy 3D diagnostics</button></div><textarea id="diagnosticsJson" readonly hidden aria-label="Diagnostics to copy manually"></textarea></details>
@@ -134,12 +133,11 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 (() => {
 'use strict';
 const $=id=>document.getElementById(id),Rig=window.PortraitSplineRig,Catalog=window.PortraitSplineCatalog;
-const DIRECTIONS=['left','right','up','down','toward','away'],FIELDS=['yaw','pitch','roll'];
-const makeSegment=()=>({deadzone:{x:4,y:4,z:6},poses:Object.fromEntries(DIRECTIONS.map(x=>[x,{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:0}}]))});
-const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.52,v:.43,depth:.025},{u:.53,v:.6,depth:.035}]; // New rigs start with fitted natural poses, not six empty wind directions.
- return {version:1,enabled:true,points,segments:Rig.makeDefaultSegments(points),regionMasks:{},
- rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,segmentsX:24,segmentsY:32};};
-let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move',maskTool='paint';
+const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth:.015},{u:.53,v:.6,depth:.035}]; // The only handles are root and tip.
+ return {version:2,enabled:true,points,bone:Rig.defaultBone(points),regionMasks:{},
+ rearOffset:{u:0,v:0},width:.1,windResponse:1,hoodStretchPx:12,segmentsX:24,segmentsY:32};};
+let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,mode='move',maskTool='paint';
+
 let images={front:null,rear:null,hood:null,head:null,headRear:null,character:null,characterRear:null};
 const manualImageVersion={front:0,rear:0,hood:0,head:0}; // Each image source tracks overrides so slower indexed/decode tasks cannot overwrite mobile uploads.
 let previewPointer=null,lastPaint=null,overlapBrush='bend'; // One captured pointer owns each knot drag or mask stroke.
@@ -185,7 +183,7 @@ $('cosmeticFile').addEventListener('change',async e=>{
     images.front=null;images.rear=null; // Never auto-classify an imported cosmetic using the previously selected style's artwork.
     maskUndo=null;markRegionDirty();maybeInitializeMasks();syncRigJson(true);
     $('sourcePath').textContent='Local import: '+file.name;
-    selectedKnot=1;selectedSegment=0;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
+    selectedKnot=1;controls();render();message('Imported '+file.name+'. Export preserves existing cosmetic fields.');
   }catch(error){message('Invalid JSON: '+error.message);}
 });
 
@@ -245,9 +243,9 @@ function maybeInitializeMasks(){
     try{
       const points=Rig.suggestRestPoints(images.front,images.head);
       if(points){
-        rig.points=points;rig.segments=Rig.makeDefaultSegments(points);
-        autoLayoutPending=false;selectedKnot=1;selectedSegment=0;controls();
-        message('Fitted the new spline and six natural wind poses to the actual hair silhouette.');
+        rig.points=points;rig.bone=Rig.defaultBone(points);
+        autoLayoutPending=false;selectedKnot=1;controls();
+        message('Fitted one root-to-tip bone to the actual hair silhouette.');
       }
     }catch(error){message('Could not fit spline to artwork: '+error.message);}
   }
@@ -466,7 +464,7 @@ async function selectIndexedStyle(){
   const stored=Rig.normalize(rigDrafts.get(draftKey)||authored||selected.config.portraitSplineRig);
   rig=stored||makeRig();
   autoLayoutPending=!stored; // Generate initial rest geometry from real head/hair pixels only for newly rigged cosmetics.
-  maskUndo=null;selectedKnot=1;selectedSegment=0;syncRigJson(true);
+  maskUndo=null;selectedKnot=1;syncRigJson(true);
   if(rawJsonDrafts.has(draftKey)){$('json').value=rawJsonDrafts.get(draftKey);jsonHasUnappliedEdits=true;syncRigJson();}
   controls();
   images.front=null;images.rear=null;markRegionDirty();render();
@@ -514,7 +512,7 @@ function loadHoodPreview(){
 function hoodPreview(){
   if(!canonicalProfile||(!hoodOption&&!images.hood)){hoodPortrait=null;return;}
   const isBeard=$('slotSelect').value==='facialHair';
-  const request=[canonicalProfile,hoodOption,images.hood,images.front,isBeard,rig.hoodOpeningMask,rig.hoodOverlapMask,rig.hoodRigidOverlapMask];
+  const request=[canonicalProfile,hoodOption,images.hood,images.front,isBeard,rig.hoodOpeningMask,rig.hoodOverlapMask,rig.hoodRigidOverlapMask,rig.hoodStretchPx];
   if(lastHoodRequest?.every((item,index)=>item===request[index]))return;
   lastHoodRequest=request;
   const generation=++hoodRenderGeneration;
@@ -582,36 +580,18 @@ $('hoodSelect').addEventListener('change',()=>void loadHoodPreview());
 $('reloadIndex').addEventListener('click',()=>void initCatalog());
 
 function normalized(){return Rig.normalize(rig);}
-function safeSegment(){return rig.segments[selectedSegment]||rig.segments[0];}
 function controls(){
-  $('segmentSelect').replaceChildren(...rig.segments.map((_,i)=>{const opt=document.createElement('option');opt.value=i;opt.textContent=(i+1)+': knot '+(i+1)+' → '+(i+2);return opt;}));
-  selectedSegment=clamp(selectedSegment,0,rig.segments.length-1);$('segmentSelect').value=selectedSegment;
-  for(const el of document.querySelectorAll('[data-direction]'))el.classList.toggle('active',el.dataset.direction===direction);
-  for(const el of ['rearU','rearV','strandWidth','response','tipFollow']){
-    const values={rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,strandWidth:rig.width,response:rig.windResponse,
-      tipFollow:rig.tipFollow??.58};
-    $(el).value=values[el];
-  }
-  const slot=safeSegment(),holder=$('segmentEditor');holder.replaceChildren();
-  const field=(label,value,min,max,step,changed)=>{
-    const div=document.createElement('div');div.className='field';
-    const title=document.createElement('label');title.textContent=label;
-    const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;input.value=value;
-    input.dataset.poseField=label; // 3D gizmo edits update the displayed values without recreating numeric controls on every pointer move.
-    input.addEventListener('change',()=>{changed(clamp(numeric(input.value,value),min,max));input.value=clamp(numeric(input.value,value),min,max);render();});
-    div.append(title,input);return div;
-  };
-  for(const key of FIELDS)holder.append(field(key+' (°)',slot.poses[direction][key],-85,85,1,v=>slot.poses[direction][key]=v));
-  for(const key of ['x','y','z'])holder.append(field('Translate '+key.toUpperCase(),slot.poses[direction].translate[key],-.35,.35,.005,v=>slot.poses[direction].translate[key]=v));
-  for(const key of ['x','y','z'])holder.append(field('Deadzone '+key+'°',slot.deadzone[key],0,44,1,v=>slot.deadzone[key]=v));
-  holder.append(field('Knot depth',rig.points[selectedKnot].depth,.003,.35,.005,v=>rig.points[selectedKnot].depth=v));
+  for(const [id,value] of Object.entries({rearU:rig.rearOffset.u,rearV:rig.rearOffset.v,
+    strandWidth:rig.width,response:rig.windResponse,hoodStretchPx:rig.hoodStretchPx??12,
+    boneYaw:rig.bone.yaw,bonePitch:rig.bone.pitch,boneRoll:rig.bone.roll})) $(id).value=value;
   syncRigJson();
 }
 function wind(){
-  const v=numeric($('testStrength').value,1),axes={x:0,y:0,z:0};
-  axes[({left:'x',right:'x',up:'y',down:'y',toward:'z',away:'z'})[direction]]=v*(['left','down','away'].includes(direction)?-1:1);
-  $('windName').textContent=direction+' · '+Math.round(v*100)+'%';return axes;
+  const gust={x:numeric($('windX').value),y:numeric($('windY').value),z:numeric($('windZ').value)};
+  $('windName').textContent=Object.entries(gust).map(([axis,value])=>axis.toUpperCase()+' '+value.toFixed(2)).join(' · ');
+  return gust;
 }
+
 function render(){
   const c=$('preview'),ctx=c.getContext('2d'),W=c.width,H=c.height;
   ctx.clearRect(0,0,W,H);ctx.fillStyle='#091725';ctx.fillRect(0,0,W,H);
@@ -632,14 +612,14 @@ function render(){
     try{const overlay=makeRegionOverlay();if(overlay)ctx.drawImage(overlay,0,0,W,H);} // Cyan pixels are anchored; translucent purple pixels follow the spline.
     catch(error){message('Could not display the pixel region mask: '+error.message);}
   }
-  const active=normalized();if(!active){message('Invalid spline: add at least two distinct knots.');return;}
+  const active=normalized();if(!active){message('Invalid single bone: position its root and tip apart.');return;}
   const posed=Rig.posePoints(active,wind()),pts=posed.points;
   if(mode==='move'){
     const drawCurve=(controlPoints,neutral)=>{
       ctx.beginPath();
       for(let i=0;i<controlPoints.length-1;i++)for(let j=0;j<=12;j++){
         if(i && !j)continue;
-        const p=Rig.curvePoint(controlPoints,i,j/12,neutral); // Preview the same smooth Catmull-Rom spline used to deform the in-world PNG.
+        const p=Rig.curvePoint(controlPoints,i,j/12,neutral); // Straight root-to-tip interpolation is shared with gameplay.
         const X=(.5+p.x+(neutral?0:p.z*.4))*W,Y=(.5-p.y-(neutral?0:p.z*.17))*H;
         if(!i && !j)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);
       }
@@ -652,27 +632,26 @@ function render(){
   const view=activeView(),mask=rig.regionMasks?.[view],rigidPixels=mask?.runs.reduce((n,p)=>n+p[1],0)||0;
   const regionNote=mask ? 'rigid: '+rigidPixels+'px / flexible: '+(40000-rigidPixels)+'px'
     : 'waiting for artwork and head overlap to classify pixel regions';
-  $('status').textContent=rig.points.length+' knots / '+rig.segments.length+' segments / '+regionNote+
-    '\nCollision-limited segments in preview: '+posed.collisions+
-    '\nSelected: knot '+(selectedKnot+1)+', segment '+(selectedSegment+1)+', '+direction+
+  $('status').textContent='Single bone / '+regionNote+
+    '\nCollision-limited bone: '+posed.collisions+
+    '\nSelected endpoint: '+(selectedKnot===0?'root':'tip')+
     '\nPortrait plane: '+(shown?'rear (offset '+rig.rearOffset.u+', '+rig.rearOffset.v+')':'front')+
-    '\nOnly enabled styles create extra geometry; others retain 2D rendering.';
+    '\nOnly enabled cosmetics create extra geometry; unrigged styles stay flat.';
+  $('hoodStretchStatus').textContent=hoodPortrait?.fit
+    ?'Elastic hole: '+hoodPortrait.fit.openingPixels+' px · rim-adjusted: '+hoodPortrait.fit.stretchedPixels+' px'
+    :'Select a hood and paint a beard-connected opening to preview stretching.';
   syncRigJson();
   if(viewer && previewPointer?.mode!=='paint' && previewPointer?.mode!=='erase'){
     // Keep mobile brush strokes responsive: recompute binary pinned mesh vertices only when the stroke ends, without re-uploading any sprite textures.
     const sources=viewerRegionSources();
-    viewer.update({rig,wind:wind(),selectedKnot,direction,
+    viewer.update({rig,wind:wind(),selectedKnot,
       head:hoodPortrait?.front||images.character||images.head,headRear:hoodPortrait?.rear||images.characterRear||regionHead('rear'),
       front:hoodPortrait?.hidden?null:sources.front,rear:sources.rear,
       rearAligned:true, // All rear artwork is pre-aligned for the same continuous mesh as the game.
       hoodFit:hoodPortrait?.fit,editKnots:mode==='move'});
   }
 }
-function updateKnots(){
-  const defaults=Rig.makeDefaultSegments(rig.points);
-  while(rig.segments.length<rig.points.length-1)rig.segments.push(defaults[rig.segments.length]||makeSegment());
-  rig.segments.length=rig.points.length-1;controls();render();
-}
+
 function pick(e){const bounds=$('preview').getBoundingClientRect();return{u:clamp((e.clientX-bounds.left)/bounds.width,0,1),v:clamp((e.clientY-bounds.top)/bounds.height,0,1)};}
 function paint(p){
   const {view,kind,overlapBrush:brushMode,mode:strokeMode}=previewPointer; // Keep a stroke on the plane and tool selected when it started.
@@ -717,7 +696,7 @@ $('preview').addEventListener('pointerdown',e=>{
       return;
     }
     autoLayoutPending=false;
-    selectedKnot=index;selectedSegment=clamp(index-1,0,rig.segments.length-1);
+    selectedKnot=index;
     previewPointer={id:e.pointerId,mode,dragStart:p,startKnot:{...rig.points[index]}};
     $('preview').setPointerCapture(e.pointerId);
     controls();render();return; // Selection alone never changes its neutral coordinates.
@@ -735,26 +714,17 @@ for(const event of ['pointerup','pointercancel','lostpointercapture'])$('preview
 $('moveMode').onclick=()=>{mode='move';render();};
 $('maskMode').onclick=()=>{mode=maskTool;render();};
 for(const tool of ['paint','erase','wand'])$(tool+'Mode').onclick=()=>{mode=maskTool=tool;render();};
-$('addPoint').onclick=()=>{const i=selectedKnot,p=rig.points[i],other=rig.points[i+1]||{u:p.u+.03,v:p.v+.1,depth:p.depth+.01};
-  const original=rig.segments[i]; // New interval inherits the authored motion of the segment it splits.
-  rig.points.splice(i+1,0,{u:(p.u+other.u)/2,v:(p.v+other.v)/2,depth:(p.depth+other.depth)/2});
-  rig.segments.splice(i,0,original?JSON.parse(JSON.stringify(original)):Rig.makeDefaultSegments(rig.points)[i]||makeSegment());
-  selectedKnot=i+1;selectedSegment=i;updateKnots();};
-$('removePoint').onclick=()=>{if(rig.points.length<=2){message('At least two knots are required.');return;}
-  rig.segments.splice(Math.max(0,selectedKnot-1),1); // Preserve the downstream segment poses when deleting an interior knot.
-  rig.points.splice(selectedKnot,1);
-  selectedKnot=clamp(selectedKnot-1,0,rig.points.length-1);
-  selectedSegment=clamp(selectedKnot-1,0,rig.segments.length-1);updateKnots();};
-$('segmentSelect').onchange=e=>{selectedSegment=+e.target.value;selectedKnot=selectedSegment+1;controls();render();};
-for(const b of document.querySelectorAll('[data-direction]'))b.onclick=()=>{direction=b.dataset.direction;controls();render();};
-$('testStrength').oninput=render;$('viewSelect').onchange=render;
+for(const id of ['windX','windY','windZ'])$(id).oninput=render;
+$('viewSelect').onchange=render;
 $('maskSelect').onchange=render;
 $('overlapMode').onchange=e=>{overlapBrush=e.target.value;};
 for(const [id,fn] of [['rearU',v=>rig.rearOffset.u=v],['rearV',v=>rig.rearOffset.v=v],
   ['strandWidth',v=>rig.width=v],['response',v=>rig.windResponse=v],
-['tipFollow',v=>rig.tipFollow=v]]){
-  $(id).onchange=e=>{fn(numeric(e.target.value));rig=Object.assign(rig,Rig.normalize(rig));markRegionDirty();controls();render();};
+  ['hoodStretchPx',v=>rig.hoodStretchPx=v],
+  ...['yaw','pitch','roll'].map(axis=>['bone'+axis[0].toUpperCase()+axis.slice(1),v=>rig.bone[axis]=v])]){
+  $(id).onchange=e=>{fn(numeric(e.target.value));rig=Rig.normalize(rig);controls();render();};
 }
+
 $('clearMask').onclick=()=>{
   recordMaskUndo();
   const kind=activeMask(),empty=Rig.encodePixelMask(new Uint8Array(40000));
@@ -765,9 +735,9 @@ $('clearMask').onclick=()=>{
 $('resetRig').onclick=()=>{
   const points=images.front?Rig.suggestRestPoints(images.front,images.head):null;
   const reset=makeRig(points||undefined);
-  rig={...rig,points:reset.points,segments:reset.segments,width:reset.width,windResponse:reset.windResponse,tipFollow:reset.tipFollow};
+  rig={...rig,points:reset.points,bone:reset.bone,width:reset.width,windResponse:reset.windResponse};
   autoLayoutPending=!points;
-  selectedKnot=1;selectedSegment=0;maybeInitializeMasks();if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();
+  selectedKnot=1;maybeInitializeMasks();if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();
 };
 $('autoMask').onclick=()=>{
   const view=activeView(),sprite=images[view],head=regionHead(view);
@@ -787,12 +757,8 @@ $('undoMask').onclick=()=>{
   maskUndo=null;render();message('Restored the previous mask.');
 };
 $('showRegions').onchange=render;
-$('generateBlend').onclick=()=>{
-  rig.segments=Rig.makeDefaultSegments(rig.points); // Replace only directional poses and deadzones; keep manually painted masks and knot locations.
-  controls();render();
-  message('Generated six natural wind directions for the current strand. Bottom knot leads the middle, with the head anchored.');
-};
-$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;selectedSegment=0;if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();message('Applied edited rig JSON.');}catch(error){message('JSON error: '+error.message);}};
+
+$('applyJson').onclick=()=>{try{const candidate=JSON.parse($('json').value),valid=Rig.normalize(candidate);if(!valid)throw Error('At least two distinct, normalized knots are required.');rig=valid;autoLayoutPending=false;maskUndo=null;markRegionDirty();selectedKnot=1;if(activeDraftKey)rawJsonDrafts.delete(activeDraftKey);syncRigJson(true);controls();render();message('Applied edited rig JSON.');}catch(error){message('JSON error: '+error.message);}};
 $('copyRig').onclick=async()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before copying the runtime rig; unapplied changes are still in the editor.');return;}const data=JSON.stringify(Rig.normalize(rig),null,2);try{await navigator.clipboard.writeText(data);message('Rig JSON copied.');}catch(_){$('json').value=data;$('json').select();message('Clipboard unavailable; select/copy the JSON from the text box.');}};
 $('download').onclick=()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON before exporting; your manual JSON edits are not applied yet.');return;}const valid=Rig.normalize(rig);if(!valid){message('Cannot export invalid knots.');return;}
  const result=JSON.parse(JSON.stringify(cosmetic));
@@ -807,18 +773,18 @@ $('download').onclick=()=>{if(jsonHasUnappliedEdits){message('Apply rig JSON bef
 async function init3D(){
   try {
     viewer=await window.PortraitSplineViewer.create($('view3d'),{
-      onSelect:index=>{selectedKnot=index;selectedSegment=clamp(index-1,0,rig.segments.length-1);controls();render();},
+      onSelect:index=>{selectedKnot=index;controls();render();},
       onEdit:({index,mode:operation,axis,rotationKey,value})=>{
-        const segment=rig.segments[index-1];if(!segment)return;
-        const pose=segment.poses[direction];
-        if(operation==='translate')pose.translate[axis]=value;
-        else pose[rotationKey]=value;
-        // Keep numeric inputs in sync during a 3D drag without replacing the focused pointer/canvas handlers.
-        const label=operation==='translate'?'Translate '+axis.toUpperCase():rotationKey+' (°)';
-        const input=[...$('segmentEditor').querySelectorAll('input')].find(node=>node.dataset.poseField===label);
-        if(input)input.value=Number(value.toFixed(3));
+        if(index!==1)return; // Root stays seated; only the free tip can move with 3D arrows.
+        if(operation==='translate'){
+          if(axis==='x')rig.points[1].u=clamp(value+.5,0,1);
+          if(axis==='y')rig.points[1].v=clamp(.5-value,0,1);
+          if(axis==='z')rig.points[1].depth=clamp(value,.003,.35);
+        }else if(rotationKey)rig.bone[rotationKey]=clamp(value,0,65);
+        if(operation==='rotate')$('bone'+rotationKey[0].toUpperCase()+rotationKey.slice(1)).value=rig.bone[rotationKey];
         render();
       },
+
       onStatus:text=>{$('viewerStatus').textContent=text||(mode==='move'
         ?'3D ready · drag axes or rings, tap knots, or orbit on empty space.'
         :'3D ready · drag to orbit. Paint masks in the 2D preview.');},
@@ -839,12 +805,13 @@ window.addEventListener('resize',()=>viewer?.schedule());
 controls();render();
 window.HobunjiSplineAuthorDiagnostics=()=>({
   selected:{species:selectedSpecies(),gender:selectedGender(),cosmetic:activeStyle?.label||loadedName,slot:activeStyle?.slot||null},
-  direction,selectedKnot,selectedSegment,mode,viewer:viewer?.debug()||{webgl:false},
+  singleBone:true,selectedKnot,mode,wind:wind(),viewer:viewer?.debug()||{webgl:false},
   regionMasks:Object.fromEntries(['front','rear'].map(view=>[view,rig.regionMasks?.[view]?.runs.reduce((n,p)=>n+p[1],0)??null])),headLoaded:!!images.head,
   canonicalPortrait:{loaded:!!images.character,rearLoaded:!!images.characterRear,error:canonicalPortraitError,registryReady:!!canonicalPortraitPromise},
   hood:{equipped:hoodOption?.id||null,hidden:!!hoodPortrait?.hidden,ready:!!hoodPortrait,
-    opening:rig.hoodOpeningMask?.runs.reduce((n,p)=>n+p[1],0)||0,overlap:rig.hoodOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,rigid:rig.hoodRigidOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,brush:overlapBrush},
-  pose:JSON.parse(JSON.stringify(rig.segments[selectedSegment]?.poses[direction]||{})),
+    opening:rig.hoodOpeningMask?.runs.reduce((n,p)=>n+p[1],0)||0,overlap:rig.hoodOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,rigid:rig.hoodRigidOverlapMask?.runs.reduce((n,p)=>n+p[1],0)||0,brush:overlapBrush,
+    stretchPx:rig.hoodStretchPx,openedPixels:hoodPortrait?.fit?.openingPixels||0,rimPixels:hoodPortrait?.fit?.stretchedPixels||0},
+  bone:JSON.parse(JSON.stringify(rig.bone)),
   jsonDraft:{unapplied:jsonHasUnappliedEdits,savedIndexedDrafts:rawJsonDrafts.size},
 }); // Visible/copyable diagnostics for mobile users who do not have devtools.
 $('copyDiagnostics').onclick=async()=>{const value=JSON.stringify(window.HobunjiSplineAuthorDiagnostics(),null,2);
