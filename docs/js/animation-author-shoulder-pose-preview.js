@@ -53,6 +53,14 @@
 
     function syncPlaneScale() {
       if (!posedAvatar || disposed) return;
+      const sourceRoot = sourceAvatar.group; // Same native sprite foot correction used by the original idle planes.
+      const posedRoot = posedAvatar.group; // Perched replacement is a sibling, not a child of the moving source group.
+      if (posedRoot?.position?.copy && sourceRoot?.position && posedRoot.parent === sourceRoot.parent
+          && !(posedRoot.position.equals?.(sourceRoot.position) ?? false)) {
+        posedRoot.position.copy(sourceRoot.position); // Direct-mesh class scaling requires copying the scaled padding Y as well as plane X/Y.
+        posedRoot.updateMatrix?.();
+        posedRoot.updateMatrixWorld?.(true);
+      }
       for (const { plane, source } of posedPlaneScaleLinks) {
         if (!plane?.scale || !source?.scale) continue;
         if (plane.scale.x === source.scale.x && plane.scale.y === source.scale.y
