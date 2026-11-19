@@ -298,9 +298,13 @@
 
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !authored.createEmitterVisual) return group;
-    if (ambientRecordByGroup.has(group)) return group;
     group.userData = group.userData || {};
     const isWallTorch = key === 'wallTorch'; // Real wall torches own a tilted flame anchor, not a custom gradient sprite.
+    const previousRecord = ambientRecordByGroup.get(group); // A furniture upgrade may replace the entire torch sprite/anchor within its live root.
+    if (previousRecord) {
+      if (!isWallTorch || previousRecord.fireAnchor === group.userData.wallTorchFireAnchor) return group;
+      disposeAmbientRecord(previousRecord); // Retire particles on the removed fallback sprite before rebinding to the authored mount.
+    }
     const emitters = Array.isArray(data?.particleEmitters)
       ? data.particleEmitters.filter(emitter => emitter?.enabled !== false)
       : []; // Existing authored emitters continue unchanged for every other fixture.
@@ -321,7 +325,7 @@
       return group;
     }
     if (!visuals.length) return group;
-    const record = { group, visuals, key, createdAt: performance.now(), wasAttached: false }; // Stored until the furniture is removed from its scene.
+    const record = { group, visuals, key, fireAnchor: wallTorchAnchor || null, createdAt: performance.now(), wasAttached: false }; // Tracks the actual torch tip so an in-place furniture upgrade cannot keep emitting from a removed anchor.
     ambientRecords.add(record);
     ambientRecordByGroup.set(group, record);
     delete group.userData.hobunjiAmbientFurnitureVfxPendingKey;
