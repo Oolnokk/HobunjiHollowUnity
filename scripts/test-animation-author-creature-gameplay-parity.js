@@ -21,6 +21,9 @@ const master = {
 const window = {
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: master },
   HOBUNJI_ATTACHMENT_RIG_MASTER: { profiles: { creatures: { grehlr: { sizeScales: {} } } } },
+  HobunjiRigPreviewSpecies: { baseSpecies: kind => ({
+    'grehlr-den-mother': 'grehlr', 'gar-wolf-alpha': 'gar-wolf',
+  })[kind] || kind },
 }; // Conflicting frozen master proves the live game profile wins.
 const src = fs.readFileSync('docs/js/animation-author-creature-gameplay-parity.js', 'utf8');
 vm.runInNewContext(src, { window }, { filename: 'animation-author-creature-gameplay-parity.js' });
@@ -28,6 +31,9 @@ const parity = window.AnimationAuthorCreatureGameplayParity;
 assert(parity, 'browser helper should export the gameplay parity API');
 assert.equal(parity.canonicalCreatures().grehlr.sizeScales.small.x, 0.2, 'live runtime profile beats frozen defaults');
 assert.equal(parity.validClass('wrong'), 'medium');
+assert.equal(parity.gameplayProfileForKind('grehlr-den-mother'), master.grehlr,
+  'den mothers inherit the same size and floor profile as gameplay');
+assert.equal(parity.gameplayProfileForKind('unknown'), null, 'unknown animals do not silently borrow an unrelated species');
 
 for (const [sizeClass, expected] of [['small', 0.13], ['medium', 0.26], ['large', 0.5]]) {
   const layout = parity.placement(master.grehlr, sizeClass, 1.2);
@@ -50,6 +56,14 @@ assert.equal(master.grehlr.groundOffsets.small, .13, 'editable copy must not alt
 const saved = parity.normalizeImported({ creatures: { grehlr: { sizeScales: { ...master.grehlr.sizeScales } } } },
   { creatures: { grehlr: { sizeScales: master.grehlr.sizeScales } } });
 assert.equal(saved.creatures.grehlr.groundOffsets.medium, .26, 'old projects lacking groundOffsets must receive real game values');
+const legacyVariant = { creatures: { 'grehlr-den-mother': { kind: 'grehlr-den-mother', anchors: { shoulderGrip: { position: { x: 0, y: 0.1, z: 0 } } } } } };
+const restoredVariant = parity.normalizeImported(JSON.parse(JSON.stringify(legacyVariant)), legacyVariant);
+assert.equal(restoredVariant.creatures['grehlr-den-mother'].sizeScales.small.x, 0.2,
+  'legacy den-mother imports inherit the actual Grehlr class sizes, not generic editor defaults');
+assert.equal(restoredVariant.creatures['grehlr-den-mother'].groundOffsets.small, 0.13,
+  'legacy den-mother imports also inherit gameplay floor');
+assert.equal(restoredVariant.creatures['grehlr-den-mother'].anchors.shoulderGrip.position.y, 0.1,
+  'the variant inherits proportions without replacing independently authored attachment points');
 const custom = {
   creatures: { grehlr: { sizeScales: { ...master.grehlr.sizeScales, small: { x: .73, y: 1.1 } },
     groundOffsets: { small: 0, medium: 0.2, large: 0.4 } } },
@@ -75,6 +89,7 @@ assert.match(index, /window\.MultiAvatarAnimationAuthor\.creatureGameplayParity 
 assert.match(index, /parityV1554\.opaqueIdleBottomRatio\(idleCanvas\)/, 'editor actually applies alpha foot scanning');
 assert.match(index, /actor\.model\.position\.y = paddingLift/, 'alpha padding moves rendered art without changing ground/anchor coordinates');
 assert.match(index, /Use game size and ground values/, 'on-device custom-profile recovery is available');
+assert.match(index, /parityV1554\.gameplayProfileForKind\(kind\)/, 'new animal variants receive game species fallback before actor creation');
 assert.match(index, /profile\.sizeScales = structuredCloneSafe\(gameProfile\.sizeScales\)/, 'reset uses current game scales and preserves unrelated anchors');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(game, /const groundLift = Number\.isFinite\(authoredGroundOffset\) \? authoredGroundOffset : halfH/, 'real game uses replacement offset');
