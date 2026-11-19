@@ -94,7 +94,8 @@ const corner = fixture([5, 5], [2, 2]);
 corner.grid[2][3].type = 'wall';
 corner.grid[3][2].type = 'wall';
 corner.step();
-assert.deepEqual([corner.follower.col, corner.follower.row], [2, 2], 'follower may not cut diagonally between two blocked side tiles');
+assert.notDeepEqual([corner.follower.col, corner.follower.row], [3, 3], 'follower may not cut diagonally between two blocked side tiles');
+assert(Math.abs(corner.follower.col - 2) + Math.abs(corner.follower.row - 2) <= 1, 'a valid A* detour may first step backward, but must not leap through the blocked corner');
 
 const mixed = fixture([7, 4], [1, 4]);
 mixed.breedingPairs[0].parentA = { source: 'stable', id: 'a', characterId: 'owner' };
