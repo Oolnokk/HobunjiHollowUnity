@@ -1133,9 +1133,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   }
 
   const WILDERNESS_BLOSSOM_NATIVE = Object.freeze({ // The hunt grows on the same species already native to each generated region.
-    map_northern_cliffs: Object.freeze({ species:'crownedPine', blossomSize:0.16 }),
-    map_western_slope: Object.freeze({ species:'deadTree', blossomSize:0.15 }), // Winter-bare limbs develop only the small magical leaf bunches.
-    map_southern_cloud_forest: Object.freeze({ species:'shadewood', blossomSize:0.50 })
+    map_northern_cliffs: Object.freeze({ species:'crownedPine', blossomSize:0.30 }),
+    map_western_slope: Object.freeze({ species:'deadTree', blossomSize:0.29 }), // Winter-bare limbs develop only the small magical leaf bunches.
+    map_southern_cloud_forest: Object.freeze({ species:'shadewood', blossomSize:0.72 })
   });
   const wildernessBlossomPresets = new Map(); // Each zone/swatch pair reuses real native tree variant geometry.
   function buildWildernessBlossomTreeMesh(seed, blossomColorHex, zoneId = 'map_southern_cloud_forest') {
@@ -1147,7 +1147,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     if (!preset) {
       preset = Object.freeze({
         ...TREE_PRESETS[native.species], blossomColorHex:hex,
-        blossomSprigsPerBranch:2, blossomSize:native.blossomSize,
+        blossomSprigsPerBranch:4, blossomSize:native.blossomSize,
         climbBranchChance:0 // This is a permanent story locale, not a harvestable/climbable resource-tree registry entry.
       });
       wildernessBlossomPresets.set(key,preset);
@@ -1206,7 +1206,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
 
     const woodGeoms = [];
     const leafGeoms = [];
-    const blossomGeoms = []; // Tiny tinted leaf-plane flowers on the outermost branch segments of wilderness blossom trees.
+    const blossomGeoms = []; // Bright flower clusters stay on real native branch tips, without replacing the green canopy.
+    const blossomSources = []; // A bounded set of real branch-bloom positions feeds the festival's pooled falling-petal emitter.
+    let blossomSourceCount = 0; // Reservoir samples spread emitters across the entire tree instead of only its first branch tier.
     const vineGeoms = [];
     let climbBranchLocal = null; // Populated below for presets that opt into climbBranchChance (shadewood).
     let climbBranchGeom = null; // Kept as its OWN mesh (not merged into woodGeoms) so buildTreeInstance can show/hide it per tile instance — see the climb-branch block below.
@@ -1452,18 +1454,28 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       }
 
       if (preset.blossomColorHex && branchSegs.length) {
-        const perBranch = Math.max(1, Math.floor(preset.blossomSprigsPerBranch || 2));
+        const perBranch = Math.max(1, Math.floor(preset.blossomSprigsPerBranch || 4));
         for (const branch of branchSegs) {
           const axis = branch.b.clone().sub(branch.a);
           for (let i = 0; i < perBranch; i++) {
-            const pos = branch.a.clone().addScaledVector(axis,0.76 + 0.21 * (i + 0.5) / perBranch);
-            pos.y += 0.05 + rand() * 0.08; // Outer twigs, just above the leafy branch rather than a giant canopy-wide petal.
-            const bloomSize = (preset.blossomSize || 0.16) * (0.8 + rand() * 0.35);
-            for (let face = 0; face < 2; face++) {
-              const petal = unitLeaf.clone(); // Two crossed tiny planes make each sprig visible from more than one direction.
-              const yaw = rand() * Math.PI * 2 + face * Math.PI * 0.5;
-              const tilt = (rand() - 0.5) * 0.7;
-              const matrix = new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(new T.Euler(tilt,yaw,0)),new T.Vector3(bloomSize,bloomSize,1));
+            const along = 0.72 + 0.26 * (i + 0.5) / perBranch; // Edge-biased blooms leave the underlying branch silhouette recognizable.
+            const pos = branch.a.clone().addScaledVector(axis, along);
+            const bloomSize = (preset.blossomSize || 0.30) * (0.84 + rand() * 0.3);
+            const radial = new T.Vector3(pos.x,0,pos.z); // Push flowers out of opaque native leaf cards, not into the hidden canopy interior.
+            if(radial.lengthSq()>1e-6) pos.addScaledVector(radial.normalize(), bloomSize*(0.65+rand()*0.35));
+            pos.y += bloomSize * (0.6 + rand()*0.45) + 0.08;
+            blossomSourceCount++;
+            const source = [pos.x,pos.y,pos.z]; // Local coordinates are unchanged by per-instance yaw/scale and copied with the cached native variant.
+            if (blossomSources.length < 24) blossomSources.push(source);
+            else {
+              const replace = Math.floor(rand()*blossomSourceCount); // Deterministic reservoir sampling: at most 24 emit origins regardless of branch count.
+              if (replace < 24) blossomSources[replace] = source;
+            }
+            for (let face = 0; face < 3; face++) {
+              const petal = unitLeaf.clone(); // Three crossed petal cards preserve a flower silhouette from oblique gameplay angles.
+              const yaw = face * Math.PI/3 + rand()*0.35;
+              const tilt = (rand()-0.5)*0.65;
+              const matrix = new T.Matrix4().compose(pos,new T.Quaternion().setFromEuler(new T.Euler(tilt,yaw,0)),new T.Vector3(bloomSize,bloomSize*0.9,1));
               petal.applyMatrix4(matrix);
               blossomGeoms.push(petal);
             }
@@ -1699,6 +1711,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       petals.name='wilderness-blossom-sprigs';
       petals.userData.noOutline=true;
       group.add(petals); // Keep the actual leaf canopy last: other tree callers inspect the last mesh for canopy bounds.
+      petals.renderOrder = 2; // Draw the outer colored cluster after native cutout leaves without disabling world-depth occlusion.
     }
     if (leafGeoms.length) {
       const merged = mergeGeomsWithUV(leafGeoms);
@@ -1713,6 +1726,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
     unitLeaf.dispose();
 
+    if(blossomSources.length) group.userData.wildernessBlossomPetalSources = blossomSources; // The particles use real colored branch sites, not guessed canopy-height boxes.
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (climbBranchLocal) group.userData.climbBranchLocal = climbBranchLocal;
