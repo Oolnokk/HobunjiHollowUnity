@@ -445,14 +445,21 @@
       if(!legCache.has(key))legCache.set(key,routeBearing(layout,from,to,place));
       return legCache.get(key);
     };
+    const maxStartTiles=20; // Opening landmark to blossom distance, not the entrance to the riddle's first landmark.
+    const nearStarts=markers.filter(site=>{
+      const distance=Math.hypot(site.point.col-point.col,site.point.row-point.row);
+      return distance>=4&&distance<=maxStartTiles;
+    }); // A stamped replacement-debris site provides a short starting leg on generated maps.
     let best=null; // Compare short routes with at most one colored intermediate waypoint; never generate fictional landmarks.
-    for(const start of markers){
+    for(const start of (nearStarts.length?nearStarts:markers)){ // Preserve older/cached maps when no near-site has been stamped.
       if(Math.hypot(start.point.col-point.col,start.point.row-point.row)<4)continue;
       const direct=getLeg(start.point,point,targetPlace);
       const possibilities=[{legs:[direct],waypoint:null}];
       for(const waypoint of markers){
         if(waypoint===start || Math.hypot(waypoint.point.col-point.col,waypoint.point.row-point.row)<4
-          ||Math.hypot(waypoint.point.col-start.point.col,waypoint.point.row-start.point.row)<4)continue;
+          ||Math.hypot(waypoint.point.col-start.point.col,waypoint.point.row-start.point.row)<4
+          ||(nearStarts.length&&(Math.hypot(waypoint.point.col-start.point.col,waypoint.point.row-start.point.row)>maxStartTiles
+            ||Math.hypot(waypoint.point.col-point.col,waypoint.point.row-point.row)>maxStartTiles)))continue; // Avoid a remote detour after a local opening.
         const first=getLeg(start.point,waypoint.point,waypoint.name);
         const last=getLeg(waypoint.point,point,targetPlace);
         if(first.eventCount>1||last.eventCount>1)continue; // Split a genuine pair of river crossings at an actual marked stone.
@@ -483,7 +490,9 @@
     }else facts[0].value+='; then go '+route[0].description; // A direct leg belongs in the opening line.
     facts.push({kind:'blossom',value:goalName,source:'stamped-target-object'});
     return {facts,route,anchor:{name:anchorName,coordinate:{...marker.point},
-      sector:anchorSector,dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
+      distanceToBlossom:+Math.hypot(marker.point.col-point.col,marker.point.row-point.row).toFixed(2), // Mobile diagnostics verify the short first clue.
+      sector:anchorSector,dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,
+      waterCenter:marker.waterCenter?{...marker.waterCenter}:null,unique:true}};
   }
 
   function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false, terrainGenerationKey = '' } = {}) {
