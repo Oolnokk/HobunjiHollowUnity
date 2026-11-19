@@ -280,9 +280,13 @@ assert.equal(beginWaterReplayClip([sparseWaterMesh], [scope(6, 6)], true).size, 
 assert.equal(beginWaterReplayClip([floodWaterMesh], Array.from({ length: 13 }, (_, i) => scope(i, 4)), false).size, 0,
   'crowded owner overflow preserves legitimate flood tint');
 
-assert.match(heldRender, /distantTintHidden = hideObjects\(tintCovers\.filter\(cover => !nearbyTintCovers\.includes\(cover\)\)\)/,
+assert.match(heldRender, /const nearby = new Set\(nearbyTintCovers\)/,
+  'distant water exclusion uses a set instead of quadratic nearest-cover searches');
+assert.match(heldRender, /tintCovers\.filter\(cover => !nearby\.has\(cover\)\)/,
+  'all distant covers remain excluded without accidentally filtering nearby water');
+assert.match(heldRender, /distantTintHidden = distantTintCovers\.length \? hideObjects\(distantTintCovers\) : null/,
   'distant water is hidden from every selective depth and tint pass');
-assert.ok(heldRender.indexOf('distantTintHidden = hideObjects(', heldRender.indexOf('  function replaySelectiveHeldOverlay('))
+assert.ok(heldRender.indexOf('distantTintHidden = distantTintCovers.length ? hideObjects(distantTintCovers) : null', heldRender.indexOf('  function replaySelectiveHeldOverlay('))
   < heldRender.indexOf('const cutoutDepthMeshes =', heldRender.indexOf('  function replaySelectiveHeldOverlay(')),
   'far water cannot leave irregular alpha depth in the held/foot mask');
 assert.match(heldRender, /if \(waterReplayClipStates\) endWaterReplayClip\(waterReplayClipStates\)/,
