@@ -326,7 +326,8 @@ function objectAt(zoneId,targetScene,point){
   dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
    motif:marker?.userData?.witnessDye?.motifUrl||null,patternId:marker?.userData?.witnessDye?.patternId||null,
    engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
-   fullSurface:engraving?.userData?.furniturePattern?.slot==='wilderness-ruin-masonry',
+   patternScale:marker?.userData?.wildernessPatternSurfaces?.scale||null,
+   fullSurface:marker?.userData?.wildernessPatternSurfaces?.actual===marker?.userData?.wildernessPatternSurfaces?.expected,
    nonGlowing:!engraving?.userData?.engravingGlowMesh,
    runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
 }
