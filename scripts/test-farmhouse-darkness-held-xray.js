@@ -137,10 +137,14 @@ farmBareRock.layers.enable(3);
 assert.equal(xray.classify(farmBareRock).ground, false, 'material replacement cannot erase the rock-mound exclusion');
 const farmFoliage = mesh(exterior, { userData: {} }, { hobunjiFarmTile: true });
 assert.equal(xray.classify(farmFoliage).ground, false, 'farm-tagged non-terrain vegetation is still solid cover');
-const changedMaterialGround = mesh(exterior, { userData: { terrainKey: 'rock' } },
-  { hobunjiGroundSurface: true, terrainRenderChunk: true }); // A true spatial terrain floor retains its identity after a material swap.
+const changedMaterialGround = mesh(exterior, { userData: { terrainKey: 'tilled' } },
+  { hobunjiGroundSurface: true, terrainRenderChunk: true }); // A spatial ground floor remains walkable after a non-rock texture swap.
 assert.equal(xray.classify(changedMaterialGround).ground, true,
-  'spatial walkable terrain stays x-ray ground even after its material is replaced');
+  'spatial walkable terrain stays x-ray ground even after a tilled material swap');
+const explicitlyWalkableRock = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true, hobunjiGroundXray: true, terrainRenderChunk: true }); // Explicit floor authority is needed for rock-colored walkable ground.
+assert.equal(xray.classify(explicitlyWalkableRock).ground, true,
+  'a genuinely walkable rock-colored floor uses its authoritative x-ray tag rather than making every rock mound transparent');
 const unqualifiedRaisedGround = mesh(exterior, { userData: { terrainKey: 'rock' } },
   { hobunjiGroundSurface: true }); // A generic ground tag alone also appears on raised obstacles.
 assert.equal(xray.classify(unqualifiedRaisedGround).ground, false,

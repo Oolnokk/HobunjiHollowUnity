@@ -250,8 +250,10 @@
     const data = object.userData || {}; // Real farm tile or its live render-batch copy; incidental props and plants never inherit this exception.
     if (data.hobunjiFarmTile !== true && data.hobunjiFarmTileBatch !== true) return false;
     if (!hasLayer(object, MATERIAL_ID_LAYER) || data.farmLooseRockMound === true) return false; // Only tile slabs are eligible, not farm rock, trees or loose vegetation.
-    const materials = Array.isArray(object.material) ? object.material : [object.material]; // Jigsaw clones retain terrainKey even after texture replacement.
-    return materials.every(material => material?.userData?.terrainKey !== 'rock'); // Trench/raised/tilled/paddy surfaces are ground; rock mounds remain real cover.
+    const material = object.material; // The farm terrain renderer shares/clones one material per tile type.
+    return Array.isArray(material)
+      ? material.length > 0 && material.every(entry => !!entry && entry.userData?.terrainKey !== 'rock')
+      : !!material && material.userData?.terrainKey !== 'rock'; // No per-tile array allocation: ground includes trench/raised/paddy, not stone mounds.
   }
 
   function isWalkableGroundSurface(object) {
