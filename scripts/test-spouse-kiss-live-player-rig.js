@@ -85,13 +85,14 @@ function createLegs(root, height) {
 }
 const playerLegs = createLegs(player, 1.1);
 const npcLegs = createLegs(walkerRoot, .92);
+let livePlayerLegs = playerLegs; // Allows the posterior-hop regression to use the production IK handle.
 const walker = { rec: { id: 'leaf' }, root: walkerRoot, avatarGroup: npcModel,
   legs: npcLegs, area: 'farm', _npcRunLeanPivot: npcModel }; // NPC still uses its real, separately positioned root.
 let update = null, lastRenderHook = null, renderCount = 0, hookReleased = 0, buffTriggers = 0;
 let poseLockActive = false; // Mirrored from CharacterActionLocks.acquire/release.
 const composer = {
   getPlayerMesh() { return player; },
-  getPlayerLegHandle() { return playerLegs; },
+  getPlayerLegHandle() { return livePlayerLegs; },
   clearChannel() {},
   addPostHeadAimHook(cb) {
     lastRenderHook = cb;
@@ -291,4 +292,66 @@ assert.equal(kiss.stop('reverse-ended'), false, 'natural completion already perf
 assert(!poseLockActive && lastRenderHook === null && hookReleased === previousHookReleases + 1,
   'reverse-height completion releases exactly one renderer owner regardless of preceding interrupted sessions');
 assert.equal(playerHands.provider, null, 'short-player hands regain tool/idle ownership');
-console.log('Spouse kiss LIVE Three.js r128 player rig PASS: BOTH height orders, full interleaved 2.4s clips, late hand sentinel, render-time takeover rejection, contact, knees, hands, pants, camera-independent facing/head, late-render ownership, takeover and restoration.');
+
+// Run the actual procedural bones for a couple whose height gap triggers the hop.
+const legsContext = { // Leave textures pending in this geometry-only fixture.
+  window, THREE, console, URL, location: { href: 'http://localhost/index.html' },
+  document: { currentScript: null }, Image: class {},
+};
+for (const file of ['leg-bones', 'procedural-leg-animation']) {
+  vm.runInNewContext(fs.readFileSync(`docs/js/${file}.js`, 'utf8'), legsContext, { filename: `${file}.js` });
+}
+player.remove(playerLegs.group);
+playerModel.userData.portraitModelHeight = .55;
+playerNeck.position.y = .32;
+const hopLegs = window.ProceduralLegAnimation.attach(THREE, player, {
+  speciesId: 'human', modelHeight: .55, modelWidth: .33, handAttachY: .176,
+}); // Live bones can expose a stale contact even when the ordinary root has recovered.
+livePlayerLegs = hopLegs;
+npcLegs.getRestStance = function () {
+  const [left, right] = this.motionAnatomy(); // Expose the tall fixture's authored posterior anchors.
+  return { left, right };
+};
+const leftFoot = hopLegs.group.getObjectByName('left_foot'); // Actual foot node whose paired contact cancels world rotation.
+const groundedRotation = leftFoot.quaternion.clone(); // Baseline local foot facing before any kiss writes.
+function startHop() {
+  assert(kiss.start(walker), 'posterior-hop fixture starts');
+  for (let frame = 0; frame < 16; frame++) update({ deltaMs: 70 });
+  assert(kiss.diagnostics().session?.height.shorterPosteriorGrip, 'short player really hops onto the spouse');
+  assert(hopLegs.hasExternalFootTargets(), 'both feet have live world anchors mid-kiss');
+  assert(leftFoot.quaternion.angleTo(groundedRotation) > .1, 'hop actually changes the foot orientation');
+}
+
+startHop();
+for (let frame = 0; frame < 17; frame++) update({ deltaMs: 70 });
+assert(kiss.diagnostics().active, 'the hop lands just before the end of the clip');
+assert(!hopLegs.hasExternalFootTargets(), 'normal landing releases the kiss targets');
+assert(leftFoot.quaternion.angleTo(groundedRotation) < 1e-7, 'normal landing restores foot facing immediately');
+update({ deltaMs: 70 });
+update({ deltaMs: 70 });
+assert.equal(kiss.diagnostics().lastResult?.reason, 'completed');
+
+startHop();
+kiss.stop('canceled');
+assert(!hopLegs.hasExternalFootTargets(), 'mid-hop cancellation releases both feet');
+assert(leftFoot.quaternion.angleTo(groundedRotation) < 1e-7, 'cancel restores grounded foot facing immediately');
+
+startHop();
+const teleported = player.position.clone().add(new THREE.Vector3(.2, 0, -.1)); // A later root writer displaces the actor while the old targets are live.
+player.position.copy(teleported);
+update({ deltaMs: 70 });
+assert.equal(kiss.diagnostics().lastResult?.reason, 'pose-owner-taken-over');
+assert.equal(kiss.diagnostics().lastResult?.releasedFootTargets, true);
+assert(player.position.distanceTo(teleported) < 1e-8, 'cleanup preserves the new root position');
+assert(!hopLegs.hasExternalFootTargets(), 'root takeover cannot strand world-space foot targets');
+hopLegs.update(1 / 60, 1, false, null);
+assert.equal(hopLegs.getStandingPoseDebug().motionMode, 'walk', 'ordinary gait takes ownership on the next tick');
+player.position.set(0, 0, 0);
+
+startHop();
+const replacementTargets = { left: new THREE.Vector3(-.1, 0, 0), right: new THREE.Vector3(.1, 0, 0) }; // A different action now owns these world contacts.
+hopLegs.setExternalFootTargets(replacementTargets);
+kiss.stop('new-foot-owner');
+assert(hopLegs.hasExternalFootTargets(), 'kiss cleanup preserves a successor’s foot targets');
+assert(hopLegs.releaseExternalFootTargets(replacementTargets), 'the newer action still owns both contacts');
+console.log('Spouse kiss LIVE Three.js r128 player rig PASS: both height orders, late render ownership, and foot recovery after landing, cancellation, and takeover.');
