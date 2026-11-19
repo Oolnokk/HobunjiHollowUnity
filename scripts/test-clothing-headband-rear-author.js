@@ -66,4 +66,26 @@ assert.equal(layers[1].canvas.id,'game-flipped painted rear','Rear pixels are fl
 assert.equal(layers[0].canvas.id,'fitted front','The existing front headband remains untouched');
 assert.equal(fitted({headband:null}).length,1,'Without painted back art, legacy single-layer exports remain unchanged');
 
+// The installable ZIP must update the actual target config, not merely supply a loose rear PNG.
+const cfg={parts:{head:{layers:{front:{
+  image:{url:'./assets/cosmetics/clothes/hat/headband.png'},layerRole:'base'
+}}}},speciesVariants:{}};
+const garment={id:'basic_headband',slot:'hat',cfg,configPath:'config/cosmetics/basic_headband.json'};
+const archive=new Function('R','HEAD_SLOTS','garmentRecord','patchNodeAtPath','safeName',
+  extract('function archiveAssetPath(', 'async function exportFittedGarment()')+'\nreturn buildFittedLayerArchivePlan;')(
+  {garments:[garment]},new Set(['hat','hood']),()=>garment,
+  (node,path)=>path.reduce((part,key)=>part?.[key],node),
+  value=>String(value).replace(/[^a-z0-9_-]/gi,'_')
+);
+const plan=archive([
+  {name:'head.layers.front',path:['parts','head','layers','front'],url:'./assets/cosmetics/clothes/hat/headband.png',view:'front',role:'base'},
+  {name:'head.layers.front.behindImage',path:['parts','head','layers','front','behindImage'],url:'./assets/cosmetics/clothes/hat/headband.png',view:'behind',role:'base'}
+],{sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'kenkari',targetGender:'male'});
+const installed=plan.config?.speciesVariants?.kenkari_male?.parts?.head?.layers?.front;
+assert(plan.configPath&&plan.files.length===2,'Front plus rear must generate an installable two-image config ZIP');
+assert(installed?.behindImage?.url&&installed?.image?.url&&installed.behindImage.url!==installed.image.url,
+  'Authored rear must receive its own distinct file and behindImage config URL');
+assert(installed.behindImage.url==='./'+plan.files[1].outputName,
+  'The new behindImage config entry must point to the generated second PNG');
+
 console.log('OK: reversible seven-point curve flips, canonical backplane reference, persistent rear PNG and behindImage export');
