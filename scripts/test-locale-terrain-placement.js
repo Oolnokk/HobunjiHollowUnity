@@ -164,5 +164,15 @@ assert.ok(pairedStartSites.every((site,i)=>{
   const tree=sharedBlossomZone.localeInstances[i].objects[0];
   return Math.hypot(site.col-tree.x,site.row-tree.y)<=18;
 }),'both blossom clues are independently anchored near their actual tree');
+assert.ok(Math.hypot(pairedStartSites[0].col-pairedStartSites[1].col,
+  pairedStartSites[0].row-pairedStartSites[1].row)>=5,
+  'same-zone patterned debris has enough separation to avoid physically overlapping inscriptions');
+for(const [i,site] of pairedStartSites.entries()) {
+  for(const [j,instance] of sharedBlossomZone.localeInstances.entries()) {
+    if(i===j)continue;
+    assert.ok(instance.objects.every(object=>Math.abs(object.x-site.col)>1||Math.abs(object.y-site.row)>1),
+      'a subsequently stamped story locale cannot cover another blossom starting marker');
+  }
+}
 
 console.log('locale-terrain-placement tests passed');
