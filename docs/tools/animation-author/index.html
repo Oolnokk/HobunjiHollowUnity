@@ -15642,6 +15642,16 @@ clearAnimationActors = function(...args) {
     const oldAddV1554 = addCreatureAnimationActor; // Native species dimensions, compositing and head rigs stay unchanged.
     addCreatureAnimationActor = async function(kind, frame = 'idle', options = {}) {
       const actor = await oldAddV1554(kind, frame, options);
+      const idleCanvas = actor.model?.userData?.rigIdleCanvas; // Already generated once by the existing rig/defaults builder, not recomposed per frame.
+      if (idleCanvas && actor.shoulderRestModelDimensions) {
+        const bottom = parityV1554.opaqueIdleBottomRatio(idleCanvas); // Same alpha=255 foot scan as game's CreatureGroundAnchor.
+        const nativeHeight = actor.shoulderRestModelDimensions.modelHeight;
+        const paddingLift = -nativeHeight * (1 - bottom); // Identical to CreatureGroundAnchor.planeOffset; only shifts rendered art, not floor/root/rig anchors.
+        actor.model.position.y = paddingLift;
+        actor.model.userData.creatureOpaqueFootRatio = bottom; // Visible debug value can be compared without developer tools.
+        actor.model.userData.creatureOpaquePaddingCorrectionY = paddingLift;
+        actor.model.updateMatrixWorld(true);
+      }
       applyCreatureSizeClass(actor, actor.creatureSizeClass, { announce: false, render: false });
       return actor;
     };
@@ -15693,7 +15703,9 @@ clearAnimationActors = function(...args) {
       const detail = document.createElement('div');
       detail.className = 'maaSmall';
       detail.style.whiteSpace = 'pre-line';
-      detail.textContent = rows.join('\n');
+      detail.textContent = rows.join('\n') + '\nIdle opaque bottom: '
+        + Number(actor.model?.userData?.creatureOpaqueFootRatio ?? 1).toFixed(4)
+        + ' · art padding shift: ' + Number(actor.model?.userData?.creatureOpaquePaddingCorrectionY ?? 0).toFixed(4);
       card.append(title, detail);
       const gameProfile = parityV1554.canonicalCreatures()?.[actor.source.kind]; // Live game baseline for the selected species, not a historical editor snapshot.
       if (gameProfile) {
