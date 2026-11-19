@@ -222,10 +222,11 @@
     return null;
   }
 
-  function notify() {
+  function notify({ refreshRecovery = true } = {}) {
     const status = getStatus();
+    const change = { refreshRecovery }; // Save-status updates can skip the recovery manager’s full disk scan.
     for (const listener of _listeners) {
-      try { listener(status); } catch {}
+      try { listener(status, change); } catch {}
     }
   }
 
@@ -935,6 +936,7 @@
       return getStatus();
     }
 
+    const wasArmed = _autoSyncArmed; // The first save that arms a folder still imports its recovery history.
     try {
       const runtime = window.HobunjiRuntimeSave; // All ordinary folder writes, including timers and Settings, capture current gameplay without first writing browser storage.
       if (!snapshot && window.__hobunjiGameStarted === true && runtime?.isReady?.() && typeof runtime.captureSnapshot === 'function') {
@@ -970,7 +972,7 @@
           _lastBrowserMirrorWarning = 'Primary folder unchanged; newer browser changes made during the disk check were queued for saving.';
           scheduleChangeSync(); // Save the new data instead of treating the stale snapshot as the last version.
         }
-        notify();
+        notify({ refreshRecovery: false });
         return getStatus(); // Do not churn manifest, canonical files, browser mirrors or recovery checkpoints.
       }
 
@@ -1106,7 +1108,9 @@
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
     }
-    notify();
+    // The checkpoint writer already mirrored the affected slots. Reconcile the full history
+    // when a folder is first armed, a restore completes, or a write may have failed.
+    notify({ refreshRecovery: !wasArmed || recoveryKind === 'restore' || Boolean(_lastError) });
     return getStatus();
   }
 
@@ -1210,7 +1214,7 @@
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
     }
-    notify();
+    notify({ refreshRecovery: Boolean(_lastError) }); // This targeted write changes no recovery checkpoint.
     return getStatus();
   }
 

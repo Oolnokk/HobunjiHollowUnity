@@ -13,6 +13,20 @@
   scene. The fade test verifies zero opacity writes across 60 settled frames, material restoration
   and chunk teardown's cleanup method. No physical-device frame-time measurement yet.
 
+## 18 Nov 2026: redundant primary-folder recovery scans
+
+Routine folder-save status notifications used to trigger a second sweep of all six
+recovery slots. Each populated slot was read and parsed from disk, then mirrored to
+browser storage again. Successful saves already mirror the affected slots as part
+of the checkpoint write. Unchanged autosaves and lock-only writes touch no recovery
+slot. These operations now publish status without the extra sweep. First arm,
+folder load, restore and failure paths can still reconcile history. Recovery UI
+refreshes read the folder directly, including changes made by another device.
+
+The checkpoint harness recorded zero slot reads across 60 routine notifications
+and six reads for one explicit refresh, which picked up an external checkpoint.
+Save Diagnostics exposes recovery scan counts under `folderRecoveryReads`.
+
 ## 18 Nov 2026: combat afterimages now opt-in, off by default
 
 A follow-up to the colored motion-smear experiment prioritizes runtime smoothness over an
