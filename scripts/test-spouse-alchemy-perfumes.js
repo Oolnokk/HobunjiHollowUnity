@@ -95,7 +95,7 @@ const recipes = [ // Unique three-source reactions, one per supported kiss stat 
   { id: 'perfumeOfDevotion', keys: ['palehartLichen', 'cloudberryVine', 'silverfernFrond'], stat: 'positiveFavor' },
   { id: 'perfumeOfInsight', keys: ['mistpetalBloom', 'cloudberryVine', 'graniteThistle'], stat: 'perception' },
 ];
-assert.equal(Object.keys(alchemy.RECIPE_DEFS).length, 49, '36 original alchemy reactions and 13 spouse perfumes are registered');
+assert.equal(Object.keys(alchemy.RECIPE_DEFS).length, 50, '36 original alchemy reactions, 13 spouse perfumes, and Potion of Fertility are registered');
 const alchemyGetters = { // Existing potion getter paths used by Combat, movement, resource costs, reputation and perception.
   outgoingDamage: 'getOutgoingDamageMultiplier', footingDamage: 'getFootingDamageMultiplier',
   attackSpeed: 'getAttackSpeedMultiplier', movementSpeed: 'getMovementSpeedMultiplier',

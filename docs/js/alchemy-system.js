@@ -55,6 +55,7 @@
     perfumeOfDevotion: recipe('perfumeOfDevotion', 'blood', 'lighten', 'wind', { label: 'Devotion Perfume', icon: '💝', useMode: 'gift', application: 'spousePerfume', kissStat: 'positiveFavor', kissEffectLabel: 'Positive Favor gains', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase positive favor gains until a different perfume is gifted.' }),
     perfumeOfInsight: recipe('perfumeOfInsight', 'senses', 'lighten', 'earth', { label: 'Insight Perfume', icon: '👁️', useMode: 'gift', application: 'spousePerfume', kissStat: 'perception', kissEffectLabel: 'Perception', kissBonus: 0.10, desc: 'Gift to your spouse. Kisses increase perception until a different perfume is gifted.' }),
 
+    potionOfFertility: recipe('potionOfFertility', 'blood', 'lighten', 'water', { brewWeight: 0.1, label: 'Potion of Fertility', icon: '🥚', useMode: 'livestock', application: 'reduceBreedingDays', daysReduced: 1, desc: 'Reduces an active breeding pair’s remaining time by one in-game day. Administer to either parent or through the Farm tab.' }),
     breedingGigantism: recipe('breedingGigantism', 'bones', 'greaten', 'water', { brewWeight: 0.1, label: 'Breeding Potion of Gigantism', icon: '🐘', useMode: 'livestock', application: 'nextOffspringSize', sizeShift: 1, desc: "Raises the affected animal's next offspring by one Size class." }),
     potionOfPoise: recipe('potionOfPoise', 'bones', 'greaten', 'earth', { label: 'Potion of Poise', icon: '🗿', useMode: 'drink', application: 'buff', stat: 'maxFooting', magnitude: 0.35, durationS: 90, desc: 'Temporarily increases maximum Footing.' }),
     potionOfImpact: recipe('potionOfImpact', 'bones', 'greaten', 'fire', { label: 'Potion of Impact', icon: '💥', useMode: 'drink', application: 'buff', stat: 'footingDamage', magnitude: 1.5, durationS: 15, desc: 'Enormously increases knockback and Footing damage briefly.' }),
@@ -138,6 +139,7 @@
     perfumeOfThickblood: ['palehartLichen', 'mistpetalBloom', 'goldbrushWeed'],
     perfumeOfDevotion: ['palehartLichen', 'silverfernFrond', 'windrootBulb'],
     perfumeOfInsight: ['cloudberryVine', 'goldbrushWeed', 'larkspurTuft'],
+    potionOfFertility: ['palehartLichen', 'cloudberryVine', 'mireLotusBud'],
     breedingGigantism: ['mistpetalBloom', 'cloudberryVine', 'larkspurTuft'],
     potionOfPoise: ['graniteThistle', 'silverfernFrond', 'goldbrushWeed'],
     potionOfImpact: ['frostcapMoss', 'sunbarleyHead', 'muckmelonRind'],
