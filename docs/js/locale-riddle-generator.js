@@ -461,8 +461,9 @@
       for(const plan of possibilities){
         const complex=plan.legs.filter(leg=>leg.eventCount>1).length;
         const length=plan.legs.reduce((sum,leg)=>sum+Math.hypot(leg.to.col-leg.from.col,leg.to.row-leg.from.row),0);
-        const score=complex*100000+(start.kind==='riverConfluence'?-16:start.kind==='riverEnd'?-8:start.kind==='witnessStone'?0:100)+
-          (plan.waypoint?8:0)+length*.01; // Prefer a single-event leg, then the original witness start, then concise verses.
+        const excessEvents=plan.legs.reduce((sum,leg)=>sum+Math.max(0,leg.eventCount-1),0); // Break ties between complex routes by the number of extra verified obstacles, not landmark type.
+        const score=complex*100000+excessEvents*1000+(start.kind==='riverConfluence'?-16:start.kind==='riverEnd'?-8:start.kind==='witnessStone'?0:100)+
+          (plan.waypoint?8:0)+length*.01; // Prefer simple terrain first, then the identifiable river or witness-stone starting point.
         if(!best||score<best.score)best={...plan,start,score};
       }
     }
