@@ -91,26 +91,80 @@ function editorFunction(start,end,globals,values){
   assert(a>=0&&b>a,'Missing editor helper '+start);
   return new Function(...globals,core.slice(a,b)+'\nreturn '+start.match(/^function ([^(]+)/)[1]+';')(...values);
 }
-const ui={sourceSpecies:{value:'mao-ao'},sourceGender:{value:'male'},garment:{value:'headband'}};
-const legacyKey='headwear::kenkari_male::headband';
-const legacy={enabled:true,source:original.map(p=>({...p})),target:original.map(p=>({...p}))};
-const state={headbandSplines:{[legacyKey]:legacy}};
+const ui={
+  species:{value:'kenkari'},gender:{value:'male'},
+  sourceSpecies:{value:'mao-ao'},sourceGender:{value:'male'},garment:{value:'headband'}
+};
+const targetKey=editorFunction('function targetKey(species,gender)','function ensureTargetData(',
+  ['fitRegion','E'],[()=>'headwear',ui]);
+const contourSelectionKey=editorFunction('function contourSelectionKey()','function currentContourRecord(',
+  ['targetKey','E'],[targetKey,ui]);
 const key=editorFunction('function headbandSelectionKey()','function traceHeadbandCanvas(',
-  ['E','contourSelectionKey'],[ui,()=>legacyKey]);
+  ['contourSelectionKey'],[contourSelectionKey]);
+assert.equal(key(),contourSelectionKey(),'Do not append redundant donor data already present in targetKey');
+const canonicalKey=key(),duplicateKey=canonicalKey+'::donor::mao-ao_male';
+const legacy={enabled:true,source:original.map(p=>({...p})),target:original.map(p=>({...p}))};
+const newer=JSON.parse(JSON.stringify(legacy));newer.target[0].y=.42;
+const state={headbandSplines:{[canonicalKey]:legacy,[duplicateKey]:newer}};
 const getRecord=editorFunction('function currentHeadbandRecord()','function currentHeadbandViewRecord()',
-  ['R','A','fitRegion','headbandSelectionKey','contourSelectionKey','window','clone',
+  ['R','A','fitRegion','headbandSelectionKey','window','clone',
     'autoHeadbandSourceNodes','autoHeadbandTargetNodes','E'],
-  [{body:{width,height},cloth:{}},state,()=>'headwear',key,()=>legacyKey,host.window,
+  [{body:{width,height},cloth:{}},state,()=>'headwear',key,host.window,
     value=>JSON.parse(JSON.stringify(value)),()=>original.map(p=>({...p})),()=>original.map(p=>({...p})),ui]);
 const donorOne=getRecord();
-assert.notStrictEqual(donorOne,legacy,'Existing target-only curves are migrated by copy, not overwritten');
+near(donorOne.target[0].y,.42,'Old redundant donor-suffix edits take priority during migration');
+assert(!state.headbandSplines[duplicateKey],'Duplicate donor-specific entry removed after migration');
 donorOne.target[0].y=.72;
 ui.sourceSpecies.value='tletingan';
+assert(key().includes('from::tletingan_male'),'Existing canonical targetKey already incorporates non-default donors');
 const donorTwo=getRecord();
-assert.notStrictEqual(donorTwo,donorOne,'Another donor species receives an independent curve record');
-near(donorTwo.target[0].y,legacy.target[0].y,'New donor starts from legacy mapping rather than other donor edits');
-assert.notEqual(key().indexOf('tletingan'),-1,'Persistence key contains the source species');
+assert.notStrictEqual(donorTwo,donorOne,'Different donors must never share a curve object');
+near(donorTwo.target[0].y,original[0].y,'New donor auto-traces fresh geometry, rather than copying another donor');
 ui.sourceSpecies.value='mao-ao';
-assert.strictEqual(getRecord(),donorOne,'Switching donors back restores its separately authored settings');
+assert.strictEqual(getRecord(),donorOne,'Switching donors back restores its independently authored mapping');
+
+// Numeric fields must not rewrite a user's in-progress negative or fractional input.
+const names=['X','Y','ScaleX','ScaleY','Rotation'];
+const makeControl=()=>({value:'0',disabled:false,min:'-120',max:'120'});
+const controlE={headbandWholeDrag:makeControl(),headbandWholeReset:makeControl(),
+  headbandWholeBake:makeControl(),headbandWholeStatus:{textContent:''}};
+for(const name of names){
+  controlE['headbandWhole'+name]=makeControl();
+  controlE['headbandWhole'+name+'Number']=makeControl();
+}
+const numeric=controlE.headbandWholeXNumber;
+const selectedWhole={curve:'target',entry:{settings:{x:-12.25,y:5,scaleX:1.25,scaleY:.85,rotation:9}}};
+const doc={activeElement:numeric};
+const sync=editorFunction('function syncHeadbandWholeControls()','async function hydrateHeadbandRearArt()',
+  ['E','R','selectedHeadbandWhole','headbandView','document'],
+  [controlE,{body:{width,height},headbandWholeWarning:''},()=>selectedWhole,()=>'front',doc]);
+numeric.value='-12.';
+sync();
+assert.equal(numeric.value,'-12.','Focused fractional input retains the typed text and caret');
+assert.equal(controlE.headbandWholeX.value,'-12.25','Companion slider still tracks the actual geometric setting');
+doc.activeElement=null;sync();
+assert.equal(numeric.value,'-12.25','Blurred numeric control shows exact committed value');
+// The isolated handler must group numeric keystrokes instead of committing on each keyup.
+const eventMap=new Map();
+for(const name of names)for(const key of [name,name+'Number']){
+  const control=controlE['headbandWhole'+key];
+  control.addEventListener=(event,callback)=>{
+    const listeners=eventMap.get(control)||{};
+    (listeners[event] ||= []).push(callback);
+    eventMap.set(control,listeners);
+  };
+}
+const begin=core.indexOf('const wholeBindings=['),finish=core.indexOf('E.headbandWholeReset.onclick=',begin);
+assert(begin>=0&&finish>begin,'Whole controls event bindings exist');
+const changes=[];let commits=0;
+new Function('E','changeHeadbandWhole','finishHeadbandWholeGesture',
+  core.slice(begin,finish))(controlE,(field,value)=>changes.push([field,value]),()=>{commits++});
+const listeners=eventMap.get(numeric);
+assert(!listeners.keyup,'Number input must not commit and create undo history after every digit');
+numeric.value='-1';listeners.input[0]();numeric.value='-12.5';listeners.input[0]();
+assert.equal(commits,0,'Multi-digit numeric edits remain part of one continuous gesture');
+assert.equal(changes.at(-1)[1],-12.5,'Live numeric input edits still change the model');
+listeners.change[0]();
+assert.equal(commits,1,'Numeric editing commits once when the number is finalized');
 
 console.log('OK: whole-spline position, independent scales, rotation, constraints, save/undo integration and controls');
