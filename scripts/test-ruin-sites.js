@@ -100,11 +100,22 @@ async function testEntranceCollision() {
       this.rotation = {};
       this.scale = {};
       this.userData = {};
+      this.children = []; // Mirror the live Group hierarchy so culling traverses child meshes instead of an inert stub.
     }
-    add(group) { group.parent = this; }
-    remove(group) { group.parent = null; }
-    traverse() {}
+    add(group) { group.parent = this; this.children.push(group); }
+    remove(group) { this.children = this.children.filter(item => item !== group); group.parent = null; }
+    traverse(fn) { fn(this); this.children.forEach(child => child.traverse(fn)); }
     updateMatrixWorld() {}
+  }
+  class StaticRuinPart {
+    constructor() {
+      this.isMesh = true; this.userData = {}; this.frustumCulled = false; // Deliberately start with culling off to prove the ruin builder re-enables it.
+      this.geometry = {
+        getAttribute: name => name === 'position' ? { count:8 } : null,
+        computeBoundingSphere() { this.boundingSphere = { radius:1 }; }, // Authoring bounds are prepared only once.
+      };
+    }
+    traverse(fn) { fn(this); }
   }
   class Box3 {
     setFromObject() { return this; }
@@ -113,7 +124,9 @@ async function testEntranceCollision() {
   Object.assign(world, {
     THREE: { Group, Box3 },
     RuinSiteLocales: RL,
-    AuthoredFurniture: { load: () => Promise.resolve(), peek: key => key === 'ruinTargetPillar', buildGroup: () => new Group() },
+    AuthoredFurniture: { load: () => Promise.resolve(), peek: key => key === 'ruinTargetPillar', buildGroup: () => {
+      const group = new Group(); group.add(new StaticRuinPart()); return group; // Every authored target includes a real visual descendant.
+    } },
   });
   const context = vm.createContext({ window: world, THREE: world.THREE }); // Only pillar pieces are needed for this collision fixture.
   for (const file of ['area-footprint-blockers', 'ruin-sites']) vm.runInContext(read(`docs/js/${file}.js`), context);
@@ -132,6 +145,10 @@ async function testEntranceCollision() {
   }] });
   sites.buildZoneMeshes(scene, [], zone);
   await new Promise(resolve => setImmediate(resolve));
+  const ruinParts=[]; scene.traverse(node => { if (node.isMesh) ruinParts.push(node); }); // Inspect real built descendants after the async ruin-site scene publish.
+  assert.ok(ruinParts.length>0,'ruin site generated authored visual parts');
+  assert.ok(ruinParts.every(node=>node.frustumCulled===true&&node.userData.hobunjiWildernessDistanceCull===true
+    &&node.geometry.boundingSphere?.radius===1),'all authored ruin parts re-enable camera frustum culling and retain prepared bounds');
   assert.equal(blockers.blocksBox(zone, 3.9, 4.2), true, 'a pillar spanning a cell boundary blocks a point on the far side');
   assert.equal(blockers.blocksBox(zone, 3.6, 4.3, 0.12), true, 'a body overlap survives the cell boundary');
   assert.equal(blockers.blocksBox(zone, 4.1, 4.3, 0, 3), false, 'height still clears the pillar for projectiles');
