@@ -139,7 +139,7 @@
     perfumeOfThickblood: ['palehartLichen', 'mistpetalBloom', 'goldbrushWeed'],
     perfumeOfDevotion: ['palehartLichen', 'silverfernFrond', 'windrootBulb'],
     perfumeOfInsight: ['cloudberryVine', 'goldbrushWeed', 'larkspurTuft'],
-    potionOfFertility: ['hazewortSprig', 'cloudberryVine', 'frostcapMoss'],
+    potionOfFertility: ['palehartLichen', 'cloudberryVine', 'mireLotusBud'],
     breedingGigantism: ['mistpetalBloom', 'cloudberryVine', 'larkspurTuft'],
     potionOfPoise: ['graniteThistle', 'silverfernFrond', 'goldbrushWeed'],
     potionOfImpact: ['frostcapMoss', 'sunbarleyHead', 'muckmelonRind'],
