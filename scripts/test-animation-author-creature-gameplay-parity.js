@@ -97,6 +97,17 @@ pixels[(2 * 4 + 1) * 4 + 3] = 255;
 pixels[(3 * 4 + 1) * 4 + 3] = 200; // Antialiased fringe is deliberately ignored by the game.
 const idle = { width: 4, height: 4, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
 assert.equal(parity.opaqueIdleBottomRatio(idle), .75, 'bottommost fully opaque row is the gameplay foot baseline');
+for (const size of ['small', 'medium', 'large']) {
+  const worldHeight = 1.2;
+  const layout = parity.placement(master.grehlr, size, worldHeight);
+  const bottomPixel = parity.opaqueIdleBottomRatio(idle);
+  const nativePadding = -worldHeight * (1 - bottomPixel);
+  const visibleBottom = worldHeight * (0.5 - bottomPixel);
+  const editorFoot = layout.groundLift + nativePadding * layout.heightScale + visibleBottom * layout.heightScale;
+  const gameFoot = layout.groundLift + (nativePadding + visibleBottom) * layout.heightScale;
+  assert.equal(editorFoot, gameFoot, size + ' editor art grounding must match group-scaled gameplay');
+}
+
 assert.equal(parity.opaqueIdleBottomRatio({ width: 0, height: 0 }), 1, 'missing idle source remains unshifted');
 
 const index = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
@@ -119,7 +130,12 @@ assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue fl
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
 assert.match(index, /window\.MultiAvatarAnimationAuthor\.creatureGameplayParity = parityReadoutV1554/, 'mobile parity diagnostic is available');
 assert.match(index, /parityV1554\.opaqueIdleBottomRatio\(idleCanvas\)/, 'editor actually applies alpha foot scanning');
-assert.match(index, /actor\.model\.position\.y = paddingLift/, 'alpha padding moves rendered art without changing ground/anchor coordinates');
+assert.match(index, /actor\.model\.position\.y = scaledPadding/, 'class-specific height scales the alpha-padding correction without changing the rig root');
+assert.match(index, /creatureOpaquePaddingNativeY \* layout\.heightScale/, 'per-size padding uses gameplay Y multiplier');
+assert.match(index, /shoulderGripPosePreviewControllerV1549\?\.syncPlaneScale\?\.\(\)/, 'perched pose updates after the size-class ground change');
+const shoulderPose = fs.readFileSync('docs/js/animation-author-shoulder-pose-preview.js', 'utf8');
+assert.match(shoulderPose, /posedRoot\.position\.copy\(sourceRoot\.position\)/,
+  'cached perched avatar copies the scaled padding correction from its source');
 assert.match(index, /Use game size and ground values/, 'on-device custom-profile recovery is available');
 assert.match(index, /parityV1554\.gameplayProfileForKind\(kind\)/, 'new animal variants receive game species fallback before actor creation');
 assert.match(index, /profile\.sizeScales = structuredCloneSafe\(gameProfile\.sizeScales\)/, 'reset uses current game scales and preserves unrelated anchors');
