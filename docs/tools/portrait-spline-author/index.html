@@ -141,6 +141,7 @@ const makeRig=(providedPoints)=>{const points=providedPoints||[{u:.5,v:.28,depth
  rearOffset:{u:0,v:0},width:.1,windResponse:1,tipFollow:.58,segmentsX:24,segmentsY:32};};
 let rig=makeRig(),cosmetic={},loadedName='cosmetic.json',selectedKnot=1,selectedSegment=0,direction='right',mode='move',maskTool='paint';
 let images={front:null,rear:null,hood:null,head:null,headRear:null,character:null,characterRear:null};
+const manualImageVersion={front:0,rear:0,hood:0,head:0}; // Each image source tracks overrides so slower indexed/decode tasks cannot overwrite mobile uploads.
 let previewPointer=null,lastPaint=null,overlapBrush='bend'; // One captured pointer owns each knot drag or mask stroke.
 let canonicalPortraitPromise=null,canonicalPortraitGeneration=0,canonicalPortraitError=null,canonicalProfile=null; // Reuses Pants Rig Author's species/gender portrait registry and naked-character render path.
 let hoodOption=null,hoodPortrait=null,hoodRenderGeneration=0,lastHoodRequest=null; // Cache canonical hood bakes independently of wind and knot edits.
@@ -163,11 +164,11 @@ $('json').addEventListener('input',()=>{jsonHasUnappliedEdits=true;syncRigJson()
 function message(value){$('catalogStatus').textContent=value;} // Source loading and error messages must remain visible alongside pose diagnostics.
 function imageInput(id,key){$(id).addEventListener('change',async e=>{
   const file=e.target.files?.[0];if(!file)return;
-  const url=URL.createObjectURL(file),img=new Image(),generation=assetGeneration; // A delayed manual image decode must not replace a different indexed cosmetic.
-  img.onload=()=>{URL.revokeObjectURL(url);if(generation!==assetGeneration)return;
+  const url=URL.createObjectURL(file),img=new Image(),generation=assetGeneration,version=++manualImageVersion[key]; // Reject stale decodes and honor a manual PNG over an in-flight indexed request.
+  img.onload=()=>{URL.revokeObjectURL(url);if(generation!==assetGeneration||version!==manualImageVersion[key])return;
     if(key==='head')headGeneration++;images[key]=img;
     markRegionDirty();maybeInitializeMasks();render();message('Loaded '+file.name+' ('+img.width+' × '+img.height+').');};
-  img.onerror=()=>{URL.revokeObjectURL(url);if(generation===assetGeneration)message('Could not decode '+file.name);};
+  img.onerror=()=>{URL.revokeObjectURL(url);if(generation===assetGeneration&&version===manualImageVersion[key])message('Could not decode '+file.name);};
   img.src=url;
 });}
 imageInput('frontFile','front');imageInput('rearFile','rear');imageInput('hoodFile','hood');imageInput('headFile','head');
@@ -356,7 +357,7 @@ async function loadStyles(){
   }
 }
 async function loadCanonicalCharacter(){
-  const generation=++canonicalPortraitGeneration;
+  const generation=++canonicalPortraitGeneration,headVersion=manualImageVersion.head; // Manual head overrides chosen during portrait loading win.
   hoodPortrait=null;lastHoodRequest=null;hoodRenderGeneration++;
   const species=selectedSpecies(),gender=selectedGender();
   canonicalProfile=null;
@@ -404,7 +405,7 @@ async function loadCanonicalCharacter(){
       forceEyesOpen:true,portraitView:'behind',onlyHeadSprite:true,
     }); // Load rear head consistently even if rear cosmetic artwork arrives after the canonical head.
     if(generation!==canonicalPortraitGeneration)return;
-    images.head=headCanvas;
+    if(headVersion===manualImageVersion.head)images.head=headCanvas;
     if(rearRendered)images.headRear=rearCanvas;
     markRegionDirty();maybeInitializeMasks();render(); // Rigid overlap uses the canonical head silhouette at the correct portrait scale.
     const rearCharacterRendered=await window.NpcAvatarPreview.renderProfileToCanvas(rearCharacter,profile,{
@@ -419,13 +420,13 @@ async function loadCanonicalCharacter(){
   }
 }
 async function loadHead(){
-  const generation=++headGeneration;
+  const generation=++headGeneration,headVersion=manualImageVersion.head; // Reject an indexed fallback if a newer manual silhouette is being decoded.
   images.head=null;render();
   if(!catalog || !selectedSpecies() || !selectedGender())return;
   const species=selectedSpecies(),gender=selectedGender();
   try{
     const image=await catalog.headArtwork(species,gender);
-    if(generation!==headGeneration || species!==selectedSpecies() || gender!==selectedGender())return;
+    if(generation!==headGeneration || headVersion!==manualImageVersion.head || species!==selectedSpecies() || gender!==selectedGender())return;
     images.head=image;markRegionDirty();maybeInitializeMasks();render(); // Fallback uses the same normalized portrait pixels.
   }catch(error){
     if(generation===headGeneration)message('Could not load '+species+' head silhouette: '+error.message+'. Manual head reference is available below.');
@@ -472,14 +473,15 @@ async function selectIndexedStyle(){
   const scopeText=selected.scope.variant?'variant '+selected.scope.key:'shared cosmetic';
   $('sourcePath').textContent='Source: config/cosmetics/'+selected.entry.path.replace(/^\.\//,'')+' · rig scope: '+scopeText;
   message('Loading '+selected.label+' sprite layers…');
+  const frontVersion=manualImageVersion.front,rearVersion=manualImageVersion.rear; // An image file selected while fetching source PNGs must take precedence.
   const tasks=[
     Catalog.composeArtwork(selected.config,species,gender,'front'),
     selected.slot==='facialHair'?Promise.resolve(null):Catalog.composeArtwork(selected.config,species,gender,'rear'),
   ];
   const results=await Promise.allSettled(tasks);
   if(generation!==assetGeneration)return;
-  images.front=results[0].status==='fulfilled'?results[0].value:null;
-  images.rear=results[1].status==='fulfilled'?results[1].value:null;
+  if(frontVersion===manualImageVersion.front)images.front=results[0].status==='fulfilled'?results[0].value:null;
+  if(rearVersion===manualImageVersion.rear)images.rear=results[1].status==='fulfilled'?results[1].value:null;
   markRegionDirty();maybeInitializeMasks();render();
   const missing=results.filter(x=>x.status==='rejected').length;
   if(!images.front)message('Selected JSON loaded, but its front PNG was unavailable. You can retry or load a manual PNG below.');
@@ -503,6 +505,7 @@ async function loadHoods(){
   }
 }
 function loadHoodPreview(){
+  manualImageVersion.hood++; // Selecting an indexed hood cancels an older pending manual hood PNG decode.
   const item=hoods.find(hood=>hood.key===$('hoodSelect').value);
   hoodOption=item?window.portraitOptionFromJson(item.entry,item.config):null;
   images.hood=null;hoodPortrait=null;lastHoodRequest=null;hoodRenderGeneration++;
