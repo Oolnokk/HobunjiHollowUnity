@@ -41,7 +41,7 @@ const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
   body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
   contourMask:null,contourMaskKey:null,contourMaskOverlay:null,contourSourceCache:null,contourLastFit:null,
-  headbandGridCache:new WeakMap(),headbandWarpStats:null,
+  headbandGridCache:new WeakMap(),headbandWarpStats:null,headbandWholeWarning:'', // Whole-curve edge/fold constraints appear in mobile editor status.
   headbandRearCanvas:null,headbandRearKey:null,headReferenceBack:null,backplaneReference:null, // Native target-space rear pixels, isolated game rear head and full rear body guide. // Caches the unchanged 6x6 raster during curve-only drag edits.
   assetGeneration:0, // Prevents a previous region/species request from overwriting a newer selection.
   repositoryGeneration:0, // Cancels stale catalog batches when a new repository reload starts.
