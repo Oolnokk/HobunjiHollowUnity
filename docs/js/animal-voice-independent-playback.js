@@ -729,6 +729,9 @@
     if (opts.preserveDurationOnFallback === true && Math.abs(tempo - 1) < 0.0001) {
       setPitchPreservation(audio, true);
       audio.playbackRate = 1; // Stone cues must keep original duration even if independent DSP is unavailable.
+    } else if (opts.preferPitchShiftOnFallback === true && Math.abs(pitch) >= 0.05) {
+      setPitchPreservation(audio, false);
+      audio.playbackRate = clamp(pitchRatio, MIN_TEMPO, 4); // Without Web Audio the yawn cannot be slowed AND transposed: preserve species/gender pitch at the expense of tempo.
     } else if (opts.preservePitchOnFallback === true || Math.abs(pitch) < 0.05) {
       setPitchPreservation(audio, true);
       audio.playbackRate = tempo; // Yawns must preserve their source pitch at 1/4 tempo; native media cannot also apply an independent species transposition.
