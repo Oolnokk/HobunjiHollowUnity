@@ -70,10 +70,10 @@ const WITNESS_DYES = Object.freeze([
  }
 ]); // Thirteen real bright cloth dye swatches; each can occur at most once per zone.
 const WITNESS_MOTIFS = Object.freeze([
- 'assets/patterns/motif_harlyao_glyph_entropy.png',
- 'assets/patterns/motif_harlyao_glyph_ignorance.png',
- 'assets/patterns/motif_harlyao_glyph_servitude.png'
-]); // Three existing ruin engraving motifs, deterministically shuffled per Tothal zone; never invent a pattern filename.
+ {id:'harlyao_glyph_entropy',url:'assets/patterns/motif_harlyao_glyph_entropy.png'},
+ {id:'harlyao_glyph_ignorance',url:'assets/patterns/motif_harlyao_glyph_ignorance.png'},
+ {id:'harlyao_glyph_servitude',url:'assets/patterns/motif_harlyao_glyph_servitude.png'}
+]); // Canonical collectible ruin wall motifs and their fallback image paths, selected deterministically per Tothal zone.
 function witnessDyes(seed) {
  const catalog=root.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || []; // The authored in-game dye catalog is the color/name authority.
  const dyes=WITNESS_DYES.map(choice=>{
@@ -140,9 +140,10 @@ function planForLayout(zoneId,layout,identity='world:shift'){
    const original=sites[index],pillar=original.kind==='brokenPillar';
    const kind=starting?'witnessStone':pillar?'brokenPillar':'markedBoulder';
    const object=starting?'standing stone':pillar?'broken pillar':'boulder';
+   const motif=WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length]; // Both the ruin pattern ID and the debug URL must describe the same engraving.
    sites[index]={...original,kind,name:'the '+dye.name+'-marked '+object,
     dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
-    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length],
+    patternId:motif.id,patternUrl:motif.url,
     unique:true,marked:true,source:'generated-year-round-scenery'}; // Every dyed object has a unique swatch within the zone.
   };
   let firstIndex=-1;
@@ -162,10 +163,11 @@ function planForLayout(zoneId,layout,identity='world:shift'){
    const isBoulder=start.replacedTree; // A real copse becomes a patterned boulder; open ground receives an authored broken pillar.
    const kind=isBoulder?'markedBoulder':'brokenPillar';
    const id=zoneId+':blossom-start:'+start.id;
+   const motif=WITNESS_MOTIFS[hash(key+'|motif|'+id)%WITNESS_MOTIFS.length]; // The relocated hunt anchor uses the exact same ruin motif pool as ordinary landmarks.
    sites.push({id,kind,name:'the '+dye.name+'-marked '+(isBoulder?'boulder':'broken pillar'),
     point:{col:start.col,row:start.row},yaw:hash(key+'|yaw|'+id)/4294967296*Math.PI*2,size:1,
     dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
-    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+id)%WITNESS_MOTIFS.length],
+    patternId:motif.id,patternUrl:motif.url,
     unique:true,marked:true,blossomNear:start.id,treeReplaced:isBoulder,source:'generated-year-round-scenery'});
   }
  }
@@ -175,42 +177,109 @@ function identity(){return String(deps?.tothalWorldId?.()||'world')+':'+String(d
 function landmarksFor(zoneId,layout){return planForLayout(zoneId,layout,identity());}
 function elevation(site){const n=Number(deps?.TILE)||64,p=site.point,y=root.ClimbSystem?.groundYAt?.((p.col+.5)*n,(p.row+.5)*n);return y==null||!Number.isFinite(y)?0:y;}
 function ignoreHits(node,shared=false){node.traverse?.(part=>{if(part.isMesh||part.isInstancedMesh)part.raycast=()=>{};if(shared&&part.geometry)part.userData.festivalSharedFoliage=true;});}
-// Width, height and depth of the four stones, from the broad footing to the cap.
-const CAIRN_STONES=[[.86,.28,.74],[.66,.25,.59],[.48,.22,.43],[.29,.17,.28]];
+// Each face uses the same source, color treatment and nine-slice UV unwrap as an actual cliff.
+const CAIRN_STONES=[[.86,.28,.74],[.66,.25,.59],[.48,.22,.43],[.29,.17,.28]]; // Four overlapping, irregularly rotated stones per cairn.
+const CAIRN_CHUNK_TILES=24; // Keeps independent instanced bounds small enough for useful camera/frustum culling.
+let cliffCairnArt=null; // One owned cliff-mapped geometry and cached material shared by every cairn chunk and Tothal Shift.
+function cairnArt(T){
+ if(cliffCairnArt)return cliffCairnArt;
+ const quarry=root.OreRockTextures?.smallStoneArt?.(T); // Supplies the actual six-sided quarry-rock geometry, not a new cuboid.
+ if(!quarry?.geometry||!quarry?.material){error='Missing small-stone art for cairns';return null;}
+ const natural=root.NaturalSurfaceMaterials,stretch=root.HobunjiSurfaceStretchUV; // Same cliff tint, PNG and connected-surface solver as wilderness cliffs.
+ if(!natural?.naturalizeMesh||!stretch?.mapMesh){error='Cliff surface material or stretch mapper unavailable for cairns';return quarry;}
+ const original=quarry.geometry.clone(); // Never modify/dispose the quarry buffers used by ordinary rubble and witness stones.
+ const template=new T.Mesh(original,quarry.material); // Temporary mesh lets the existing natural-surface pipeline assign its exact cliff material.
+ try{
+  natural.naturalizeMesh(template,'cliffs');
+  const mapping=stretch.mapMesh(template,{label:'wilderness cairn stone faces'}); // Separate full PNG on each polygon face, stretched to that face.
+  if(!mapping?.patchCount||!template.material?.map)throw new Error('Cliff surface UV or texture was not assigned');
+  if(template.geometry!==original)original.dispose?.(); // The seam-capable mapper created its own owned geometry.
+  cliffCairnArt={geometry:template.geometry,material:template.material,patchCount:mapping.patchCount}; // Reused for all stone sizes without re-unwrapping.
+  return cliffCairnArt;
+ }catch(reason){
+  if(template.geometry!==original)template.geometry.dispose?.();
+  original.dispose?.();
+  error='Could not prepare cliff-textured cairns: '+String(reason?.message||reason);
+  return quarry; // Fail open with the previous quarry stones, rather than losing the landmark.
+ }
+}
 function cairns(T,host,sites){
  const list=sites.filter(s=>s.kind==='stoneCairn');if(!list.length)return;
- const art=root.OreRockTextures.smallStoneArt(T); // Match the closed rock shape and texture used by interactible rubble.
- const mesh=new T.InstancedMesh(art.geometry,art.material,list.length*CAIRN_STONES.length);
- const dummy=new T.Object3D();let index=0; // Reuse one transform across the entire wilderness batch.
+ const art=cairnArt(T);if(!art)return;
+ const batches=new Map(); // Spatially partitioned sites prevent one wilderness-wide instance sphere from keeping every cairn visible.
  for(const site of list){
-  const rand=rng(hash(site.id)),size=site.size;
-  let bottom=elevation(site)-.055*size; // Embed the footing and overlap each tier by the same scaled amount.
-  for(const [width,height,depth] of CAIRN_STONES){
-   const offset=(rand()-.5)*.08*size; // Keep every cap over the broad bearing face below it.
-   dummy.position.set(site.point.col+.5+Math.cos(site.yaw)*offset,bottom+height*size/2,site.point.row+.5+Math.sin(site.yaw)*offset);
-   dummy.rotation.y=site.yaw+(rand()-.5)*1.5;
-   dummy.scale.set(width*size,height*size,depth*size);
-   dummy.updateMatrix();
-   mesh.setMatrixAt(index++,dummy.matrix);
-   bottom+=(height-.055)*size;
-  }
+  const key=Math.floor(site.point.col/CAIRN_CHUNK_TILES)+','+Math.floor(site.point.row/CAIRN_CHUNK_TILES);
+  if(!batches.has(key))batches.set(key,[]);
+  batches.get(key).push(site);
  }
- mesh.instanceMatrix.needsUpdate=true;
- mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};
- mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
+ const parent=new T.Group();parent.name='wilderness-stone-cairns';parent.userData.wildernessLandmarkScenery=true;
+ const dummy=new T.Object3D(); // Reused temporary transform; matrices are written once when the zone is generated.
+ for(const [key,chunk] of batches){
+  const mesh=new T.InstancedMesh(art.geometry,art.material,chunk.length*CAIRN_STONES.length);
+  let index=0; // Tracks the four matrices contributed by every stone stack in this chunk.
+  for(const site of chunk){
+   const rand=rng(hash(site.id)),size=site.size;
+   let bottom=elevation(site)-.055*size; // Embed the footing and overlap each tier.
+   for(const [width,height,depth] of CAIRN_STONES){
+    const offset=(rand()-.5)*.08*size;
+    dummy.position.set(site.point.col+.5+Math.cos(site.yaw)*offset,bottom+height*size/2,site.point.row+.5+Math.sin(site.yaw)*offset);
+    dummy.rotation.y=site.yaw+(rand()-.5)*1.5;
+    dummy.scale.set(width*size,height*size,depth*size);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(index++,dummy.matrix);
+    bottom+=(height-.055)*size;
+   }
+  }
+  mesh.instanceMatrix.needsUpdate=true;
+  mesh.name='wilderness-cairn-chunk-'+key;mesh.raycast=()=>{};
+  mesh.frustumCulled=false; // Three r128 cannot use a base geometry's sphere for scattered instances; the render-only view culler uses tagged instance bounds.
+  mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;
+  mesh.userData.hobunjiWildernessDistanceCull=true; // Also permits existing zone-distance and scissored-replay culling.
+  root.InstancedMeshBounds?.tag?.(mesh); // Registers accurate per-chunk world bounds with InstancedMeshViewCull.
+  parent.add(mesh);
+ }
+ host.add(parent);
+}
+function prepareStaticRuinVisual(group){
+ group.traverse?.(node=>{
+  if(!node.isMesh||node.isSkinnedMesh||node.isInstancedMesh||!node.geometry?.getAttribute?.('position'))return;
+  if(node.frustumCulled===false)return; // Preserve deliberate no-cull sprite billboards, shader-displaced engraving glows and animated decals.
+  node.frustumCulled=true; // Regular authored stone uses its own geometry sphere, never a zone-wide owner bound.
+  node.userData.hobunjiWildernessDistanceCull=true; // Only static, ordinarily frustum-cullable meshes enter the render-only distance pass.
+  if(!node.geometry.boundingSphere)node.geometry.computeBoundingSphere?.(); // Reuse authored local bounds in subsequent camera passes.
+ });
+}
+const SOURCE_PILLAR_PATTERN_KEY='pillar_square › Square Tapered Shaft'; // The intact V50 ruin pillar sets the tile scale; debris does not invent an independent layout.
+function originalPillarPatternScale(){
+ const config=root.RuinPatternSurfaceRules?.mergedConfig?.(); // One-time zone construction reads the same applied/repo rules as decorateRuin.
+ const source=Number(config?.rules?.[SOURCE_PILLAR_PATTERN_KEY]?.scale),fallback=Number(config?.defaultScale);
+ return Number.isFinite(source)&&source>0?source:Number.isFinite(fallback)&&fallback>0?fallback:4;
 }
 function engrave(mesh,site,stone=false) {
- const surface=root.FurniturePatternSurfaces; // Reuse ruin surface projection and its cached GPU atlas.
- mesh.userData.ownsWildernessWitnessBuffers=true; // Cleanup owns just the marker's decal buffers, not the original geometry.
- mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,unique:true};
- surface?.applyPart?.(mesh,{patternSurfaces:[{
-  slot:'sides',selector:'sides',mode:'engraving',scale:.9,opacity:.9,glowIntensity:.15,
-  pattern:{motifUrl:site.patternUrl,motifScale:.75,tiling:false},
-  palette:['#e6e0d1',site.ink],glowColor:site.ink,maxAtlasPx:256,tilePx:128
- }]});
- const rune=surface?.attachStoneSignal?.(mesh,{face:'front',width:.45,height:.5,idleColor:site.ink});
- if(stone&&rune?.glyph?.position)rune.glyph.position.z=.57; // Natural irregular rock requires clearance beyond its facets.
+ const surface=root.FurniturePatternSurfaces; // The production ruin wall compositor and side-perimeter unwrap own all masonry pattern UVs.
+ if(!surface?.applyPart){error='FurniturePatternSurfaces unavailable for wilderness engraving';return false;}
+ mesh.userData.ownsWildernessWitnessBuffers=true; // Cleanup owns projected overlays only, never the shared quarry stone or authored masonry.
+ mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,patternId:site.patternId,unique:true};
+ const scale=originalPillarPatternScale(); // Original pillars use tile 4 by default, not the previous wilderness-only .65 motif scale.
+ const slots=stone?[
+  {slot:'ruin-pillar-rock',selector:'all'}
+ ]:[
+  {slot:'ruin-pillar-entire-fragment',selector:'pillar-wrap'}
+ ]; // A single mesh uses the exact intact side perimeter UV plus planar exposed ends; no redundant second atlas/draw call.
+ const records=slots.map(slot=>({...slot,mode:'engraving',patternId:site.patternId,
+  scale,opacity:.9,engravingCoreOpacity:.85,glowIntensity:0,glowPulseDepth:0,
+  palette:['#b7a185',site.ink],maxAtlasPx:256,tilePx:256,minSurfaceTiles:0
+ })); // Use the repo motif's own tiling/frame/mesh settings exactly as decorateRuin does; only the landmark ink and glow differ.
+ const part=mesh.userData?.authoredPart; // Authored box vs natural rock decides the canonical pattern surface projection.
+ surface.applyPart(mesh,{...part,kind:stone?'sphere':part?.kind||'box',patternSurfaces:records});
+ const engraved=mesh.children.filter(child=>child.userData?.furniturePattern?.mode==='engraving'&&records.some(record=>record.slot===child.userData.furniturePattern.slot));
+ mesh.userData.wildernessPatternSurfaces={expected:records.length,actual:engraved.length,scale}; // Mobile diagnostics catch a missing side/cap overlay without opening devtools.
+ if(engraved.length!==records.length)error='Incomplete ruin pattern on '+(mesh.name||site.id)+': '+engraved.length+'/'+records.length;
+ return engraved.length===records.length;
 }
+
+// Every authored stone fragment is marked, including chips; one wrapped overlay per part keeps the draw-call budget no worse than before.
+
 function witnessStone(T,host,sites){
  for(const site of sites.filter(s=>s.kind==='witnessStone'||s.kind==='markedBoulder')){
   const art=root.OreRockTextures?.smallStoneArt?.(T); // Use the same permanent quarry PNG mesh as wilderness rubble.
@@ -222,6 +291,8 @@ function witnessStone(T,host,sites){
   rock.userData.wildernessLandmarkScenery=true;
   rock.userData.wildernessLandmarkSitePoint={...site.point}; // Existing stone root is the perception silhouette for the verified anchor.
   rock.userData.terrainJigsawIgnore=true;
+  rock.userData.hobunjiWildernessDistanceCull=true; // Marked ruin stones use their own ordinary mesh frustum and wilderness distance bounds.
+  rock.frustumCulled=true;
   rock.raycast=()=>{}; // This permanent marking is unbreakable and does not steal player input.
   host.add(rock);engrave(rock,site,true);
  }
@@ -246,12 +317,16 @@ async function debris(host,sites,ticket,zoneId){
    built.name='wilderness-broken-stone-pillar';built.position.set(site.point.col+.5,elevation(site),site.point.row+.5);
    built.rotation.y=site.yaw;built.scale.multiplyScalar(site.size);built.userData.wildernessLandmarkScenery=true;
    built.userData.wildernessLandmarkSitePoint={...site.point}; // The authored pillar, not a proxy, is the sense target.
+   if(site.marked)built.updateMatrixWorld?.(true); // Surface UV density includes the final authored part + wilderness scale on its first atlas build.
    if(site.marked){
     const parts=built.userData?.meshById;
-    const shaft=parts?.get?.('stump')||parts?.get?.('stub')||parts?.get?.('base'); // Actual authored pillar shaft receives the engraving.
-    if(shaft)engrave(shaft,site,false);
-    built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can name the color on a given pillar.
+    const targets=[...new Set([...(parts?.values?.()||[])].filter(mesh=>mesh?.isMesh&&mesh.geometry))]; // All original authored masonry fragments, not only shafts/caps, retain the full wrap.
+    if(!targets.length)built.traverse?.(mesh=>{if(mesh.isMesh&&mesh.userData?.authoredPart?.id&&mesh.geometry)targets.push(mesh);}); // Old authored builders without meshById still pattern all stone fragments.
+    built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can identify the ink of the entire broken pillar.
+    built.userData.wildernessPatternedParts=targets.filter(mesh=>engrave(mesh,site)).length; // The shaft, base, broken ends and small chips all receive one continuous authentic ruin pattern projection.
+    if(!built.userData.wildernessPatternedParts)error='No stone faces were available for '+site.id;
    }
+   prepareStaticRuinVisual(built); // Cull static authored debris fragments; preserve explicitly unculled billboards.
    ignoreHits(built);host.add(built);
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
@@ -262,7 +337,10 @@ function clear(){
  group?.traverse?.(node=>{
   if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
  });
- group?.children?.find(node=>node.name==='wilderness-stone-cairns')?.dispose?.(); // Main's loose stone geometry/material are shared by all cairns and must never be destroyed here.
+ // Release per-zone InstancedMesh renderer state, but never dispose the shared cliff/quarry geometries or material.
+ const cairnGroup=group?.children?.find(node=>node.name==='wilderness-stone-cairns');
+ for(const chunk of cairnGroup?.children||[])chunk.dispose?.(); // One instance matrix per spatial chunk; its owning mesh may release GPU bookkeeping on Shift.
+ 
  for(const rock of witness){
   for(const child of [...rock.children]){
    if(child.userData?.furniturePattern || child.userData?.ruinStoneSignalGlyph){
@@ -293,11 +371,35 @@ function objectAt(zoneId,targetScene,point){
    &&node.userData?.wildernessLandmarkSitePoint?.row===point.row)||null; // Bounded to scene-local roots, never a world traversal.
  }
  function debugSnapshot(){
+ const cairnGroup=group?.getObjectByName?.('wilderness-stone-cairns'); // On-demand mobile check of spatial cairn culling.
  const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
  const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
+ const pillars=group?.children?.filter(node=>node.userData?.wildernessDyeId)||[]; // On-demand mobile diagnostics, never traversed in the render loop.
+ const pillarPatterns={ready:0,loading:0,failed:0,missing:0}; // Detect visible/pending/error atlas states on *every* authored stone, not just geometry ownership.
+ for(const pillar of pillars){
+  const parts=pillar.userData?.meshById;
+  const meshes=[...(parts?.values?.()||[])].filter(mesh=>mesh?.isMesh&&mesh.geometry);
+  for(const mesh of meshes){
+   const overlays=mesh.children.filter(child=>child.userData?.furniturePattern?.mode==='engraving');
+   if(!overlays.length){pillarPatterns.missing++;continue;}
+   for(const overlay of overlays){
+    const status=overlay.userData.furniturePattern.status;
+    if(status==='ready'&&overlay.visible)pillarPatterns.ready++;
+    else if(status==='loading')pillarPatterns.loading++;
+    else pillarPatterns.failed++;
+   }
+  }
+ } // Never touch these part maps during ordinary rendering; mobile debugging should reveal invisible pattern atlases.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
+  cairnRendering:{chunks:cairnGroup?.children?.length||0,cliffMappedFaces:cliffCairnArt?.patchCount||0,
+   frustumTracked:cairnGroup?.children?.filter?.(mesh=>mesh.userData?.hobunjiInstanceBounds===true)?.length||0},
+  patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),pillarPatterns,
   dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
-   motif:marker?.userData?.witnessDye?.motifUrl||null,engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
+   motif:marker?.userData?.witnessDye?.motifUrl||null,patternId:marker?.userData?.witnessDye?.patternId||null,
+   engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
+   patternScale:marker?.userData?.wildernessPatternSurfaces?.scale||null,
+   fullSurface:marker?.userData?.wildernessPatternSurfaces?.actual===marker?.userData?.wildernessPatternSurfaces?.expected,
+   nonGlowing:!engraving?.userData?.engravingGlowMesh,
    runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
 }
 function init(injected){clear();deps=injected;error=null;root.DevCompanion?.registerStateProvider?.('wildernessLandmarkScenery',debugSnapshot);}

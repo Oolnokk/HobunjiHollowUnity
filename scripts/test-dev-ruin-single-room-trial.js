@@ -75,5 +75,7 @@ assert.ok(simple.includes('if(nativeKind){'));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes('single_room_native_v50_goal'));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('__devRuinSingleRoomNativeCreated=null'));
 
+assert.ok(simple.includes('window.InstancedMeshBounds?.tag?.(plateBatch)') && simple.includes('if (runeBatch) window.InstancedMeshBounds?.tag?.(runeBatch)'),
+  'hallway stone slabs and matching rune instance batches must both participate in the real frustum culler');
 assert.match(read('docs/js/dev-random-ruin-bootstrap.js'), /dev-random-ruin-simple-puzzles\.js\?v=[A-Za-z0-9_-]+/);
 console.log('Single-room puzzle lab: 200 planner seeds, twelve forced choices, isolation and no-loot contracts passed.');

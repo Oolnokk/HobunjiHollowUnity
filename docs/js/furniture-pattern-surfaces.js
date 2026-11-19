@@ -205,6 +205,7 @@
     if (record.selector === 'top') return ny > .7;
     if (record.selector === 'bottom') return ny < -.7;
     if (record.selector === 'sides') return Math.abs(ny) < .7;
+    if (record.selector === 'pillar-wrap') return true; // The ruin pillar's original side UVs plus planar end faces in a single overlay/draw call.
     if (record.selector === 'front') return nz > .7;
     if (record.selector === 'back') return nz < -.7;
     return true;
@@ -241,7 +242,8 @@
         if (Math.abs(normal.dot(a) - normal.x * center[0] - normal.y * center[1] - normal.z * center[2]) > .02) continue;
       }
       const direction = record.normal || [normal.x,normal.y,normal.z]; // Selected planar faces share one projection even when individual triangles are slightly tilted.
-      const axis = record.selector === 'sides' ? 'z' : Math.abs(direction[1]) >= Math.max(Math.abs(direction[0]), Math.abs(direction[2])) ? 'y' : Math.abs(direction[0]) >= Math.abs(direction[2]) ? 'x' : 'z'; // Stable box projection uses actual local dimensions, not normalized bounds.
+      const perimeterUnwrap = record.selector === 'sides' || (record.selector === 'pillar-wrap' && Math.abs(normal.y) < .7); // Broken pillars retain precisely the intact pillar's four-face side UVs; only end faces use planar UVs.
+      const axis = perimeterUnwrap ? 'z' : Math.abs(direction[1]) >= Math.max(Math.abs(direction[0]), Math.abs(direction[2])) ? 'y' : Math.abs(direction[0]) >= Math.abs(direction[2]) ? 'x' : 'z'; // Stable box projection uses actual local dimensions, not normalized bounds.
       const angles = [a,b,c].map(point => (Math.atan2(point.z / (bounds.z || 1), point.x / (bounds.x || 1)) + Math.PI*2) % (Math.PI*2)); // Shared edge vertices keep identical coordinates; only the back closing seam is unwrapped.
       if (Math.max(...angles)-Math.min(...angles)>Math.PI) for(let i=0;i<3;i++) if(angles[i]<Math.PI) angles[i]+=Math.PI*2;
       let vertex = 0; // Associates triangle vertices with their seam-corrected angle.
@@ -260,10 +262,10 @@
           u=angles[vertex]*equatorialRadius;
           v=(latitude+Math.PI/2)*verticalRadius;
           uAxis=3;vAxis=4; // Longitude scales with equatorial X/Z; latitude scales with vertical Y.
-        } else if (record.selector === 'sides' && curved) {
+        } else if (perimeterUnwrap && curved) {
           u = angles[vertex] * Math.sqrt((bounds.x*bounds.x+bounds.z*bounds.z)/2);
           uAxis=3;
-        } else if (record.selector === 'sides') {
+        } else if (perimeterUnwrap) {
           ux=normal.z > .7 ? point.x : normal.x > .7 ? bounds.x : normal.z < -.7 ? 2*bounds.x-point.x : 3*bounds.x;
           uz=normal.z > .7 ? 0 : normal.x > .7 ? bounds.z-point.z : normal.z < -.7 ? 2*bounds.z : 3*bounds.z+point.z;
           u=ux+uz;
