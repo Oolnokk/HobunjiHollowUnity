@@ -86,6 +86,13 @@ for (const key of ['pingdortMeat', 'pingdortHide', 'tzatzulMeat', 'tzatzulHide']
   assert(inventoryWheel.some(entry => entry.key === key), key + ' is absent from the item wheel');
 }
 
+// The one-off Tzatzul palette must persist on its hide even without breeding genes.
+vm.runInContext(read('docs/js/animal-hides.js'), context, { filename: 'animal-hides.js' });
+const tintedHide = W.AnimalHides.makeRecord('tzatzulHide', {
+  creatureKey: 'tzatzul', tzatzulIdentity: { tintHex: '#718bc2' },
+}, 40); // Exact live bird color is part of the hide's appearance data, not rerolled after death.
+assert.equal(tintedHide.appearance.baseColor, '#718bc2');
+
 const farmSource = read('docs/js/farm-animals.js');
 assert(farmSource.trimEnd().endsWith('})();'), 'FarmAnimals must retain its isolated module closure');
 const farmUnderTest = farmSource.replace(/\}\)\(\);\s*$/,
