@@ -12,32 +12,28 @@ const globals = { window: {}, console, Uint8Array, Int16Array, Int32Array, Math,
 vm.runInNewContext(read('docs/js/portrait-spline-rig.js'), globals);
 const Rig = globals.window.PortraitSplineRig;
 assert(Rig, 'the runtime provides both 3D deformation and pixel-accurate rigid/flexible region masks');
-const raw = {
-  points: [{u:.5,v:.3,depth:.02},{u:.52,v:.6,depth:.035}],
-  segments:[{deadzone:{x:4,y:4,z:6},poses:{
-    right:{yaw:0,pitch:0,roll:0,translate:{x:.18,y:.06,z:.1}},
-    away:{yaw:0,pitch:0,roll:0,translate:{x:0,y:0,z:-.35}},
-  }}],
-};
-const rig = Rig.normalize(raw), rest = Rig.posePoints(rig), moved = Rig.posePoints(rig,{x:1});
-assert.equal(rig.segments[0].poses.right.translate.x,.18, '3D X translation must survive cosmetic normalization');
-assert.equal(rig.segments[0].poses.right.translate.y,.06, '3D Y translation must survive cosmetic normalization');
-assert.equal(rig.segments[0].poses.right.translate.z,.1, '3D depth must survive cosmetic normalization');
-assert(Math.abs(moved.points[1].x-rest.points[1].x-.18)<1e-9, 'authored X gizmo offset moves the selected segment endpoint');
-assert(Math.abs(moved.points[1].y-rest.points[1].y-.06)<1e-9, 'authored Y gizmo offset is applied in head-local space');
-assert(Math.abs(moved.points[1].z-rest.points[1].z-.1)<1e-9, 'Z gizmo offset has physical 3D depth');
-assert.equal(Rig.blendSegment(rig.segments[0],{}).translate,undefined,'neutral wind leaves all knot translations unapplied');
-const inward=Rig.posePoints(rig,{z:-1});
-assert(inward.points[1].z>=.003,'negative local depth translation must collide with the portrait plane');
-assert(inward.collisions>=1,'the portrait penetration guard reports the inward pose');
-const clamped=Rig.normalize({...raw,segments:[{poses:{right:{translate:{x:9,y:-7,z:Infinity}}}}]});
-assert.equal(clamped.segments[0].poses.right.translate.x,.35,'edited translations are range-validated');
-assert.equal(clamped.segments[0].poses.right.translate.y,-.35,'negative translations are range-validated');
-assert.equal(clamped.segments[0].poses.right.translate.z,0,'invalid depth is not written to the character');
-const old=Rig.normalize({...raw,segments:[{poses:{right:{roll:30}}}]});
-assert.equal(old.segments[0].poses.right.translate.z,0,'preexisting rotation-only JSON remains supported');
-const center=Rig.deformPosition(rig,moved.points,.52,.59,1,1);
-assert(center.z>=.003 && Number.isFinite(center.x),'the preview can reuse the same deformPosition as the game');
+const raw={points:[{u:.5,v:.3,depth:.02},{u:.52,v:.6,depth:.035}],
+  bone:{yaw:8,pitch:10,roll:18},hoodStretchPx:14};
+const rig=Rig.normalize(raw),rest=Rig.posePoints(rig),right=Rig.posePoints(rig,{x:1});
+assert.equal(rig.version,2,'one bone schema is exported');
+assert.equal(rig.points.length,2,'only root and tip handles remain');
+assert.equal(JSON.stringify(rig.bone),JSON.stringify(raw.bone),'single bone swing amplitudes persist');
+assert(!('segments' in rig),'the multi-segment blend space has been eliminated');
+assert.equal(rig.hoodStretchPx,14,'elastic hood opening settings round-trip');
+assert(right.points[1].x>rest.points[1].x,'positive X wind swings right');
+assert(Rig.posePoints(rig,{x:-1}).points[1].x<rest.points[1].x,'negative X wind swings left');
+assert.equal(right.points[0].x,rest.points[0].x,'bone root stays fixed');
+const clamped=Rig.normalize({...raw,bone:{yaw:999,pitch:-7,roll:Infinity},hoodStretchPx:100});
+assert.equal(clamped.bone.yaw,65,'wind swing is clamped to supported range');
+assert.equal(clamped.bone.pitch,0,'negative amplitude clamps to zero');
+assert(Number.isFinite(clamped.bone.roll),'nonfinite amplitudes normalize');
+assert.equal(clamped.hoodStretchPx,32,'stretch radius has a bounded budget');
+const old=Rig.normalize({...raw,version:1,points:[...raw.points,{u:.54,v:.8,depth:.04}],
+  segments:[{poses:{right:{yaw:85}}},{poses:{left:{roll:-40}}}]});
+assert.equal(old.points.length,2,'old three-knot rigs collapse to one joint');
+assert(!('segments' in old),'old directional poses disappear from export');
+const center=Rig.deformPosition(rig,right.points,.52,.59,1,1);
+assert(center.z>=.003&&Number.isFinite(center.x),'author and runtime share deformation');
 
 const pixels=new Uint8Array(40000); // The exact 200px portrait mask, not an approximate silhouette circle.
 pixels[60*200+100]=1;
@@ -63,12 +59,12 @@ new vm.Script(viewer,{filename:'portrait-spline-viewer.js'});
 for(const id of ['view3d','gizmoTranslate','gizmoRotate','autoMask','undoMask','clearMask','showRegions','paintMode','eraseMode','brush'])
   assert(editor.includes('id="'+id+'"'),'editor must expose '+id+' for touch and mouse authoring');
 assert(editor.includes("Rig.maskFromOverlap(sprite,head"),'auto mask uses actual cosmetic/head alpha overlap rather than seam-length heuristics');
-assert(editor.includes("pose.translate[axis]=value"),'the 3D translation gizmo changes the serialized runtime pose');
-assert(editor.includes("pose[rotationKey]=value"),'the rotation ring changes the actual runtime pose');
-for(const id of ['generateBlend','maskSelect','overlapMode','tipFollow'])
-  assert(editor.includes('id="'+id+'"'),'3D editor must expose natural default poses, attachment smoothing, and bottom-knots-first control: '+id);
-assert(editor.includes("Rig.makeDefaultSegments(rig.points)"),
-  'natural wind pose button recalculates all six directions from the authored 2D knot positions');
+assert(editor.includes("rig.points[1].u=clamp(value+.5"),'3D arrows edit the single tip');
+assert(editor.includes("rig.bone[rotationKey]=clamp(value,0,65)"),'rotation rings edit one bone');
+for(const id of ['maskSelect','overlapMode','boneYaw','bonePitch','boneRoll','hoodStretchPx','windX','windY','windZ'])
+  assert(editor.includes('id="'+id+'"'),'bone editor exposes '+id);
+assert(!editor.includes('id="generateBlend"')&&!editor.includes('id="segmentSelect"'),
+  'blend-space and multi-joint selection controls are removed');
 assert(editor.includes("Rig.suggestRestPoints(images.front,images.head)"),
   'new, unrigged cosmetics get art-fitted default knots instead of generic placement');
 assert(!editor.includes('id="pinWidth"'),'the 2D author no longer expands the hard head mask');
