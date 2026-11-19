@@ -465,6 +465,14 @@
       if (pending?.size) {
         for (const root of pending) {
           if (owningScene(root) !== scene) continue; // It was removed/moved again before the next render.
+          // A whole subtree may be queued along with every child while it is
+          // assembled in the live scene. The ancestor already visits them all;
+          // rescanning each child would turn one build into quadratic work.
+          let coveredByQueuedAncestor = false; // Used only to skip redundant descendant scans in this flush.
+          for (let parent = root.parent; parent; parent = parent.parent) {
+            if (pending.has(parent)) { coveredByQueuedAncestor = true; break; }
+          }
+          if (coveredByQueuedAncestor) continue;
           root.traverse?.(object => {
             if (isWorldTextOverlayMesh(object)) cached.meshes.add(object);
           });
