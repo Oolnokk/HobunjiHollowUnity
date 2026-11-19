@@ -59,6 +59,10 @@ replays (`WorldRenderPipeline.captureFrame()` shows the exact list).
 | Held items / hands / feet over ground, x-ray, water tint | `js/held-object-render-order.js`, rules in `js/xray-hierarchy.js` | `HeldObjectRenderOrder`, `XrayHierarchy` |
 | Matrix reuse between passes, world-text overlay | `js/outline-render-performance.js` | `OutlineRenderPerformance` |
 | PNG sprite material/texture path | `js/portrait-utils.js` | `HobunjiSpritePngSurface` (see AGENTS.md) |
+| Which characters exist (player, NPCs, enemies, creatures, companions, mounts, shoulder pets, corpses, farm animals) and which visual systems cover which kind | `js/character-visuals.js` | `CharacterVisuals` |
+| Held tool/weapon planes for any holder (mastery/metal from the holder) | `js/character-held-tools.js` | `CharacterHeldTools` |
+| Shoulder-pet perch/grip solver (one instance per owner) | `js/shoulder-pet-attachment-runtime.js` | `ShoulderPetAttachmentRuntime` |
+| Mist depth silhouettes for characters in Cloud Forest mist / blizzard | `js/cloud-forest-avatar-depth-occluder.js` | `CloudForestAvatarDepthOccluder` |
 | Wilderness vegetation corridor cull + tree fade targets | `js/zone-vegetation-cull.js`, `js/zone-tree-fade.js` | `ZoneVegetationCull`, `ZoneTreeFade` |
 | Sky dome, clouds, celestial sprites | `js/sky-dome.js` | `HobunjiSkyDome` |
 | Rain / blizzard planes | `js/rain-planes.js` | `RainPlanes` |
@@ -110,7 +114,9 @@ Registered hooks, in order (lower runs first, its restore runs last):
 
 | Order | id | Scope | Owner | What it does |
 |---|---|---|---|---|
+| 50 | `animal-subtle-elevation` | frame | animal-subtle-elevation-bridge.js | creatures, companions, mounts, corpses, farm animals lifted onto terrain/supports (game renderer only) |
 | 100 | `death-mark-billboards` | frame | combat/combat-death-mark.js | Death-mark billboards face the camera |
+| 150 | `town-body-elevation` | frame | town-player-body-elevation-bridge.js | clears the retired composer lift channel; town support diagnostics (game renderer only) |
 | 200 | `drunk-prone-composition` | frame | drunk-prone-composition-bridge.js | publishes the drunk channel to the composer; bandit sway |
 | 300 | `held-seed-reticle` | frame | held-seed-action-bridge.js | plant reticle material |
 | 400 | `crop-ready-presentation` | frame | crop-ready-presentation.js | ready crops' resting pose |
@@ -139,9 +145,10 @@ Wrappers that still sit **above** the hook base (outer to inner, as measured):
 (instance, opt-in), `held-object-render-order.js` (replays),
 `onboarding-character-creation-camera-composition.js`,
 `natural-surface-stretch-post-jigsaw.js`, `outline-render-performance.js`.
-Also instance-level: `dynamic-surfaces.js` (constructor), the town/animal
-elevation bridges and `zone-grass-billboards.js` (attached via Pixel Probe init),
-`geometry-auto-lod.js` (opt-in). Note: `held-object-render-order.js`'s "raw"
+Also instance-level: `dynamic-surfaces.js` (constructor; its before-render
+clients drive ruin puzzle frames with their own `dt`, so it stays per top-level
+call) and `geometry-auto-lod.js` (opt-in). `zone-grass-billboards.js`' old town
+height wrapper never installs (the town bridge marks the renderer first). Note: `held-object-render-order.js`'s "raw"
 replay render (`unwrapRendererRender`) stops at the onboarding wrapper (no
 marker), so replays go through the full lower chain, hooks included. Migrate
 these into `RenderHooks` when you next touch them for another reason.
@@ -178,7 +185,46 @@ not by editing `renderFrame`. Prop batching groups by `material.id`: share one
 material between identical props (as `wild-berries.js` now does per colour) or
 they can never merge.
 
-## 6. Cookbook
+## 6. Character visuals (player, NPCs, enemies, pets — one system)
+
+A character visual is written for **any** character. The player is one
+character among NPC walkers, humanoid enemies (bandits, tribes, ghouls,
+skeletons, liches), creatures, companions, mounts, shoulder pets, corpses and
+farm animals. Enumerate them with `CharacterVisuals.forEachCharacter(area,
+visit)` (game.js registers the provider) instead of reaching for `playerMesh`
+or one collection, and never read the player's state (mastery, plating,
+equipment) to decorate someone else.
+
+`CharacterVisuals.audit(area)` returns live counts by kind and this coverage
+table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
+
+| System | Covers | Gap |
+|---|---|---|
+| held tool/weapon planes (`character-held-tools.js`) | player, NPC, enemy | holder's own mastery/metal; metal variants per appearance |
+| held bag-item plane (game.js) | player | NPCs never hold bag items |
+| procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |
+| portrait life (blink/breath) | player, NPC | enemies keep static portraits |
+| render-time body composition (`player-body-transform-composer.js`) | player (+ its pet) | NPC/enemy poses go straight through rig layers |
+| terrain height | every kind (movement-owned for humanoids; render lift for animals) | — |
+| water/slush tint | player, NPC, enemy, pet | — |
+| mist depth silhouettes | every kind | — |
+| shoulder-pet perch | player | runtime is owner-generic; only the player owns a pet in gameplay |
+| weather on bodies (wetness, snow, wind) | none | absent for everyone |
+
+Rules:
+- New per-character visual → take the character (or its holder/owner) as a
+  parameter. If it can only serve the player for now, add a `CAPABILITIES`
+  entry with a `gap`, so the audit shows it.
+- Held items: build through `CharacterHeldTools.makeToolPlaneMesh(key, { holder })`.
+  Omitting `holder` means the player. A holder may define
+  `weaponMasteryLevel` and `weaponMetalOptions(itemKey)`; otherwise it shows
+  no mastery effects and fresh base metal. Bandit definitions are passed as
+  the holder, so loadout data can author both.
+- Terrain/weather response that moves or re-materials a character while
+  drawing belongs in a `frame` `RenderHooks` hook (see the elevation hooks),
+  so every pass sees the same pose.
+
+## 7. Cookbook
 
 | I want to… | Do this |
 |---|---|
@@ -191,8 +237,10 @@ they can never merge.
 | Add a pass | Add it in `renderOutlinedPasses`/`renderDirectPasses` with a `pass('name')` label and a PerfProfiler bucket; add a layer to the registry; update §1 |
 | Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation) |
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
+| Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
+| Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
 
-## 7. Debugging
+## 8. Debugging
 
 ```js
 WorldRenderPipeline.captureFrame();          // next frame: every native render
@@ -200,6 +248,9 @@ WorldRenderPipeline.lastCapture().passes     // [{ pass, layers:[names], overrid
 WorldRenderPipeline.snapshot()               // last frame: native renders, scopes, errors
 WorldRenderPipeline.setScopeEnabled('zone-prop-batches', false) // A/B one scope
 RenderHooks.getDebug()                       // hooks in order: calls/applies/skips/errors
+CharacterVisuals.audit('map_western_slope')  // characters by kind + which visual systems cover them
+CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
+CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderHooks.setTiming(true)                  // per-hook ms
 RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names
@@ -210,7 +261,7 @@ If a visual is wrong only in one pass (e.g. its outline is offset from the
 sprite), capture a frame and compare which passes draw it and with which layers
 before touching materials.
 
-## 8. Performance notes
+## 9. Performance notes
 
 See `docs/architecture/performance-investigation-log.md` for measurements. In
 the wilderness the frame is small in geometry; cost is draw submission plus the

@@ -513,6 +513,22 @@
 
   function patchRenderer(renderer) {
     if (!renderer || typeof renderer.render !== 'function' || renderer.__hobunjiAnimalSubtleElevationRenderHook) return;
+    if (window.RenderHooks?.register) {
+      // Once per world frame (js/render-hooks.js): every pass — main, PNG
+      // depth, shell, held replays — sees the same lifted animals, and the
+      // lift is computed once instead of per top-level render call.
+      window.RenderHooks.register({
+        id: 'animal-subtle-elevation',
+        owner: 'animal-subtle-elevation-bridge.js',
+        order: window.RenderHooks.ORDER.ANIMAL_ELEVATION,
+        scope: 'frame',
+        appliesTo: ctx => ctx.renderer === renderer && (ctx.frame ? ctx.scene === ctx.frame.scene : ctx.depth === 0),
+        before: () => { applyRenderLift(); return true; },
+        after: () => restoreRenderLift(),
+      });
+      renderer.__hobunjiAnimalSubtleElevationRenderHook = true;
+      return;
+    }
     const baseRender = renderer.render;
     renderer.render = function animalSubtleElevationRender(...args) {
       const outermost = renderDepth++ === 0;

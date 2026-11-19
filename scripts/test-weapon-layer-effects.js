@@ -11,7 +11,10 @@ const held = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); // 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // The real weapon factory supplies plating/mastery metal options.
 const hub = fs.readFileSync('docs/tools/multi-sprite-weapon-editor/app.js','utf8'); // Only used in the standalone authoring iframe.
 new Function(src);new Function(registry);new Function(hub);
-assert.match(game,/metalOptions: \(\) => metalToolRecolorOptions\(itemKey\)/);
+// The weapon factory moved to js/character-held-tools.js: the player's tools get the player's plating/mastery
+// metal options, every other holder its own (executed in scripts/test-character-visuals.js).
+assert.match(game,/playerMetalOptions: metalToolRecolorOptions/);
+assert.match(fs.readFileSync('docs/js/character-held-tools.js', 'utf8'),/metalOptions: key => deps\.playerMetalOptions\(key\)/);
 assert.match(game,/hachutuTorchFlail: \{[^\n]*metalKey: 'tinBronze'/);
 assert.match(vfx,/assembly\.enchantmentTargets\(heldVisual\)/);
 assert.match(vfx,/snapshot\.maskByPlane\?\.get\(emitter\.plane\)/);
@@ -218,7 +221,7 @@ assert(staffFx.particles.every(p => Math.abs(p.y) < .001), 'recorded local ignit
 api.dispose(staffState);
 assert.equal(staffFx.group.parent, null);
 assert.match(game, /hachutuTorchStaff: \{[^\n]*shapeKey: 'hachutuTorchStaff'/);
-assert.match(game, /masteryLevel: \(\) => toolMasteryLevel\(itemKey\)/);
+assert.match(game, /playerMasteryLevel: toolMasteryLevel/); // The player's own tools; other holders use their own mastery (js/character-held-tools.js).
 assert.match(hub, /baseFireMode/, 'tool editor exposes single-PNG effects');
 
 // Handheld torch: verify the real litOnly state, missing-marker fallback and both render passes.

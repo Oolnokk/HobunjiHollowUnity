@@ -64,7 +64,9 @@
   // (outermost first). Matches the wrapper chain order they had before the
   // migration so their observable nesting is unchanged.
   const ORDER = Object.freeze({
+    ANIMAL_ELEVATION: 50, // Outermost: animals/mounts/companions lifted before anything poses against them.
     DEATH_MARK: 100,
+    TOWN_BODY_ELEVATION: 150, // Before the composer reads its channels.
     DRUNK_PRONE: 200,
     HELD_SEED_RETICLE: 300,
     CROP_READY: 400,

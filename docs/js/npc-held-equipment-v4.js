@@ -465,7 +465,10 @@
       const factory = sharedToolFactory();
       if (factory) {
         try {
-          const root = factory(loadout.toolKey); // Exact same plane/material/texture construction used by player and bandits.
+          const npcMetal = { targetHex: BRONZE.hex, verdigrisHex: BRONZE.verdigrisHex, oxidationAmount: loadout.verdigris };
+          // Exact same plane/material/texture construction used by player and bandits; this NPC is the
+          // holder, so layered decorations use its own verdigris and no mastery (js/character-held-tools.js).
+          const root = factory(loadout.toolKey, { holder: { weaponMetalOptions: () => npcMetal, weaponMasteryLevel: 0 } });
           const plane = findToolPlane(root);
           if (root && plane) {
             if (canvas) applyRecoloredCanvasToSharedPlane(state, plane, canvas);

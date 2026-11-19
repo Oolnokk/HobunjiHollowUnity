@@ -49,6 +49,8 @@ Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.
 
 Before changing anything that draws — outlines, passes, sprites, billboards, culls, batches, render-time poses — read [`docs/architecture/visual-render-pipeline.md`](docs/architecture/visual-render-pipeline.md). It lists the frame's passes in order, who owns each visual system, the named `THREE.Layers` registry (`js/render-layers.js`), the render-time presentation hooks (`js/render-hooks.js`) and render scopes (`js/world-render-pipeline.js`), plus the debug calls (`WorldRenderPipeline.captureFrame()`, `RenderHooks.getDebug()`) that show what each pass actually drew.
 
+Character visuals are one system: anything the player's character can show (held items, hands, pants, shoulder pets, terrain/weather response) is written for any character — NPCs, enemies, creatures, companions — and never decorates someone else with the player's state. Enumerate characters with `CharacterVisuals.forEachCharacter` (`js/character-visuals.js`), build held tools with `CharacterHeldTools.makeToolPlaneMesh(key, { holder })`, and keep the `CAPABILITIES` coverage table there accurate (§6 of the pipeline doc).
+
 ## Runtime frame ownership
 
 Before adding, removing, or migrating permanent `requestAnimationFrame` work, read [`docs/architecture/runtime-frame-scheduler.md`](docs/architecture/runtime-frame-scheduler.md). It defines which work belongs to `gameLoop`, `RuntimeFrameScheduler`, Three.js render hooks, timers/events, or an isolated animation context. Feature modules register their own scheduler callbacks; do not add feature-specific behavior to the scheduler itself.

@@ -49,6 +49,12 @@ render scopes, and the capture/debug calls that show what each pass drew.
 Extracting more visual clusters out of `game.js` into owners listed there is
 exactly the kind of opportunistic decoupling described above.
 
+Character visuals are written for every character, not just the player:
+NPCs, enemies, creatures, companions and shoulder pets get the same held-item,
+body, terrain and weather presentation through `js/character-visuals.js`
+(enumeration + coverage table) and `js/character-held-tools.js` (holder-scoped
+weapons). See §6 of `docs/architecture/visual-render-pipeline.md`.
+
 ## Headless testing
 
 Use the `headless-game-test` skill before claiming a rendering/behavior

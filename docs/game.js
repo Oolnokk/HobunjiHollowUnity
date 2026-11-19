@@ -13568,7 +13568,7 @@
                 const toolFlip = target.toolFlip === true;
                 if (this.stationToolKey !== target.toolKey || this.stationToolFlip !== toolFlip) {
                   if (this.stationToolMesh) this.stationToolMesh.parent?.remove(this.stationToolMesh);
-                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: toolFlip });
+                  this.stationToolMesh = isKurraya ? buildKurrayaAssembly() : makeToolPlaneMesh(target.toolKey, { flip: toolFlip, holder: this }); // The NPC's own tool, not the player's mastery/plating.
                   this.stationToolKey = this.stationToolMesh ? target.toolKey : '';
                   this.stationToolFlip = toolFlip; // Same pick-shovel sprite must rebuild when switching between shovel and pick orientation.
                   this.stationKurrayaTwitch = isKurraya ? newKurrayaTwitchState() : null;
@@ -23218,6 +23218,45 @@
         healthPopupAccumulator.set(root, current);
       });
       const playerGroundShadow = makeCharacterGroundShadow('player_ground_shadow');
+      // Every drawn character, for visual systems (js/character-visuals.js):
+      // the player, NPC walkers, humanoid enemies, creatures, companions,
+      // mounts, shoulder pets (owned by the player), corpses and farm animals.
+      // Visual features enumerate characters here instead of each reaching for
+      // playerMesh or one collection, so they cover every character by default.
+      window.CharacterVisuals?.registerProvider({
+        id: 'game',
+        each(area, visit) {
+          const K = window.CharacterVisuals.KINDS;
+          const here = (actor, root) => !!root?.parent && root.visible !== false && (!actor?.areaId || actor.areaId === area);
+          if (area === currentArea && playerMesh.parent && visit(K.PLAYER, playerMesh, player, null)) return;
+          for (const walker of npcWalkers) {
+            if (walker?.area === area && walker.root?.parent && walker.root.visible !== false && visit(K.NPC, walker.root, walker, null)) return;
+          }
+          for (const hostile of hostileObjects) {
+            const root = hostile?.avatarRef?.group;
+            if (!here(hostile, root)) continue;
+            const kind = hostile.isBandit && !hostile.isAmphibiousFishCorpse ? K.ENEMY : K.CREATURE;
+            if (visit(kind, root, hostile, null)) return;
+          }
+          for (const companion of companionObjects) {
+            const root = companion?.avatarRef?.group;
+            if (!here(companion, root)) continue;
+            const role = companion.stableRole || companion.role;
+            const kind = role === 'shoulderPet' ? K.SHOULDER_PET : role === 'mount' ? K.MOUNT : K.COMPANION;
+            if (visit(kind, root, companion, kind === K.SHOULDER_PET ? playerMesh : null)) return;
+          }
+          for (const corpse of corpseObjects) {
+            const root = corpse?.avatarRef?.group;
+            if (here(corpse, root) && visit(K.CORPSE, root, corpse, null)) return;
+          }
+          if (area === 'farm') {
+            for (const animal of animalObjects) {
+              const root = animal?.avatarRef?.group;
+              if (root?.parent && root.visible !== false && visit(K.FARM_ANIMAL, root, animal, null)) return;
+            }
+          }
+        },
+      });
       scene.add(playerGroundShadow);
       // Logical facing angle — decoupled from playerMesh.rotation.y so sweep can
       // rotate the visual body without affecting movement/targeting math.
@@ -23774,139 +23813,47 @@
       // one complete swing; spear-mode harpoon items leave their `spinning` flag false/unset.
       const TOOL_SPIN_REVOLUTIONS = 2.5;
 
-      // Reference width in world units; height is derived from the image's aspect ratio,
-      // matching the pattern used by buildAnimalPlaneAvatarModel (modelWidth × h/w).
-      const TOOL_MODEL_WIDTH = 0.5;
-
-      // Preload tool sprite textures; capture pixel dimensions on load and rebuild meshes
-      const _toolTexLoader = new THREE.TextureLoader();
-      const toolTextures = {};
-      const loadedToolTextures = {};
-      const modularToolGeometries = new Map(); // Shared per-item quads let an asynchronous canvas expansion update both hands and every held copy.
-      // One loader path for every TOOL_ITEM_DEFS entry: boot-time keys
-      // below, and keys registered later at runtime (unbound Harlyao relic
-      // weapons, js/harlyao-relics.js) through ensureToolTexture().
-      function ensureToolTexture(key) {
-        const def = TOOL_ITEM_DEFS[key];
-        if (!def || toolTextures[key]) return toolTextures[key] || null;
-        if (def.modular) {
-          const canvas = document.createElement('canvas'); // Placeholder uses the donor frame until asynchronous composition finishes.
-          canvas.width = 450; canvas.height = 1204;
-          const texture = window.HobunjiSpritePngSurface.makeCanvasTexture(THREE, canvas, key); // Canonical authored PNG surface.
-          toolTextures[key] = texture;
-          def._imgW = 450; def._imgH = 1204;
-          refreshMetalToolWorldTexture(key);
-          return texture;
-        }
-        const tex = _toolTexLoader.load(def.sprite, (t) => {
-          const img = t.image;
-          def._imgW = img.naturalWidth  || img.width  || 1;
-          def._imgH = img.naturalHeight || img.height || 1;
-          // Rebuild with correct aspect ratio now that dimensions are known
+      // Held tool/weapon planes for ANY character — texture caches, metal
+      // recolour and makeToolPlaneMesh — live in js/character-held-tools.js
+      // (window.CharacterHeldTools). Calls from this file build the player's
+      // own tools (player mastery/plating); every other holder passes
+      // { holder } so its weapon shows its own mastery and metal, not the
+      // player's (see the NPC station tool below and BanditCombat's deps).
+      const TOOL_MODEL_WIDTH = window.CharacterHeldTools.TOOL_MODEL_WIDTH;
+      const HELD_OBJECT_RENDER_ORDER = window.CharacterHeldTools.HELD_OBJECT_RENDER_ORDER;
+      const toolTextures = window.CharacterHeldTools.toolTextures;
+      const loadedToolTextures = window.CharacterHeldTools.loadedToolTextures;
+      const modularToolGeometries = window.CharacterHeldTools.modularToolGeometries;
+      window.CharacterHeldTools.init({
+        THREE, TOOL_ITEM_DEFS,
+        markPngPlane: _markPngPlane,
+        playerMetalOptions: metalToolRecolorOptions,
+        playerMasteryLevel: toolMasteryLevel,
+        // A non-player holder without its own metal state shows fresh base metal.
+        baseMetalOptions: itemKey => {
+          const metal = METAL_DEFS[TOOL_ITEM_DEFS[itemKey]?.metalKey];
+          return metal ? { targetHex: metal.hex, verdigrisHex: metal.verdigrisHex, oxidationAmount: 0 } : null;
+        },
+        quantizeOxidation,
+        // Rebuild the player's equipped meshes once a sprite's real aspect ratio is known.
+        onTextureLoaded: () => {
           rebuildToolMeshes();
           const cur = toolMeshMap[activeTool];
           Object.values(toolMeshMap).forEach(m => { if (m) toolHolder.remove(m); });
           if (cur) toolHolder.add(cur);
-          // A smith-crafted verdigris tool's in-hand mesh should show its
-          // metal/verdigris/plating, not the flat teal placeholder art —
-          // see refreshMetalToolWorldTexture.
-          if (def.metalKey) refreshMetalToolWorldTexture(key);
-        });
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-        toolTextures[key] = tex;
-        if (def.loadedSprite) {
-          const loadedTex = _toolTexLoader.load(def.loadedSprite, () => {
-            rebuildToolMeshes();
-            setRangedLoadedVisual(key, window.RangedWeapons?.isLoaded?.(key) !== false);
-          });
-          loadedTex.magFilter = THREE.NearestFilter;
-          loadedTex.minFilter = THREE.NearestFilter;
-          loadedToolTextures[key] = loadedTex;
-        }
-        return tex;
-      }
+        },
+        onLoadedTextureLoaded: key => {
+          rebuildToolMeshes();
+          setRangedLoadedVisual(key, window.RangedWeapons?.isLoaded?.(key) !== false);
+        },
+        log: (message, level) => window.__farmLog?.(message, level),
+      });
+      const _toolTexLoader = window.CharacterHeldTools.textureLoader;
+      function ensureToolTexture(key) { return window.CharacterHeldTools.ensureToolTexture(key); }
       for (const key of Object.keys(TOOL_ITEM_DEFS)) if (!TOOL_ITEM_DEFS[key].modular) ensureToolTexture(key);
-
-      // Swaps a crafted tool's in-hand mesh texture to its current metal/
-      // verdigris/plating recolor — called once its base texture finishes
-      // loading (see above) and again any time Sloomi/Kzubug changes its
-      // plating (see applyMetalToolPlating). Reinforcement never calls this:
-      // per design, reinforcing keeps the tool's own base-metal appearance.
-      function refreshMetalToolWorldTexture(itemKey) {
-        const def = TOOL_ITEM_DEFS[itemKey];
-        const opts = metalToolRecolorOptions(itemKey);
-        const tex = toolTextures[itemKey];
-        if (!def?.sprite || !opts || !tex) return;
-        // Quantized the same way as ensureMetalToolIconSource's icon path, so
-        // this in-hand mesh recolor reuses that same cached canvas instead of
-        // minting its own raw-precision entry in ToolMetalRecolor's cache.
-        const quantizedOpts = { ...opts, oxidationAmount: quantizeOxidation(opts.oxidationAmount) };
-        window.ToolMetalRecolor?.getRecoloredCanvas(def.sprite, quantizedOpts).then(canvas => {
-          tex.image = canvas;
-          tex.needsUpdate = true;
-          if (def.modular && modularToolGeometries.has(itemKey)) window.ModularWeapons.fitPlaneGeometry(modularToolGeometries.get(itemKey), canvas, TOOL_MODEL_WIDTH);
-        }).catch(error => { window.__farmLog?.(`[Foundry/metal sprite] ${error.message}`, 'error'); });
-      }
-
-      // Build a PNG plane mesh sized to the sprite's pixel aspect ratio.
-      // Shared by the player's own equipped-tool mesh (rebuildToolMeshes), a
-      // bandit's weapon (makeBanditToolHolder), and an NPC work station's
-      // displayed tool.
-      // Used by both tool planes and held bag-item planes to keep them above
-      // resource-ring layers (<1.1) while remaining below avatar planes (2+).
-      const HELD_OBJECT_RENDER_ORDER = 1.5;
-      function makeToolPlaneMesh(itemKey, opts = {}) {
-        if (!itemKey || !ensureToolTexture(itemKey)) return null;
-        const def  = TOOL_ITEM_DEFS[itemKey];
-        const imgW = def?._imgW || 1;
-        const imgH = def?._imgH || 1;
-        const planeW = TOOL_MODEL_WIDTH;
-        const planeH = planeW * (imgH / imgW);   // e.g. 450×1204 → 0.5 × 1.338
-        const g   = new THREE.Group();
-        let geo = def?.modular ? modularToolGeometries.get(itemKey) : null; // Reuse the same geometry object so existing dual-wield copies receive layout updates.
-        if (!geo) {
-          geo = new THREE.PlaneGeometry(planeW, planeH);
-          if (def?.modular) modularToolGeometries.set(itemKey, geo);
-        }
-        if (def?.modular) window.ModularWeapons.fitPlaneGeometry(geo, toolTextures[itemKey].image, TOOL_MODEL_WIDTH);
-        const mat = def?.modular
-          ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
-          : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
-        const plane = new THREE.Mesh(geo, mat);
-        plane.userData.sharedToolGeometry = !!def?.modular; // Enemy teardown leaves cached modular geometry available to other holders.
-        // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
-        // Tool End Flip is an in-plane 180° turn on the visible sprite, so
-        // the business end actually swaps with the handle instead of merely
-        // rolling the parent around the weapon's own length axis.
-        plane.rotation.x = -Math.PI / 2;
-        plane.rotation.z = opts.flip ? Math.PI : 0;
-        plane.renderOrder = HELD_OBJECT_RENDER_ORDER;
-        g.add(plane);
-        // Keep the parent identity-oriented; pose rotations stay on toolHolder.
-        g.rotation.z = 0;
-        g.userData.toolEndFlipBase = opts.flip === true;
-        g.userData.itemKey = itemKey; // Used by ranged visual updates to prove the mesh still belongs to the item whose loaded state changed.
-        // Keep a handle on the sprite plane so updateToolMesh can layer the sweep style's
-        // blade-parallel twist and the mace-mode "spinning" twirl on top each frame, derived
-        // from whichever anim is actually playing rather than baked in per-item here — see
-        // updateToolMesh's baseRotZ for why.
-        g.userData.toolPlane = plane;
-        _markPngPlane(g);
-        window.HobunjiWeaponSpriteAssemblies?.decorate(g, itemKey, def, { THREE, metalOptions: () => metalToolRecolorOptions(itemKey), masteryLevel: () => toolMasteryLevel(itemKey) }); // Shared optional layered PNG/flail visual; grip, impact, swing and enchantment authority stay on the original haft plane.
-        return g;
-      }
-
-      function setToolMeshLoadedState(mesh, itemKey, loaded) {
-        const meshItemKey = mesh?.userData?.itemKey || null; // Used to reject stale/asynchronous loaded-state updates aimed at another weapon's live mesh.
-        if (meshItemKey && meshItemKey !== itemKey) return false;
-        const plane = mesh?.userData?.toolPlane || mesh?.children?.[0]?.userData?.toolPlane;
-        if (!plane) return false;
-        plane.material.map = loaded && loadedToolTextures[itemKey] ? loadedToolTextures[itemKey] : toolTextures[itemKey];
-        plane.material.needsUpdate = true;
-        mesh.userData.appliedTextureItemKey = itemKey;
-        return true;
-      }
+      function refreshMetalToolWorldTexture(itemKey) { return window.CharacterHeldTools.refreshMetalToolWorldTexture(itemKey); }
+      function makeToolPlaneMesh(itemKey, opts = {}) { return window.CharacterHeldTools.makeToolPlaneMesh(itemKey, opts); }
+      function setToolMeshLoadedState(mesh, itemKey, loaded) { return window.CharacterHeldTools.setToolMeshLoadedState(mesh, itemKey, loaded); }
 
       function setRangedLoadedVisual(itemKey, loaded, owner = null) {
         if (!owner && equipmentSlots.ranged !== itemKey) return false;
@@ -30830,6 +30777,7 @@
         },
       });
 
+      const NON_PLAYER_TOOL_HOLDER = Object.freeze({ kind: 'non-player' }); // No mastery, fresh base metal unless the caller passes the real holder.
       window.BanditCombat?.init({
         isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
         isGameStarted: () => window.__hobunjiGameStarted === true, // Prevent abstract marching while the title/creator owns the world.
@@ -30880,7 +30828,9 @@
         creatureGroundShadowRadii,
         characterGroundShadowSurfaceOffset,
         markPngPlane: _markPngPlane,
-        makeToolPlaneMesh,
+        // Non-player holders (bandits, tribes, undead, NPC held equipment that
+        // reuses these deps): their own mastery/metal, never the player's.
+        makeToolPlaneMesh: (itemKey, opts = {}) => makeToolPlaneMesh(itemKey, { ...opts, holder: opts.holder || NON_PLAYER_TOOL_HOLDER }),
         STYLE_NEUTRAL_POSE,
         qFac: _qFac,
         qToolYaw: _qToolYaw,
