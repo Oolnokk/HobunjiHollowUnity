@@ -6,8 +6,8 @@
   const CLASSES = Object.freeze(['small', 'medium', 'large']); // Valid genetic size rows used for preview and import.
 
   const clone = value => JSON.parse(JSON.stringify(value)); // Copies frozen gameplay profiles into editable editor state.
-  const canonicalCreatures = () => window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures
-    || window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures || {}; // Source used by gameplay creature size/ground solvers.
+  const canonicalCreatures = () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures
+    || window.HOBUNJI_ATTACHMENT_RIG_MASTER?.profiles?.creatures || {}; // Live gameplay profiles win over the frozen default master.
   const validClass = sizeClass => CLASSES.includes(sizeClass) ? sizeClass : 'medium'; // Prevents a missing class from indexing unrelated profile entries.
 
   function placement(profile, sizeClass, modelHeight) {
