@@ -215,7 +215,12 @@ for(const [field,slider,number,percent] of wholeBindings){
   // Number fields keep focus/caret through intermediate edits, and commit once on change/blur.
   for(const event of ['change','blur'])number.addEventListener(event,()=>{
     finishHeadbandWholeGesture();
-    syncHeadbandWholeControls(); // After blur this restores the actual value if clamped at the sprite boundary.
+    const actual=selectedHeadbandWhole()?.entry.settings?.[field];
+    if(Number.isFinite(actual)){
+      const shown=percent?actual*100:actual;
+      number.value=String(Math.round(shown*1000)/1000); // A committed value must reveal constraint-clamped geometry even while the field retains focus.
+    }
+    syncHeadbandWholeControls();
   });
 }
 E.headbandWholeReset.onclick=()=>{
