@@ -986,9 +986,10 @@
     if (!pair) return { ok: false, message: 'That breeding pair is no longer active.' };
     const livestock = deps.loadWorldLivestock();
     const stableCache = new Map(); // Resolves mixed and Stable parents under the same ownership rules as hourly gestation.
-    const parentA = resolveBreedingParent(pair.parentA, livestock, stableCache);
-    const parentB = resolveBreedingParent(pair.parentB, livestock, stableCache);
-    if (!parentA || !parentB) return { ok: false, message: 'A parent in that breeding pair is unavailable.' };
+    const resolveParent = window.FarmAnimals?.resolveBreedingParent || resolveBreedingParent; // Use the Nursery's installed adulthood guard, not the unwrapped private resolver.
+    const parentA = resolveParent(pair.parentA, livestock, stableCache);
+    const parentB = resolveParent(pair.parentB, livestock, stableCache);
+    if (!parentA || !parentB) return { ok: false, message: 'A parent in that breeding pair is unavailable or too young.' };
     const progress = normalizeBreedingProgress(pair); // Migrates older readyDay/startDay pairs without discarding their elapsed time.
     if (progress >= 1) return { ok: false, message: 'That pair is already ready to give birth.' };
     const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
