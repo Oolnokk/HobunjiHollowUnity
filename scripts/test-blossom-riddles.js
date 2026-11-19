@@ -294,8 +294,8 @@ assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions cont
 assert.ok(witnessVerse.evidence.route.every(step=>step.terrainEvent==='river-crossing'||step.terrainEvent==='elevation'),'each walking leg commits to one main terrain event');
 const chosenSite=coloredSites.find(site=>site.dyeId===witnessVerse.evidence.uniqueStart.dyeId); // A nearby colored marker may correctly beat the old designated standing stone.
 assert.ok(chosenSite,'riddle ink must identify an actually generated, uniquely dyed scenery object');
-assert.equal(chosenSite.point.col,witnessVerse.evidence.uniqueStart.coordinate.col,'riddle opening points to the selected painted object's real column');
-assert.equal(chosenSite.point.row,witnessVerse.evidence.uniqueStart.coordinate.row,'riddle opening points to the selected painted object's real row');
+assert.equal(chosenSite.point.col,witnessVerse.evidence.uniqueStart.coordinate.col,'riddle opening points to the selected painted object column');
+assert.equal(chosenSite.point.row,witnessVerse.evidence.uniqueStart.coordinate.row,'riddle opening points to the selected painted object row');
 assert.ok(witnessVerse.evidence.uniqueStart.distanceToBlossom<=20,'a naturally available near marker wins over a faraway witness stone');
 assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
   instance:sceneryWorld.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route'}).text,
