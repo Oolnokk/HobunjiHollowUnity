@@ -84,6 +84,12 @@ assert.equal(ring.children.length,3,'a large ground decal is made from multiple 
 assert.ok(ring.children[2].geometry.outside>2,'outer ring spans multiple map tiles');
 assert.equal(ring.position.y,2.25,'decal follows the actual floor, not flat sea-level');
 assert.equal(cue.debugSnapshot().waterCenter.col,8,'river hum uses the verified central water tile');
+const edgeRiver={kind:'riverConfluence',coordinate:{col:15,row:9},waterCenter:{col:16,row:9},unique:true};
+cue.update({...riverOptions,anchor:edgeRiver,tile:{area:blossom.zoneId,col:15,row:9}});
+assert.equal(cue.debugSnapshot().voiceActive,false,'a river bank across a chunk seam cannot trigger sound in the wrong chunk');
+cue.update({...riverOptions,anchor:edgeRiver,tile:{area:blossom.zoneId,col:16,row:9}});
+assert.equal(cue.debugSnapshot().voiceActive,true,'the verified central water tile owns the audible chunk even when the bank differs');
+cue.update(riverOptions); // Restore the original ring and voice for the normal Perception and Shift lifecycle checks.
 assert.equal(ring.visible,true,'area decal appears only in Perception Mode');
 perception=false;
 cue.update(riverOptions);
