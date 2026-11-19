@@ -49,6 +49,8 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Test generated Hobunji Windows icon
+        run: node desktop/test-icon.cjs
       - name: Configure an independently installed Friends edition
         shell: pwsh
         run: |
