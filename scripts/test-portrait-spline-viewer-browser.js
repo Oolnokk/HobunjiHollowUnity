@@ -62,7 +62,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(before.canonicalPortrait.error,null,'canonical portrait integration is error-free');
     assert.equal(Object.keys(before.viewer.textureErrors||{}).length,0,
       'no origin-tainted or invalid PNG textures: '+JSON.stringify(before.viewer.textureErrors));
-    assert.equal(before.viewer.knots,3,'the 3D viewer builds the same three rest knots as the 2D author');
+    assert.equal(before.viewer.knots,2,'one root and one tip are shown in WebGL');
     assert(before.viewer.ribbonVertices>100,'the real WebGL ribbon has deformable vertex geometry');
     assert(before.viewer.textures.head?.colored>10 && before.viewer.textures.hair?.colored>10,
       'canonical body/head and hair textures contain real colored RGBA sprite pixels, not blank/black image buffers');
@@ -74,7 +74,7 @@ const server=http.createServer((req,res)=>{
       'the beard must actually render colored pixels on the GPU: '+JSON.stringify(before.viewer.gpuHair));
     assert(before.viewer.arrows.some(item=>item.axis==='x'),'the selected knot has a real X-axis move gizmo');
     // Wind previews must move existing meshes rather than allocate new ones on each touch input.
-    await page.locator('#testStrength').evaluate(input=>{
+    await page.locator('#windX').evaluate(input=>{
       input.value='.47';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
     const windEdited=await debug();
@@ -82,22 +82,19 @@ const server=http.createServer((req,res)=>{
       'wind slider should not rebuild the 3D knot spheres');
     assert.equal(windEdited.viewer.gizmoRebuilds,before.viewer.gizmoRebuilds,
       'wind slider should not rebuild the 3D XYZ gizmo');
-    await page.locator('#testStrength').evaluate(input=>{
+    await page.locator('#windX').evaluate(input=>{
       input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
-    const natural=await page.evaluate(()=>{
-      const authored=JSON.parse(document.querySelector('#json').value);
-      return {tip:authored.segments.at(-1).poses.right.translate.x,
-        upper:authored.segments[0].poses.right.translate.x,
-        follow:authored.tipFollow,hasOldGrip:'pinWidthPx' in authored};
-    });
-    assert(natural.tip>natural.upper&&natural.tip>0,
-      'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
-    assert(natural.follow>0&&!natural.hasOldGrip,'authored head pixels alone determine the hard mask');
+    const authored=JSON.parse(await page.locator('#json').inputValue());
+    assert.equal(authored.version,2,'single bone JSON schema');
+    assert.equal(authored.points.length,2,'only root and tip are authored');
+    assert(Object.values(authored.bone).every(n=>n>0),'one bone has swing limits');
+    assert(!('segments' in authored)&&!('tipFollow' in authored),'old blend table has been eliminated');
+    assert.equal(authored.hoodStretchPx,12,'elastic opening has a meaningful default');
     await page.locator('details:has(#json) > summary').click(); // Open the authoring JSON panel before touch-style typing.
     const rigBeforeDraft=await page.locator('#json').inputValue();
     await page.locator('#json').fill('{"draft":');
-    await page.locator('#testStrength').evaluate(input=>{
+    await page.locator('#windX').evaluate(input=>{
       input.value='.65';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
     assert.equal(await page.locator('#json').inputValue(),'{"draft":',
@@ -126,7 +123,7 @@ const server=http.createServer((req,res)=>{
     await page.locator('#applyJson').click();
     assert.equal(await page.locator('#jsonDraftStatus').innerText(),'',
       'applying valid JSON clears the draft warning');
-    await page.locator('#testStrength').evaluate(input=>{
+    await page.locator('#windX').evaluate(input=>{
       input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));
     });
     assert(before.regionMasks.front>0,'actual head-overlapping beard pixels default to the rigid region');
@@ -137,7 +134,7 @@ const server=http.createServer((req,res)=>{
     assert(before.viewer.textures.hair?.opaque>0,
       'single mesh retains opaque rigid beard art and flexible hanging pixels in the same GPU texture');
     await page.locator('#maskMode').click();
-    assert(await page.locator('#addPoint').isHidden(),'mask mode hides spline tools');
+    assert(await page.locator('#resetRig').isHidden(),'mask mode hides bone fitting tools');
     assert.equal((await debug()).viewer.handles,0,'mask mode removes the 3D rig gizmos');
     await page.locator('#autoMask').click();
     const initial=await debug();
@@ -186,21 +183,10 @@ const server=http.createServer((req,res)=>{
     const selectedPoint=JSON.parse(await page.locator('#json').inputValue()).points[1];
     assert.equal(selectedPoint.u,originalRig.points[1].u,'knot selection preserves rest X');
     assert.equal(selectedPoint.v,originalRig.points[1].v,'knot selection preserves rest Y');
-    await page.locator('#addPoint').click();
-    const inserted=JSON.parse(await page.locator('#json').inputValue());
-    assert.equal(inserted.points.length,originalRig.points.length+1,'knot insertion increases spline length');
-    assert.equal(JSON.stringify(inserted.segments[2]),JSON.stringify(originalRig.segments[1]),
-      'inserting a knot must preserve the downstream authored segment poses');
-    await page.locator('#removePoint').click();
-    const restored=JSON.parse(await page.locator('#json').inputValue());
-    assert.equal(JSON.stringify(restored.points),JSON.stringify(originalRig.points),
-      'removing the inserted knot restores the original resting geometry');
-    assert.equal(JSON.stringify(restored.segments),JSON.stringify(originalRig.segments),
-      'removing the inserted knot restores all original authored poses');
-    await page.locator('#generateBlend').click();
-    const generated=await debug();
-    assert.equal(generated.regionMasks.front,repainted.regionMasks.front,
-      'regenerating natural six-direction poses never discards manual rigid/flexible mask edits');
+    assert.equal(originalRig.points.length,2,'a single bone cannot insert middle knots');
+    assert(!('segments' in originalRig),'no segment pose table is exported');
+    assert.equal((await debug()).regionMasks.front,repainted.regionMasks.front,
+      'tip selection does not discard painted head attachment');
     await page.locator('#moveMode').click();
     await page.locator('#gizmoTranslate').click();
     const move=(await debug()).viewer.arrows.find(item=>item.axis==='x');
@@ -209,7 +195,9 @@ const server=http.createServer((req,res)=>{
     await page.mouse.move(move.x+65,move.y,{steps:6});
     await page.mouse.up();
     const moved=await debug();
-    assert(Math.abs(moved.pose.translate.x)>0.006,'dragging the 3D X arrow edits the runtime X knot translation');
+    const dragged=JSON.parse(await page.locator('#json').inputValue());
+    assert(Math.abs(dragged.points[1].u-originalRig.points[1].u)>0.006,
+      '3D X arrow moves the actual free bone tip');
     assert.equal(moved.viewer.mode,'translate');
     await page.locator('#gizmoRotate').click();
     const ring=(await debug()).viewer.rings.find(item=>item.axis==='z');
@@ -219,7 +207,7 @@ const server=http.createServer((req,res)=>{
     await page.mouse.move(ring.x+42,ring.y-28,{steps:6});
     await page.mouse.up();
     const rotated=await debug();
-    assert(Math.abs(rotated.pose.roll)>0.5,'dragging the Z rotation ring authors the real roll pose');
+    assert(Math.abs(rotated.bone.roll-dragged.bone.roll)>0.5,'3D Z ring authors one bone swing limit');
     assert.equal(rotated.regionMasks.front,repainted.regionMasks.front,
       '3D knot posing does not discard the separately authored rigid/flexible pixel region');
     const selectHood=async id=>{
@@ -251,7 +239,8 @@ const server=http.createServer((req,res)=>{
       const authored={...part.rig,hoodOpeningMask:{size:200,runs:[[covered,1]]}};
       profile.facialHair={...beard,splineRig:authored,variantSplineRigs:{}};
       await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,deferSplineParts:true});
-      const opening=canvas.hobunjiSplineParts[0].hoodFit.coverage[covered];
+      const fitted=canvas.hobunjiSplineParts[0].hoodFit;
+      const opening=fitted.coverage[covered],aperture=fitted.aperture[covered],openingPixels=fitted.openingPixels;
       profile.facialHair={...profile.facialHair,splineRig:{...authored,hoodOpeningMask:null,hoodOverlapMask:{size:200,runs:[[covered,1]]}}};
       await window.NpcAvatarPreview.renderProfileToCanvas(canvas,profile,{forceEyesOpen:true,deferSplineParts:true});
       const overlap=canvas.hobunjiSplineParts[0].hoodFit.overlap[covered];
@@ -261,9 +250,13 @@ const server=http.createServer((req,res)=>{
       let hasIslandVertex=false;
       for(let i=0;i<uv.count;i++)if(Math.abs(uv.getX(i)-50.5/200)<1e-6&&Math.abs(uv.getY(i)-(1-50.5/200))<1e-6)hasIslandVertex=true;
       mesh.dispose();
-      return {opening,overlap,hasIslandVertex};
+      return {opening,overlap,hasIslandVertex,aperture,openingPixels};
     });
-    assert.deepEqual(gameplay,{opening:0,overlap:1,hasIslandVertex:true},'the gameplay bake carries both masks and preserves isolated flexible pixels in 3D');
+    assert.equal(gameplay.opening,0,'seeded beard pixel punches the hood');
+    assert.equal(gameplay.aperture,1,'the same hole pins the beard at the aperture');
+    assert(gameplay.openingPixels>1,'elastic opening expands around connected hair');
+    assert.equal(gameplay.overlap,1,'marked hair can still overlap opaque hood cloth');
+    assert.equal(gameplay.hasIslandVertex,true,'small flexible islands remain deformable');
     const projected=await page.evaluate(async()=>{
       const THREE=await import('https://esm.sh/three@0.128.0');
       const renderer=new THREE.WebGLRenderer();
@@ -339,7 +332,7 @@ const server=http.createServer((req,res)=>{
     assert.equal((await debug()).hood.opening,openingBefore,'one undo restores the previous opening mask');
     assert.equal(errors.filter(text=>/uncaught|typeerror|referenceerror|syntaxerror|shader error|validate_status/i.test(text)).length,0,
       'No unhandled source error: '+errors.join('\n').slice(-2400));
-    console.log('Portrait spline author browser: canonical hood and facewrap, independent masks, and 3D gizmos pass.');
+    console.log('Single-bone hair author browser: GPU textures, elastic hood aperture, facewrap and 3D gizmos pass.');
   }finally{
     await browser?.close();await new Promise(resolve=>server.close(resolve));
   }
