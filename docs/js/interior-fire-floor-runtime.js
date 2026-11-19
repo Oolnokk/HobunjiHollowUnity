@@ -296,6 +296,44 @@
     };
   }
 
+  function attachWallTorchFlame(anchor) {
+    if (!anchor?.add) return null;
+    const shared = window.PersistentGroundFire?.attachCampfireFlame; // Game areas already have the canonical campfire-based VFX helper.
+    if (typeof shared === 'function') return shared(anchor, { scale: .5, rateScale: .55 });
+
+    // Standalone furniture/interior editors don't load PersistentGroundFire.
+    // Build the exact same campfire emitter through AuthoredFurniture instead
+    // of silently losing torch flames or resurrecting the old gradient sprite.
+    const state = { visual: null, disposed: false, source: 'loading-campfire' }; // Owned by the shared ambient scheduler; disposal invalidates late loads.
+    Promise.resolve(authored.load('campfire')).then(data => {
+      if (state.disposed) return;
+      const source = data?.particleEmitters?.find(emitter => emitter?.type === 'fire' && emitter.enabled !== false);
+      if (!source) { state.source = 'missing-campfire-fire'; return; }
+      const flame = deepCloneJson(source); // The player's campfire asset is immutable even in editor previews.
+      delete flame.attachedPartId;
+      flame.id = 'wall_torch_campfire_fire';
+      flame.name = 'Wall Torch Campfire Flames';
+      flame.position = { x: 0, y: 0, z: 0 };
+      for (const field of ['radius', 'size', 'speed', 'spread', 'gravity']) {
+        if (Number.isFinite(flame[field])) flame[field] *= .5; // Scaled campfire plume follows the slender handheld torch.
+      }
+      flame.rate = Math.max(3, Math.round((Number(source.rate) || 38) * .55));
+      const capacity = Math.max(8, Math.ceil(flame.rate * (Number(source.lifetime) || .72)) + 3);
+      state.visual = authored.createEmitterVisual(anchor, flame, capacity);
+      state.visual?.update?.(Math.min(.05, 1 / flame.rate), true); // Standalone editor previews get visible fire even before a scheduler attaches.
+      state.source = state.visual ? 'authored-campfire' : 'renderer-unavailable';
+    }).catch(error => {
+      if (state.disposed) return;
+      state.source = 'campfire-load-failed';
+      window.__farmLog?.('[ambient-fire] wall torch campfire VFX failed: ' + String(error?.message || error), 'warn');
+    });
+    return {
+      update(dt, lit) { if (!state.disposed) state.visual?.update?.(dt, lit); },
+      dispose() { state.disposed = true; state.visual?.dispose?.(); state.visual = null; },
+      debugSnapshot() { return { source: state.source, canonicalCampfire: true }; },
+    };
+  }
+
   function attachAmbientEmitters(group, data, key) {
     if (!group || !AMBIENT_FIRE_KEYS.has(key) || !authored.createEmitterVisual) return group;
     group.userData = group.userData || {};
@@ -316,7 +354,7 @@
     if (key === 'candleCluster') instanceCandleClusterBodies(group, data.parts); // Optimization is limited to these static authored candle parts.
     const wallTorchAnchor = isWallTorch ? group.userData.wallTorchFireAnchor : null; // Set by the shared handheld-torch sprite builder, including house fixtures.
     const visuals = isWallTorch
-      ? [wallTorchAnchor && window.PersistentGroundFire?.attachCampfireFlame?.(wallTorchAnchor, { scale: .5, rateScale: .55 })].filter(Boolean)
+      ? [wallTorchAnchor && attachWallTorchFlame(wallTorchAnchor)].filter(Boolean)
       : key === 'candleCluster'
         ? [makeCandleClusterFlames(group, emitters, data.parts)].filter(Boolean)
         : emitters.map(emitter => authored.createEmitterVisual(group, emitter)).filter(Boolean); // Every flame now uses the authored campfire emitter rather than a synthetic sprite or a separate point simulator.
