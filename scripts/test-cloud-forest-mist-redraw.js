@@ -123,6 +123,11 @@ sky.name = 'hobunji_dynamic_skydome';
 slope.fog = slopeFog;
 slope.background = slopeBackground;
 slope.add(sky);
+let slopeLightingSamples = 0; // Counts actual sky-light sampling, not the number of rendered snow frames.
+win.HobunjiSkyDome = {
+  getLightingState: () => { slopeLightingSamples++; return { r: 230, g: 235, b: 250, a: 0 }; },
+  getDebugState: () => ({ moonIllumination: 1 }),
+}; // The Western Slope retains its own daylight sky; only fog-material tint is sampled.
 area = 'map_western_slope';
 activeScene = slope;
 const policy = fog.__test;
@@ -167,6 +172,16 @@ assert(Math.abs(worldMist.children[0].material.opacity - 0.14) < 0.001, 'blizzar
 assert(Math.abs(worldMist.children[1].material.opacity - 0.26) < 0.001, 'blizzard reaches the middle Cloud Forest layer cap');
 assert(Math.abs(worldMist.children[2].material.opacity - 0.46) < 0.001, 'blizzard reaches the outer Cloud Forest layer cap');
 assert.equal(policy.westernSlopeSnowOpacity(3, 1), 1, 'full blizzard target is capped at one');
+const tintSamplesBefore = slopeLightingSamples; // Establishes how many sky lighting reads one continuous two-second interval needs.
+for (let i = 0; i < 120; i++) {
+  testSeconds += 1 / 60;
+  fog.update(1 / 60);
+}
+const tintRefreshes = slopeLightingSamples - tintSamplesBefore; // Expected: ~10 samples instead of 120 frame-by-frame reads.
+assert(tintRefreshes >= 8 && tintRefreshes <= 12,
+  'slope snow tint refreshes at about 5Hz rather than on every frame');
+assert.equal(slope.fog, slopeFog, 'throttled snow tint must not overwrite native depth fog');
+assert.equal(slope.background, slopeBackground, 'throttled snow tint must not overwrite native sky colors');
 fog.setLayerOpacity(2, 0.23);
 advance();
 assert(worldMist.children[2].material.opacity <= 0.23, 'custom layer tuning remains the absolute blizzard cap');
