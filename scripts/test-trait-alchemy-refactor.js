@@ -317,11 +317,13 @@ const followingAnimals = new Set([
   { livestockId:'fert-b', avatarRef:{group:{visible:true}} },
 ]); // In-memory farm avatars used to prove Stable exclusions without constructing Three.js meshes.
 let fertilityWorldSaves = 0; // Counts world writes made by the administered potion.
+let fertilityPermission = true; // Simulates an authorized farmhand or guest for the direct administration guard.
 window.FarmAnimals.init({
   calendar:{day:1}, inventory, animalObjects: followingAnimals,
   loadWorldLivestock:() => worldLivestock, saveWorldLivestock:list => { worldLivestock = list; fertilityWorldSaves++; },
   _loadWorldBreedingPairs:() => pairs, _saveWorldBreedingPairs:value => { pairs = value; },
   LIVESTOCK_RESOURCE_DEFS:{}, clampInventoryStack:key => { if (!inventory[key]) delete inventory[key]; },
+  hasFarmPermission: () => fertilityPermission,
   saveMemberWorldData:() => {}, refreshItemScroll:() => {}, showToast:() => {},
 });
 window.FarmAnimals.invalidateBreedingFollowCache();
@@ -346,6 +348,18 @@ window.FarmAnimals.invalidateBreedingFollowCache();
 assert.deepStrictEqual(window.FarmAnimals.breedingFollowDebug().followers, [], 'mixed world/Stable pairs never acquire a farm-follow relationship');
 assert.equal(window.FarmAnimals.administerFertilityPotion('mixed-pair',fertilityKey).ok, true, 'Farm pair action supports a Stable breeding parent');
 assert.ok(pairs[0].progress > 0, 'mixed-pair Fertility persists progress');
+
+pairs = [{ id:'underage-pair', parentA:{source:'world',id:'fert-a'}, parentB:{source:'world',id:'fert-b'}, startedDay:1, progress:0 }];
+inventory[fertilityKey] = 1;
+const unwrappedParentResolver = window.FarmAnimals.resolveBreedingParent; // Restored after exercising Nursery's exported adulthood filter.
+window.FarmAnimals.resolveBreedingParent = (ref, ...args) => ref?.id === 'fert-b' ? null : unwrappedParentResolver(ref, ...args);
+assert.equal(window.FarmAnimals.administerFertilityPotion('underage-pair', fertilityKey).ok, false, 'Nursery-rejected young parents cannot consume a Fertility bottle');
+assert.equal(inventory[fertilityKey], 1, 'invalid underage breeding preserves the bottle');
+window.FarmAnimals.resolveBreedingParent = unwrappedParentResolver;
+fertilityPermission = false;
+assert.equal(window.FarmAnimals.administerFertilityPotion('underage-pair', fertilityKey).ok, false, 'a guest without livestock privileges cannot accelerate a farm pair');
+assert.equal(inventory[fertilityKey], 1, 'permission failure preserves the bottle');
+fertilityPermission = true;
 assert.match(read('docs/js/wild-treasure.js'), /recipe\?\.useMode === 'livestock'/, 'reinforced-or-better buried chests must include all authored livestock potions in their existing pool');
 
 const game = read('docs/game.js');
