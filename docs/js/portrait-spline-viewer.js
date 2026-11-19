@@ -130,7 +130,9 @@
     function deformMesh(mesh,rig,posed,rear,hoodFit){
       // Reuse the authored ribbon's vertex buffers during pointer drags; only reallocate if grid density changes.
       const mask=rig.regionMasks?.[rear?'rear':'front'];
-      const grid=JSON.stringify([rig.segmentsX,rig.segmentsY,mask,rear?null:rig.hoodOverlapMask,rear?null:rig.hoodRigidOverlapMask]);
+      const grid=JSON.stringify([rig.segmentsX,rig.segmentsY,mask,
+        rear?null:rig.hoodOpeningMask,rear?null:rig.hoodStretchPx,
+        rear?null:rig.hoodOverlapMask,rear?null:rig.hoodRigidOverlapMask]);
       if(mesh.userData.grid!==grid){
         replaceMeshGeometry(mesh,window.PortraitSplineRig.strandGeometry(THREE,rig,1,1,rear));
         mesh.userData.rest=new Float32Array(mesh.geometry.attributes.position.array); // Neutral UV mesh, unchanged by 3D pose deformation.
@@ -231,7 +233,8 @@
         hoodClip?.update(next.hoodFit,1,1);
         lastHoodFit=next.hoodFit;
       }
-      const geometryKey=JSON.stringify([rig.points,rig.bone,rig.regionMasks,rig.hoodOverlapMask,rig.hoodRigidOverlapMask,
+      const geometryKey=JSON.stringify([rig.points,rig.bone,rig.regionMasks,rig.hoodOpeningMask,rig.hoodStretchPx,
+        rig.hoodOverlapMask,rig.hoodRigidOverlapMask,
         rig.width,rig.segmentsX,rig.segmentsY,next.wind]); // Mask edits and hierarchical pose strength must invalidate the live 3D ribbon.
       if(geometryKey!==lastGeometryKey||hoodChanged){
         deformMesh(hairPlane,rig,posed.points,false,next.hoodFit);
