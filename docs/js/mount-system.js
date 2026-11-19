@@ -783,8 +783,12 @@
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
-    deps.player.dodging = false; // Recover stale on-foot roll state before mounted cliff checks.
-    deps.player.dodgeT = 0;
+    // While the summoned mount is rushing in (or running out after dismount),
+    // the player is still on foot. Only boarding/riding owns and cancels an active roll.
+    if (mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
+      deps.player.dodging = false;
+      deps.player.dodgeT = 0;
+    }
     const currentArea = deps.getCurrentArea();
     if (!mountAllowedInArea(currentArea)) {
       // Covers rushing, mounting, mounted, and dismissing states alike; no

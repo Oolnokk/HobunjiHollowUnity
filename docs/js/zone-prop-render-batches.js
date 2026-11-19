@@ -222,6 +222,11 @@
     return data;
   }
 
+  function markBatchMembershipChanged(scene) {
+    const data = scene.userData; // Consumed by WildernessDistanceCull before this frame's world render.
+    data.hobunjiZonePropBatchRevision = (data.hobunjiZonePropBatchRevision || 0) + 1;
+  }
+
   function buildBatch(THREE, record, batch, members, owner, t) {
     const first = members[0];
     const geometry = mergeWorldGeometry(THREE, members);
@@ -244,6 +249,7 @@
     mesh.userData = carriedUserData(members, owner);
     batch.members = members.slice();
     batch.builtAt = t;
+    markBatchMembershipChanged(record.holder.parent); // New/rebuilt mesh must enter distance culling immediately.
     stats.rebuilds++;
   }
 
@@ -330,6 +336,7 @@
     const record = recordFor(scene);
     const groups = new Map();
     if (!collect(scene, record, t, groups)) {
+      if (record.batches.size) markBatchMembershipChanged(scene); // Deleted candidate meshes must leave the culler list too.
       for (const batch of record.batches.values()) { record.holder.remove(batch.mesh); batch.mesh.geometry.dispose(); }
       record.batches.clear();
       return null;
@@ -340,6 +347,7 @@
       record.holder.remove(batch.mesh);
       batch.mesh.geometry.dispose(); // The material belongs to the props.
       record.batches.delete(key);
+      markBatchMembershipChanged(scene);
     }
     const hidden = [];
     for (const [key, group] of groups) {

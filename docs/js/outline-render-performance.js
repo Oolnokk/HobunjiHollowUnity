@@ -407,7 +407,12 @@
   // re-checks the predicate and re-reads layer mask/visibility of the cached candidates.
   const WORLD_TEXT_RESCAN_MS = 1000;
   const worldTextCandidates = new WeakMap(); // scene -> { epoch, at, meshes }
-  let structureEpoch = 0;
+  const sceneStructureEpochs = new WeakMap(); // Only changes attached to this Scene invalidate its candidate traversal.
+  function owningScene(object) {
+    for (let node = object; node; node = node.parent) if (node.isScene) return node;
+    return null; // Mutations on detached groups must not invalidate the visible world's cache.
+  }
+  function sceneStructureEpoch(scene) { return sceneStructureEpochs.get(scene) || 0; }
 
   function installStructureEpoch() {
     for (const proto of [THREE.Object3D?.prototype, THREE.Scene?.prototype]) {
@@ -415,7 +420,12 @@
       for (const method of ['add', 'remove', 'clear']) {
         const previous = proto[method];
         if (typeof previous !== 'function' || previous.__hobunjiStructureEpochWrapped) continue;
-        const wrapped = function structureEpochWrapped(...args) { structureEpoch++; return previous.apply(this, args); };
+        const wrapped = function structureEpochWrapped(...args) {
+          const scene = owningScene(this); // Read before remove()/clear() detach their children.
+          const result = previous.apply(this, args);
+          if (scene) sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+          return result;
+        };
         Object.assign(wrapped, previous); // Other modules recognise their own wrapper on proto.add by marker properties; keep those visible.
         wrapped.__hobunjiStructureEpochWrapped = true;
         proto[method] = wrapped;
@@ -428,10 +438,10 @@
     if (!scene?.traverse) return [];
     const now = performance.now();
     let cached = worldTextCandidates.get(scene);
-    if (!cached || cached.epoch !== structureEpoch || now - cached.at > WORLD_TEXT_RESCAN_MS) {
+    if (!cached || cached.epoch !== sceneStructureEpoch(scene) || now - cached.at > WORLD_TEXT_RESCAN_MS) {
       const meshes = [];
       scene.traverse(object => { if (isWorldTextOverlayMesh(object)) meshes.push(object); });
-      cached = { epoch: structureEpoch, at: now, meshes };
+      cached = { epoch: sceneStructureEpoch(scene), at: now, meshes };
       worldTextCandidates.set(scene, cached);
     }
     const entries = [];
