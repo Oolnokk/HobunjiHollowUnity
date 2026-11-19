@@ -64,7 +64,7 @@ Canonical API:
 - Prefer `HobunjiSpritePngSurface.makeMaterial(THREE, texture, debugName, overrides)` for the matching unlit material.
 - Use `HobunjiSpritePngSurface.alphaTest()` rather than inventing a new cutout threshold.
 
-The avatar plane, body sprites, hands/feet, held tools/weapons, and same-style authored PNG surfaces are expected to share this appearance path. If a new PNG plane behaves differently from existing sprites, first compare it against this API rather than adding special-case material flags.
+The avatar **portrait and pants PNG planes**, held tools/weapons drawn on PNG planes, and other authored sprite-like planes should share this appearance path. **Modeled 3D hands and feet are not PNG billboards**: they still need their own 3D-generated outlines even if their textures are sourced from PNG art. If a new PNG plane behaves differently from existing sprites, compare it against this API before adding special-case material flags.
 
 ## Canvas/WebGL image loading: CORS is required
 
