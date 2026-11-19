@@ -16,6 +16,13 @@ npm run dist:win
 ```
 
 The installer appears in `desktop/dist/Hobunji-Hollow-Setup-0.1.0.exe`.
+
+The executable, installer shortcuts, game window, and update window use
+`docs/assets/hud/icon_hobunji.png` rather than Electron's default icon.
+The original artwork is 107×107 pixels; `npm run dist:win` automatically makes a
+512×512 pixel-perfect packaging copy at `desktop/build/icon.png` (ignored by
+Git). Both the ordinary and Friends Windows installers share this icon.
+The `pngjs` dependency is used only while building, not shipped with the game.
 The **Windows desktop installer** GitHub Actions workflow also builds an
 installer for this PR; download it from that workflow run's artifacts.
 No merge is needed to build or test the PR version.

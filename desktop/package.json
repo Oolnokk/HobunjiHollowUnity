@@ -6,7 +6,7 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis --x64 --publish never"
+    "dist:win": "node prepare-icon.cjs && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "three": "0.128.0",
@@ -14,7 +14,8 @@
   },
   "devDependencies": {
     "electron": "44.11.3",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "pngjs": "7.0.0"
   },
   "build": {
     "appId": "com.oolnokk.hobunjihollow",
@@ -63,6 +64,7 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "build/icon.png",
       "artifactName": "Hobunji-Hollow-Setup-${version}.${ext}"
     },
     "nsis": {
