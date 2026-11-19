@@ -110,6 +110,12 @@ assert.equal(cue.debugSnapshot().voiceActive,true);
 cue.update({...riverOptions,active:false});
 assert.equal(cue.senseTargets(scene).length,0,'quest expiry removes current perception target');
 assert.equal(cue.debugSnapshot().voiceActive,false,'quest expiry mutes the hum');
+cue.update({...riverOptions,color:'#ee00ff'}); // A changed festival swatch must replace an already-instantiated river-ring material.
+const recoloredRing=cue.senseTargets(scene)[0].root;
+assert.equal(recoloredRing.children[0].material.color,'#ee00ff','the area decal uses the current blossom window color');
+cue.update(riverOptions);
+assert.equal(recoloredRing.parent,null,'swatch changes dispose obsolete ring geometry and materials');
+assert.equal(cue.senseTargets(scene)[0].root.children[0].material.color,'#00ffff','reverting the swatch restores the original blossom color');
 cue.reset();
 assert.equal(cue.debugSnapshot().inChunk,false,'world reinit clears any retained landmark ownership');
 console.log('ok - Blossom Hunt sound, object glow, river decals and lifecycle');
