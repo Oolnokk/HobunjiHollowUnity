@@ -1723,7 +1723,10 @@
     snd._bgsLastUpdateAt = now;
     snd._bgsTargetVolume = v;
     snd.volume = Math.max(0, Math.min(1, snd.volume + (v - snd.volume) * blend));
-    audioTrace('bgs state ' + id + ' volume=' + snd.volume.toFixed(2) + ' target=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, 'bgs-state-' + id, 5000, 'bgs');
+    const stateTraceKey = 'bgs-state-' + id; // Shared key lets the trace's existing five-second throttle skip per-frame string formatting.
+    if (audioTraceEnabled() && _audioDebugDue(stateTraceKey, 5000)) {
+      audioTrace('bgs state ' + id + ' volume=' + snd.volume.toFixed(2) + ' target=' + v.toFixed(2) + ' paused=' + snd.paused + ' ready=' + audioReadyStateLabel(snd) + ' url=' + snd.src, stateTraceKey, 5000, 'bgs');
+    }
     if (v > 0 && snd.paused && !snd._gameAutoplayBlocked) {
       audioDebug('starting bgs ' + id + ' url=' + snd.src + ' volume=' + v.toFixed(2), 'bgs-start-' + id, 3000, 'bgs');
       requestGameAudioPlay(snd).catch(err => audioDebug('bgs play blocked/failed ' + id + ': ' + (err?.name || err), 'bgs-fail-' + id, 3000, 'bgs'));
