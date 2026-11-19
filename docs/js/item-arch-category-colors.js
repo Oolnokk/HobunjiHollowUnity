@@ -55,14 +55,21 @@
   const MINERAL_RE = /\b(stone|rock|ore|mineral|metal|ingot|bar|copper|bronze|iron|verdigris)\b/;
   const ANIMAL_PRODUCT_RE = /\b(milk|curds?|cheese|wool|venom|stink oil|dew|egg|hide|leather|feather)\b/;
   const RECIPE_RE = /\b(recipe|blueprint|plan|schematic)\b/;
-  const LABEL_ID = 'itemArchCategoryHeading';
-  const LABEL_OUTSET_PX = 17; // Matches quick-potion-arc-ui.js's curved selector heading outset.
+  const FIXED_HEADING_ID = 'itemArchFixedCategoryHeading'; // The single fixed Potion Select-style category label.
+  const ITEM_RADIUS_INSET_PX = 6; // Item Select alone sits six pixels inside the common selector ring.
+  const FIXED_HEADING_MID_DEG = 135; // Stable centre of the category title's quadratic arc.
+  const FIXED_HEADING_SWEEP_DEG = 40; // Constant title arc prevents desktop jitter.
+  const FALLBACK_LABEL_OUTSET_PX = 17; // Used before QuickPotionArcUI exposes its measured text outset.
+  const GEOMETRY_EPSILON_PX = 0.35; // Avoid pointless geometry refreshes from rounding alone.
 
   let itemDeps = {}; // Used to merge ITEM_DEFS/inventoryItems/inventory helpers supplied by existing game modules.
   let observer = null; // Used to recolor/relabel when the transient selection arc is built or removed.
   let refreshQueued = false; // Used to coalesce DOM/input bursts into one pre-paint category pass.
   let lastSnapshot = []; // Used by the mobile-friendly debug API to report what the player can currently see.
-  let lastLabelSignature = null; // Skips rebuilding the curved category label's SVG when its content/geometry hasn't actually changed.
+  let frameRunning = false; // The sole bounded animation owner while the item selector is open.
+  let lastCategoryLabel = ''; // Retains the last real selection through mobile edge sentinels.
+  let lastSelected = null; // Previous real category, used by the mobile debug view and edge scrolling.
+  let lastGeometryRequest = null; // Suppresses repeated requests when potion geometry cannot yet change.
   let lastGroupedOrder = []; // Used by diagnostics to verify the real canonical selectable order.
   let lastGroupedAt = 0; // Used by diagnostics to distinguish boot grouping from later item-registration regrouping.
   let hookedSharedArc = false; // Prevents wrapping window._desktopSelectionArc.openItem more than once.
@@ -143,42 +150,115 @@
 
   function injectStyles() {
     if (document.getElementById('itemArchCategoryColorStyles')) return;
-    const style = document.createElement('style'); // Used to keep all category presentation decoupled from the shared HUD stylesheet.
+    const style = document.createElement('style'); // The only item-arch style owner; loaded before the wheel and scoped to its slots.
     style.id = 'itemArchCategoryColorStyles';
     style.textContent = `
-      .arc-slot[data-item-category] .arc-icon {
-        --item-cat-color: #A9B4C3;
-        --item-cat-rgb: 169,180,195;
-        position: relative;
-        display: inline-grid !important;
-        place-items: center;
-        min-width: 1.72em;
-        min-height: 1.72em;
-        box-sizing: border-box;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(var(--item-cat-rgb), .58) 0 52%, rgba(var(--item-cat-rgb), .20) 67%, rgba(var(--item-cat-rgb), 0) 72%);
-        box-shadow:
-          0 0 0 3px rgba(var(--item-cat-rgb), .96),
-          0 0 15px 5px rgba(var(--item-cat-rgb), .68),
-          inset 0 0 10px rgba(var(--item-cat-rgb), .42);
-      }
-      .arc-slot[data-item-category] .arc-label {
-        color: var(--item-cat-color) !important;
-        text-shadow: 0 1px 2px #000, 0 0 7px rgba(var(--item-cat-rgb), .92);
-        font-weight: 800;
-      }
+      /* Keep the category treatment bold without changing Potion Select's
+         authoritative icon dimensions. The earlier 1.72em disc enlarged the
+         item glyph and made the wheel read as a different radius. */
+      .arc-slot[data-item-category] .arc-icon,
       .arc-slot[data-item-category].arc-active .arc-icon {
+        min-width:0 !important;
+        min-height:0 !important;
+        width:auto !important;
+        height:auto !important;
+        display:inline-block !important;
+        box-sizing:content-box !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        font-size:.78em !important;
+        filter:
+          drop-shadow(0 0 2px rgba(var(--item-cat-rgb), 1))
+          drop-shadow(0 0 5px rgba(var(--item-cat-rgb), .78)) !important;
+        z-index:1;
+      }
+      /* Emoji reset must not erase item sprites installed as background images. */
+      .arc-slot[data-item-category] .arc-icon:not(.sprited-icon) { background:none !important; }
+      .arc-slot[data-item-category] .arc-icon img,
+      .arc-slot[data-item-category] .arc-icon canvas,
+      .arc-slot[data-item-category] .arc-icon svg {
+        max-width:18px !important;
+        max-height:18px !important;
+      }
+
+      /* Category colour now lives around the potion-sized slot rather than
+         enlarging the icon itself. Pseudo-element decoration never affects
+         layout, hit testing, slot diameter, or selector radius. */
+      .arc-slot[data-item-category]::before {
+        content:'';
+        position:absolute;
+        inset:-1px;
+        border:2px solid rgba(var(--item-cat-rgb), .96);
+        border-radius:50%;
+        background:radial-gradient(circle, rgba(var(--item-cat-rgb), .24) 0 58%, rgba(var(--item-cat-rgb), .06) 72%, transparent 76%);
+        box-shadow:0 0 9px rgba(var(--item-cat-rgb), .72), inset 0 0 7px rgba(var(--item-cat-rgb), .28);
+        pointer-events:none;
+        z-index:0;
+      }
+      .arc-slot[data-item-category] .arc-label { z-index:1; }
+      .arc-slot.shared-selection-slot[data-item-category].arc-active:not(.arc-arrow):not(.shared-selection-exit-ghost)::before {
+        border-color:#fff;
         box-shadow:
-          0 0 0 3px #fff,
-          0 0 0 7px rgba(var(--item-cat-rgb), 1),
-          0 0 24px 9px rgba(var(--item-cat-rgb), .90),
-          inset 0 0 12px rgba(var(--item-cat-rgb), .55);
+          0 0 0 3px rgba(var(--item-cat-rgb), .98),
+          0 0 13px 4px rgba(var(--item-cat-rgb), .78),
+          inset 0 0 8px rgba(var(--item-cat-rgb), .34);
       }
-      #${LABEL_ID} .quick-potion-curved-category {
-        filter: drop-shadow(0 0 5px var(--item-category-heading-color, #f9e28a));
+
+      
+      .arc-slot[data-item-category] .arc-label {
+        color:var(--item-cat-color) !important;
+        text-shadow:0 1px 2px #000, 0 0 7px rgba(var(--item-cat-rgb), .92);
+        font-weight:800;
       }
-      @media (prefers-reduced-motion: reduce) {
-        .arc-slot[data-item-category] .arc-icon { transition: none !important; }
+      @media (prefers-reduced-motion:reduce) {
+        .arc-slot[data-item-category] .arc-icon { transition:none !important; }
+      }
+
+      /* Restore the item icon box to its pre-category-feature state. Deliberately
+         do NOT set font-size or media max-size here: the game's existing selector
+         CSS remains authoritative for the actual icon size. */
+      html body .arc-slot.shared-selection-slot[data-item-category] .arc-icon,
+      html body .arc-slot.shared-selection-slot[data-item-category].arc-active .arc-icon {
+        display:inline !important;
+        place-items:normal !important;
+        width:auto !important;
+        height:auto !important;
+        min-width:auto !important;
+        min-height:auto !important;
+        box-sizing:border-box !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        filter:none !important;
+        z-index:auto !important;
+      }
+
+      /* Leave actual item sprite backgrounds intact while keeping plain glyphs undecorated. */
+      html body .arc-slot.shared-selection-slot[data-item-category] .arc-icon:not(.sprited-icon) { background:none !important; }
+      html body .arc-slot.shared-selection-slot[data-item-category] .arc-icon.sprited-icon {
+        display:inline-block !important;
+        width:1.25em !important;
+        height:1.25em !important;
+        background-size:contain !important;
+        background-position:center !important;
+        background-repeat:no-repeat !important;
+      }
+/* Translate is independent from the shared selector's left/top/scale
+         animation, so this changes only Item Select's visual radius. */
+      html body .arc-slot.item-select-radius-inset[data-item-category] {
+        translate:var(--item-select-inset-x, 0px) var(--item-select-inset-y, 0px) !important;
+      }
+
+      /* Visually identical to Potion Select's sharply legible category text. */
+      html #${FIXED_HEADING_ID} .quick-potion-curved-category {
+        fill:#f9e28a !important;
+        stroke:rgba(0,0,0,.82) !important;
+        stroke-width:3px !important;
+        paint-order:stroke fill !important;
+        font-family:'KhymeryyanRomanLetters+Numbers','Pixelify Sans',sans-serif !important;
+        font-size:clamp(16px,2.5vmin,24px) !important;
+        letter-spacing:.08em !important;
+        text-shadow:0 2px 5px rgba(0,0,0,.8) !important;
+        filter:none !important;
       }
     `;
     document.head.appendChild(style);
@@ -213,159 +293,228 @@
   }
 
   function clearSlot(slot) {
-    delete slot.dataset.itemCategory;
-    delete slot.dataset.itemKey;
-    delete slot.dataset.itemCategoryLabel;
+    if (slot.dataset.itemCategory !== undefined) delete slot.dataset.itemCategory;
+    if (slot.dataset.itemKey !== undefined) delete slot.dataset.itemKey;
+    if (slot.dataset.itemCategoryLabel !== undefined) delete slot.dataset.itemCategoryLabel;
     const icon = slot.querySelector('.arc-icon');
-    icon?.style.removeProperty('--item-cat-color');
-    icon?.style.removeProperty('--item-cat-rgb');
+    for (const target of [slot, icon]) {
+      if (target?.style.getPropertyValue('--item-cat-color')) target.style.removeProperty('--item-cat-color');
+      if (target?.style.getPropertyValue('--item-cat-rgb')) target.style.removeProperty('--item-cat-rgb');
+    }
+    if (slot.classList.contains('item-select-radius-inset')) {
+      slot.classList.remove('item-select-radius-inset');
+      slot.style.removeProperty('--item-select-inset-x');
+      slot.style.removeProperty('--item-select-inset-y');
+    }
   }
 
-  function removeCurvedCategoryLabel() {
-    document.getElementById(LABEL_ID)?.remove();
-  }
-
-  function sharedTargetCenter(slot) {
-    const x = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
-    const y = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
-    if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
-    const rect = slot?.getBoundingClientRect?.();
-    return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
-  }
-
-  function outerRingCenter() {
-    const anchor = document.getElementById('toolSelect');
-    const rect = anchor?.getBoundingClientRect?.();
-    return rect
-      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  function fallbackGeometry() {
+    const anchorRect = document.getElementById('toolSelect')?.getBoundingClientRect?.();
+    const center = anchorRect
+      ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 }
       : { x: innerWidth, y: innerHeight };
+    const toolRect = document.getElementById('toolBtn')?.getBoundingClientRect?.();
+    const toolCenter = toolRect ? { x: toolRect.left + toolRect.width / 2, y: toolRect.top + toolRect.height / 2 } : null;
+    const radius = toolCenter ? Math.hypot(toolCenter.x - center.x, toolCenter.y - center.y) : innerWidth / 32 * 10;
+    return { center, radius, labelOutsetPx: FALLBACK_LABEL_OUTSET_PX };
   }
 
-  function outwardLabelPoint(point, center) {
-    if (!point) return null;
-    const dx = point.x - center.x;
-    const dy = point.y - center.y;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    return { x: point.x + dx / length * LABEL_OUTSET_PX, y: point.y + dy / length * LABEL_OUTSET_PX };
+  function sharedGeometry() {
+    const diagnostics = window.QuickPotionArcUI?.diagnostics?.();
+    const fallback = fallbackGeometry();
+    const center = diagnostics?.outerRingGeometry?.center;
+    const radius = Number(diagnostics?.outerRingGeometry?.radius);
+    const labelOutsetPx = Number(diagnostics?.labelOutsetPx);
+    return {
+      center: center && Number.isFinite(center.x) && Number.isFinite(center.y) ? { x: center.x, y: center.y } : fallback.center,
+      radius: Number.isFinite(radius) && radius > 1 ? radius : fallback.radius,
+      labelOutsetPx: Number.isFinite(labelOutsetPx) ? labelOutsetPx : fallback.labelOutsetPx,
+    };
   }
 
-  function visibleItemSlots() {
+  function realItemSlots() {
     return [...document.querySelectorAll('.arc-slot[data-item-category]:not(.arc-arrow):not(.shared-selection-exit-ghost)')]
       .filter(slot => {
         const style = getComputedStyle(slot);
         return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-      })
-      .sort((a, b) => {
-        const aa = Number.parseFloat(a.dataset.sharedSelectionAngle || '');
-        const ba = Number.parseFloat(b.dataset.sharedSelectionAngle || '');
-        if (Number.isFinite(aa) && Number.isFinite(ba)) return ba - aa; // Left-to-right around the 9-to-12 o'clock selector quadrant.
-        return (sharedTargetCenter(a)?.x || 0) - (sharedTargetCenter(b)?.x || 0);
       });
   }
 
-  function renderCurvedCategoryLabel() {
-    // This whole function reruns every time colorItemSlots() does, which is
-    // driven by this file's own document.body-wide MutationObserver -- and
-    // removing+recreating the SVG is itself a childList mutation on body, so
-    // doing that unconditionally every pass fed the observer right back into
-    // itself, forever, once per animation frame, for as long as the item arc
-    // stayed open. lastLabelSignature (checked below, once geometry is known)
-    // skips the remove+recreate when nothing about the label actually changed.
-    if (!itemArcIsOpen()) {
-      removeCurvedCategoryLabel();
-      lastLabelSignature = null;
-      return;
-    }
-    const slots = visibleItemSlots();
-    const active = slots.find(slot => slot.classList.contains('arc-active'));
-    const category = active?.dataset?.itemCategory;
-    const categoryStyle = CATEGORY_STYLES[category];
-    if (!active || !categoryStyle) {
-      removeCurvedCategoryLabel();
-      lastLabelSignature = null;
-      return;
-    }
+  function slotAngleDeg(slot, center) {
+    const authored = Number.parseFloat(slot?.dataset?.sharedSelectionAngle || '');
+    if (Number.isFinite(authored)) return authored;
+    const x = Number.parseFloat(slot?.dataset?.sharedSelectionTargetX || '');
+    const y = Number.parseFloat(slot?.dataset?.sharedSelectionTargetY || '');
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return Math.atan2(-(y - center.y), x - center.x) * 180 / Math.PI;
+  }
 
-    const center = outerRingCenter();
-    let points = slots.map(slot => outwardLabelPoint(sharedTargetCenter(slot), center)).filter(Boolean);
+  function applyTinyRadiusInset(slots, center) {
+    slots.forEach(slot => {
+      const angleDeg = slotAngleDeg(slot, center);
+      if (!Number.isFinite(angleDeg)) return;
+      const angle = angleDeg * Math.PI / 180;
+      // Shared arc uses x = cx + cos(a)r, y = cy - sin(a)r; the opposite vector moves inward.
+      const dx = -Math.cos(angle) * ITEM_RADIUS_INSET_PX;
+      const dy = Math.sin(angle) * ITEM_RADIUS_INSET_PX;
+      // This runs only in the one bounded item-arch presentation loop
+      // for as long as the item wheel is open, so unconditional writes here
+      // are a real, continuous cost even though the values are frequently
+      // unchanged frame to frame for a stationary wheel.
+      if (!slot.classList.contains('item-select-radius-inset')) slot.classList.add('item-select-radius-inset');
+      const insetX = `${dx.toFixed(3)}px`, insetY = `${dy.toFixed(3)}px`;
+      if (slot.style.getPropertyValue('--item-select-inset-x') !== insetX) slot.style.setProperty('--item-select-inset-x', insetX);
+      if (slot.style.getPropertyValue('--item-select-inset-y') !== insetY) slot.style.setProperty('--item-select-inset-y', insetY);
+    });
+  }
 
-    // Potion Select normally has 2+ slots. Preserve the same curved treatment for
-    // a one-item inventory by synthesizing a short tangent span around that slot.
-    if (points.length === 1) {
-      const point = sharedTargetCenter(active);
-      const radius = point ? Math.hypot(point.x - center.x, point.y - center.y) : 0;
-      const angle = Number.parseFloat(active.dataset.sharedSelectionAngle || '');
-      if (!(radius > 1) || !Number.isFinite(angle)) {
-        removeCurvedCategoryLabel();
-        lastLabelSignature = null;
-        return;
-      }
-      points = [angle + 12, angle - 12].map(deg => {
-        const rad = deg * Math.PI / 180;
-        return outwardLabelPoint({ x: center.x + Math.cos(rad) * radius, y: center.y - Math.sin(rad) * radius }, center);
-      });
-    }
-    if (points.length < 2) {
-      removeCurvedCategoryLabel();
-      lastLabelSignature = null;
-      return;
-    }
+  function clearRadiusInsets() {
+    document.querySelectorAll('.arc-slot.item-select-radius-inset').forEach(slot => {
+      slot.classList.remove('item-select-radius-inset');
+      slot.style.removeProperty('--item-select-inset-x');
+      slot.style.removeProperty('--item-select-inset-y');
+    });
+  }
 
-    const start = points[0];
-    const end = points[points.length - 1];
-    const middle = points[Math.floor(points.length / 2)];
+  function pointOnArc(angleDeg, center, radius) {
+    const angle = angleDeg * Math.PI / 180;
+    return { x: center.x + Math.cos(angle) * radius, y: center.y - Math.sin(angle) * radius };
+  }
+
+  function fixedHeadingPathData(geometry) {
+    const radius = Math.max(1, geometry.radius - ITEM_RADIUS_INSET_PX + geometry.labelOutsetPx);
+    const halfSweep = FIXED_HEADING_SWEEP_DEG / 2;
+    const start = pointOnArc(FIXED_HEADING_MID_DEG + halfSweep, geometry.center, radius);
+    const middle = pointOnArc(FIXED_HEADING_MID_DEG, geometry.center, radius);
+    const end = pointOnArc(FIXED_HEADING_MID_DEG - halfSweep, geometry.center, radius);
     const mx = (start.x + end.x) / 2;
     const my = (start.y + end.y) / 2;
-    let control;
-    if (points.length >= 3) {
-      control = { x: 2 * middle.x - mx, y: 2 * middle.y - my };
-    } else {
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const length = Math.max(1, Math.hypot(dx, dy));
-      let nx = -dy / length;
-      let ny = dx / length;
-      if ((center.x - mx) * nx + (center.y - my) * ny > 0) { nx *= -1; ny *= -1; }
-      const span = Math.hypot(dx, dy);
-      control = { x: mx + nx * Math.min(30, span * 0.16), y: my + ny * Math.min(30, span * 0.16) };
-    }
+    const control = { x: 2 * middle.x - mx, y: 2 * middle.y - my }; // Same quadratic construction used by Potion Select, but from fixed screen-space points.
+    return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+  }
 
-    const pathD = `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
-    const signature = `${category}|${categoryStyle.label}|${pathD}`;
-    if (signature === lastLabelSignature) return; // Already showing exactly this label at this geometry -- nothing to rebuild.
-    lastLabelSignature = signature;
-    removeCurvedCategoryLabel();
-
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.id = LABEL_ID;
-    svg.setAttribute('viewBox', `0 0 ${innerWidth} ${innerHeight}`);
+  function ensureFixedHeading() {
+    let svg = document.getElementById(FIXED_HEADING_ID);
+    if (svg) return svg;
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = FIXED_HEADING_ID;
     svg.setAttribute('aria-hidden', 'true');
-    svg.style.cssText = `position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:203;overflow:visible;--item-category-heading-color:${categoryStyle.color};`;
+    svg.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:204;overflow:visible;';
 
-    const pathId = `${LABEL_ID}Path`;
     const path = document.createElementNS(svg.namespaceURI, 'path');
-    path.id = pathId;
-    path.setAttribute('d', pathD);
+    path.id = `${FIXED_HEADING_ID}Path`;
     path.setAttribute('fill', 'none');
 
-    const textNode = document.createElementNS(svg.namespaceURI, 'text');
-    textNode.setAttribute('class', 'quick-potion-curved-category');
-    textNode.setAttribute('fill', categoryStyle.color);
+    const text = document.createElementNS(svg.namespaceURI, 'text');
+    text.setAttribute('class', 'quick-potion-curved-category');
     const textPath = document.createElementNS(svg.namespaceURI, 'textPath');
-    textPath.setAttribute('href', `#${pathId}`);
+    textPath.setAttribute('href', `#${FIXED_HEADING_ID}Path`);
     textPath.setAttribute('startOffset', '50%');
     textPath.setAttribute('text-anchor', 'middle');
-    textPath.textContent = categoryStyle.label;
-    textNode.appendChild(textPath);
-    svg.append(path, textNode);
-    document.body.appendChild(svg);
+    text.appendChild(textPath);
+    svg.append(path, text);
+    document.documentElement.appendChild(svg);
+    return svg;
+  }
+
+  function removeFixedHeading() {
+    document.getElementById(FIXED_HEADING_ID)?.remove();
+  }
+
+  function selectedCategoryLabel(slots) {
+    const active = slots.find(slot => slot.classList.contains('arc-active'));
+    if (active?.dataset?.itemCategoryLabel) {
+      lastCategoryLabel = active.dataset.itemCategoryLabel;
+      const category = active.dataset.itemCategory; // Saved for the edge-scroll debug view.
+      lastSelected = { key: active.dataset.itemKey || null, category, categoryLabel: lastCategoryLabel,
+        color: CATEGORY_STYLES[category]?.color || CATEGORY_STYLES.other.color };
+    }
+    return lastCategoryLabel;
+  }
+
+  function updateFixedHeading(slots, geometry) {
+    const label = selectedCategoryLabel(slots);
+    if (!label) { removeFixedHeading(); return; }
+    const svg = ensureFixedHeading();
+    // Same every-frame cost as applyTinyRadiusInset above: innerWidth/innerHeight
+    // and the path geometry rarely change mid-interaction, so guard both writes.
+    const viewBox = `0 0 ${innerWidth} ${innerHeight}`;
+    if (svg.getAttribute('viewBox') !== viewBox) svg.setAttribute('viewBox', viewBox);
+    const pathEl = svg.querySelector('path');
+    const d = fixedHeadingPathData(geometry);
+    if (pathEl && pathEl.getAttribute('d') !== d) pathEl.setAttribute('d', d);
+    const textPath = svg.querySelector('textPath');
+    if (textPath && textPath.textContent !== label) textPath.textContent = label;
+  }
+
+  function selectionRadiusMatchesPotion(slots, geometry = sharedGeometry()) {
+    if (!Number.isFinite(geometry.radius) || !slots.length) return true;
+    return slots.every(slot => {
+      const actual = Number.parseFloat(slot.dataset.sharedSelectionRadius || '');
+      return !Number.isFinite(actual) || Math.abs(actual - geometry.radius) <= GEOMETRY_EPSILON_PX;
+    });
+  }
+
+  function requestExactSharedGeometry(slots, geometry) {
+    if (selectionRadiusMatchesPotion(slots, geometry)) { lastGeometryRequest = null; return; }
+    if (typeof window.QuickPotionArcUI?.refresh !== 'function') return;
+    const signature = geometry.radius + ':' + slots.map(slot => slot.dataset.sharedSelectionRadius || '').join('|'); // One attempt per mismatch until the underlying geometry changes.
+    if (lastGeometryRequest === signature) return;
+    lastGeometryRequest = signature;
+    window.QuickPotionArcUI.refresh();
+    queueRefresh(); // Re-read selector-owned positions after its refresh; never manually move its hit targets.
+  }
+
+  function updateOpenPresentation() {
+    if (!itemArcIsOpen()) {
+      lastCategoryLabel = '';
+      lastSelected = null;
+      lastGeometryRequest = null;
+      clearRadiusInsets();
+      removeFixedHeading();
+      return false;
+    }
+    const geometry = sharedGeometry();
+    const slots = realItemSlots();
+    requestExactSharedGeometry(slots, geometry); // The shared selector remains the sole owner of actual slot coordinates.
+    applyTinyRadiusInset(slots, geometry.center);
+    updateFixedHeading(slots, geometry);
+    return true;
+  }
+
+  function startFrameLoop() {
+    if (frameRunning) return;
+    frameRunning = true;
+    const frame = () => {
+      if (!updateOpenPresentation()) {
+        frameRunning = false;
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  function queueRefresh() {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    requestAnimationFrame(() => {
+      refreshQueued = false;
+      if (updateOpenPresentation()) startFrameLoop();
+    });
+  }
+
+  function mutationTouchesArc(mutation) {
+    const nodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    return nodes.some(node => node?.nodeType === 1
+      && (node.matches?.('.arc-slot') || node.querySelector?.('.arc-slot')));
   }
 
   function colorItemSlots() {
     if (!itemArcIsOpen()) {
       document.querySelectorAll('.arc-slot[data-item-category]').forEach(clearSlot);
       lastSnapshot = [];
-      removeCurvedCategoryLabel();
+      updateOpenPresentation(); // Clears the inset and fixed heading as soon as the wheel closes.
       return;
     }
 
@@ -389,10 +538,13 @@
       if (slot.dataset.itemCategoryLabel !== style.label) slot.dataset.itemCategoryLabel = style.label;
       if (icon.style.getPropertyValue('--item-cat-color') !== style.color) icon.style.setProperty('--item-cat-color', style.color);
       if (icon.style.getPropertyValue('--item-cat-rgb') !== style.rgb) icon.style.setProperty('--item-cat-rgb', style.rgb);
+      // The non-layout halo belongs to the slot, while old icon consumers still read their existing variables.
+      if (slot.style.getPropertyValue('--item-cat-color') !== style.color) slot.style.setProperty('--item-cat-color', style.color);
+      if (slot.style.getPropertyValue('--item-cat-rgb') !== style.rgb) slot.style.setProperty('--item-cat-rgb', style.rgb);
       snapshot.push({ key: item.key, label, category, categoryLabel: style.label, color: style.color, active: slot.classList.contains('arc-active') });
     });
     lastSnapshot = snapshot;
-    renderCurvedCategoryLabel();
+    updateOpenPresentation(); // Same owner handles category state, six-pixel inset and the only visible heading.
   }
 
   function compareEntries(a, b) {
@@ -513,6 +665,7 @@
     requestAnimationFrame(() => {
       refreshQueued = false;
       colorItemSlots();
+      if (itemArcIsOpen()) startFrameLoop(); // One existing bounded loop, no parallel sticky/original presenters.
     });
   }
 
@@ -560,14 +713,17 @@
     if (observer || !document.body) return;
     groupInventoryItems();
     colorItemSlots();
+    if (itemArcIsOpen()) startFrameLoop();
     observer = new MutationObserver(mutations => {
-      if (mutations.some(mutation => mutation.type === 'childList')) queueRefresh();
+      if (mutations.some(mutationTouchesArc)) queueRefresh(); // Unrelated HUD/heading mutations no longer rebuild the wheel.
     });
     observer.observe(document.body, { subtree: true, childList: true });
 
     // Active selection changes do not rebuild the arc. These events update the
     // curved category heading and active halo without observing every HUD class.
     addEventListener('pointermove', queueRefresh, { capture: true, passive: true });
+    addEventListener('pointerdown', queueRefresh, { capture: true, passive: true });
+    addEventListener('pointerup', queueRefresh, { capture: true, passive: true });
     addEventListener('wheel', queueRefresh, { capture: true, passive: true });
     addEventListener('keydown', event => {
       if (event.key === 'Tab') groupInventoryItems(); // Keeps tap/keyboard cycling on the same grouped canonical order.
@@ -591,12 +747,41 @@
   }
 
   function bootstrap() {
+    document.getElementById('itemArchCategoryHeading')?.remove(); // Clean up retired duplicate headings if a previous bootstrap ran.
+    document.getElementById('itemArchStickyCategoryHeading')?.remove();
     injectStyles();
     hookInit(window.CookingSystem);
     hookInit(window.FarmCrates);
     hookInit(window.AlchemySystem);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installObserver, { once: true });
     else installObserver();
+  }
+
+  function presentationDebugSnapshot() {
+    const activeIcon = document.querySelector('.arc-slot[data-item-category].arc-active .arc-icon')
+      || document.querySelector('.arc-slot[data-item-category] .arc-icon');
+    const iconStyle = activeIcon ? getComputedStyle(activeIcon) : null;
+    const geometry = sharedGeometry();
+    const heading = document.querySelector(`#${FIXED_HEADING_ID} .quick-potion-curved-category`);
+    const headingStyle = heading ? getComputedStyle(heading) : null;
+    return {
+      installed: true,
+      styleInstalled: Boolean(document.getElementById('itemArchCategoryColorStyles')),
+      itemArcOpen: itemArcIsOpen(),
+      itemRadiusInsetPx: ITEM_RADIUS_INSET_PX,
+      sharedSelectionRadius: geometry.radius,
+      visualItemSelectionRadius: geometry.radius - ITEM_RADIUS_INSET_PX,
+      fixedHeadingRadius: geometry.radius - ITEM_RADIUS_INSET_PX + geometry.labelOutsetPx,
+      fixedHeadingSweepDeg: FIXED_HEADING_SWEEP_DEG,
+      lastSelected: lastSelected ? { ...lastSelected } : null,
+      activeEdge: Boolean(document.querySelector('.arc-slot.arc-arrow.arc-active')),
+      selectionRadiusMatchesPotion: selectionRadiusMatchesPotion(realItemSlots(), geometry),
+      singlePresenter: true,
+      frameRunning,
+      fixedHeadingText: document.querySelector(`#${FIXED_HEADING_ID} textPath`)?.textContent || null,
+      icon: iconStyle ? { fontSize: iconStyle.fontSize, display: iconStyle.display, width: iconStyle.width, height: iconStyle.height, filter: iconStyle.filter } : null,
+      heading: headingStyle ? { fill: headingStyle.fill, stroke: headingStyle.stroke, fontFamily: headingStyle.fontFamily, fontSize: headingStyle.fontSize, filter: headingStyle.filter } : null,
+    };
   }
 
   window.ItemArchCategoryColors = {
@@ -612,7 +797,8 @@
         ready: Boolean(itemDeps.ITEM_DEFS && itemDeps.inventoryItems && itemDeps.inventory),
         observing: Boolean(observer),
         sharedArcHooked: hookedSharedArc,
-        curvedCategory: document.querySelector(`#${LABEL_ID} textPath`)?.textContent || null,
+        curvedCategory: document.querySelector(`#${FIXED_HEADING_ID} textPath`)?.textContent || null,
+        presentation: presentationDebugSnapshot(),
         visibleSlots: lastSnapshot.map(entry => ({ ...entry })),
         groupedAt: lastGroupedAt || null,
         groupedOrder: lastGroupedOrder.map(entry => ({ ...entry })),
@@ -620,6 +806,13 @@
       };
     },
   };
+
+  // Old public debug hooks survive, but their modules have no separate observers, CSS or animation loops.
+  window.ItemArchStickyCategoryHeading = { installed: true, refresh: queueRefresh,
+    debugSnapshot: () => ({ ...presentationDebugSnapshot(), stickyVisible: false,
+      lastSelected: lastSelected ? { ...lastSelected } : null }) };
+  window.ItemArchOriginalPresentation = { installed: true, refresh: queueRefresh,
+    debugSnapshot: presentationDebugSnapshot };
 
   bootstrap();
 })();
