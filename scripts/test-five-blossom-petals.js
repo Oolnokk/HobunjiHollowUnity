@@ -66,8 +66,10 @@ assert.ok(points.geometry.attributes.position.array.every(Number.isFinite),'fall
 assert.ok(petals.debugSnapshot().livePetals<=28,'two-tree southern cloud forest cannot exceed 28 live petals');
 tree.visible=false;slot.fn({deltaMs:16});
 assert.equal(points.visible,false,'native zone culling also hides its entire particle emitter');
-tree.visible=true;slot.fn({deltaMs:16});
+assert.equal(points.geometry.drawRange.count,0,'off-camera petals are cleared, not frozen for the next return');
+tree.visible=true;for(let i=0;i<60;i++)slot.fn({deltaMs:16});
 assert.equal(points.visible,true,'visibility resumes when native tree returns to frustum');
+assert.ok(points.geometry.drawRange.count>0,'returning to view spawns fresh falling petals from real branches');
 petals.setContext({area:zone,col:99,row:99},zone);
 assert.equal(slot.enabled,false,'long-range absence disables the entire shared frame subscriber');
 assert.equal(points.geometry.drawRange.count,0,'leave/reenter clears previously animated particles');
