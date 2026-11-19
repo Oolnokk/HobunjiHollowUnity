@@ -321,14 +321,17 @@
 
   function sharedGeometry() {
     const diagnostics = window.QuickPotionArcUI?.diagnostics?.();
-    const fallback = fallbackGeometry();
     const center = diagnostics?.outerRingGeometry?.center;
     const radius = Number(diagnostics?.outerRingGeometry?.radius);
     const labelOutsetPx = Number(diagnostics?.labelOutsetPx);
+    const measuredCenter = center && Number.isFinite(center.x) && Number.isFinite(center.y); // Only unsupported/missing diagnostics need synchronous DOM geometry reads.
+    const measuredRadius = Number.isFinite(radius) && radius > 1;
+    const measuredOutset = Number.isFinite(labelOutsetPx);
+    const fallback = measuredCenter && measuredRadius && measuredOutset ? null : fallbackGeometry(); // Avoid two getBoundingClientRect calls on every open-arch frame.
     return {
-      center: center && Number.isFinite(center.x) && Number.isFinite(center.y) ? { x: center.x, y: center.y } : fallback.center,
-      radius: Number.isFinite(radius) && radius > 1 ? radius : fallback.radius,
-      labelOutsetPx: Number.isFinite(labelOutsetPx) ? labelOutsetPx : fallback.labelOutsetPx,
+      center: measuredCenter ? { x: center.x, y: center.y } : fallback.center,
+      radius: measuredRadius ? radius : fallback.radius,
+      labelOutsetPx: measuredOutset ? labelOutsetPx : fallback.labelOutsetPx,
     };
   }
 
@@ -711,7 +714,7 @@
 
     // Active selection changes do not rebuild the arc. These events update the
     // curved category heading and active halo without observing every HUD class.
-    addEventListener('pointermove', queueRefresh, { capture: true, passive: true });
+    addEventListener('pointermove', () => { if (!frameRunning) queueRefresh(); }, { capture: true, passive: true }); // Active UI-open loop already tracks selection without recataloging every item on pointer movement.
     addEventListener('pointerdown', queueRefresh, { capture: true, passive: true });
     addEventListener('pointerup', queueRefresh, { capture: true, passive: true });
     addEventListener('wheel', queueRefresh, { capture: true, passive: true });
