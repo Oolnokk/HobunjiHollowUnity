@@ -103,7 +103,7 @@ assert.equal(Rig.attachmentPinField(empty),null,
   'explicitly all-flexible hair has no phantom anchored vertices');
 assert.equal(Rig.isPinnedPixel(null,.5,.5),false,'legacy unmasked hair remains movable');
 const reference=Rig.normalize({points:[{u:.45,v:.30,depth:.02},{u:.47,v:.55,depth:.03}],
-  segments:[{deadzone:{x:0,y:0,z:0},poses:{right:{translate:{x:.1}}}}],pinWidthPx:18});
+  bone:{yaw:10,pitch:15,roll:26},pinWidthPx:18});
 const rest=Rig.posePoints(reference).points,moved=Rig.posePoints(reference,{x:1}).points;
 const pinned=Rig.deformPosition(reference,moved,.46,.45,1,1,true);
 const free=Rig.deformPosition(reference,moved,.46,.45,1,1,false);
@@ -114,12 +114,13 @@ assert(Math.abs(pinned.z-.0008)<1e-9,'pinned hair depth is fixed flush against t
 assert(free.x>neutral.x,'outside the rigid region, hair gets the full authored movement');
 assert(!('pinWidthPx' in reference),'legacy broad grip never overrides the exact head mask');
 assert(!('blendRadiusPx' in reference),'legacy blendRadiusPx is ignored and dropped from exported rigs');
-const defaultWind=Rig.makeDefaultSegments([{u:.5,v:.2},{u:.5,v:.5},{u:.5,v:.8}]);
-assert(defaultWind[1].poses.left.translate.x<0&&defaultWind[1].poses.right.translate.x>0,
-  'default wind directions use opposite, shape-scaled motions, not six empty poses');
+const defaultBone=Rig.defaultBone([{u:.5,v:.2},{u:.5,v:.8}]);
+assert(defaultBone.roll>0&&defaultBone.pitch>0&&defaultBone.yaw>0,
+  'one physical bone has shape-scaled swing limits without directional poses');
+assert(!('segments' in reference),'the normalized format no longer contains a blend space');
 const suggested=Rig.suggestRestPoints(hair,head);
-assert(suggested&&suggested.length===3&&suggested[0].v<suggested[1].v&&suggested[1].v<suggested[2].v,
-  'rest spline is fitted to opaque hair bounds and head-overlapping root, rather than fixed coordinates');
+assert(suggested&&suggested.length===2&&suggested[0].v<suggested[1].v,
+  'the single bone fits its root and tip to actual art bounds and head overlap');
 const portrait=fs.readFileSync(path.join(root,'docs/js/portrait-utils.js'),'utf8');
 assert(portrait.includes('canvas.hobunjiSplineParts.push({ key, slot, rig, canvas: partCanvas'),
   'the game sends all rigid and flexible pixels on ONE continuous textured mesh');
@@ -131,13 +132,24 @@ console.log('Single-mesh spline region masks: alpha overlap, binary head grip, u
 const hood=new Canvas(); // A solid cloth patch covers the beard and a neighboring empty part of the portrait.
 for(let y=70;y<90;y++)for(let x=85;x<130;x++)paint(hood,x,y,[50,100,80,255]);
 const opening=Rig.paintPixelMask(null,95.5/200,80.5/200,2,true,{u:125.5/200,v:80.5/200});
-const overlap=Rig.paintPixelMask(null,96.5/200,75.5/200,1,true);
+const overlap=Rig.paintPixelMask(null,125.5/200,75.5/200,1,true);
 const hoodRig=Rig.normalize({...reference,hoodOpeningMask:opening,hoodOverlapMask:overlap});
 const fitted=Rig.fitHood(hood,hoodRig,[hair]);
 assert.equal(fitted.coverage[idx(95,80)],0,'painted beard pixels open the hood');
-assert.equal(fitted.coverage[idx(125,80)],1,'the opening cannot punch a hole past the beard silhouette');
-assert.equal(fitted.overlap[idx(96,75)],1,'covered beard pixels may render above the hood');
-assert.equal(fitted.overlap[idx(100,75)],0,'unpainted beard is occluded by the hood');
+assert.equal(fitted.coverage[idx(125,80)],1,'the aperture does not carve into cloth beyond the painted hair reach');
+assert(fitted.openingPixels>0&&fitted.stretchedPixels>=0,'hood fitting exposes measurable aperture/rim diagnostics');
+assert.equal(fitted.aperture[idx(95,80)],1,'hair passing through the hood is pinned to its fitted hole');
+assert.equal(fitted.overlap[idx(125,75)],1,'marked cloth overlap remains visible outside the stretched hole');
+assert.equal(fitted.overlap[idx(100,75)],0,'the cut opening cannot preserve an opaque overlapping cloth pixel');
+const fittedHood=()=>{const canvas=new Canvas();for(let y=70;y<90;y++)for(let x=85;x<130;x++)paint(canvas,x,y,[50,100,80,255]);return canvas;};
+const seed={size:200,runs:[[idx(95,80),1]]};
+const shortFit=Rig.fitHood(fittedHood(),{hoodOpeningMask:seed,hoodStretchPx:0},[hair]);
+const longFit=Rig.fitHood(fittedHood(),{hoodOpeningMask:seed,hoodStretchPx:12},[hair]);
+assert(longFit.openingPixels>shortFit.openingPixels,'stretch opens additional contiguous hair pixels');
+assert.equal(shortFit.coverage[idx(104,80)],1,'zero stretch leaves nearby cloth in place');
+assert.equal(longFit.coverage[idx(104,80)],0,'positive stretch lets nearby connected hair pass through');
+assert.equal(longFit.coverage[idx(120,80)],1,'bounded expansion does not carve distant unpainted hair');
+assert.equal(longFit.coverage[idx(128,80)],1,'unrelated cloth stays solid and intact');
 const smallBeard=new Canvas(100,100); // A different source size still uses canonical 200px mask coordinates.
 paint(smallBeard,47,40,[90,65,45,255]);
 paint(hood,94,80,[50,100,80,255]);
