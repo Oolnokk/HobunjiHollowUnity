@@ -8945,13 +8945,9 @@
               w: Math.max(.1, Number(o.collision.w) || Number(o.w) || 1) * localeScale,
               h: Math.max(.1, Number(o.collision.h) || Number(o.h) || 1) * localeScale
             } : o.collision ? { mode:o.collision.mode || 'auto' } : undefined;
-            // Garanki's tent is rendered as the piece's authored 3x3 shell, not a 6x6 scaled structure.
-            // game.js uses this instance footprint to place its door trigger immediately outside the flap.
-            const footprintScale = meta.localeId === 'locale_researchers_tent' && o.id === 'obj_structure'
-              ? 1 : localeScale; // Applied only to the displayed object size; its generated world position stays scaled.
             return {
               id: o.id, kind: o.kind, key: o.key, label: o.label, ...toWorld(o.col, o.row),
-              w: o.w * footprintScale, h: o.h * footprintScale, rot:o.rot || 0,
+              w: o.w * localeScale, h: o.h * localeScale, rot:o.rot || 0,
               visual:o.visual ? clonePlain(o.visual) : undefined,
               pieceFile:o.pieceFile || undefined,
               collision
