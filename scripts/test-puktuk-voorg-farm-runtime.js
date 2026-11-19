@@ -18,7 +18,9 @@ assert.match(geneticsSource, /resources\[VOORG_ASS_KIND\]\s*=\s*\{\s*itemKey:\s*
 assert.match(geneticsSource, /if\s*\(puktukWool\)\s*puktukWool\.name\s*=\s*'Heavy Wool'/, 'Puktuk wool is presented to the player as Heavy Wool');
 assert.match(geneticsSource, /name:\s*'Light Wool'/, 'Voorg-Ass wool is presented to the player as Light Wool');
 
-assert.match(farmSource, /deps\.inventory\[resDef\.itemKey\]\s*=\s*Math\.min\([\w.]+,[\s\S]*?rec\.resourceReady\s*=\s*false;[\s\S]*?rec\.daysUntilResource\s*=\s*Math\.max\(1,\s*Math\.round\(resDef\.cooldownDays/, 'Generic harvest adds the configured wool item, clears readiness, and restarts its cooldown');
-assert.match(farmSource, /const\s+offset\s*=\s*HARVEST_HANDLER_OFFSET\[animal\.animalKey\];[\s\S]*?if\s*\(!offset\)\s*\{\s*collectResource\(animal\.livestockId\);\s*return;\s*\}/, 'Species without an authored handler animation still harvest through the generic instant-collection fallback');
+assert.match(farmSource, /deps\.inventory\[resDef\.itemKey\]\s*=\s*\(deps\.inventory\[resDef\.itemKey\]\s*\|\|\s*0\)\s*\+\s*1;/, 'Generic harvest adds one resource after the full-stack guard');
+assert.match(farmSource, /const\s+nextDays\s*=\s*Math\.max\(1,\s*Math\.round\(resDef\.cooldownDays/, 'Generic harvest retains the heart-adjusted cooldown');
+assert.match(farmSource, /else\s*\{\s*rec\.resourceReady\s*=\s*false;\s*rec\.daysUntilResource\s*=\s*nextDays;\s*\}/, 'Primary wool collection resets its own readiness and cooldown');
+assert.match(farmSource, /const\s+offset\s*=\s*HARVEST_HANDLER_OFFSET\[animal\.animalKey\];[\s\S]*?if\s*\(!offset\)\s*\{\s*collectResource\(animal\.livestockId,\s*itemKey\);\s*return;\s*\}/, 'Species without an authored handler animation still harvest through the generic instant-collection fallback');
 
 console.log('Puktuk/Voorg-Ass farm runtime and shearing registration checks passed.');
