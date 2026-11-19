@@ -216,9 +216,8 @@ function engrave(mesh,site,stone=false) {
  const slots=stone?[
   {slot:'ruin-pillar-rock',selector:'all'}
  ]:[
-  {slot:'ruin-pillar-sides',selector:'sides'},
-  {slot:'ruin-pillar-broken-ends',selector:'caps'}
- ]; // Sides retain the intact pillar's continuous, four-face perimeter UV; every exposed fracture/cap gets the same motif.
+  {slot:'ruin-pillar-entire-fragment',selector:'pillar-wrap'}
+ ]; // A single mesh uses the exact intact side perimeter UV plus planar exposed ends; no redundant second atlas/draw call.
  const records=slots.map(slot=>({...slot,mode:'engraving',patternId:site.patternId,
   scale,opacity:.9,engravingCoreOpacity:.85,glowIntensity:0,glowPulseDepth:0,
   palette:['#b7a185',site.ink],maxAtlasPx:256,tilePx:256,minSurfaceTiles:0
@@ -231,7 +230,7 @@ function engrave(mesh,site,stone=false) {
  return engraved.length===records.length;
 }
 
-const PATTERNED_PILLAR_PARTS=Object.freeze(['base','stump','stub','fallen','cap']); // Only major masonry receives full face projection; chips stay bare to limit draw calls.
+// Every authored stone fragment is marked, including chips; one wrapped overlay per part keeps the draw-call budget no worse than before.
 
 function witnessStone(T,host,sites){
  for(const site of sites.filter(s=>s.kind==='witnessStone'||s.kind==='markedBoulder')){
@@ -271,10 +270,10 @@ async function debris(host,sites,ticket,zoneId){
    if(site.marked)built.updateMatrixWorld?.(true); // Surface UV density includes the final authored part + wilderness scale on its first atlas build.
    if(site.marked){
     const parts=built.userData?.meshById;
-    const targets=[...new Set(PATTERNED_PILLAR_PARTS.map(id=>parts?.get?.(id)).filter(mesh=>mesh?.isMesh))]; // Resolve authored parts before attaching any overlay children.
-    if(!targets.length)built.traverse?.(mesh=>{if(mesh.isMesh&&PATTERNED_PILLAR_PARTS.includes(mesh.userData?.authoredPart?.id))targets.push(mesh);}); // Support older builders without meshById.
+    const targets=[...new Set([...(parts?.values?.()||[])].filter(mesh=>mesh?.isMesh&&mesh.geometry))]; // All original authored masonry fragments, not only shafts/caps, retain the full wrap.
+    if(!targets.length)built.traverse?.(mesh=>{if(mesh.isMesh&&mesh.userData?.authoredPart?.id&&mesh.geometry)targets.push(mesh);}); // Old authored builders without meshById still pattern all stone fragments.
     built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can identify the ink of the entire broken pillar.
-    built.userData.wildernessPatternedParts=targets.filter(mesh=>engrave(mesh,site)).length; // Mark the shaft, fallen pieces and base, not just one small front-facing decal.
+    built.userData.wildernessPatternedParts=targets.filter(mesh=>engrave(mesh,site)).length; // The shaft, base, broken ends and small chips all receive one continuous authentic ruin pattern projection.
     if(!built.userData.wildernessPatternedParts)error='No stone faces were available for '+site.id;
    }
    ignoreHits(built);host.add(built);
