@@ -32,11 +32,20 @@
   // copy of just the field they asked for. The cached object itself is never
   // exposed, so callers can keep mutating what they receive exactly as they
   // could with a fresh parse. Writers keep using the uncached readWorld.
-  let parsedMetaCache = { raw: null, meta: null };
+  let parsedMetaCache = { raw: null, meta: null, revision: undefined, storage: null }; // The guarded revision skips synchronous getItem when no save metadata changed.
 
   function readWorldCached(worldId) {
-    const raw = localStorage.getItem(META_KEY) || 'null';
-    if (parsedMetaCache.raw !== raw) parsedMetaCache = { raw, meta: JSON.parse(raw) };
+    const revision = window.HobunjiStorageQuota?.getSaveMetaRevision?.(); // Covers same-tab writes, folder staging, cross-tab events and browser reset.
+    if (revision !== undefined && parsedMetaCache.revision === revision
+        && parsedMetaCache.storage === localStorage && parsedMetaCache.raw !== null) {
+      return (parsedMetaCache.meta?.worlds || []).find(w => w.id === worldId) || null; // No synchronous storage read on repeated HUD/tick calls.
+    }
+    const raw = localStorage.getItem(META_KEY) || 'null'; // Unguarded tests/previews retain the original per-call freshness check.
+    if (parsedMetaCache.raw !== raw || parsedMetaCache.storage !== localStorage) {
+      parsedMetaCache = { raw, meta: JSON.parse(raw), revision, storage: localStorage };
+    } else {
+      parsedMetaCache.revision = revision; // Unchanged metadata needs no parse after a revision-only transition.
+    }
     return (parsedMetaCache.meta?.worlds || []).find(w => w.id === worldId) || null;
   }
 
