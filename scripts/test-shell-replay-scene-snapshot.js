@@ -119,7 +119,7 @@ const collectFromScissor = new Function(
   'let lastReplayInstancedCulled=0,lastReplayInstancedKept=0,lastReplayInertCount=0;'
   + 'let lastReplayCulledCount=0,lastReplayKeptCount=0,instancedReplaySphereReuses=0;'
   + section('  function collectReplayCulled(', '  function cullReplayGroup(')
-  + '\\nreturn collectReplayCulled;'
+  + '\nreturn collectReplayCulled;'
 )(
   () => false, object => object.userData?.replayInert === true,
   () => null, () => false, object => !!object.isMesh && !object.children?.length,
@@ -144,11 +144,11 @@ for (const object of culled) object.visible = true;
 scene.children.splice(-2, 2);
 
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
-assert.match(replay, /shellCandidateSnapshot = \\{ depth: \\[\\], shell: \\[\\] \\}/,
+assert.match(replay, /shellCandidateSnapshot = \{ depth: \[\], shell: \[\] \}/,
   'successful scissor culling captures the depth and shell candidates in the same walk');
-assert.match(replay, /!!nearReplay, shellCandidateSnapshot\\)\\)/,
+assert.match(replay, /!!nearReplay, shellCandidateSnapshot\)\)/,
   'shell replay passes its snapshot into the existing culler');
-assert.match(replay, /if \\(!replayCandidates\\) replayCandidates = collectShellReplayCandidates\\(scene\\)/,
+assert.match(replay, /if \(!replayCandidates\) replayCandidates = collectShellReplayCandidates\(scene\)/,
   'unscissored shell passes retain live traversal fallback');
 assert.match(replay, /let replayCandidates = null;/,
   'shell candidate snapshot remains in scope through the final depth restore');
