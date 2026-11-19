@@ -141,10 +141,13 @@
     const tile = options.tile;
     const scene = options.scene;
     const chunkTiles = Math.max(1, Math.floor(Number(window.WildernessChunks?.constants?.CHUNK_TILES) || CHUNK_FALLBACK));
+    const isArea = anchor?.kind === 'riverConfluence' || anchor?.kind === 'riverEnd'; // River sound belongs to the actual water-center chunk, not the accessible bank tile.
+    const center = anchor?.waterCenter;
+    const chunkAnchor = isArea && Number.isFinite(center?.col) && Number.isFinite(center?.row) ? center : point;
     const valid = options.active === true && !!options.blossom?.id && !!scene &&
       tile?.area === options.blossom.zoneId && anchor?.unique === true &&
       Number.isFinite(point?.col) && Number.isFinite(point?.row);
-    inChunk = !!(valid && sameChunk(tile, point, chunkTiles));
+    inChunk = !!(valid && sameChunk(tile, chunkAnchor, chunkTiles));
     if (!inChunk) {
       clearVisual(); stopVoice(); currentAnchor = null;
       return;
@@ -152,7 +155,7 @@
     currentAnchor = anchor;
     color = options.color || options.blossom.color || '#ffffff';
     const nextKey = [options.blossom.id, options.shift, anchor.kind, point.col, point.row, anchor.dyeId].join(':');
-    const isArea = anchor.kind === 'riverConfluence' || anchor.kind === 'riverEnd';
+
     const tilePixels = Math.max(1, Number(options.tilePixels) || 64);
     if (sceneOwner !== scene || cueKey !== nextKey) {
       clearVisual();
