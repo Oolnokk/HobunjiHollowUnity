@@ -1978,20 +1978,30 @@
     return sphere ? replayCullFrustum.intersectsSphere(sphere) : replayCullFrustum.intersectsObject(object);
   }
 
-  function collectReplayCulled(scene, keep, groupCandidates = null, boundedKept = null, allowFarOnly = false) {
+  function collectReplayCulled(scene, keep, groupCandidates = null, boundedKept = null, allowFarOnly = false, visibleSnapshot = null) {
     const culled = [];
     let kept = 0;
+    // The shell replay needs a second list of its depth/outline participants.
+    // Derive that list from the SAME live scene walk used by scissor culling,
+    // retaining only meshes that will survive the temporary hideObjects step.
+    const remember = (object) => {
+      if (!visibleSnapshot) return;
+      const isMesh = !!object?.isMesh;
+      if (isMesh || (object?.isSprite && object.userData?.hobunjiNoOutline === true)) visibleSnapshot.depth.push(object);
+      if (isMesh && hasLayer(object, SHELL_LAYER)) visibleSnapshot.shell.push(object);
+    };
     lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || hasAlternateReplayPose(object)) return;
+      if (keep.has(object) || hasAlternateReplayPose(object)) { remember(object); return; }
       if (isDepthReplayInert(object, allowFarOnly)) { culled.push(object); lastReplayInertCount++; return; }
       const instanceSphere = instancedReplaySphere(object); // Reused for the intersection test below.
       const instanced = !!instanceSphere || hasAuthoredInstanceBounds(object);
-      if (!instanced && !isReplayCullable(object)) return;
+      if (!instanced && !isReplayCullable(object)) { remember(object); return; }
       if (instanceSphere) instancedReplaySphereReuses++;
       const inside = replayFrustumIntersects(object, instanceSphere);
       if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
+        remember(object);
         kept++;
         groupCandidates?.push(object);
         boundedKept?.push(object);
@@ -3548,6 +3558,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let depthWasCleared = false;
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
+    let shellCandidateSnapshot = null; // When the scissor walk succeeds, reuse that same visible-scene enumeration for shell depth/materials.
     let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
     const nearReplay = nearReplaySupport(true); // This replay silences color per material, so no color-mask lock is needed.
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
@@ -3567,7 +3578,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         // final restore, but can only write inside the scissor. Without it
         // the shell pass cost about as many draw calls as the base pass.
         if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
-          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates, nearCandidates, !!nearReplay));
+          shellCandidateSnapshot = { depth: [], shell: [] }; // Populated only by surviving participants in the scissor walk.
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates, nearCandidates, !!nearReplay, shellCandidateSnapshot));
         } else if (nearCandidates) collectBoundedReplayObjects(scene, new Set(xrayMeshes), nearCandidates);
       } else {
         fullscreenReplayCount++;
@@ -3586,8 +3598,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
-      replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
-      shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
+      replayCandidates = shellCandidateSnapshot;
+      if (!replayCandidates) replayCandidates = collectShellReplayCandidates(scene); // No trusted scissor snapshot: preserve the original live scan.
+      shellSceneTraversalsAvoided += groups.length * 2 + (shellCandidateSnapshot ? 1 : 0); // Includes the additional complete visible-scene walk avoided by fusing scissor + shell enumeration.
       // These source materials are identical for all elevation groups; only
       // the ground shader's tile uniforms change. A single transaction avoids
       // rescanning and rewriting every mesh/material once per actor group.
