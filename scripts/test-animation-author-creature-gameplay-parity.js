@@ -128,7 +128,10 @@ assert.match(index, /if \(stored\.groundOffsets\) target\.groundOffsets = struct
 assert.match(index, /animationAuthor\.mode === 'rig' \? 0 : layout\.groundLift/, 'rig floor calibrator remains fixed');
 assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue floor uses the real Auto lift');
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
-assert.match(index, /window\.MultiAvatarAnimationAuthor\.creatureGameplayParity = parityReadoutV1554/, 'mobile parity diagnostic is available');
+assert.match(index, /publicApiV1554\.creatureGameplayParity = parityReadoutV1554/, 'mobile parity diagnostic is available');
+assert.match(index, /publicApiV1554\.addCreature = addCreatureAnimationActor/, 'public API creates fully grounded current animal actors');
+assert.match(index, /publicApiV1554\.importProject = importAnimationProjectData/, 'public API imports are routed through autosave recovery');
+assert.match(index, /publicApiV1554\.setMode = setAnimationAuthorMode/, 'public mode switch cannot use stale author sizing');
 assert.match(index, /parityV1554\.opaqueIdleBottomRatio\(idleCanvas\)/, 'editor actually applies alpha foot scanning');
 assert.match(index, /actor\.model\.position\.y = scaledPadding/, 'class-specific height scales the alpha-padding correction without changing the rig root');
 assert.match(index, /creatureOpaquePaddingNativeY \* layout\.heightScale/, 'per-size padding uses gameplay Y multiplier');
