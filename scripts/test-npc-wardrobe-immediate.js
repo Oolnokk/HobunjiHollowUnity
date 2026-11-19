@@ -62,11 +62,12 @@ const fallbackRec = {
   appliedDyes: { TORSO: 'dye:CLOTH:legacy_torso' },
   gifts: { loved: ['style:test'], liked: [], disliked: [], hated: [] },
 };
+const stubCanvas = () => ({ width: 16, height: 16, getContext: () => ({ clearRect() {}, drawImage() {} }) }); // Test live canvases support staged portrait uploads.
 const walker = {
   rec,
   profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } }, // Deliberately wrong stale profile reproduces the Teacup species bug if refresh reads profile.appearance.
   avatarGroup: { userData: { frontTexture: true } },
-  avatarFrontCanvas: {},
+  avatarFrontCanvas: stubCanvas(),
   avatarBackCanvas: null,
 };
 const offscreenRec = {
@@ -83,7 +84,7 @@ const fallbackWalker = {
   rec: fallbackRec,
   profile: { appearance: { speciesId: 'mao-ao', gender: 'male' } },
   avatarGroup: { userData: { frontTexture: true } },
-  avatarFrontCanvas: {},
+  avatarFrontCanvas: stubCanvas(),
   avatarBackCanvas: null,
 };
 const gearInventory = { clothingItems: [], clothing: {} };
@@ -93,7 +94,7 @@ const context = {
   window: null,
   console,
   Math,
-  document: {},
+  document: { createElement: type => { assert.equal(type, 'canvas'); return stubCanvas(); } },
   DialogueContent: { adjustNpcFavor() {} },
   RomanceSystem: { getSpouse: () => ({ npcId: 'assigned_spouse' }) },
   ItemTraits: {
@@ -479,6 +480,28 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(cursedVerdict.worn, false, 'and is never put on');
   assert.equal(wardrobe.getWardrobeContents(rec.id).stored.length, cursedStoredBefore, 'nor stored in the wardrobe');
   assert.ok(saves >= 3, 'manual Store/Wear operations request world persistence');
+  // Complete newer art before older art: the previous draw must never upload stale pixels.
+  const originalRenderer = context.NpcAvatarPreview.renderProfileToCanvas;
+  const renderJobs = []; // Deferred jobs reproduce overlapping portrait draws on slower mobile hardware.
+  context.NpcAvatarPreview.renderProfileToCanvas = (canvas, profile) =>
+    new Promise(resolve => { renderJobs.push({ canvas, profile, resolve }); });
+  const uploaded = []; // Records the live plane artwork, rather than the order jobs were launched.
+  const originalRefresh = context.PNGPlaneAvatar.refreshSinglePlaneAvatarModel;
+  context.PNGPlaneAvatar.refreshSinglePlaneAvatarModel = (_group, front) => {
+    uploaded.push(front.lastPaint); return true;
+  };
+  const firstRace = wardrobe.refreshWalkerAppearance(walker);
+  rec.appliedDyes.CLOTH = 'dye:CLOTH:newest';
+  const secondRace = wardrobe.refreshWalkerAppearance(walker);
+  assert.equal(renderJobs.length, 2, 'both jobs render privately');
+  renderJobs[1].canvas.lastPaint = 'new'; renderJobs[1].resolve();
+  assert.equal(await secondRace, true, 'newer portrait commits successfully');
+  renderJobs[0].canvas.lastPaint = 'old'; renderJobs[0].resolve();
+  assert.equal(await firstRace, false, 'superseded portrait does not commit');
+  assert.deepEqual(uploaded, ['new'], 'only the latest rendered portrait reaches the live texture');
+  context.NpcAvatarPreview.renderProfileToCanvas = originalRenderer;
+  context.PNGPlaneAvatar.refreshSinglePlaneAvatarModel = originalRefresh;
+
   console.log('Immediate NPC wardrobe behavior passed.');
 })().catch(error => {
   console.error(error);

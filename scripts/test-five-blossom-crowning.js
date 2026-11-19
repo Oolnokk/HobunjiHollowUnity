@@ -18,7 +18,7 @@ const festivalScript=read('docs/js/festival-system.js'); // Regression for the e
 assert.match(festivalScript,/father_hunundi_hodu'[\s\S]{0,200}festival_npc_gift/,'Father Hunundi offers the canonical festival NPC action');
 assert.match(festivalScript,/FestivalBlossomHunt\?\.turnInAtHunundi/,'Father Hunundi action executes the real hunt submission');
 
-let civilYear=1156,area='town',tile=null,listener=null,cutscenes=0,gearSaves=0,avatarRefresh=0,questsSaved=0,scheduleInvalidations=0;
+let civilYear=1156,area='town',tile=null,listener=null,cutscenes=0,gearSaves=0,avatarRefresh=0,questsSaved=0,scheduleInvalidations=0,crownedStandIns=0;
 let failNextCompletionSave=false; // Simulates a transient quest-persistence failure after the ceremony has already saved its physical reward.
 const initial={characters:[
   {id:'owner',nickname:'Naku',gearInventory:{keyItems:[],clothingItems:[],
@@ -103,6 +103,11 @@ const mapDeps={_zoneLayouts:layouts,TILE:64,getCurrentArea:()=>area,currentTotha
   tothalWorldId:()=> 'world-one',showToast(message){toasts.push(message);}};
 W.FestivalBlossomCeremony.init({getLayout:()=>layout,getWalkers:()=>walkers,getArea:()=>area});
 let activeScene=null;
+W.NpcWardrobe={async refreshWalkerAppearance(actor,opts){
+  assert.equal(opts.strict,true,'ceremony requires real visible portrait upload');
+  assert(actor.rec.equippedCosmetics.includes('appearance::hat::five_blossom_crown'),'synthetic actor wears the actual earned crown');
+  actor.profile={equippedCosmetics:actor.rec.equippedCosmetics};crownedStandIns++;return true;
+}};
 W.AuthoredCutsceneRuntime={
   async run(scene,options){
     cutscenes++;activeScene=scene;
@@ -123,7 +128,11 @@ W.AuthoredCutsceneRuntime={
       assert.equal(target?.pose,'stand');assert.equal(target?.rotY,180,'crowd looks north at raised stage');
     }
     announcements.push(crowning.text);
-    options.onDialogueContinue(crowning);
+    const standIn={rec:{id:'player'},avatarFrontCanvas:{},avatarGroup:{},profile:null};
+    const standInEntity={walker:standIn,rec:standIn.rec,profile:null};
+    await options.onDialogueContinue(crowning,new Map([['player',standInEntity]]));
+    assert(standInEntity.profile.equippedCosmetics.includes('appearance::hat::five_blossom_crown'),
+      'the visible cutscene actor is repainted before the crown reveal');
     assert.equal(equipment.devWornClothing().hat?.prizeCosmeticId,'appearance::hat::five_blossom_crown',
       'the crown replaces the old hat at the exact announcement callback');
     assert.equal(equipment.devWornClothing().hood,hood,'hood stays temporarily hidden until scene exits');
@@ -309,6 +318,7 @@ async function main(){
   assert(!unEquippedPortrait.equippedCosmetics.includes(crownId),'switching away from a quest-only hat clears its previously rendered portrait layer');
   W.__hobunjiPlayerProfile.gearInventory.clothing.hat=crownHat;
   assert(gearSaves>=3 && avatarRefresh>=4 && questsSaved>=18,'real persistence and portrait refresh were exercised');
+  assert.equal(crownedStandIns,3,'a crown portrait is uploaded for each played first-Finder ceremony');
   assert(audienceShots.some(item=>item.owner==='five-blossoms-crowning' && item.priority>0),'crowning audience outranks ordinary town plans');
   assert(scheduleInvalidations>=7,'crowd gathering and release both invalidate cached NPC destinations');
   const fullVillage=Array.from({length:100},(_,i)=>({rec:{id:'crowd_'+i},area:'town',root:{position:{x:0,z:0}}})); // Oversized authored roster probes the edge of the actual 50-row town map.

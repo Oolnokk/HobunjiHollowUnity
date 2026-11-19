@@ -50,4 +50,15 @@ run({ isZone: false });
 clock.now += 10; run();
 assert.equal(api.snapshot().scans, 5, 'leaving the zone drops the retained candidate record');
 assert.equal(late.visible, true, 'restored after every frame');
-console.log('PASS wilderness distance cull rescan: residency-driven, throttled, idle safety net, record dropped outside zone');
+// Batch membership changes are independent of chunk residency: the far mesh
+// must be found and culled immediately rather than five seconds later.
+const scansBeforeBatch = api.snapshot().scans;
+const replacement = mk('zone_prop_render_batch', 210, { hobunjiZonePropBatch: true, hobunjiZonePropKind: 'furniture' });
+replacement.parent = scene; scene.children.push(replacement);
+scene.userData.hobunjiZonePropBatchRevision = 1;
+run();
+assert.equal(api.snapshot().scans, scansBeforeBatch + 1, 'new prop batch triggers immediate candidate rescan');
+assert.equal(api.snapshot().hiddenBatch, 1, 'distant replacement batch is culled on the same render');
+assert.equal(replacement.visible, true, 'render-only suppression restores the original visibility');
+
+console.log('PASS wilderness distance cull rescan: residency-driven, batch invalidation, idle safety net');
