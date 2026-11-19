@@ -1360,8 +1360,7 @@
     const result = others ? collectVisible(registry, scene) : null;
     if (result) {
       const isFoot = registry === waterOccludedRegistry;
-      if (registry === heldRegistry) for (const mesh of result) if (!isReplayParticipant(mesh, scene)) enforceHeldMesh(mesh); // Same invariant repair the participants get.
-      return splitReplayParticipants(result, scene, others, isFoot);
+      return splitReplayParticipants(result, scene, others, isFoot, registry === heldRegistry); // Resolve owners once; nonparticipant held meshes still have their invariant repaired.
     }
     const visible = [];
     for (const object of registry.pending) {
@@ -2389,12 +2388,16 @@
     if (owner === 'other') return false;
     return isFoot ? withinFeetXrayDistance(mesh) : true;
   }
-  function splitReplayParticipants(meshes, scene, others, isFoot = false) {
+  function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
     if (replayParticipantPolicy === 'all') return meshes;
     const keep = [];
     for (const mesh of meshes) {
       if (isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
-      else { others.push(mesh); nonParticipantReplaySkips++; }
+      else {
+        if (repairHeld) enforceHeldMesh(mesh); // Keep the regular-pass held invariant without a second owner lookup.
+        others.push(mesh);
+        nonParticipantReplaySkips++;
+      }
     }
     return keep;
   }
@@ -3168,6 +3171,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       : tintCovers;
     lastNearbyTintCovers = nearbyTintCovers.length;
     lastDistantTintCovers = tintCovers.length - nearbyTintCovers.length;
+    const distantTintCovers = lastDistantTintCovers ? (() => {
+      const nearby = new Set(nearbyTintCovers); // Membership check once per cover, not a nested linear search for every distant water mesh.
+      return tintCovers.filter(cover => !nearby.has(cover));
+    })() : []; // No allocation or hide transaction for dry scenes and all-nearby water.
     const tintOverlay = lastBaseStencilBits >= 1
       && hasOverlappingHeldCover(renderer, camera, scissorMeshes, nearbyTintCovers);
     if (tintOverlay) groups = splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers);
@@ -3200,7 +3207,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let portraitGearIds = null; // Null without 8-bit stencil; otherwise maps held weapon art to its exact character owner.
     internalReplay = true;
     try {
-      distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
+      distantTintHidden = distantTintCovers.length ? hideObjects(distantTintCovers) : null;
       waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, bodyTint ? [...scopes, ...bodyTint.scopes] : scopes, hasUnknownOwner);
       if (scissored) {
         glState.scissor(scissorRect);
