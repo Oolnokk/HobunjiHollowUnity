@@ -5,12 +5,14 @@
   let deps = null;
   let group = null;
   let rainSourceTexture = null;
-  const blizzardSourceTextures = [];
+  const blizzardSourceTextures = []; // One texture per depth family, created only when snow uses it.
   let attachedScene = null;
   const layers = [];
   const rowAssignments = []; // Reused row descriptors populated during updateRowLayers, avoiding per-frame temporary arrays and Sets.
   let rowAssignmentCount = 0; // Number of populated descriptors in the current update; consumed by assignRowLayers and rendering.
   let rowAssignmentStamp = 0; // Marks claimed pooled layers without allocating a per-frame Set.
+  let rowLayout = null; // Cached row identities and mesh assignments for the current lattice interval.
+  let rowAssignmentPasses = 0; // Counts pool searches in the existing weather diagnostic.
   let rowReassignments = 0; // Exposed in getDebugState to diagnose row churn while walking.
   let activeContentKind = 'rain'; // Keeps layer-content changes event-driven instead of visiting every plane each frame.
   let wasPrecipitating = false; // Avoids resetting all pooled layers on every dry/interior frame.
@@ -173,28 +175,20 @@
     return texture;
   }
 
-  function cloneConfiguredTexture(source, config, index) {
-    const THREE = deps.THREE;
-    const texture = source.clone();
-    texture.image = source.image;
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(config.repeatX, config.repeatY);
-    texture.offset.set(index * 0.173, index * 0.317);
-    texture.minFilter = source.minFilter;
-    texture.magFilter = source.magFilter;
-    texture.generateMipmaps = false;
-    texture.needsUpdate = true;
-    return texture;
+  function applyLayerTextureTransform(layer, material) {
+    if (material !== layer.material) return;
+    // Three r128 reads the map transform after onBeforeRender. Each sheet has
+    // a distinct material, so it uploads that sheet's UVs with the shared map.
+    layer.texture.repeat.set(layer.config.repeatX, layer.config.repeatY);
+    layer.texture.offset.set(layer.offsetX, layer.offsetY[layer.contentKind]);
   }
 
   function makeLayer(index) {
     const THREE = deps.THREE;
-    const configIndex = index % CAMERA_CONFIG.length;
+    const configIndex = index % CAMERA_CONFIG.length; // Selects the same depth family for UV motion and snow artwork.
     const config = CAMERA_CONFIG[configIndex];
-    const rainTexture = cloneConfiguredTexture(rainSourceTexture, config, index);
-    const blizzardTexture = cloneConfiguredTexture(blizzardSourceTextures[configIndex], config, index);
     const material = new THREE.MeshBasicMaterial({
-      map: rainTexture,
+      map: rainSourceTexture,
       color: 0xcce8ff,
       transparent: true,
       opacity: 0,
@@ -209,13 +203,13 @@
     mesh.renderOrder = 900;
     mesh.userData.isBillboard = true;
     mesh.visible = false;
-    group.add(mesh);
-    return {
+    const layer = { // Retains independent UV phases even though the source textures are shared.
       mesh,
       material,
-      texture: rainTexture,
-      rainTexture,
-      blizzardTexture,
+      texture: rainSourceTexture,
+      offsetX: index * 0.173,
+      offsetY: { rain: index * 0.317, blizzard: index * 0.317 },
+      configIndex,
       contentKind: 'rain',
       config,
       rowKey: null,
@@ -224,6 +218,11 @@
       assignmentStamp: 0, // Used only by assignRowLayers to mark each claimed mesh.
       currentOpacity: 0,
     };
+    mesh.onBeforeRender = (_renderer, _scene, _camera, _geometry, renderMaterial) => {
+      applyLayerTextureTransform(layer, renderMaterial);
+    };
+    group.add(mesh);
+    return layer;
   }
 
   function ensureLayerCount(count) {
@@ -236,7 +235,9 @@
 
   function setLayerContent(layer, kind) {
     if (layer.contentKind === kind) return;
-    const texture = kind === 'blizzard' ? layer.blizzardTexture : layer.rainTexture;
+    const texture = kind === 'blizzard'
+      ? (blizzardSourceTextures[layer.configIndex] ??= createBlizzardSourceTexture(layer.configIndex))
+      : rainSourceTexture; // Weather switches share the existing artwork by depth family.
     layer.texture = texture;
     layer.material.map = texture;
     layer.material.color.set(kind === 'blizzard' ? 0xffffff : 0xcce8ff);
@@ -268,8 +269,6 @@
     const THREE = deps.THREE;
     rainSourceTexture = createRainSourceTexture();
     sharedPlaneGeometry = new THREE.PlaneGeometry(1, 1);
-    blizzardSourceTextures.length = 0;
-    for (let i = 0; i < CAMERA_CONFIG.length; i++) blizzardSourceTextures.push(createBlizzardSourceTexture(i));
     cameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
     group = new THREE.Group();
     group.name = 'world_rain_planes';
@@ -279,7 +278,7 @@
 
   function advanceTexture(layer, dt, speedMultiplier) {
     // The same UV movement drives both rain and snow; Western Slope only swaps plane content.
-    layer.texture.offset.y = (layer.texture.offset.y + dt * layer.config.speed * speedMultiplier) % 1;
+    layer.offsetY[layer.contentKind] = (layer.offsetY[layer.contentKind] + dt * layer.config.speed * speedMultiplier) % 1;
   }
 
   function applyPlaneRotation(mesh, yawOverride = null) {
@@ -292,7 +291,7 @@
   }
 
   function updateCameraLayers(dt, context) {
-    ensureLayerCount(3);
+    rowLayout = null;
     layers.forEach((layer, index) => {
       if (index >= 3) { layer.mesh.visible = false; return; }
       const { mesh, material, config } = layer;
@@ -315,40 +314,43 @@
     });
   }
 
-  function desiredRows(playerRowCoordinate) {
-    const spacing = settings.rowSpacingTiles; // Spacing used by both row families and their placement calculations.
-    const gridPosition = playerRowCoordinate / spacing; // Current position on the player-following row lattice.
+  function updateRowAssignments(playerRowCoordinate) {
+    const { rowSpacingTiles: spacing, frontCount, behindCount } = settings; // Settings that determine row identities.
+    const gridPosition = playerRowCoordinate / spacing; // Continuous player position on the row lattice.
+    const firstFront = Math.floor(gridPosition) + 1; // Nearest strictly forward band.
+    const firstBehind = Math.ceil(gridPosition) - 1; // Nearest strictly rear band.
+    if (rowLayout?.spacing === spacing && rowLayout.frontCount === frontCount
+        && rowLayout.behindCount === behindCount && rowLayout.firstFront === firstFront
+        && rowLayout.firstBehind === firstBehind) return;
+
+    rowLayout = { spacing, frontCount, behindCount, firstFront, firstBehind };
     rowAssignmentCount = 0;
-    // Reuse each descriptor across frames. A descriptor's row index changes only
-    // when the player crosses a band boundary (or the arena settings change).
     for (let sideIndex = 0; sideIndex < 2; sideIndex++) {
-      const front = sideIndex === 0;
+      const front = sideIndex === 0; // Forward and rear rows have separate identities and fade limits.
       const sign = front ? 1 : -1;
-      const count = front ? settings.frontCount : settings.behindCount;
+      const count = front ? frontCount : behindCount;
       const side = front ? 'front' : 'behind';
-      const firstIndex = sign > 0 ? Math.floor(gridPosition) + 1 : Math.ceil(gridPosition) - 1;
+      const firstIndex = front ? firstFront : firstBehind;
       const maxDistance = Math.max(spacing, spacing * count);
       for (let i = 0; i < count; i++) {
-        const rowIndex = firstIndex + sign * i; // Stable integer row identity used for mesh reuse.
-        const rowCoordinate = rowIndex * spacing; // World-space row coordinate along the moving lattice.
+        const rowCoordinate = (firstIndex + sign * i) * spacing;
         let assignment = rowAssignments[rowAssignmentCount];
         if (!assignment) {
-          assignment = { rowCoordinate: 0, side: null, distance: 0, maxDistance: 0, layer: null };
+          assignment = { rowCoordinate: 0, side: null, maxDistance: 0, layer: null };
           rowAssignments.push(assignment);
         }
         assignment.rowCoordinate = rowCoordinate;
         assignment.side = side;
-        assignment.distance = Math.abs(rowCoordinate - playerRowCoordinate);
         assignment.maxDistance = maxDistance;
         assignment.layer = null;
         rowAssignmentCount++;
       }
     }
-    return rowAssignmentCount;
+    assignRowLayers(rowAssignmentCount);
   }
 
   function assignRowLayers(count) {
-    ensureLayerCount(Math.max(3, count));
+    rowAssignmentPasses++;
     const stamp = ++rowAssignmentStamp; // Current-update claim marker; no Set or array expansion is needed.
     // First claim all existing matching rows before recycling any spare layer.
     for (let i = 0; i < count; i++) {
@@ -419,7 +421,7 @@
     const localForwardX = cameraForward.x * cosYaw - cameraForward.z * sinYaw;
     const localForwardZ = cameraForward.x * sinYaw + cameraForward.z * cosYaw;
 
-    assignRowLayers(desiredRows(rowTravelCoordinate));
+    updateRowAssignments(rowTravelCoordinate);
     const fadeLerp = 1 - Math.exp(-dt / 0.32); // One shared fade coefficient for all active sheets this frame.
     const groundY = settings.followCameraY ? 0 : deps.getPlayerGroundY(); // Reused if row placement follows terrain rather than the camera.
     for (let i = 0; i < rowAssignmentCount; i++) {
@@ -427,8 +429,9 @@
       const layer = assignment.layer;
       const { mesh, material, config } = layer;
       const cameraRelativeDistance = config.distance;
+      const rowOffset = assignment.rowCoordinate - rowTravelCoordinate; // Drives fading even while mesh assignments stay cached.
       const localZ = settings.lockRowZ
-        ? assignment.rowCoordinate - rowTravelCoordinate
+        ? rowOffset
         : localCameraZ + localForwardZ * cameraRelativeDistance;
       let rayDistance = Math.abs(cameraRelativeDistance);
       if (settings.lockRowZ && Math.abs(localForwardZ) > 0.001) {
@@ -445,7 +448,7 @@
       const y = settings.followCameraY
         ? context.camera.position.y + cameraForward.y * rayDistance
         : groundY + viewHeight * 0.5;
-      const distanceFade = Math.max(0, Math.min(1, 1 - assignment.distance / assignment.maxDistance));
+      const distanceFade = Math.max(0, Math.min(1, 1 - Math.abs(rowOffset) / assignment.maxDistance));
       const targetOpacity = config.opacity * context.opacityMultiplier * distanceFade;
       layer.currentOpacity += (targetOpacity - layer.currentOpacity) * fadeLerp;
       material.opacity = layer.currentOpacity;
@@ -459,6 +462,7 @@
   }
 
   function hideLayers() {
+    rowLayout = null;
     layers.forEach(layer => {
       layer.mesh.visible = false;
       layer.currentOpacity = 0;
@@ -566,6 +570,8 @@
       frustumCulling: true, // Offscreen sheet rejection is handled by Three.js during rendering.
       rowAssignmentScratchSize: rowAssignments.length,
       rowReassignments,
+      rowAssignmentPasses,
+      precipitationTextureCount: Number(!!rainSourceTexture) + blizzardSourceTextures.filter(Boolean).length,
       blizzardPreset: { ...BLIZZARD_PRESET },
       activeContent: blizzardActive ? 'blizzard' : 'rain',
       blizzardAudioRouting: typeof window.Music?.weatherRegionForArea === 'function',
