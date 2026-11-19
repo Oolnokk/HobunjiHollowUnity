@@ -686,6 +686,23 @@ hunt.update();
 assert.match(hunt.menuStatus().detail, /Northern Cliffs/, 'when a zone is not generated, the quest still names the zone to search');
 zones.set('map_northern_cliffs', missingZone);
 
+// A forced layout rebuild can reuse the active scene; foliage and its culling registry must still follow the new stamped trunk.
+const previousTree = zoneInfo.cullables[0]; // The currently visible cyan tree must not survive a same-scene locale relocation.
+currentZone = northId;
+const relocatedNorth = layoutFor('cyan', 40, 32); // Simulates replacing _zoneLayouts without destroying its existing Three scene.
+zones.set(northId, relocatedNorth);
+hunt.update();
+const relocatedTree=zoneInfo.cullables[0]; // The new native tree owns a fresh culling bound at the current locale.
+const relocatedPoint=Riddles.positionOf(relocatedNorth.localeInstances[0],'blossom-tree');
+assert.notEqual(relocatedTree,previousTree,'same-scene regeneration must replace old visual rather than retaining a stale location');
+assert.equal(previousTree.parent,null,'old native blossom is detached from the reused Three scene');
+assert.equal(zoneInfo.cullables.length,1,'same-scene regeneration removes the old tree from its culling registry');
+assert.equal(relocatedTree.position.x,relocatedPoint.col+.5,'the visual moves to the relocated blossom coordinate');
+assert.equal(relocatedTree.position.z,relocatedPoint.row+.5,'the visual moves to the relocated blossom coordinate');
+zones.set(northId,missingZone);
+hunt.update();
+assert.equal(zoneInfo.cullables.length,1,'restoring the original layout still leaves exactly one native tree in the culling array');
+
 // The parser must not import a second unversioned terrain matcher after its versioned script has already installed.
 const temporarySource = fs.readFileSync(path.join(ROOT, 'docs/js/temporary-locales.js'), 'utf8');
 const writes = []; // Captures the actual browser parser-time loader output without a DOM.
