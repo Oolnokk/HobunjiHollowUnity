@@ -106,7 +106,13 @@ function planForLayout(zoneId,layout,identity='world:shift'){
  const key=zoneId+':'+identity,old=cache.get(layout);
  if(old?.key===key)return old.sites;
  const next=rng(hash(key)),at=tileLookup(layout),cols=layout.cols,rows=layout.rows;
+ const blossomStarts=(layout.localeInstances||[]).filter(instance=>String(instance.localeId||'').startsWith('locale_five_blossoms_')
+  &&Number.isInteger(instance.blossomStartLandmark?.col)&&Number.isInteger(instance.blossomStartLandmark?.row))
+  .map(instance=>({id:instance.localeId,...instance.blossomStartLandmark}))
+  .sort((a,b)=>a.id.localeCompare(b.id))
+  .filter((entry,index,list)=>list.findIndex(other=>other.col===entry.col&&other.row===entry.row)===index); // Each stamped blossom reserves a short, uniquely patterned opening landmark.
  const occupied=[]; // Preserve entrances, authored locales, totems and the wilderness spawn clearing.
+ for(const start of blossomStarts)occupied.push({c:start.col,r:start.row,d:5}); // Ordinary random cairns never overlap the replacement debris.
  for(const item of layout.localeInstances||[])occupied.push({c:Number(item.x??item.col),r:Number(item.y??item.row),d:6});
  for(const item of [...(layout.dens||[]),...(layout.animalDens||[])])occupied.push({c:Number(item.mouthAnchor?.x??item.x),r:Number(item.mouthAnchor?.y??item.y),d:5});
  for(const item of layout.rootTotems||[])occupied.push({c:Number(item.x),r:Number(item.y),d:4});
@@ -122,15 +128,14 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   const name=kind==='stoneCairn'?'a stone cairn':kind==='brokenPillar'?'a broken stone pillar':'a dead tree';
   sites.push({id:zoneId+':'+sites.length,kind,name,point:{col,row},yaw:next()*Math.PI*2,size:.75+next()*.5,source:'generated-year-round-scenery'});
  }
- if(sites.length){
-  if(!sites.some(site=>site.kind==='brokenPillar')&&sites.length>1){
+ if(sites.length||blossomStarts.length){
+  if(sites.length&&!sites.some(site=>site.kind==='brokenPillar')&&sites.length>1){
    const replacement=sites.find(site=>site.kind==='deadTree')||sites[1];
-   replacement.kind='brokenPillar';replacement.name='a broken stone pillar'; // Every substantial zone has a possible painted pillar.
+   replacement.kind='brokenPillar';replacement.name='a broken stone pillar'; // Every substantial zone keeps real patterned pillar debris.
   }
   const dyes=witnessDyes(key);
-  let firstIndex=sites.findIndex(site=>site.kind==='stoneCairn'); // Keep a masonry pillar available even in rare zones without any cairns.
-  if(firstIndex<0)firstIndex=sites.findIndex(site=>site.kind==='deadTree');
-  if(firstIndex<0)firstIndex=sites.length>1?1:0; // With several pillars, sacrifice only one for the unique standing-stone start.
+  const regularBudget=Math.max(0,dyes.length-blossomStarts.length); // Reserve a distinct real dye for each local hunt marker first.
+  let dyeIndex=0;
   const marked=(index,dye,starting=false)=>{
    const original=sites[index],pillar=original.kind==='brokenPillar';
    const kind=starting?'witnessStone':pillar?'brokenPillar':'markedBoulder';
@@ -138,14 +143,31 @@ function planForLayout(zoneId,layout,identity='world:shift'){
    sites[index]={...original,kind,name:'the '+dye.name+'-marked '+object,
     dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
     patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+original.id)%WITNESS_MOTIFS.length],
-    unique:true,marked:true,source:'generated-year-round-scenery'}; // Color remains unambiguous among all marked objects in this zone.
+    unique:true,marked:true,source:'generated-year-round-scenery'}; // Every dyed object has a unique swatch within the zone.
   };
-  marked(firstIndex,dyes[0],true); // Exactly one quest start, though many permanent surfaces have distinctive markings.
+  let firstIndex=-1;
+  if(sites.length&&regularBudget){
+   firstIndex=sites.findIndex(site=>site.kind==='stoneCairn');
+   if(firstIndex<0)firstIndex=sites.findIndex(site=>site.kind==='deadTree');
+   if(firstIndex<0)firstIndex=sites.length>1?1:0;
+   marked(firstIndex,dyes[dyeIndex++],true);
+  }
   const candidates=sites.map((site,index)=>({site,index})).filter(({site,index})=>index!==firstIndex
    &&(site.kind==='brokenPillar'||site.kind==='stoneCairn'));
   candidates.sort((a,b)=>Number(b.site.kind==='brokenPillar')-Number(a.site.kind==='brokenPillar')
-   ||hash(key+'|'+a.site.id)-hash(key+'|'+b.site.id)); // Prioritize immovable masonry, then convert select cairns to marked boulders.
-  for(let i=0;i<Math.min(dyes.length-1,candidates.length);i++)marked(candidates[i].index,dyes[i+1]);
+   ||hash(key+'|'+a.site.id)-hash(key+'|'+b.site.id));
+  for(let i=0;i<candidates.length&&dyeIndex<regularBudget;i++)marked(candidates[i].index,dyes[dyeIndex++]);
+  for(const start of blossomStarts){
+   const dye=dyes[dyeIndex++];if(!dye)break;
+   const isBoulder=start.replacedTree; // A real copse becomes a patterned boulder; open ground receives an authored broken pillar.
+   const kind=isBoulder?'markedBoulder':'brokenPillar';
+   const id=zoneId+':blossom-start:'+start.id;
+   sites.push({id,kind,name:'the '+dye.name+'-marked '+(isBoulder?'boulder':'broken pillar'),
+    point:{col:start.col,row:start.row},yaw:hash(key+'|yaw|'+id)/4294967296*Math.PI*2,size:1,
+    dyeName:dye.name,dyeId:dye.id,ink:dye.hex,
+    patternUrl:WITNESS_MOTIFS[hash(key+'|motif|'+id)%WITNESS_MOTIFS.length],
+    unique:true,marked:true,blossomNear:start.id,treeReplaced:isBoulder,source:'generated-year-round-scenery'});
+  }
  }
  cache.set(layout,{key,sites});return sites;
 }
@@ -198,6 +220,7 @@ function witnessStone(T,host,sites){
   rock.position.set(site.point.col+.5,elevation(site)+.52,site.point.row+.5);
   rock.rotation.y=site.yaw;
   rock.userData.wildernessLandmarkScenery=true;
+  rock.userData.wildernessLandmarkSitePoint={...site.point}; // Existing stone root is the perception silhouette for the verified anchor.
   rock.userData.terrainJigsawIgnore=true;
   rock.raycast=()=>{}; // This permanent marking is unbreakable and does not steal player input.
   host.add(rock);engrave(rock,site,true);
@@ -222,6 +245,7 @@ async function debris(host,sites,ticket,zoneId){
    const built=author.buildGroup(pieces[variant]);if(!built)continue;
    built.name='wilderness-broken-stone-pillar';built.position.set(site.point.col+.5,elevation(site),site.point.row+.5);
    built.rotation.y=site.yaw;built.scale.multiplyScalar(site.size);built.userData.wildernessLandmarkScenery=true;
+   built.userData.wildernessLandmarkSitePoint={...site.point}; // The authored pillar, not a proxy, is the sense target.
    if(site.marked){
     const parts=built.userData?.meshById;
     const shaft=parts?.get?.('stump')||parts?.get?.('stub')||parts?.get?.('base'); // Actual authored pillar shaft receives the engraving.
@@ -263,7 +287,12 @@ function update(){
  marked:sites.filter(s=>s.marked).map(s=>({kind:s.kind,dyeId:s.dyeId,at:s.point}))}; // Diagnostics verify distinct dyes per generated zone.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
 }
-function debugSnapshot(){
+function objectAt(zoneId,targetScene,point){
+  if(area!==zoneId||scene!==targetScene||!group?.parent||!Number.isFinite(point?.col)||!Number.isFinite(point?.row))return null;
+  return group.children.find(node=>node.userData?.wildernessLandmarkSitePoint?.col===point.col
+   &&node.userData?.wildernessLandmarkSitePoint?.row===point.row)||null; // Bounded to scene-local roots, never a world traversal.
+ }
+ function debugSnapshot(){
  const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
  const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
@@ -272,5 +301,5 @@ function debugSnapshot(){
    runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
 }
 function init(injected){clear();deps=injected;error=null;root.DevCompanion?.registerStateProvider?.('wildernessLandmarkScenery',debugSnapshot);}
-return Object.freeze({init,update,clear,planForLayout,landmarksFor,debugSnapshot});
+return Object.freeze({init,update,clear,planForLayout,landmarksFor,objectAt,debugSnapshot});
 });
