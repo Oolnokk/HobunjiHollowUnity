@@ -268,6 +268,7 @@
     getActiveRows,
     getActiveGrid,
     getActiveScene,
+    getZoneSceneInfo(areaId) { return deps?._zoneScenes?.get?.(areaId) || null; }, // Exposes the canonical cullables owner without forcing a zone rebuild.
     getActiveTileAt,
     isHouseFootprint,
     isFarmBuildingCollisionTile,
