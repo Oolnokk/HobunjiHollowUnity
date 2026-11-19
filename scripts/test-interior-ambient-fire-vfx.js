@@ -212,5 +212,23 @@ console.log('interior ambient fire VFX scheduler migration and scheduler-free ed
   group.parent = null;
   fxTick({ timestamp: 40 });
   assert.equal(clustered.visuals[0].disposed, true, 'cluster cleanup disposes its shared authored emitter');
+  // Building Interior Editor deliberately omits PersistentGroundFire. It must still
+  // create authentic campfire flames for wall torches, not silently render none.
+  const editor = buildContext();
+  const editorAnchor = { add() {} }; // The fallback uses this standalone 3D anchor rather than the world-ground helper.
+  const editorTorch = { parent: {}, userData: { wallTorchFireAnchor: editorAnchor } };
+  editor.context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(editorTorch, null, 'wallTorch');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(editor.emitterCalls.length, 1, 'standalone editor creates one campfire VFX emitter without PersistentGroundFire');
+  assert.equal(editor.emitterCalls[0].group, editorAnchor, 'standalone torch flame follows its actual authored tip');
+  assert.equal(editor.emitterCalls[0].emitter.type, 'fire', 'standalone torch uses the actual authored fire-emitter type');
+  assert.equal(editor.emitterCalls[0].emitter.colorA, '#ffd45a', 'standalone torch uses the player-campfire palette');
+  const editorTick = editor.registered.get('interior-ambient-vfx').fn;
+  editorTick({ timestamp: 20 });
+  assert(editor.visuals[0].updates.length >= 2, 'standalone flame is primed and also receives ambient updates');
+  editorTorch.parent = null;
+  editorTick({ timestamp: 40 });
+  assert.equal(editor.visuals[0].disposed, true, 'standalone torch emitter is disposed when removed');
+
   console.log('canonical campfire wall-torch and batched candle-cluster VFX passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
