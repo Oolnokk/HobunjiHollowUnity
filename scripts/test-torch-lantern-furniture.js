@@ -40,9 +40,27 @@ assert.equal(emitter?.type, 'fire', 'existing ambient fire effect powers the lan
 assert.ok(read('docs/js/interior-fire-floor-runtime.js').includes("'candleTable', 'candleCluster', 'standingLamp', 'hearth'"), 'lantern and cluster both share the existing furniture fire scheduler');
 assert.ok(!lamp.parts.some(part => /lampshade|fabric shade/i.test(part.name)), 'old lampshade parts are gone');
 assert.equal(sourceLamp.lightSource.enabled, true, 'existing toggle-light and furniture-light metadata is retained');
-assert.ok(torchParts.get('wall_torch_shaft').transform.rz < -15, 'wall torch shaft visibly leans like a Minecraft wall torch');
-assert.equal(torchParts.get('wall_torch_flame').kind, 'cylinder', 'torch flame is tapered rather than spherical');
-assert.ok(torchParts.has('wall_torch_flame_inner'), 'torch has a bright inner flame');
+assert.deepEqual([...torchParts.keys()], ['wall_torch_plate','wall_torch_arm','wall_torch_rest'],
+  'wall torch JSON has only the mounting perch, never the old geometry torch and fake flames');
+assert.equal(torchParts.get('wall_torch_arm').transform.z,.145,'arm reaches the painted handle');
+assert.equal(torchParts.get('wall_torch_rest').transform.z,.31,'rest is directly beneath the sprite handle');
+const authoredTorchSource=read('docs/js/authored-furniture-runtime.js'); // Validate the art bridge for rendered authored furniture.
+const fallbackTorchSource=read('docs/js/wall-ornament-placement.js'); // JSON-cold fallback must match the authored version.
+const houseTorchSource=read('docs/js/house-wall-fixtures.js'); // Older house fixtures must not use cubes.
+assert.ok(authoredTorchSource.includes("new URL('../assets/toolsprites/torch.png'"),
+  'wall torch uses the exact handheld tool PNG in the game and editors');
+assert.ok(authoredTorchSource.includes('png.rotation.z = Math.PI'),
+  'PNG -Y business end is rotated to world up');
+assert.ok(authoredTorchSource.includes("data.key === 'wallTorch') attachWallTorchSprite(group, THREE)"),
+  'authored furniture builds the sprite onto the perch');
+assert.ok(fallbackTorchSource.includes('AuthoredFurniture?.attachWallTorchSprite?.(group, THREE)'),
+  'procedural fallback uses the same cached texture renderer');
+assert.ok(houseTorchSource.includes('AuthoredFurniture?.attachWallTorchSprite?.(mount,THREE,spriteOptions)'),
+  'house fixtures use the shared sprite where available');
+assert.ok(houseTorchSource.includes('art.rotation.z=Math.PI'),
+  'isolated house editor fallback flips the sprite too');
+assert.ok(!fallbackTorchSource.includes("id: 'wall_torch_shaft'"),
+  'procedural fallback never recreates the unwanted cylinder shaft');
 assert.equal(torch.wallOrnament.attachmentSurfaceId, 'wall_torch_plate:surface:4', 'wall attachment contract remains stable');
 assert.ok(torch.recognizedSurfaces[0].bounds.maxU > torch.recognizedSurfaces[0].bounds.minU, 'mounting surface bounds remain valid');
 const procedural = read('docs/js/procedural-furniture.js');
