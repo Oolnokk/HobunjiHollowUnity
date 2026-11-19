@@ -250,33 +250,24 @@
   }
 
   const WALL_TORCH_PARTS = Object.freeze([
-    Object.freeze({ id: 'wall_torch_plate', kind: 'box', name: 'Wall Torch Plate', color: '#5a4029', transform: { x: 0, y: 0.8, z: 0, rx: 0, ry: 0, rz: 0, sx: 0.22, sy: 0.32, sz: 0.04 } }),
-    Object.freeze({ id: 'wall_torch_arm', kind: 'beam', name: 'Wall Torch Arm', color: '#4b3523', transform: { x: 0, y: 0.83, z: 0.22, rx: 0, ry: 0, rz: 0, sx: 0.09, sy: 0.09, sz: 0.42 } }),
-    Object.freeze({ id: 'wall_torch_shaft', kind: 'cylinder', name: 'Wall Torch Shaft', color: '#6e4b2c', segments: 10, transform: { x: 0, y: 1.04, z: 0.42, rx: 0, ry: 0, rz: 0, sx: 0.08, sy: 0.46, sz: 0.08 } }),
-    Object.freeze({ id: 'wall_torch_flame', kind: 'sphere', name: 'Wall Torch Flame', color: '#ff9e3d', transform: { x: 0, y: 1.31, z: 0.42, rx: 0, ry: 0, rz: 0, sx: 0.15, sy: 0.15, sz: 0.15 } }),
-  ]); // Shared fallback geometry mirrors docs/config/furniture-authored/wallTorch.json.
+    Object.freeze({ id: 'wall_torch_plate', kind: 'box', name: 'Wall Torch Plate', color: '#5a4029', transform: { x: 0, y: 0.8, z: 0, rx: 0, ry: 0, rz: 0, sx: 0.16, sy: 0.24, sz: 0.035 } }),
+    Object.freeze({ id: 'wall_torch_arm', kind: 'beam', name: 'Wall Torch Perch Arm', color: '#4b3523', transform: { x: 0, y: 0.82, z: 0.145, rx: 0, ry: 0, rz: 0, sx: 0.07, sy: 0.07, sz: 0.29 } }),
+    Object.freeze({ id: 'wall_torch_rest', kind: 'box', name: 'Wall Torch Tilted Handle Socket', color: '#5a4029', transform: { x: 0, y: 0.865, z: 0.34, rx: 30, ry: 0, rz: 0, sx: 0.135, sy: 0.16, sz: 0.115 } }),
+  ]); // Procedural perch mirrors wallTorch.json while the real torch comes from torch.png.
 
   function buildWallTorchGroup(api, baseColor) {
-    const THREE = window.THREE; // Uses whichever Three instance owns the active game/tool scene.
+    const THREE = window.THREE; // Same Three instance as the currently active scene.
     if (!THREE?.Group || !api?.buildPartMesh) return null;
-    const group = new THREE.Group(); // Procedural fallback lets wallTorch render even before AuthoredFurniture knows this new key.
+    const group = new THREE.Group(); // Fallback matches authored furniture even if the JSON has not loaded.
     group.name = 'procedural_furniture_wallTorch';
     for (const part of WALL_TORCH_PARTS) {
-      const mesh = api.buildPartMesh(clone(part), baseColor); // Standard furniture primitive/material pipeline remains authoritative.
+      const mesh = api.buildPartMesh(clone(part), baseColor);
       if (!mesh) continue;
       mesh.userData.wallTorchPartId = part.id;
-      if (part.id === 'wall_torch_flame' && THREE.MeshBasicMaterial) mesh.material = new THREE.MeshBasicMaterial({ color: 0xff9e3d }); // Flame stays luminous without adding a custom shader.
       group.add(mesh);
     }
-    if (THREE.PointLight) {
-      const light = new THREE.PointLight(0xffa04a, 0.85, 5, 2); // Light is parented to the furniture so wall gizmo transforms move it automatically.
-      light.name = 'WallTorchLight';
-      light.position.set(0, 1.31, 0.42);
-      light.userData.intentionalFakeLightSource = true; // Wall torches illuminate through the shared 2D compositor; the PointLight itself never reaches WebGL lighting.
-      light.userData.furnitureLightMask = true;
-      window.FurnitureLightRegistry?.register(light);
-      group.add(light);
-    }
+    const art = window.AuthoredFurniture?.attachWallTorchSprite?.(group, THREE); // Central texture/material cache and -Y-up orientation.
+    group.userData.wallTorchSpriteReady = !!art; // Pixel Probe can distinguish a missing shared renderer from a stale asset.
     group.userData.wallOrnamentKey = 'wallTorch';
     return group;
   }

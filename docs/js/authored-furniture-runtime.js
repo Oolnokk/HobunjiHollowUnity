@@ -16,7 +16,7 @@
   'use strict';
 
   const CONFIG_BASE = window.__hobunjiFurnitureConfigBase || 'config/furniture-authored/';
-  const AUTHORED_ASSET_REVISIONS = Object.freeze({ festivalBlossoms:'20261118blossomVases1' }); // Returning players must receive the new petal-free authored vase, not a cached rigid-flower JSON. // Editor previews resolve the same repository assets from their own document root.
+  const AUTHORED_ASSET_REVISIONS = Object.freeze({ festivalBlossoms:'20261118blossomVases1', wallTorch:'20261119spritePerch1' }); // Returning players must receive the new petal-free authored vase, not a cached rigid-flower JSON. // Editor previews resolve the same repository assets from their own document root.
   let surfaceBuildAncestors = []; // Scoped synchronous construction context survives existing two-argument furniture/VFX wrappers.
   const _cache = new Map(); // furnitureKey -> Promise<data|null>, .__value set once resolved
 
@@ -37,6 +37,91 @@
       .then((data) => { promise.__value = data; return data; });
     _cache.set(furnitureKey, promise);
     return promise;
+  }
+
+
+  const wallTorchSpriteUrl = typeof document !== 'undefined' && document.currentScript?.src
+    ? new URL('../assets/toolsprites/torch.png', document.currentScript.src).href
+    : 'assets/toolsprites/torch.png'; // Existing handheld PNG resolves relative to this script from the game and editors.
+  const wallTorchArtCaches = new WeakMap(); // One torch texture and mesh/material pair per Three.js instance, not per fixture.
+  function getWallTorchArt(Three) {
+    if (wallTorchArtCaches.has(Three)) return wallTorchArtCaches.get(Three);
+    if (!Three?.TextureLoader || !Three?.PlaneGeometry || !Three?.MeshBasicMaterial) return null;
+    const texture = new Three.TextureLoader().load(wallTorchSpriteUrl, undefined, undefined,
+      error => window.__farmLog?.('[wall torch] torch.png: ' + String(error?.message || error), 'warn'));
+    if (Three.SRGBColorSpace) texture.colorSpace = Three.SRGBColorSpace;
+    if (Three.NearestFilter) texture.magFilter = Three.NearestFilter; // Preserve pixel edges.
+    const art = {
+      texture,
+      geometry: new Three.PlaneGeometry(.26,.70),
+      material: new Three.MeshBasicMaterial({
+        map:texture,color:0xffffff,transparent:true,alphaTest:.1,
+        depthTest:true,depthWrite:true,side:Three.DoubleSide,toneMapped:false
+      }),
+      flameMaterial:null,
+    }; // Shared geometry and material keep multiple torches cheap.
+    if (typeof document !== 'undefined' && Three.CanvasTexture && Three.SpriteMaterial) {
+      const canvas = document.createElement('canvas'); // One fire glow texture shared by every lit wall torch.
+      canvas.width = 24; canvas.height = 48;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const glow = ctx.createLinearGradient(0,0,0,48);
+        glow.addColorStop(0,'rgba(255,238,170,0)');
+        glow.addColorStop(.32,'rgba(255,238,170,.92)');
+        glow.addColorStop(.68,'rgba(255,140,45,.8)');
+        glow.addColorStop(1,'rgba(255,74,16,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.ellipse(12,24,8,21,0,0,Math.PI*2);ctx.fill();
+        art.flameMaterial = new Three.SpriteMaterial({
+          map:new Three.CanvasTexture(canvas), transparent:true,depthTest:true,depthWrite:false,
+          blending:Three.AdditiveBlending
+        });
+      }
+    }
+    wallTorchArtCaches.set(Three,art);
+    return art;
+  }
+
+  function attachWallTorchSprite(group, Three = window.THREE, options = {}) {
+    if (!group?.add || !Three?.Group || !Three?.Mesh) return null;
+    const previous = group.getObjectByName?.('wall_torch_handheld_sprite');
+    if (previous) return previous; // Avoid duplicate decorative lights on reattachment.
+    const shared = getWallTorchArt(Three);
+    if (!shared) return null;
+    const origin = options.position || [0,.82,.31]; // Perch contacts the bottom of the PNG handle, not the flame.
+    const scale = Number.isFinite(Number(options.scale)) ? Math.min(3,Math.max(.2,Number(options.scale))) : 1;
+    const pivot = new Three.Group(); // Parent transform follows arbitrary wall yaw and support adjustment.
+    pivot.name = 'wall_torch_handheld_sprite';
+    pivot.position.set(Number(origin[0])||0,Number(origin[1])||0,Number(origin[2])||0);
+    pivot.rotation.x = Math.PI / 6; // 30° outward from vertical; the wooden socket below uses the same X-axis tilt.
+    pivot.scale.setScalar(scale);
+    const png = new Three.Mesh(shared.geometry,shared.material);
+    png.name = 'wall_torch_actual_handheld_png';
+    png.rotation.z = Math.PI; // torch.png's business end is image -Y: DOWN on the artwork is UP when mounted.
+    png.position.set(0,.35,.017);
+    png.userData.nonInteractive = true;
+    png.raycast = () => {}; // Pixel art never blocks fixture selection or game interactions.
+    pivot.add(png);
+    if (shared.flameMaterial && Three.Sprite) {
+      const glow = new Three.Sprite(shared.flameMaterial);
+      glow.name = 'wall_torch_flame_sprite';
+      glow.position.set(0,.73,.038);
+      glow.scale.set(.15,.24,1);
+      glow.raycast = () => {};
+      pivot.add(glow);
+    }
+    if (Three.PointLight && options.light !== false) {
+      const light = new Three.PointLight(0xffa04a,.85,5,2); // Preserve existing wall-torch light mask behavior.
+      light.name = 'WallTorchLight';
+      light.position.set(0,.69,.06);
+      light.userData.intentionalFakeLightSource = true;
+      light.userData.furnitureLightMask = true;
+      window.FurnitureLightRegistry?.register?.(light);
+      pivot.add(light);
+    }
+    pivot.userData.wallTorchSpriteUrl = wallTorchSpriteUrl; // Mobile-visible inspection of loaded sprite provenance.
+    group.add(pivot);
+    return pivot;
   }
 
   // Builds a full-fidelity THREE.Group from authored `parts`. Each child
@@ -79,6 +164,7 @@
       group.add(mesh);
       meshById.set(part.id, mesh);
     }
+    if (data.key === 'wallTorch') attachWallTorchSprite(group, THREE); // Author and game share the handheld torch artwork.
     group.userData.meshById = meshById;
     group.userData.partById = partById;
     if(data.tileSpan?.axis==='y'&&data.tileSpan.verticalTarget==='ceiling')
@@ -775,6 +861,7 @@
     load,
     peek,
     buildGroup,
+    attachWallTorchSprite,
     setTileSpan,
     setRuntimeValues,
     setItemPlacements,

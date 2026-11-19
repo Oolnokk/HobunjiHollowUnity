@@ -20,6 +20,10 @@
     authoredWallFurniture: { width: .8, height: 1.3 }, // Signed/banner-like furniture with a declared wall ornament end.
     torch: { width: .18, height: .54 }
   });
+  const torchSpriteUrl = typeof document !== 'undefined' && document.currentScript?.src
+    ? new URL('../assets/toolsprites/torch.png',document.currentScript.src).href
+    : 'assets/toolsprites/torch.png'; // Isolated editors load the same handheld PNG even without AuthoredFurniture.
+  const torchSpriteTextures = new WeakMap(); // One texture per Three instance for house fixtures whose authored runtime is absent.
   const isWindow = fixture => WINDOWS.has(fixture?.key);
   const validFace = face => face?.tag === 'wall' && Array.isArray(face.v) && face.v.length === 4
     && face.v.every(p => Array.isArray(p) && p.length >= 3 && p.every(Number.isFinite));
@@ -509,11 +513,36 @@
         const faceMat=new THREE.MeshLambertMaterial({color:0xc8aa75,side:THREE.DoubleSide});
         addBox(0,0,.103,w*.89,h*.83,.008,faceMat);
       }else{
-        const bracket=new THREE.MeshLambertMaterial({color:0x444448});
-        const flame=new THREE.MeshBasicMaterial({color:0xffc766});
-        addBox(0,-h*.08,.16,w*.34,h*.65,.09,wood);
-        addBox(0,h*.25,.16,w*.55,h*.35,.14,flame);
-        addBox(0,-h*.4,.09,w*.7,.06,.18,bracket);
+        const bracket=new THREE.MeshLambertMaterial({color:0x554332}); // Simple support, no faux torch/flame cubes.
+        addBox(0,-h*.38,.018,w*.76,h*.23,.04,wood); // Plate attaches to the wall.
+        addBox(0,-h*.39,.11,w*.21,h*.09,.21,bracket); // Perch projects toward the room.
+        const handleRest=addBox(0,-h*.40,.21,w*.55,h*.16,.08,bracket); // Solid 3D socket supports the leaning handle.
+        handleRest.rotation.x=Math.PI/6; // Match the torch's 30° outward lean, not a flat ledge.
+        const spriteOptions={position:[0,-h*.42,.23],scale:h/.72}; // Keeps the tip within the saved fixture's height.
+        if(!global.AuthoredFurniture?.attachWallTorchSprite?.(mount,THREE,spriteOptions)){
+          // House Piece Author may not load AuthoredFurniture; use the same torch.png and inverted sprite directly.
+          if(THREE.TextureLoader && THREE.PlaneGeometry && THREE.MeshBasicMaterial){
+            let texture=torchSpriteTextures.get(THREE);
+            if(!texture){texture=new THREE.TextureLoader().load(torchSpriteUrl);torchSpriteTextures.set(THREE,texture);}
+            if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+            if(THREE.NearestFilter)texture.magFilter=THREE.NearestFilter;
+            const spriteHeight=h*(.70/.72); // The shared authored sprite is .70 high for a .72 mount before fixture scaling.
+            const spriteWidth=spriteHeight*(.26/.70); // Keep the canonical torch PNG silhouette instead of stretching it to fixture width.
+            const art=new THREE.Mesh(new THREE.PlaneGeometry(spriteWidth,spriteHeight),
+              new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.1,
+                side:THREE.DoubleSide,depthWrite:true,toneMapped:false}));
+            art.name='wall_torch_actual_handheld_png';
+            art.rotation.z=Math.PI; // Burning end is PNG -Y; flip to world +Y.
+            const tilt=new THREE.Group(); // The standalone House Editor follows the same tilted grip as AuthoredFurniture.
+            tilt.name='wall_torch_handheld_sprite';
+            tilt.position.set(0,-h*.42,.23);
+            tilt.rotation.x=Math.PI/6; // +X pitches the torch's upper end outward toward the room.
+            art.position.set(0,spriteHeight*.5,.017*(h/.72)); // Identical scaled handle pivot to the shared authored renderer.
+            art.raycast=()=>{};
+            tilt.add(art);
+            mount.add(tilt);
+          }
+        }
       }
       if(options.previewSelectionId === f.id){
         const highlight=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,.12)),
