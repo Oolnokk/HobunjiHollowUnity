@@ -165,6 +165,74 @@ for(const [button,axis] of [[E.headbandFlipH,'horizontal'],[E.headbandFlipV,'ver
     bakeHeadbandWhole(record,curve); // Reflect the current curve; start any later whole transform from its new shape.
   },'Flipped '+headbandView()+' '+E.headbandEditCurve.value+' curve '+axis+' around its own bounds.');
 }
+let headbandWholeGesture=false; // Groups continuous slider or numeric edits into one undo step.
+function beginHeadbandWholeGesture(){
+  if(headbandWholeGesture||!selectedHeadbandWhole())return;
+  pushUndo();headbandWholeGesture=true; // Capture before the first modified group transform.
+}
+function finishHeadbandWholeGesture(){
+  if(!headbandWholeGesture)return;
+  headbandWholeGesture=false;saveState();syncHeadbandControls();render();
+}
+function changeHeadbandWhole(field,value){
+  const selected=selectedHeadbandWhole();
+  if(!selected||!Number.isFinite(value))return;
+  const wanted={...selected.entry.settings,[field]:value};
+  if(Math.abs(wanted[field]-selected.entry.settings[field])<1e-9)return;
+  beginHeadbandWholeGesture();
+  const applied=window.ClothingHeadbandSpline.fitWholeTransform(
+    selected.entry.base,selected.entry.settings,wanted,R.body.width,R.body.height
+  );
+  selected.record[selected.curve]=applied.nodes;
+  selected.entry.settings=applied.settings;
+  R.headbandWholeWarning=applied.fraction<.99999
+    ?'Edit constrained at the sprite edge or before node crossing ('+Math.round(applied.fraction*100)+'% of requested adjustment).'
+    :'';
+  if(mode!=='headband')mode='headband'; // Always expose the transformed sprite while editing.
+  syncHeadbandWholeControls();queueHeadbandRender();
+}
+const wholeBindings=[
+  ['x',E.headbandWholeX,E.headbandWholeXNumber,false],
+  ['y',E.headbandWholeY,E.headbandWholeYNumber,false],
+  ['scaleX',E.headbandWholeScaleX,E.headbandWholeScaleXNumber,true],
+  ['scaleY',E.headbandWholeScaleY,E.headbandWholeScaleYNumber,true],
+  ['rotation',E.headbandWholeRotation,E.headbandWholeRotationNumber,false]
+]; // Slider and numeric pair share the same live current-view source/target record.
+for(const [field,slider,number,percent] of wholeBindings){
+  for(const input of [slider,number]){
+    input.addEventListener('pointerdown',beginHeadbandWholeGesture);
+    input.addEventListener('keydown',beginHeadbandWholeGesture);
+    input.addEventListener('input',()=>{
+      const displayed=Number(input.value);
+      if(!Number.isFinite(display)||input.value==='')return;
+      const min=Number(input.min),max=Number(input.max);
+      const bounded=Math.max(min,Math.min(max,displayed));
+      changeHeadbandWhole(field,percent?bounded/100:bounded);
+    });
+    for(const event of ['pointerup','pointercancel','keyup','blur','change'])
+      input.addEventListener(event,finishHeadbandWholeGesture);
+  }
+}
+E.headbandWholeReset.onclick=()=>{
+  const selected=selectedHeadbandWhole();if(!selected)return;
+  pushUndo();
+  selected.record[selected.curve]=selected.entry.base.map(point=>({...point}));
+  selected.entry.settings=window.ClothingHeadbandSpline.defaultWholeTransform();
+  R.headbandWholeWarning='';saveState();syncHeadbandControls();render();
+  log('Reset whole-spline position, width, height and rotation for '+headbandView()+' '+selected.curve+'.');
+};
+E.headbandWholeBake.onclick=()=>{
+  const selected=selectedHeadbandWhole();if(!selected)return;
+  pushUndo();bakeHeadbandWhole(selected.record,selected.curve);
+  R.headbandWholeWarning='';saveState();syncHeadbandControls();render();
+  log('Baked whole-spline transform as the new seven-point baseline.');
+};
+E.headbandWholeDrag.onchange=()=>{
+  saveState();render(false);
+  E.headbandWholeStatus.textContent=E.headbandWholeDrag.checked
+    ?'Touch anywhere on the canvas to move all seven nodes; uncheck to drag individual nodes.'
+    :'Individual node dragging restored.';
+};
 let rearBrushAction='draw'; // Current paint, erase or sample operation for the separately authored back sprite.
 let rearStroke=null; // Last touch location; interpolates fast pointer movements without holes.
 let rearRenderQueued=false; // Limit backplane paint preview to one update per animation frame.
