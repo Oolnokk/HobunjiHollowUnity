@@ -16,7 +16,7 @@ const win = {CreatureGeneticsRender:renderer, HobunjiAnimalHeadRigSpecies:specie
 const context = vm.createContext({window:win, localStorage,console,JSON,Object,String,Array,Number});
 vm.runInContext(fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'),context,{filename:'animal-head-rig-authored.js'});
 const api = win.HobunjiAuthoredAnimalHeadRigs;
-assert.equal(api?.version,'2026-11-18-nine-authored-rigs1','latest defaults must load on desktop and mobile');
+assert.equal(api?.version,'2026-11-18-nine-authored-rigs2','latest defaults must load on desktop and mobile');
 const plain = value=>JSON.parse(JSON.stringify(value)); // Normalizes the vm realm before deep-equality comparisons.
 for(const id of ids){
   const records=bestiary.creatures.filter(c=>c.id===id);
