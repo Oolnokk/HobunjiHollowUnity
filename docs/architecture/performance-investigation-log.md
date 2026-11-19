@@ -1,5 +1,49 @@
 # Performance investigation log
 
+## 19 Nov 2026: actual Chrome CPU profile — repeated scene traversals
+
+Inspected the attached `Trace-20261118T215416.json.gz` as a sampled Chrome
+CPU profile, not just the DevTools URL-level cost chart. Of **20,479**
+profile samples, **1,381 (6.7%)** had a Three.js `traverse` or
+`traverseVisible` anywhere in their stack; **741 (3.6%)** had
+`updateMatrixWorld`. These are *unique stack-presence counts* rather than
+inclusive self times, and they do not capture minified Three.js render-list
+recursion under names like `At`. No FPS estimate is possible from them.
+
+Observed call-chain contributors included:
+- `held-object-render-order.js` shell scissor
+  `collectReplayCulled` (~430 inclusive samples) and held
+  `collectBoundedReplayObjects` (~211).
+- `outline-render-performance.js` world-text overlay search (~213).
+- `held-object-render-order.js` periodic `scanScene -> classifyTree`
+  (~237), currently a 750 ms fallback for post-add tags; retained.
+- `crop-sprite-art.js` placeholder discovery (~156), currently a
+  250 ms fallback for newly planted crops; retained.
+
+**Changed here:** `outline-render-performance.js` now handles attachments
+to an already-scanned scene by checking just the newly attached subtrees
+and uses live ancestry on cached candidates after removals/moves. Its
+full-scene safety rescan remains once per second for a material/renderOrder
+changed long after add; structure-epoch tracking is unchanged for the
+timed-score character cache. A new standalone regression covers new and
+late-stamped text, hidden parents, moves between scenes, removal, and rescan.
+`OutlineRenderPerformance.snapshot()` exposes `worldTextFullScans`,
+`worldTextIncrementalRoots`, and `worldTextCacheHits` for on-device checks.
+
+**Second change:** the shell replay's `collectReplayCulled` now optionally
+fills the same depth and shell candidate arrays while traversing the visible
+scene. When a scissor frustum is available, the replay avoids a later
+independent `collectShellReplayCandidates` full-scene walk; otherwise
+that original live walk is still used. Existing visibility/material
+restoration and conservative culling rules are unchanged. The regression
+compares the fused result against the original post-cull traversal, including
+hidden and depth-inert objects.
+
+**Not yet measured:** real-frame FPS improvements or remaining cost from
+Three.js's per-render render-list traversal. The player's trace was captured
+before these changes, so only a matched camera/zone A/B recording after merge
+can establish an actual speedup.
+
 ## 18 Nov 2026: redundant scene matrix traversal in PNG outline depth pass (code inspection)
 
 The default outlined frame renders the main world scene, then immediately replays its PNG
