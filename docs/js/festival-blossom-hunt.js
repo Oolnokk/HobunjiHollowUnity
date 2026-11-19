@@ -198,14 +198,14 @@
     const area = mapDeps?.getCurrentArea?.();
     if (!BLOSSOMS.some(item => item.zoneId === area)) { if (visibleTrees.size) clearTrees(); return; } // Blossom locales exist all year; only collecting them is festival-limited.
     const scene = window.GridTileAccessors?.getActiveScene?.();
-    if (!scene) return;
+    if (!scene) { if (visibleTrees.size) clearTrees(); return; } // A zone-scene teardown must detach stale animated trees even before the replacement scene is ready.
     const layout = zoneLayout(area); // O(1) identity test catches forced Shift regeneration without recreating the Three.js scene.
     if (visibleScene !== scene || visibleZone !== area || visibleLayout !== layout) clearTrees();
     visibleScene = scene; visibleZone = area; visibleLayout = layout;
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area) continue;
       const previous = visibleTrees.get(blossom.localeId); // A live temple swatch change rebuilds only this blossom, not every tree.
-      if (previous?.userData?.festivalBlossomHunt?.color === blossomColor(blossom)) continue;
+      if (previous?.parent === scene && previous.userData?.festivalBlossomHunt?.color === blossomColor(blossom)) continue; // A rebuilt zone may detach an old tree without changing its scene/layout references.
       if (previous) { releaseVisibleTree(previous); visibleTrees.delete(blossom.localeId); }
       const instance = localeFor(blossom);
       const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // The region's own native tree shape, with tiny colored leaf bunches among its branches.
