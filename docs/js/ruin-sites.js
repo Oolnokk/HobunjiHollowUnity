@@ -357,8 +357,9 @@
   function prepareStaticPieceCulling(group) {
     group.traverse?.(node => {
       if (!node.isMesh || node.isSkinnedMesh || node.isInstancedMesh || !node.geometry?.getAttribute?.('position')) return;
-      node.frustumCulled = true; // Static ruin furniture uses each part's actual local bounds in the ordinary Three.js camera pass.
-      node.userData.hobunjiWildernessDistanceCull = true; // The existing wilderness-distance pass can skip distant ruin parts without touching collision or gameplay state.
+      if (node.frustumCulled === false) return; // Billboards, camera-facing decals and shader-displaced effects opt out intentionally.
+      node.frustumCulled = true; // Ordinary static ruin parts use the actual local bounds in the Three.js camera pass.
+      node.userData.hobunjiWildernessDistanceCull = true; // Only normal static geometry enters the existing render-only distance pass.
       if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere?.(); // Calculate once at build time instead of on the first frame in view.
     });
   }
