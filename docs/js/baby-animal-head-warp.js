@@ -368,49 +368,101 @@
     finally { if (pendingIdleMasks.get(promiseKey) === promise) pendingIdleMasks.delete(promiseKey); }
   }
 
-  function warpPixels(source, width, height, frame, requestedScale = scale, idleMask = null, requestedShortening = 0, mode = 'idle-alpha') {
-    const w = Math.floor(Number(width)), h = Math.floor(Number(height));
-    const magnification = clampScale(requestedScale), shorten = clampShortening(requestedShortening);
-    if (!source || w < 1 || h < 1 || source.length !== w * h * 4) return null;
-    const output = new Uint8ClampedArray(source); // Final eyes, coats, patterns and non-head pixels are never mutated in the shared texture.
+  const canvasWarps = new WeakMap(); // The rig consumes the same inverse mapping as the finished canvas.
+  const speciesWarps = new Map(); // Reuse a mapping across idle and run frames with identical proportions.
+
+  function warpRegion(w, h, frame, magnification, idleMask, shorten, mode) {
     const legacy = mode === 'legacy-frame';
-    if (!frame || (magnification <= 1 && shorten <= 0) || (!legacy && !idleMask)) return output;
-    const left = frame.x * w, top = frame.y * h, halfW = frame.width * w / 2, halfH = frame.height * h / 2;
-    const cx = legacy ? left + halfW : idleMask.centerX * w / idleMask.width;
-    const cy = legacy ? top + halfH : idleMask.centerY * h / idleMask.height;
-    const fade = Math.max(1, Math.max(halfW, halfH) * FALLOFF_RADIUS); // Retains the older rectangular method's transition.
-    const minX = legacy ? Math.max(0, Math.floor(left - fade)) : 0;
-    const maxX = legacy ? Math.min(w - 1, Math.ceil(left + 2 * halfW + fade)) : w - 1;
-    const minY = legacy ? Math.max(0, Math.floor(top - fade)) : 0;
-    const maxY = legacy ? Math.min(h - 1, Math.ceil(top + 2 * halfH + fade)) : h - 1;
-    for (let y = minY; y <= maxY; y++) {
-      const dy = y + 0.5 - cy;
-      const outsideY = legacy ? Math.max(0, Math.abs(dy) - halfH) : 0;
-      const my = legacy ? 0 : Math.max(0, Math.min(idleMask.height - 1, Math.floor((y + 0.5) * idleMask.height / h)));
-      for (let x = minX; x <= maxX; x++) {
+    if (!frame || (magnification <= 1 && shorten <= 0) || (!legacy && !idleMask)) return null;
+    const halfW = frame.width * w / 2, halfH = frame.height * h / 2;
+    const cx = legacy ? frame.x * w + halfW : idleMask.centerX * w / idleMask.width;
+    const cy = legacy ? frame.y * h + halfH : idleMask.centerY * h / idleMask.height;
+    const fade = Math.max(1, Math.max(halfW, halfH) * FALLOFF_RADIUS);
+    const clamp = (value, max) => Math.max(0, Math.min(max, value));
+    return {
+      minX: legacy ? clamp(Math.floor(cx - halfW - fade), w - 1) : 0,
+      maxX: legacy ? clamp(Math.ceil(cx + halfW + fade), w - 1) : w - 1,
+      minY: legacy ? clamp(Math.floor(cy - halfH - fade), h - 1) : 0,
+      maxY: legacy ? clamp(Math.ceil(cy + halfH + fade), h - 1) : h - 1,
+      sourceAt(x, y, out) {
+        const dx = x - cx, dy = y - cy;
         let influence;
         if (legacy) {
-          const outsideX = Math.max(0, Math.abs(x + 0.5 - cx) - halfW);
-          const distance = Math.hypot(outsideX, outsideY);
-          if (distance >= fade) continue;
-          const t = distance / fade;
+          const distance = Math.hypot(Math.max(0, Math.abs(dx) - halfW), Math.max(0, Math.abs(dy) - halfH));
+          const t = Math.min(1, distance / fade);
           influence = 1 - t * t * (3 - 2 * t);
         } else {
-          const mx = Math.max(0, Math.min(idleMask.width - 1, Math.floor((x + 0.5) * idleMask.width / w)));
+          const mx = clamp(Math.floor(x * idleMask.width / w), idleMask.width - 1);
+          const my = clamp(Math.floor(y * idleMask.height / h), idleMask.height - 1);
           influence = idleMask.coverage[my * idleMask.width + mx];
         }
-        if (!(influence > 0)) continue;
-        // Horizontal compression shortens the muzzle/profile; vertical growth remains independent.
-        const factorX = 1 + (magnification * (1 - shorten) - 1) * influence;
-        const factorY = 1 + (magnification - 1) * influence;
-        const sx = Math.max(0, Math.min(w - 1, Math.round(cx + (x + 0.5 - cx) / factorX - 0.5)));
-        const sy = Math.max(0, Math.min(h - 1, Math.round(cy + dy / factorY - 0.5)));
+        if (influence <= 0) {
+          out.x = x;
+          out.y = y;
+          return false;
+        }
+        out.x = cx + dx / (1 + (magnification * (1 - shorten) - 1) * influence);
+        out.y = cy + dy / (1 + (magnification - 1) * influence);
+        return true;
+      },
+    };
+  }
+
+  function warpPixels(source, width, height, frame, requestedScale = scale, idleMask = null, requestedShortening = 0, mode = 'idle-alpha') {
+    const w = Math.floor(Number(width)), h = Math.floor(Number(height));
+    if (!source || w < 1 || h < 1 || source.length !== w * h * 4) return null;
+    const output = new Uint8ClampedArray(source);
+    const region = warpRegion(w, h, frame, clampScale(requestedScale), idleMask, clampShortening(requestedShortening), mode);
+    if (!region) return output;
+    const pixel = { x: 0, y: 0 }; // Reused throughout the raster pass.
+    for (let y = region.minY; y <= region.maxY; y++) {
+      for (let x = region.minX; x <= region.maxX; x++) {
+        if (!region.sourceAt(x + 0.5, y + 0.5, pixel)) continue;
+        const sx = Math.max(0, Math.min(w - 1, Math.round(pixel.x - 0.5)));
+        const sy = Math.max(0, Math.min(h - 1, Math.round(pixel.y - 0.5)));
         const from = (sy * w + sx) * 4, to = (y * w + x) * 4;
         output[to] = source[from]; output[to + 1] = source[from + 1];
         output[to + 2] = source[from + 2]; output[to + 3] = source[from + 3];
       }
     }
     return output;
+  }
+
+  function rigWarpFor(kind, w, h, headFrame, headScale, shorten, mask, mode, abdomenFrame, abdomenScale) {
+    const key = [w, h, frameKey(headFrame), headScale, shorten, mode, frameKey(abdomenFrame), abdomenScale].join('|');
+    const cached = speciesWarps.get(kind);
+    if (cached?.key === key && cached.mask === mask) return cached.warp;
+    const head = warpRegion(w, h, headFrame, headScale, mask, shorten, mode);
+    const abdomen = warpRegion(w, h, abdomenFrame, abdomenScale, null, 0, 'legacy-frame');
+    if (!head && !abdomen) return null;
+    function sourceAt(u, v, out = {}) {
+      out.x = u * w;
+      out.y = v * h;
+      // Raster applies head first, then abdomen. Walk the maps backwards to sample original rig paint.
+      abdomen?.sourceAt(out.x, out.y, out);
+      head?.sourceAt(out.x, out.y, out);
+      out.x /= w;
+      out.y /= h;
+      return out;
+    }
+    function destinationFor(point) {
+      const best = { x: point.x, y: point.y }; // Resolve an authored source-space pivot into the rendered sprite.
+      let x = point.x, y = point.y, error = Infinity;
+      const sample = {};
+      for (let i = 0; i < 32; i++) {
+        sourceAt(x, y, sample);
+        const dx = point.x - sample.x, dy = point.y - sample.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance < error) { best.x = x; best.y = y; error = distance; }
+        if (error < 1e-7) break;
+        x += dx * 0.75;
+        y += dy * 0.75;
+      }
+      return best;
+    }
+    const warp = { sourceAt, destinationFor }; // Shared by textures and their matching skinned faces.
+    speciesWarps.set(kind, { key, mask, warp });
+    return warp;
   }
 
   function applyToCanvas(canvas, kind, previewScale = null, previewFrame = null,
@@ -449,6 +501,9 @@
       const image = ctx.createImageData(w, h);
       image.data.set(pixels);
       ctx.putImageData(image, 0, 0);
+      const warp = rigWarpFor(kind, w, h, canGrowHead ? frame : null, selectedScale, selectedShortening, mask,
+        painted ? 'legacy-frame' : 'idle-alpha', growAbdomen ? abdomenFrame : null, clampScale(abdomenScale));
+      if (warp) canvasWarps.set(output, warp);
       debug.applied++; debug.lastKind = kind;
       debug.lastFrame = { head: canGrowHead ? frame : null, abdomen: growAbdomen ? abdomenFrame : null };
       debug.lastError = growHead && !canGrowHead ? 'Head mask unavailable; abdomen was enlarged independently.' : null;
@@ -463,7 +518,7 @@
     DEFAULT_SCALE, MAX_SCALE, DEFAULT_SHORTENING, MAX_SHORTENING, MAX_ABDOMEN_SCALE, getScale: () => scale, setScale, scaleForKind,
     getShortening, setShortening, shorteningForKind, usePaintedHeadForKind, maskModeForKind,
     customHeadFrameForKind, abdomenForKind,
-    frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, buildIdleMask, maskForKind, primeIdleMask, ensureIdleMask, warpPixels, applyToCanvas,
+    frameForKind, frameFromRig, validateFrame, isSmallSizeVariantPet, buildIdleMask, maskForKind, primeIdleMask, ensureIdleMask, warpPixels, applyToCanvas, rigWarpForCanvas: canvas => canvasWarps.get(canvas) || null,
     debugSnapshot: () => ({ ...debug, scale, shortening, defaultScale: DEFAULT_SCALE, defaultShortening: DEFAULT_SHORTENING, falloffRadius: FALLOFF_RADIUS, masksCached: idleMasks.size, masksPending: pendingIdleMasks.size, rawOnlyKinds: admittedIdleKinds.size }),
   });
 })();

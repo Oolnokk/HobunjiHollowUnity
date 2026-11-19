@@ -1,4 +1,4 @@
-// Baby animal head warp is a texture-only, baby-only postprocess.
+// Baby head and body growth must share their inverse coordinates with the skinning mesh.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -159,6 +159,20 @@ const output = warp.applyToCanvas(input, 'grehlr', 1.32, null, 0, false); // Exp
 assert.notEqual(output, input, 'warped baby art occupies its own canvas');
 assert.equal(output, lastOutput, 'canvas uses the native dimensions and the nearest-neighbor pixel map');
 assert.equal(at(output.bytes, 26, 20), at(warped, 26, 20));
+const rigWarp = warp.rigWarpForCanvas(output);
+assert(rigWarp);
+assert.equal(warp.rigWarpForCanvas(input), null, 'unwarped adult art has no rig remap');
+assert.equal(warp.rigWarpForCanvas(warp.applyToCanvas(input, 'grehlr', 1.32, null, 0, false)), rigWarp,
+  'equivalent idle/run frames can share a mesh mapping without rebuilding at each frame');
+const sampled = rigWarp.sourceAt(26.5 / width, 20.5 / height);
+assert.equal(at(output.bytes, 26, 20), at(pixels, Math.floor(sampled.x * width), Math.floor(sampled.y * height)),
+  'the mesh looks up the same source position that supplied the grown sprite pixel');
+const pivot = { x: 0.57, y: 0.46 }; // A neck hinge away from the center must move when the head grows.
+const warpedPivot = rigWarp.destinationFor(pivot);
+const originalPivot = rigWarp.sourceAt(warpedPivot.x, warpedPivot.y);
+assert(warpedPivot.x > pivot.x);
+assert(Math.hypot(originalPivot.x - pivot.x, originalPivot.y - pivot.y) < 1e-5, 'remapped pivot still tracks its authored source pixel');
+
 const blankIdle = new Uint8ClampedArray(width * height * 4);
 assert.equal(warp.buildIdleMask(blankIdle, width, height, head), null, 'an entirely transparent chathead area never becomes a rectangular mask');
 const sparseIdle = new Uint8ClampedArray(width * height * 4);

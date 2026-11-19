@@ -77,6 +77,14 @@ assert.strictEqual(animal.headRig.frontHeadBone,headBone,'existing animated head
 assert.equal(headBone.rotation.z,oldAngle,'posed head angle remains unchanged through retessellation');
 assert.strictEqual(animal.frontPlane.material,material,'genotype material and map are retained');
 assert(oldGeometry.disposed,'old GPU buffer freed after replacement');
+meshBudget.setPortraitWireframeEnabled(true);
+assert.notEqual(animal.frontPlane.material, material);
+animal.frontPlane.material.map = 'new-grown-frame'; // Frame writers still target the active material during diagnostics.
+assert.equal(animal.frontPlane.material.map, null, 'wireframe draws the whole geometry with no sampled sprite');
+assert.equal(meshBudget.originalPortraitMaterial(animal.frontPlane).map, 'new-grown-frame');
+meshBudget.setPortraitWireframeEnabled(false);
+assert.equal(animal.frontPlane.material.map, 'new-grown-frame', 'turning wireframe off reveals the latest bound sprite');
+
 animal.dispose();
 animal.dispose();
 assert.equal(sourceDisposals,1,'both modern and original dispose chains are idempotent');

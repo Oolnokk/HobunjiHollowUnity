@@ -29,10 +29,11 @@ const materialStart = source.indexOf('  function makeSpriteMaterial('); // Inclu
 const materialEnd = source.indexOf('  // Compatibility alias', materialStart);
 const start = source.indexOf('  const animalSourceTextures'), end = source.indexOf('  function hasUsablePortraitRig', start);
 assert(materialStart >= 0 && materialEnd > materialStart, 'the avatar material factory is available');
-const context = { window: {}, cfg: () => ({ alphaTest: 0.001, maskAlphaTest: 0.35 }) }; // Standalone fallback retains the correct depth-occlusion threshold.
+const wireframeAnimalMaterials = new WeakMap(); // The mesh budget owns this registry in production.
+const context = { window: {}, wireframeAnimalMaterials, cfg: () => ({ alphaTest: 0.001, maskAlphaTest: 0.35 }) }; // Standalone fallback retains the correct depth-occlusion threshold.
 vm.runInNewContext('const spritePngSurface = window.HobunjiSpritePngSurface;\n' +
   source.slice(materialStart, materialEnd) + '\n' + source.slice(start, end) +
-  '\nthis.build = buildAnimalPlaneAvatarModel;', context);
+  '\nthis.build = buildAnimalPlaneAvatarModel; this.bindBackMap = backMapFor;', context);
 const herd = Array.from({ length: 24 }, () => context.build(THREE, 'herd.png'));
 assert.equal(loads, 1, '24 adults share one native-resolution source image (the back card mirrors it in-shader)');
 assert.equal(herd[0].frontPlane.material.alphaTest, 0.35, 'animal silhouettes must discard almost-transparent pixels');
@@ -53,6 +54,14 @@ assert.equal(typeof backMaterial.onBeforeCompile, 'function', 'the back material
   const cloneShader = { uniforms: {}, vertexShader: '#include <uv_vertex>' };
   clone.onBeforeCompile(cloneShader);
   assert.equal(cloneShader.uniforms.hobunjiSharedFaceMirror.value, 1, 'clones keep the in-shader mirror');
+  const debugMaterial = new MeshBasicMaterial();
+  const latestFrame = new Texture();
+  wireframeAnimalMaterials.set(debugMaterial, backMaterial);
+  assert.equal(context.bindBackMap(debugMaterial, { front: latestFrame }), latestFrame,
+    'updates during wireframe still select the original material’s shared-face mirror');
+  backMaterial.map = latestFrame;
+  assert.equal(shader.uniforms.hobunjiSharedFaceMirror.value, 1, 'the later frame mirrors after restoring the real material');
+
 }
 const survivingMap = herd[23].frontPlane.material.map;
 for (let i = 0; i < 23; i++) { herd[i].dispose(); herd[i].dispose(); }
