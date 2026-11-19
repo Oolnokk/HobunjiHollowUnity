@@ -337,54 +337,18 @@
     "owner": "ItemArchCategoryColors",
     "classification": "one-shot",
     "function": "queueRefresh",
-    "reason": "Guarded single RAF recolors item slots after inventory deps/order change; not a loop.",
+    "reason": "Coalesced one-shot RAF updates category tags and the only fixed-heading/item-inset presentation after arc, inventory or input changes.",
     "migrationStage": "not-planned",
-    "line": 486
+    "line": 656
   },
   {
-    "file": "docs/js/item-arch-original-presentation.js",
-    "owner": "ItemArchOriginalPresentation",
+    "file": "docs/js/item-arch-category-colors.js",
+    "owner": "ItemArchCategoryColors",
     "classification": "bounded-animation",
     "function": "startFrameLoop (frame)",
-    "reason": "Self-perpetuating RAF loop that keeps the item arc's fixed heading/inset positioned while the radial item-arc menu is open, and stops itself (frameRunning = false) as soon as updateOpenPresentation() reports the arc closed - a bounded, UI-open-scoped effect rather than a persistent world runtime.",
+    "reason": "One UI-open-only RAF follows the selector's moving/recycled slots; ends immediately when the item wheel closes. Retired sticky/original modules register no parallel loops.",
     "migrationStage": "not-planned",
-    "line": 229
-  },
-  {
-    "file": "docs/js/item-arch-original-presentation.js",
-    "owner": "ItemArchOriginalPresentation",
-    "classification": "one-shot",
-    "function": "queueRefresh",
-    "reason": "Guarded single RAF recomputes the arc's open presentation once after a DOM mutation and, if the arc is open, hands off to startFrameLoop; the RAF itself does not reschedule.",
-    "migrationStage": "not-planned",
-    "line": 237
-  },
-  {
-    "file": "docs/js/item-arch-sticky-category-heading.js",
-    "owner": "ItemArchStickyCategoryHeading",
-    "classification": "one-shot",
-    "function": "requestExactSharedGeometry",
-    "reason": "Guarded by geometryRefreshPending so it fires only once per request, deferring a single geometry-refresh check to the next paint rather than running a self-perpetuating loop.",
-    "migrationStage": "not-planned",
-    "line": 263
-  },
-  {
-    "file": "docs/js/item-arch-sticky-category-heading.js",
-    "owner": "ItemArchStickyCategoryHeading",
-    "classification": "one-shot",
-    "function": "refresh (retry path)",
-    "reason": "Guarded by retryQueued, this schedules exactly one deferred retry of queueRefresh() when slots are momentarily empty, not a recursive loop.",
-    "migrationStage": "not-planned",
-    "line": 349
-  },
-  {
-    "file": "docs/js/item-arch-sticky-category-heading.js",
-    "owner": "ItemArchStickyCategoryHeading",
-    "classification": "one-shot",
-    "function": "queueRefresh",
-    "reason": "Guarded by refreshQueued, this debounces MutationObserver bursts into a single next-frame call to refresh(); refresh() itself never re-arms this RAF.",
-    "migrationStage": "not-planned",
-    "line": 360
+    "line": 493
   },
   {
     "file": "docs/js/kurraya-instrument.js",
