@@ -17,6 +17,7 @@ global.THREE = THREE;
 require('../docs/js/foliage-generator.js'); // Use the real generator and its cached variants, not a handcrafted tree fixture.
 const generator = window.FoliageGenerator;
 require('../docs/js/furniture-pattern-surfaces.js'); // Use the production face projector to verify complete engraving coverage, without needing canvas or WebGL.
+require('../docs/js/procedural-furniture.js'); // Build actual source tapered masonry with real material groups, not approximate BoxGeometry fixtures.
 assert.ok(generator?.buildWildernessBlossomTreeMesh, 'wilderness builder is exported independently of table flowers');
 assert.equal(generator.wildernessBlossomRecipe.map_northern_cliffs.species,'crownedPine');
 assert.equal(generator.wildernessBlossomRecipe.map_western_slope.species,'deadTree');
@@ -75,18 +76,18 @@ window.GridTileAccessors={getActiveScene:()=>scene};
 window.AuthoredFurniture={
   async load(key){return JSON.parse(fs.readFileSync('docs/config/furniture-authored/'+key+'.json','utf8'));},
   buildGroup(def){const root=new THREE.Group(),parts=new Map();
-    for(const part of def.parts){const {sx,sy,sz,x,y,z,rx,ry,rz}=part.transform;
-      const mesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshBasicMaterial());
-      mesh.name=part.name;mesh.position.set(x,y,z);
-      mesh.rotation.set(THREE.MathUtils.degToRad(rx),THREE.MathUtils.degToRad(ry),THREE.MathUtils.degToRad(rz));
-      mesh.userData.authoredPart=part;parts.set(part.id,mesh);root.add(mesh);}
-    root.userData.meshById=parts;return root;} // Actual authored sizes/rotations/IDs; an untapered box isolates UV coverage from the live Furniture Author's bevels.
+    for(const part of def.parts){const mesh=window.ProceduralFurniture.buildPartMesh(part);
+      assert.ok(mesh.geometry.getAttribute('uv'),'real authored tapered stone must expose source UVs');
+      assert.equal(mesh.geometry.groups.length,0,'actual tapered masonry uses one material group: one overlay really is one draw call');
+      parts.set(part.id,mesh);root.add(mesh);}
+    root.userData.meshById=parts;return root;} // Run production furniture geometry, material, taper, transforms and authored metadata with no independent imitation.
 };
 window.ClimbSystem={groundYAt:()=>1.25};
 const ruinSurfaces=window.FurniturePatternSurfaces; // The real projector is the coverage oracle, not the test's simulated atlas.
 window.RuinPatternSurfaceRules={mergedConfig:()=>({defaultScale:4,rules:{}})}; // The canonical intact ruin pillar's four-world-unit motif scale is the source.
 window.FurniturePatternSurfaces={
   applyPart(mesh,part) {
+    if(!part?.patternSurfaces?.length)return mesh; // The source furniture builds plain before this test's wilderness engraving is applied.
     const patterns=part.patternSurfaces||[],rock=part.kind==='sphere';
     assert.deepEqual(patterns.map(record=>record.selector),rock?['all']:['pillar-wrap'],
       'one engraving covers every source face: original pillar side wrap and both planar cut faces');
