@@ -63,6 +63,7 @@ class Element {
   }
   setAttribute(key, value) { this.attributes.set(key, String(value)); this.writes++; }
   getAttribute(key) { return this.attributes.get(key) || null; }
+  addEventListener() {} // Supports the item selector's native pointerdown regroup hook.
   querySelector(tag) {
     const matches = node => tag === '.arc-label' ? node.classList.has('arc-label')
       : tag === '.arc-icon' ? node.classList.has('arc-icon')
