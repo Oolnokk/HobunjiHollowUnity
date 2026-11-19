@@ -63,7 +63,7 @@ function harness(roll, legacyPlacement = null, disableMetals = false, twoChests 
       HobunjiRuntimeSave: { flushNow() { flushed.push(true); return { ok: true, captured: true }; } },
       HobunjiActivityEvents: { emit() {} },
       AlchemySystem: {
-        RECIPE_DEFS: { breedingGigantism: { id: 'breedingGigantism', useMode: 'livestock' } },
+        RECIPE_DEFS: { potionOfFertility: { id: 'potionOfFertility', useMode: 'livestock', application: 'reduceBreedingDays' }, breedingGigantism: { id: 'breedingGigantism', useMode: 'livestock' } },
         ensureRecipeItemDef(id) { return 'alchemy_' + id; },
         recordPotionAcquisition(key, qty) { acquired.push([key, qty]); },
       },
@@ -126,6 +126,7 @@ for (const [roll, tier] of [[0, 1], [0.619, 1], [0.62, 2], [0.869, 2], [0.87, 3]
   assert.equal(h.inventory.gold, undefined, 'entering the lock must never grant loot early');
   const loot = JSON.parse(JSON.stringify(h.placement.loot)); // Snapshot of pre-rolled bundle for save stability.
   assert.equal(h.placement.loot.breedingPotionKey != null, tier >= 2, 'better chests should contain breeding potions at winning rolls');
+  if (tier >= 2) assert.equal(h.placement.loot.breedingPotionKey, 'alchemy_potionOfFertility', 'rare chest breeding-potion pool includes Fertility alongside existing size potions');
   h.started[0].onSuccess({ bonusDrops: 0 }); // Only successful lock completion grants the authored bundle.
   assert.equal(h.placement.found, true);
   assert.equal(h.flushed.length, 1, 'opening a chest flushes the canonical save once');
