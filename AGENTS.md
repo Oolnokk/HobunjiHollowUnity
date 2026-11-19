@@ -2,6 +2,10 @@
 
 This file records project-specific implementation rules that are easy to miss when working from an isolated bug report. Treat these as repository invariants unless a task explicitly calls for changing them.
 
+## MANDATORY visual-authoring preflight
+
+**Before editing ANY furniture, mesh, prop, avatar/body visual, billboard/PNG plane, terrain/cliff, or flame/fire effect, agents MUST read [docs/architecture/visual-authoring.md](docs/architecture/visual-authoring.md) in full.** Its rules are repository invariants for **existing** content as well as new content: PNG portrait (head/torso/shoulders) and pants already carry black ink; generated outlines are for 3D curved hands, feet, trees, and similarly rounded meshes; hard-edged surfaces use the farm-cliff-style per-surface outlined PNG stretch and **no** generated outlines; PNG billboards NEVER get generated outlines; all flames reuse player-built campfire authored particle VFX, with optional palette changes. Audit and fix preexisting violations in the code you touch instead of silently copying them. Do not confuse a PNG depth-occlusion replay with permission to outline the PNG.
+
 ## Running tests
 
 - Run only the tests related to what you changed: `node scripts/run-tests.js <name-fragment> [...]` (e.g. `node scripts/run-tests.js livestock`). Run the whole fast suite (`node scripts/run-tests.js`, ~10s) once before finishing, not after every edit.
