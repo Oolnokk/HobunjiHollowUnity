@@ -53,4 +53,18 @@ assert(wind.getDebugState('map_western_slope').strength > wind.getDebugState('to
   'debug strength agrees with the live regional values');
 assert(wind.getStrengthForArea('unknown_map') < 0.5, 'unknown areas use a safe ordinary-weather fallback');
 
-console.log('Weather wind passed: regional katabatic baselines, gusts, storms, vegetation and diagnostics.');
+const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Guards against a later main-loop overwrite bypassing the shared zone wind.
+const fogSource = fs.readFileSync('docs/js/cloud-forest-fog.js', 'utf8'); // Ensures Slope snow samples the same wind as audio.
+const musicSource = fs.readFileSync('docs/js/music-system.js', 'utf8'); // Ensures SFX strength no longer derives solely from rainfall.
+const startup = fs.readFileSync('docs/index.html', 'utf8'); // Verifies the shared wind module loads before consumers.
+assert.match(gameSource, /zoneGrassWindMat\.uniforms\.uStrength\.value = s_billWind[\s\S]{0,160}WeatherWind\?\.vegetationSwayForArea/,
+  'wilderness billboard wind updates from the shared biome signal at constant cost');
+assert.match(musicSource, /WeatherWind\?\.getStrengthForArea\?\.\(windRegion, deps\.calendar\)/,
+  'wind SFX consume the actual regional strength and calendar');
+assert.match(fogSource, /slopeWindStrength = clamp01\(window\.WeatherWind\?\.getStrengthForArea/,
+  'windblown snow consumes shared strength instead of a private gust oscillator');
+assert(startup.indexOf('js/weather-wind.js?v=') > 0
+  && startup.indexOf('js/weather-wind.js?v=') < startup.indexOf('js/cloud-forest-fog.js?v=')
+  && startup.indexOf('js/weather-wind.js?v=') < startup.indexOf('src="game.js?v='),
+  'wind authority boots ahead of both fog and the game loop');
+console.log('Weather wind passed: regional katabatic baselines, gusts, storms, vegetation, SFX integration and diagnostics.');
