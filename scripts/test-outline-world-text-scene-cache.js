@@ -108,4 +108,23 @@ clock += 1100;
 assert.equal(api.collectWorldTextOverlayEntries(scene).length, 2, 'periodic rescan finds an edited mesh that changed long after add');
 assert.equal(scene.fullWalks, 2, 'safety rescan is bounded to roughly one per second');
 assert(api.sceneStructureEpoch(scene) > 0, 'structure epoch stays available to score-actor caching');
-console.log('Outline world-text scene cache: additions, moves, removal, hidden parent, post-add tagging and rescan passed');
+
+// Hundreds of nested add() calls during a live scene build must not rescan
+// the entire subtree once for its parent AND again for each new child.
+const beforeBulkRootScans = api.stats().worldTextIncrementalRoots; // Used to prove one scan regardless of nested attachment count.
+const beforeBulkSceneWalks = scene.fullWalks; // Used to ensure bulk builds never trigger a full-scene traversal.
+const vegetationRoot = new Object3D(); // Representative root attached before its descendants are generated.
+scene.add(vegetationRoot);
+for (let i = 0; i < 600; i++) {
+  const vegetationBranch = new Object3D(); // Used as the parent of a newly generated leaf or popup.
+  vegetationRoot.add(vegetationBranch);
+  vegetationBranch.add(new Object3D());
+}
+const nestedPopup = popup(); // Ensures the skipped child scans don't miss deeply nested world text.
+vegetationRoot.children[599].add(nestedPopup);
+assert(api.collectWorldTextOverlayEntries(scene).some(entry => entry.object === nestedPopup),
+  'new world text nested under a queued parent is discovered immediately');
+assert.equal(api.stats().worldTextIncrementalRoots, beforeBulkRootScans + 1,
+  'all 1200 descendant add events collapse to one subtree scan');
+assert.equal(scene.fullWalks, beforeBulkSceneWalks, 'bulk attachment does not trigger a full-scene search');
+console.log('Outline world-text scene cache: additions, moves, removal, hidden parent, late tags, bulk builds and rescan passed');
