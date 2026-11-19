@@ -90,9 +90,13 @@ async function main() {
       clearExpression: id => expressions.delete(id),
     },
     CombatVocalizations: {
-      getVoiceModulation: entity => entity.rec.appearance.gender === 'female'
-        ? { pitchSemitones: 7, tempo: 0.8, gain: 1.25 }
-        : { pitchSemitones: 1, tempo: 1, gain: 1 },
+      getVoiceModulation: entity => {
+        const appearance = entity.rec.appearance; // Species and gender must both affect the mock combat modulation shared by yawns.
+        if (appearance.speciesId === 'porakaneki') return { pitchSemitones: appearance.gender === 'female' ? 11 : 9, tempo: 1, gain: 1 };
+        return appearance.gender === 'female'
+          ? { pitchSemitones: 7, tempo: 0.8, gain: 1.25 }
+          : { pitchSemitones: 1, tempo: 1, gain: 1 };
+      },
       getConfig: () => ({ assets: { breath: { '1': 'assets/audio/sfx/combat/breath.m4a', '5': expectedYawnBreathUrl } } }),
       getVoicePriority: () => 3,
     },
@@ -155,11 +159,14 @@ async function main() {
   assert.equal(femaleVoice.pitch, 6, 'female pitch must be relative to the male source');
   assert.equal(femaleVoice.tempo, 0.8);
   assert.equal(femaleVoice.gain, 1.25);
+  const recordedMaleVoice = await runtime._test.voiceFor('tletingan', 'male'); // An authored male yawn is already voiced for that identity.
+  assert.equal(recordedMaleVoice.pitch, 0, 'dedicated male yawn recordings are not pitched twice');
   for (let i = 0; i < 8 && !audioOptions; i++) await Promise.resolve();
   assert.ok(audioOptions, 'the first yawn must actually play a voice, not merely return a playback plan');
   assert.equal(audioOptions.pitchSemitones, 6);
   assert.equal(audioOptions.tempo, 0.8);
-  assert.equal(audioOptions.preservePitchOnFallback, true, 'a borrowed yawn must preserve pitch on native media');
+  assert.equal(audioOptions.preservePitchOnFallback, false, 'a borrowed yawn must not discard female transposition on native-only media');
+  assert.equal(audioOptions.preferPitchShiftOnFallback, true, 'native-only borrowed yawns must prioritize their relative gender pitch');
   assert.equal(audioOptions.breathYawnDurationS, undefined, 'existing male yawn recordings must not be synthesized');
   assert.equal(audioOptions.volume, Math.min(1, 0.72 * 1.25));
   assert.equal(audioActor?.x, 128);
@@ -225,7 +232,19 @@ async function main() {
   assert.equal(noYawnClip.source, 'breath 5 (0.350x utterance tempo)');
   assert.equal(noYawnClip.tempo, 0.35, 'missing-yawn breath always uses the exact 0.350x utterance tempo');
   assert.equal(noYawnClip.cadence, undefined, 'fallback must not include any old grain-composer cadence');
-  assert.equal(noYawnClip.pitch, 0, 'fallback does not pitch-shift the original intensity-5 breath');
+  assert.equal(noYawnClip.pitch, 7, 'fallback applies the same species/gender semitone offset as the combat voice');
+  const maleFallback = await runtime._test.voiceFor('kenkari', 'male'); // Same breath recording must sound different for each NPC gender.
+  assert.equal(maleFallback.pitch, 1, 'male NPC fallback keeps the male species voice offset');
+  assert.equal(maleFallback.tempo, 0.35, 'male fallback keeps the authored 0.350x utterance tempo');
+  const originalModulation = window.CombatVocalizations.getVoiceModulation; // Yawns must re-read edits to the shared live voice config, not cache old semitone choices.
+  window.CombatVocalizations.getVoiceModulation = entity => {
+    const gender = entity.rec.appearance.gender; // Simulates a mid-save voice-config reload without changing the probed recording URLs.
+    return { pitchSemitones: gender === 'female' ? 12 : 2, tempo: gender === 'female' ? 0.8 : 1, gain: 1 };
+  };
+  assert.equal((await runtime._test.voiceFor('kenkari', 'female')).pitch, 12, 'cached missing-recording probes must not cache stale species/gender pitch');
+  assert.equal((await runtime._test.voiceFor('tletingan', 'female')).pitch, 10, 'borrowed male recordings must recompute the current female-minus-male pitch offset');
+  window.CombatVocalizations.getVoiceModulation = originalModulation; // Restore the test voice table for subsequent player/NPC assertions.
+  assert.equal((await runtime._test.voiceFor('kenkari', 'female')).pitch, 7, 'restoring the shared voice config immediately updates the same cached fallback');
   assert.equal(noYawnClip.gain, 1, 'fallback does not apply species voice-gain modulation');
   assert.equal(noYawnClip.fallbackBreath, true, 'fallback has explicit ownership distinct from recorded yawns');
   assert.equal(noYawnClip.url, expectedYawnBreathUrl, 'missing dedicated yawns use configured intensity-5 breathing');
@@ -233,6 +252,8 @@ async function main() {
   window.CombatVocalizations.getConfig = () => ({ assets: { breath: {} } });
   const unconfiguredYawnClip = await runtime._test.voiceFor('porakaneki', 'male'); // A fresh identity bypasses the voice-plan cache for the missing-config case.
   assert.equal(unconfiguredYawnClip.url, expectedYawnBreathUrl, 'no configured source still falls back to intensity 5');
+  assert.equal(unconfiguredYawnClip.pitch, 9, 'a different male species keeps its own voice pitch even when its dedicated yawn and configured breath asset are missing');
+  assert.notEqual(unconfiguredYawnClip.pitch, maleFallback.pitch, 'species identity, not gender alone, determines the fallback pitch');
   window.CombatVocalizations.getConfig = configuredGetVoice;
   assert.equal(interruptions, 0, 'only currently active Koma events require interruption cleanup');
 
@@ -357,14 +378,17 @@ async function main() {
   assert.equal(runtime.playerMovementMultiplier(), .25, 'the fallback voice is checked while its yawn is still active');
   for (let index = 0; index < 32; index++) await Promise.resolve(); // Await asset probes and voice planning while the yawn still owns the voice.
   const playerBreath = audioCalls.find(call => call.url === expectedYawnBreathUrl
-    && call.opts.tempo === 0.35 && call.opts.pitchSemitones === 0
+    && call.opts.tempo === 0.35 && call.opts.pitchSemitones === 7
     && call.opts.trimSilence === false
     && !Object.hasOwn(call.opts, 'breathYawnDurationS')
-    && !Object.hasOwn(call.opts, 'breathYawnCadence')); // The sole authored change to the source waveform is utterance tempo.
-  assert.ok(playerBreath, 'missing yawn recordings play untrimmed breath 5 directly at 0.350x with no pitch shift');
+    && !Object.hasOwn(call.opts, 'breathYawnCadence')); // The shared renderer handles species/gender pitch independently of yawn tempo.
+  assert.ok(playerBreath, 'missing yawn recordings use untrimmed breath 5 at 0.350x with the configured species/gender pitch');
+  assert.equal(playerBreath.opts.preservePitchOnFallback, false, 'native-only fallback does not silently suppress the requested player pitch');
+  assert.equal(playerBreath.opts.preferPitchShiftOnFallback, true, 'native-only fallback preserves the player voice identity rather than slowing it to the wrong pitch');
   assert.equal(playerSpatialChecks, 0, 'player yawns must never be silenced by an NPC distance calculation');
   assert.ok(runtime.debugSnapshot().lastPlayerVoice, 'mobile diagnostics retain a player-specific voice status among NPC yawns');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.tempo, 0.35, 'mobile diagnostics show the exact fallback utterance tempo');
+  assert.equal(runtime.debugSnapshot().lastPlayerVoice.pitch, 7, 'mobile diagnostics report the requested player species/gender pitch');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.fallbackBreath, true, 'mobile diagnostics expose stable fallback identity for audio lifetime decisions');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.composedDurationS, undefined, 'mobile diagnostics cannot report obsolete yawn synthesis');
   assert.equal(runtime.debugSnapshot().lastPlayerVoice.status, 'queued', 'voice request is not mistaken for audible playback');
@@ -465,7 +489,7 @@ async function main() {
   assert.equal(unloadTailCall.stops, 1, 'leaving the save stops a fallback still playing after its pose');
   assert.equal(runtime.debugSnapshot().trailingBreathCount, 0, 'save unload clears all outstanding audio tails');
 
-  console.log('Player/NPC fatigue, exact 0.350x untrimmed Breath 5 fallback, natural voice tails, and rested buffs: OK');
+  console.log('Player/NPC fatigue, species/gender-pitched 0.350x Breath 5 fallback, natural voice tails, and rested buffs: OK');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
