@@ -245,6 +245,15 @@
     return materials.some(entry => entry?.userData?.hobunjiBaseGrassTerrainMaterial === true);
   }
 
+  function isFarmWalkableGroundSurface(object) {
+    if (!object?.isMesh || object.isSkinnedMesh) return false;
+    const data = object.userData || {}; // Real farm tile or its live render-batch copy; incidental props and plants never inherit this exception.
+    if (data.hobunjiFarmTile !== true && data.hobunjiFarmTileBatch !== true) return false;
+    if (!hasLayer(object, MATERIAL_ID_LAYER) || data.farmLooseRockMound === true) return false; // Only tile slabs are eligible, not farm rock, trees or loose vegetation.
+    const materials = Array.isArray(object.material) ? object.material : [object.material]; // Jigsaw clones retain terrainKey even after texture replacement.
+    return materials.every(material => material?.userData?.terrainKey !== 'rock'); // Trench/raised/tilled/paddy surfaces are ground; rock mounds remain real cover.
+  }
+
   function isWalkableGroundSurface(object) {
     if (!object?.isMesh || object.isSkinnedMesh) return false;
     const data = object.userData || {}; // Existing semantic floor tags are preferred over geometry/name heuristics.
@@ -329,7 +338,8 @@
     // must all use the same held-object ground depth policy. The separate
     // ROCK material bucket holds solid mounds, so that one stays an occluder
     // along with untagged rock props and cave walls.
-    surfaceClassificationHints.baseGround = data.hachutuGroundRoot === true
+    surfaceClassificationHints.baseGround = isFarmWalkableGroundSurface(object) // Farm trench, raised soil and other ground materials need the same hand/color shell x-ray as grass.
+      || data.hachutuGroundRoot === true
       || (data.hobunjiGroundSurface === true
         && (data.terrainRenderChunk === true || data.terrainRenderChunkSource === true || data.terrainJigsawBaked === true)
         && !(Array.isArray(object.material) ? object.material : [object.material]).some(material => material?.userData?.terrainKey === 'rock')) // Rendered floor only: rock material buckets are solid mounds even when a generic ground tag survives batching.

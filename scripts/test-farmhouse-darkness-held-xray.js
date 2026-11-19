@@ -119,6 +119,24 @@ assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin ston
 const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
+const farmTrench = mesh(exterior, { userData: { terrainKey: 'trench' } }, { hobunjiFarmTile: true });
+farmTrench.layers.enable(3); // Farm tiles receive this material-ID layer when painted, including raised and trench soil.
+assert.equal(xray.classify(farmTrench).ground, true, 'farm trench soil must not erase yawn-stretch hand colors');
+const farmRaisedBatch = mesh(exterior, { userData: { terrainKey: 'trench', terrainJigsawMaterial: true } },
+  { hobunjiFarmTileBatch: true, terrainRenderChunk: true });
+farmRaisedBatch.layers.enable(3);
+assert.equal(xray.classify(farmRaisedBatch).ground, true, 'farm raised earth survives Jigsaw and batching without blocking the colored hands');
+const farmPaddy = mesh(exterior, { userData: { terrainKey: 'paddy' } }, { hobunjiFarmTile: true });
+farmPaddy.layers.enable(3);
+assert.equal(xray.classify(farmPaddy).ground, true, 'walkable paddy floor receives the same selective ground-x-ray policy');
+const farmMound = mesh(exterior, { userData: { terrainKey: 'rock' } }, { hobunjiFarmTile: true, farmLooseRockMound: true });
+farmMound.layers.enable(3);
+assert.equal(xray.classify(farmMound).ground, false, 'farm rock mounds remain true occluders rather than terrain floor');
+const farmBareRock = mesh(exterior, { userData: {} }, { hobunjiFarmTile: true, farmLooseRockMound: true });
+farmBareRock.layers.enable(3);
+assert.equal(xray.classify(farmBareRock).ground, false, 'material replacement cannot erase the rock-mound exclusion');
+const farmFoliage = mesh(exterior, { userData: {} }, { hobunjiFarmTile: true });
+assert.equal(xray.classify(farmFoliage).ground, false, 'farm-tagged non-terrain vegetation is still solid cover');
 const changedMaterialGround = mesh(exterior, { userData: { terrainKey: 'rock' } },
   { hobunjiGroundSurface: true, terrainRenderChunk: true }); // A true spatial terrain floor retains its identity after a material swap.
 assert.equal(xray.classify(changedMaterialGround).ground, true,
