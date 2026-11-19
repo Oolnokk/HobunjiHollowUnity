@@ -685,9 +685,11 @@ civilYear = 1158;
 hunt.update();
 assert.match(hunt.menuStatus().detail, /Northern Cliffs/, 'when a zone is not generated, the quest still names the zone to search');
 zones.set('map_northern_cliffs', missingZone);
+hunt.update(); // Rebuild the deliberately unloaded zone before recording the baseline tree for same-scene regeneration.
 
 // A forced layout rebuild can reuse the active scene; foliage and its culling registry must still follow the new stamped trunk.
 const previousTree = zoneInfo.cullables[0]; // The currently visible cyan tree must not survive a same-scene locale relocation.
+assert.ok(previousTree,'the restored zone must own a rendered blossom before a same-scene rebuild test');
 currentZone = northId;
 const relocatedNorth = layoutFor('cyan', 40, 32); // Simulates replacing _zoneLayouts without destroying its existing Three scene.
 zones.set(northId, relocatedNorth);
