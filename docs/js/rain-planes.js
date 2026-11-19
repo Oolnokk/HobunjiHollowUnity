@@ -175,12 +175,18 @@
     return texture;
   }
 
-  function applyLayerTextureTransform(layer, material) {
-    if (material !== layer.material) return;
-    // Three r128 reads the map transform after onBeforeRender. Each sheet has
-    // a distinct material, so it uploads that sheet's UVs with the shared map.
-    layer.texture.repeat.set(layer.config.repeatX, layer.config.repeatY);
-    layer.texture.offset.set(layer.offsetX, layer.offsetY[layer.contentKind]);
+  function bindLayerTextureTransform(THREE, material, transform) {
+    // Three r128 derives uvTransform from the shared map. Give each sheet a
+    // material uniform so its UVs stay independent without an object draw
+    // hook that would keep it in the held-object depth replays.
+    material.onBeforeCompile = shader => {
+      shader.uniforms.hobunjiPrecipitationUvTransform = { value: transform };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <uv_pars_vertex>', THREE.ShaderChunk.uv_pars_vertex
+          .replace('uvTransform', 'hobunjiPrecipitationUvTransform'))
+        .replace('#include <uv_vertex>', THREE.ShaderChunk.uv_vertex
+          .replace('uvTransform', 'hobunjiPrecipitationUvTransform'));
+    };
   }
 
   function makeLayer(index) {
@@ -197,6 +203,9 @@
       depthWrite: false,
       fog: true,
     });
+    const uvTransform = new THREE.Matrix3(); // Keeps this sheet's repeat and scroll independent of the shared artwork.
+    uvTransform.setUvTransform(index * 0.173, index * 0.317, config.repeatX, config.repeatY, 0, 0, 0);
+    bindLayerTextureTransform(THREE, material, uvTransform);
     const mesh = new THREE.Mesh(sharedPlaneGeometry, material);
     mesh.name = `world_rain_plane_${index + 1}`;
     mesh.frustumCulled = true; // Cull off-camera transparent sheets before they consume fill rate.
@@ -206,8 +215,7 @@
     const layer = { // Retains independent UV phases even though the source textures are shared.
       mesh,
       material,
-      texture: rainSourceTexture,
-      offsetX: index * 0.173,
+      uvTransform,
       offsetY: { rain: index * 0.317, blizzard: index * 0.317 },
       configIndex,
       contentKind: 'rain',
@@ -217,9 +225,6 @@
       rowSide: null, // Distinguishes forward and behind rows for the row pool.
       assignmentStamp: 0, // Used only by assignRowLayers to mark each claimed mesh.
       currentOpacity: 0,
-    };
-    mesh.onBeforeRender = (_renderer, _scene, _camera, _geometry, renderMaterial) => {
-      applyLayerTextureTransform(layer, renderMaterial);
     };
     group.add(mesh);
     return layer;
@@ -238,7 +243,6 @@
     const texture = kind === 'blizzard'
       ? (blizzardSourceTextures[layer.configIndex] ??= createBlizzardSourceTexture(layer.configIndex))
       : rainSourceTexture; // Weather switches share the existing artwork by depth family.
-    layer.texture = texture;
     layer.material.map = texture;
     layer.material.color.set(kind === 'blizzard' ? 0xffffff : 0xcce8ff);
     layer.material.needsUpdate = true;
@@ -278,7 +282,9 @@
 
   function advanceTexture(layer, dt, speedMultiplier) {
     // The same UV movement drives both rain and snow; Western Slope only swaps plane content.
-    layer.offsetY[layer.contentKind] = (layer.offsetY[layer.contentKind] + dt * layer.config.speed * speedMultiplier) % 1;
+    const offsetY = (layer.offsetY[layer.contentKind] + dt * layer.config.speed * speedMultiplier) % 1; // Scroll phase of the active weather on this sheet.
+    layer.offsetY[layer.contentKind] = offsetY;
+    layer.uvTransform.elements[7] = offsetY; // Matrix3 stores the V translation in column 3, row 2.
   }
 
   function applyPlaneRotation(mesh, yawOverride = null) {
