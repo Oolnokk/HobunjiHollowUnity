@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -24,9 +24,20 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
   const camera = { layers: { mask: 1 } }; // Main camera restored after every replay.
+  let stencilMask = staleStencil ? 0 : 0xff; // A previous read-only tint pass can leave all stencil writes disabled.
+  let scissorTest = false; // The held replay rectangle covers only the first two simulated pixels.
+  const stencil = staleStencil ? [1, 0xfc, 0xff] : [0, 0, 0]; // Dry portrait, current gear, and a pixel outside the replay rectangle.
   const renderer = { autoClear: true, autoClearColor: true, autoClearDepth: true, autoClearStencil: true, shadowMap: { autoUpdate: true },
-    state: { buffers: { color: colorLock ? { setMask() {}, setLocked() {} } : {} } },
-    clearDepth() { clears++; }, clearStencil() {},
+    state: {
+      scissor() {}, setScissorTest(enabled) { scissorTest = enabled; },
+      buffers: { color: colorLock ? { setMask() {}, setLocked() {} } : {},
+        stencil: { setMask(mask) { stencilMask = mask; } },
+      },
+    },
+    clearDepth() { clears++; },
+    clearStencil() {
+      for (let pixel = 0; pixel < (scissorTest ? 2 : stencil.length); pixel++) stencil[pixel] &= ~stencilMask;
+    },
   };
   const hideObjects = objects => { const states = new Map(); for (const object of objects) { states.set(object, object.visible); object.visible = false; } return states; }; // Visibility transaction used by the owner.
   const scope = {
@@ -37,7 +48,10 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     backgroundDepthRegistry: 'background',
     airborneDepthRebuilds: 0, backgroundDepthMeshesExcluded: 0,
     objectProto: { onBeforeRender: undefined }, internalReplay: false,
-    lastBaseStencilBits: tint ? 1 : 0, replayScissorEnabled: false, replayCullEnabled: false,
+    lastBaseStencilBits: tint ? 8 : 0, replayScissorEnabled: staleStencil, replayCullEnabled: false,
+    replayScissorRect: () => true, scissorRect: { z: 2, w: 1 }, scissorTargetWidth: 3, scissorTargetHeight: 1,
+    scissoredReplayCount: 0, applyElevationScissor: () => false,
+    restoreRendererScissor() { scissorTest = false; },
     buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
     collectGroundElevationMaterials: () => wildernessGround ? new Set([groundMaterial]) : [], hasOverlappingHeldCover: () => tint,
     forEachMaterial(material, visit) { for (const member of Array.isArray(material) ? material : [material]) if (member) visit(member); }, // Exercise the renderer's actual ground selection against ordinary and x-ray groups.
@@ -55,6 +69,14 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     rawRender: function(_scene, _camera) {
       const nodes = []; _scene.traverseVisible(node => { if ((node.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(node); });
       draws.push({ mask: _camera.layers.mask, nodes, groundDepthWrite: groundMaterial?.depthWrite }); // Confirm the true flag at submission, not merely after the helper runs.
+      if (staleStencil && _camera.layers.mask === 2) {
+        stencilMask = 1; // The current frame stamps only its submerged gear pixel.
+        stencil[1] |= 1;
+      }
+      if (staleStencil && _camera.layers.mask === 8) {
+        stencilMask = 0; // WebGL keeps the write mask from the tint material until another draw changes it.
+        if (!draws.some(draw => draw.tintedPixels)) draws.at(-1).tintedPixels = stencil.slice(0, 2).map(bits => bits & 1);
+      }
       if (fail) throw new Error('render failure');
     },
   };
@@ -77,7 +99,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   assert.equal(scope.internalReplay, false);
   if (groundMaterial) assert.equal(groundMaterial.depthWrite, false, 'every render exit restores the wilderness ground material');
   const forcedGround = vm.runInContext('lastForcedGroundDepthMaterials', scope); // The shipping module uses a lexical counter rather than exposing it on the context.
-  return { draws, clears, opaque, cutout, cover, sky, parent, hooked, scope, weapon, hand, forcedGround };
+  return { draws, clears, stencil, opaque, cutout, cover, sky, parent, hooked, scope, weapon, hand, forcedGround };
 }
 const normal = fixture(); // Common above-floor case: supplement + source draw, without a terrain redraw/restore.
 assert.equal(normal.clears, 0);
@@ -100,6 +122,11 @@ assert.equal(fixture({ colorLock: false }).clears, 1, 'unsupported renderer uses
 const submerged = fixture({ tint: true }); // Unchanged base ground depth must precede both water tint and cover depth restore.
 assert.deepEqual(submerged.draws.map(draw => draw.mask), [1, 2, 8, 8]);
 assert.equal(submerged.clears, 0);
+const staleTint = fixture({ tint: true, staleStencil: true });
+assert.deepEqual(staleTint.draws.find(draw => draw.tintedPixels).tintedPixels, [0, 1],
+  'water tints current submerged gear only, even if a previous frame marked the dry portrait pixel');
+assert.deepEqual(staleTint.stencil, [0, 0, 0],
+  'replay clears all stencil bits inside and outside the scissor before handing the target back');
 const floodedXray = fixture({ bounded: true, tint: true }); // Actual floor exceptions still restore opaque ground before water tint.
 assert.deepEqual(floodedXray.draws.map(draw => draw.mask), [1, 2, 1, 2, 2, 4, 8, 8]);
 const flail = fixture({ bounded: true, nested: true });
