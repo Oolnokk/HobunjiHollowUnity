@@ -15621,7 +15621,7 @@ clearAnimationActors = function(...args) {
       return parityV1554.normalizeImported(oldNormalizeV1554(source), source);
     };
     function layoutV1554(actor, sizeClass = actor?.creatureSizeClass) {
-      if (actor?.source?.type !== 'creature') return null;
+      if (actor?.source?.type !== 'creature' || actor.source.kind === 'omgurku-lower') return null; // Hybrid lower-body calibration has its own height and floor solver.
       const modelHeight = Number(actor.shoulderRestModelDimensions?.modelHeight)
         || Number(actor.model?.userData?.modelHeight) || 0; // Unscaled native PNG height, fixed when the actor is created.
       return parityV1554.placement(attachmentRigProfileForActor(actor), sizeClass, modelHeight);
@@ -15686,7 +15686,7 @@ clearAnimationActors = function(...args) {
       return result;
     };
     function parityReadoutV1554(actor = selectedAnimationActor()) {
-      if (actor?.source?.type !== 'creature') return null;
+      if (actor?.source?.type !== 'creature' || actor.source.kind === 'omgurku-lower') return null; // Not a normal genetics-sized creature.
       const profile = attachmentRigProfileForActor(actor);
       const height = actor.shoulderRestModelDimensions?.modelHeight;
       const gameProfile = parityV1554.gameplayProfileForKind(actor.source.kind);
@@ -15706,7 +15706,7 @@ clearAnimationActors = function(...args) {
     function showParityV1554() {
       const actor = selectedAnimationActor();
       const inspector = $('maaInspector');
-      if (!inspector || actor?.source?.type !== 'creature') return;
+      if (!inspector || actor?.source?.type !== 'creature' || actor.source.kind === 'omgurku-lower') return; // Omgurku's own inspector handles its hybrid floor.
       const profile = attachmentRigProfileForActor(actor);
       const rows = ['small', 'medium', 'large'].map(size => {
         const info = parityV1554.placement(profile, size, actor.shoulderRestModelDimensions?.modelHeight);
