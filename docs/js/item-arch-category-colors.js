@@ -320,7 +320,8 @@
   }
 
   function sharedGeometry() {
-    const diagnostics = window.QuickPotionArcUI?.diagnostics?.();
+    const sharedArc = window.QuickPotionArcUI; // Reuses the shared selector's cheap geometry snapshot instead of its full DOM-scanning diagnostics every frame.
+    const diagnostics = sharedArc?.readGeometry?.() || sharedArc?.diagnostics?.();
     const center = diagnostics?.outerRingGeometry?.center;
     const radius = Number(diagnostics?.outerRingGeometry?.radius);
     const labelOutsetPx = Number(diagnostics?.labelOutsetPx);
