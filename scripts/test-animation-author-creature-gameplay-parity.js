@@ -58,6 +58,13 @@ const preserved = parity.normalizeImported(JSON.parse(JSON.stringify(custom)), c
 assert.equal(preserved.creatures.grehlr.sizeScales.small.x, .73, 'intentional X authoring survives import');
 assert.equal(preserved.creatures.grehlr.groundOffsets.small, 0, 'intentional Auto/0 survives import');
 
+const pixels = new Uint8ClampedArray(4 * 4 * 4); // A tiny native PNG image with transparent foot padding.
+pixels[(2 * 4 + 1) * 4 + 3] = 255;
+pixels[(3 * 4 + 1) * 4 + 3] = 200; // Antialiased fringe is deliberately ignored by the game.
+const idle = { width: 4, height: 4, getContext: () => ({ getImageData: () => ({ data: pixels }) }) };
+assert.equal(parity.opaqueIdleBottomRatio(idle), .75, 'bottommost fully opaque row is the gameplay foot baseline');
+assert.equal(parity.opaqueIdleBottomRatio({ width: 0, height: 0 }), 1, 'missing idle source remains unshifted');
+
 const index = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
 assert.match(index, /src="\.\.\/\.\.\/js\/animation-author-creature-gameplay-parity\.js\?v=/, 'editor loads the helper');
 assert.match(index, /creaturePlaneScaleRoot\.scale\.set\(1, layout\.heightScale, layout\.widthScale\)/, 'width uses rotated billboard Z');
@@ -65,6 +72,8 @@ assert.match(index, /animationAuthor\.mode === 'rig' \? 0 : layout\.groundLift/,
 assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue floor uses the real Auto lift');
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
 assert.match(index, /window\.MultiAvatarAnimationAuthor\.creatureGameplayParity = parityReadoutV1554/, 'mobile parity diagnostic is available');
+assert.match(index, /parityV1554\.opaqueIdleBottomRatio\(idleCanvas\)/, 'editor actually applies alpha foot scanning');
+assert.match(index, /actor\.model\.position\.y = paddingLift/, 'alpha padding moves rendered art without changing ground/anchor coordinates');
 assert.match(index, /Use game size and ground values/, 'on-device custom-profile recovery is available');
 assert.match(index, /profile\.sizeScales = structuredCloneSafe\(gameProfile\.sizeScales\)/, 'reset uses current game scales and preserves unrelated anchors');
 const game = fs.readFileSync('docs/game.js', 'utf8');
