@@ -253,7 +253,7 @@ assert.match(game, /beginThrowVisual: \(durationS, options\)/, 'torch reuses the
 assert.match(game, /window\.AdventuringTools\?\.swingAtAim\(combatSwingCone\)/);
 assert.match(game, /equipmentSlots\.adventuring = 'torch'/);
 assert.match(game, /adventuringToolActionButtons\(\)/);
-assert.match(arc, /\['adventuringGateway',\.\.\.deps\.WHEEL_SLOTS/);
+// Tool-slot order, including the optional back-carried Burden, is exercised against ActionArcUI in test-tool-arch-back-burden-order.js.
 assert.match(arc, /_openAdventuringArc\(\)/);
 assert.match(ranged, /function throwAdventuringTorch\(visual = null\)/, 'torch accepts the held sprite snapshot for the hatchet launch path');
 assert.match(ranged, /projectileSprite:'assets\/toolsprites\/torch\.png', projectileVisualStyle:'spinningWeapon'/, 'torch uses the hatchet projectile tumble');
