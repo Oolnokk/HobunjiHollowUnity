@@ -79,6 +79,58 @@
       : nodes.map(p => ({ x: p.x, y: minY + maxY - p.y }));
     return valid(result) ? result : nodes.map(p => ({ ...p }));
   }
+  function defaultWholeTransform() {
+    return { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+  }
+  function validWholeTransform(transform) {
+    return !!transform && ['x', 'y', 'scaleX', 'scaleY', 'rotation'].every(key => Number.isFinite(transform[key])) &&
+      transform.scaleX > 0 && transform.scaleY > 0;
+  }
+  function transformWhole(nodes, settings, width, height) {
+    if (!valid(nodes) || !validWholeTransform(settings) ||
+        !Number.isInteger(width) || !Number.isInteger(height) || width < 2 || height < 2)
+      throw new Error('Whole-spline transform requires seven valid nodes, finite settings and sprite dimensions.');
+    const cx = (nodes[0].x + nodes[NODES - 1].x) * (width - 1) * 0.5;
+    const ys = nodes.map(point => point.y);
+    const cy = (Math.min(...ys) + Math.max(...ys)) * (height - 1) * 0.5;
+    const angle = settings.rotation * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle);
+    // Pixel-space rotation preserves proportions when a portrait is not square.
+    const transformed = nodes.map(point => {
+      const x = (point.x * (width - 1) - cx) * settings.scaleX;
+      const y = (point.y * (height - 1) - cy) * settings.scaleY;
+      return {
+        x: (cx + x * cos - y * sin + settings.x) / (width - 1),
+        y: (cy + x * sin + y * cos + settings.y) / (height - 1)
+      };
+    });
+    // Null means no safe, monotone mapping. Never clamp individual nodes: that would damage the curve.
+    return valid(transformed) ? transformed : null;
+  }
+  function fitWholeTransform(nodes, from, desired, width, height) {
+    if (!validWholeTransform(from) || !validWholeTransform(desired))
+      throw new Error('Whole-spline settings must be finite and have positive scales.');
+    const interpolate = t => ({
+      x: from.x + (desired.x - from.x) * t,
+      y: from.y + (desired.y - from.y) * t,
+      scaleX: from.scaleX + (desired.scaleX - from.scaleX) * t,
+      scaleY: from.scaleY + (desired.scaleY - from.scaleY) * t,
+      rotation: from.rotation + (desired.rotation - from.rotation) * t
+    });
+    const prior = transformWhole(nodes, from, width, height);
+    if (!prior) throw new Error('Existing whole-spline settings do not fit the sprite.');
+    let accepted = transformWhole(nodes, desired, width, height);
+    if (accepted) return { nodes: accepted, settings: { ...desired }, fraction: 1 };
+    let low = 0, high = 1;
+    // Binary-search the largest safe portion of the requested edit, with no distortion or node crossings.
+    for (let i = 0; i < 28; i++) {
+      const t = (low + high) * 0.5;
+      const candidate = transformWhole(nodes, interpolate(t), width, height);
+      if (candidate) { low = t; accepted = candidate; }
+      else high = t;
+    }
+    const fraction = low < 1e-6 ? 0 : low;
+    return { nodes: fraction ? accepted : prior, settings: interpolate(fraction), fraction };
+  }
   function warp(rgba, width, height, source, target) {
     if (!rgba || rgba.length !== width * height * 4 || width < 2 || height < 2 ||
       !valid(source) || !valid(target)) throw new Error('Invalid headband image or seven-point curves.');
@@ -121,5 +173,5 @@
     }
     return out; // Nearest-neighbour sampling preserves the authored pixel art and alpha exactly.
   }
-  global.ClothingHeadbandSpline = Object.freeze({ NODES, valid, trace, curveAt, dragNode, flipNodes, warp });
+  global.ClothingHeadbandSpline = Object.freeze({ NODES, valid, trace, curveAt, dragNode, flipNodes, defaultWholeTransform, validWholeTransform, transformWhole, fitWholeTransform, warp });
 })(typeof window !== 'undefined' ? window : globalThis);
