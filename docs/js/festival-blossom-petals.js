@@ -111,11 +111,13 @@
     const rnd = state.rnd, source = state.sources[Math.floor(rnd()*state.sources.length)];
     if (!source || state.particles.length >= CAP) return;
     const speed = 0.7 + rnd()*0.50; // Local tree units/second; the native group transform supplies its physical scale.
+    const fallHeight = Math.max(0,source[1]-0.12); // Actual branch-to-ground distance; canopy tiers can be much taller than five units.
+    const fallTime = (Math.sqrt(speed*speed+0.9*fallHeight)-speed)/0.45; // Gentle acceleration gets tall-branch petals near ground before expiry.
     state.particles.push({
       x:source[0] + (rnd()-0.5)*0.14, y:source[1], z:source[2] + (rnd()-0.5)*0.14,
       vx:(rnd()-0.5)*0.24,vz:(rnd()-0.5)*0.24,age:0,phase:rnd()*Math.PI*2,speed,
-      life:Math.min(5.5,Math.max(2.0,(source[1]-0.12)/speed))
-    }); // Lifespan approximates the path to ground; petals vanish rather than accumulating on the terrain.
+      life:Math.min(12,Math.max(1.5,fallTime+0.25))
+    }); // Falling petals reach the tree's local ground plane instead of despawning at mid-canopy height.
   }
 
   function frame({deltaMs = 0} = {}) {
@@ -124,7 +126,11 @@
     for (const state of emitters.values()) {
       const visible = state.active && state.tree.visible !== false && !!state.tree.parent;
       state.points.visible = visible; // Respect the native cullable's visibility; never issue a Points draw in a culled tree.
-      if (!visible) continue;
+      if (!visible) { // Cull transitions remove old particles rather than freezing them in midair until the camera returns.
+        state.points.visible=false; state.particles.length=0; state.spawnDebt=0;
+        state.geometry.setDrawRange(0,0);
+        continue;
+      }
       state.spawnDebt = Math.min(2,state.spawnDebt + dt*SPAWN_RATE);
       while(state.spawnDebt >= 1) {
         if(state.particles.length < CAP) spawn(state);
@@ -133,7 +139,7 @@
       const particles = state.particles;
       for (let i=0;i<particles.length;) {
         const p = particles[i];
-        p.age += dt; p.y -= p.speed*dt;
+        p.age += dt; p.y -= (p.speed+0.45*p.age)*dt; // Petals gently accelerate toward the ground instead of expiring in the upper canopy.
         if(p.age>=p.life || p.y<0.10) {
           particles[i]=particles[particles.length-1];particles.pop();continue;
         }
