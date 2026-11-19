@@ -107,9 +107,10 @@ function fixture(failAt=0) {
     restoreVisibility(states){for(const [mesh,v]of states)mesh.visible=v;},
     MASK_ALL:0xffffffff,SHELL_MASK:2,
     nearReplaySupport:()=>null, // No depth-snapshot support in this fake renderer: the original redraw path runs.
+    withShellDepthColorMask:(_buffer, draw)=>draw(), // Fallback fixture has no WebGL color-mask capability.
   }; // Only production dependencies that execute when replay scissoring is disabled.
   const run=new Function('deps','getCounters',[
-    'const {nearReplaySupport,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,MASK_ALL,SHELL_MASK}=deps;',
+    'const {nearReplaySupport,withShellDepthColorMask,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,MASK_ALL,SHELL_MASK}=deps;',
     'const xrayRule=()=>"original"; // Preserve the original shell test scope; horizon exclusions have their own coverage.',
     'let internalReplay=false,fullscreenReplayCount=0,shellSceneTraversalsAvoided=0,nonGroundDepthReplayCount=0,shellXrayPassCount=0,shellXrayMeshDrawCount=0;',
     shell,
