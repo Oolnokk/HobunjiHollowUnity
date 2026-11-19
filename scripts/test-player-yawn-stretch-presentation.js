@@ -193,7 +193,9 @@ assert.equal(locks.length, 1, 'presentation may not release the independent Koma
 locks.pop();
 rig.armLengthForSide = () => 0.04; // Simulates a tiny character whose authored arms are much shorter than the former 0.1-unit minimum.
 const tiny = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } }; // Separate yawn must recapture normal hand sockets.
-presentation.start(tiny); presentation.update(tiny, 0.5); sentinel.onBeforeRender();
+presentation.start(tiny);
+assert.equal(rig.applyOwnedPose(), true, 'native hand driver restores both idle wrists before the yawn render hook');
+presentation.update(tiny, 0.5); sentinel.onBeforeRender();
 for (const hand of [left, right]) {
   const idleX = hand === left ? -0.15 : 0.15;
   assert.ok(Math.hypot(hand.position.x - idleX, hand.position.y - 0.04 * 0.82, hand.position.z) <= 0.04 * 0.94 + 1e-6,
