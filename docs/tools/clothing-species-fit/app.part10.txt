@@ -267,9 +267,11 @@ let transformDrag=null;
 E.stage.addEventListener('pointerdown',e=>{
   if(mode==='rear-paint'){
     if(!R.headbandRearCanvas||headbandView()!=='back')return;
-    if(rearBrushAction!=='sample')pushUndo();
+    const sampling=rearBrushAction==='sample';
+    if(!sampling)pushUndo();
     rearStroke=null;paintRearAt(pointer(e));
-    if(rearBrushAction!=='sample')E.stage.setPointerCapture(e.pointerId);
+    if(sampling){rearStroke=null;setRearPaintTool('draw')}
+    else E.stage.setPointerCapture(e.pointerId);
     e.preventDefault();return;
   }
   if(mode==='headband'){
