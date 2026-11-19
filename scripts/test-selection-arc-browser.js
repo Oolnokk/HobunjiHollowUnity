@@ -17,6 +17,7 @@ if (!process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && !fs.existsSync(chromium.
   process.exit(0);
 }
 const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Runs the shipped presentation module with real layout, CSSStyleDeclaration, and observers.
+const itemSource = fs.readFileSync('docs/js/item-arch-category-colors.js', 'utf8'); // Run item presentation against real browser DOM/CSS.
 
 (async () => {
   const browser = await chromium.launch({
@@ -109,7 +110,104 @@ const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Run
     await page.waitForFunction(() => window.QuickPotionArcUI?.diagnostics().frameEnforcerRunning
       && document.body.classList.contains('shared-selection-arc-open')
       && document.getElementById('reopenedChoice')?.dataset.sharedSelectionPresented === '1');
-    assert.deepEqual(errors, [], 'real selector open, scroll, close, and reopen produce no browser errors');
+
+    // Exercise the merged presenter inside the same real Chromium wheel used by
+    // the original browser smoke: sprites, category halo, radius, edge scroll, idle writes.
+    await page.evaluate(() => {
+      document.querySelectorAll('.arc-slot').forEach(slot => slot.remove());
+      const itemBtn = document.createElement('button'); // The item's actual open-mode condition.
+      itemBtn.id = 'itemBtn'; document.body.appendChild(itemBtn);
+      document.getElementById('toolBtn').style.visibility = 'hidden';
+      window.CookingSystem = {init() {}};
+      window.FarmCrates = {init() {}};
+      window.AlchemySystem = {init() {}};
+      window.itemArchBrowserDeps = {
+        ITEM_DEFS: {seed:{label:'BLUE SEED',itemArchCategory:'seed'},berry:{label:'RED BERRY',tags:['berry']}},
+        inventory:{seed:2,berry:3},
+        inventoryItems:[{key:'seed',label:'BLUE SEED'},{key:'berry',label:'RED BERRY'}],
+      };
+      for (const [id,label,active] of [['itemArchSeed','BLUE SEED',true],['itemArchBerry','RED BERRY',false]]) {
+        const node = document.createElement('div');
+        node.id = id;
+        node.className = 'arc-slot' + (active ? ' arc-active' : '');
+        node.style.cssText = 'position:fixed;left:20px;opacity:1;';
+        node.innerHTML = '<span class="arc-icon sprited-icon"></span><span class="arc-label"></span>';
+        node.querySelector('.arc-label').textContent = label;
+        node.querySelector('.arc-icon').style.backgroundImage = 'url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==")';
+        document.body.appendChild(node);
+      }
+      const arrow = document.createElement('div');
+      arrow.id = 'itemArchEdge';
+      arrow.className = 'arc-slot arc-arrow';
+      arrow.style.left = '25px';
+      document.body.appendChild(arrow);
+    });
+    await page.addScriptTag({content:itemSource});
+    await page.evaluate(() => window.CookingSystem.init(window.itemArchBrowserDeps));
+    await page.waitForFunction(() => document.getElementById('itemArchSeed')?.dataset.itemCategory === 'seed'
+      && document.getElementById('itemArchBerry')?.dataset.itemCategory === 'berry'
+      && document.querySelector('#itemArchFixedCategoryHeading textPath')?.textContent === 'Seeds'
+      && document.getElementById('itemArchSeed')?.classList.contains('item-select-radius-inset')
+      && window.ItemArchCategoryColors?.debugSnapshot().presentation.selectionRadiusMatchesPotion);
+    await page.waitForTimeout(350);
+    const openItem = await page.evaluate(() => {
+      const slot = document.getElementById('itemArchSeed');
+      const icon = getComputedStyle(slot.querySelector('.arc-icon'));
+      return {
+        headings:document.querySelectorAll('#itemArchFixedCategoryHeading').length,
+        retired:document.querySelectorAll('#itemArchCategoryHeading, #itemArchStickyCategoryHeading').length,
+        text:document.querySelector('#itemArchFixedCategoryHeading textPath')?.textContent,
+        background:icon.backgroundImage,
+        radiusInset:getComputedStyle(slot).translate,
+        haloBorder:getComputedStyle(slot, '::before').borderTopColor,
+        geometry:window.QuickPotionArcUI.readGeometry(),
+      };
+    });
+    assert.equal(openItem.headings, 1, 'exactly one fixed item-category heading');
+    assert.equal(openItem.retired, 0, 'the hidden legacy SVG presenters are gone');
+    assert.equal(openItem.text, 'Seeds');
+    assert.match(openItem.background, /data:image\/gif/, 'sprite icon background is not erased');
+    assert.notEqual(openItem.radiusInset, 'none', 'six-pixel item-only inward radius is applied');
+    assert.match(openItem.haloBorder, /rgb/, 'category halo is rendered by the slot pseudo-element');
+    assert(openItem.geometry.outerRingGeometry?.radius > 8, 'cheap live geometry is available');
+    const idleWrites = await page.evaluate(async () => {
+      let writes = 0;
+      const observer = new MutationObserver(records => { writes += records.length; });
+      for (const element of [document.getElementById('itemArchSeed'), document.getElementById('itemArchBerry'),
+        document.getElementById('itemArchFixedCategoryHeading')]) {
+        observer.observe(element, {subtree:true,attributes:true,attributeFilter:['class','style','d','viewBox','data-item-category','data-item-category-label']});
+      }
+      await new Promise(resolve => {
+        let frames = 0;
+        const frame = () => { if (++frames >= 12) resolve(); else requestAnimationFrame(frame); };
+        requestAnimationFrame(frame);
+      });
+      observer.disconnect();
+      return writes;
+    });
+    assert.equal(idleWrites, 0, 'real Chromium idle item selection does not rewrite category slots or SVG attributes');
+    await page.evaluate(() => {
+      document.getElementById('itemArchSeed').classList.remove('arc-active');
+      document.getElementById('itemArchEdge').classList.add('arc-active');
+    });
+    await page.waitForFunction(() => document.querySelector('#itemArchFixedCategoryHeading textPath')?.textContent === 'Seeds'
+      && window.ItemArchStickyCategoryHeading?.debugSnapshot().stickyVisible);
+    await page.evaluate(() => {
+      document.getElementById('itemArchEdge').classList.remove('arc-active');
+      document.getElementById('itemArchBerry').classList.add('arc-active');
+    });
+    await page.waitForFunction(() => document.querySelector('#itemArchFixedCategoryHeading textPath')?.textContent === 'Berries');
+    await page.evaluate(() => { document.getElementById('itemArchBerry').querySelector('.arc-label').textContent = 'BLUE SEED'; });
+    await page.waitForFunction(() => document.getElementById('itemArchBerry')?.dataset.itemCategory === 'seed',
+      null, {timeout:3000});
+    await page.evaluate(() => {
+      document.querySelectorAll('.arc-slot').forEach(slot => slot.remove());
+      document.getElementById('toolBtn').style.visibility = '';
+    });
+    await page.waitForFunction(() => !document.getElementById('itemArchFixedCategoryHeading')
+      && !window.ItemArchCategoryColors.debugSnapshot().presentation.frameRunning);
+    assert.deepEqual(errors, [], 'real Chromium selection and item-arch integration produces no browser errors');
+
     console.log('selection arc real-browser idle: PASS (12+ quiet frames, legacy scroll, responsive resize, close/reopen, diagnostics)');
   } finally {
     await browser.close();
