@@ -149,7 +149,7 @@ async function main() {
   const refresh = new Function(
     'R','E','C','clearTimeout','disposeRuntimeRig','fitRegion',
     'buildBodyCanvas','buildSourceReferenceCanvas','buildHeadReferenceCanvas','buildGarmentCanvas',
-    'buildVariantGarmentCanvas','buildTorsoCanvas','ensureTargetData','syncTransformControls','syncMaskTransformControls','syncContourControls','sizeStage','syncHeadbandControls',
+    'buildVariantGarmentCanvas','buildTorsoCanvas','ensureTargetData','syncTransformControls','syncMaskTransformControls','syncContourControls','sizeStage','syncHeadbandControls','hydrateHeadbandRearArt',
     'saveState','render','status','log','console','window','CustomEvent',
     refreshCode + '\nreturn refreshAssets;'
   )(
@@ -157,7 +157,7 @@ async function main() {
     ()=>refE.fitRegion.value,
     async (species)=>{if(failTarget)throw Error('missing species art');return canvas(species);},
     async ()=>canvas('source'),async ()=>canvas('head'),async ()=>canvas('hood'),async ()=>canvas('authored'),
-    async ()=>canvas('torso'),()=>{},()=>{},()=>{},()=>{},()=>{},()=>{},()=>{},()=>{rendered++;},
+    async ()=>canvas('torso'),()=>{},()=>{},()=>{},()=>{},()=>{},()=>{},async ()=>{},()=>{},()=>{rendered++;},
     ()=>{},()=>{},console,{dispatchEvent:()=>{}},function(){}
   );
   await refresh();
