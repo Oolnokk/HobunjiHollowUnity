@@ -67,4 +67,32 @@ assert(startup.indexOf('js/weather-wind.js?v=') > 0
   && startup.indexOf('js/weather-wind.js?v=') < startup.indexOf('js/cloud-forest-fog.js?v=')
   && startup.indexOf('js/weather-wind.js?v=') < startup.indexOf('src="game.js?v='),
   'wind authority boots ahead of both fog and the game loop');
+// Multiple consumers (fog, grass, audio) used to recalculate two sines each.
+// Sample one atmospheric frame and assert there are no repeated expensive trig calls.
+let sineCalls = 0; // Counts real gust evaluations on a fresh production Wind module.
+const spyMath = Object.create(Math); // Delegates standard Math functions without changing the Node global.
+spyMath.sin = input => { sineCalls++; return Math.sin(input); };
+const spyWindow = {
+  Math: spyMath,
+  performance: { now: () => 10000 },
+  WeatherFX: { getProjection: () => ({ calendar: { isRaining: false, rainStrength: 0 } }) },
+}; // Isolated browser-like context exercises the exported production wind API.
+spyWindow.window = spyWindow;
+vm.runInNewContext(fs.readFileSync('docs/js/weather-wind.js', 'utf8'), spyWindow);
+const windCached = spyWindow.WeatherWind;
+for (let i = 0; i < 100; i++) {
+  windCached.getStrengthForArea('map_western_slope', { isRaining: false, rainStrength: 0 }, 10);
+  windCached.gustForArea('map_western_slope', 10);
+  windCached.vegetationSwayForArea('map_western_slope', { isRaining: false, rainStrength: 0 }, 10);
+}
+assert.equal(sineCalls, 2, 'fog, foliage and SFX reuse one two-sine sample at 60Hz rather than repeated per-consumer trig');
+windCached.getStrengthForArea('map_western_slope', { isRaining: true, rainStrength: 3 }, 10);
+assert.equal(sineCalls, 2, 'instant weather changes reuse the gust while correctly updating wind strength');
+assert.equal(windCached.getStrengthForArea('map_western_slope', { isRaining: true, rainStrength: 3 }, 10), 1,
+  'a same-frame blizzard override still takes immediate effect');
+windCached.gustForArea('map_northern_cliffs', 10);
+assert.equal(sineCalls, 4, 'querying a different zone obtains a distinct gust sample');
+windCached.gustForArea('map_northern_cliffs', 10.04);
+assert.equal(sineCalls, 6, 'later 60Hz samples refresh the gust instead of freezing wind');
+
 console.log('Weather wind passed: regional katabatic baselines, gusts, storms, vegetation, SFX integration and diagnostics.');
