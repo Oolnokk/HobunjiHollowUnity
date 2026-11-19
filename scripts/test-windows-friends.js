@@ -20,6 +20,7 @@ assert.equal(friends.build.publish[0].provider, 'generic');
 assert.equal(friends.build.publish[0].url, FEED_URL);
 assert.equal(friends.build.win.artifactName, 'Hobunji-Hollow-Tester-Setup-' + '$' + '{version}.' + '$' + '{ext}');
 assert.equal(original.build.publish[0].provider, 'github');
+assert.equal(friends.build.win.icon, original.build.win.icon, 'Friends installer retains the shared Hobunji app icon');
 assert.equal(installerName('0.2.123'), 'Hobunji-Hollow-Tester-Setup-0.2.123.exe');
 assert.throws(() => configureFriendsPackage(original, '../latest'), /Friends version/);
 assert.throws(() => installerName('0.2.0'), /Friends version/);

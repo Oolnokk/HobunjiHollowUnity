@@ -46,6 +46,12 @@ assert.ok(localized.includes('game.js'), 'Retains original game entry point');
 const manifest = JSON.parse(fs.readFileSync(path.join(repo, 'desktop', 'package.json'), 'utf8'));
 assert.equal(manifest.dependencies.three, '0.128.0');
 assert.equal(manifest.build.win.target, 'nsis');
+assert.equal(manifest.build.win.icon, 'build/icon.png', 'Windows EXE and shortcuts use the Hobunji icon');
+assert.ok(manifest.scripts['dist:win'].startsWith('node prepare-icon.cjs && '), 'Build creates the properly sized icon before packaging');
+assert.equal(manifest.devDependencies.pngjs, '7.0.0', 'Icon resizing only needs a build-time dependency');
+const iconSource = fs.readFileSync(path.join(repo, 'docs/assets/hud/icon_hobunji.png')); // Existing artwork is the single source of truth.
+assert.equal(iconSource.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'Icon asset must be a PNG');
+assert.equal(iconSource.readUInt32BE(16), iconSource.readUInt32BE(20), 'Source icon must be square');
 assert.ok(manifest.build.extraResources.some(x => x.from === '../docs' && x.to === 'game'));
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/three.min.js'));
 assert.ok(manifest.build.extraResources.some(x => x.to === 'vendor/TransformControls.js'));
@@ -56,6 +62,9 @@ assert.ok(manifest.build.files.includes('gpu-diagnostics.cjs'), 'Graphics diagno
 const main = fs.readFileSync(path.join(repo, 'desktop', 'main.cjs'), 'utf8');
 assert.ok(main.includes('nodeIntegration: false'));
 assert.ok(main.includes('contextIsolation: true'));
+assert.ok(main.includes("path.join(GAME_ROOT, 'assets', 'hud', 'icon_hobunji.png')"), 'Native game window resolves shipped PNG in both dev and packaged modes');
+assert.ok(main.includes('icon: desktopIcon'), 'Game BrowserWindow receives the Hobunji icon');
+assert.ok(main.includes('autoUpdater, desktopIcon,'), 'Updater receives the same native window icon');
 assert.ok(main.includes('sandbox: true'));
 assert.ok(main.includes("require('./close-save.cjs')"), 'Desktop main uses the independently tested save policy');
 assert.ok(main.includes('CLOSE_SAVE_SCRIPT'));

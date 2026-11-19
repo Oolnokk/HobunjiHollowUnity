@@ -241,6 +241,11 @@
     }
 
     rig.shoulderPositionLocal = (side,out) => { const point=shoulderInParent(side);return point ? out.copy(point) : null; }; // Paired poses capture the same authored/scanned shoulder the existing hand aim uses.
+    rig.idlePositionLocal = (side, out) => { // Read-only neutral wrist for Koma/food; no temporary tool or hand-pose ownership.
+      const shoulder = shoulderInParent(side);
+      if (!shoulder || !out?.set) return null;
+      return out.set(shoulder.x, posteriorYInParent() + armLengthOffsetY(), 0); // Same shoulder/posterior basis as native setSideIdle + shoulder alignment.
+    };
 
     function posteriorYInParent() {
       const resolvedY = Number(attachmentRigProfile()?.resolvedPosteriorPosition?.y); // Animation Author publishes the exact live posterior gizmo coordinate here.

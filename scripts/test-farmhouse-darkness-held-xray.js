@@ -119,6 +119,40 @@ assert.equal(xray.classify(stoneFloor).ground, true, 'instanced rooted ruin ston
 const stoneWall = mesh(otherInterior, untaggedMaterial, { liveRootFloor: true, ruinPreviewRole: 'wall' });
 assert.equal(xray.classify(stoneWall).ground, false, 'rooted walls never share the floor exception');
 assert.equal(xray.classify(grass).ground, true, 'exterior farm terrain still x-rays');
+const farmTrench = mesh(exterior, { userData: { terrainKey: 'trench' } }, { hobunjiFarmTile: true });
+farmTrench.layers.enable(3); // Farm tiles receive this material-ID layer when painted, including raised and trench soil.
+assert.equal(xray.classify(farmTrench).ground, true, 'farm trench soil must not erase yawn-stretch hand colors');
+const farmRaisedBatch = mesh(exterior, { userData: { terrainKey: 'trench', terrainJigsawMaterial: true } },
+  { hobunjiFarmTileBatch: true, terrainRenderChunk: true });
+farmRaisedBatch.layers.enable(3);
+assert.equal(xray.classify(farmRaisedBatch).ground, true, 'farm raised earth survives Jigsaw and batching without blocking the colored hands');
+const farmPaddy = mesh(exterior, { userData: { terrainKey: 'paddy' } }, { hobunjiFarmTile: true });
+farmPaddy.layers.enable(3);
+assert.equal(xray.classify(farmPaddy).ground, true, 'walkable paddy floor receives the same selective ground-x-ray policy');
+const farmMound = mesh(exterior, { userData: { terrainKey: 'rock' } }, { hobunjiFarmTile: true, farmLooseRockMound: true });
+farmMound.layers.enable(3);
+assert.equal(xray.classify(farmMound).ground, false, 'farm rock mounds remain true occluders rather than terrain floor');
+const farmBareRock = mesh(exterior, { userData: {} }, { hobunjiFarmTile: true, farmLooseRockMound: true });
+farmBareRock.layers.enable(3);
+assert.equal(xray.classify(farmBareRock).ground, false, 'material replacement cannot erase the rock-mound exclusion');
+const farmFoliage = mesh(exterior, { userData: {} }, { hobunjiFarmTile: true });
+assert.equal(xray.classify(farmFoliage).ground, false, 'farm-tagged non-terrain vegetation is still solid cover');
+const changedMaterialGround = mesh(exterior, { userData: { terrainKey: 'tilled' } },
+  { hobunjiGroundSurface: true, terrainRenderChunk: true }); // A spatial ground floor remains walkable after a non-rock texture swap.
+assert.equal(xray.classify(changedMaterialGround).ground, true,
+  'spatial walkable terrain stays x-ray ground even after a tilled material swap');
+const explicitlyWalkableRock = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true, hobunjiGroundXray: true, terrainRenderChunk: true }); // Explicit floor authority is needed for rock-colored walkable ground.
+assert.equal(xray.classify(explicitlyWalkableRock).ground, true,
+  'a genuinely walkable rock-colored floor uses its authoritative x-ray tag rather than making every rock mound transparent');
+const unqualifiedRaisedGround = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true }); // A generic ground tag alone also appears on raised obstacles.
+assert.equal(xray.classify(unqualifiedRaisedGround).ground, false,
+  'a raised rock surface must not be made transparent just because it shares a ground tag');
+const batchedRockMound = mesh(exterior, { userData: { terrainKey: 'rock' } },
+  { hobunjiGroundSurface: true, terrainRenderChunk: true }); // The terrain batcher may propagate generic ground labels onto a solid rock bucket.
+assert.equal(xray.classify(batchedRockMound).ground, false,
+  'even a spatially batched rock mound must occlude hands and shell outlines instead of becoming x-ray ground');
 const wildernessTypes = ['weeds', 'shrub', 'tilled', 'trench', 'raised', 'paddy', 'path', 'river', 'stream', 'waterfall']; // Every merged wilderness floor bucket shares the grass ground-depth exception.
 const wildernessFinishes = JSON.parse(read('docs/config/maps/terrain-materials.json')).byMap['*']; // The shared authored material schema backs all live wilderness floor buckets.
 for (const kind of ['grass', 'rock', ...wildernessTypes]) {

@@ -7,6 +7,7 @@ on:
       - 'desktop/**'
       - 'scripts/desktop-friends-build.js'
       - 'scripts/test-windows-friends.js'
+      - 'scripts/test-windows-desktop-icon.ps1'
       - '.github/workflows/windows-friends.yml'
   workflow_dispatch:
     inputs:
@@ -49,6 +50,8 @@ jobs:
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
+      - name: Test generated Hobunji Windows icon
+        run: node desktop/test-icon.cjs
       - name: Configure an independently installed Friends edition
         shell: pwsh
         run: |
@@ -60,6 +63,9 @@ jobs:
         run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify custom icon is embedded in the Friends executable
+        shell: pwsh
+        run: ./scripts/test-windows-desktop-icon.ps1 -Executable 'desktop/dist/win-unpacked/Hobunji Hollow Tester.exe'
       - name: Verify isolation and updater metadata
         shell: pwsh
         run: |

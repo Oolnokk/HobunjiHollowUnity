@@ -14,8 +14,6 @@ assert.match(gameSource, /const s_shoulderPetRotationSource = 'head';/,
   'head/neck remains the fixed authored shoulder rotation frame');
 assert.doesNotMatch(indexSource, /Shoulder-Pet Rotation Source|Invert Selected Shoulder Rotation|Cancel Shoulder-Pet Rotational Offset/,
   'shoulder presentation tuning controls are no longer exposed in Settings');
-assert.match(runtimeSource, /const SHOULDER_PET_HALF_TURN_QUATERNION = new THREE\.Quaternion\(\)\.setFromAxisAngle\(new THREE\.Vector3\(0, 1, 0\), Math\.PI\);/,
-  'shoulder facing swap is authored as an exact 180-degree local-Y quaternion');
 assert.match(runtimeSource,
   /const facingTowardPlayerCenter = pet\?\.__hobunjiShoulderFacingInward === true;[\s\S]{0,5000}const shoulderFacingTurnDeg = facingTowardPlayerCenter !== authoredFacesInward \? 180 : 0;/,
   'the chosen half-turn depends on the authored heading and the observation pose');
@@ -189,6 +187,8 @@ for (const skinned of [true, false]) {
         avatarRef: { group: { scale: renderedScale } },
       }); // Samples the real pin with the full rendered scale, not just the static authored perch multiplier.
       const neutral = pinAt(0);
+      closeness(new TestVector3(0, 1, 0).applyQuaternion(neutral.worldQuaternion), new TestVector3(0, 1, 0),
+        'authored perch and grip angles keep the neutral pet upright');
       for (const lean of [-7, -3, 0, 3, 7]) {
         const pose = pinAt(lean);
         const localGrip = new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z); // Native grip coordinates before THREE's nonuniform group scale.
@@ -293,13 +293,34 @@ const newOwner = liveRuntime.solveSurfaceTransform(livePerch, liveGrip, livePet)
 assert.ok(newOwner.perchWorldPosition.distanceTo(newNeck.perchWorldPosition) > 1,
   'attachment reads the newly replaced player root and repositions the pinned grip');
 
+for (const pitch of [-68, 48, 90]) {
+  const tilt = new TestQuaternion().setFromEuler(new TestEuler(degrees(pitch), degrees(17), 0, 'YXZ')); // Tilt the socket while holding the owner's heading fixed.
+  const roll = new TestQuaternion().setFromAxisAngle({ x: 0, y: 0, z: 1 }, degrees(pitch === 90 ? 0 : 35)); // Include compound pitch and roll outside the vertical-forward case.
+  tilt.multiply(roll);
+  livePlayerMesh = {
+    ...playerMesh,
+    localToWorld: point => point.applyQuaternion(tilt).add(playerPosition),
+  };
+  liveNeckJoint = { ...playerNeckJoint, getWorldQuaternion: () => tilt.clone() };
+  const tilted = liveRuntime.solveSurfaceTransform(livePerch, liveGrip, livePet); // Exercise the actual gameplay head source and moving fallback perch.
+  const upright = solveBody(livePerch, liveGrip, livePet); // Same heading on a level carrier.
+  const expectedPerch = livePlayerMesh.localToWorld(new TestVector3(livePerch.x, livePerch.y, livePerch.z)); // Independent position from the tilted owner matrix.
+  assert.ok(expectedPerch.distanceTo(upright.perchWorldPosition) > 0.1, 'carrier tilt actually moves the perch');
+  closeness(new TestVector3(0, 1, 0).applyQuaternion(tilted.worldQuaternion), new TestVector3(0, 1, 0),
+    'the pet stays world-up with the carrier pitched and rolled');
+  closeness(new TestVector3(0, 0, 1).applyQuaternion(tilted.worldQuaternion),
+    new TestVector3(0, 0, 1).applyQuaternion(upright.worldQuaternion), 'tilt keeps the same horizontal heading');
+  closeness(new TestVector3(liveGrip.x, liveGrip.y, liveGrip.z).applyQuaternion(tilted.worldQuaternion).add(tilted.worldPosition),
+    expectedPerch, 'the upright rotation keeps the grip on the moved perch');
+}
+
 // Legacy pets whose authored shoulderPerch/shoulderGrip are absent arrive via
 // game.js with its old getWorldQuaternion() from a potentially reflected rig.
 const reflectedAncestor = { isObject3D: true, quaternion: yaw(27), parent: null, scale: { x: -1, y: 1, z: 1 } }; // Model a body-mirror ancestor, not an animation flip.
 const actualPlayerRoot = {
-  isObject3D: true, quaternion: yaw(14), parent: reflectedAncestor,
+  isObject3D: true, quaternion: new TestQuaternion().setFromEuler(new TestEuler(degrees(32), degrees(14), degrees(-19), 'YXZ')), parent: reflectedAncestor,
   getWorldQuaternion: () => yaw(221), // A false 180° rotation from negative-scale matrix decomposition must not be applied.
-}; // Physical world orientation is 41°, not the supplied reflected 221°.
+}; // Physical horizontal heading is 41° through reflection and tilt.
 const fallbackRuntime = runtimeFactory({
   THREE, getPlayerMesh: () => actualPlayerRoot, getPlayerNeckJoint: () => null,
   getRotationSource: () => 'body', getInvertRotationSource: () => false,

@@ -135,6 +135,12 @@ const sentinel = playerMesh.children.find(node => node.name === 'player_yawn_str
 assert.ok(sentinel?.onBeforeRender, 'hands are posed by the same final-render pattern as the punch dance');
 sentinel.onBeforeRender();
 assert.ok(left.position.y > 0.48 && right.position.y > 0.48, 'both arms stretch overhead at mid-yawn');
+for (const hand of [left, right]) {
+  const idleX = hand === left ? -0.15 : 0.15; // Neutral wrist X for this test avatar.
+  const shoulderY = 0.3 * 0.82; // Same unrigged shoulder offset as the playable yawn.
+  assert.ok(Math.hypot(hand.position.x - idleX, hand.position.y - shoulderY, hand.position.z) <= 0.3 * 0.94 + 1e-6,
+    'both yawn hands remain inside their authored shoulder-to-wrist reach');
+}
 const leftHigh = left.position.y;
 sentinel.onBeforeRender();
 assert.equal(left.position.y, leftHigh, 'second render pass must not accumulate hand offsets');
@@ -159,6 +165,29 @@ assert.equal(locks.length, 0, 'cancellation releases the action lock');
 assert.equal(rig.getDebug().poseOwner, null, 'completion releases hand pose ownership to the normal grip driver');
 assert.equal(presentation.debugSnapshot().hiddenHeldRoots, 0, 'visibility snapshots are cleared on finish');
 
+let shoulderResolverCalls = 0; // Verifies that the shoulder resolver runs before rendering, never in the temporary body-pose pass.
+rig.shoulderPositionLocal = (side, out) => { // Exercises the real shoulder-aim API with a lateral offset from the neutral hand.
+  shoulderResolverCalls++;
+  out.x = side === 'left' ? -0.025 : 0.06; out.y = 0.255; out.z = -0.04;
+  return out;
+};
+const authoredYawn = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } };
+presentation.start(authoredYawn);
+assert.equal(rig.applyOwnedPose(), true, 'the native idle pose is still authoritative before authored-shoulder yawn');
+presentation.update(authoredYawn, 0.5);
+const callsBeforeRender = shoulderResolverCalls; // Captured by start/update; renderer must reuse these two anchors without rebuilding matrices.
+assert.ok(callsBeforeRender >= 2);
+sentinel.onBeforeRender();
+assert.equal(shoulderResolverCalls, callsBeforeRender,
+  'final-render stretch must not trigger shoulder scans or recompute the temporarily baked avatar matrices');
+for (const hand of [left, right]) {
+  const shoulderX = hand === left ? -0.025 : 0.06;
+  assert.ok(Math.hypot(hand.position.x - shoulderX, hand.position.y - 0.255, hand.position.z + 0.04) <= 0.3 * 0.94 + 1e-6,
+    'the wrist is limited by the actual off-centre shoulder anchor, not a guessed baseline');
+}
+assert.equal(presentation.debugSnapshot().authoredShoulderSamples, 2, 'mobile diagnostics confirm both real shoulder anchors were used');
+presentation.end(authoredYawn);
+delete rig.shoulderPositionLocal;
 right.visible = false;
 const hiddenHandYawn = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } };
 presentation.start(hiddenHandYawn); presentation.update(hiddenHandYawn, 0.5); sentinel.onBeforeRender();
@@ -178,10 +207,24 @@ assert.equal(rig.getDebug().poseOwner, null, 'daily Koma keeps the natural right
 assert.ok(left.position.y > 0.48 && left.position.y < 0.65,
   'the free arm stretches from neutral, not a hidden two-hand weapon grip');
 assert.equal(right.position.y, 0.20, 'the Koma leaf retains its own right-hand chewing pose');
+assert.ok(Math.hypot(left.position.x + 0.15, left.position.y - 0.3 * 0.82, left.position.z) <= 0.3 * 0.94 + 1e-6,
+  "Koma's free arm stays within reach without disturbing its leaf grip");
 assert.equal(presentation.actionBlocked(koma), false, 'the yawn and its Koma-owned action lock coexist');
 presentation.end(koma);
 assert.equal(invisibleTool.visible, false, 'previously hidden equipment stays hidden on cleanup');
 assert.equal(locks.length, 1, 'presentation may not release the independent Koma lock');
 locks.pop();
+rig.armLengthForSide = () => 0.04; // Simulates a tiny character whose authored arms are much shorter than the former 0.1-unit minimum.
+const tiny = { isPlayer: true, komaStarted: false, walker: { root: playerMesh, avatarGroup: avatar } }; // Separate yawn must recapture normal hand sockets.
+presentation.start(tiny);
+assert.equal(rig.applyOwnedPose(), true, 'native hand driver restores both idle wrists before the yawn render hook');
+presentation.update(tiny, 0.5); sentinel.onBeforeRender();
+for (const hand of [left, right]) {
+  const idleX = hand === left ? -0.15 : 0.15;
+  assert.ok(Math.hypot(hand.position.x - idleX, hand.position.y - 0.04 * 0.82, hand.position.z) <= 0.04 * 0.94 + 1e-6,
+    'small characters use their real arm length without the oversized old minimum');
+}
+assert.ok(presentation.debugSnapshot().constrainedHandSamples > 0, 'mobile diagnostics report a wrist reach clamp');
+presentation.end(tiny);
 assert.equal(presentation.debugSnapshot().lastError, null);
 console.log('Player yawn stretch, held visuals, final-render pose, Koma, and cleanup: OK');
