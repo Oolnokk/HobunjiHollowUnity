@@ -1,5 +1,34 @@
 # Performance investigation log
 
+## 18 Nov 2026: redundant scene matrix traversal in PNG outline depth pass (code inspection)
+
+The default outlined frame renders the main world scene, then immediately replays its PNG
+portrait/held-item layer into that same target's depth buffer. Three r128 normally calls
+`scene.updateMatrixWorld()` at the start of **each** `renderer.render(scene, camera)`; with
+thousands of active scene nodes, the extra PNG-only replay repeats the entire graph's
+matrix walk even though the main colour pass just resolved those matrices.
+
+`png-plane-outline-occluder.js` already registers visible PNG meshes rather than scanning
+the world graph for depth participants. The replay now calls
+`updateWorldMatrix(true, false)` only on its visible registered participants (to pick up
+late animation-hook changes to their local/parent transforms), disables
+`activeScene.autoUpdate` for that **single extra render**, and restores its original
+value in `finally` along with the camera layers/materials. The main colour, shell,
+furniture seam, and held-object render paths keep their existing matrix-update policy.
+The replay still uses the complete scene for layer filtering, so this removes a redundant
+full-tree *matrix update*, not Three's render-list traversal.
+
+`scripts/test-npc-png-depth-ancestor-cull.js` now exercises visible/hidden actor
+participants, the selective update arguments, render-scoped `autoUpdate`, the existing
+material/camera restoration, an injected renderer exception and an originally disabled
+scene. An isolated runtime smoke test passed those scenarios.
+
+**Not yet measured on the player's hardware:** frame-time savings. The 18 Nov Chrome
+capture groups ~37% of sampled CPU time under `three.min.js`, but URL grouping does not
+identify whether this matrix traversal or another internal Three.js function dominates.
+A follow-up A/B performance recording with Bottom-Up grouped by function/call stack and
+the same zone, camera and outline settings is still required before claiming an FPS gain.
+
 ## 18 Nov 2026: dense Cloud Forest steady rendering
 
 - The mist outline redraw uses its own scene with at most three visible meshes. It shares the base
