@@ -333,10 +333,106 @@
       terrainEvent:complex?'complex':crossing?'river-crossing':'elevation',
       altitudeProfile:profile,from:{...from},to:{...to}};
   }
+
+  // Main river routes are already exported by wilderness-map-generator. Never guess from incidental stream tiles.
+  function riverStartLandmarks(layout) {
+    const map=layout?.maps?.find?.(m=>m.id==='map_generated_wilderness_root')||layout?.maps?.[0]||layout;
+    const size=dimensions(layout); // Final-grid extents let each candidate name its *own* zone sector.
+    const waterways=(map?.rivers||[]).map((river,index)=>{
+      const width=Number(river.widthTilesAverage??river.width);
+      const nodes=(river.nodes||[]).map(node=>Array.isArray(node)
+        ?{col:Number(node[0]),row:Number(node[1])}:{col:Number(node?.x??node?.col),row:Number(node?.y??node?.row)})
+        .filter(node=>Number.isFinite(node.col)&&Number.isFinite(node.row));
+      return {id:String(river.id||index),width,nodes};
+    }).filter(river=>river.width>=4&&river.nodes.length>=2); // A tiny stream is not a recognizable main river.
+    if(!waterways.length)return [];
+    const isRiver=point=>WATERWAY.has(String(tileAt(layout,Math.round(point.col),Math.round(point.row))?.type||'').toLowerCase());
+    function waterNear(point) {
+      for(let radius=0;radius<=2;radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+        if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+        const candidate={col:Math.round(point.col)+dx,row:Math.round(point.row)+dy};
+        if(isRiver(candidate))return candidate;
+      }
+      return null; // Stale path metadata does not count as a physically present landmark.
+    }
+    function nearbyBank(center,width) {
+      const limit=Math.min(16,Math.max(4,Math.ceil(width*.65)+3)); // Bank search is bounded by the actual channel width.
+      for(let r=1;r<=limit;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+        if(Math.max(Math.abs(dx),Math.abs(dy))!==r)continue;
+        const point={col:center.col+dx,row:center.row+dy}, tile=tileAt(layout,point.col,point.row);
+        if(!tile||tile.incline||tile.borderEscarpment||tile.distantBoundaryLandscape)continue;
+        if(['grass','path','weeds','ramp'].includes(String(tile.type||'').toLowerCase()))return point;
+      }
+      return null; // An inaccessible river does not become a walking route's start.
+    }
+    function projected(point,from,to) {
+      const dx=to.col-from.col,dy=to.row-from.row,length=dx*dx+dy*dy;
+      const fraction=length?Math.max(0,Math.min(1,((point.col-from.col)*dx+(point.row-from.row)*dy)/length)):0;
+      return {col:from.col+dx*fraction,row:from.row+dy*fraction};
+    }
+    function nearestSegments(a,b,c,d) {
+      const ax=b.col-a.col,ay=b.row-a.row,bx=d.col-c.col,by=d.row-c.row,det=ax*by-ay*bx;
+      if(Math.abs(det)>1e-6){
+        const cx=c.col-a.col,cy=c.row-a.row,t=(cx*by-cy*bx)/det,u=(cx*ay-cy*ax)/det;
+        if(t>=0&&t<=1&&u>=0&&u<=1)return {col:a.col+ax*t,row:a.row+ay*t,distance:0};
+      }
+      const ends=[[a,projected(a,c,d)],[b,projected(b,c,d)],[projected(c,a,b),c],[projected(d,a,b),d]];
+      let closest=null;
+      for(const [p,q] of ends){
+        const distance=Math.hypot(p.col-q.col,p.row-q.row);
+        if(!closest||distance<closest.distance)closest={col:(p.col+q.col)/2,row:(p.row+q.row)/2,distance};
+      }
+      return closest;
+    }
+    const junctions=[]; // Distinct crossing/confluence clusters of two independently exported main river centerlines.
+    for(let i=0;i<waterways.length;i++)for(let j=i+1;j<waterways.length;j++){
+      const first=waterways[i],second=waterways[j],width=Math.min(first.width,second.width);
+      for(let a=1;a<first.nodes.length;a++)for(let b=1;b<second.nodes.length;b++){
+        const p=first.nodes[a-1],q=first.nodes[a],r=second.nodes[b-1],s=second.nodes[b];
+        const ax=q.col-p.col,ay=q.row-p.row,bx=s.col-r.col,by=s.row-r.row;
+        const lengths=Math.hypot(ax,ay)*Math.hypot(bx,by);
+        if(lengths<.001||Math.abs(ax*by-ay*bx)/lengths<.30)continue; // Parallel reaches are one course, not a junction.
+        if(Math.min(p.col,q.col)>Math.max(r.col,s.col)+3||Math.min(r.col,s.col)>Math.max(p.col,q.col)+3
+          ||Math.min(p.row,q.row)>Math.max(r.row,s.row)+3||Math.min(r.row,s.row)>Math.max(p.row,q.row)+3)continue;
+        const intersection=nearestSegments(p,q,r,s);
+        if(intersection.distance>Math.min(3,width*.35))continue;
+        const center=waterNear(intersection); // A geometric crossing without actual river water is not a clue.
+        if(!center||junctions.some(other=>Math.hypot(other.center.col-center.col,other.center.row-center.row)<Math.max(8,width)))continue;
+        const bank=nearbyBank(center,width);
+        if(bank)junctions.push({center,bank,width});
+      }
+    }
+    const sectorCounts=new Map(); // Repeating indistinguishable confluences within one sector would be unfair.
+    for(const site of junctions){
+      const sector=sectorAt(site.center.col,site.center.row,size.cols,size.rows);
+      sectorCounts.set(sector,(sectorCounts.get(sector)||0)+1);
+    }
+    const anchors=junctions.filter(site=>sectorCounts.get(sectorAt(site.center.col,site.center.row,size.cols,size.rows))===1)
+      .map(site=>({kind:'riverConfluence',name:'the meeting of two broad rivers',point:site.bank,
+        waterCenter:site.center,unique:true,source:'verified-main-river-network'}));
+    const edgeCandidates=new Map(); // Only a single major river endpoint on a given edge is uniquely findable.
+    for(const river of waterways)for(const node of [river.nodes[0],river.nodes[river.nodes.length-1]]){
+      const distances=[['north',node.row],['south',size.rows-1-node.row],['west',node.col],['east',size.cols-1-node.col]];
+      const edge=distances.sort((a,b)=>a[1]-b[1])[0];
+      if(edge[1]>Math.max(2,river.width*.6+1))continue;
+      const center=waterNear(node),bank=center&&nearbyBank(center,river.width);
+      if(!bank)continue;
+      if(!edgeCandidates.has(edge[0]))edgeCandidates.set(edge[0],[]);
+      edgeCandidates.get(edge[0]).push({bank,center,side:edge[0],riverId:river.id});
+    }
+    for(const [side,sites] of edgeCandidates){
+      if(new Set(sites.map(site=>site.riverId)).size!==1)continue; // More than one same-side endpoint needs another distinguishing mark.
+      const site=sites[0];
+      anchors.push({kind:'riverEnd',name:'the broad river where it meets the '+side+' edge',
+        point:site.bank,waterCenter:site.center,unique:true,source:'verified-main-river-network'});
+    }
+    return anchors;
+  }
+
   function uniqueWitnessRoute({zoneId,zoneName,layout,point,goalName,landmarks,generationKey=''}) {
     const name=zoneName||ZONES[zoneId]||zoneId;
-    const markers=landmarks.filter(site=>site.unique===true&&site.dyeId
-      &&site.source==='generated-year-round-scenery'
+    const markers=landmarks.filter(site=>site.unique===true
+      &&((site.dyeId&&site.source==='generated-year-round-scenery')||site.source==='verified-main-river-network')
       &&Number.isFinite(site.point?.col)&&Number.isFinite(site.point?.row)
       &&tileAt(layout,site.point.col,site.point.row)); // Every starting mark is physically stamped, and its color unique in this zone.
     if(!markers.length)return null;
@@ -365,15 +461,17 @@
       for(const plan of possibilities){
         const complex=plan.legs.filter(leg=>leg.eventCount>1).length;
         const length=plan.legs.reduce((sum,leg)=>sum+Math.hypot(leg.to.col-leg.from.col,leg.to.row-leg.from.row),0);
-        const score=complex*100000+(start.kind==='witnessStone'?0:100)+
-          (plan.waypoint?8:0)+length*.01; // Prefer a single-event leg, then the original witness start, then concise verses.
+        const excessEvents=plan.legs.reduce((sum,leg)=>sum+Math.max(0,leg.eventCount-1),0); // Break ties between complex routes by the number of extra verified obstacles, not landmark type.
+        const score=complex*100000+excessEvents*1000+(start.kind==='riverConfluence'?-16:start.kind==='riverEnd'?-8:start.kind==='witnessStone'?0:100)+
+          (plan.waypoint?8:0)+length*.01; // Prefer simple terrain first, then the identifiable river or witness-stone starting point.
         if(!best||score<best.score)best={...plan,start,score};
       }
     }
     if(!best)return null;
     const marker=best.start;
-    const anchorName=marker.name+(marker.name.includes(name)?'':' in '+name); // Diagnostics preserve the full zone-qualified referent.
-    const route=best.legs,facts=[{kind:'routeAnchor',value:marker.name,zoneName:name,
+    const anchorSector=sectorAt(marker.waterCenter?.col??marker.point.col,marker.waterCenter?.row??marker.point.row,size.cols,size.rows); // Start sector must locate the FIRST visible landmark, not the hidden blossom.
+    const anchorName=marker.name+(marker.name.includes(name)?'':' in '+anchorSector+' of '+name); // Diagnostics preserve the full zone-qualified referent.
+    const route=best.legs,facts=[{kind:'routeAnchor',value:marker.name,zoneName:name,sector:anchorSector,
       source:marker.source,coordinate:{...marker.point},unique:true,dye:marker.dyeId||null}]; // In verse, say the broader region BEFORE the colored rock.
     if(best.waypoint){
       const leg=route[0];
@@ -385,7 +483,7 @@
     }else facts[0].value+='; then go '+route[0].description; // A direct leg belongs in the opening line.
     facts.push({kind:'blossom',value:goalName,source:'stamped-target-object'});
     return {facts,route,anchor:{name:anchorName,coordinate:{...marker.point},
-      dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
+      sector:anchorSector,dyeName:marker.dyeName||null,dyeId:marker.dyeId||null,kind:marker.kind,unique:true}};
   }
 
   function inspect({ zoneId, zoneName, layout, instance, targetObjectKey = null, targetName = null, targetKind = 'target', blossomName = null, landmarks: suppliedLandmarks = [], radius = 24, requireUniqueStart = false, terrainGenerationKey = '' } = {}) {
@@ -412,6 +510,7 @@
     for (const site of (layout.rootTotems || [])) landmarks.push({ name: 'the root totem', point: { col: Number(site.x), row: Number(site.y) }, source: 'generated-root-totem', kind:'rootTotem' }); // Uses the existing root-totem placement index.
     for (const site of (layout.animalDens || [])) landmarks.push({ name: 'a wild animal den', point: { col: Number(site.mouthAnchor?.x ?? site.x), row: Number(site.mouthAnchor?.y ?? site.y) }, source: 'generated-animal-den', kind:'animalDen' });
     for (const site of suppliedLandmarks) if (site?.name && site?.point) landmarks.push({ ...site,name: String(site.name), point: site.point, source: site.source || 'generated-scenery', kind: site.kind || (site.source === 'registered-cliff-door' ? 'cliffDoor' : 'authoredLocale') }); // Caller supplies only genuinely generated scenery, ruin entrances and cliff doors. // Use the visible den doorway rather than an assumed footprint center.
+    landmarks.push(...riverStartLandmarks(layout)); // Reuse the exported, verified main waterways; never scan all map tiles for quest anchors.
     const nearbyLandmarks = landmarks.filter(item => item.name && Number.isFinite(item.point.col) && Number.isFinite(item.point.row))
       .map(item => ({ ...item, d: Math.hypot(item.point.col - point.col, item.point.row - point.row) }))
       .filter(item => item.d <= Math.max(18, radius * 2) && item.d >= 5)
@@ -461,10 +560,10 @@
       const word = line.trim().split(/\s+/).pop().toLowerCase();
       if (!fallback) fallback = line;
       if (word !== previousEnding) return fact.kind==='routeAnchor'&&fact.zoneName
-        ? 'In '+fact.zoneName+', '+line[0].toLowerCase()+line.slice(1) : line;
+        ? 'In '+fact.zoneName+(fact.sector?', in '+fact.sector:'')+', '+line[0].toLowerCase()+line.slice(1) : line;
     }
     return fact.kind==='routeAnchor'&&fact.zoneName
-      ? 'In '+fact.zoneName+', '+fallback[0].toLowerCase()+fallback.slice(1) : fallback;
+      ? 'In '+fact.zoneName+(fact.sector?', in '+fact.sector:'')+', '+fallback[0].toLowerCase()+fallback.slice(1) : fallback;
   }
   function chooseFamily(lines, parity, exclude, seed) {
     const hinted = lines.filter((_, index) => index % 2 === parity)
