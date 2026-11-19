@@ -23062,73 +23062,68 @@
           if (enabled) child.layers.enable(1); else child.layers.disable(1);
         });
       }
+      // The camera corridor is shared with the baked-tree chunk culler. Reuse one
+      // scratch record instead of allocating a view object for every vegetation group.
+      const vegetationCullBasis = {
+        camX: 0, camZ: 0, viewX: 0, viewZ: 1, rightX: 1, rightZ: 0,
+        forwardRange: VEG_CULL_FORWARD_TILES, rearRange: VEG_CULL_REAR_TILES,
+        halfWidth: VEG_CULL_WIDTH_TILES * 0.5, shortCloudForest: false,
+      }; // Used by procedural vegetation and baked Cloud Forest chunks; no per-tree allocations.
+
+      function zoneVegetationCullBasis() {
+        const basis = vegetationCullBasis;
+        basis.camX = camera.position.x;
+        basis.camZ = camera.position.z;
+        let vx = camTargetX - basis.camX, vz = camTargetZ - basis.camZ;
+        let viewLen = Math.hypot(vx, vz);
+        if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
+        basis.viewX = vx / viewLen;
+        basis.viewZ = vz / viewLen;
+        basis.rightX = basis.viewZ;
+        basis.rightZ = -basis.viewX;
+        basis.shortCloudForest = !!EXTERIOR_ZONES[currentArea]?.cloudForest && s_cloudForestShortCull;
+        const configuredReach = Number(s_cloudForestCullRadiusTiles);
+        const reach = Number.isFinite(configuredReach) ? Math.max(5, configuredReach) : 30;
+        // At the default 30-tile slider: 21 tiles forward by 19.2 wide,
+        // rather than the normal 42 forward by 30 wide. Both still keep
+        // a 2-tile rear strip and conservative XZ canopy/chunk overlap.
+        basis.forwardRange = basis.shortCloudForest ? Math.min(VEG_CULL_FORWARD_TILES, reach * 0.70) : VEG_CULL_FORWARD_TILES;
+        basis.halfWidth = basis.shortCloudForest ? Math.min(VEG_CULL_WIDTH_TILES * 0.5, reach * 0.32) : VEG_CULL_WIDTH_TILES * 0.5;
+        basis.rearRange = VEG_CULL_REAR_TILES;
+        return basis;
+      }
+
+      function vegetationCorridorContains(s, wasVisible, basis) {
+        if (!s) return true; // Unknown bounds must fail open, not drop authored scenery.
+        const dx = s.x - basis.camX, dz = s.z - basis.camZ;
+        const along = dx * basis.viewX + dz * basis.viewZ;
+        const side = Math.abs(dx * basis.rightX + dz * basis.rightZ);
+        // For the Cloud Forest, use horizontal coverage. A tall canopy's 3D
+        // bounding sphere must not inflate the short corridor by its height.
+        const radius = basis.shortCloudForest ? (s.xzRadius ?? s.radius) : s.radius;
+        const expanded = Math.max(0, Number(radius) || 0) + (wasVisible ? VEG_CULL_HYSTERESIS_TILES : 0);
+        return along >= -(basis.rearRange + expanded) && along <= basis.forwardRange + expanded
+          && side <= basis.halfWidth + expanded;
+      }
+
       function updateZoneVegetationCulling(force = false) {
         if (!_isZoneArea(currentArea)) return;
         const zi = _zoneScenes.get(currentArea);
         const cullables = zi?.cullables;
         if (!cullables || !cullables.length) return;
-        const camX = camera.position.x, camZ = camera.position.z;
-        const hysteresis = VEG_CULL_HYSTERESIS_TILES;
+        const basis = zoneVegetationCullBasis();
+        const camX = basis.camX, camZ = basis.camZ;
         const px = player.x / TILE, pz = player.y / TILE;
-        // A handful of zones (currently just the Southern Cloud Forest, via
-        // vegCullRadiusTiles — see its EXTERIOR_ZONES comment) swap the
-        // camera-forward/rear/width box every other zone uses below for a
-        // plain circle centered on the PLAYER, not the camera — pairing with
-        // CloudForestFog's own player-centered mist cylinders so the ring
-        // where vegetation pops in/out sits inside the mist uniformly in
-        // every direction instead of only character-forward.
-        const radialCullRadius = s_cloudForestWideCull
-          ? (EXTERIOR_ZONES[currentArea]?.cloudForest ? s_cloudForestCullRadiusTiles : EXTERIOR_ZONES[currentArea]?.vegCullRadiusTiles)
-          : null;
-        let viewX = 0, viewZ = 1, rightX = 1, rightZ = 0, forwardRange = 0, rearRange = 0, halfWidth = 0;
-        if (!radialCullRadius) {
-          let vx = camTargetX - camX, vz = camTargetZ - camZ;
-          let viewLen = Math.hypot(vx, vz);
-          if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
-          viewX = vx / viewLen; viewZ = vz / viewLen;
-          rightX = viewZ; rightZ = -viewX;
-          forwardRange = VEG_CULL_FORWARD_TILES;
-          rearRange = VEG_CULL_REAR_TILES;
-          halfWidth = VEG_CULL_WIDTH_TILES * 0.5;
-        }
-        // Every character worth revealing an occluder for, not just the
-        // player -- a tree that only fades for the player would leave a
-        // companion standing behind the SAME tree fully hidden by it, since
-        // the fade/depthWrite trigger below only checks whichever line(s)
-        // it's given. A tree can easily sit on the camera-to-companion line
-        // without also sitting on the camera-to-player line (they're rarely
-        // standing on exactly the same spot), so this needs its own check
-        // per target rather than reusing the player's.
+        // Include companions behind the same trunk, even when the camera-player
+        // line itself misses that tree. Retain the established occlusion fade.
         const revealTargets = [{ x: px, z: pz }];
         for (const c of companionObjects) {
           if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
         }
         for (const obj of cullables) {
           const s = obj.userData.cullSphere;
-          // Used below to cull grass without running tree fade/outline bookkeeping.
           const isGrassChunk = obj.userData.isWildernessGrassChunk === true;
-          const sticky = obj.visible ? hysteresis : 0;
-          const expandedRadius = s.radius + sticky;
-          let show;
-          if (radialCullRadius) {
-            // Distance to the tree's own center, plus only the small
-            // anti-flicker hysteresis margin — NOT + s.radius (each tree's
-            // own bounding-sphere size, which the box-cull path below adds
-            // deliberately). A shadewood's canopy bounding sphere can run
-            // several tiles wide on its own, so adding it here made the
-            // Tree Cull Radius slider's number bear little relation to the
-            // actual load-in distance (e.g. "5" behaving nothing like 5
-            // tiles). The distance fade (see below) already softens any
-            // mid-canopy pop/clip this used to guard against.
-            const chunkOverlap = isGrassChunk ? (s.xzRadius ?? s.radius) : 0;
-            show = Math.hypot(s.x - px, s.z - pz) <= radialCullRadius + sticky + chunkOverlap;
-          } else {
-            const dx = s.x - camX, dz = s.z - camZ;
-            const along = dx * viewX + dz * viewZ;
-            const side = Math.abs(dx * rightX + dz * rightZ);
-            show = along >= -(rearRange + expandedRadius) && along <= forwardRange + expandedRadius
-              && side <= halfWidth + expandedRadius;
-          }
+          const show = vegetationCorridorContains(s, obj.visible, basis);
           if (force || show !== obj.visible) obj.visible = show;
           if (isGrassChunk) continue;
 
@@ -23139,19 +23134,20 @@
               && revealTargets.some(t => window.ZoneTreeFade.isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
             let target = blocking ? TREE_FADE_OPACITY : 1;
             let outlineAllowed = true;
-            // Cloud Forest only (radialCullRadius implies it — see above):
-            // ramp opacity in over the outer band of the cull radius
-            // instead of popping a tree in solid the instant it crosses the
-            // cull sphere, and keep the (pricier) outline pass off outside
-            // its own closer radius regardless of the tree's own opacity.
-            if (radialCullRadius) {
-              const distFromPlayer = Math.hypot(s.x - px, s.z - pz);
-              const fadeStartAt = radialCullRadius * s_cloudForestFadeStartFrac;
-              if (distFromPlayer > fadeStartAt) {
-                const fadeSpan = Math.max(0.001, radialCullRadius - fadeStartAt);
-                target = Math.min(target, window.FormatUtils.clamp(1 - (distFromPlayer - fadeStartAt) / fadeSpan, 0, 1));
+            // Fade toward the camera corridor's *forward and side* edges,
+            // not an unrelated circle around the player. The outline budget
+            // follows the same tighter envelope.
+            if (basis.shortCloudForest) {
+              const dx = s.x - camX, dz = s.z - camZ;
+              const along = dx * basis.viewX + dz * basis.viewZ;
+              const side = Math.abs(dx * basis.rightX + dz * basis.rightZ);
+              const edge = Math.max(0, along / Math.max(0.001, basis.forwardRange),
+                side / Math.max(0.001, basis.halfWidth));
+              if (edge > s_cloudForestFadeStartFrac) {
+                const span = Math.max(0.001, 1 - s_cloudForestFadeStartFrac);
+                target = Math.min(target, window.FormatUtils.clamp((1 - edge) / span, 0, 1));
               }
-              outlineAllowed = distFromPlayer <= radialCullRadius * s_cloudForestOutlineFrac;
+              outlineAllowed = edge <= s_cloudForestOutlineFrac;
             }
             window.ZoneTreeFade.setTarget(obj, target, blocking);
             setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
@@ -26246,22 +26242,22 @@
       // ── Visual feature toggles (Settings tab) ────────────────────
       // Southern Cloud Forest-specific effects added in the same window as
       // Shoulder Cam's promotion out of experimental (mist cylinders, the
-      // zone's wide player-centered vegetation cull radius, and its dense
+      // zone's shorter camera-forward vegetation corridor, and its dense
       // instanced background forest along the north town-entrance edge) —
       // off switches for isolating which one (if any) is behind reported
       // choppiness/hitching specifically in that zone. Default on (no
       // change from current behavior); each is meant to be flipped off one
       // at a time to A/B test.
       let s_cloudForestFog = true;
-      let s_cloudForestWideCull = true;
+      let s_cloudForestShortCull = true;
       let s_cloudForestBgForest = true;
-      // Live Settings-tab slider value for the radial vegetation cull
+      // Live Settings-tab slider value for the short directional vegetation cull
       // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
       // vegCullRadiusTiles default (30) but is independently adjustable
       // without touching that config.
       let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
       // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
-      // updateZoneVegetationCulling's radialCullRadius branch. Fade start:
+      // updateZoneVegetationCulling's shortCloudForest branch. Fade start:
       // beyond this fraction of the radius a tree ramps from opaque (at the
       // fraction) down to fully transparent (at the radius) instead of
       // popping in solid the instant it enters the cull sphere. Outline:
@@ -26430,8 +26426,8 @@
           zi.scene.fog.density = s_cloudForestFog ? (EXTERIOR_ZONES.map_southern_cloud_forest?.fogDensity ?? 0.055) : 0;
         }
       });
-      document.getElementById('settingCloudForestWideCull')?.addEventListener('change', e => {
-        s_cloudForestWideCull = e.target.checked;
+      document.getElementById('settingCloudForestShortCull')?.addEventListener('change', e => {
+        s_cloudForestShortCull = e.target.checked;
       });
       document.getElementById('settingCloudForestBgForest')?.addEventListener('change', e => {
         s_cloudForestBgForest = e.target.checked;
@@ -26519,7 +26515,7 @@
           input.value = input.defaultValue;
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        debugLog('Cloud Forest development sliders restored to defaults (Tree Cull Radius: 30 tiles).', 'info');
+        debugLog('Cloud Forest development sliders restored (short cull: 21 forward by 19.2 wide at reach 30).', 'info');
       });
       // FPS Counter's checkbox is owned entirely by js/performance-debug.js
       // (window.PerfProfiler.setFpsEnabled, bound in installSettingsUI) —
@@ -31753,6 +31749,9 @@
         getActiveScene: window.GridTileAccessors.getActiveScene,
         getCurrentArea: () => currentArea,
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
+        getCloudForestFogRadiusTiles: () => s_cloudForestCullRadiusTiles, // Uses the same live value for near/far baked trees as the editor slider.
+        getVegetationCullMode: () => s_cloudForestShortCull ? 'short-camera' : 'normal-camera', // Recomputes baked visibility when the A/B mode changes.
+        isVegetationChunkInView: (sphere, wasVisible) => vegetationCorridorContains(sphere, wasVisible, zoneVegetationCullBasis()), // Baked-tree visibility cannot override the procedural vegetation gate.
       });
 
       window.FarmPanel?.init({

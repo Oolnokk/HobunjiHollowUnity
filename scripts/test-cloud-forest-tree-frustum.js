@@ -168,6 +168,30 @@ batchAt(-19).visible = true; // Simulate another wilderness-culling pass overwri
 root.CloudForestFog.update(0.016);
 assert.equal(batchAt(-19).visible, false, 'unchanged camera should restore the batching visibility decision');
 assert.equal(domLookups, initialLookups, 'idle frame should not update the developer panel');
+
+// The fog frame's baked-tree batcher must obey the SAME camera corridor as
+// the procedural vegetation culler. Otherwise its per-frame reassertion
+// undoes the ordinary cull's group.visible=false on the next frame.
+let corridorMode = 'short-camera'; // Simulates the Settings A/B toggle while the camera stays still.
+root.CloudForestFog.init({
+  THREE, player: { x: 0, y: 0 }, TILE: 1,
+  getCurrentArea: () => 'map_southern_cloud_forest',
+  isCloudForestArea: () => true,
+  getActiveScene: () => currentScene,
+  getCloudForestFogRadiusTiles: () => 34,
+  getVegetationCullMode: () => corridorMode,
+  isVegetationChunkInView: (sphere) => corridorMode !== 'short-camera' || sphere.x < 0,
+});
+root.CloudForestFog.update(0.016);
+assert.equal(batchAt(19).visible, false, 'short directional gate hides a chunk the baked batcher formerly restored');
+corridorMode = 'normal-camera';
+root.CloudForestFog.update(0.016);
+assert.equal(batchAt(19).visible, true, 'changing the corridor toggle refreshes a stationary baked-tree camera');
+corridorMode = 'short-camera';
+root.CloudForestFog.update(0.016);
+assert.equal(batchAt(19).visible, false, 're-enabling compact culling immediately hides the same tree');
+corridorMode = 'normal-camera';
+root.CloudForestFog.update(0.016);
 api.setNearRadiusTiles(24);
 assert.equal(right.mesh.visible, true, 'near high-detail GLB must be restored');
 assert.equal(right.farMesh.visible, true, 'LOD can still switch its original low-detail leaf');

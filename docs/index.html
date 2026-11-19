@@ -147,7 +147,7 @@
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261118blossomVases1"></script>
+  <script src="debug.js?v=20261119cfShortCull1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261116boneyKasaCfg1"></script>
@@ -193,7 +193,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261118pairedRig1"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261119hsmileLoader2"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261119cfShortCull1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -1874,15 +1874,15 @@
           </label>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Cloud Forest Wide Vegetation Cull</div>
-              <div class="settings-desc">Off: falls back to the normal camera-forward cull box every other zone uses. On: a circle around the player, sized by the radius slider below</div>
+              <div class="settings-name">Cloud Forest Short Directional Cull</div>
+              <div class="settings-desc">On: a narrower, shorter camera-forward vegetation corridor. Off: use the ordinary wilderness corridor for comparison</div>
             </div>
-            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestWideCull" checked><span class="toggle-slider"></span></span>
+            <span class="settings-toggle"><input type="checkbox" id="settingCloudForestShortCull" checked><span class="toggle-slider"></span></span>
           </label>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
-              <div class="settings-name">Tree Cull Radius</div>
-              <div class="settings-desc">How far (in tiles) around the player vegetation stays loaded while Wide Vegetation Cull is on</div>
+              <div class="settings-name">Tree Cull Reach</div>
+              <div class="settings-desc">Adjusts the short corridor: at 30, trees extend 21 tiles forward and 9.6 tiles to either side of the camera</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
               <input type="range" id="settingCloudForestCullRadius" min="5" max="40" step="1" value="30" style="align-self:center">
@@ -2934,7 +2934,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261119h3bd54dd"></script>
+  <script src="game.js?v=20261119cfShortCull1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

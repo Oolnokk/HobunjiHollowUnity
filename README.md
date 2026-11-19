@@ -69,25 +69,25 @@ follow camera is still reachable by unchecking the toggle.
 
 ## Southern Cloud Forest fog
 
-The Southern Cloud Forest (`map_southern_cloud_forest`) sets its own zone
-config in `EXTERIOR_ZONES` (`docs/game.js`) to make the fog both thicker and
-actually present, and to make its vegetation cull radial instead of
-directional:
+The Southern Cloud Forest (`map_southern_cloud_forest`) uses denser white
+fog and a **shorter camera-forward vegetation corridor** than the other wilderness
+zones. The Cloud Forest-specific corridor remains configurable for performance tests:
 
 - **`fogDensity: 0.055`** vs. every other zone's shared `0.018`, read by
   `buildZoneScene`. Thematically, a *cloud* forest with no clouds in it was an
   obvious gap. `fogColor` is white (`0xffffff`) instead of every other zone's
   dark tint, so the mist reads as bright overcast weather rather than gloom.
-- **`vegCullRadiusTiles: 34`** — `updateZoneVegetationCulling` uses its
-  presence to swap the other zones' camera-forward/rear/width box for a plain
-  circle centered on the *player*. Shoulder Cam lets the camera actually look
-  down the length of the forest now, which had made that box's forward pop-in
-  edge (`VEG_CULL_FORWARD_TILES`, 42 tiles) visible; 34 tiles is where
-  `fogDensity` above has already made `FogExp2` ~97% opaque, so the (now
-  uniform-in-every-direction) pop-in ring stays hidden in the mist. A full
-  circle that size does mean more renders behind/beside the player than the
-  old forward-biased box did — an acceptable trade since the fog is now doing
-  the work that box used to.
+- **`vegCullRadiusTiles: 30`** is the initial dev slider setting. With the
+  short-directional toggle enabled, it produces a 21-tile forward corridor,
+  9.6 tiles on either side and a 2-tile rear margin (versus the normal
+  42-forward / 15-per-side corridor). The visibility gate uses XZ bounds for
+  tall trees instead of extending the horizontal reach by their full height.
+  The outer corridor bands fade tree opacity and omit their outline passes.
+  Disabling the toggle restores the ordinary camera-forward corridor; it
+  does **not** enable the old player-centered 30-tile circle.
+  `CloudForestTreeBatcher` uses the same corridor gate in baked-tree mode,
+  so its fog-frame refresh cannot restore groups hidden by the vegetation
+  culler. Fog-cylinder radii remain independently adjustable.
 - **`docs/js/cloud-forest-fog.js`** (`window.CloudForestFog`) adds three
   large, translucent white cylinders centered on the player — scaled to
   0.42×/0.70×/1.00× `vegCullRadiusTiles` — that the camera always renders from
