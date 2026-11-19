@@ -526,7 +526,9 @@
             if(!texture){texture=new THREE.TextureLoader().load(torchSpriteUrl);torchSpriteTextures.set(THREE,texture);}
             if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
             if(THREE.NearestFilter)texture.magFilter=THREE.NearestFilter;
-            const art=new THREE.Mesh(new THREE.PlaneGeometry(w*.98,h*.98),
+            const spriteHeight=h*(.70/.72); // The shared authored sprite is .70 high for a .72 mount before fixture scaling.
+            const spriteWidth=spriteHeight*(.26/.70); // Keep the canonical torch PNG silhouette instead of stretching it to fixture width.
+            const art=new THREE.Mesh(new THREE.PlaneGeometry(spriteWidth,spriteHeight),
               new THREE.MeshBasicMaterial({map:texture,transparent:true,alphaTest:.1,
                 side:THREE.DoubleSide,depthWrite:true,toneMapped:false}));
             art.name='wall_torch_actual_handheld_png';
@@ -535,7 +537,7 @@
             tilt.name='wall_torch_handheld_sprite';
             tilt.position.set(0,-h*.42,.23);
             tilt.rotation.x=Math.PI/6; // +X pitches the torch's upper end outward toward the room.
-            art.position.set(0,h*.49,.005); // Rotating around the bottom handle keeps it seated in its 3D socket.
+            art.position.set(0,spriteHeight*.5,.017*(h/.72)); // Identical scaled handle pivot to the shared authored renderer.
             art.raycast=()=>{};
             tilt.add(art);
             mount.add(tilt);
