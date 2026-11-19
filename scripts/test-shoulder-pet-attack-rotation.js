@@ -127,13 +127,14 @@ const playerMesh = {
   updateWorldMatrix() {},
   getWorldQuaternion() { return playerQuaternion.clone(); },
   localToWorld(point) { return point.applyQuaternion(playerQuaternion).add(playerPosition); },
+  worldToLocal(point) { return point.sub(playerPosition).applyQuaternion(playerQuaternion.clone().invert()); },
 }; // Production solver sees a rotated body, but must use the head follow frame for orientation.
 const playerNeckJoint = {
   isObject3D: true,
   updateWorldMatrix() {},
   getWorldQuaternion() { return yaw(31); },
 }; // Different from the body frame to catch mistaken head/body orientation coupling.
-const skinnedPerchPosition = new TestVector3(5.3, 8.7, -2.6); // Actual live-animated shoulder target, deliberately not the static local-coordinate fallback.
+const skinnedPerchPosition = new TestVector3(5.3, 8.7, -2.6); // Actual live-animated shoulder target, on the opposite side from the authored X, as when the portrait art is flipped.
 const solverFactory = new Function('THREE', 'playerMesh', 'playerNeckJoint', 'window',
   's_shoulderPetRotationSource', 's_invertShoulderPetRotationSource',
   's_cancelShoulderPetRotationalOffset',
@@ -211,8 +212,10 @@ for (const skinned of [true, false]) {
         assert.equal(pose.shoulderFacingTurnDeg, neutral.shoulderFacingTurnDeg, 'lean leaves the selected half-turn alone');
         const heading = new TestVector3(0, 0, 1).applyQuaternion(pose.worldQuaternion);
         const ownerRight = new TestVector3(1, 0, 0).applyQuaternion(playerQuaternion);
-        assert.equal(heading.x * ownerRight.x + heading.z * ownerRight.z > 0, facingInward,
-          'the rendered nose points toward the midline from this left shoulder exactly in the inward pose');
+        const renderedPerchX = playerMesh.worldToLocal(perchWorld.clone()).x; // Check the visible shoulder, which flips when the pixel resolver returns the other side.
+        const lateralHeading = heading.x * ownerRight.x + heading.z * ownerRight.z;
+        assert.equal(lateralHeading * renderedPerchX < 0, facingInward,
+          'the nose points toward the midline in the inward pose, including on the UV-flipped shoulder');
         assert.equal(pose.shoulderLeanDeg, lean, 'runtime exposes the exact applied lean');
         if (lean !== 0) {
           assert.ok(pose.worldPosition.distanceTo(neutral.worldPosition) > 1e-5,

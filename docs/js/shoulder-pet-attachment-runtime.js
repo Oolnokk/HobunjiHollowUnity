@@ -32,6 +32,7 @@
     const neutralGripYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(61)); // Stock shoulder yaw gives neutral grip rigs a readable side silhouette.
     const petHeading = new THREE.Vector3(); // The animal's nose points along local +Z; the two cards face along ±X.
     const ownerLateral = new THREE.Vector3(); // World-space lateral ray including the owner's actual reflection.
+    const perchInOwnerSpace = new THREE.Vector3(); // Reads the live perch side after the source pixel follows the portrait flip.
     const ownerOrigin = new THREE.Vector3(); // Subtracted from the lateral point to obtain a direction.
     function shoulderLateralHeading(owner, rotation) {
       owner.localToWorld(ownerLateral.set(1, 0, 0));
@@ -62,6 +63,7 @@
       const perchFrame = window.PNGPlaneAvatar?.resolveSkinnedPixelWorldFrame?.(playerMesh, perch.sourcePixel);
       const perchWorldPosition = perchFrame?.position
         || playerMesh.localToWorld(new THREE.Vector3(perch.x || 0, perch.y || 0, perch.z || 0)); // Position always prefers the authored live-skinned pixel, independent of the rotation dropdown.
+      const renderedPerchX = perchFrame ? playerMesh.worldToLocal(perchInOwnerSpace.copy(perchWorldPosition)).x : perch.x; // Use the side the pet is actually perched on after portrait UV mirroring.
       const facingTowardPlayerCenter = pet?.__hobunjiShoulderFacingInward === true; // Desired heading for this held observation pose.
       let selectedRotationQuaternion = null; // Receives the world-space frame chosen by the Settings dropdown below.
       let resolvedRotationSource = s_shoulderPetRotationSource;
@@ -110,10 +112,10 @@
       let authoredFacesInward = false; // Identifies which of the two authored half-turns points toward the carrier's midline.
       if (!s_cancelShoulderPetRotationalOffset) {
         worldQuaternion.multiply(authoredRotationOffset);
-        if (perch.x) {
+        if (renderedPerchX) {
           const authoredLateralHeading = petHeading.set(0, 0, 1).applyQuaternion(authoredRotationOffset).x; // Only neutral rigs need an added yaw; head animation alone cannot enable it.
           if (Math.abs(authoredLateralHeading) < 0.05) worldQuaternion.multiply(neutralGripYaw);
-          authoredFacesInward = shoulderLateralHeading(playerMesh, worldQuaternion) * perch.x < 0;
+          authoredFacesInward = shoulderLateralHeading(playerMesh, worldQuaternion) * renderedPerchX < 0;
         }
       }
       const shoulderFacingTurnDeg = facingTowardPlayerCenter !== authoredFacesInward ? 180 : 0;
