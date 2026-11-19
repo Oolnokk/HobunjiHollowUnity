@@ -15832,8 +15832,12 @@ clearAnimationActors = function(...args) {
       showParityV1554();
       return result;
     };
-    window.MultiAvatarAnimationAuthor.creatureGameplayParity = parityReadoutV1554;
-    window.MultiAvatarAnimationAuthor.canonicalCreatureProfileCount = profileCountV1554;
+    const publicApiV1554 = window.MultiAvatarAnimationAuthor; // Original startup exports captured the old function objects before V15.54 installed.
+    publicApiV1554.addCreature = addCreatureAnimationActor; // External/browser-smoke callers now receive padding, alias and class fixes too.
+    publicApiV1554.importProject = importAnimationProjectData; // Autosave and explicit project imports share the final guarded recovery path.
+    publicApiV1554.setMode = setAnimationAuthorMode; // Restored mode state cannot skip reapplying correct preview dimensions.
+    publicApiV1554.creatureGameplayParity = parityReadoutV1554;
+    publicApiV1554.canonicalCreatureProfileCount = profileCountV1554;
     syncAnimationAuthorFloorGridV1538();
     log('V15.54 animal parity: ' + profileCountV1554 + ' canonical game profiles, billboard Z-width, authored/Auto floor lifts.');
   } else log('Creature gameplay parity script missing; preview size and floor cannot be verified.', 'warn');
