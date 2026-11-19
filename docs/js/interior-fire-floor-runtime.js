@@ -280,8 +280,8 @@
       flame.spread = (Number(source.spread) || .3) * scale;
       flame.gravity = (Number(source.gravity) || -.05) * scale;
       flame.lifetime = Math.max(.2, (Number(source.lifetime) || .72) * .7);
-      flame.rate = Math.max(16, Math.round((Number(candle.rate) || 8) * tips.length));
-      const capacity = Math.max(tips.length * 3, Math.ceil(flame.rate * flame.lifetime) + tips.length);
+      flame.rate = Math.max(16, Math.round(tips.length * 3 / flame.lifetime)); // Roughly three live canonical particles per wick, preserving the old cluster's GPU/CPU budget.
+      const capacity = Math.ceil(flame.rate * flame.lifetime) + 3; // One draw/particle buffer per cluster, not sixteen per-wick draw calls.
       state.visual = authored.createEmitterVisual(group, flame, capacity);
       state.source = state.visual ? 'authored-campfire' : 'emitter-unavailable';
     }).catch(error => {
