@@ -109,7 +109,7 @@
     document.body.appendChild(_arcBd);
     const activeTool = deps.getActiveTool();
     const backBurden=window.Shattercasks?.backCarriedInfo?.(); // Adds one virtual entry without modifying saved equipment slots.
-    const slots=['adventuringGateway',...deps.WHEEL_SLOTS,...(backBurden?['backBurden']:[])]; // Non-default gateway sits counterclockwise of the first regular tool.
+    const slots=['adventuringGateway',...(backBurden?['backBurden']:[]),...deps.WHEEL_SLOTS]; // Carryables sit between the Adventuring gateway and Shovel; regular tools retain their order.
     const n=slots.length,step=n>1?(ARC_S-ARC_E)/(n-1):0;
     slots.forEach((slot, i) => {
       const deg = ARC_S - i * step;
@@ -123,7 +123,7 @@
       _arcSlots.push({ angle: deg, el, data: slot });
       if (activeTool === slot) _arcActive = i;
     });
-    if (_arcActive < 0) _setActive(1); // A selected adventuring tool does not make this non-default gateway the default.
+    if (_arcActive < 0) _setActive(Math.max(0, slots.indexOf(deps.WHEEL_SLOTS[0]))); // Default to the first real tool, not the optional burden or gateway.
   }
 
   function _openAdventuringArc() {
