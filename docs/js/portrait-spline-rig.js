@@ -612,7 +612,6 @@
     };
     const setHood = fit => {
       if (fit === hoodFit) return;
-      const previous = hoodFit;
       hoodFit = fit || null;
       if (hoodFit && !occlusion) {
         occlusion = hoodOcclusion(THREE, frontMesh.material);
@@ -620,10 +619,10 @@
         frontMesh.userData.disposeSplineHood = () => occlusion.dispose();
       }
       occlusion?.update(hoodFit, width, height);
-      const before = previous?.overlap, after = hoodFit?.overlap;
-      if (before && after ? before.some((value, i) => value !== after[i]) : (before || after)?.some(Boolean)) {
-        applyWind({ x: lastX, y: lastY, z: lastZ }, true);
-      }
+      // A new aperture can change even when the hood overlap flags do not.
+      // Re-seat every affected strand vertex immediately instead of waiting for the next gust.
+      applyWind({x:Number.isFinite(lastX)?lastX:0,y:Number.isFinite(lastY)?lastY:0,
+        z:Number.isFinite(lastZ)?lastZ:0},true);
     };
     applyWind({ x: 0, y: 0, z: 0 }, true);
     if (front.hoodFit) setHood(front.hoodFit);
