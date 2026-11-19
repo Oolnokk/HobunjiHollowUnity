@@ -94,6 +94,7 @@ const server=http.createServer((req,res)=>{
     assert(natural.tip>natural.upper&&natural.tip>0,
       'new cosmetics start with natural, tip-led poses based on actual strand length: '+JSON.stringify(natural));
     assert(natural.follow>0&&!natural.hasOldGrip,'authored head pixels alone determine the hard mask');
+    await page.locator('details:has(#json) > summary').click(); // Open the authoring JSON panel before touch-style typing.
     const rigBeforeDraft=await page.locator('#json').inputValue();
     await page.locator('#json').fill('{"draft":');
     await page.locator('#testStrength').evaluate(input=>{
