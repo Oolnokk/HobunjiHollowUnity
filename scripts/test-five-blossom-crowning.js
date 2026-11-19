@@ -155,16 +155,79 @@ function readyHunt(){
   assert.equal(W.FestivalBlossomHunt.menuStatus().ready,true,'all five real blossoms unlock Father Hunundi turn-in');
   area='town';tile={area,col:33,row:40};
 }
+// The production NPC entry route must offer the hunt through normal Talk.
+let queuedDialogue = false; // Queued scenes still have higher priority.
+let dialogueClosed = false; // The ceremony must start after dialogue releases its lock.
+let lastChoice = null; // Captures the visible synthetic dialogue options.
+let lastConversation = ''; // Captures the ordinary/choice route for mobile-like diagnostics.
+let pendingAward = null; // Holds the true async hunt transaction triggered by a selected option.
+const dialogueHandlers = new Map(); // Mirrors DialogueContent's custom action registry.
+W.DialogueContent = {
+  hasQueuedConversationTree: () => queuedDialogue,
+  beginNpcConversation(rec) { lastConversation = 'chat:' + rec.id; },
+  beginSyntheticChoice(rec) { lastConversation = 'choice:' + rec.id; },
+  renderDlgNode(node) { lastChoice = node; },
+  registerActionHandler(type, handler) { dialogueHandlers.set(type, handler); return true; },
+};
+W.ProceduralTasks = {
+  getTurnInReadyTaskForNpc: () => null,
+  async maybeProposeRequest() { return null; },
+  maybeOfferFavor() { return null; },
+};
+W.FestivalSystem = {
+  receiveNpcReward(walker, action) {
+    assert.equal(action, 'festival_npc_gift', 'Talk reuses the existing festival reward action');
+    assert.strictEqual(walker, walkers[0], 'the actual nearby Hunundi walker is passed through');
+    assert.equal(dialogueClosed, true, 'dialogue closes before crowning starts');
+    pendingAward = W.FestivalBlossomHunt.turnInAtHunundi(walker);
+    return pendingAward;
+  },
+};
+load('docs/js/npc-dialogue-entry-router.js');
+W.NpcDialogueEntryRouter.init({
+  ITEM_DEFS: {}, isGeneralStoreNpcOnDuty: () => false, isCarpenterNpcOnDuty: () => false
+});
+async function presentViaDialogue(walker) {
+  lastChoice = null; pendingAward = null; dialogueClosed = false;
+  assert.equal(await W.NpcDialogueEntryRouter.route(walker.rec, walker), true);
+  assert.equal(W.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'five-blossoms-turn-in');
+  assert.equal(lastConversation, 'choice:' + walker.rec.id);
+  assert.equal(lastChoice?.type, 'choice');
+  assert(lastChoice.choices.some(choice => choice.actions?.some(action => action.type === 'startChat')),
+    'normal Chat remains available alongside the hand-in');
+  const present = lastChoice.choices.find(choice => choice.actions?.[0]?.type === 'presentFiveBlossoms'); // Visible player-facing turn-in option.
+  assert.match(present?.label || '', /Present the Five Blossoms/);
+  const action = present.actions[0]; // Registered feature action, dispatched by the real dialogue core.
+  const handler = dialogueHandlers.get(action.type); // Same handler selected by an NPC dialogue choice.
+  assert.equal(typeof handler, 'function');
+  assert.equal(handler(action, { npc: walkers[1].rec })?.ok, false,
+    'a stale/mismatched NPC context cannot turn in blossoms');
+  handler(action, { npc: walker.rec });
+  assert.equal(pendingAward, null, 'award does not start before conversation closes');
+  dialogueClosed = true;
+  await Promise.resolve();
+  assert(pendingAward, 'clicking Present begins the real crown transaction');
+  return pendingAward;
+}
 async function main(){
-  login('owner');readyHunt();
+  login('owner');
+  await W.NpcDialogueEntryRouter.route(walkers[0].rec, walkers[0]);
+  assert.equal(W.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'ordinary',
+    'before five blossoms, Father Hunundi still starts normal dialogue');
+  readyHunt();
+  queuedDialogue = true;
+  await W.NpcDialogueEntryRouter.route(walkers[0].rec, walkers[0]);
+  assert.equal(W.NpcDialogueEntryRouter.debugSnapshot().lastDecision, 'queued',
+    'queued authored scenes retain priority');
+  queuedDialogue = false;
   const ownerBefore=equipment.devWornClothing().hat;
   const ownerHood=equipment.devWornClothing().hood;
   failNextCompletionSave=true;
-  const failedCompletion=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  const failedCompletion=await presentViaDialogue(walkers[0]);
   assert(!failedCompletion.ok,'a failed completion save reports failure without eating flowers');
   assert.equal(cutscenes,1,'one stage ceremony played before the failed quest save');
   assert.equal(equipment.ownsFiveBlossomCrown(1156),true,'the crown was saved even if the later quest write failed');
-  const first=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  const first=await presentViaDialogue(walkers[0]);
   assert(first.ok&&first.first,'retry finishes the first Finder reward');
   assert.equal(cutscenes,1,'retry does not replay the ceremony after a real crown was already saved');assert.match(announcements[0],/first to complete our challenge this year/);
   assert.equal(getMeta().worlds[0].fiveBlossomsFinders['1156'].characterId,'owner');
@@ -274,7 +337,7 @@ async function main(){
   equipment.applyGearClothingToPlayerData({equippedCosmetics:[],appearance:{bodyColors:{}}});
   assert.equal(gearSaves,beforeFirstPortraitMigration+1,'subsequent portrait refreshes never resave the already migrated crown');
   login('farmhand');readyHunt();
-  const second=await W.FestivalBlossomHunt.turnInAtHunundi(walkers[0]);
+  const second=await presentViaDialogue(walkers[0]);
   assert(second.ok&&!second.first,'later farmhand receives crown without fanfare');
   assert.equal(cutscenes,1,'only one cinematic per shared world-year');
   assert.equal(equipment.devWornClothing().hat?.label,'Five Blossom Crown');

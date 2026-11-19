@@ -32,6 +32,34 @@
       dc.beginNpcConversation(rec);
       return true;
     }
+    // The Five Blossoms hand-in must be available through ordinary Talk, not just
+    // the secondary festival NPC action. Preserve the queued/urgent story priorities above.
+    if (rec?.id === 'father_hunundi_hodu' && window.FestivalBlossomHunt?.menuStatus?.().ready
+        && typeof dc.registerActionHandler === 'function'
+        && typeof window.FestivalSystem?.receiveNpcReward === 'function') {
+      dc.registerActionHandler('presentFiveBlossoms', (_action, context) => {
+        if (context.npc?.id !== rec.id) return { ok: false, message: 'Only Father Hunundi can receive the blossoms.', skipNav: true };
+        // The dialogue core closes this synthetic choice after the handler; launch the
+        // ceremony on the next microtask, once the dialogue lock is released.
+        Promise.resolve().then(() => window.FestivalSystem.receiveNpcReward(walker, 'festival_npc_gift'))
+          .catch(error => {
+            console.warn('[five-blossoms] Dialogue hand-in failed', error);
+            window.__farmLog?.('[five-blossoms] Dialogue hand-in failed: ' + String(error?.message || error), 'error');
+          });
+        return null;
+      });
+      lastDecision = 'five-blossoms-turn-in';
+      dc.beginSyntheticChoice(rec);
+      dc.renderDlgNode({
+        type: 'choice',
+        text: 'All five blossoms! Shall we present them to everyone?',
+        choices: [
+          { label: 'Present the Five Blossoms.', actions: [{ type: 'presentFiveBlossoms' }] },
+          { label: 'Just chat.', actions: [{ type: 'startChat' }] },
+        ],
+      });
+      return true;
+    }
     // From the original game.js conversation dispatch: preserve the relative order
     // of turn-ins, coaching, fresh requests, favors and station/shop shortcuts.
         // Task turn-in — checked before everything else (including a fresh
