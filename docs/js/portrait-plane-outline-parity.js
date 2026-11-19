@@ -152,7 +152,7 @@
   }
   installSkinnedPixelCpuParity();
 
-  const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = 4; // Mirrors js/png-plane-outline-occluder.js's LAYER (game.js's _markPngPlane/depth replay).
+  const PNG_PLANE_OUTLINE_OCCLUDER_LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Mirrors js/png-plane-outline-occluder.js's LAYER (game.js's _markPngPlane/depth replay).
   const MAX_SNAPSHOT_AGE_MS = 160; // Allows the adjacent base->depth-replay sequence without accepting old frames.
   const RESCAN_INTERVAL_MS = 100; // game.js's own _markPngPlane call (which enables the layer bit below) runs synchronously right after build, but poll briefly in case that ordering ever changes.
   const RESCAN_ATTEMPTS = 20; // ~2s.

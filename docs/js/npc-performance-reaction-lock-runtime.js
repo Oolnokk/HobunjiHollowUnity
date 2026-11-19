@@ -136,15 +136,10 @@
     return state.plannerDeps.listNpcWalkersInArea(area) || [];
   }
 
-  function installRenderHook() {
-    const proto = global.THREE?.WebGLRenderer?.prototype;
-    if (state.renderHookInstalled || !proto || typeof proto.render !== 'function') return;
-    const original = proto.render;
-    if (original.__npcPerformanceReactionLockRenderHook) {
-      state.renderHookInstalled = true;
-      return;
-    }
-    function performanceReactionLockRender(scene, camera) {
+  // Hides the social look/dance targets of instrument-locked NPCs from the
+  // social presentation hooks that run inside this one, for one render (or one
+  // world frame); restoreLockedSocialTargets() puts them back.
+  function hideLockedSocialTargets() {
       const hiddenTargets = [];
       for (const walker of currentWalkers()) {
         patchWalkerFacing(walker);
@@ -163,13 +158,44 @@
         state.renderSuppressions++;
         noteSuppression(walker.rec?.id);
       }
-      try {
-        return original.call(this, scene, camera);
-      } finally {
-        for (const snapshot of hiddenTargets) {
+      return hiddenTargets;
+  }
+
+  function restoreLockedSocialTargets(hiddenTargets) {
+        for (const snapshot of hiddenTargets || []) {
           if (snapshot.hadSocialLookAt) snapshot.target.socialLookAt = snapshot.socialLookAt;
           if (snapshot.hadSocialDance) snapshot.target.socialDance = snapshot.socialDance;
         }
+  }
+
+  function installRenderHook() {
+    if (state.renderHookInstalled) return;
+    // Once per world frame, outside NpcSocialInhibition (js/render-hooks.js order).
+    if (global.RenderHooks?.register) {
+      global.RenderHooks.register({
+        id: 'npc-performance-reaction-lock',
+        owner: 'npc-performance-reaction-lock-runtime.js',
+        order: global.RenderHooks.ORDER.NPC_PERFORMANCE_LOCK,
+        scope: 'frame',
+        before: () => hideLockedSocialTargets(),
+        after: (_ctx, hiddenTargets) => restoreLockedSocialTargets(hiddenTargets),
+      });
+      state.renderHookInstalled = true;
+      return;
+    }
+    const proto = global.THREE?.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js.
+    if (!proto || typeof proto.render !== 'function') return;
+    const original = proto.render;
+    if (original.__npcPerformanceReactionLockRenderHook) {
+      state.renderHookInstalled = true;
+      return;
+    }
+    function performanceReactionLockRender(scene, camera) {
+      const hiddenTargets = hideLockedSocialTargets();
+      try {
+        return original.call(this, scene, camera);
+      } finally {
+        restoreLockedSocialTargets(hiddenTargets);
       }
     }
     performanceReactionLockRender.__npcPerformanceReactionLockRenderHook = true;

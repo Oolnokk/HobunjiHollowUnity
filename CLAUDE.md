@@ -39,6 +39,16 @@ old call site that the existing extractions do.
 This is a standing instruction, not a one-off: it applies to every session
 that edits `game.js`, not just the one it was added in.
 
+## Visual code
+
+Any change that affects what is drawn starts at
+`docs/architecture/visual-render-pipeline.md`: pass order and owners
+(`js/world-render-pipeline.js`), render-time hooks (`js/render-hooks.js` —
+never wrap `renderer.render` yourself), named layers (`js/render-layers.js`),
+render scopes, and the capture/debug calls that show what each pass drew.
+Extracting more visual clusters out of `game.js` into owners listed there is
+exactly the kind of opportunistic decoupling described above.
+
 ## Headless testing
 
 Use the `headless-game-test` skill before claiming a rendering/behavior

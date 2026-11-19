@@ -41,20 +41,20 @@
   }; // Reused only inside the synchronous classifier to avoid one hint-object allocation per mesh.
 
   const LEGACY_HELD_RENDER_ORDER = 1.5;
-  const DEFAULT_LAYER = 0;
-  const SHELL_LAYER = 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
+  const DEFAULT_LAYER = globalThis.HobunjiRenderLayers?.WORLD ?? 0; // Named in js/render-layers.js.
+  const SHELL_LAYER = globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
   const SHELL_MASK = (1 << SHELL_LAYER) >>> 0;
-  const MATERIAL_ID_LAYER = 3;
-  const PNG_OCCLUDER_LAYER = 4;
-  const FRONT_PORTRAIT_MASK_LAYER = 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
+  const MATERIAL_ID_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // Named in js/render-layers.js.
+  const PNG_OCCLUDER_LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Named in js/render-layers.js.
+  const FRONT_PORTRAIT_MASK_LAYER = globalThis.HobunjiRenderLayers?.FRONT_PORTRAIT_MASK ?? 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
   const FRONT_PORTRAIT_STENCIL_MASK = 0xFC; // Bits 2..7 identify up to 63 distinct owners; bit 0 stays reserved for water tint.
   const FRONT_PORTRAIT_MAX_OWNERS = 63; // Stencil owner IDs share one draw without hiding weapons in front of unrelated NPCs.
   const FRONT_PORTRAIT_MASK = (1 << FRONT_PORTRAIT_MASK_LAYER) >>> 0; // The camera layer for the one front-portrait stamp pass.
-  const PORTRAIT_WATER_MASK = 1 << 25; // Temporary colorless silhouette for eligible front and rear actor art.
-  const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
-  const WATER_REPLAY_LAYER = 27;
-  const GROUND_REPLAY_LAYER = 28;
-  const HELD_OVERLAY_LAYER = 29;
+  const PORTRAIT_WATER_MASK = 1 << (globalThis.HobunjiRenderLayers?.PORTRAIT_WATER_MASK ?? 25); // Temporary colorless silhouette for eligible front and rear actor art.
+  const FOOT_WATER_MASK_LAYER = globalThis.HobunjiRenderLayers?.FOOT_WATER_MASK ?? 26; // Used only to stamp procedural feet that should remain subject to translucent water.
+  const WATER_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.WATER_REPLAY ?? 27; // Named in js/render-layers.js.
+  const GROUND_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.GROUND_REPLAY ?? 28; // Named in js/render-layers.js.
+  const HELD_OVERLAY_LAYER = globalThis.HobunjiRenderLayers?.HELD_OVERLAY ?? 29; // Named in js/render-layers.js.
   const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;

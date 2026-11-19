@@ -1,5 +1,59 @@
 # Performance investigation log
 
+## 19 Nov 2026: render wrapper chain → RenderHooks; world pipeline extracted (headless, measured)
+
+**What a wilderness frame was doing.** A quiet Western Slope frame makes **17 native
+`renderer.render` calls** (main pass, 5 held-object replays, PNG depth, shell + 3 x-ray
+replays, mist, 4 composite quads, world text) and ~158 draws; 80 draws are the main
+pass. About 25 modules had monkey-patched `renderer.render` /
+`WebGLRenderer.prototype.render`, and every one of them ran on all 17 calls. The
+player-body composer recomposed the body, re-ran the camera deadzone and head aim and
+re-skinned the pants twice **per pass** (~10 world-scene passes a frame). In a 20 s CPU
+profile the chain between the outermost wrapper and three.js was ~24% of `gameLoop`'s JS.
+`held-object-render-order.js`'s `unwrapRendererRender` stops at the onboarding wrapper (no
+`__hobunji*Original` marker), so its "raw" replays also went through the whole lower chain.
+
+**Changes.**
+- `js/render-hooks.js` (`RenderHooks`) is the prototype base render; ten wrappers became
+  registered hooks (composer, drunk/bandit sway, crop sprite art / billboard / ready
+  presentation, heftroot, held-seed reticle, death marks, NPC social inhibition,
+  performance lock). All use `scope: 'frame'`: applied once on the first world-scene pass,
+  undone at `endWorldFrame`. Outside a world frame they fall back to per-render.
+  `RenderHooks.setFrameScopeEnabled(false)` is the A/B switch; `getDebug()` lists
+  calls/applies/skips/errors per hook.
+- `js/world-render-pipeline.js` owns `renderWorldPasses` (now `renderFrame`), the outline
+  materials/targets/composite and the six render scopes, with `captureFrame()` for a
+  per-pass draw list. `js/render-layers.js` names every layer bit. `js/zone-vegetation-cull.js`
+  took the corridor cull out of `game.js` (no per-tree closure allocation).
+- `action-arch-icons.js` replaced a document-wide `querySelectorAll` (up to 10×/s) with ID
+  lookups and a live `arc-slot` collection. `wild-berries.js` shares one material per berry
+  colour so berry clusters can join prop batches (they were keyed by per-bush material id).
+
+**Measured** (headless SwiftShader, 480×270, same save and spot, ~180 frames each; JS only,
+GL time is not representative):
+
+| Per frame | Before | After |
+| --- | --- | --- |
+| Main-thread JS (incl. GC) | 17.67 ms | 16.19 ms (−8%) |
+| `renderWorldPasses` inclusive | 7.51 ms | 6.19 ms (−18%) |
+| Wrapper chain above three.js `render` | 3.38 ms | 2.01 ms (−41%) |
+| Arch-icon static refresh | 0.73 ms | 0.04 ms |
+| Pants re-skin (`handle.update`) | 0.37 ms | 0.15 ms |
+| Draws | 158 | 157 |
+
+`RenderHooks.getDebug()` over 10 frames: every hook `applies = 10`, `skips = 160`
+(previously each ran 170 times). **Pixels:** rendering the identical frozen frame with
+frame scope on vs off differs in ~1,300–1,400 of 129,600 px, all at the player's
+feet/leg edges where the old per-pass recomposition left the PNG-depth and x-ray replay
+passes with a slightly different pose than the main pass; frame-scope vs frame-scope is
+0 px. **Not measured:** real-device FPS. On a phone the JS saving should scale with CPU
+speed; compare with `RenderHooks.setFrameScopeEnabled(false)` on the same view.
+
+**Leads not taken:** `refreshActionBar` runs every frame by design and rebuilds inventory
+stacks (~0.5 ms here); the held-object replays remain the largest extra draw source; 15
+rain/blizzard planes are separate transparent draws (merging them would change their
+depth sort against the player sprite).
+
 ## 19 Nov 2026: actual Chrome CPU profile — repeated scene traversals
 
 Inspected the attached `Trace-20261118T215416.json.gz` as a sampled Chrome

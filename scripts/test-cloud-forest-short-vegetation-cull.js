@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// Exercises game.js's actual vegetation culling functions without booting WebGL.
+// Exercises the shipped vegetation corridor (docs/js/zone-vegetation-cull.js,
+// extracted from game.js) through its real init(deps) API without WebGL.
 // The baked tree batcher uses the same corridor gate via CloudForestFog.init.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,15 +10,9 @@ const vm = require('node:vm');
 
 const game = fs.readFileSync('docs/game.js', 'utf8');
 const html = fs.readFileSync('docs/index.html', 'utf8');
-const start = game.indexOf('      // The camera corridor is shared with the baked-tree chunk culler.');
-const end = game.indexOf('      // ── Lighting ─', start);
-assert(start > -1 && end > start, 'the shipped game retains the authoritative vegetation corridor');
+const source = fs.readFileSync('docs/js/zone-vegetation-cull.js', 'utf8');
 
 const state = {
-  VEG_CULL_FORWARD_TILES: 42,
-  VEG_CULL_WIDTH_TILES: 30,
-  VEG_CULL_REAR_TILES: 2,
-  VEG_CULL_HYSTERESIS_TILES: 1,
   currentArea: 'map_southern_cloud_forest',
   EXTERIOR_ZONES: { map_southern_cloud_forest: { cloudForest: true }, map_western_slope: {} },
   s_cloudForestShortCull: true,
@@ -27,33 +22,52 @@ const state = {
   camera: { position: { x: 0, z: 0 } },
   camTargetX: 0, camTargetZ: 1,
   player: { x: 0, y: 0 },
-  TILE: 1,
-  _isZoneArea: () => true,
-  _zoneScenes: new Map(),
-  companionObjects: [],
-  activeCameraMode: 'normal',
-  SHOULDER_SURF_MODE: 'shoulder',
-  OCCLUSION_XZ_RADIUS_MUL: 1,
-  TREE_FADE_OPACITY: 0.4,
-  window: { FormatUtils: { clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)) } },
-  setTreeOutlineEnabled(obj, enabled) { obj.outline = enabled; },
+  zoneScenes: new Map(),
 };
-const fades = new Map(); // Tracks the real game function's requested tree opacity and reset.
-state.window.ZoneTreeFade = {
-  setTarget(obj, opacity, blocking) { fades.set(obj, { opacity, blocking }); },
-  reset(obj) { fades.delete(obj); },
-  isBetweenCameraAndPlayer2D() { return false; },
+const fades = new Map(); // Tracks the real module's requested tree opacity and reset.
+const windowObject = {
+  ZoneTreeFade: {
+    init() {},
+    setTarget(obj, opacity, blocking) { fades.set(obj, { opacity, blocking }); },
+    reset(obj) { fades.delete(obj); },
+    isBetweenCameraAndPlayer2D() { return false; },
+  },
 };
-vm.runInNewContext(game.slice(start, end) + `
-  globalThis.cull = { zoneVegetationCullBasis, vegetationCorridorContains, updateZoneVegetationCulling };
-`, state, { filename: 'game.js:vegetation-corridor' });
+vm.runInNewContext(source, { window: windowObject, globalThis: {} }, { filename: 'zone-vegetation-cull.js' });
+const cullApi = windowObject.ZoneVegetationCull;
+cullApi.init({
+  camera: state.camera,
+  getCamTargetX: () => state.camTargetX,
+  getCamTargetZ: () => state.camTargetZ,
+  getCurrentArea: () => state.currentArea,
+  isZoneArea: () => true,
+  getZoneScene: area => state.zoneScenes.get(area),
+  exteriorZones: state.EXTERIOR_ZONES,
+  getPlayerTile: out => { out.x = state.player.x; out.z = state.player.y; return out; },
+  companionObjects: [], TILE: 1,
+  isShoulderSurf: () => false,
+  clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+  settings: {
+    shortCloudForestCull: () => state.s_cloudForestShortCull,
+    cloudForestCullRadiusTiles: () => state.s_cloudForestCullRadiusTiles,
+    cloudForestFadeStartFrac: () => state.s_cloudForestFadeStartFrac,
+    cloudForestOutlineFrac: () => state.s_cloudForestOutlineFrac,
+  },
+});
+assert.equal(cullApi.CORRIDOR.FORWARD_TILES, 42, 'ordinary corridor reach is unchanged');
+assert.equal(cullApi.CORRIDOR.WIDTH_TILES, 30);
 
 function tree(x, z, radius = 0, xzRadius = radius) {
-  return { visible: false, userData: { cullSphere: { x, z, radius, xzRadius } } };
+  const meshes = [];
+  return {
+    visible: false, userData: { cullSphere: { x, z, radius, xzRadius } },
+    traverse(fn) { for (const mesh of meshes) fn(mesh); },
+    get outline() { return this.userData._outlineEnabled; },
+  };
 }
 function apply(...trees) {
-  state._zoneScenes.set(state.currentArea, { cullables: trees });
-  state.cull.updateZoneVegetationCulling();
+  state.zoneScenes.set(state.currentArea, { cullables: trees });
+  cullApi.update();
 }
 const near = tree(0, 10);
 const distant = tree(0, 28);
@@ -107,5 +121,9 @@ assert.equal(side.visible, true, 'other zones retain the ordinary width');
 
 assert.match(html, /id="settingCloudForestShortCull"/);
 assert.match(game, /getVegetationCullMode: \(\) =>/);
-assert.match(game, /isVegetationChunkInView: \(sphere, wasVisible\) => vegetationCorridorContains/);
+assert.match(game, /isVegetationChunkInView: \(sphere, wasVisible\) => window\.ZoneVegetationCull\.isChunkInView\(sphere, wasVisible\)/);
+assert.equal(cullApi.isChunkInView({ x: 0, z: 10, radius: 0 }, false), true, 'baked chunk gate uses the same corridor');
+assert.equal(cullApi.isChunkInView({ x: 0, z: -10, radius: 0 }, false), false);
+const html2 = require('./classic-script-group-index.js').expandClassicScriptGroups();
+assert.ok(html2.indexOf('js/zone-vegetation-cull.js?v=') > 0 && html2.indexOf('js/zone-vegetation-cull.js?v=') < html2.indexOf('src="game.js'), 'module loads before game.js');
 console.log('Cloud Forest vegetation: compact corridor, yaw, fade, hysteresis, slider, baked hook and ordinary-zone parity passed.');

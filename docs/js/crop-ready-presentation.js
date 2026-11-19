@@ -267,7 +267,20 @@
   }
 
   function installRenderHook() {
-    const prototype = THREE.WebGLRenderer.prototype;
+    // Ready-crop pose applied once per world frame, restored after its last
+    // pass (js/render-hooks.js).
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'crop-ready-presentation',
+        owner: 'crop-ready-presentation.js',
+        order: window.RenderHooks.ORDER.CROP_READY,
+        scope: 'frame',
+        before: ctx => prepare(ctx.scene),
+        after: (_ctx, states) => restoreTransforms(states || []),
+      });
+      return;
+    }
+    const prototype = THREE.WebGLRenderer.prototype; // Fallback for pages without render-hooks.js.
     if (prototype.__hobunjiCropReadyPresentationHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render;
     prototype.render = function cropReadyPresentationRender(scene, camera, ...rest) {

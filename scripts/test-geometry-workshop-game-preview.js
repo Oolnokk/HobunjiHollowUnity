@@ -13,8 +13,8 @@ const sourceData = fs.readFileSync(path.join(docs, 'tools/enemy-loadout-editor/s
 const shell = fs.readFileSync(path.join(docs, 'tools/geometry-workshop/index.html'), 'utf8');
 const workshop = fs.readFileSync(path.join(docs, 'tools/geometry-workshop/workshop.js'), 'utf8');
 const css = fs.readFileSync(path.join(docs, 'tools/geometry-workshop/workshop.css'), 'utf8');
-assert.match(sourceData, /function renderingFromGame\(game\)/, 'the game renderer extractor must be shared, not duplicated in the Geometry Workshop');
-assert.match(sourceData, /const \{ makeShellMaterial, makeLighting, applyLighting \} = renderingFromGame\(game\)/);
+assert.match(sourceData, /function renderingFromGame\(game, pipelineSource\)/, 'the game renderer extractor must be shared, not duplicated in the Geometry Workshop');
+assert.match(sourceData, /const \{ makeShellMaterial, makeLighting, applyLighting \} = renderingFromGame\(game, renderPipeline\)/);
 assert.match(shell, /tools\/enemy-loadout-editor\/source-data\.js\?v=/);
 assert.match(shell, /tools\/geometry-workshop\/game-preview\.js\?v=/);
 assert.match(shell, /js\/weather-fx\.js\?v=/);
@@ -68,8 +68,9 @@ const fakeWindow = {
     drawSkyTint(ctx,w,h,state){assert.equal(state.hour,12);skyCalls++;},
   },
   EnemyLoadoutSourceData:{
-    renderingFromGame(content) {
+    renderingFromGame(content, pipelineSource) {
       assert.equal(content, 'game shader and lighting source');
+      assert.equal(pipelineSource, 'world render pipeline source', 'the shell shader source comes from js/world-render-pipeline.js');
       return {
         makeShellMaterial(){return {uniforms:{uThickness:{value:0}},dispose(){}};},
         makeLighting(THREE,scene){return {ambientLight:{},sunLight:{},hemiLight:{}};},
@@ -97,6 +98,7 @@ const overlay={width:0,height:0,style:{},className:'',setAttribute(){},getContex
 const fakeDocument={createElement(tag){assert.equal(tag,'canvas');return overlay;}};
 const fakeHost={clientWidth:400,clientHeight:300,appendChild(child){this.child=child;}};
 const fakeFetch=async url=>url==='game.js'?{ok:true,text:async()=> 'game shader and lighting source'}:
+  url==='js/world-render-pipeline.js'?{ok:true,text:async()=> 'world render pipeline source'}:
   {ok:true,json:async()=>({shell:{thicknessNdc:0.006}})};
 vm.runInNewContext(js,{window:fakeWindow,document:fakeDocument,fetch:fakeFetch,console,Error,Number,Object,Math,Set,WeakSet,Map});
 const adapter=fakeWindow.GeometryWorkshopGamePreview;

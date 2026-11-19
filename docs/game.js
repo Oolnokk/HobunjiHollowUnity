@@ -1477,7 +1477,7 @@
           // presence, since a flat per-pixel exponential fog alone reads as
           // computed haze rather than something with real volume.
           fogDensity: 0.055,
-          // updateZoneVegetationCulling uses this zone's presence here to
+          // ZoneVegetationCull.update (js/zone-vegetation-cull.js) uses this zone's presence here to
           // switch from the other zones' camera-forward/rear/width box to a
           // simple circle around the player — originally paired with
           // CloudForestFog's outer mist cylinder so the ring where
@@ -11196,7 +11196,7 @@
               // one is still mostly visible over/around it, and they're
               // meant to read as harmless ground clutter rather than a wall
               // — never worth the fade occlusion treatment reserved for
-              // actual trees (see updateZoneVegetationCulling). The
+              // actual trees (see ZoneVegetationCull.update (js/zone-vegetation-cull.js)). The
               // generic shrub fallback (everything that isn't a real tree/
               // bush/stump — see the comment above, and the vast majority of
               // ground cover in most zones) is the exact same kind of squat
@@ -11255,7 +11255,7 @@
               }
               if (isNativeBuild) {
                 // Bounding sphere for view-corridor culling (see
-                // updateZoneVegetationCulling) — computed once per instance at
+                // ZoneVegetationCull.update (js/zone-vegetation-cull.js)) — computed once per instance at
                 // build time, not per frame. Ports the standalone foliage
                 // tool's own forestCullSphere concept: a dense forest pays for
                 // full per-object visibility work at ~7Hz instead of every
@@ -11265,7 +11265,7 @@
                 if (!box.isEmpty()) {
                   const sphere = box.getBoundingSphere(new THREE.Sphere());
                   // xzRadius: horizontal-only footprint half-diagonal, for the
-                  // camera-player occlusion test (updateZoneVegetationCulling)
+                  // camera-player occlusion test (ZoneVegetationCull.update (js/zone-vegetation-cull.js))
                   // — the full 3D bounding-sphere radius above is dominated by
                   // a tall tree's height, not its trunk/canopy width, and
                   // reusing it as the occlusion test's sideways tolerance let
@@ -11518,7 +11518,7 @@
         zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
 
         // Trees/bushes/stumps eligible for view-corridor culling — see
-        // updateZoneVegetationCulling.
+        // ZoneVegetationCull.update (js/zone-vegetation-cull.js).
         const cullables = [];
         zScene.traverse(o => { if (o.userData?.cullSphere) cullables.push(o); });
 
@@ -16509,7 +16509,7 @@
         // recipe); every chunk along the corridor is built once ready
         // (registerPathBrickChunks), then gameLoop's throttled tick just
         // toggles each chunk's .visible by the same camera-aligned-corridor
-        // test already used for wilderness tree culling (updateZoneVegetationCulling)
+        // test already used for wilderness tree culling (ZoneVegetationCull.update (js/zone-vegetation-cull.js))
         // — cheap per-frame, no geometry rebuilding.
         ensurePathSurfaceReady().then(() => {
           const splineData = window.TerrainGeometry.preparePathSplineData(townGrid, TCOLS, TROWS, worldTownRoutes, 'town');
@@ -21738,249 +21738,19 @@
       // otherwise; shared by every rebuildInteriorGeometry() floor tile.
       const interiorFloorMaterial = InteriorSceneBuilder.buildFloorMaterial(THREE, '', 'assets/', null, window.FarmWorldSettings.current());
 
-      // ── Outline rendering tuning (config/outline-rendering.json) ──────
-      // Every numeric/color knob across the three outline sources below
-      // (shell, colored target highlight, furniture material-seam) used to
-      // be baked into the shader/material literals directly. Pulled out
-      // the same way atmosphere-lighting.json tunes CloudForestFog: a
-      // frozen built-in default so rendering never blocks on the fetch,
-      // overwritten in place onto the already-created materials/uniforms
-      // once the config loads (see loadOutlineRenderingConfig below,
-      // called once these materials exist).
-      const OUTLINE_RENDERING_DEFAULTS = Object.freeze({
-        shell: Object.freeze({ thicknessNdc: 0.006 }),
-        targetHighlight: Object.freeze({ thicknessNdc: 0.009, allyColor: '#14f22e', hostileColor: '#f21f14' }),
-        materialSeam: Object.freeze({ hueStep: 0.6180339887, saturation: 0.85, lightness: 0.55, colorDistanceThreshold: 0.1, occlusionToleranceDepth: 0.05 }),
-      });
-      let _outlineRenderingConfig = {
-        shell: { ...OUTLINE_RENDERING_DEFAULTS.shell },
-        targetHighlight: { ...OUTLINE_RENDERING_DEFAULTS.targetHighlight },
-        materialSeam: { ...OUTLINE_RENDERING_DEFAULTS.materialSeam },
-      };
-      function _applyOutlineRenderingConfig(raw) {
-        const finiteOr = (v, fb) => Number.isFinite(Number(v)) ? Number(v) : fb;
-        const hexOr = (v, fb) => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) ? v.trim() : fb;
-        const shell = raw?.shell || {};
-        const target = raw?.targetHighlight || {};
-        const seam = raw?.materialSeam || {};
-        _outlineRenderingConfig = {
-          shell: { thicknessNdc: finiteOr(shell.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.shell.thicknessNdc) },
-          targetHighlight: {
-            thicknessNdc: finiteOr(target.thicknessNdc, OUTLINE_RENDERING_DEFAULTS.targetHighlight.thicknessNdc),
-            allyColor: hexOr(target.allyColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.allyColor),
-            hostileColor: hexOr(target.hostileColor, OUTLINE_RENDERING_DEFAULTS.targetHighlight.hostileColor),
-          },
-          materialSeam: {
-            hueStep: finiteOr(seam.hueStep, OUTLINE_RENDERING_DEFAULTS.materialSeam.hueStep),
-            saturation: finiteOr(seam.saturation, OUTLINE_RENDERING_DEFAULTS.materialSeam.saturation),
-            lightness: finiteOr(seam.lightness, OUTLINE_RENDERING_DEFAULTS.materialSeam.lightness),
-            colorDistanceThreshold: finiteOr(seam.colorDistanceThreshold, OUTLINE_RENDERING_DEFAULTS.materialSeam.colorDistanceThreshold),
-            occlusionToleranceDepth: finiteOr(seam.occlusionToleranceDepth, OUTLINE_RENDERING_DEFAULTS.materialSeam.occlusionToleranceDepth),
-          },
-        };
-        // Re-apply onto whatever's already built — materials/uniforms exist
-        // by the time this ever runs (loadOutlineRenderingConfig is only
-        // called after them), shader source (the literals turned into
-        // uniforms above) never needs recompiling.
-        shellOutlineMat.uniforms.uThickness.value = _outlineRenderingConfig.shell.thicknessNdc;
-        targetOutlineGreenMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
-        targetOutlineRedMat.uniforms.uThickness.value = _outlineRenderingConfig.targetHighlight.thicknessNdc;
-        try { targetOutlineGreenMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.allyColor); } catch {}
-        try { targetOutlineRedMat.uniforms.uColor.value.set(_outlineRenderingConfig.targetHighlight.hostileColor); } catch {}
-        _postMat.uniforms.uSeamColorDistThresh.value = _outlineRenderingConfig.materialSeam.colorDistanceThreshold;
-        _postMat.uniforms.uSeamOcclusionTolerance.value = _outlineRenderingConfig.materialSeam.occlusionToleranceDepth;
-      }
-      function loadOutlineRenderingConfig() {
-        fetch('config/outline-rendering.json')
-          .then(r => r.ok ? r.json() : null)
-          .then(cfg => { if (cfg) _applyOutlineRenderingConfig(cfg); })
-          .catch(() => {});
-      }
-
-      // ── Inverted shell outline ────────────────────────────────────
-      // Second render pass: back faces only, vertices extruded along
-      // normals → solid black border on every mesh edge. No render
-      // targets or screen-space sampling required.
-      const shellOutlineMat = new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        // fog:true + the merged UniformsLib.fog entries below are the
-        // standard (only) way three.js feeds a raw ShaderMaterial the
-        // active scene's actual fog uniforms — refreshed automatically from
-        // whichever scene is being rendered (farm's light 0.018 fog, a
-        // wilderness zone's own, or the Cloud Forest's dense white one).
-        // The shader below does the actual color-mix by hand rather than
-        // relying on the built-in fog_vertex/fog_fragment #include chunks,
-        // since those assume a varying named exactly `mvPosition`, which
-        // this shader computes as `viewPos` instead.
-        fog: true,
-        uniforms: THREE.UniformsUtils.merge([
-          THREE.UniformsLib.fog,
-          { uThickness: { value: 0.006 } },  // NDC units → constant screen-pixel width
-        ]),
-        vertexShader: `
-          // NOTE: do not redeclare "attribute mat4 instanceMatrix" here — for a
-          // regular (non-Raw) ShaderMaterial, three.js's WebGLProgram already
-          // injects that exact declaration into the vertex shader prefix
-          // whenever USE_INSTANCING is defined. Redeclaring it is a duplicate
-          // attribute and fails to compile/link, which silently dropped the
-          // outline for every InstancedMesh (wall bricks) using this material.
-          uniform float uThickness;
-          varying float vFogDepth;
-          void main() {
-            #ifdef USE_INSTANCING
-              mat4 mvMatrix = modelViewMatrix * instanceMatrix;
-              // Wall-brick instances are only ever rotated/shifted per
-              // instance, never non-uniformly scaled (see WallBuilder's
-              // brickJitter), so the linear part of mvMatrix itself still
-              // transforms a normal correctly here.
-              vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
-            #else
-              mat4 mvMatrix = modelViewMatrix;
-              // normalMatrix (three.js's own inverse-transpose of
-              // modelViewMatrix's linear part, supplied automatically) is
-              // required here rather than mat3(mvMatrix) directly —
-              // furniture placed in a building interior can carry a
-              // non-uniform per-instance scale (see loadBuildingScene's
-              // postSX/postSY/postSZ), and naively transforming a normal
-              // through a non-uniformly-scaled matrix stops being
-              // perpendicular to the actual scaled surface — confirmed live
-              // as a rescaled interior bench's shell outline bleeding onto
-              // the player sprite regardless of actual depth (not a
-              // depth-test bug at all: the shell geometry itself was wrong).
-              vec3 viewNormal = normalize(normalMatrix * normal);
-            #endif
-            vec4 viewPos = mvMatrix * vec4(position, 1.0);
-            vec4 clip  = projectionMatrix * viewPos;
-            vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
-
-            vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
-            float len = length(dir);
-            dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
-            clip.xy    += dir * uThickness * clip.w;
-            gl_Position = clip;
-            // Same depth convention THREE's own fog_vertex chunk uses (the
-            // view-space position's negated Z), computed here by hand since
-            // this shader's view-space variable is named viewPos, not the
-            // mvPosition that chunk expects.
-            vFogDepth = -viewPos.z;
-          }
-        `,
-        fragmentShader: `
-          uniform vec3 fogColor;
-          #ifdef FOG_EXP2
-            uniform float fogDensity;
-          #else
-            uniform float fogNear;
-            uniform float fogFar;
-          #endif
-          varying float vFogDepth;
-          void main() {
-            vec3 outlineColor = vec3(0.0);
-            #ifdef USE_FOG
-              #ifdef FOG_EXP2
-                float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth);
-              #else
-                float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-              #endif
-              outlineColor = mix(outlineColor, fogColor, fogFactor);
-            #endif
-            gl_FragColor = vec4(outlineColor, 1.0);
-          }
-        `,
-        // depthWrite off: shell only reads the scene depth, never corrupts it.
-        // LessDepth: coplanar back faces (adjacent tiles share the same Z plane)
-        // would pass LEQUAL and splat black everywhere — LESS rejects equal depth.
-        depthWrite: false,
-        depthFunc:  THREE.LessDepth,
-      });
-
-      // Enable layer 1 on a mesh (or every mesh inside a Group) so the
-      // selective outline pass picks it up. Flat floor slabs, water, and
-      // grass billboards stay on layer 0 only and are never outlined.
-      // Meshes tagged userData.noOutline (textured leaf cards — see
-      // foliage-generator.js's getLeafCardMaterial usage) are skipped even
-      // inside an otherwise-outlined group: shellOutlineMat's inverted-hull
-      // technique needs real volume, correct normals, and a depth-writing
-      // main pass to produce a thin border. A leaf card is a flat, single-
-      // layer, depthWrite:false alpha-cutout plane with no computed normals
-      // (mergeGeomsWithUV never calls computeVertexNormals, unlike the bark/
-      // vine merges right next to it) — the shell's normal-based expand is
-      // therefore zero, so for whichever leaf cards happen to be back-facing
-      // from the current camera angle (roughly half, given the random per-
-      // leaf yaw), the BackSide shell isn't culled, has the exact same depth
-      // as the real card, passes shellOutlineMat's LessDepth test (nothing
-      // else at that depth to fail against, since the real card never wrote
-      // depth), and paints its FULL quad solid black with no alphaTest —
-      // the "black leaf rectangles" bug, camera-angle dependent since it's a
-      // different subset of back-facing cards each time the view changes.
-      function _markOutline(obj) {
-        if (!obj || typeof obj.isMesh === 'undefined' && !obj.isGroup) return;
-        // PNG planes already contain their authored outline ink. Never enroll
-        // them (or a parent group containing them) in the inverted-hull shell
-        // pass, which is reserved for volumetric 3D geometry.
-        if (obj.userData?.isPngPlane === true) return;
-        if (obj.isMesh) {
-          if (!obj.userData.noOutline && obj.userData.isPngPlane !== true) obj.layers.enable(1);
-          return;
-        }
-        obj.traverse(child => {
-          if (child.isMesh && !child.userData.noOutline && child.userData.isPngPlane !== true) child.layers.enable(1);
-        });
-      }
-
-      // Shared vertex shader used for coloured target outlines (supports instancing)
-      const _targetOutlineVert = `
-        // See shellOutlineMat above — three.js's own vertex-shader prefix
-        // already declares "attribute mat4 instanceMatrix" under
-        // USE_INSTANCING for ShaderMaterial, so it must not be redeclared here.
-        uniform float uThickness;
-        void main() {
-          #ifdef USE_INSTANCING
-            mat4 mvMatrix = modelViewMatrix * instanceMatrix;
-            vec3 viewNormal = normalize(mat3(mvMatrix) * normal);
-          #else
-            mat4 mvMatrix = modelViewMatrix;
-            // See shellOutlineMat's own comment on this same substitution —
-            // required for correctness under non-uniform scale.
-            vec3 viewNormal = normalize(normalMatrix * normal);
-          #endif
-          vec4 viewPos = mvMatrix * vec4(position, 1.0);
-          vec4 clip  = projectionMatrix * viewPos;
-          vec4 clipN = projectionMatrix * (viewPos + vec4(viewNormal, 0.0));
-          vec2 dir = clipN.xy / clipN.w - clip.xy / clip.w;
-          float len = length(dir);
-          dir = (len > 1e-5) ? dir / len : vec2(0.0, 0.0);
-          clip.xy += dir * uThickness * clip.w;
-          gl_Position = clip;
-        }
-      `;
-      // Thickness/colors default from OUTLINE_RENDERING_DEFAULTS below and
-      // are overwritten in place once config/outline-rendering.json loads
-      // (see loadOutlineRenderingConfig) — created with the built-in
-      // defaults so rendering never blocks on that fetch.
-      const _targetOutlineFrag = `
-        uniform vec3 uColor;
-        void main() { gl_FragColor = vec4(uColor, 1.0); }
-      `;
-      const targetOutlineGreenMat = new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0x14f22e) } },
-        vertexShader: _targetOutlineVert,
-        fragmentShader: _targetOutlineFrag,
-        depthWrite: false, depthFunc: THREE.LessDepth,
-      });
-      const targetOutlineRedMat = new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        uniforms: { uThickness: { value: 0.009 }, uColor: { value: new THREE.Color(0xf21f14) } },
-        vertexShader: _targetOutlineVert,
-        fragmentShader: _targetOutlineFrag,
-        depthWrite: false, depthFunc: THREE.LessDepth,
-      });
-      let _targetOutlineMeshes = [];
-      let _targetOutlineAllowed = true;
+      // ── World render pipeline ─────────────────────────────────────
+      // The outline materials (shell, target highlight, material-seam ID),
+      // the offscreen colour/ID render targets, the fullscreen composite,
+      // config/outline-rendering.json tuning, the reticle target-highlight
+      // state and the whole per-frame pass sequence (renderWorldPasses) now
+      // live in js/world-render-pipeline.js (window.WorldRenderPipeline),
+      // initialised right after the camera below. Layer numbers are named in
+      // js/render-layers.js. The hoisted wrappers below keep the names the
+      // rest of this file (and avatar builders above) already call.
+      function _markOutline(obj) { window.WorldRenderPipeline.markShellOutline(obj); }
+      function _markFurnitureEdgeId(obj) { window.WorldRenderPipeline.markMaterialSeamId(obj); }
       function clearTargetHighlights() {
-        for (const m of _targetOutlineMeshes) m.layers.disable(2);
-        _targetOutlineMeshes = [];
+        window.WorldRenderPipeline.clearTargetHighlights();
         window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
       }
       function findTargetMeshes(col, row) {
@@ -22004,118 +21774,11 @@
         return out;
       }
 
-      // ── Screen-space outline pass (depth edges + furniture material seams) ──
-      // Two extra outline sources layered on top of the per-mesh shell outline
-      // above, both detected as a post-process over the rendered frame:
-      //   1. Depth discontinuities — catches silhouettes the shell pass misses,
-      //      e.g. one object's edge against another object/the floor behind it.
-      //   2. Furniture "material ID" seams — catches boundaries between two
-      //      touching parts of the same furniture group (e.g. a chair leg
-      //      against the seat) where depth is continuous but the part changes,
-      //      so neither the shell pass nor depth edges would draw a line.
-      // Layer 3 is reserved for furniture parts feeding the material-ID buffer.
-
       // PNG-plane outline occluders (layer 4 registry, _markPngPlane, and the
       // depth-only replay before the outline passes) now live in
       // js/png-plane-outline-occluder.js. _markPngPlane stays a hoisted
       // function here because avatar builders above call it by this name.
       function _markPngPlane(obj) { window.PngPlaneOutlineOccluder.markPngPlane(obj); }
-
-      let _furnitureEdgeIdSeq = 0;
-      function _markFurnitureEdgeId(obj) {
-        if (!obj) return;
-        const apply = (m) => {
-          m.layers.enable(3);
-          const seamCfg = _outlineRenderingConfig.materialSeam;
-          const hue = (_furnitureEdgeIdSeq++ * seamCfg.hueStep) % 1;
-          const idColor = new THREE.Color().setHSL(hue, seamCfg.saturation, seamCfg.lightness);
-          m.onBeforeRender = function (renderer, scene, camera, geometry, material) {
-            if (material !== _furnitureIdMat) return;
-            _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
-            // Every tagged part shares this one material instance, so the
-            // renderer's "material/program unchanged since last draw" cache
-            // would otherwise skip re-uploading the uniform we just mutated —
-            // only the first part drawn each frame would ever reach the GPU.
-            _furnitureIdMat.uniformsNeedUpdate = true;
-          };
-        };
-        if (obj.isMesh) { apply(obj); return; }
-        obj.traverse(child => { if (child.isMesh) apply(child); });
-      }
-      // Exposed so docs/js/procedural-leg-animation.js (a separate module,
-      // not part of this closure) can tag a foot's touching material
-      // sub-meshes (e.g. the pachyderm/sloth GLBs' separate bone-claw and
-      // body-pad meshes) into this same seam pass — traversing a group here
-      // assigns each mesh CHILD its own unique ID color independently
-      // (_furnitureEdgeIdSeq increments per mesh, not per call), so calling
-      // this once on a foot's root already produces a seam wherever two
-      // differently-tagged meshes touch, exactly like two touching
-      // furniture parts.
-      window.HobunjiOutlines = { markShellOutline: _markOutline, markMaterialSeamId: _markFurnitureEdgeId };
-
-      // Flat-unlit material shared by every furniture part during the ID-buffer
-      // pass; each part's onBeforeRender (above) stamps its own colour into the
-      // shared uniform right before its draw call.
-      const _furnitureIdMat = new THREE.ShaderMaterial({
-        uniforms: { uIdColor: { value: new THREE.Color(0, 0, 0) } },
-        vertexShader: `
-          void main() {
-            #ifdef USE_INSTANCING
-              gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-            #else
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            #endif
-          }
-        `,
-        fragmentShader: `
-          uniform vec3 uIdColor;
-          void main() { gl_FragColor = vec4(uIdColor, 1.0); }
-        `,
-      });
-
-      // Main colour pass render target — keeps a depth texture around so the
-      // composite shader below can read real per-pixel scene depth.
-      function _makeSceneRT(w, h, needsStencil = false) {
-        const rt = new THREE.WebGLRenderTarget(w, h, {
-          minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
-          stencilBuffer: needsStencil,
-        });
-        rt.depthTexture = new THREE.DepthTexture(w, h);
-        if (needsStencil) {
-          // HeldObjectRenderOrder uses two stencil bits while rendering the
-          // gameplay scene into this offscreen target: bit 1 protects held
-          // weapons/hands, while bit 0 identifies feet that water may repaint.
-          // A plain DepthTexture leaves WebGLRenderTarget with no stencil
-          // attachment, so those masks silently cannot work while outlines are on.
-          rt.depthTexture.format = THREE.DepthStencilFormat;
-          rt.depthTexture.type = THREE.UnsignedInt248Type;
-        }
-        return rt;
-      }
-      const _mainRT   = _makeSceneRT(1, 1, true);
-      // Furniture/terrain material-ID buffer — alpha 0 means "nothing tagged
-      // here". Carries its own depth texture (depth of the tagged objects
-      // only, since the pass that fills this target restricts the camera to
-      // layer 3) so the composite shader can tell whether a tagged surface is
-      // actually the frontmost thing at that pixel before drawing its seam —
-      // without that check, a tagged object hidden behind a wall would still
-      // contribute an edge, since nothing else was rendered into this target
-      // to occlude it.
-      const _edgeIdRT = _makeSceneRT(1, 1);
-      function _resizeOutlineTargets(pixelW, pixelH) {
-        _mainRT.setSize(pixelW, pixelH);
-        _edgeIdRT.setSize(s_furnitureSeamOutlines ? pixelW : 1, s_furnitureSeamOutlines ? pixelH : 1);
-        _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
-      }
-
-      // Fullscreen composite — blends depth-edge and furniture-seam outlines
-      // over the rendered colour buffer.
-      const _postScene  = new THREE.Scene();
-      const _postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-      // Fullscreen composite material now lives in js/outline-composite-material.js.
-      const _postMat = window.OutlineCompositeMaterial.create(THREE);
-      _postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _postMat));
-      loadOutlineRenderingConfig();
 
       let s_zoomScale = 1.5; // camera zoom level — higher = camera sits closer to the player (default 150%)
       // Declared up here (rather than down by the rest of the Cutscene
@@ -22168,6 +21831,23 @@
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       window.PngPlaneOutlineOccluder.init({ renderer, camera }); // Registry pruning + depth-only PNG silhouette replay: js/png-plane-outline-occluder.js.
+      // Outline materials, render targets, composite and the per-frame pass
+      // order (js/world-render-pipeline.js). Settings are read live each frame.
+      window.WorldRenderPipeline.init({
+        THREE, renderer, camera,
+        farmScene: scene, // The reticle target-highlight pass has always drawn the farm scene.
+        getActiveScene: () => window.GridTileAccessors.getActiveScene(),
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getPlayerTile: out => { out.x = player.x / TILE; out.z = player.y / TILE; return out; },
+        npcWalkers, hostileObjects,
+        isPaused: () => paused,
+        settings: {
+          outlines: () => s_outlines,
+          seamOutlines: () => s_furnitureSeamOutlines,
+          cloudForestFog: () => s_cloudForestFog,
+        },
+      });
       let camTargetX = COLS / 2, camTargetZ = ROWS * 0.72, camTargetY = 0;
       // Snaps the camera's follow target to the player's current position,
       // including ground height — exterior zones now carry real per-tile
@@ -22999,160 +22679,29 @@
       }
       updateCameraPosition();
 
-      // Camera-aligned view-corridor culling for dense zone vegetation — ports
-      // the standalone foliage tool's updateForestGeometryCulling. Toggling
-      // .visible on whole tree/bush/stump groups (bounding sphere precomputed
-      // once at build time, see cullSphere tagging in _buildZoneFloorMeshes)
-      // is far cheaper than every one of those groups' own per-object frustum
-      // test every single frame, and this corridor can hide far more than
-      // default frustum culling would (behind camera, wide off to the sides)
-      // — the "1-2 tile gaps throughout" density this exists to support can
-      // put thousands of these groups in one zone.
-      const VEG_CULL_FORWARD_TILES = 42;
-      const VEG_CULL_WIDTH_TILES = 30;
-      const VEG_CULL_REAR_TILES = 2;
-      const VEG_CULL_HYSTERESIS_TILES = 1;
-      let _vegCullAccum = 999; // force a real pass on the first tick
-
-      // Keep the player (and anyone/anything else) visible when foliage is
-      // between them and the camera. A tree flagged as blocking the
-      // camera-player sightline (below, via isBetweenCameraAndPlayer2D)
-      // fades its own opacity down — but a transparent object with
-      // depthWrite left at its default (true) still writes full depth, so
-      // whatever's behind it still fails the depth test and gets fully
-      // occluded despite the tree visually reading as see-through. That
-      // asymmetry (tools showing through, characters not) was originally
-      // patched around with a "ghost" duplicate of the avatar/tool plane,
-      // stencil-gated to draw only behind a flagged-blocking tree — real,
-      // but a bandaid: it needed its own mesh built per revealable target
-      // (player, companion, mount, each tool, each hat swap) at avatar-build
-      // time, its own per-frame transform resync for anything that animates
-      // its own local transform after ghost creation (see the old
-      // updateToolMesh spinPlane note), and a wilderness-zone visibility
-      // gate — all just to work around one flag on the actual occluder.
-      // Dropping depthWrite once a tree is actually fading removes the
-      // occlusion at its source instead: the tree stops writing depth for
-      // exactly as long as it's actually transparent, so ANYTHING behind it
-      // (player, companion, wild animal, a bandit's weapon, whatever) shows
-      // through via ordinary alpha blending — no per-target ghost mesh, no
-      // stencil buffer, nothing to keep in sync each frame.
-      const TREE_FADE_OPACITY = 0.25;
-      const TREE_FADE_LERP_PER_SEC = 6;
-      // Sideways tolerance for the camera-player occlusion line test, as a
-      // fraction of a tree's own horizontal footprint radius (cullSphere's
-      // xzRadius) — halved from the full footprint so only trees whose trunk
-      // is genuinely close to dead-center on the sightline count as
-      // blocking, not merely anything within a whole canopy-width of it.
-      const OCCLUSION_XZ_RADIUS_MUL = 0.5;
-      window.ZoneTreeFade.init({ lerpPerSec: TREE_FADE_LERP_PER_SEC });
-      // The Cloud Forest’s distance-based outline radius (see
-      // updateZoneVegetationCulling's radialCullRadius branch) can toggle
-      // just the outline layer without also touching depthWrite/occlusion
-      // fade. Cached on userData._outlineEnabled so the (traverse-heavy)
-      // toggle only actually runs on a real transition, not every frame for
-      // every visible tree.
-      function setTreeOutlineEnabled(vegGroup, enabled) {
-        if (vegGroup.userData._outlineEnabled === enabled) return;
-        vegGroup.userData._outlineEnabled = enabled;
-        vegGroup.traverse(child => {
-          if (!child.isMesh || child.userData.noOutline) return;
-          if (enabled) child.layers.enable(1); else child.layers.disable(1);
-        });
-      }
-      // The camera corridor is shared with the baked-tree chunk culler. Reuse one
-      // scratch record instead of allocating a view object for every vegetation group.
-      const vegetationCullBasis = {
-        camX: 0, camZ: 0, viewX: 0, viewZ: 1, rightX: 1, rightZ: 0,
-        forwardRange: VEG_CULL_FORWARD_TILES, rearRange: VEG_CULL_REAR_TILES,
-        halfWidth: VEG_CULL_WIDTH_TILES * 0.5, shortCloudForest: false,
-      }; // Used by procedural vegetation and baked Cloud Forest chunks; no per-tree allocations.
-
-      function zoneVegetationCullBasis() {
-        const basis = vegetationCullBasis;
-        basis.camX = camera.position.x;
-        basis.camZ = camera.position.z;
-        let vx = camTargetX - basis.camX, vz = camTargetZ - basis.camZ;
-        let viewLen = Math.hypot(vx, vz);
-        if (viewLen < 1e-5) { vx = 0; vz = 1; viewLen = 1; }
-        basis.viewX = vx / viewLen;
-        basis.viewZ = vz / viewLen;
-        basis.rightX = basis.viewZ;
-        basis.rightZ = -basis.viewX;
-        basis.shortCloudForest = !!EXTERIOR_ZONES[currentArea]?.cloudForest && s_cloudForestShortCull;
-        const configuredReach = Number(s_cloudForestCullRadiusTiles);
-        const reach = Number.isFinite(configuredReach) ? Math.max(5, configuredReach) : 30;
-        // At the default 30-tile slider: 21 tiles forward by 19.2 wide,
-        // rather than the normal 42 forward by 30 wide. Both still keep
-        // a 2-tile rear strip and conservative XZ canopy/chunk overlap.
-        basis.forwardRange = basis.shortCloudForest ? Math.min(VEG_CULL_FORWARD_TILES, reach * 0.70) : VEG_CULL_FORWARD_TILES;
-        basis.halfWidth = basis.shortCloudForest ? Math.min(VEG_CULL_WIDTH_TILES * 0.5, reach * 0.32) : VEG_CULL_WIDTH_TILES * 0.5;
-        basis.rearRange = VEG_CULL_REAR_TILES;
-        return basis;
-      }
-
-      function vegetationCorridorContains(s, wasVisible, basis) {
-        if (!s) return true; // Unknown bounds must fail open, not drop authored scenery.
-        const dx = s.x - basis.camX, dz = s.z - basis.camZ;
-        const along = dx * basis.viewX + dz * basis.viewZ;
-        const side = Math.abs(dx * basis.rightX + dz * basis.rightZ);
-        // For the Cloud Forest, use horizontal coverage. A tall canopy's 3D
-        // bounding sphere must not inflate the short corridor by its height.
-        const radius = basis.shortCloudForest ? (s.xzRadius ?? s.radius) : s.radius;
-        const expanded = Math.max(0, Number(radius) || 0) + (wasVisible ? VEG_CULL_HYSTERESIS_TILES : 0);
-        return along >= -(basis.rearRange + expanded) && along <= basis.forwardRange + expanded
-          && side <= basis.halfWidth + expanded;
-      }
-
-      function updateZoneVegetationCulling(force = false) {
-        if (!_isZoneArea(currentArea)) return;
-        const zi = _zoneScenes.get(currentArea);
-        const cullables = zi?.cullables;
-        if (!cullables || !cullables.length) return;
-        const basis = zoneVegetationCullBasis();
-        const camX = basis.camX, camZ = basis.camZ;
-        const px = player.x / TILE, pz = player.y / TILE;
-        // Include companions behind the same trunk, even when the camera-player
-        // line itself misses that tree. Retain the established occlusion fade.
-        const revealTargets = [{ x: px, z: pz }];
-        for (const c of companionObjects) {
-          if (c.areaId === currentArea) revealTargets.push({ x: c.x / TILE, z: c.y / TILE });
-        }
-        for (const obj of cullables) {
-          const s = obj.userData.cullSphere;
-          const isGrassChunk = obj.userData.isWildernessGrassChunk === true;
-          const show = vegetationCorridorContains(s, obj.visible, basis);
-          if (force || show !== obj.visible) obj.visible = show;
-          if (isGrassChunk) continue;
-
-          if (show) {
-            const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
-            const blocking = activeCameraMode !== SHOULDER_SURF_MODE
-              && !obj.userData.skipOcclusionFade
-              && revealTargets.some(t => window.ZoneTreeFade.isBetweenCameraAndPlayer2D(s.x, s.z, camX, camZ, t.x, t.z, occlusionRadius));
-            let target = blocking ? TREE_FADE_OPACITY : 1;
-            let outlineAllowed = true;
-            // Fade toward the camera corridor's *forward and side* edges,
-            // not an unrelated circle around the player. The outline budget
-            // follows the same tighter envelope.
-            if (basis.shortCloudForest) {
-              const dx = s.x - camX, dz = s.z - camZ;
-              const along = dx * basis.viewX + dz * basis.viewZ;
-              const side = Math.abs(dx * basis.rightX + dz * basis.rightZ);
-              const edge = Math.max(0, along / Math.max(0.001, basis.forwardRange),
-                side / Math.max(0.001, basis.halfWidth));
-              if (edge > s_cloudForestFadeStartFrac) {
-                const span = Math.max(0.001, 1 - s_cloudForestFadeStartFrac);
-                target = Math.min(target, window.FormatUtils.clamp((1 - edge) / span, 0, 1));
-              }
-              outlineAllowed = edge <= s_cloudForestOutlineFrac;
-            }
-            window.ZoneTreeFade.setTarget(obj, target, blocking);
-            setTreeOutlineEnabled(obj, !blocking && outlineAllowed);
-          } else {
-            window.ZoneTreeFade.reset(obj);
-          }
-        }
-      }
+      // Wilderness vegetation corridor cull, tree occlusion-fade targets and
+      // the corridor's shell-outline budget now live in
+      // js/zone-vegetation-cull.js (window.ZoneVegetationCull); gameLoop calls
+      // tick(dt). The same corridor gates baked Cloud Forest chunks and path bricks.
+      window.ZoneVegetationCull.init({
+        camera,
+        getCamTargetX: () => camTargetX,
+        getCamTargetZ: () => camTargetZ,
+        getCurrentArea: () => currentArea,
+        isZoneArea: _isZoneArea,
+        getZoneScene: area => _zoneScenes.get(area),
+        exteriorZones: EXTERIOR_ZONES,
+        getPlayerTile: out => { out.x = player.x / TILE; out.z = player.y / TILE; return out; },
+        companionObjects, TILE,
+        isShoulderSurf: () => activeCameraMode === SHOULDER_SURF_MODE,
+        clamp: window.FormatUtils.clamp,
+        settings: {
+          shortCloudForestCull: () => s_cloudForestShortCull,
+          cloudForestCullRadiusTiles: () => s_cloudForestCullRadiusTiles,
+          cloudForestFadeStartFrac: () => s_cloudForestFadeStartFrac,
+          cloudForestOutlineFrac: () => s_cloudForestOutlineFrac,
+        },
+      });
 
       // ── Lighting ──────────────────────────────────────────────────
       const ambientLight = new THREE.AmbientLight(0xffeedd, 0.7);
@@ -23311,16 +22860,8 @@
       function _markTerrainEdgeId(mesh, category) {
         if (!mesh) return;
         const idColor = _terrainIdColors[category] || _terrainIdColors[TileType.GRASS];
-        mesh.layers.enable(3);
         mesh.userData.hobunjiTerrainEdgeIdColor = idColor; // Shared per category: lets js/farm-tile-render-batches.js merge tiles that draw identically, hook included.
-        mesh.onBeforeRender = function (renderer, scene, camera, geometry, material) {
-          if (material !== _furnitureIdMat) return;
-          _furnitureIdMat.uniforms.uIdColor.value.copy(idColor);
-          // See _markFurnitureEdgeId above — required so each tile's colour
-          // actually reaches the GPU instead of reusing whatever the
-          // previous tile sharing this material last uploaded.
-          _furnitureIdMat.uniformsNeedUpdate = true;
-        };
+        window.WorldRenderPipeline.stampSeamIdColor(mesh, idColor); // MATERIAL_SEAM_ID layer + per-draw colour hook.
       }
       // ── Vertical waterfall-curtain shader ──────────────────────────
       // Horizontal surfaces use MergedWaterRenderer's shared PNG material.
@@ -23462,7 +23003,10 @@
         TileType, CARVED_TILE_TYPES, WATERWAY_TYPES, sameWaterway,
         SLAB_H, NORMAL_TOP, RAISED_TOP, ROCK_H, DEPRESSION_TOP, PLATEAU_UNIT,
         PATH_SURFACE_RECIPE_ID, pathWallBuilder,
-        VEG_CULL_FORWARD_TILES, VEG_CULL_REAR_TILES, VEG_CULL_WIDTH_TILES, VEG_CULL_HYSTERESIS_TILES,
+        VEG_CULL_FORWARD_TILES: window.ZoneVegetationCull.CORRIDOR.FORWARD_TILES,
+        VEG_CULL_REAR_TILES: window.ZoneVegetationCull.CORRIDOR.REAR_TILES,
+        VEG_CULL_WIDTH_TILES: window.ZoneVegetationCull.CORRIDOR.WIDTH_TILES,
+        VEG_CULL_HYSTERESIS_TILES: window.ZoneVegetationCull.CORRIDOR.HYSTERESIS_TILES,
         camera, debugLog,
       });
 
@@ -26153,9 +25697,7 @@
         if (isObjTarget || isWeedBlock || cuttableTarget) {
           const meshes = cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D ? [] : findTargetMeshes(reticle.col, reticle.row);
           if (meshes.length > 0) {
-            for (const m of meshes) m.layers.enable(2);
-            _targetOutlineMeshes = meshes;
-            _targetOutlineAllowed = isObjTarget;
+            window.WorldRenderPipeline.setTargetHighlights(meshes, isObjTarget); // Green when the action is allowed, red when blocked.
             window.VegetationCropRendering.updateCuttableBillboardGlow(0, 0, false);
             reticleRingMesh.visible = false;
           } else if (cuttableTarget && tile.type === TileType.WEEDS && !s_weed3D) {
@@ -26247,7 +25789,7 @@
         renderer.setPixelRatio(window.MobileRenderBudget?.pixelRatio(w, h, s_resScale) ?? dpr * s_resScale);
         renderer.setSize(w, h);
         const bufSize = renderer.getDrawingBufferSize(new THREE.Vector2());
-        _resizeOutlineTargets(bufSize.x, bufSize.y);
+        window.WorldRenderPipeline.resize(bufSize.x, bufSize.y);
         overlayCanvas.width  = Math.round(w * dpr);
         overlayCanvas.height = Math.round(h * dpr);
         octx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -26269,12 +25811,12 @@
       let s_cloudForestShortCull = true;
       let s_cloudForestBgForest = true;
       // Live Settings-tab slider value for the short directional vegetation cull
-      // (see updateZoneVegetationCulling) — starts at EXTERIOR_ZONES'
+      // (see ZoneVegetationCull.update (js/zone-vegetation-cull.js)) — starts at EXTERIOR_ZONES'
       // vegCullRadiusTiles default (30) but is independently adjustable
       // without touching that config.
       let s_cloudForestCullRadiusTiles = EXTERIOR_ZONES.map_southern_cloud_forest?.vegCullRadiusTiles ?? 30;
       // Fractions of s_cloudForestCullRadiusTiles (0..1) — see
-      // updateZoneVegetationCulling's shortCloudForest branch. Fade start:
+      // ZoneVegetationCull.update (js/zone-vegetation-cull.js)'s shortCloudForest branch. Fade start:
       // beyond this fraction of the radius a tree ramps from opaque (at the
       // fraction) down to fully transparent (at the radius) instead of
       // popping in solid the instant it enters the cull sphere. Outline:
@@ -26288,7 +25830,7 @@
       // idEdge in the composite shader) — unlike the shell pass above,
       // this one never had a Settings toggle of its own; it
       // just always ran whenever s_outlines was on. Off by default now: the
-      // shell pass alone (see shellOutlineMat's fog handling) is the
+      // shell pass alone (see world-render-pipeline.js's shell fog handling) is the
       // intended outline style, and this extra seam layer isn't fog-aware
       // (it always draws a solid line regardless of distance), so leaving it
       // on would keep punching crisp lines through the Cloud Forest's mist
@@ -27043,12 +26585,7 @@
         // Throttled to ~7Hz, not every frame — drives the tree-fade targets
         // (opacity and, while a tree is actually blocking, depthWrite).
         const vegCullPerf = window.PerfProfiler?.begin('vegetation+path culling'); // Isolates the throttled-but-potentially-bulk culling passes below from the per-frame work around them.
-        _vegCullAccum += dt;
-        if (_vegCullAccum >= 0.14) {
-          const force = _vegCullAccum >= 900; // first tick after script load
-          _vegCullAccum = 0;
-          updateZoneVegetationCulling(force);
-        }
+        window.ZoneVegetationCull.tick(dt); // js/zone-vegetation-cull.js, ~7 Hz internally.
         window.ZoneTreeFade.updateAnimation(dt);
 
         // Same camera-aligned-corridor visibility toggle, same throttle, for
@@ -27235,169 +26772,10 @@
         window.PerfProfiler?.end(gameLoopTotalPerf);
       }
 
-      // gameLoop's world render: the main pass plus, with outlines on, the
-      // occluder/outline/mist/seam passes and the post-process composite.
-      function renderWorldPasses(now) {
-        // "Render CPU" in the overlay only shows the average cost of a single
-        // renderer.render() call; s_outlines below can chain up to 6 of them
-        // in one frame, so this bucket captures the true per-frame total.
-        const renderPassPerf = window.PerfProfiler?.begin('render passes');
-        const activeScene = window.GridTileAccessors.getActiveScene();
-        // A walker has a stable floor-anchored root even though its skinned
-        // portrait, limbs and clothing disable Three's individual frustum
-        // culling. Suspend off-camera NPC visuals across ALL world passes,
-        // then restore before any gameplay tick or subsequent render.
-        // The farm's ~1,000 per-tile ground meshes draw as merged 8x8-tile
-        // batches for this render only (js/farm-tile-render-batches.js); the
-        // tiles themselves stay the authority for edits and raycasts.
-        const restoreFarmTileBatches = window.FarmTileRenderBatches?.suspendForRender?.(activeScene);
-        // Wilderness props (tents, totems, herbs, berry bushes, camp furniture, cliff-door caves) get the same treatment:
-        // still prop meshes draw as merged 8x8-tile batches for this render only (js/zone-prop-render-batches.js).
-        const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender?.(activeScene, { isZone: _isZoneArea(currentArea) });
-        const restoreNpcVisuals = window.NpcViewFrustumCull?.suspendForRender?.(npcWalkers, activeScene, camera);
-        // Same contract for instanced brick walls/paths and grass, which Three r128
-        // cannot frustum-cull on its own: farm/town grass swaps to spatial chunks
-        // first (js/grass-billboard-render-chunks.js), then off-camera tagged
-        // instanced meshes are hidden (js/instanced-mesh-view-cull.js).
-        const restoreGrassChunks = window.GrassBillboardRenderChunks?.suspendForRender?.(activeScene);
-        const restoreWallVisuals = window.InstancedMeshViewCull?.suspendForRender?.(activeScene, camera);
-        // Static wilderness objects outside the vegetation corridor can stay GPU-visible deep into the fog.
-        // Hide only far world geometry for this complete render (main + outline + held depth passes).
-        const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender?.(
-          activeScene, camera, { x: player.x / TILE, z: player.y / TILE }, { isZone: _isZoneArea(currentArea) });
-        try {
-        // Frame-scoped whole-actor suppression; simulation still runs before and
-        // after this render. Existing frustum culling handles camera-offscreen
-        // walkers; the new renderer adds covered NPCs and hostile humanoids.
-        window.ActorRenderOcclusion?.beginFrame?.({
-          renderer, camera, scene:activeScene, walkers:npcWalkers, hostiles:hostileObjects,
-          area:currentArea, playerPosition:{x:player.x/TILE,z:player.y/TILE}
-        });
-        if (s_outlines) {
-          // Colour + depth into an offscreen target so the post-process
-          // composite below can read real per-pixel depth afterwards —
-          // rendering straight to the canvas would lose that depth buffer
-          // the moment the fullscreen composite quad overwrites it.
-          const rpMainPerf = window.PerfProfiler?.begin('render: main scene');
-          renderer.setRenderTarget(_mainRT);
-          renderer.render(activeScene, camera);
-          window.PerfProfiler?.end(rpMainPerf);
-
-          // Preserve the colour/depth result while PNG silhouettes add only
-          // the missing occlusion depth needed by both outline systems.
-          renderer.autoClearColor = false;
-          renderer.autoClearDepth = false;
-          const rpPngOccluderPerf = window.PerfProfiler?.begin('render: png occluder depth'); // Does a full activeScene.traverse() every frame -- prime suspect for scaling with total scene object count.
-          window.PngPlaneOutlineOccluder.renderDepth(activeScene);
-          window.PerfProfiler?.end(rpPngOccluderPerf);
-          const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
-          window.ActorRenderOcclusion?.probeAfterBase?.(); // Use existing world + PNG depth; no extra world redraw.
-          window.PerfProfiler?.end(actorProbePerf);
-
-          // Selective shell outline pass (layer-1 objects only)
-          const rpShellPerf = window.PerfProfiler?.begin('render: shell outline');
-          activeScene.overrideMaterial = shellOutlineMat;
-          camera.layers.set(1);
-          renderer.render(activeScene, camera);
-          camera.layers.enableAll();
-          activeScene.overrideMaterial = null;
-          window.PerfProfiler?.end(rpShellPerf);
-
-          // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-          if (_targetOutlineMeshes.length > 0) {
-            const rpTargetPerf = window.PerfProfiler?.begin('render: target outline');
-            scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-            camera.layers.set(2);
-            renderer.render(scene, camera);
-            camera.layers.enableAll();
-            scene.overrideMaterial = null;
-            window.PerfProfiler?.end(rpTargetPerf);
-          }
-
-          // Blend mist back over the outlines using their existing depth buffer.
-          if (s_cloudForestFog && window.CloudForestFog?.isActive?.()) {
-            const rpMistPerf = window.PerfProfiler?.begin('render: cloud mist');
-            window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
-            window.PerfProfiler?.end(rpMistPerf);
-          }
-          renderer.autoClearColor = true;
-          renderer.autoClearDepth = true;
-
-          // Furniture material-ID buffer (layer-3 objects only) — feeds the
-          // material-seam edge detection in the composite shader below.
-          // Skipped entirely while s_furnitureSeamOutlines is off — the
-          // composite's uSeamOutlinesOn uniform also zeroes its contribution
-          // regardless, so leaving _edgeIdRT's contents stale here is safe.
-          if (s_furnitureSeamOutlines) {
-            const rpSeamPerf = window.PerfProfiler?.begin('render: furniture seam');
-            renderer.setRenderTarget(_edgeIdRT);
-            renderer.setClearColor(0x000000, 0);
-            renderer.clear(true, true, false);
-            camera.layers.set(3);
-            activeScene.overrideMaterial = _furnitureIdMat;
-            renderer.render(activeScene, camera);
-            activeScene.overrideMaterial = null;
-            camera.layers.enableAll();
-            window.PerfProfiler?.end(rpSeamPerf);
-          }
-
-          // Composite: blend furniture material-seam outlines over the
-          // rendered scene, straight to the canvas.
-          const rpCompositePerf = window.PerfProfiler?.begin('render: composite');
-          renderer.setRenderTarget(null);
-          _postMat.uniforms.tColor.value          = _mainRT.texture;
-          _postMat.uniforms.tEdgeId.value          = _edgeIdRT.texture;
-          _postMat.uniforms.tEdgeIdDepth.value     = _edgeIdRT.depthTexture;
-          _postMat.uniforms.tSceneDepth.value      = _mainRT.depthTexture;
-          _postMat.uniforms.uCameraNear.value      = camera.near;
-          _postMat.uniforms.uCameraFar.value       = camera.far;
-          _postMat.uniforms.uSeamOutlinesOn.value = s_furnitureSeamOutlines ? 1 : 0;
-          renderer.render(_postScene, _postCamera);
-          window.PerfProfiler?.end(rpCompositePerf);
-          // Perception Mode silhouettes go on top of the finished composite so
-          // the painterly/outline post-process can't smear them.
-          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
-        } else {
-          const scoreMeshes = window.PuzzleCaveEntrances?.activeScoreMeshes?.(currentArea, activeScene); // The active cave plate owns direct-render score candidates.
-          const finishScore = window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes); // Keeps the glyphs out of actor probes and held-depth replay.
-          let worldPresented = false; // Release the temporary layer on error without drawing an overlay over an incomplete frame.
-          try {
-            window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.
-            renderer.setRenderTarget(null);
-            renderer.render(activeScene, camera);
-            const actorProbePerf = window.PerfProfiler?.begin('render: actor occlusion probes');
-            window.ActorRenderOcclusion?.probeAfterBase?.(); // Same visibility checks even with all shell outlines disabled.
-            window.PerfProfiler?.end(actorProbePerf);
-            // Coloured target outline pass (layer-2 objects — green allowed, red blocked)
-            if (_targetOutlineMeshes.length > 0) {
-              renderer.autoClearColor = false;
-              renderer.autoClearDepth = false;
-              scene.overrideMaterial = _targetOutlineAllowed ? targetOutlineGreenMat : targetOutlineRedMat;
-              camera.layers.set(2);
-              renderer.render(scene, camera);
-              camera.layers.enableAll();
-              scene.overrideMaterial = null;
-              renderer.autoClearColor = true;
-              renderer.autoClearDepth = true;
-            }
-            worldPresented = true;
-          } finally {
-            finishScore?.(worldPresented);
-          }
-          window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
-        }
-        } finally {
-          window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
-          restoreNpcVisuals?.(); // Never leave simulation-visible walkers hidden between frames.
-          restoreWildernessDistance?.(); // No static-world visual cull may leak into gameplay or the next zone.
-          restoreWallVisuals?.(); // Raycasts and path-corridor culling must see every wall again.
-          restoreGrassChunks?.(); // Grass writers and every other renderer see the single source mesh again.
-          restoreFarmTileBatches?.(); // Tile edits, raycasts and other renderers see the per-tile meshes again.
-          restoreZonePropBatches?.(); // Picking, raycasts and prop animation see the individual prop meshes again.
-        }
-        window.PerfProfiler?.end(renderPassPerf);
-        window.MobileRenderBudget?.sample(now, !paused && !window.PixelProbe?.armed);
-      }
+      // gameLoop's world render — render-scoped culls/batches, the world-frame
+      // presentation bracket, the main/outline/mist/seam passes and the
+      // composite — now lives in js/world-render-pipeline.js (renderFrame).
+      function renderWorldPasses(now) { window.WorldRenderPipeline.renderFrame(now); }
 
       // Debug hitbox/collider overlay (Settings → Dev Tools → Show Hitboxes)
       // now lives in js/debug-hitboxes.js — call via window.DebugHitboxes.draw().
@@ -31779,7 +31157,7 @@
         isCloudForestArea: () => !!EXTERIOR_ZONES[currentArea]?.cloudForest,
         getCloudForestFogRadiusTiles: () => s_cloudForestCullRadiusTiles, // Uses the same live value for near/far baked trees as the editor slider.
         getVegetationCullMode: () => s_cloudForestShortCull ? 'short-camera' : 'normal-camera', // Recomputes baked visibility when the A/B mode changes.
-        isVegetationChunkInView: (sphere, wasVisible) => vegetationCorridorContains(sphere, wasVisible, zoneVegetationCullBasis()), // Baked-tree visibility cannot override the procedural vegetation gate.
+        isVegetationChunkInView: (sphere, wasVisible) => window.ZoneVegetationCull.isChunkInView(sphere, wasVisible), // Baked-tree visibility cannot override the procedural vegetation gate.
       });
 
       window.FarmPanel?.init({

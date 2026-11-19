@@ -43,6 +43,10 @@ The game is `docs/index.html` (+ `docs/game.js`, `docs/onboarding.js`). All tool
 
 Serve this repository as static files and load portrait scripts from `docs/js/` so the runtime can fetch configs from `docs/config/` and image assets from `docs/assets/`.
 
+## Rendering: start at the visual render pipeline map
+
+[docs/architecture/visual-render-pipeline.md](docs/architecture/visual-render-pipeline.md) is the map of a frame: every pass in order, who owns each visual system, the named layer registry (`js/render-layers.js`), render-time presentation hooks (`js/render-hooks.js`, which replaced ten of the ~25 `renderer.render` monkey-patches; the rest are listed there) and render scopes (`js/world-render-pipeline.js`). `WorldRenderPipeline.captureFrame()` then `.lastCapture()` lists every native render of a frame with its pass, layers, target and draw count.
+
 ## Rendering: ground x-ray and translucent water (regression contract)
 Shell outlines for registered held/foot x-ray objects inherit the same ground-visibility exception: they can show through classified walkable ground, while walls, furniture, rocks, snow and water remain occluders. The shell replay restores the ordinary depth buffer before later outline passes.
 
@@ -104,7 +108,7 @@ zones. The Cloud Forest-specific corridor remains configurable for performance t
 
 ## Outlines are fog-aware; the furniture seam pass is off
 
-`shellOutlineMat` (`docs/game.js`, the inverted-hull "Shell Outlines" pass —
+`shellOutlineMat` (`docs/js/world-render-pipeline.js`, formerly in `game.js`; the inverted-hull "Shell Outlines" pass —
 the dark border on rocks/crops/terrain steps) now declares `fog: true` and
 merges in `THREE.UniformsLib.fog`, so it mixes its black line toward whichever
 scene's actual `fogColor`/`fogDensity` is active based on distance, by hand in

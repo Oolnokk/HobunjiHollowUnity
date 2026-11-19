@@ -16,7 +16,7 @@
   // Layer 4 is a depth-only replay of visible PNG silhouettes immediately
   // before outline rendering (layers 1-3 are the shell, target and furniture
   // material-ID passes in game.js).
-  const LAYER = 4;
+  const LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Named in js/render-layers.js.
 
   let deps = null;
 

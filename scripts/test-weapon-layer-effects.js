@@ -226,7 +226,7 @@ const handheld = window.WEAPON_SPRITE_ASSEMBLY_CONFIG.weapons.torch; // Producti
 const bareTip = pixels(4, 10, [[1, 8, [222, 212, 193, 255]], [2, 8, [222, 212, 193, 255]], [1, 9, [160, 140, 120, 255]]]);
 const litPlane = new Group(); litPlane.renderOrder = 1.5;
 litPlane.material = { map: { image: bareTip, needsUpdate:false } }; // Real torch clones its base map before per-instance cloth tint.
-const actualOverlayLayer = Number(held.match(/const HELD_OVERLAY_LAYER = (\d+);/)?.[1]); // Read the actual held-overlay layer from gameplay.
+const actualOverlayLayer = Number(held.match(/const HELD_OVERLAY_LAYER = (?:globalThis\.HobunjiRenderLayers\?\.HELD_OVERLAY \?\? )?(\d+);/)?.[1]); // Read the actual held-overlay layer from gameplay.
 assert(Number.isInteger(actualOverlayLayer), 'the test can locate the actual held overlay layer');
 litPlane.layers.mask = (1 << 0) | (1 << actualOverlayLayer); // Torch plane participates in ordinary and real held overlay draws.
 window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: actualOverlayLayer };

@@ -123,7 +123,20 @@
   }
 
   function installRenderHook() {
-    const prototype = THREE.WebGLRenderer?.prototype; // Used as the shared synchronous render boundary made hookable by combat-config-loader.
+    // Once per world frame for the world scene only (js/render-hooks.js). The
+    // old per-render wrapper also ran for the final composite quad scene,
+    // whose root never matches a plane's, and dropped every tracked plane.
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'heftroot-billboard',
+        owner: 'heftroot-billboard-bridge.js',
+        order: window.RenderHooks.ORDER.HEFTROOT_BILLBOARD,
+        scope: 'frame',
+        before: ctx => faceBillboards(ctx.scene, ctx.camera),
+      });
+      return;
+    }
+    const prototype = THREE.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js.
     if (!prototype || prototype.__hobunjiHeftrootBillboardHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render; // Used to preserve crop-sprite/presentation and every earlier renderer wrapper in the chain.
     prototype.render = function heftrootBillboardRender(scene, camera, ...rest) {

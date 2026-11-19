@@ -758,8 +758,30 @@
     return snapshots;
   }
 
+  function revertNpcPresentation(snapshots) {
+    for (let i = (snapshots?.length || 0) - 1; i >= 0; i--) {
+      try { snapshots[i](); } catch (_) {}
+    }
+  }
+
   function installRenderHook() {
-    if (state.renderHookInstalled || !THREE?.WebGLRenderer?.prototype) return;
+    if (state.renderHookInstalled) return;
+    // js/render-hooks.js owns the "once per world frame" bracket this hook used
+    // to approximate with a microtask: applied before the first pass, reverted
+    // after the last.
+    if (global.RenderHooks?.register) {
+      global.RenderHooks.register({
+        id: 'npc-social-inhibition',
+        owner: 'npc-social-inhibition-runtime.js',
+        order: global.RenderHooks.ORDER.NPC_SOCIAL_INHIBITION,
+        scope: 'frame',
+        before: () => { state.renderCount++; return applyAllNpcPresentation(); },
+        after: (_ctx, snapshots) => revertNpcPresentation(snapshots),
+      });
+      state.renderHookInstalled = true;
+      return;
+    }
+    if (!THREE?.WebGLRenderer?.prototype) return; // Fallback for pages without render-hooks.js.
     const proto = THREE.WebGLRenderer.prototype;
     const original = proto.render;
     if (typeof original !== 'function') return;
