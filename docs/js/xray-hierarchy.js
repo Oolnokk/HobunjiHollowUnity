@@ -578,7 +578,7 @@
               : 'None recorded'],
             ['Tool vs its own front art', frontPriority],
             ['Shoulder pet compositor', live.shoulderPetCompositor?.active
-              ? live.shoulderPetCompositor.mode + ' · front pet ' + (live.shoulderPetCompositor.frontForeground ? 'above' : 'behind') + ' · rear pet ' + (live.shoulderPetCompositor.backForeground ? 'above' : 'behind')
+              ? live.shoulderPetCompositor.mode + ' · from front ' + (live.shoulderPetCompositor.frontForeground ? 'above' : 'behind') + ' · from rear ' + (live.shoulderPetCompositor.backForeground ? 'above' : 'behind')
               : 'No active shoulder pet'],
             ['Front mask stencil', maskStatus],
             ['Front mask pass status', String(live.frontPortraitMaskReason ?? '-')],

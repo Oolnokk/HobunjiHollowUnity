@@ -12,13 +12,13 @@ const config = fs.readFileSync('docs/js/xray-hierarchy.js', 'utf8');
 const index = fs.readFileSync('docs/index.html', 'utf8');
 
 assert.match(game, /const SHOULDER_PET_XRAY_ENABLED = false/, 'retired pet-specific x-ray remains off');
-assert.match(attachment, /const shoulderFacingTurnDeg = facingTowardPlayerCenter \? 180 : 0;/,
-  'inward observation still rotates the sprite 180 degrees; the pairing change belongs in the compositor');
+assert.match(attachment, /shoulderFacingTurnDeg = facingTowardPlayerCenter !== authoredFacesInward/,
+  'the attachment resolves the authored heading before choosing its half-turn');
 assert.match(game, /function updatePetLayering\(active, pet\)[\s\S]*?HeldObjectRenderOrder\?\.setShoulderPetLayering\?\.\(/,
   'gameplay delegates player/pet visual decisions to the shared compositor');
 assert.doesNotMatch(game, /function _setLayerDepthWrite\(/, 'gameplay no longer writes shoulder-pet depth independently');
 assert.doesNotMatch(game, /function _setPlayerBodyRenderOrder\(/, 'gameplay no longer reorders shoulder-pet portraits independently');
-assert.match(render, /if \(isBaseWorldPass\(scene, camera\)\) syncShoulderPetLayering\(\)/,
+assert.match(render, /if \(isBaseWorldPass\(scene, camera\)\) syncShoulderPetLayering\(camera\)/,
   'the compositor restores its shared policy immediately before a real world draw');
 assert.match(render, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'held owners still receive front-art masks in scenes with no nearby ground/water');
@@ -42,11 +42,14 @@ const masks = new Set();
 let synced = 0;
 const windowStub = { HobunjiShoulderSplitLayerParity: { syncAvatar(avatar) { synced++; for (const split of avatar?.group?.children || []) { if (!split.userData?.hobunjiShoulderSplitOverlay) continue; const source = split.userData.hobunjiPlaneFace === 'front' ? avatar.frontPlane : avatar.backPlane; split.renderOrder = source.renderOrder + 0.01; split.material.depthWrite = source.material.depthWrite; } } } };
 const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh), delete: mesh => masks.delete(mesh) };
-const api = new Function('window', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
+// The identity portrait faces +Z; the fixtures supply cameras on either side.
+const three = { Vector3: class { applyMatrix4() { return this; } }, Matrix4: class { copy() { return this; } invert() { return this; } } };
+const view = frontView => ({ getWorldPosition(point) { point.z = frontView ? 5 : -5; return point; } });
+const api = new Function('window', 'THREE', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
   'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER',
   render.slice(start, end) +
   '\nreturn { setShoulderPetLayering, syncShoulderPetLayering, compareShoulderPetDrawFaces, shoulderPetDrawFace, orders: SHOULDER_PET_RENDER_ORDERS, get state() { return lastShoulderPetDecision; } };')(
-    windowStub,
+    windowStub, three,
     (material, fn) => { for (const entry of Array.isArray(material) ? material : [material]) if (entry) fn(entry); },
     key => key === 'shoulderPet.presentation' ? mode : null,
     mesh => mesh?.name === 'player_avatar_front_plane',
@@ -59,6 +62,8 @@ const makeMesh = name => ({
   userData: {},
 });
 const front = makeMesh('player_avatar_front_plane');
+front.matrixWorld = {}; // Identity in this camera-side fixture.
+front.updateWorldMatrix = () => {};
 const back = makeMesh('player_avatar_back_plane');
 const ownerHatFront = makeMesh('player_avatar_front_hat_xray_plane'); // Tests real auxiliary front portrait depth participation.
 const ownerHatBack = makeMesh('player_avatar_back_hat_xray_plane'); // Tests rear hat overlay parity independently.
@@ -87,30 +92,30 @@ const activeOwner = { frontMesh: front, backMesh: back }; // Tracks the actual o
 const use = (companion, viewerSeesFront) => {
   activeOwner.frontMesh = front;
   activeOwner.backMesh = back;
-  return api.setShoulderPetLayering(
-    companion, front, back, front.material, back.material, viewerSeesFront);
+  api.setShoulderPetLayering(companion, front, back, front.material, back.material);
+  api.syncShoulderPetLayering(view(viewerSeesFront));
 };
 
 function testFacing(inward) {
   pet.__hobunjiShoulderFacingInward = inward;
   use(pet, true);
   const a = pet.avatarRef;
-  assert.equal(front.renderOrder, api.orders.front, 'owner front order remains authoritative');
-  assert.equal(back.renderOrder, api.orders.back, 'owner back order remains authoritative');
+  assert.equal(front.renderOrder, inward ? api.orders.front : api.orders.back);
+  assert.equal(back.renderOrder, inward ? api.orders.back : api.orders.front);
   for (const material of [front.material, back.material, a.frontPlane.material, a.backPlane.material]) {
     assert.equal(material.depthWrite, false, 'attached owner/pet remain depth-write-free');
   }
-  assert.equal(a.frontPlane.renderOrder, inward ? api.orders.frontAbove : api.orders.frontBehind);
-  assert.equal(a.backPlane.renderOrder, inward ? api.orders.backBehind : api.orders.backAbove);
+  assert.equal(a.frontPlane.renderOrder, api.orders.pet);
+  assert.equal(a.backPlane.renderOrder, api.orders.pet);
   assert.equal(a.frontPlane.renderOrder > front.renderOrder, inward, 'front plane swaps across owner front');
   assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-front')), inward ? -1 : 1,
     'front pet must x-ray over EVERY owner front sprite in its inward pose');
   assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-back', 'pet-back')), inward ? 1 : -1,
     'rear pet must x-ray over EVERY owner rear sprite in its outward pose');
-  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-back')), inward ? 1 : -1,
+  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'pet-back')), inward ? -1 : 1,
     'cross-face ordering remains consistent while observation flips the pet');
-  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'owner-back')), -1,
-    'one skinned owner still has stable front-before-back face priority');
+  assert.equal(Math.sign(api.compareShoulderPetDrawFaces('owner-front', 'owner-back')), inward ? -1 : 1,
+    'the two owner faces bracket the pet even when shared by a skinned mesh');
   assert.equal(api.shoulderPetDrawFace({object:a.splitFront,material:a.splitFront.material}), 'pet-front');
   assert.equal(api.shoulderPetDrawFace({object:a.splitBack,material:a.splitBack.material}), 'pet-back');
   assert.equal(api.shoulderPetDrawFace({object:ownerHatFront,material:ownerHatFront.material}), 'owner-front');
@@ -126,9 +131,9 @@ function testFacing(inward) {
   assert.equal(a.backPlane.userData.hobunjiShoulderPortraitFace, 'back');
   for (const [mesh, shouldMask] of [
     [a.frontPlane, inward], [a.splitFront, inward],
-    [a.backPlane, !inward], [a.splitBack, !inward],
+    [a.backPlane, inward], [a.splitBack, inward],
   ]) {
-    assert.equal(masks.has(mesh), shouldMask, 'only the above-owner face joins the held stencil');
+    assert.equal(masks.has(mesh), shouldMask, 'either animal card can supply the foreground silhouette');
     assert.equal(mesh.userData.hobunjiShoulderPetStencilForeground === true, shouldMask);
   }
   assert.equal(api.state.mode, 'owner-portrait-stages');
@@ -152,20 +157,18 @@ assert.equal(visualLayerFor({object: {name:'split',userData:{hobunjiShoulderPort
   material: {name:'avatar_skinned_front_material'}}), 'actor.rear');
 
 testFacing(false);
-pet.__hobunjiShoulderFacingInward = true; // Observation pose changes without rebuilding or reassigning the active pet.
-api.syncShoulderPetLayering(); // The base-world render calls this directly every frame.
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove,
-  'an observation transition moves the live pet front above the owner without reattachment');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backBehind,
-  'the back face simultaneously moves behind the owner after the same observation transition');
-assert.equal(pet.avatarRef.splitFront.renderOrder, api.orders.frontAbove + 0.01,
-  'split overlay follows the observation transition before transparent sorting');
+pet.__hobunjiShoulderFacingInward = true; // The active pet switches observation pose without reattachment.
+api.syncShoulderPetLayering(view(true));
+assert(front.renderOrder < pet.avatarRef.backPlane.renderOrder, 'either animal card draws above the front portrait when inward');
+assert(back.renderOrder > pet.avatarRef.frontPlane.renderOrder, 'either animal card draws behind the rear portrait when inward');
+assert(masks.has(pet.avatarRef.backPlane), 'the visible reverse card can stamp the front-view mask');
+api.syncShoulderPetLayering(view(false));
+assert(!masks.has(pet.avatarRef.backPlane), 'the rear view omits the inward pet from the foreground mask');
 pet.__hobunjiShoulderFacingInward = false;
-api.syncShoulderPetLayering();
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontBehind,
-  'the reverse observation transition returns the live front behind the owner');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backAbove,
-  'the reverse observation transition brings the live back above the owner');
+api.syncShoulderPetLayering(view(false));
+assert(front.renderOrder > pet.avatarRef.backPlane.renderOrder, 'the front portrait covers either animal card in the outward pose');
+assert(back.renderOrder < pet.avatarRef.frontPlane.renderOrder, 'the animal stays in front of the rear portrait in the outward pose');
+assert(masks.has(pet.avatarRef.frontPlane), 'the rear view can stamp either card in the outward pose');
 testFacing(true);
 
 // Exercise the common skinned owner, where one mesh has two material-group
@@ -379,24 +382,24 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
 use(pet, true); // Restore the original rigid owner for detachment assertions.
 testFacing(true);
 use(pet, false);
-assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.frontAbove, 'camera side must not flip the pose');
-assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.backBehind);
+assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.pet, 'orbiting the camera does not change the pet stage');
+assert.equal(pet.avatarRef.backPlane.renderOrder, api.orders.pet);
 testFacing(false);
 
 front.material.depthWrite = true;
 front.renderOrder = 91;
 api.syncShoulderPetLayering();
 assert.equal(front.material.depthWrite, false, 'late depth-write changes are repaired before draw');
-assert.equal(front.renderOrder, api.orders.front, 'owner front priority is restored before draw');
+assert.equal(front.renderOrder, api.orders.back, 'outward front priority is restored before draw');
 
 const replacement = makePet();
-use(replacement, true);
+use(replacement, false);
 assert.equal(pet.avatarRef.frontPlane.material.depthWrite, true, 'old pet depth restored');
 assert.equal(pet.avatarRef.frontPlane.renderOrder, api.orders.front, 'old pet joins regular actor sort');
 assert.equal(pet.avatarRef.frontPlane.userData.hobunjiShoulderPortraitFace, undefined);
 assert.equal(pet.avatarRef.group.userData.hobunjiShoulderPetLayering, undefined);
 assert.equal(masks.has(pet.avatarRef.backPlane), false, 'old pet cannot mask owner tools');
-assert.equal(masks.has(replacement.avatarRef.backPlane), true, 'new outward pet masks with its back');
+assert.equal(masks.has(replacement.avatarRef.backPlane), true, 'replacement pet masks with either card from the rear');
 
 use(null, false);
 assert.equal(front.material.depthWrite, true, 'detaching restores owner front depth');

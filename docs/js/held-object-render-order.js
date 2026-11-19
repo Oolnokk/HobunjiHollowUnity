@@ -422,13 +422,14 @@
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
-    front: 2, back: 4, // The owner's existing front/back portrait orders stay unchanged.
-    frontBehind: 1, frontAbove: 3, // Either side of the owner's front art and its 2.5 hat overlay.
-    backBehind: 1, backAbove: 6, // Either side of the owner's back art and its 5.0 hat overlay.
-  }); // Fixed intra-owner portrait stage ordering; no camera-specific x-ray mode.
+    front: 2, back: 4, // Ordinary owner priorities, also the low and high ends of the attached stack.
+    pet: 3, // Both sides of the animal sit between the owner sides. A turn can expose either animal card.
+  });
+  const shoulderViewLocal = new THREE.Vector3(); // Tests the camera against the owner's front plane for the optional gear mask.
+  const shoulderViewInverse = new THREE.Matrix4(); // Converts a world view ray to the owner portrait's local space.
   let shoulderPetPresentation = null; // Latest gameplay-owned pet and the owner's two portrait meshes.
   let previouslyPresentedPet = null; // Previous pet to restore when the stable slot changes.
-  const petForegroundStencilParts = new Set(); // Only the active pet face above its corresponding owner face covers the owner's held gear.
+  const petForegroundStencilParts = new Set(); // The pet can mask held gear only in the view where it is foreground.
   let lastShoulderPetDecision = { active: false, mode: 'owner-portrait-stages' }; // Mobile-readable stage pairing.
   let lastFrontPortraitMaskReason = 'not-rendered'; // Explains 0/0 when no owner stencil was attempted.
 
@@ -471,14 +472,14 @@
     return overlay ? 'owner-' + overlay[1].toLowerCase() : null; // Same-owner hat/portrait helpers; never unrelated NPCs.
   }
 
-  // Four-way portrait stage rank shared by every transparent-sort comparison.
+  // Three-stage portrait rank shared by every transparent-sort comparison.
   // No per-comparison closure: large towns sort thousands of transparent items.
   function shoulderPetFaceSortRank(face, inward) {
     switch (face) {
-      case 'owner-front': return SHOULDER_PET_RENDER_ORDERS.front;
-      case 'owner-back': return SHOULDER_PET_RENDER_ORDERS.back;
-      case 'pet-front': return inward ? SHOULDER_PET_RENDER_ORDERS.frontAbove : SHOULDER_PET_RENDER_ORDERS.frontBehind;
-      case 'pet-back': return inward ? SHOULDER_PET_RENDER_ORDERS.backBehind : SHOULDER_PET_RENDER_ORDERS.backAbove;
+      case 'owner-front': return inward ? SHOULDER_PET_RENDER_ORDERS.front : SHOULDER_PET_RENDER_ORDERS.back;
+      case 'owner-back': return inward ? SHOULDER_PET_RENDER_ORDERS.back : SHOULDER_PET_RENDER_ORDERS.front;
+      case 'pet-front':
+      case 'pet-back': return SHOULDER_PET_RENDER_ORDERS.pet;
       default: return null;
     }
   }
@@ -519,13 +520,14 @@
     }
   }
 
-  function syncPetForegroundStencil(pet, foregroundFace) {
+  function syncPetForegroundStencil(pet, foreground) {
     const desired = new Set(); // Bounded to the active pet's two cards and optional split copies, not a scene traversal.
     const avatar = pet?.avatarRef;
-    if (avatar && (foregroundFace === 'front' || foregroundFace === 'back')) {
-      for (const mesh of [avatar.frontPlane, avatar.backPlane, ...(avatar.group?.children || [])]) {
-        if (shoulderPetPortraitFace(mesh, avatar) !== foregroundFace) continue;
-        desired.add(mesh);
+    if (avatar && foreground) {
+      if (avatar.frontPlane) desired.add(avatar.frontPlane);
+      if (avatar.backPlane) desired.add(avatar.backPlane);
+      for (const mesh of avatar.group?.children || []) {
+        if (mesh.userData?.hobunjiShoulderSplitOverlay && shoulderPetPortraitFace(mesh, avatar)) desired.add(mesh);
       }
     }
     for (const mesh of petForegroundStencilParts) {
@@ -567,14 +569,24 @@
     syncShoulderPetLayering();
   }
 
-  function syncShoulderPetLayering() {
+  function shoulderViewIsFront(camera, ownerFront) {
+    if (!ownerFront?.matrixWorld) return true;
+    ownerFront.updateWorldMatrix(true, false);
+    shoulderViewInverse.copy(ownerFront.matrixWorld).invert();
+    if (camera.isOrthographicCamera) {
+      return camera.getWorldDirection(shoulderViewLocal).transformDirection(shoulderViewInverse).z <= 0;
+    }
+    return camera.getWorldPosition(shoulderViewLocal).applyMatrix4(shoulderViewInverse).z >= 0;
+  }
+
+  function syncShoulderPetLayering(camera) {
     const state = shoulderPetPresentation;
     if (!state) return;
     const pet = state.pet;
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
       syncShoulderOwnerOverlayDepth(state, false);
-      if (petForegroundStencilParts.size) syncPetForegroundStencil(null, null);
+      if (petForegroundStencilParts.size) syncPetForegroundStencil(null, false);
       if (previouslyPresentedPet) {
         setShoulderPartDepthWrite(state.frontMaterial, true);
         setShoulderPartDepthWrite(state.backMaterial, true);
@@ -587,27 +599,23 @@
     }
     previouslyPresentedPet = pet;
     const inward = pet.__hobunjiShoulderFacingInward === true; // The existing animation alone decides when the two stages swap.
-    const frontOrder = shoulderPetFaceSortRank('pet-front', inward); // Shared with the transparent sorter.
-    const backOrder = shoulderPetFaceSortRank('pet-back', inward);
-    const frontForeground = frontOrder > SHOULDER_PET_RENDER_ORDERS.front; // The same draw decision selects the held-gear mask.
+    const ownerFrontOrder = shoulderPetFaceSortRank('owner-front', inward); // The front view sees the pet on top in the inward pose.
+    const ownerBackOrder = shoulderPetFaceSortRank('owner-back', inward); // The reverse view sees the opposite layering.
+    const petOrder = SHOULDER_PET_RENDER_ORDERS.pet; // Independent of which animal card survives backface culling.
     const avatar = pet.avatarRef;
 
     // Draw the owner/pet as one depth-tested, depth-write-free portrait stack.
-    syncShoulderOwnerOverlayDepth(state, true); // Front/back hat copies must not write depth through their paired pet face.
-    // Do not change either owner's render order to push the whole character above/below the pet.
+    syncShoulderOwnerOverlayDepth(state, true);
     setShoulderPartDepthWrite(state.frontMaterial, false);
     setShoulderPartDepthWrite(state.backMaterial, false);
-    if (state.frontMesh) state.frontMesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.front;
-    if (state.backMesh && state.backMesh !== state.frontMesh) state.backMesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.back;
-    for (const [mesh, face, order] of [
-      [avatar?.frontPlane, 'front', frontOrder],
-      [avatar?.backPlane, 'back', backOrder],
-    ]) {
+    if (state.frontMesh) state.frontMesh.renderOrder = ownerFrontOrder;
+    if (state.backMesh && state.backMesh !== state.frontMesh) state.backMesh.renderOrder = ownerBackOrder;
+    for (const [mesh, face] of [[avatar?.frontPlane, 'front'], [avatar?.backPlane, 'back']]) {
       if (!mesh) continue;
       setShoulderPartDepthWrite(mesh.material, false);
-      mesh.renderOrder = order;
+      mesh.renderOrder = petOrder;
       mesh.userData = mesh.userData || {};
-      mesh.userData.hobunjiShoulderPortraitFace = face; // Keeps manual X-ray category sorting in the same owner portrait stage.
+      mesh.userData.hobunjiShoulderPortraitFace = face;
     }
     // Split and replacement skinned cards share the same portrait-stage rank as
     // their source face in the optional manual sorter; split-layer parity
@@ -622,14 +630,19 @@
       if (!hasLayer(state.frontMesh, FRONT_PORTRAIT_MASK_LAYER)) state.frontMesh.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
       if (!frontPortraitRegistry.has(state.frontMesh)) frontPortraitRegistry.add(state.frontMesh);
     }
-    // Only the pet face actually ABOVE its matching owner face contributes to the private owner mask.
-    syncPetForegroundStencil(pet, frontForeground ? 'front' : 'back');
+    // The mask follows the same view as the color pass. Three culls the hidden pet card.
+    if (camera) {
+      const needsPetMask = xrayRule('weapon.frontPlaneMask') !== 'off' || xrayRule('hand.frontPlaneMask') !== 'off'; // The default color pass needs no camera-side solve.
+      if (needsPetMask || petForegroundStencilParts.size) {
+        syncPetForegroundStencil(pet, needsPetMask && shoulderViewIsFront(camera, state.frontMesh) === inward);
+      }
+    }
     window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar); // The split halves inherit face-specific render order, material and stencil in the same frame.
     lastShoulderPetDecision = {
       active: true, mode: 'owner-portrait-stages', inwardFrontPose: inward,
-      frontForeground, backForeground: !frontForeground,
-      petFrontOrder: frontOrder, petBackOrder: backOrder,
-      ownerFrontOrder: SHOULDER_PET_RENDER_ORDERS.front, ownerBackOrder: SHOULDER_PET_RENDER_ORDERS.back,
+      frontForeground: inward, backForeground: !inward,
+      petFrontOrder: petOrder, petBackOrder: petOrder,
+      ownerFrontOrder, ownerBackOrder,
       ownerDepthWrite: false, petDepthWrite: false,
       ownerOverlayDepthWriteFree: ownerOverlayMaterialDepths.size,
       pairedFaceSort: true, // The private sorter places a pet above/below ALL owner sprites in its face stage.
@@ -639,7 +652,7 @@
       avatar.group.userData.hobunjiShoulderPetLayering = {
         ...lastShoulderPetDecision, xrayEnabled: true,
         depthMode: 'depth-tested-owner-portrait-stage-xray',
-        recentChange: 'The pet front draws above the owner front during the inward pose. The pet back draws above the owner back during the outward pose.',
+        recentChange: 'From the owner’s front, the pet peeks out from behind in the outward pose and draws in front in the inward pose.',
       };
     }
   }
@@ -849,7 +862,7 @@
           const owner = face === 'owner-front' || face === 'owner-back';
           const ownerBase = face === 'owner-front' ? shoulderPetPresentation?.frontMesh : shoulderPetPresentation?.backMesh;
           // Hat and auxiliary portrait layers follow their owner's stage before a foreground pet.
-          value = stage + (split ? 0.01 : owner && mesh !== ownerBase ? (face === 'owner-front' ? 0.5 : 1) : 0);
+          value = stage + (split ? 0.01 : owner && mesh !== ownerBase ? 0.5 : 0);
         }
         orderCache.set(item, value);
       }
@@ -3746,7 +3759,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
     replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
 
-    if (isBaseWorldPass(scene, camera)) syncShoulderPetLayering(); // Reassert paired-sprite policy after other actor depth writers and before this renderer's portrait/stencil passes.
+    if (isBaseWorldPass(scene, camera)) syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers and before this renderer's portrait/stencil passes.
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
