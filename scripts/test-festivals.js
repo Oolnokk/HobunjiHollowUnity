@@ -191,6 +191,25 @@ const festivalStage = window.MapLayoutSystem.getEffectiveMapData(town,{dateOrdin
   .decor.find(piece=>piece.key==='festivalStage'&&piece.festivalLocale?.kind==='bandstand'); // The same movable stage used by the crown ceremony.
 assert(festivalStage,'Uung Feast layout includes its bandstand');
 assert(Math.hypot(morningHost.c-festivalStage.col,morningHost.r-festivalStage.row)<6,'the hand-in meeting is near the authored stage');
+// NPC pathfinding (not just general terrain checks) must reject crowded festival furniture.
+const blockedHostCells = new Set(); // Models a bandstand whose nearby tiles are occupied by festival props.
+for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++)
+  blockedHostCells.add((morningHost.c+dc)+','+(morningHost.r+dr));
+let hostCollisionChecks = 0; // Counts narrow NPC walkability probes so this test exercises the real collision API.
+window.NpcPathfinding = {isNpcTileWalkable(area,col,row){
+  assert.equal(area,'town','host probes use the actual town area');
+  hostCollisionChecks++;
+  return !blockedHostCells.has(col+','+row);
+}};
+const clearPlazaHost = festivalTarget(host);
+assert(clearPlazaHost,'a clear plaza spot beyond the nearest two tile rings should still be found');
+assert.equal(Math.max(Math.abs(clearPlazaHost.c-morningHost.c),Math.abs(clearPlazaHost.r-morningHost.r)),3,
+  'the host expands to a collision-clear tile only when the nearby bandstand is obstructed');
+assert(!blockedHostCells.has(clearPlazaHost.c+','+clearPlazaHost.r),'never route Hunundi into an occupied stage tile');
+assert(hostCollisionChecks>9,'the NPC pathfinder is consulted rather than a general canStandAt fallback');
+window.NpcPathfinding = {isNpcTileWalkable:()=>false};
+assert.equal(festivalTarget(host),null,'fully blocked plaza does not assign an impossible NPC target');
+window.NpcPathfinding = null; // Restores the no-pathfinder editor/test fallback for independent festival checks.
 hour = 17;
 assert.equal(festivalTarget(host)?.activity,'receiving the Five Blossoms','Hunundi remains findable during feast hours');
 civilDay = calendar.ordinal(9,22); hour = 8;
