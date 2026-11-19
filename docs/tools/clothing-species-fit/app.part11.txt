@@ -91,7 +91,7 @@ async function importGrids(file){
       A.maskPreviewTransforms[key]=defaultMaskTransform();
     }
   }else throw new Error('Unsupported grid export version.');
-  R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap(); // A newly imported mask must replace the previous in-memory brush buffer.
+  R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap();R.headbandRearCanvas=null;R.headbandRearKey=null; // Reload imported rear PNG instead of continuing with the previous in-memory painting buffer. // A newly imported mask must replace the previous in-memory brush buffer.
   if(v.repoBase)E.repo.value=v.repoBase;
   saveState();syncTransformControls();syncMaskTransformControls();await refreshAssets();log('Imported '+file.name);
 }
