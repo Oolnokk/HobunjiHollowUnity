@@ -201,20 +201,36 @@ function cairns(T,host,sites){
  mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};
  mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
 }
-function engrave(mesh,site,stone=false) {
- const surface=root.FurniturePatternSurfaces; // The exact ruin-wall surface compositor handles UVs, authored Harlyao lattice and opacity.
- if(!surface?.applyPart){error='FurniturePatternSurfaces unavailable for wilderness engraving';return false;}
- mesh.userData.ownsWildernessWitnessBuffers=true; // Only these projected surface children are disposable; source quarry/pillar geometry is shared.
- mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,patternId:site.patternId,unique:true};
- const pattern={
-  slot:'wilderness-ruin-masonry',selector:'all',mode:'engraving',patternId:site.patternId,
-  scale:.65,opacity:.9,engravingCoreOpacity:.85,glowIntensity:0,glowPulseDepth:0,
-  layerTransforms:[{tiling:true,scale:1,motifScale:1,rotationDeg:0,offsetX:0,offsetY:0}],
-  palette:['#e6e0d1',site.ink],maxAtlasPx:256,tilePx:128
- }; // Repeat the original ruin-wall motif across the *whole* visible stone surface; never add a glowing rune decal.
- surface.applyPart(mesh,{...(mesh.userData?.authoredPart||{}),kind:stone?'sphere':mesh.userData?.authoredPart?.kind||'box',patternSurfaces:[pattern]});
- return mesh.children.some(child=>child.userData?.furniturePattern?.mode==='engraving');
+const SOURCE_PILLAR_PATTERN_KEY='pillar_square › Square Tapered Shaft'; // The intact V50 ruin pillar sets the tile scale; debris does not invent an independent layout.
+function originalPillarPatternScale(){
+ const config=root.RuinPatternSurfaceRules?.mergedConfig?.(); // One-time zone construction reads the same applied/repo rules as decorateRuin.
+ const source=Number(config?.rules?.[SOURCE_PILLAR_PATTERN_KEY]?.scale),fallback=Number(config?.defaultScale);
+ return Number.isFinite(source)&&source>0?source:Number.isFinite(fallback)&&fallback>0?fallback:4;
 }
+function engrave(mesh,site,stone=false) {
+ const surface=root.FurniturePatternSurfaces; // The production ruin wall compositor and side-perimeter unwrap own all masonry pattern UVs.
+ if(!surface?.applyPart){error='FurniturePatternSurfaces unavailable for wilderness engraving';return false;}
+ mesh.userData.ownsWildernessWitnessBuffers=true; // Cleanup owns projected overlays only, never the shared quarry stone or authored masonry.
+ mesh.userData.witnessDye={id:site.dyeId,name:site.dyeName,color:site.ink,motifUrl:site.patternUrl,patternId:site.patternId,unique:true};
+ const scale=originalPillarPatternScale(); // Original pillars use tile 4 by default, not the previous wilderness-only .65 motif scale.
+ const slots=stone?[
+  {slot:'ruin-pillar-rock',selector:'all'}
+ ]:[
+  {slot:'ruin-pillar-sides',selector:'sides'},
+  {slot:'ruin-pillar-broken-ends',selector:'caps'}
+ ]; // Sides retain the intact pillar's continuous, four-face perimeter UV; every exposed fracture/cap gets the same motif.
+ const records=slots.map(slot=>({...slot,mode:'engraving',patternId:site.patternId,
+  scale,opacity:.9,engravingCoreOpacity:.85,glowIntensity:0,glowPulseDepth:0,
+  palette:['#b7a185',site.ink],maxAtlasPx:256,tilePx:256,minSurfaceTiles:0
+ })); // Use the repo motif's own tiling/frame/mesh settings exactly as decorateRuin does; only the landmark ink and glow differ.
+ const part=mesh.userData?.authoredPart; // Authored box vs natural rock decides the canonical pattern surface projection.
+ surface.applyPart(mesh,{...part,kind:stone?'sphere':part?.kind||'box',patternSurfaces:records});
+ const engraved=mesh.children.filter(child=>child.userData?.furniturePattern?.mode==='engraving'&&records.some(record=>record.slot===child.userData.furniturePattern.slot));
+ mesh.userData.wildernessPatternSurfaces={expected:records.length,actual:engraved.length,scale}; // Mobile diagnostics catch a missing side/cap overlay without opening devtools.
+ if(engraved.length!==records.length)error='Incomplete ruin pattern on '+(mesh.name||site.id)+': '+engraved.length+'/'+records.length;
+ return engraved.length===records.length;
+}
+
 const PATTERNED_PILLAR_PARTS=Object.freeze(['base','stump','stub','fallen','cap']); // Only major masonry receives full face projection; chips stay bare to limit draw calls.
 
 function witnessStone(T,host,sites){
