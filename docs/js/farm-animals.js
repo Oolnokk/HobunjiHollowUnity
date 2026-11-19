@@ -702,11 +702,13 @@
   const BREEDING_MATE_CACHE_MS = 750; // Limits pair/animal lookup work during AI ticks.
   const BREEDING_MATE_PATH_RETRY_MS = 1200; // Prevents pathfinding every AI tick when a pen is blocked.
   let breedingFollowerById = new Map(); // Live world-only parentB -> parentA map used by the daytime wander override.
+  let breedingWorldParentIds = new Set(); // Shared timed cache for held Fertility contextual prompts, including mixed Stable/world pairs.
   let breedingFollowerRefreshAt = 0; // Next allowed breeding-map rebuild in milliseconds.
 
   function invalidateBreedingFollowCache() {
     breedingFollowerRefreshAt = 0; // Newly paired, sold, or respawned livestock is discovered on its next AI tick.
     breedingFollowerById.clear();
+    breedingWorldParentIds.clear();
   }
 
   function breedingFollowerMap() {
@@ -716,14 +718,23 @@
     const liveById = new Map(); // Indexed once per refresh, instead of scanning live animals per follower.
     for (const animal of deps.animalObjects) if (animal?.livestockId) liveById.set(animal.livestockId, animal);
     const followers = new Map(); // Only live farm/world parents can pair-follow; personal Stable companions never do.
+    const worldParentIds = new Set(); // Allows prompt filtering without loading breeding pairs on every render frame.
     for (const pair of deps._loadWorldBreedingPairs?.() || []) {
+      if (pair?.parentA?.source === 'world') worldParentIds.add(pair.parentA.id);
+      if (pair?.parentB?.source === 'world') worldParentIds.add(pair.parentB.id);
       if (pair?.parentA?.source !== 'world' || pair?.parentB?.source !== 'world') continue;
       const leader = liveById.get(pair.parentA.id), follower = liveById.get(pair.parentB.id);
       if (!leader || !follower || leader === follower || followers.has(follower.livestockId)) continue;
       followers.set(follower.livestockId, leader);
     }
     breedingFollowerById = followers;
+    breedingWorldParentIds = worldParentIds;
     return followers;
+  }
+
+  function isActiveWorldBreedingParent(livestockId) {
+    breedingFollowerMap(); // Shares the 750 ms save parse/map refresh already used by daytime partner following.
+    return breedingWorldParentIds.has(livestockId);
   }
 
   function _farmAnimalFollowMateTick(animal, onStep) {
@@ -911,8 +922,7 @@
     const heldPayload = heldKey && (window.AlchemySystem?.POTION_ITEMS?.[heldKey] || window.AlchemySystem?.parseBrewedItemKey?.(heldKey)); // Stored recipe/tier payload.
     const heldRecipe = heldPayload?.recipeId && window.AlchemySystem?.RECIPE_DEFS?.[heldPayload.recipeId]; // Explicit use-mode definition.
     if (heldRecipe?.useMode === 'livestock' && (deps.inventory[heldKey] || 0) > 0) {
-      const canFertilize = heldRecipe.application !== 'reduceBreedingDays' || deps._loadWorldBreedingPairs?.().some(pair => // Fertility only targets a real active pair; no misleading button on unpaired animals.
-        refsEqual(pair.parentA, { source: 'world', id: animal.livestockId }) || refsEqual(pair.parentB, { source: 'world', id: animal.livestockId }));
+      const canFertilize = heldRecipe.application !== 'reduceBreedingDays' || isActiveWorldBreedingParent(animal.livestockId); // Only active breeding parents expose Fertility; the 750 ms lookup cache avoids per-frame save parsing.
       if (canFertilize && deps.hasFarmPermission?.('livestock') !== false) {
         buttons.push({ icon: heldRecipe.icon, label: `Administer ${heldRecipe.label}`, action: `obj_alchemy_${animal.id}`, style: 'secondary', allowed: true });
       }
