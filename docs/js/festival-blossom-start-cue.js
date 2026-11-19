@@ -154,7 +154,7 @@
     }
     currentAnchor = anchor;
     color = options.color || options.blossom.color || '#ffffff';
-    const nextKey = [options.blossom.id, options.shift, anchor.kind, point.col, point.row, anchor.dyeId].join(':');
+    const nextKey = [options.blossom.id, options.shift, anchor.kind, point.col, point.row, anchor.dyeId, color].join(':'); // A recolored temple swatch must also rebuild the river decal, not only the object silhouette.
 
     const tilePixels = Math.max(1, Number(options.tilePixels) || 64);
     if (sceneOwner !== scene || cueKey !== nextKey) {
