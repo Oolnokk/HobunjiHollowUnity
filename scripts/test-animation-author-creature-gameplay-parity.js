@@ -65,6 +65,8 @@ assert.match(index, /animationAuthor\.mode === 'rig' \? 0 : layout\.groundLift/,
 assert.match(index, /Auto\/0 uses half the scaled model height/, 'moving blue floor uses the real Auto lift');
 assert.match(index, /normalizeImported\(oldNormalizeV1554\(source\), source\)/, 'saved profiles are normalized after legacy migrations');
 assert.match(index, /window\.MultiAvatarAnimationAuthor\.creatureGameplayParity = parityReadoutV1554/, 'mobile parity diagnostic is available');
+assert.match(index, /Use game size and ground values/, 'on-device custom-profile recovery is available');
+assert.match(index, /profile\.sizeScales = structuredCloneSafe\(gameProfile\.sizeScales\)/, 'reset uses current game scales and preserves unrelated anchors');
 const game = fs.readFileSync('docs/game.js', 'utf8');
 assert.match(game, /const groundLift = Number\.isFinite\(authoredGroundOffset\) \? authoredGroundOffset : halfH/, 'real game uses replacement offset');
 console.log('animation-author creature gameplay parity: passed size classes, Z width, floor Auto/authored, defaults, imports and mobile diagnostics');
