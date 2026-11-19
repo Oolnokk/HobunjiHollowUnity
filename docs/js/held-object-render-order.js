@@ -161,6 +161,8 @@
   let lastBaseElevationGroups = 0; // Distinct visible actor heights that needed the last held depth rebuild.
   let lastShellElevationGroups = 0; // Distinct visible actor heights that needed the last shell-depth rebuild.
   let shellSceneTraversalsAvoided = 0; // Cumulative redundant full-scene walks avoided by one snapshot per shell replay.
+  let shellMaskedDepthDraws = 0; // Successful shell depth draws whose color output was suppressed once in GPU state instead of rewriting every material.
+  let shellOpaqueMaterialWritesAvoided = 0; // Ordinary opaque material transactions skipped by shell depth replays using the color mask.
   let groupScissorCount = 0; // Elevation-group passes assigned their own tighter depth-replay screen rectangle.
   let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
   let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
@@ -1358,8 +1360,7 @@
     const result = others ? collectVisible(registry, scene) : null;
     if (result) {
       const isFoot = registry === waterOccludedRegistry;
-      if (registry === heldRegistry) for (const mesh of result) if (!isReplayParticipant(mesh, scene)) enforceHeldMesh(mesh); // Same invariant repair the participants get.
-      return splitReplayParticipants(result, scene, others, isFoot);
+      return splitReplayParticipants(result, scene, others, isFoot, registry === heldRegistry); // Resolve owners once; nonparticipant held meshes still have their invariant repaired.
     }
     const visible = [];
     for (const object of registry.pending) {
@@ -1523,7 +1524,7 @@
     material.alphaTest = Math.max(Number(material.alphaTest), maskCutoff);
   }
 
-  function prepareNonGroundDepthMaterials(scene, visibleCandidates = null) {
+  function prepareNonGroundDepthMaterials(scene, visibleCandidates = null, colorMaskLocked = false) {
     const states = new Map();
     const processCandidate = (object) => {
       const isMesh = !!object?.isMesh;
@@ -1531,7 +1532,17 @@
       if (!isMesh && !isCelestialSprite) return;
       const forceCutoutDepth = isMesh && hasLayer(object, PNG_OCCLUDER_LAYER);
       const forceCoverDepth = isMesh && isProtectedCover(object); // Transparent water/slush and alpha-cutout grass must occlude held gear.
+      // GPU color masking makes ordinary opaque materials safe to leave untouched.
+      // Preserve colorWrite=false for custom callbacks in EITHER render hook:
+      // a draw-end observer can distinguish a depth replay by material state too.
+      const hasDrawHook = (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
+        || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
       forEachMaterial(object.material, (material) => {
+        const forceDepth = isMesh && (forceCutoutDepth || forceCoverDepth || Number(material?.alphaTest || 0) > 0);
+        if (colorMaskLocked && !forceDepth && !hasDrawHook) {
+          shellOpaqueMaterialWritesAvoided++;
+          return;
+        }
         saveMaterialState(states, material);
         material.colorWrite = false;
         if (forceCoverDepth) setSurfaceOcclusionDepthOnly(material, true);
@@ -1541,7 +1552,7 @@
         // alpha-tested silhouette while making it capable of blocking a tool.
         // Celestial sprites keep their authored depthWrite=false; only their
         // accidental second color draw is suppressed during this replay.
-        if (isMesh && (forceCutoutDepth || forceCoverDepth || Number(material.alphaTest || 0) > 0)) material.depthWrite = true;
+        if (forceDepth) material.depthWrite = true;
         if (forceCutoutDepth) useSpriteOcclusionCutout(object, material);
       });
     };
@@ -1978,20 +1989,29 @@
     return sphere ? replayCullFrustum.intersectsSphere(sphere) : replayCullFrustum.intersectsObject(object);
   }
 
-  function collectReplayCulled(scene, keep, groupCandidates = null, boundedKept = null, allowFarOnly = false) {
+  function collectReplayCulled(scene, keep, groupCandidates = null, boundedKept = null, allowFarOnly = false, visibleSnapshot = null) {
     const culled = [];
     let kept = 0;
+    // The shell replay needs a second list of its depth/outline participants.
+    // Derive that list from the SAME live scene walk used by scissor culling,
+    // retaining only meshes that will survive the temporary hideObjects step.
+    const remember = visibleSnapshot ? (object) => {
+      const isMesh = !!object?.isMesh;
+      if (isMesh || (object?.isSprite && object.userData?.hobunjiNoOutline === true)) visibleSnapshot.depth.push(object);
+      if (isMesh && hasLayer(object, SHELL_LAYER)) visibleSnapshot.shell.push(object);
+    } : null; // Ordinary held replays skip all candidate-recording work.
     lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
-      if (keep.has(object) || hasAlternateReplayPose(object)) return;
+      if (keep.has(object) || hasAlternateReplayPose(object)) { if (remember) remember(object); return; }
       if (isDepthReplayInert(object, allowFarOnly)) { culled.push(object); lastReplayInertCount++; return; }
       const instanceSphere = instancedReplaySphere(object); // Reused for the intersection test below.
       const instanced = !!instanceSphere || hasAuthoredInstanceBounds(object);
-      if (!instanced && !isReplayCullable(object)) return;
+      if (!instanced && !isReplayCullable(object)) { if (remember) remember(object); return; }
       if (instanceSphere) instancedReplaySphereReuses++;
       const inside = replayFrustumIntersects(object, instanceSphere);
       if (instanced) { if (inside) lastReplayInstancedKept++; else lastReplayInstancedCulled++; }
       if (inside) {
+        if (remember) remember(object);
         kept++;
         groupCandidates?.push(object);
         boundedKept?.push(object);
@@ -2378,12 +2398,16 @@
     if (owner === 'other') return false;
     return isFoot ? withinFeetXrayDistance(mesh) : true;
   }
-  function splitReplayParticipants(meshes, scene, others, isFoot = false) {
+  function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
     if (replayParticipantPolicy === 'all') return meshes;
     const keep = [];
     for (const mesh of meshes) {
       if (isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
-      else { others.push(mesh); nonParticipantReplaySkips++; }
+      else {
+        if (repairHeld) enforceHeldMesh(mesh); // Keep the regular-pass held invariant without a second owner lookup.
+        others.push(mesh);
+        nonParticipantReplaySkips++;
+      }
     }
     return keep;
   }
@@ -3157,6 +3181,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       : tintCovers;
     lastNearbyTintCovers = nearbyTintCovers.length;
     lastDistantTintCovers = tintCovers.length - nearbyTintCovers.length;
+    const distantTintCovers = lastDistantTintCovers ? (() => {
+      const nearby = new Set(nearbyTintCovers); // Membership check once per cover, not a nested linear search for every distant water mesh.
+      return tintCovers.filter(cover => !nearby.has(cover));
+    })() : []; // No allocation or hide transaction for dry scenes and all-nearby water.
     const tintOverlay = lastBaseStencilBits >= 1
       && hasOverlappingHeldCover(renderer, camera, scissorMeshes, nearbyTintCovers);
     if (tintOverlay) groups = splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers);
@@ -3189,7 +3217,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let portraitGearIds = null; // Null without 8-bit stencil; otherwise maps held weapon art to its exact character owner.
     internalReplay = true;
     try {
-      distantTintHidden = hideObjects(tintCovers.filter(cover => !nearbyTintCovers.includes(cover)));
+      distantTintHidden = distantTintCovers.length ? hideObjects(distantTintCovers) : null;
       waterReplayClipStates = beginWaterReplayClip(nearbyTintCovers, bodyTint ? [...scopes, ...bodyTint.scopes] : scopes, hasUnknownOwner);
       if (scissored) {
         glState.scissor(scissorRect);
@@ -3523,6 +3551,23 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return { depth, shell };
   }
 
+  function withShellDepthColorMask(colorBuffer, draw) {
+    // A locked WebGL color mask stops writes even when ordinary opaque world
+    // materials retain colorWrite:true. The callback is synchronous, and a
+    // failed draw must never leave the next color/shell pass muted.
+    if (!colorBuffer?.setMask || !colorBuffer?.setLocked) return draw();
+    try {
+      colorBuffer.setMask(false);
+      colorBuffer.setLocked(true);
+      const result = draw();
+      shellMaskedDepthDraws++;
+      return result;
+    } finally {
+      colorBuffer.setLocked(false);
+      colorBuffer.setMask(true);
+    }
+  }
+
   // Replays shell outlines for the same meshes that receive the selective
   // ground x-ray. The ordinary shell pass omits those meshes; this pass rebuilds
   // depth without x-ray ground, draws only their shells against every other
@@ -3541,6 +3586,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const oldShadowAutoUpdate = shadowMap?.autoUpdate;
     const previousInternalReplay = internalReplay;
     const glState = renderer.state;
+    const shellColorBuffer = glState?.buffers?.color; // Only shell depth renders use its fast colorless GPU mask.
+    const canMaskShellColor = !!(shellColorBuffer?.setMask && shellColorBuffer?.setLocked); // Unavailable on fake/legacy renderers; keep material transaction.
     const groundMeshes = [...ground, ...topFaceGround];
     const groundMaterials = groups.some(group => group.regions.length) ? collectGroundElevationMaterials(groundMeshes) : null; // Scan the ground materials once per replay.
     const groupCullCandidates = groups.length > 1 ? [] : null; // Reused by each shell depth draw.
@@ -3548,8 +3595,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     let depthWasCleared = false;
     let replayCulled = null; // Renderables outside the scissor, hidden for every pass below (including the final depth restore, which is scissored too).
     let replayCandidates = null; // Shared between the replay loop and finally's depth restore; assigned after optional culling.
+    let shellCandidateSnapshot = null; // When the scissor walk succeeds, reuse that same visible-scene enumeration for shell depth/materials.
     let depthStates = null; // Preserve the one depth-only material transaction across all group draws and final restoration.
-    const nearReplay = nearReplaySupport(true); // This replay silences color per material, so no color-mask lock is needed.
+    const nearReplay = nearReplaySupport(true); // Depth snapshots complement GPU color masking, with the legacy material fallback where unavailable.
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : []; // Visual backgrounds are never true hand/foot shell occluders.
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
@@ -3567,7 +3615,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         // final restore, but can only write inside the scissor. Without it
         // the shell pass cost about as many draw calls as the base pass.
         if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
-          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates, nearCandidates, !!nearReplay));
+          shellCandidateSnapshot = { depth: [], shell: [] }; // Populated only by surviving participants in the scissor walk.
+          replayCulled = hideObjects(collectReplayCulled(scene, new Set(xrayMeshes), groupCullCandidates, nearCandidates, !!nearReplay, shellCandidateSnapshot));
         } else if (nearCandidates) collectBoundedReplayObjects(scene, new Set(xrayMeshes), nearCandidates);
       } else {
         fullscreenReplayCount++;
@@ -3586,12 +3635,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       scene.background = null;
       scene.autoUpdate = false;
       if (shadowMap) shadowMap.autoUpdate = false;
-      replayCandidates = collectShellReplayCandidates(scene); // Snapshot after scissor culling; reused while the synchronous replay only changes temporary visibility.
-      shellSceneTraversalsAvoided += groups.length * 2; // Former full-tree walks: one depth + one shell mask per group, plus final depth, replaced by this one walk.
+      replayCandidates = shellCandidateSnapshot;
+      if (!replayCandidates) replayCandidates = collectShellReplayCandidates(scene); // No trusted scissor snapshot: preserve the original live scan.
+      shellSceneTraversalsAvoided += groups.length * 2 + (shellCandidateSnapshot ? 1 : 0); // Includes the additional complete visible-scene walk avoided by fusing scissor + shell enumeration.
       // These source materials are identical for all elevation groups; only
       // the ground shader's tile uniforms change. A single transaction avoids
       // rescanning and rewriting every mesh/material once per actor group.
-      depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth);
+      depthStates = prepareNonGroundDepthMaterials(scene, replayCandidates.depth, canMaskShellColor);
       for (const mesh of xrayMeshes) {
         forEachMaterial(mesh.material, material => {
           saveMaterialState(depthStates, material);
@@ -3624,7 +3674,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           backgroundHidden = backgroundMeshes.length ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
-          rawRender.call(renderer, scene, camera);
+          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
           nonGroundDepthReplayCount++;
         } finally {
           if (backgroundHidden) restoreVisibility(backgroundHidden);
@@ -3661,12 +3711,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (nearToken && nearReplay.restore(renderer, nearToken, scissorActive ? scissorRect : null)) {
             // Saved depth is back; add the x-ray parts' own forced depth, as the full redraw below would have.
             camera.layers.mask = HELD_OVERLAY_MASK;
-            rawRender.call(renderer, scene, camera);
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
           } else {
             if (nearToken) nearReplayFallbacks++;
             camera.layers.mask = MASK_ALL;
             renderer.clearDepth();
-            rawRender.call(renderer, scene, camera); // The one original-depth transaction already covers the final unfiltered restore.
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera)); // The one original-depth transaction already covers the final unfiltered restore.
           }
         }
       } finally {
@@ -3887,6 +3937,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       baseElevationGroups: lastBaseElevationGroups,
       shellElevationGroups: lastShellElevationGroups,
       shellSceneTraversalsAvoided,
+      shellMaskedDepthDraws, shellOpaqueMaterialWritesAvoided,
       ordinaryDepthLeavesSkipped,
       ordinaryDepthClearsAvoided,
       groupScissors: groupScissorCount,

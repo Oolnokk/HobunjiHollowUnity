@@ -3,8 +3,9 @@
 
 // outline-render-performance.js used to traverse the whole scene on every base pass to find
 // world popup/dialogue planes (a full walk of thousands of nodes per frame in a wilderness
-// zone). The candidates are now cached per scene and re-derived only after a scene-graph
-// change (add/remove/clear anywhere) or the periodic safety rescan. This executes the real
+// zone). The candidates are cached per scene; only newly attached subtrees are
+// inspected on add, while removals are filtered by ancestry. A periodic rescan
+// finds late material/render-order edits. This executes the real
 // module and checks both halves: no per-frame traversal, and no missed or stale popups.
 
 const assert = require('node:assert/strict');
@@ -19,7 +20,26 @@ class Layers {
   set(channel) { this.mask = (1 << Number(channel)) >>> 0; }
   enableAll() { this.mask = 0xFFFFFFFF >>> 0; }
 }
-class Object3D { add() { return this; } remove() { return this; } clear() { return this; } }
+class Object3D {
+  constructor() { this.isObject3D = true; this.parent = null; this.children = []; this.visible = true; }
+  add(...children) {
+    for (const child of children) {
+      child.parent?.remove(child);
+      child.parent = this;
+      this.children.push(child);
+    }
+    return this;
+  }
+  remove(...children) {
+    for (const child of children) {
+      const at = this.children.indexOf(child);
+      if (at >= 0) { this.children.splice(at, 1); child.parent = null; }
+    }
+    return this;
+  }
+  clear() { return this.remove(...this.children); }
+  traverse(callback) { callback(this); for (const child of this.children) child.traverse(callback); }
+}
 class Scene extends Object3D {}
 const withheld = []; // Popups hidden while the base pass renders.
 class Renderer {
@@ -41,7 +61,10 @@ const api = context.window.OutlineRenderPerformance;
 assert.ok(api?.installed);
 
 function popup(name) {
-  return { name, isMesh: true, renderOrder: 1200, visible: true, layers: new Layers(1), material: { map: { isCanvasTexture: true }, depthTest: false, depthWrite: false } };
+  const mesh = new Object3D(); // Real THREE.Mesh inherits Object3D ancestry, traverse() and scene attachment.
+  Object.assign(mesh, { name, isMesh: true, renderOrder: 1200, visible: true,
+    layers: new Layers(1), material: { map: { isCanvasTexture: true }, depthTest: false, depthWrite: false } });
+  return mesh;
 }
 let traversals = 0;
 function makeScene(popups) {
@@ -50,6 +73,7 @@ function makeScene(popups) {
     name: 'world', isScene: true, overrideMaterial: null, background: {}, autoUpdate: true, children: [], popups,
     traverse(cb) { traversals++; cb({ isMesh: true, renderOrder: 0, layers: new Layers(1) }); for (const p of this.popups) cb(p); },
   });
+  for (const mesh of popups) { scene.children.push(mesh); mesh.parent = scene; } // Model the actual scene graph the registry verifies.
   return scene;
 }
 const camera = { layers: new Layers(1) };
@@ -77,11 +101,11 @@ const second = popup('second');
 scene.popups.push(second);
 scene.add(second);
 assert.deepEqual(baseFrame(renderer, scene).map(p => p.name).sort(), ['first', 'second'], 'a newly added popup must not be missed');
-assert.equal(traversals, 2, 'one rescan after the structure change');
+assert.equal(traversals, 1, 'new popup is discovered by inspecting only the attached subtree');
 for (let frame = 0; frame < 5; frame++) baseFrame(renderer, scene);
-assert.equal(traversals, 2, 'and no further traversals while the graph is unchanged');
+assert.equal(traversals, 1, 'unrelated frames still avoid a full-scene traversal');
 
-// 3. remove()/clear() also invalidate, and a popup that stopped being an overlay plane is dropped.
+// 3. remove()/clear() prune detached candidates without a full scan; changed renderOrder is checked live.
 scene.popups.splice(scene.popups.indexOf(first), 1);
 scene.remove(first);
 assert.deepEqual(baseFrame(renderer, scene).map(p => p.name), ['second'], 'a removed popup is no longer withheld');
@@ -107,9 +131,10 @@ assert.deepEqual(baseFrame(new Renderer(), other).map(p => p.name), [], 'a diffe
 // 6. Invisible score parents must not schedule the expensive post-composite pass;
 //    toggling plate visibility must take effect immediately without rescanning the scene.
 const score = popup('plate-score-ink'); // A CanvasTexture note cached even when its pressure plate is inactive.
-const scoreBoard = { visible: false, parent: null }; // The invisible parent that owns all three note layers in the real game.
-score.parent = scoreBoard;
-scene.popups.push(score); scene.add(score);
+const scoreBoard = new Object3D(); // An actual parent group, not a detached mock.
+scoreBoard.visible = false;
+scoreBoard.add(score);
+scene.popups.push(score); scene.add(scoreBoard);
 assert.ok(!baseFrame(renderer, scene).map(p => p.name).includes('plate-score-ink'),
   'inactive pressure-plate notes are not withheld or selected for the final overlay');
 const traversalsAfterScore = traversals;

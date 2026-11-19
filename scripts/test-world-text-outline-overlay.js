@@ -100,14 +100,21 @@ function makePopupMesh() {
 }
 
 function makeWorldScene(name, popup) {
-  return {
+  const scene = {
     name,
+    isScene: true,
     overrideMaterial: null,
     background: { kind: 'world-background' },
     autoUpdate: true,
     children: [],
     traverse(callback) { callback(popup); },
   };
+  // Real Three.js nodes always lead through their parent hierarchy to the
+  // owning scene. The overlay registry uses that to drop moved/detached text.
+  let root = popup;
+  while (root.parent && !root.parent.isScene) root = root.parent;
+  root.parent = scene;
+  return scene;
 }
 
 function makePostScene(name = 'outline-post') {

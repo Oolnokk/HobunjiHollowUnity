@@ -39,12 +39,19 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
-  return { split: (m, s, o, foot) => splitReplayParticipants(m, s, o, foot), setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips };`)(window, { now: () => 0 });
+  const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
+  const enforceHeldMesh = mesh => repaired.push(mesh);
+  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips };`)(window, { now: () => 0 });
 
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
 assert.deepEqual(held, [playerHand, playerBlade, tallSpear, shortHand, shortClub, orphanHand], 'every weapon keeps the x-ray; hands only for the player and short species');
 assert.deepEqual(heldOthers, [tallHand], 'a tall species\' hands draw with ordinary depth');
+const heldWithRepairOthers = [];
+assert.deepEqual(api.split([playerHand, tallHand, tallSpear], scene, heldWithRepairOthers, false, true), [playerHand, tallSpear],
+  'single-pass partition leaves the same hands out of the x-ray');
+assert.deepEqual(heldWithRepairOthers, [tallHand], 'only the nonparticipant hand remains in the normal scene pass');
+assert.deepEqual(api.repaired, [tallHand], 'ordinary held hand invariant repaired once without a second ownership test');
 const feetOthers = [];
 const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar], scene, feetOthers, true);
 assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
