@@ -82,14 +82,23 @@ group.visible = false;
 assert.deepEqual(api.collectWorldTextOverlayEntries(scene).map(entry => entry.object), [delayed],
   'hidden parent suppresses popup without unregistering it');
 group.visible = true;
+scene.visible = false;
+assert.deepEqual(api.collectWorldTextOverlayEntries(scene), [],
+  'hiding the scene itself suppresses every cached popup');
+scene.visible = true;
+assert(api.collectWorldTextOverlayEntries(scene).some(entry => entry.object === delayed),
+  'restoring scene visibility reveals the unchanged popup immediately');
 
 const otherScene = new Scene();
+assert.equal(api.collectWorldTextOverlayEntries(otherScene).length, 0, 'destination scene has already been scanned');
+const destinationWalks = otherScene.fullWalks; // Checks that a moved group is processed incrementally.
 otherScene.add(group);
 assert.deepEqual(api.collectWorldTextOverlayEntries(scene).map(entry => entry.object), [delayed],
   'a moved popup never renders in the old scene');
 assert.equal(scene.fullWalks, 1, 'moving/removing a group does not require a full scan');
 assert.deepEqual(api.collectWorldTextOverlayEntries(otherScene).map(entry => entry.object), [text],
-  'new owner scene discovers the moved popup on first render');
+  'a moved popup appears immediately in a previously cached destination scene');
+assert.equal(otherScene.fullWalks, destinationWalks, 'moving a group never needs a full destination-scene rescan');
 
 scene.remove(delayed);
 assert.equal(api.collectWorldTextOverlayEntries(scene).length, 0, 'detached popup is pruned');
@@ -127,4 +136,15 @@ assert(api.collectWorldTextOverlayEntries(scene).some(entry => entry.object === 
 assert.equal(api.stats().worldTextIncrementalRoots, beforeBulkRootScans + 1,
   'all 1200 descendant add events collapse to one subtree scan');
 assert.equal(scene.fullWalks, beforeBulkSceneWalks, 'bulk attachment does not trigger a full-scene search');
+
+// Clearing a scene drops cached overlay references and reattaching does not
+// strand them in a permanently removed state.
+const clearScene = new Scene(); // Independent scene prevents bulk-tree traversal from hiding this edge case.
+const clearPopup = popup(); // World text reused after leaving and re-entering a scene.
+clearScene.add(clearPopup);
+assert.equal(api.collectWorldTextOverlayEntries(clearScene).length, 1);
+clearScene.clear();
+assert.equal(api.collectWorldTextOverlayEntries(clearScene).length, 0, 'cleared text no longer renders');
+clearScene.add(clearPopup);
+assert.equal(api.collectWorldTextOverlayEntries(clearScene).length, 1, 'reattached text immediately renders after clear');
 console.log('Outline world-text scene cache: additions, moves, removal, hidden parent, late tags, bulk builds and rescan passed');
