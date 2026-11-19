@@ -399,6 +399,7 @@
     return Array.isArray(material) ? material.some(isWorldTextOverlayMaterial) : isWorldTextOverlayMaterial(material);
   }
 
+  // This used to traverse the entire scene whenever any node was attached or removed.
   // A scene add/remove can happen dozens of times inside a frame (VFX,
   // temporary render chunks, props). Structure epochs still serve the score
   // actor cache below, but must not force a full-world text search each time.
