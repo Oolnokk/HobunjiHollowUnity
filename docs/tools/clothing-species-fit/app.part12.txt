@@ -220,6 +220,7 @@ if(pinnedPreviewSha&&(!savedRepo||/^https:\/\/raw\.githubusercontent\.com\/Oolno
 if(A.settings?.gender)E.gender.value=A.settings.gender;
 if(A.settings?.headbandEditCurve==='source')E.headbandEditCurve.value='source';
 if(A.settings?.headbandView==='back')E.headbandView.value='back';
+E.headbandWholeDrag.checked=!!A.settings?.headbandWholeDrag; // Restore whole-curve touch preference without changing saved spline nodes.
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
