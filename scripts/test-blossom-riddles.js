@@ -292,7 +292,11 @@ assert.match(witnessVerse.text,/^In Northern Cliffs, in the (?:north|south|east|
 assert.match(witnessVerse.text,/Northern Cliffs/,'the starting stone identifies its actual zone so reused dyes across zones remain unambiguous');
 assert.ok(/north|south|east|west/.test(witnessVerse.text),'route directions contain actual cardinal bearings, including a direct first-line couplet');
 assert.ok(witnessVerse.evidence.route.every(step=>step.terrainEvent==='river-crossing'||step.terrainEvent==='elevation'),'each walking leg commits to one main terrain event');
-assert.equal(witnessVerse.evidence.uniqueStart.dyeId,witnessSites[0].dyeId,'riddle ink matches the rock painted by the scenery renderer');
+const chosenSite=coloredSites.find(site=>site.dyeId===witnessVerse.evidence.uniqueStart.dyeId); // A nearby colored marker may correctly beat the old designated standing stone.
+assert.ok(chosenSite,'riddle ink must identify an actually generated, uniquely dyed scenery object');
+assert.equal(chosenSite.point.col,witnessVerse.evidence.uniqueStart.coordinate.col,'riddle opening points to the selected painted object's real column');
+assert.equal(chosenSite.point.row,witnessVerse.evidence.uniqueStart.coordinate.row,'riddle opening points to the selected painted object's real row');
+assert.ok(witnessVerse.evidence.uniqueStart.distanceToBlossom<=20,'a naturally available near marker wins over a faraway witness stone');
 assert.equal(witnessVerse.text,Riddles.generate({zoneId:'map_northern_cliffs',layout:sceneryWorld,
   instance:sceneryWorld.localeInstances[0],targetKind:'blossom',targetName:'Cyan Blossom',landmarks,seed:'witness-grounded-route'}).text,
   'inscription, route and elevation are deterministic on load');
