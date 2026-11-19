@@ -18,6 +18,7 @@ function makeHarness(initialBurden, initialTool = 'adventuring') {
     const el = {
       className: '', innerHTML: '', style: {}, removed: false,
       remove() { this.removed = true; },
+      addEventListener() {}, setPointerCapture() {}, // Permits the gateway to install its nested pointer handlers.
     }; // Minimal DOM element carrying the same CSS class and content the real arch writes.
     el.classList = {
       add(name) {
@@ -77,6 +78,14 @@ function makeHarness(initialBurden, initialTool = 'adventuring') {
     labels() { return slots().map(labelOf); },
     selectedLabel() { return labelOf(slots().find(el => el.className.split(' ').includes('arc-active'))); },
     scroll(dir) { window._desktopSelectionArc.scrollTool(dir); },
+    movePointerTo(label) {
+      const target = slots().find(el => labelOf(el) === label); // Finds the visible slot without depending on indices.
+      assert(target, 'missing visible entry: ' + label);
+      const coords = target.style.cssText.match(/left:([-0-9.]+)px;top:([-0-9.]+)px/); // Uses the real layout coordinates.
+      assert(coords, 'missing tool coordinates for: ' + label);
+      window._desktopSelectionArc.movePointer(Number(coords[1]), Number(coords[2]));
+    },
+    entryMenuOpen() { return window._desktopSelectionArc.entryMenuOpen(); },
     commit() { window._desktopSelectionArc.commit(); },
     selectedTools,
     takeCount: () => takeCount,
@@ -91,6 +100,9 @@ assert.deepEqual(noBurden.labels(), ['Adventuring Tools', 'Shovel', 'Hoe', 'Weap
   'without a burden, the regular arch and its gateway keep their existing positions');
 assert.equal(noBurden.selectedLabel(), 'Shovel',
   'an active Adventuring Tool defaults to the first real farm tool');
+noBurden.scroll(1);
+assert.equal(noBurden.selectedLabel(), 'Hoe', 'scroll still follows the normal tool order');
+assert.deepEqual(noBurden.selectedTools, ['hoe'], 'normal tools still equip on scroll');
 
 const carried = makeHarness({ displayName: 'Witch Bomb' });
 carried.open();
@@ -113,4 +125,22 @@ assert.deepEqual(carried.labels(), ['Adventuring Tools', 'Shovel', 'Hoe', 'Weapo
 const selectedHoe = makeHarness({ displayName: 'Shattercask' }, 'hoe');
 selectedHoe.open();
 assert.equal(selectedHoe.selectedLabel(), 'Hoe', 'an already selected real tool retains its highlighting');
+
+const pointerCarried = makeHarness({ displayName: 'Shattercask' });
+pointerCarried.open();
+pointerCarried.movePointerTo('Shattercask');
+assert.equal(pointerCarried.selectedLabel(), 'Shattercask', 'pointer movement reaches the burden at its new angle');
+pointerCarried.commit();
+assert.equal(pointerCarried.takeCount(), 1, 'pointer selection takes the burden from its new slot');
+
+const gateway = makeHarness({ displayName: 'Shattercask' });
+gateway.open();
+gateway.movePointerTo('Adventuring Tools');
+gateway.commit();
+assert.equal(gateway.entryMenuOpen(), true, 'the gateway remains usable beside the burden');
+assert.deepEqual(gateway.labels(), ['Back to Tools'], 'the gateway exposes its return entry');
+gateway.commit();
+assert.equal(gateway.menuOpen(), true, 'returning through the gateway reopens the tool arch');
+assert.deepEqual(gateway.labels(), ['Adventuring Tools', 'Shattercask', 'Shovel', 'Hoe', 'Weapon'],
+  'returning from the sub-arch preserves the burden position');
 console.log('Tool arch back-burden ordering and selection regression passed.');
