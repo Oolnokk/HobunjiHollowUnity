@@ -13,6 +13,16 @@ const colorsFor=kind=>new Set(palettes[kind].map(entry=>entry.hex)); // Reject a
 const pingdortGreens=palettes.pingdort.filter(entry=>/green|moss|sage|fern|lichen|pine/i.test(entry.name)); // Muted woodland greens, not the bright Drenkirra palette.
 assert(pingdortGreens.length>=5&&pingdortGreens.every(entry=>entry.weight>0));
 assert(palettes.pingdort.every(entry=>/^#[0-9a-f]{6}$/i.test(entry.hex)&&entry.weight>0));
+const popularPingdortCoats={moss:'#536747','blue-moss':'#587a80','bog-olive':'#9b9845'}; // The three requested natural coat families share the species genetics pipeline.
+for(const [id,hex] of Object.entries(popularPingdortCoats)){
+  const entry=palettes.pingdort.find(color=>color.id===id); // Verify palette identity and a genuinely common wild/farm roll.
+  assert(entry&&entry.hex===hex&&entry.weight>=8,'Missing or too-rare Pingdort coat: '+id);
+}
+const totalPingdortWeight=palettes.pingdort.reduce((sum,color)=>sum+color.weight,0); // Denominator for actual weighted spawn odds.
+const popularPingdortWeight=palettes.pingdort.filter(color=>popularPingdortCoats[color.id]).reduce((sum,color)=>sum+color.weight,0); // Combined requested hues must be easy to encounter.
+assert(popularPingdortWeight/totalPingdortWeight>=.28,'Moss/blue-moss/bog-olive Pingdorts should be common together');
+assert.equal(new Set(palettes.pingdort.map(color=>color.id)).size,palettes.pingdort.length,'Pingdort coat genes need unique ids');
+assert.equal(new Set(palettes.pingdort.map(color=>color.hex)).size,palettes.pingdort.length,'Pingdort colors need unique hex keys');
 const nelkLightWeight=palettes.nelk.filter(entry=>entry.weight>=5).reduce((total,entry)=>total+entry.weight,0); // Wild rolls should primarily select light/mid coats.
 const nelkDarkWeight=palettes.nelk.filter(entry=>entry.weight===1).reduce((total,entry)=>total+entry.weight,0); // Rare dark variants must still exist and breed.
 assert(nelkDarkWeight>0&&nelkLightWeight>=7*nelkDarkWeight,'Nelk dark coats should be much rarer than lighter coats');
@@ -169,6 +179,16 @@ async function check(){
   assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
   assert.equal(materials.wings.color.value,'ffffff');
   assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
+  for(const hex of ['#587a80','#9b9845']){
+    assert.equal(tintedRig.restoreTint(hex),true,'New Pingdort coat should recolor the live flight rig');
+    const rgb=renderColors.hexToRgb(hex); // Native blue-moss and bog-olive textures use the shared shade fill, not flat material multiplication.
+    for(const material of Object.values(materials)){
+      assert.deepEqual([...material.map.image.pixels.slice(0,3)],rgb,'New coat color reaches every flight pose');
+      assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye stays white');
+      assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'Ink outlines stay black');
+    }
+  }
+  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,4,'Both new tones update cached pose textures exactly once');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('create(appearance)'),'Native bird owner passes Pingdort genotype to rig constructor');
   assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner restores after damage or genetic edits');
   assert(db.pingdort.modelWidth<db.drenkirra.modelWidth);
