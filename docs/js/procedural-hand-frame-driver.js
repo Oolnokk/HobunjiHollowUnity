@@ -893,6 +893,7 @@
   }
 
   function disposeSyncSentinel(record) {
+    restoreHeldItemReach(record); // Release any visual lift when an avatar is discarded.
     const sentinel = record?.syncSentinel;
     if (!sentinel) return;
     sentinel.parent?.remove?.(sentinel);
@@ -938,6 +939,7 @@
       record._lastHandSyncFrameId = frameId;
       if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); return; } // A paired action owns hand contacts; restore any previous visual holder lift.
       if (inHandCalibrationMode()) {
+        restoreHeldItemReach(record);
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
         const heldItem = heldItemTarget(record);
@@ -1000,6 +1002,7 @@
       updateFallbackMotion(record);
       if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); continue; } // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
+        restoreHeldItemReach(record);
         syncCalibrationWorkspace(record);
       } else {
         const heldItem = heldItemTarget(record);
@@ -1043,6 +1046,7 @@
         updateFallbackMotion(record);
         if(record.rig.applyOwnedPose?.()){restoreHeldItemReach(record);results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
+          restoreHeldItemReach(record);
           results.push(syncCalibrationWorkspace(record, true));
         } else {
           const heldItem = heldItemTarget(record);
