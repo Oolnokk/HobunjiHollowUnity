@@ -225,6 +225,54 @@ function currentHeadbandViewRecord(){
   }
   return record.back; // Rear curve never changes the front seven-node mapping.
 }
+function bakeHeadbandWhole(record,curve){
+  if(!record||!['source','target'].includes(curve)||!window.ClothingHeadbandSpline.valid(record[curve]))return;
+  record.whole ||= {}; // Each independent source/target curve has its own fitted baseline.
+  record.whole[curve]={
+    base:record[curve].map(point=>({...point})),
+    settings:window.ClothingHeadbandSpline.defaultWholeTransform()
+  };
+}
+function headbandWholeEntry(record,curve){
+  if(!record||!R.body||!['source','target'].includes(curve))return null;
+  const engine=window.ClothingHeadbandSpline;
+  const entry=record.whole?.[curve];
+  const computed=entry&&engine.valid(entry.base)&&engine.validWholeTransform(entry.settings)
+    ?engine.transformWhole(entry.base,entry.settings,R.body.width,R.body.height):null;
+  // Imported points and manual node changes become a baseline rather than producing slider jumps.
+  if(!computed||computed.some((p,i)=>Math.abs(p.x-record[curve][i].x)>1e-5||Math.abs(p.y-record[curve][i].y)>1e-5)){
+    bakeHeadbandWhole(record,curve);
+  }
+  return record.whole[curve];
+}
+function selectedHeadbandWhole(){
+  const record=currentHeadbandViewRecord();
+  if(!record)return null;
+  const curve=E.headbandEditCurve.value==='source'?'source':'target';
+  const entry=headbandWholeEntry(record,curve);
+  return entry?{record,curve,entry}:null; // Shared by sliders and whole-curve drag.
+}
+function syncHeadbandWholeControls(){
+  const selected=selectedHeadbandWhole(),settings=selected?.entry.settings;
+  const bindings=[
+    [E.headbandWholeX,E.headbandWholeXNumber,settings?.x],
+    [E.headbandWholeY,E.headbandWholeYNumber,settings?.y],
+    [E.headbandWholeScaleX,E.headbandWholeScaleXNumber,settings?.scaleX*100],
+    [E.headbandWholeScaleY,E.headbandWholeScaleYNumber,settings?.scaleY*100],
+    [E.headbandWholeRotation,E.headbandWholeRotationNumber,settings?.rotation]
+  ];
+  for(const [slider,number,value] of bindings){
+    slider.disabled=!settings;number.disabled=!settings;
+    if(!settings)continue;
+    const formatted=String(Math.round(value*1000)/1000);
+    slider.value=formatted;number.value=formatted;
+  }
+  for(const button of [E.headbandWholeReset,E.headbandWholeBake])button.disabled=!settings;
+  E.headbandWholeDrag.disabled=!settings;
+  E.headbandWholeStatus.textContent=!settings
+    ?'Select a traceable headband curve to move, resize and rotate all seven points.'
+    :(headbandView()==='back'?'Rear':'Front')+' '+selected.curve+' curve. Position in native pixels; width/height as a percentage. '+(R.headbandWholeWarning||'Edits pivot around the curve center.');
+}
 async function hydrateHeadbandRearArt(){
   const record=currentHeadbandRecord(),key=headbandSelectionKey(),generation=R.assetGeneration;
   R.headbandRearCanvas=null;R.headbandRearKey=null;
@@ -253,7 +301,8 @@ function captureHeadbandState(){
   const record=currentHeadbandRecord();
   return record?{
     enabled:!!record.enabled,source:record.source.map(p=>({...p})),target:record.target.map(p=>({...p})),
-    back:record.back?{enabled:!!record.back.enabled,source:record.back.source.map(p=>({...p})),target:record.back.target.map(p=>({...p}))}:null,
+    whole:record.whole?clone(record.whole):null, // Numeric group transforms and saved baseline accompany exported mapping.
+    back:record.back?{enabled:!!record.back.enabled,source:record.back.source.map(p=>({...p})),target:record.back.target.map(p=>({...p})),whole:record.back.whole?clone(record.back.whole):null}:null,
     rearCanvas:R.headbandRearKey===headbandSelectionKey()?copyHeadbandCanvas(R.headbandRearCanvas):null
   }:null; // Immutable front/back snapshots for asynchronous PNG exports.
 }
@@ -275,6 +324,7 @@ function syncHeadbandControls(){
   E.headbandStatus.textContent=ready
     ?'Seven source and target points for '+(back?'rear':'front')+'. '+(active.enabled?'Spline ON.':'Spline OFF.')
     :back?'Create a rear sprite to map seven independent back nodes.':'No traceable headband pixels.';
+  syncHeadbandWholeControls();
 }
 function drawHeadbandOverlay(ctx){
   const record=currentHeadbandViewRecord();if(!record)return;
