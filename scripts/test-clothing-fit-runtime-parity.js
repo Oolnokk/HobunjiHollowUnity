@@ -149,7 +149,7 @@ async function main() {
   const refresh = new Function(
     'R','E','C','clearTimeout','disposeRuntimeRig','fitRegion',
     'buildBodyCanvas','buildSourceReferenceCanvas','buildHeadReferenceCanvas','buildGarmentCanvas',
-    'buildVariantGarmentCanvas','ensureTargetData','syncTransformControls','syncMaskTransformControls',
+    'buildVariantGarmentCanvas','buildTorsoCanvas','ensureTargetData','syncTransformControls','syncMaskTransformControls','syncContourControls','sizeStage','syncHeadbandControls',
     'saveState','render','status','log','console','window','CustomEvent',
     refreshCode + '\nreturn refreshAssets;'
   )(
@@ -157,7 +157,7 @@ async function main() {
     ()=>refE.fitRegion.value,
     async (species)=>{if(failTarget)throw Error('missing species art');return canvas(species);},
     async ()=>canvas('source'),async ()=>canvas('head'),async ()=>canvas('hood'),async ()=>canvas('authored'),
-    ()=>{},()=>{},()=>{},()=>{},()=>{rendered++;},
+    async ()=>canvas('torso'),()=>{},()=>{},()=>{},()=>{},()=>{},()=>{},()=>{},()=>{rendered++;},
     ()=>{},()=>{},console,{dispatchEvent:()=>{}},function(){}
   );
   await refresh();
@@ -411,7 +411,7 @@ const eightSource=part(8);
 const canonicalFns=sourceBetween(eightSource,'function canonicalPreviewSlot(', 'async function composeRuntimePortrait()');
 let fittedColor=null,backOption=null;
 const canonicalHarness=new Function('R','E','document','window','garmentRecord','mode',
-  'routedPatchIsBody','warpGarment','warpGridForMode','fittedSourceCanvasForLayer',
+  'routedPatchIsBody','warpClothing','warpGridForMode','fittedSourceCanvasForLayer',
   canonicalFns+'\nreturn {canonicalPreviewGarmentOption,canonicalFittedGarmentPortrait};');
 const fineMeta=[
   {url:'cosmetics/clothes/hood/tl_finehood-base.png',pos:'front',paletteColorKey:'A'},

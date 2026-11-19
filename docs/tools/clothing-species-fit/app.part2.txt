@@ -201,7 +201,7 @@ function rebuildGarmentSelector(){
   E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
 }
 function bodyLayers(species,gender){
-  return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
+  return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({id:x.id,path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
 }
 async function buildBodyCanvas(species,gender){
   const key=`${species}::${gender}`;
@@ -219,6 +219,15 @@ async function buildBodyCanvas(species,gender){
   R.bodyCanvases.set(key,p);
   p.catch(()=>{if(R.bodyCanvases.get(key)===p)R.bodyCanvases.delete(key)}); // Failed target asset loads must be retryable; never cache a rejected promise indefinitely.
   return p;
+}
+async function buildTorsoCanvas(species,gender,width,height){
+  const layer=bodyLayers(species,gender).find(item=>String(item.id||'').toLowerCase()==='torso'); // Only the isolated torso layer defines the side silhouette; never arms or a full-body composite.
+  if(!layer)return null;
+  let image;
+  try{image=await loadImage(layer.url)}catch(error){log('Isolated torso unavailable for '+species+' '+gender+': '+error.message);return null} // An optional contour reference must never prevent ordinary 6x6 clothing fitting.
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  canvas.getContext('2d',{alpha:true}).drawImage(image,0,0); // Preserve exact shared portrait origin for the 6×6 warp.
+  return canvas;
 }
 function garmentRecord(){return R.garments.find(g=>g.id===E.garment.value)||null}
 function headwearLayerRecords(garment,species,gender){

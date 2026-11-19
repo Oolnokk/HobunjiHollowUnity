@@ -9,10 +9,14 @@ const vm=require('node:vm');
 const toolRoot=path.join(__dirname,'../docs/tools/clothing-species-fit'); // Uses the actual shipped editor files.
 const read=name=>fs.readFileSync(path.join(toolRoot,name),'utf8');
 const loader=read('loader.js');
+const headband=read('headband-spline-fit.js'); // Sprite-only seven-node warp must initialize ahead of the editor.
+const contour=read('contour-fit.js'); // New standalone math module required before the 12-part editor.
 const html=read('index.html');
 const parts=Array.from({length:12},(_,i)=>read('app.part'+(i+1)+'.txt'));
 const behind=Array.from({length:5},(_,i)=>read('behind.part'+(i+1)+'.txt'));
 new vm.Script(loader,{filename:'loader.js'});
+new vm.Script(contour,{filename:'contour-fit.js'});
+new vm.Script(headband,{filename:'headband-spline-fit.js'});
 new vm.Script(parts.join(''),{filename:'clothing-fit-core.js'});
 new vm.Script(behind.join(''),{filename:'clothing-fit-behind.js'});
 
@@ -157,6 +161,8 @@ async function waitUntil(predicate,timeoutMs=1000){
 async function testSuccess(){
   const names=[];
   const files={};
+  files['headband-spline-fit.js']='window.headbandReady=true;';
+  files['contour-fit.js']='window.contourReady=true;';
   for(let i=1;i<=12;i++)files['app.part'+i+'.txt']=i===1?'window.coreReady=true;':'';
   for(let i=1;i<=5;i++)files['behind.part'+i+'.txt']=i===1?'window.behindReady=true;':'';
   const {host,status,behindPanel}=makeHost(async name=>{
@@ -166,7 +172,11 @@ async function testSuccess(){
   });
   vm.runInNewContext(loader,host,{filename:'loader.js'});
   await waitUntil(()=>status.banner?.removed);
-  assert.equal(names.length,17,'All app + behind modules must load exactly once');
+  assert.equal(names.length,19,'Spline + contour + app + behind modules must load exactly once');
+  assert.equal(names[0],'headband-spline-fit.js','Headband spline must load before the main editor');
+  assert.equal(names[1],'contour-fit.js','Contour fitter must load before the main editor');
+  assert.equal(host.headbandReady,true,'The seven-node spline module initializes');
+  assert.equal(host.contourReady,true,'Outline fitter must initialize');
   assert.equal(host.coreReady,true,'The main editor must initialize');
   assert.equal(host.behindReady,true,'The behind-sprite extension must initialize');
   assert.equal(behindPanel.hidden,true,'Headwear mode hides the body-only patch extension');

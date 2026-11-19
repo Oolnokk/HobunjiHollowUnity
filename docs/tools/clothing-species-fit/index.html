@@ -41,11 +41,13 @@
 
       <section>
         <h2>Mode</h2>
-        <div class="modes" style="grid-template-columns:repeat(4,1fr)">
+        <div class="modes" style="grid-template-columns:repeat(3,minmax(0,1fr))">
           <button data-mode="transform" class="active">Base transform</button>
           <button data-mode="body">Grid only</button>
           <button data-mode="fit">Species fit</button>
           <button data-mode="preview">Preview</button>
+          <button data-mode="protect">Protect pixels</button>
+          <button data-mode="headband">Band spline</button>
         </div>
         <div id="help" class="help" style="margin-top:6px"></div>
       </section>
@@ -86,6 +88,30 @@
           <button id="redo">Redo</button>
         </div>
         <div class="small">Orange is the normalized starting-sprite source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
+      </section>
+
+      <section id="contourFitSection">
+        <h2>Automatic torso outline fit</h2>
+        <div class="row"><label class="small"><input id="contourEnabled" type="checkbox"> fit garment to torso silhouette</label><label class="small"><input id="contourShowOutline" type="checkbox" checked> trace outlines</label></div>
+        <div class="field"><label for="contourStrength">Fit strength</label><input id="contourStrength" type="range" min="0" max="1" step="0.05" value="1"></div>
+        <div class="field"><label for="contourFeather">Protected-area falloff (pixels)</label><input id="contourFeather" type="range" min="4" max="40" step="1" value="14"></div>
+        <div class="row"><button type="button" id="contourPaintMode">Paint protected pixels</button><button type="button" id="contourEraseMode">Erase protection</button></div>
+        <div class="field"><label for="contourBrush">Brush radius (pixels)</label><input id="contourBrush" type="range" min="1" max="24" step="1" value="4"></div>
+        <div class="row"><button type="button" id="contourClear">Clear protected mask</button><button type="button" id="contourMaskPng">Export mask PNG</button></div>
+        <div id="contourStatus" class="small" aria-live="polite">Load a body garment to trace its donor and target torsos.</div>
+        <div class="small">Select <b>Protect pixels</b>, then paint directly over the neck opening or any artwork that must stay fixed. Transparent holes can be protected too. The cyan lines show the target torso edges, the orange lines the starting torso. Protected pixels are tinted magenta. Use a wider falloff for smooth fabric transitions. Every garment/source/target combination saves its own mask; exports bake the result into each PNG layer.</div>
+      </section>
+
+      <section id="headbandSplineSection" hidden>
+        <h2>Seven-point headband / flower crown spline</h2>
+        <div class="row"><label class="small"><input id="headbandEnabled" type="checkbox"> Deform artwork along editable spline</label></div>
+        <div class="field"><label for="headbandEditCurve">Drag which seven nodes?</label>
+          <select id="headbandEditCurve"><option value="source">Map original band (orange)</option><option value="target" selected>Shape fitted band (cyan)</option></select>
+        </div>
+        <div class="row"><button type="button" id="headbandTraceSource">Auto-map original</button><button type="button" id="headbandTraceTarget">Trace authored target</button></div>
+        <div class="row"><button type="button" id="headbandCopy">Copy original to target</button><button type="button" id="headbandReset">Reset both curves</button></div>
+        <div id="headbandStatus" class="small" aria-live="polite">Choose a headband, then drag seven points in Band spline mode.</div>
+        <div class="small">Start with the normal 6×6 transform, then switch to <b>Band spline</b>. Map seven orange points across the original band or crown, then drag seven cyan points into the desired curved position. The whole sprite bends with the spline, preserving its transparency and pixel-art edges. Source and target curves are saved independently for each garment/species pair. Works for headbands, flower crowns and other narrow headwear; ordinary hats and hoods retain their existing grid fitting unless explicitly enabled.</div>
       </section>
 
       <section id="bodyMaskSection">

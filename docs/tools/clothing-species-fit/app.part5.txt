@@ -4,7 +4,7 @@ function routedPatchIsClothing(){return R.patchWorkflow.active&&R.patchWorkflow.
 function currentWarp(sourceOverride=null){
   const source=sourceOverride||mainClothSource();
   if(!source)return null;
-  return warpGarment(source,warpGridForMode(),R.body.width,R.body.height); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
+  return warpClothing(source,warpGridForMode(),R.body.width,R.body.height); // Routed clothing and body patches share the same live Base Transform / 6×6 fit path before their different avatar-assembly stages.
 }
 function currentExtendedWarp(finalFit=false){
   if(!R.extendedSource)return null;
@@ -18,12 +18,12 @@ function headwearWarpForView(view,finalFit=false){
   if(fitRegion()!=='headwear'||!R.cloth||!R.body)return null;
   const source=view==='back'?(R.cloth._behindView||R.cloth._back):view==='under'?R.cloth._back:R.cloth._front;
   if(!source)return null;
-  return warpGarment(source,finalFit?targetGrid():warpGridForMode(),R.body.width,R.body.height);
+  return warpClothing(source,finalFit?targetGrid():warpGridForMode(),R.body.width,R.body.height);
 } // Back and front sprites use the same saved 6×6 fit, but remain separate for compositing and exports.
 function clothOut(fitState=captureFitState()){
   const source=mainClothSource();
   if(!source||!R.body)return null;
-  return warpGarment(source,targetGridFromFitState(fitState),R.body.width,R.body.height); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
+  return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
 }
 function fittedClothingFilename(){
   if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
@@ -35,7 +35,7 @@ function fittedLayerOutputs(fitState=captureFitState()){
   return (R.cloth._layers||[]).map(layer=>{
     const isPatched=layerMatchesRoutedClothingPatch(layer);
     const source=fittedSourceCanvasForLayer(layer); // Same shared pixel frame and layer order as the live preview.
-    return {...layer,patched:!!isPatched,canvas:warpGarment(source,targetNorm,R.body.width,R.body.height)};
+    return {...layer,patched:!!isPatched,canvas:warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour)};
   });
 } // Every layer uses one immutable fit snapshot; compositing is for preview only.
 
@@ -207,7 +207,7 @@ async function exportFittedGarment(){
       format:'hobunji-clothing-fit-layered-v2',...selection,
       installRoot:'docs/',targetConfigUpdated:!!plan.configPath,
       configPath:plan.originalConfigPath, // Pin garment metadata before asynchronous image encoding.
-      fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets},
+      fit:{key:fit.key,baseTransform:fit.transform,localOffsets:fit.offsets,contour:{enabled:fit.contour.enabled,strength:fit.contour.strength,feather:fit.contour.feather,protectedPixels:fit.contour.maskPixels?.reduce((n,v)=>n+v,0)||0},headband:fit.headband},
       files:plan.files
     };
     entries.push({name:'fitted-layers-manifest.json',bytes:new TextEncoder().encode(JSON.stringify(manifest,null,2))});
