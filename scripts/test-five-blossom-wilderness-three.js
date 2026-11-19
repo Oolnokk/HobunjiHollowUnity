@@ -53,6 +53,17 @@ for(const [zone,info] of Object.entries(nativeForZone)) {
     assert.equal(leaves.geometry,anotherLeaves.geometry,'native foliage stays instanced by reference');
   }
 }
+// Validate actual connected-surface UVs on the same six-sided stone topology before the integration fixture substitutes a counting mapper.
+require('../docs/js/surface-stretch-uv-furniture.js'); // Production island mapper, tested here independently of network image loading.
+const naturalMapper=window.HobunjiSurfaceStretchUV; // Real function is used on an independent cylinder, never on shared quarry art.
+const sixFaceStone=new THREE.Mesh(new THREE.CylinderGeometry(.46,.5,1,6),new THREE.MeshBasicMaterial());
+const stoneSurfaceReport=naturalMapper.mapMesh(sixFaceStone,{label:'six-sided cairn standalone UV validation'});
+assert.ok(stoneSurfaceReport?.patchCount>=8,'the real mapper recognizes separate side and cap surfaces on a faceted cairn stone');
+const mappedPosition=sixFaceStone.geometry.getAttribute('position');
+const mappedUv=sixFaceStone.geometry.getAttribute('uv');
+assert.equal(mappedUv.count,mappedPosition.count,'seam expansion preserves one independent UV per rendered corner');
+assert.ok(Array.from(mappedUv.array).every(value=>Number.isFinite(value)&&value>=-0.0001&&value<=1.0001),
+  'all stretched stone-face UVs stay within the one-PNG texture domain');
 // Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
 async function verifyScenery(){
 const scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Built witness stones are the exact physical referents named in saved riddles.
