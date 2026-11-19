@@ -13,7 +13,7 @@ const colorsFor=kind=>new Set(palettes[kind].map(entry=>entry.hex)); // Reject a
 const pingdortGreens=palettes.pingdort.filter(entry=>/green|moss|sage|fern|lichen|pine/i.test(entry.name)); // Muted woodland greens, not the bright Drenkirra palette.
 assert(pingdortGreens.length>=5&&pingdortGreens.every(entry=>entry.weight>0));
 assert(palettes.pingdort.every(entry=>/^#[0-9a-f]{6}$/i.test(entry.hex)&&entry.weight>0));
-const popularPingdortCoats={moss:'#536747','blue-moss':'#587a80','bog-olive':'#9b9845'}; // The three requested natural coat families share the species genetics pipeline.
+const popularPingdortCoats={moss:'#485543','blue-moss':'#4a5d61','bog-olive':'#687149'}; // The requested muted natural coats share the species genetics pipeline.
 for(const [id,hex] of Object.entries(popularPingdortCoats)){
   const entry=palettes.pingdort.find(color=>color.id===id); // Verify palette identity and a genuinely common wild/farm roll.
   assert(entry&&entry.hex===hex&&entry.weight>=8,'Missing or too-rare Pingdort coat: '+id);
@@ -21,6 +21,21 @@ for(const [id,hex] of Object.entries(popularPingdortCoats)){
 const totalPingdortWeight=palettes.pingdort.reduce((sum,color)=>sum+color.weight,0); // Denominator for actual weighted spawn odds.
 const popularPingdortWeight=palettes.pingdort.filter(color=>popularPingdortCoats[color.id]).reduce((sum,color)=>sum+color.weight,0); // Combined requested hues must be easy to encounter.
 assert(popularPingdortWeight/totalPingdortWeight>=.28,'Moss/blue-moss/bog-olive Pingdorts should be common together');
+const previousPingdortCoats={moss:'#536747','blue-moss':'#587a80','bog-olive':'#9b9845'}; // Baseline hues from the prior PR, used to catch accidental brightness or saturation regressions.
+const pigmentRgb=hex=>[1,3,5].map(index=>parseInt(hex.slice(index,index+2),16)); // Converts authored swatches into numeric channels for relative tone checks.
+const coatTone=hex=>{ // Rejects coats that are lighter or more saturated than the requested muted reference.
+  const [r,g,b]=pigmentRgb(hex); // Each channel contributes to HSV brightness and saturation.
+  const brightest=Math.max(r,g,b),darkest=Math.min(r,g,b); // Brightness and chroma are measured against the same RGB swatch.
+  return {brightness:brightest,saturation:(brightest-darkest)/Math.max(1,brightest)};
+};
+for(const [id,hex] of Object.entries(popularPingdortCoats)){
+  const previousTone=coatTone(previousPingdortCoats[id]),currentTone=coatTone(hex); // Compare the actual shipped swatches, not descriptive names.
+  assert(currentTone.brightness<previousTone.brightness,'Pingdort coat should be darker: '+id);
+  assert(currentTone.saturation<previousTone.saturation,'Pingdort coat should be less saturated: '+id);
+}
+const [bogRed,bogGreen,bogBlue]=pigmentRgb(popularPingdortCoats['bog-olive']); // Verify the mustard-olive coat leans green without becoming neon.
+const [oldBogRed,oldBogGreen]=pigmentRgb(previousPingdortCoats['bog-olive']); // Only Bog Olive must explicitly shift toward green.
+assert(bogGreen>bogRed&&bogGreen>bogBlue&&bogGreen-bogRed>oldBogGreen-oldBogRed,'Bog Olive should be greener than before');
 assert.equal(new Set(palettes.pingdort.map(color=>color.id)).size,palettes.pingdort.length,'Pingdort coat genes need unique ids');
 assert.equal(new Set(palettes.pingdort.map(color=>color.hex)).size,palettes.pingdort.length,'Pingdort colors need unique hex keys');
 const nelkLightWeight=palettes.nelk.filter(entry=>entry.weight>=5).reduce((total,entry)=>total+entry.weight,0); // Wild rolls should primarily select light/mid coats.
@@ -179,7 +194,7 @@ async function check(){
   assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
   assert.equal(materials.wings.color.value,'ffffff');
   assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
-  for(const hex of ['#587a80','#9b9845']){
+  for(const hex of ['#4a5d61','#687149']){
     assert.equal(tintedRig.restoreTint(hex),true,'New Pingdort coat should recolor the live flight rig');
     const rgb=renderColors.hexToRgb(hex); // Native blue-moss and bog-olive textures use the shared shade fill, not flat material multiplication.
     for(const material of Object.values(materials)){
