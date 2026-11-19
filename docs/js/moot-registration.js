@@ -28,6 +28,8 @@
     widths[KIND] = Number(widths[KIND]) > 0 ? Number(widths[KIND]) : 1.7;
     const diet = livestock.diet || (livestock.diet = {}); // Reuses the existing plant-fodder barn feeding behavior.
     diet[KIND] = 'prey';
+    const resources = livestock.resources || (livestock.resources = {}); // Moot milking uses the existing barn resource cooldown and harvest action.
+    resources[KIND] = { itemKey: 'mootMilk', cooldownDays: 1, verb: 'Milk', interactive: true };
     const mothers = game.wildlife?.denMothers; // Moots are surface animals, not den species.
     if (mothers) { delete mothers[KIND]; delete mothers[HERD_MOTHER_KIND]; }
     return true;

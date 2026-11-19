@@ -104,12 +104,13 @@ assert.deepEqual(
     { key: 'puktukHide', label: 'PUKTUK HIDE', max: 99 },
     { key: 'voorgAssHide', label: 'VOORG-ASS HIDE', max: 99 },
     { key: 'nelkHide', label: 'NELK HIDE', max: 99 },
+    { key: 'nazgrakuHide', label: 'NAZGRAKU HIDE', max: 99 },
     { key: 'uumkaoiiShell', label: "UUMKAO'II SHELL", max: 99 },
   ],
   'Wool, hides and Uumkao\'ii shell must be visible in the normal inventory picker',
 );
 
-for (const key of ['puktukHide', 'voorgAssHide', 'nelkHide']) {
+for (const key of ['puktukHide', 'voorgAssHide', 'nelkHide', 'nazgrakuHide']) {
   assert.equal(woolItemDefs[key].cat, 'material', key + ' is a standard material');
   assert(woolItemDefs[key].tags.includes('Hide'), key + ' remains recognized as a hide');
   assert(woolItemDefs[key].sellPrice > 0, key + ' can be shipped and valued by the ordinary economy');
@@ -117,13 +118,16 @@ for (const key of ['puktukHide', 'voorgAssHide', 'nelkHide']) {
 assert(!woolItemDefs.uumkaoiiShell.tags.includes('Hide'), 'Uumkao\'ii shells must not be categorized as fur hides');
 assert(woolItemDefs.uumkaoiiShell.tags.includes('Shell'), 'Uumkao\'ii corpse yields an ordinary shell material');
 windowStub.CookingSystem.init(cookingDeps);
-assert.equal(inventoryItems.length, 6, 'repeated CookingSystem.init must not duplicate material inventory entries');
+assert.equal(inventoryItems.length, 7, 'repeated CookingSystem.init must not duplicate materials, including Nazgraku Hide');
 
 windowStub.WildlifeSpawn = {
   init(deps) { originalWildlifeInitDeps = deps; return 'wildlife-initialized'; },
 };
 const wildlifeDeps = {
-  CREATURE_DB: { nelk: { label: 'Nelk', lootPool: null } }, // Live species definition must bind to the new Nelk corpse pool at WildlifeSpawn.init.
+  CREATURE_DB: {
+    nelk: { label: 'Nelk', lootPool: null },
+    nazgraku: { label: 'Nazgraku', lootPool: null },
+  }, // Wild Nelk and Nazgraku must bind to their own corpse pools at WildlifeSpawn.init.
   EXTERIOR_ZONES: {
     map_northern_cliffs: { packSpecies: ['grehlr'], herbivoreSpecies: ['uumkaoii-wild'] },
   },
@@ -135,6 +139,7 @@ const wildlifeDeps = {
 assert.equal(windowStub.WildlifeSpawn.init(wildlifeDeps), 'wildlife-initialized');
 assert.equal(originalWildlifeInitDeps, wildlifeDeps, 'WildlifeSpawn.init must still receive the untouched dependency object');
 assert.equal(wildlifeDeps.CREATURE_DB.nelk.lootPool, 'creature_nelk', 'wild Nelk must use its dedicated meat and hide pool');
+assert.equal(wildlifeDeps.CREATURE_DB.nazgraku.lootPool, 'creature_nazgraku', 'wild Nazgraku must use its dedicated meat and hide pool');
 assert.equal(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.denSpecies, undefined, 'Voorg-Ass herd registration must not create an explicit cavern den roster');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.herbivoreSpecies)), [], 'legacy Northern Cliffs den-herbivore slot is cleared');
 assert.deepEqual(JSON.parse(JSON.stringify(wildlifeDeps.EXTERIOR_ZONES.map_northern_cliffs.roamingHerdSpecies)), ['voorg-ass'], 'Voorg-Ass is registered in the exterior roaming-herd pool');

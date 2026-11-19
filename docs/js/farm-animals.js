@@ -900,19 +900,31 @@
     animal._barnHome = false;
   }
 
+  function additionalResourceDefs(kind) {
+    const defs = window.SCRATCHBONES_CONFIG?.game?.livestock?.additionalResources?.[kind]; // Authored independent resource definitions, currently Nazgraku milk alongside eggs.
+    return Array.isArray(defs) ? defs : [];
+  }
+
   function _farmAnimalGetButtons(animal, label, icon) {
     if (animal._vatWorkPose) return []; // Used to prevent interacting with an animal while its rendered body is working at a vat.
     const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
     const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
     const buttons = [];
-    const resourceReady = !!(rec?.resourceReady && resDef);
+    let resourceReady = !!(rec?.resourceReady && resDef); // Includes any independently ready dairy product for the Talk action priority.
 
     // Harvest is Action 1 while a good is ready. Talk follows as Action 2;
     // as soon as the good is collected, Talk naturally slides into Action 1.
     if (resourceReady) {
       const itemLabel = deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey;
-      const verb = deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
+      const verb = resDef.verb || deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
       buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
+    }
+    if (rec) for (const extraDef of additionalResourceDefs(rec.kind)) {
+      if (!rec.additionalResources?.[extraDef.itemKey]?.ready) continue;
+      const itemLabel = deps.ITEM_DEFS[extraDef.itemKey]?.label || extraDef.itemKey;
+      buttons.push({ icon: deps.ITEM_DEFS[extraDef.itemKey]?.icon || icon, label: `${extraDef.verb || 'Collect'} ${itemLabel}`,
+        action: 'obj_collect_' + animal.id + ':' + extraDef.itemKey, style: resourceReady ? 'secondary' : 'primary', allowed: true });
+      resourceReady = true;
     }
     const talkName = rec?.name || label;
     buttons.push({ icon: '💬', label: `Talk to ${talkName}`, action: 'obj_talk_' + animal.id, style: resourceReady ? 'secondary' : 'primary', allowed: true });
@@ -957,6 +969,15 @@
       const resDef = rec ? deps.LIVESTOCK_RESOURCE_DEFS[rec.kind] : null;
       if (resDef?.interactive) { beginHarvestInteraction(animal); return { ok: true }; }
       return collectResource(animal.livestockId);
+    }
+    const collectPrefix = 'obj_collect_' + animal.id + ':'; // Distinguishes a secondary product without changing old action identifiers.
+    if (typeof action === 'string' && action.startsWith(collectPrefix)) { // Ignore malformed/controller-canceled inputs safely.
+      const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
+      const itemKey = action.slice(collectPrefix.length); // Only exact authored secondary resource keys may be harvested.
+      const extraDef = additionalResourceDefs(rec?.kind).find(def => def.itemKey === itemKey);
+      if (!extraDef) return { ok: false, message: 'Unknown livestock resource.' };
+      if (extraDef.interactive) { beginHarvestInteraction(animal, itemKey); return { ok: true }; }
+      return collectResource(animal.livestockId, itemKey);
     }
     return { ok: false, message: fallbackMessage };
   }
@@ -1406,13 +1427,19 @@
 
   // Gives the ready resource item and resets the cooldown — called from
   // the animal's own "Collect" action button (see _farmAnimalOnAction).
-  function collectResource(livestockId) {
+  function collectResource(livestockId, itemKey = null) {
     const list = deps.loadWorldLivestock();
     const rec = list.find(l => l.id === livestockId);
     if (!rec) return { ok: false, message: 'Livestock not found.' };
-    const resDef = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind];
-    if (!resDef || !rec.resourceReady) return { ok: false, message: 'Nothing to collect yet.' };
-    deps.inventory[resDef.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[resDef.itemKey] || 0) + 1);
+    const primary = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind]; // Legacy primary product (Nazgraku eggs) keeps its save fields.
+    const extra = itemKey && itemKey !== primary?.itemKey
+      ? additionalResourceDefs(rec.kind).find(def => def.itemKey === itemKey) : null; // Secondary product (Nazgraku milk) has an independent saved cooldown.
+    if (itemKey && itemKey !== primary?.itemKey && !extra) return { ok: false, message: 'Unknown livestock resource.' };
+    const resDef = extra || primary;
+    const extraState = extra ? rec.additionalResources?.[extra.itemKey] : null;
+    if (!resDef || !(extra ? extraState?.ready : rec.resourceReady)) return { ok: false, message: 'Nothing to collect yet.' };
+    if ((deps.inventory[resDef.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) return { ok: false, message: 'Your bag is full.' };
+    deps.inventory[resDef.itemKey] = (deps.inventory[resDef.itemKey] || 0) + 1;
     const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
     // A well-cared-for (well-fed, high-heart) animal nudges its own
     // product quality up on top of whatever Farming rolls — every full
@@ -1425,10 +1452,11 @@
     const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
     deps.recordItemQuality?.(resDef.itemKey, stars, 1);
     deps.awardFarmingXp?.();
-    rec.resourceReady = false;
     // Higher hearts also shorten the regen cooldown — up to 40% faster at
     // a full 5 hearts, never below 1 day.
-    rec.daysUntilResource = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08)));
+    const nextDays = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08))); // Shared husbandry timing for both resource channels.
+    if (extraState) { extraState.ready = false; extraState.daysUntilResource = nextDays; }
+    else { rec.resourceReady = false; rec.daysUntilResource = nextDays; }
     deps.saveWorldLivestock(list);
     return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
@@ -1446,6 +1474,15 @@
         if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
         l.daysUntilResource--;
         if (l.daysUntilResource <= 0) l.resourceReady = true;
+        changed = true;
+      }
+      if (l.barnId) for (const extraDef of additionalResourceDefs(l.kind)) {
+        const saved = l.additionalResources || (l.additionalResources = {}); // Persist independent readiness alongside existing egg/resource fields.
+        const state = saved[extraDef.itemKey] || (saved[extraDef.itemKey] = { ready: false, daysUntilResource: extraDef.cooldownDays }); // Old saves initialize lazily on the first housed-day tick.
+        if (state.ready) continue;
+        if (!Number.isFinite(state.daysUntilResource)) state.daysUntilResource = extraDef.cooldownDays;
+        state.daysUntilResource--;
+        if (state.daysUntilResource <= 0) state.ready = true;
         changed = true;
       }
       // Uumkao'ii dew cooldown — separate from the egg resource above;
@@ -1578,6 +1615,12 @@
         resourceLabel: resDef ? (deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey) : null,
         resourceReady: !!(resDef && rec.resourceReady),
         daysUntilResource: resDef && !rec.resourceReady && Number.isFinite(rec.daysUntilResource) ? Math.max(0, rec.daysUntilResource) : null,
+        additionalResources: additionalResourceDefs(rec.kind).map(def => ({
+          itemKey: def.itemKey, label: deps.ITEM_DEFS[def.itemKey]?.label || def.itemKey,
+          ready: !!rec.additionalResources?.[def.itemKey]?.ready,
+          daysUntilResource: Number.isFinite(rec.additionalResources?.[def.itemKey]?.daysUntilResource)
+            ? Math.max(0, rec.additionalResources[def.itemKey].daysUntilResource) : def.cooldownDays,
+        })), // Perception consumers can inspect every independently ready animal product.
         housed: !!rec.barnId,
         dewReady: rec.kind === 'uumkaoii' ? !!rec.dewReady : null,
         dewDaysUntil: rec.kind === 'uumkaoii' && !rec.dewReady && Number.isFinite(rec.dewDaysUntil) ? Math.max(0, rec.dewDaysUntil) : null,
@@ -1616,6 +1659,8 @@
   // instead just faces the animal directly once in position.
   const HARVEST_HANDLER_OFFSET = {
     'gar-wolf': { x: -0.243, z: 0.249 },
+    'moot': { x: -0.243, z: 0.249 }, // Reuse the authored milk-harvest handler approach until a species-specific clip exists.
+    'nazgraku': { x: -0.243, z: 0.249 }, // Ditto, without changing the independent egg collection action.
     'dabinggi-hound': { x: -0.493, z: 0.429 },
     'grehlr': { x: 0.064, z: -0.86 },
   };
@@ -1624,10 +1669,10 @@
     return !!harvestInteraction;
   }
 
-  function beginHarvestInteraction(animal) {
+  function beginHarvestInteraction(animal, itemKey = null) {
     if (harvestInteraction || !animal) return;
     const offset = HARVEST_HANDLER_OFFSET[animal.animalKey];
-    if (!offset) { collectResource(animal.livestockId); return; } // no authored spot — just collect instantly
+    if (!offset) { collectResource(animal.livestockId, itemKey); return; } // no authored spot — just collect instantly
     const theta = animal.groupRot;
     const dx = offset.x * Math.cos(theta) + offset.z * Math.sin(theta);
     const dz = -offset.x * Math.sin(theta) + offset.z * Math.cos(theta);
@@ -1636,7 +1681,7 @@
     const targetAngle = Math.atan2(animalPxY - targetY, animalPxX - targetX);
     animal._harvestFrozen = true;
     harvestInteraction = {
-      animal, livestockId: animal.livestockId,
+      animal, livestockId: animal.livestockId, itemKey, // The player finishes harvesting the same good they selected, even if another becomes ready.
       phase: 'in', t: 0,
       startX: deps.player.x, startY: deps.player.y, startAngle: deps.getFacingAngle(),
       targetX, targetY, targetAngle,
@@ -1659,7 +1704,7 @@
       deps.setFacingAngle(h.targetAngle); deps.player.angle = deps.getFacingAngle();
       h.t += dt;
       if (h.t >= HARVEST_ACTIVE_DURATION_S) {
-        const result = collectResource(h.livestockId);
+        const result = collectResource(h.livestockId, h.itemKey);
         if (result?.message) deps.showToast(result.message, !!result.ok);
         h.phase = 'out'; h.t = 0;
       }
