@@ -57,6 +57,7 @@ async function updateThreePreview(){
       if(avatar.headOnlyFront&&!R.headReference?._canonical)R.headReference=canonicalHeadReference(avatar.headOnlyFront);
       if(avatar.headOnlyBack)R.headReferenceBack=canonicalHeadReference(avatar.headOnlyBack); // Actual behind portrait, never a mirrored front head.
       if(avatar.back)R.backplaneReference=projectRuntimeFrontToFittingCanvas(avatar.back); // Optional full-body guide uses the game's bare rear portrait.
+      syncHeadbandControls(); // Clear the mobile "backplane pending" message once the canonical rear head is ready.
       render(false);
     }
     const THREE=window.THREE;
