@@ -45,7 +45,7 @@ for (const [key, definition] of reagentEntries) {
   assert.ok(A.nativeRecipeForReagent(key), `${key}'s native trio must be authored`);
   assert.ok(['waterEdge','treeRoots','cliffBase','rockEdge','shrubEdge'].includes(definition.habitat), `${key} must declare a terrain sub-habitat`);
 }
-assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 49, '36 existing reactions plus thirteen persistent spouse perfumes must exist');
+assert.strictEqual(Object.keys(A.RECIPE_DEFS).length, 50, 'existing reactions, thirteen persistent spouse perfumes, and Fertility must exist');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.afflict.fire']?.id, 'fireFlask', 'Fire Flask must be brewable from the standard three-trait reaction system');
 assert.strictEqual(A.RECIPE_BY_TRAITS['senses.lighten.fire'], undefined, 'undefined permutations must remain invalid');
 
@@ -94,6 +94,9 @@ const rareOutcome = rarityOutcomes.find(outcome => outcome.recipeId === 'breedin
 const commonOutcome = rarityOutcomes.find(outcome => A.outcomeWeight(outcome) === 1);
 assert.strictEqual(A.outcomeWeight(rareOutcome), 0.1, 'breeding potions must use the authored 0.10 base reaction weight before targeting bonuses');
 assert.strictEqual(A.RECIPE_DEFS.breedingPygmation.brewWeight, 0.1, 'Breeding Pygmation must use the same 0.10 base reaction weight before targeting bonuses');
+assert.strictEqual(A.RECIPE_DEFS.potionOfFertility.brewWeight, 0.1, 'Fertility is a real rare livestock reaction');
+assert.strictEqual(A.RECIPE_DEFS.potionOfFertility.daysReduced, 1, 'Fertility always reduces one in-game day');
+assert.ok(A.enumerateRecipes(['hazewortSprig', 'cloudberryVine', 'frostcapMoss']).some(outcome => outcome.recipeId === 'potionOfFertility'), 'Fertility standard ingredients brew a real three-source reaction');
 assert.ok(A.outcomeWeight(rareOutcome) < A.outcomeWeight(commonOutcome), 'breeding potions must carry a lower natural reaction weight');
 assert.ok(A.targetingProbability(20, rarityOutcomes, rareOutcome.recipeId) < A.targetingProbability(20, rarityOutcomes, commonOutcome.recipeId), 'rare reaction weight must also reduce targeting reliability');
 const weightedCounts = Object.fromEntries(rarityOutcomes.map(outcome => [outcome.recipeId, 0]));
@@ -298,6 +301,52 @@ worldLivestock = [
 pairs = [{ parentA:{source:'world',id:'c'}, parentB:{source:'world',id:'d'}, startedDay:0, progress:.99 }];
 window.FarmAnimals.tickBreedingProgress(1);
 assert.strictEqual(worldLivestock[2].genotype.sizeClass, 'medium', 'opposing parental modifiers must cancel');
+
+
+// Fertility runs through the same progress, save, Nursery and inventory
+// contracts as normal breeding rather than a separate real-time timer.
+const fertilityKey = A.ensureRecipeItemDef('potionOfFertility', 0); // Authored bottled item used by live animal and Farm pair actions.
+inventory[fertilityKey] = 3;
+worldLivestock = [
+  { id:'fert-a', kind:'uumkaoii', name:'Fert A', heartLevel:2.5, genotype:{sizeClass:'medium',coat:'silver'} },
+  { id:'fert-b', kind:'uumkaoii', name:'Fert B', heartLevel:2.5, genotype:{sizeClass:'medium',coat:'gold'} },
+];
+pairs = [{ id:'fert-pair', parentA:{source:'world',id:'fert-a'}, parentB:{source:'world',id:'fert-b'}, startedDay:1, progress:0 }];
+const followingAnimals = new Set([
+  { livestockId:'fert-a', avatarRef:{group:{visible:true}} },
+  { livestockId:'fert-b', avatarRef:{group:{visible:true}} },
+]); // In-memory farm avatars used to prove Stable exclusions without constructing Three.js meshes.
+let fertilityWorldSaves = 0; // Counts world writes made by the administered potion.
+window.FarmAnimals.init({
+  calendar:{day:1}, inventory, animalObjects: followingAnimals,
+  loadWorldLivestock:() => worldLivestock, saveWorldLivestock:list => { worldLivestock = list; fertilityWorldSaves++; },
+  _loadWorldBreedingPairs:() => pairs, _saveWorldBreedingPairs:value => { pairs = value; },
+  LIVESTOCK_RESOURCE_DEFS:{}, clampInventoryStack:key => { if (!inventory[key]) delete inventory[key]; },
+  saveMemberWorldData:() => {}, refreshItemScroll:() => {}, showToast:() => {},
+});
+window.FarmAnimals.invalidateBreedingFollowCache();
+assert.deepStrictEqual(window.FarmAnimals.breedingFollowDebug().followers, [{ followerId:'fert-b', leaderId:'fert-a' }], 'only the second world parent follows the first');
+assert.equal(window.FarmAnimals.administerBreedingPotion('not-a-parent', fertilityKey).ok, false, 'an unpaired animal cannot consume Fertility');
+assert.equal(inventory[fertilityKey], 3, 'failed administration cannot waste a bottle');
+assert.equal(window.FarmAnimals.administerBreedingPotion('fert-b', fertilityKey).ok, true, 'a paired animal accepts Fertility with the existing contextual action');
+assert.ok(Math.abs(pairs[0].progress - 0.35) < 1e-10, 'one dose replaces a whole 16-hour game day at 2.5 average hearts (1.05x / 3 days)');
+assert.equal(window.FarmAnimals.administerFertilityPotion('fert-pair', fertilityKey).ok, true, 'the Farm-menu pair action uses the same saved progress');
+assert.ok(Math.abs(pairs[0].progress - 0.7) < 1e-10, 'multiple bottles shorten the same timer cumulatively');
+assert.equal(window.FarmAnimals.administerFertilityPotion('fert-pair', fertilityKey).ok, true, 'final bottle may immediately finish gestation');
+assert.equal(worldLivestock.length, 3, 'completed potion acceleration creates exactly one child through the original breeding path');
+assert.equal(pairs.length, 0, 'birth clears the breeding pair');
+assert.equal(inventory[fertilityKey] || 0, 0, 'only successful use consumes each bottle');
+assert.ok(fertilityWorldSaves > 0, 'fertility birth uses world livestock persistence');
+assert.equal(window.FarmAnimals.administerFertilityPotion('fert-pair', fertilityKey).ok, false, 'an expired pair cannot be accelerated twice');
+
+storedMeta.characters = [{ id:'stable-owner', stable:[{ id:'stable-mate', kind:'uumkaoii', heartLevel:2.5, genotype:{sizeClass:'medium',coat:'blue'} }] }];
+pairs = [{ id:'mixed-pair', parentA:{source:'stable',id:'stable-mate',characterId:'stable-owner'}, parentB:{source:'world',id:'fert-a'}, startedDay:1, progress:0 }];
+inventory[fertilityKey] = 1;
+window.FarmAnimals.invalidateBreedingFollowCache();
+assert.deepStrictEqual(window.FarmAnimals.breedingFollowDebug().followers, [], 'mixed world/Stable pairs never acquire a farm-follow relationship');
+assert.equal(window.FarmAnimals.administerFertilityPotion('mixed-pair',fertilityKey).ok, true, 'Farm pair action supports a Stable breeding parent');
+assert.ok(pairs[0].progress > 0, 'mixed-pair Fertility persists progress');
+assert.match(read('docs/js/wild-treasure.js'), /recipe\?\.useMode === 'livestock'/, 'reinforced-or-better buried chests must include all authored livestock potions in their existing pool');
 
 const game = read('docs/game.js');
 const style = read('docs/style.css');
