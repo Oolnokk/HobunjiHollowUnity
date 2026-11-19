@@ -5,7 +5,7 @@
   "name": "Wall Torch",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
   "authoringSourceSchema": "hobunji_furniture_surface_author.v58",
-  "notes": "The real handheld torch.png is rendered by AuthoredFurniture on a short wooden wall perch. PNG -Y is the burning end; runtime rotates the torch upright. The rear face of the existing mounting plate stays the stable wall-attachment surface.",
+  "notes": "The handheld torch.png leans outward 30 degrees on a matching tilted handle socket. The sprite's PNG -Y burning end is rotated upright before the tilt. The rear face of the existing mounting plate remains the wall-attachment surface.",
   "createdAt": "2026-09-16T06:30:00.000Z",
   "footprint": {
     "w": 1,
@@ -99,16 +99,16 @@
     {
       "id": "wall_torch_rest",
       "kind": "box",
-      "name": "Wall Torch Handle Rest",
+      "name": "Wall Torch Tilted Handle Socket",
       "transform": {
         "x": 0,
-        "y": 0.81,
-        "z": 0.31,
-        "rx": 0,
+        "y": 0.865,
+        "z": 0.34,
+        "rx": 30,
         "ry": 0,
         "rz": 0,
         "sx": 0.135,
-        "sy": 0.06,
+        "sy": 0.16,
         "sz": 0.115
       },
       "color": "#5a4029",
