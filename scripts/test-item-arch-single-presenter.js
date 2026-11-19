@@ -251,6 +251,14 @@ seed.dataset.sharedSelectionRadius = '120'; berry.dataset.sharedSelectionRadius 
 step();
 assert.equal(api.debugSnapshot().presentation.selectionRadiusMatchesPotion, true);
 
+const legacyStickyDebug = window.ItemArchStickyCategoryHeading.debugSnapshot(); // Cached mobile diagnostics should keep their old property shape.
+assert.equal(legacyStickyDebug.potionGeometry.radius,120);
+assert.equal(legacyStickyDebug.itemSelectionRadii.length,2);
+assert.equal(legacyStickyDebug.itemCategoryLabelRadius,137);
+assert.equal(legacyStickyDebug.potionCategoryLabelRadius,137);
+assert.equal(legacyStickyDebug.potionIconCss.fontSize,'.78em');
+assert.equal(legacyStickyDebug.parityStyleInstalled,true);
+
 const headingBefore = heading.getAttribute('viewBox');
 assert.equal(headingBefore, '0 0 1000 800');
 toolBtn.style.visibility='visible'; itemBtn.style.visibility='hidden';
@@ -260,11 +268,4 @@ assert.ok(!has(seed,'item-select-radius-inset'), 'close restores original item s
 assert.equal(api.debugSnapshot().presentation.frameRunning,false,'bounded loop stops on close');
 assert.equal(window.ItemArchOriginalPresentation.debugSnapshot().singlePresenter,true);
 assert.equal(window.ItemArchStickyCategoryHeading.debugSnapshot().singlePresenter,true);
-const legacyStickyDebug = window.ItemArchStickyCategoryHeading.debugSnapshot(); // Cached mobile diagnostics should keep their old property shape.
-assert.equal(legacyStickyDebug.potionGeometry.radius,120);
-assert.equal(legacyStickyDebug.itemSelectionRadii.length,2);
-assert.equal(legacyStickyDebug.itemCategoryLabelRadius,137);
-assert.equal(legacyStickyDebug.potionCategoryLabelRadius,137);
-assert.equal(legacyStickyDebug.potionIconCss.fontSize,'.78em');
-assert.equal(legacyStickyDebug.parityStyleInstalled,true);
 console.log('Item arch: single owner, category colors, sprite styling, sentinel, fixed heading, inset, idle writes and cleanup passed.');
