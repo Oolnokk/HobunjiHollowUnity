@@ -98,8 +98,10 @@ class TorchNode {
     this.children=[]; this.userData={}; this.name='';
     this.position={ set(...xyz){ this.xyz=xyz; } };
     this.rotation={}; this.scale={ setScalar(value){ this.value=value; } };
+    this.listeners=new Map(); // Test the real Three.js 'added' event used to distinguish live furniture from temporary upgrade groups.
   }
-  add(node) { this.children.push(node); node.parent=this; }
+  add(node) { this.children.push(node); node.parent=this; for(const callback of node.listeners.get('added')||[]) callback({type:'added'}); }
+  addEventListener(type,callback) { if(!this.listeners.has(type)) this.listeners.set(type,[]); this.listeners.get(type).push(callback); }
   getObjectByName(name) { return this.children.find(child=>child.name===name)||null; }
 }
 class TorchMesh extends TorchNode {
@@ -113,8 +115,10 @@ const fakeThree={
   MeshBasicMaterial:class { constructor(args){Object.assign(this,args);} },
   DoubleSide:2,NearestFilter:1003,SRGBColorSpace:'srgb'
 }; // Only the Three entry points needed by the static torch artwork.
+const fireRegistrations=[]; // Temporary authored upgrade groups must not create invisible emitters.
 const artWindow={THREE:fakeThree,
-  FurnitureLightRegistry:{register(light){registeredTorchLights.push(light);}}};
+  FurnitureLightRegistry:{register(light){registeredTorchLights.push(light);}},
+  InteriorFireFloorRuntime:{onAuthoredFurnitureReady(group,data,key){fireRegistrations.push({group,key});}}};
 vm.runInNewContext(authoredTorchSource,{window:artWindow,THREE:fakeThree}, {filename:'authored-furniture-runtime.js'});
 const firstMount=new TorchNode(),secondMount=new TorchNode(); // Independent furniture roots must not share mutable transforms.
 const sprite1=artWindow.AuthoredFurniture.attachWallTorchSprite(firstMount,fakeThree);
@@ -138,3 +142,11 @@ assert.equal(registeredTorchLights.length,2,'one light source per mounted torch,
 assert.equal(artWindow.AuthoredFurniture.attachWallTorchSprite(firstMount,fakeThree),sprite1,
   'repeated attachments never duplicate the torch or its light');
 assert.equal(registeredTorchLights.length,2,'reattachment does not register duplicate lights');
+assert.equal(fireRegistrations.length,0,'an unattached authored furniture build must not register an orphan fire');
+const liveScene=new TorchNode(); // Mounting an actual fixture is the first moment it owns ambient fire.
+liveScene.add(firstMount);
+assert.equal(fireRegistrations.length,1,'mounting a live torch registers exactly one shared campfire effect');
+assert.equal(fireRegistrations[0].group,firstMount,'the live host, not its sprite pivot, owns the fire');
+assert.equal(fireRegistrations[0].key,'wallTorch','the canonical wall-torch furniture key reaches the ambient owner');
+assert.equal(secondMount.parent,undefined,'temporary authored replacement remains detached');
+assert.equal(fireRegistrations.length,1,'detached authored replacement never creates a second orphan emitter');
