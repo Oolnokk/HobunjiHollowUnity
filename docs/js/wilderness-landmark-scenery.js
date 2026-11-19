@@ -175,29 +175,76 @@ function identity(){return String(deps?.tothalWorldId?.()||'world')+':'+String(d
 function landmarksFor(zoneId,layout){return planForLayout(zoneId,layout,identity());}
 function elevation(site){const n=Number(deps?.TILE)||64,p=site.point,y=root.ClimbSystem?.groundYAt?.((p.col+.5)*n,(p.row+.5)*n);return y==null||!Number.isFinite(y)?0:y;}
 function ignoreHits(node,shared=false){node.traverse?.(part=>{if(part.isMesh||part.isInstancedMesh)part.raycast=()=>{};if(shared&&part.geometry)part.userData.festivalSharedFoliage=true;});}
-// Width, height and depth of the four stones, from the broad footing to the cap.
-const CAIRN_STONES=[[.86,.28,.74],[.66,.25,.59],[.48,.22,.43],[.29,.17,.28]];
+// Each face uses the same source, color treatment and nine-slice UV unwrap as an actual cliff.
+const CAIRN_STONES=[[.86,.28,.74],[.66,.25,.59],[.48,.22,.43],[.29,.17,.28]]; // Four overlapping, irregularly rotated stones per cairn.
+const CAIRN_CHUNK_TILES=24; // Keeps independent instanced bounds small enough for useful camera/frustum culling.
+let cliffCairnArt=null; // One owned cliff-mapped geometry and cached material shared by every cairn chunk and Tothal Shift.
+function cairnArt(T){
+ if(cliffCairnArt)return cliffCairnArt;
+ const quarry=root.OreRockTextures?.smallStoneArt?.(T); // Supplies the actual six-sided quarry-rock geometry, not a new cuboid.
+ if(!quarry?.geometry||!quarry?.material){error='Missing small-stone art for cairns';return null;}
+ const natural=root.NaturalSurfaceMaterials,stretch=root.HobunjiSurfaceStretchUV; // Same cliff tint, PNG and connected-surface solver as wilderness cliffs.
+ if(!natural?.naturalizeMesh||!stretch?.mapMesh){error='Cliff surface material or stretch mapper unavailable for cairns';return quarry;}
+ const original=quarry.geometry.clone(); // Never modify/dispose the quarry buffers used by ordinary rubble and witness stones.
+ const template=new T.Mesh(original,quarry.material); // Temporary mesh lets the existing natural-surface pipeline assign its exact cliff material.
+ try{
+  natural.naturalizeMesh(template,'cliffs');
+  const mapping=stretch.mapMesh(template,{label:'wilderness cairn stone faces'}); // Separate full PNG on each polygon face, stretched to that face.
+  if(!mapping?.patchCount||!template.material?.map)throw new Error('Cliff surface UV or texture was not assigned');
+  if(template.geometry!==original)original.dispose?.(); // The seam-capable mapper created its own owned geometry.
+  cliffCairnArt={geometry:template.geometry,material:template.material,patchCount:mapping.patchCount}; // Reused for all stone sizes without re-unwrapping.
+  return cliffCairnArt;
+ }catch(reason){
+  if(template.geometry!==original)template.geometry.dispose?.();
+  original.dispose?.();
+  error='Could not prepare cliff-textured cairns: '+String(reason?.message||reason);
+  return quarry; // Fail open with the previous quarry stones, rather than losing the landmark.
+ }
+}
 function cairns(T,host,sites){
  const list=sites.filter(s=>s.kind==='stoneCairn');if(!list.length)return;
- const art=root.OreRockTextures.smallStoneArt(T); // Match the closed rock shape and texture used by interactible rubble.
- const mesh=new T.InstancedMesh(art.geometry,art.material,list.length*CAIRN_STONES.length);
- const dummy=new T.Object3D();let index=0; // Reuse one transform across the entire wilderness batch.
+ const art=cairnArt(T);if(!art)return;
+ const batches=new Map(); // Spatially partitioned sites prevent one wilderness-wide instance sphere from keeping every cairn visible.
  for(const site of list){
-  const rand=rng(hash(site.id)),size=site.size;
-  let bottom=elevation(site)-.055*size; // Embed the footing and overlap each tier by the same scaled amount.
-  for(const [width,height,depth] of CAIRN_STONES){
-   const offset=(rand()-.5)*.08*size; // Keep every cap over the broad bearing face below it.
-   dummy.position.set(site.point.col+.5+Math.cos(site.yaw)*offset,bottom+height*size/2,site.point.row+.5+Math.sin(site.yaw)*offset);
-   dummy.rotation.y=site.yaw+(rand()-.5)*1.5;
-   dummy.scale.set(width*size,height*size,depth*size);
-   dummy.updateMatrix();
-   mesh.setMatrixAt(index++,dummy.matrix);
-   bottom+=(height-.055)*size;
-  }
+  const key=Math.floor(site.point.col/CAIRN_CHUNK_TILES)+','+Math.floor(site.point.row/CAIRN_CHUNK_TILES);
+  if(!batches.has(key))batches.set(key,[]);
+  batches.get(key).push(site);
  }
- mesh.instanceMatrix.needsUpdate=true;
- mesh.name='wilderness-stone-cairns';mesh.raycast=()=>{};
- mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;host.add(mesh);
+ const parent=new T.Group();parent.name='wilderness-stone-cairns';parent.userData.wildernessLandmarkScenery=true;
+ const dummy=new T.Object3D(); // Reused temporary transform; matrices are written once when the zone is generated.
+ for(const [key,chunk] of batches){
+  const mesh=new T.InstancedMesh(art.geometry,art.material,chunk.length*CAIRN_STONES.length);
+  let index=0; // Tracks the four matrices contributed by every stone stack in this chunk.
+  for(const site of chunk){
+   const rand=rng(hash(site.id)),size=site.size;
+   let bottom=elevation(site)-.055*size; // Embed the footing and overlap each tier.
+   for(const [width,height,depth] of CAIRN_STONES){
+    const offset=(rand()-.5)*.08*size;
+    dummy.position.set(site.point.col+.5+Math.cos(site.yaw)*offset,bottom+height*size/2,site.point.row+.5+Math.sin(site.yaw)*offset);
+    dummy.rotation.y=site.yaw+(rand()-.5)*1.5;
+    dummy.scale.set(width*size,height*size,depth*size);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(index++,dummy.matrix);
+    bottom+=(height-.055)*size;
+   }
+  }
+  mesh.instanceMatrix.needsUpdate=true;
+  mesh.name='wilderness-cairn-chunk-'+key;mesh.raycast=()=>{};
+  mesh.frustumCulled=false; // Three r128 cannot use a base geometry's sphere for scattered instances; the render-only view culler uses tagged instance bounds.
+  mesh.userData.wildernessLandmarkScenery=true;mesh.userData.terrainJigsawIgnore=true;
+  mesh.userData.hobunjiWildernessDistanceCull=true; // Also permits existing zone-distance and scissored-replay culling.
+  root.InstancedMeshBounds?.tag?.(mesh); // Registers accurate per-chunk world bounds with InstancedMeshViewCull.
+  parent.add(mesh);
+ }
+ host.add(parent);
+}
+function prepareStaticRuinVisual(group){
+ group.traverse?.(node=>{
+  if(!node.isMesh||node.isSkinnedMesh||node.isInstancedMesh||!node.geometry?.getAttribute?.('position'))return;
+  node.frustumCulled=true; // Authored ruin furniture must use per-part bounds, not remain an always-drawn world decoration.
+  node.userData.hobunjiWildernessDistanceCull=true; // Optional distance cull operates only during the synchronous world render.
+  if(!node.geometry.boundingSphere)node.geometry.computeBoundingSphere?.(); // Reuse authored local bounds in subsequent camera passes.
+ });
 }
 function engrave(mesh,site,stone=false) {
  const surface=root.FurniturePatternSurfaces; // Reuse ruin surface projection and its cached GPU atlas.
@@ -222,6 +269,8 @@ function witnessStone(T,host,sites){
   rock.userData.wildernessLandmarkScenery=true;
   rock.userData.wildernessLandmarkSitePoint={...site.point}; // Existing stone root is the perception silhouette for the verified anchor.
   rock.userData.terrainJigsawIgnore=true;
+  rock.userData.hobunjiWildernessDistanceCull=true; // Marked ruin stones use their own ordinary mesh frustum and wilderness distance bounds.
+  rock.frustumCulled=true;
   rock.raycast=()=>{}; // This permanent marking is unbreakable and does not steal player input.
   host.add(rock);engrave(rock,site,true);
  }
@@ -252,6 +301,7 @@ async function debris(host,sites,ticket,zoneId){
     if(shaft)engrave(shaft,site,false);
     built.userData.wildernessDyeId=site.dyeId; // Mobile diagnostics can name the color on a given pillar.
    }
+   prepareStaticRuinVisual(built); // Off-camera debris-ifier parts are individually frustum and distance culled.
    ignoreHits(built);host.add(built);
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
@@ -262,7 +312,7 @@ function clear(){
  group?.traverse?.(node=>{
   if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
  });
- group?.children?.find(node=>node.name==='wilderness-stone-cairns')?.dispose?.(); // Main's loose stone geometry/material are shared by all cairns and must never be destroyed here.
+ // Cairn chunks share one cached, owned cliff-mapped geometry/material; neither they nor quarry stone buffers are disposed on a zone Shift.
  for(const rock of witness){
   for(const child of [...rock.children]){
    if(child.userData?.furniturePattern || child.userData?.ruinStoneSignalGlyph){
@@ -293,9 +343,12 @@ function objectAt(zoneId,targetScene,point){
    &&node.userData?.wildernessLandmarkSitePoint?.row===point.row)||null; // Bounded to scene-local roots, never a world traversal.
  }
  function debugSnapshot(){
+ const cairnGroup=group?.getObjectByName?.('wilderness-stone-cairns'); // Lets the mobile Dev Companion verify bounded instancing without developer tools.
  const marker=group?.getObjectByName?.('wilderness-dye-inscribed-witness-stone'); // Mobile debug can verify that the route's dyed rock is visibly rendered, not just planned.
  const engraving=marker?.children?.find?.(child=>child.userData?.furniturePattern);
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
+  cairnRendering:{chunks:cairnGroup?.children?.length||0,cliffMappedFaces:cliffCairnArt?.patchCount||0,
+   frustumTracked:cairnGroup?.children?.filter?.(mesh=>mesh.userData?.hobunjiInstanceBounds===true)?.length||0},
   dyedWitness:{present:!!marker,color:marker?.userData?.witnessDye?.color||null,
    motif:marker?.userData?.witnessDye?.motifUrl||null,engraving:engraving?.userData?.furniturePattern?.status||'unavailable',
    runeVisible:!!marker?.children?.some?.(child=>child.userData?.ruinStoneSignalGlyph)}};
