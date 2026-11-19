@@ -15,6 +15,7 @@ global.window = { THREE, __farmLog() {} };
 global.THREE = THREE;
 require('../docs/js/foliage-generator.js'); // Use the real generator and its cached variants, not a handcrafted tree fixture.
 const generator = window.FoliageGenerator;
+require('../docs/js/furniture-pattern-surfaces.js'); // Use the production face projector to verify complete engraving coverage, without needing canvas or WebGL.
 assert.ok(generator?.buildWildernessBlossomTreeMesh, 'wilderness builder is exported independently of table flowers');
 assert.equal(generator.wildernessBlossomRecipe.map_northern_cliffs.species,'crownedPine');
 assert.equal(generator.wildernessBlossomRecipe.map_western_slope.species,'deadTree');
@@ -64,7 +65,7 @@ const worldLayout = {
 const zoneId='map_northern_cliffs';
 const zoneLayouts=new Map([[zoneId,worldLayout]]);
 const scene=new THREE.Group(); // Same active scene persists when the Tothal cycle is forcibly advanced.
-let cycle='1156',decorations=0,signals=0;
+let cycle='1156',decorations=0; // Count projected masonry surfaces across Tothal regeneration.
 const sharedStoneArt={geometry:new THREE.CylinderGeometry(.46,.5,1,6),material:new THREE.MeshLambertMaterial({color:0x85857c})};
 let sharedStoneDisposed=false; // The real OreRockTextures.smallStoneArt resource is shared by all wilderness cairns.
 sharedStoneArt.geometry.addEventListener('dispose',()=>{sharedStoneDisposed=true;});
@@ -72,30 +73,38 @@ window.OreRockTextures={smallStoneArt:()=>sharedStoneArt}; // Renderer-provided 
 window.GridTileAccessors={getActiveScene:()=>scene};
 window.AuthoredFurniture={
   async load(key){return {key};}, // Simulate the real asynchronous furniture data load.
-  buildGroup(def){const root=new THREE.Group(),shaft=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());
-    root.userData.meshById=new Map([['stump',shaft]]);root.add(shaft);return root;} // A real mesh owns the pillar's inscribed shaft.
+  buildGroup(def){const root=new THREE.Group(),parts=new Map();
+    const partIds=def.key==='ruinPillarBroken'?['base','stump','fallen','cap','chip']:['base','stub','chip_a'];
+    for(const id of partIds){const part=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());
+      part.userData.authoredPart={id,kind:'box'};parts.set(id,part);root.add(part);}
+    root.userData.meshById=parts;return root;} // Mirror the real multi-part authored debris so every major stone is checked.
 };
 window.ClimbSystem={groundYAt:()=>1.25};
+const ruinSurfaces=window.FurniturePatternSurfaces; // The real projector is the coverage oracle, not the test's simulated atlas.
 window.FurniturePatternSurfaces={
   applyPart(mesh,part) {
     const pattern=part.patternSurfaces?.[0];
-    assert.ok(pattern?.pattern?.motifUrl?.startsWith('assets/patterns/motif_harlyao_glyph_'),
-      'dyed stones use a real Harlyao ruin engraving motif');
+    assert.match(pattern?.patternId||'',/^harlyao_glyph_(entropy|ignorance|servitude)$/,
+      'dyed stones reuse an authored Harlyao ruin-wall pattern, not a single motif decal');
     assert.equal(pattern.mode,'engraving','stone engravings use the existing ruin-wall pattern mode');
+    assert.equal(pattern.selector,'all','broken masonry faces and rock caps are covered, not only the front face');
+    assert.equal(pattern.layerTransforms?.[0]?.tiling,true,'the full original ruin motif must repeat across the stone');
+    assert.equal(pattern.glowIntensity,0,'wilderness masonry engravings must never glow');
+    assert.equal(pattern.glowPulseDepth,0,'wilderness masonry must never pulse');
+    assert.ok(pattern.maxAtlasPx<=256,'mobile pattern atlases stay bounded');
     assert.match(pattern.palette[1],/^#[0-9a-f]{6}$/i,'engraving ink has the authored dye hex');
+    const projected=ruinSurfaces.surfaceGeometry(mesh,ruinSurfaces.normalize(pattern),part);
+    assert.ok(projected,'the real ruin surface projector accepts the wilderness masonry geometry');
+    assert.equal(projected.getAttribute('position').count,mesh.geometry.index?.count||mesh.geometry.attributes.position.count,
+      'the full mesh surface is projected, with no tiny isolated decal');
+    projected.dispose();
     const engraving=new THREE.Mesh(new THREE.PlaneGeometry(.2,.2),new THREE.MeshBasicMaterial());
-    engraving.userData.furniturePattern={mode:'engraving',status:'ready'}; // Real surface owner creates a separate child atlas mesh.
+    engraving.userData.furniturePattern={mode:'engraving',slot:pattern.slot,patternId:pattern.patternId,status:'ready'};
     mesh.add(engraving);
-    decorations++; // Counts actual runtime engraving calls, not merely planner output.
+    decorations++; // Counts production-compatible projected surface assignments, not a fake glyph decal.
     return mesh;
   },
-  attachStoneSignal(mesh,options) {
-    assert.equal(options.face,'front','immediate visible glyph sits on the standing rock front');
-    const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.1,.1),new THREE.MeshBasicMaterial());
-    glyph.userData.ruinStoneSignalGlyph=true;
-    mesh.add(glyph);signals++;
-    return {glyph};
-  }
+  attachStoneSignal(){assert.fail('wilderness landmarks must not receive rune decals or glow effects');}
 };
 scenery.init({
   _zoneLayouts:zoneLayouts,getCurrentArea:()=>zoneId,
@@ -108,18 +117,24 @@ const originalMarked=decoratedFor().length; // The planned dye-bearing objects a
 const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
 let first=witnessFor();
 assert.ok(first?.isMesh,'the physically rendered dyed stone exists inside the live wilderness scene');
-assert.equal(decorations,originalMarked,'every distinct marked pillar and stone uses one ruin engraving atlas');
-assert.equal(signals,originalMarked,'one visible colored rune is attached to each dyed object');
+assert.ok(decorations>originalMarked,'major parts of broken pillars each receive their own ruin pattern, not just one front decal');
+const firstCycleDecorations=decorations; // Used to verify cleanup and exactly one rebuild per new Shift.
 assert.equal(first.userData.witnessDye.unique,true);
-assert.equal(first.children.find(child=>child.userData?.ruinStoneSignalGlyph)?.position.z,.57,
-  'the dyed rune is outside the irregular stone instead of buried inside its geometry');
+assert.equal(first.children.some(child=>child.userData?.ruinStoneSignalGlyph),false,'the witness has no rune decal');
+assert.equal(scenery.debugSnapshot().dyedWitness.fullSurface,true,'mobile debug reports the projected full-surface motif');
+assert.equal(scenery.debugSnapshot().dyedWitness.nonGlowing,true,'mobile debug reports non-glowing engraving');
 assert.ok(scenery.debugSnapshot().dyedWitness.present,'mobile Dev Companion can verify the rendered rock');
 assert.equal(scenery.debugSnapshot().plan.marked.length,originalMarked,'mobile diagnostics enumerate every marked object');
 let paintedPillars=0;scene.traverse(node=>{if(node.userData?.wildernessDyeId){paintedPillars++;
-  assert.ok(node.userData.meshById.get('stump').children.some(part=>part.userData?.furniturePattern),
-    'the real authored pillar shaft receives the existing ruin pattern overlay');
+  const parts=node.userData.meshById, expected=[...parts.keys()].filter(id=>['base','stump','stub','fallen','cap'].includes(id));
+  assert.equal(node.userData.wildernessPatternedParts,expected.length,'every major stone part is decorated exactly once');
+  for(const id of expected)assert.ok(parts.get(id).children.some(part=>part.userData?.furniturePattern),
+    id+' receives the entire ruin pattern, including the fallen shaft and base');
+  for(const [id,mesh] of parts)if(id.startsWith('chip'))assert.equal(mesh.children.some(part=>part.userData?.furniturePattern),false,
+    'tiny loose chips are not separate atlas/draw call owners');
 }});
-assert.ok(paintedPillars>0,'even a small generated area renders colored pillar inscriptions');
+assert.ok(paintedPillars>0,'even a small generated area renders colored full-surface pillar patterns');
+assert.ok(scenery.debugSnapshot().patternedPillarParts>paintedPillars,'mobile debug counts multi-part masonry patterns');
 assert.equal(scenery.debugSnapshot().dyedWitness.engraving,'ready','mobile diagnostics report the actual patterned-child status');
 assert.equal(first.geometry,sharedStoneArt.geometry,'witness uses the same natural rubble mesh instead of a new box');
 scenery.update();
@@ -134,13 +149,15 @@ const nextMarked=decoratedFor().length; // The next Shift may distribute a diffe
 assert.notEqual(witnessFor(),first,'a new Tothal generation rebuilds the marker even with the same zone object and scene');
 assert.ok(disposed,'the old marker-owned engraving geometry is disposed on Shift');
 assert.equal(sharedStoneDisposed,false,'Shift must not dispose shared stone geometry');
-assert.equal(decorations,originalMarked+nextMarked,'the new cycle decorates each new marked object exactly once');
+const secondCycleDecorations=decorations-firstCycleDecorations; // Each newly drawn surface is counted once after cleanup.
+assert.ok(secondCycleDecorations>=nextMarked,'the new cycle redraws the full marked-surface set');
 const second=witnessFor();
 zoneLayouts.set(zoneId,{...worldLayout}); // Same cycle but forced regeneration replaces the workspace object.
 scenery.update();
 await new Promise(resolve=>setImmediate(resolve));
 assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also rebuilds the physical riddle witness');
-assert.equal(decorations,originalMarked+nextMarked*2,'same-cycle regeneration reuses the canonical engraving pipeline on every dyed object');
+assert.equal(decorations,firstCycleDecorations+secondCycleDecorations*2,
+  'same-cycle regeneration uses the same surface projection count on every marked part');
 scenery.clear();
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
