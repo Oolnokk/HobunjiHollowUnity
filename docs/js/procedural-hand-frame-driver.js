@@ -619,10 +619,104 @@
     return record.heldItemScratch;
   }
 
+  // Move the HELD OBJECT and its grips together when a resting wrist would
+  // fall below that character's measured shoulder-to-wrist reach. No arm IK,
+  // hand-only clamp, or authored animation/GLB calibration is introduced.
+  // Reuse the actual shoulder targets and rigger reach from the attached rig.
+  function restoreHeldItemReach(record) {
+    const scratch = record.heldItemScratch;
+    const holder = scratch?.reachHolder;
+    if (!holder) return;
+    // Gameplay may have authored a new holder pose since our last render.
+    // Only undo the offset if the holder still has the position we set.
+    if (holder.parent && holder.position.distanceToSquared(scratch.reachPlaced) < 1e-10) {
+      holder.position.sub(scratch.reachApplied);
+      holder.updateWorldMatrix(true, false);
+    }
+    scratch.reachHolder = null;
+    scratch.reachApplied.set(0, 0, 0);
+  }
+
+  function liftHeldItemIntoReach(record, target, scratch) {
+    restoreHeldItemReach(record); // Repeated pre-render and outline renders must never accumulate offsets.
+    const holder = target?.holder;
+    const rig = record.rig;
+    const parent = rig?.parent;
+    if (!holder?.parent || !parent || !rig.shoulderPositionLocal || !rig.armLengthForSide || inAttackEditor()) return;
+    const THREE = record.THREE;
+    scratch.reachShoulder ||= new THREE.Vector3(); // Current anatomical anchor used for held-item reach checks.
+    scratch.reachGrip ||= new THREE.Vector3(); // Current held-item wrist in the hand parent's coordinate frame.
+    scratch.reachGripOffset ||= new THREE.Vector3(); // Grip-mode palm offset applied before measuring reach.
+    scratch.reachQuaternion ||= new THREE.Quaternion(); // Shared held-item rotation including canonical hand orientation.
+    scratch.reachOrigin ||= new THREE.Vector3(); // Hand-parent origin in world space for transforming the lift.
+    scratch.reachRaised ||= new THREE.Vector3(); // Raised hand-parent origin in world space.
+    scratch.reachHolderOrigin ||= new THREE.Vector3(); // Unraised origin in the item's parent frame.
+    scratch.reachHolderRaised ||= new THREE.Vector3(); // Raised origin in the item's parent frame.
+    scratch.reachApplied ||= new THREE.Vector3(); // Last local displacement, reversible without changing gameplay's authored pose.
+    scratch.reachPlaced ||= new THREE.Vector3(); // Last shifted holder position, used to detect external pose writes.
+    holder.updateWorldMatrix(true, false);
+    parent.updateWorldMatrix?.(true, false);
+    hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
+    const mode = gripModeTransformForRecord(record)?.position || {};
+    let lift = 0;
+    let allowableLift = Infinity;
+    let validHands = 0;
+    for (const side of ['right', 'left']) {
+      if (side === 'left' && target.mode !== 'large' && target.mode !== 'authored-world') continue;
+      const reach = Number(rig.armLengthForSide(side));
+      const shoulder = rig.shoulderPositionLocal(side, scratch.reachShoulder);
+      if (!shoulder || !Number.isFinite(reach) || reach <= 0) continue;
+      const hand = target.mode === 'authored-world' ? target.handTargets?.[side] || {} : null;
+      const edge = (Number(target.width) || 0) / 2 + HELD_LARGE_EDGE_MARGIN;
+      const x = hand ? Number(hand.x) || 0 : target.mode === 'large' ? (side === 'right' ? edge : -edge) : 0;
+      const y = hand ? Number(hand.y) || 0 : 0;
+      const z = hand ? Number(hand.z) || 0 : target.mode === 'large' ? 0 : (Number(target.height) || 0) * (Number(target.neckFraction) || 0.2);
+      const rotationName = target.mode === 'large' || target.mode === 'authored-world' ? side : 'bottle';
+      scratch.reachQuaternion.copy(scratch.holderQuat).multiply(scratch.rotations[rotationName]);
+      if (hand) {
+        const r = hand.rotation || {};
+        scratch.authoredEuler ||= new THREE.Euler(0, 0, 0, 'XYZ');
+        scratch.authoredQuaternion ||= new THREE.Quaternion();
+        scratch.authoredEuler.set((Number(r.x) || 0) * Math.PI / 180,
+          (Number(r.y) || 0) * Math.PI / 180, (Number(r.z) || 0) * Math.PI / 180, 'XYZ');
+        scratch.reachQuaternion.multiply(scratch.authoredQuaternion.setFromEuler(scratch.authoredEuler));
+      }
+      holder.localToWorld(scratch.reachGrip.set(x, y, z));
+      scratch.reachGripOffset.set(Number(mode.x) || 0, Number(mode.y) || 0, Number(mode.z) || 0)
+        .applyQuaternion(scratch.reachQuaternion);
+      scratch.reachGrip.add(scratch.reachGripOffset);
+      parent.worldToLocal(scratch.reachGrip);
+      const dx = scratch.reachGrip.x - shoulder.x;
+      const dz = scratch.reachGrip.z - shoulder.z;
+      const lateralSquared = dx * dx + dz * dz;
+      if (lateralSquared >= reach * reach) continue; // An impossible sideways grip cannot be fixed by raising it.
+      const verticalReach = Math.sqrt(reach * reach - lateralSquared);
+      lift = Math.max(lift, shoulder.y - verticalReach - scratch.reachGrip.y);
+      allowableLift = Math.min(allowableLift, shoulder.y + verticalReach - scratch.reachGrip.y);
+      validHands++;
+    }
+    lift = validHands ? Math.max(0, Math.min(lift, allowableLift)) : 0;
+    if (!(lift > 1e-6)) return;
+    // Convert a +Y translation in the *hand parent* into the holder parent's
+    // local axes. Works through player lean, NPC facing and non-uniform scaling.
+    parent.localToWorld(scratch.reachOrigin.set(0, 0, 0));
+    parent.localToWorld(scratch.reachRaised.set(0, lift, 0));
+    scratch.reachHolderOrigin.copy(scratch.reachOrigin);
+    scratch.reachHolderRaised.copy(scratch.reachRaised);
+    holder.parent.worldToLocal(scratch.reachHolderOrigin);
+    holder.parent.worldToLocal(scratch.reachHolderRaised);
+    scratch.reachApplied.copy(scratch.reachHolderRaised).sub(scratch.reachHolderOrigin);
+    holder.position.add(scratch.reachApplied);
+    scratch.reachPlaced.copy(holder.position);
+    scratch.reachHolder = holder;
+    holder.updateWorldMatrix(true, false);
+  }
+
   function syncRigToHeldItem(record, target) {
     const holder = target.holder;
-    holder.updateWorldMatrix(true, false);
     const scratch = heldItemScratch(record);
+    liftHeldItemIntoReach(record, target, scratch);
+    holder.updateWorldMatrix(true, false);
     const holderQuat = hierarchyWorldQuaternion(record, holder, scratch.holderQuat);
     const modelCalibration = modelCalibrationForRecord(record);
     const place = (side, x, y, z, rotationName) => {
@@ -842,12 +936,14 @@
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
-      if (record.rig.applyOwnedPose?.()) return; // A paired action retains its hand contacts through the final render-time sync too.
+      if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); return; } // A paired action owns hand contacts; restore any previous visual holder lift.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record); // Render-time authority stays on the neutral calibration frame while this tab is active.
       } else {
         const heldItem = heldItemTarget(record);
         const holder = heldItem ? null : currentToolHolder(record);
+        if (!heldItem) restoreHeldItemReach(record);
+        if (!heldItem) restoreHeldItemReach(record);
         if (heldItem) syncRigToHeldItem(record, heldItem);
         else if (holder) syncRigToTool(record, holder);
         else applyFallbackBoth(record);
@@ -902,7 +998,7 @@
       }
       record._poseSyncSkipped = false;
       updateFallbackMotion(record);
-      if (record.rig.applyOwnedPose?.()) continue; // Explicit pose ownership precedes held-tool and idle fallback writers.
+      if (record.rig.applyOwnedPose?.()) { restoreHeldItemReach(record); continue; } // Explicit pose ownership precedes held-tool and idle fallback writers.
       if (inHandCalibrationMode()) {
         syncCalibrationWorkspace(record);
       } else {
@@ -945,12 +1041,17 @@
       const results = [];
       for (const record of managed) {
         updateFallbackMotion(record);
-        if(record.rig.applyOwnedPose?.()){results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
+        if(record.rig.applyOwnedPose?.()){restoreHeldItemReach(record);results.push({poseOwned:true});continue;} // Async shoulder/profile refreshes obey the same action owner as normal frames.
         if (inHandCalibrationMode()) {
           results.push(syncCalibrationWorkspace(record, true));
         } else {
-          const holder = currentToolHolder(record);
-          if (holder) results.push(syncRigToTool(record, holder, true));
+          const heldItem = heldItemTarget(record);
+          const holder = heldItem ? null : currentToolHolder(record);
+          if (!heldItem) restoreHeldItemReach(record);
+          if (heldItem) {
+            syncRigToHeldItem(record, heldItem);
+            results.push({ direct: true, heldItem: true, reachLift: record.heldItemScratch?.reachApplied?.length?.() || 0 });
+          } else if (holder) results.push(syncRigToTool(record, holder, true));
           else {
             applyFallbackBoth(record);
             results.push({ direct: true, toolVisible: false, secondaryActive: false });
@@ -985,6 +1086,7 @@
         primaryGrip: toolGrips.primaryGripForTool(record.lastToolKey, toolGrips.currentGripContext?.(), { speciesId: record.speciesId, gender: record.gender }),
         secondaryGrip: toolGrips.secondaryGripForTool(record.lastToolKey, toolGrips.currentGripContext?.(), { speciesId: record.speciesId, gender: record.gender }) || null,
         hand: record.rig?.getDebug?.() || null,
+        heldItemReachLift: Number(record.heldItemScratch?.reachApplied?.length?.() || 0), // Mobile diagnostics report any active anatomical holder lift.
         hasPreRenderSentinel: !!record.syncSentinel,
         poseSyncSkipped: !!record._poseSyncSkipped,
       }));
