@@ -50,11 +50,12 @@ enforce(hand);
 assert(hand.layers.mask & 2,'hand still receives a volumetric outline');
 
 const shell = block('  function replayShellOutlineXray(', '  function wrappedRender(');
-function fixture(failAt=0) {
+function fixture(failAt=0, useGpuMask=false) {
   let draws=0, clears=0, preparations=0, restorations=0, shellCount=0; // Assert pass budget and cleanup in both success and error paths.
   let internalReplay=false, fullscreenReplayCount=0, shellSceneTraversalsAvoided=0; // Production cumulative diagnostic counters.
   let nonGroundDepthReplayCount=0, shellXrayPassCount=0, shellXrayMeshDrawCount=0; // Tracks real replay outcomes.
   let currentGroundGroup=null; // Tracks active tile/elevation filter for each depth reconstruction.
+  let gpuColorWrite=true, gpuLocked=false; // GPU state that must be restored even when a replay draw throws.
   const mats=Array.from({length:3},(_,i)=>({colorWrite:true,depthWrite:false,depthTest:false,marker:i}));
   const parts=mats.map((material,i)=>({isMesh:true,visible:true,material,id:i}));
   const groups=parts.map((mesh,i)=>({meshes:[mesh],regions:[{col:i*5,row:0,elevation:0}]}));
@@ -62,7 +63,10 @@ function fixture(failAt=0) {
   const oldOverride=scene.overrideMaterial;
   const camera={layers:{mask:2}};
   const renderer={autoClear:true,autoClearColor:true,autoClearDepth:true,autoClearStencil:true,
-    shadowMap:{autoUpdate:true},state:{},clearDepth(){clears++;}};
+    shadowMap:{autoUpdate:true},state:useGpuMask ? { buffers: { color: {
+      setMask(value) { gpuColorWrite=value; },
+      setLocked(value) { gpuLocked=value; },
+    } } } : {},clearDepth(){clears++;}};
   const initialMask=camera.layers.mask; // Every renderer property must be restored even after a simulated exception.
   const saveMaterialState=(states,material)=>{
     if(!states.has(material))states.set(material,{
@@ -73,9 +77,13 @@ function fixture(failAt=0) {
       draws++;
       if(_scene.overrideMaterial){
         shellCount++;
+        if(useGpuMask) assert.equal(gpuColorWrite,true,'colored shell draws must never inherit the depth mask');
         assert.equal(parts.filter(p=>p.visible).length,1,'one exceptional shell participates per group');
       } else {
-        assert(mats.every(m=>m.colorWrite===false),'all world depth draws remain colorless');
+        if(useGpuMask) {
+          assert.equal(gpuColorWrite,false,'both grouped and restore depth draws are GPU color-masked');
+          assert.equal(gpuLocked,true,'depth draws must hold the color mask against Three material overrides');
+        } else assert(mats.every(m=>m.colorWrite===false),'fallback world depth draws remain colorless');
         assert(mats.every(m=>m.depthWrite===true),'all group and restore passes use repaired depthWrite');
       }
       if(failAt && draws===failAt)throw Error('simulated draw interruption');
@@ -111,9 +119,10 @@ function fixture(failAt=0) {
   const run=new Function('deps','getCounters',[
     'const {nearReplaySupport,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,MASK_ALL,SHELL_MASK}=deps;',
     'const xrayRule=()=>"original"; // Preserve the original shell test scope; horizon exclusions have their own coverage.',
-    'let internalReplay=false,fullscreenReplayCount=0,shellSceneTraversalsAvoided=0,nonGroundDepthReplayCount=0,shellXrayPassCount=0,shellXrayMeshDrawCount=0;',
+    'let internalReplay=false,fullscreenReplayCount=0,shellSceneTraversalsAvoided=0,nonGroundDepthReplayCount=0,shellXrayPassCount=0,shellXrayMeshDrawCount=0,shellMaskedDepthDraws=0;',
+    block('  function withShellDepthColorMask(', '  // Replays shell outlines for the same meshes'),
     shell,
-    'return {invoke:replayShellOutlineXray,counters:()=>({internalReplay,nonGroundDepthReplayCount,shellXrayPassCount,shellXrayMeshDrawCount})};'
+    'return {invoke:replayShellOutlineXray,counters:()=>({internalReplay,nonGroundDepthReplayCount,shellXrayPassCount,shellXrayMeshDrawCount,shellMaskedDepthDraws})};'
   ].join('\n'))(deps);
   let error=null;
   try{run.invoke(renderer,scene,camera,parts,[],[],false,groups,.02);}catch(e){error=e;}
@@ -132,6 +141,8 @@ function fixture(failAt=0) {
   assert.equal(camera.layers.mask,initialMask,'camera shell mask restores');
   assert.equal(renderer.autoClear,true,'renderer clear settings restore');
   assert.equal(renderer.shadowMap.autoUpdate,true,'shadow state restores');
+  assert.equal(gpuColorWrite,true,'depth-replay color mask restores after normal and interrupted renders');
+  assert.equal(gpuLocked,false,'GPU color mask lock is released after normal and interrupted renders');
   assert.equal(run.counters().internalReplay,false,'internal replay guard never sticks after a draw failure');
   return {error,draws,clears,preparations,shellCount,counters:run.counters()};
 } // Real renderer shell helper with deterministic fake draw calls and material states.
@@ -147,5 +158,15 @@ const aborted=fixture(4);
 assert.match(String(aborted.error),/simulated draw interruption/,
   'exceptions must still run colorless depth restoration and state cleanup');
 assert.equal(aborted.preparations,1,'failed group never triggers redundant material preparation');
+const gpuMasked = fixture(0,true);
+assert.equal(gpuMasked.error,null);
+assert.equal(gpuMasked.counters.shellMaskedDepthDraws,4,
+  'three depth rebuilds plus the final restore are masked, while the three shell color draws stay unmasked');
+const failedGpuDepth = fixture(3,true);
+assert.match(String(failedGpuDepth.error), /simulated draw interruption/,
+  'an interrupted GPU-masked elevation depth pass restores color state and scene state');
+const failedGpuShell = fixture(4,true);
+assert.match(String(failedGpuShell.error), /simulated draw interruption/,
+  'an interrupted colored shell pass restores GPU mask and scene state');
 
 console.log('Authored ink shell exclusions and single-transaction multi-elevation depth replay tests passed.');

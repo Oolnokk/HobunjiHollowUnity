@@ -109,12 +109,104 @@ assert.equal(detached.has(ordinaryShell), false, 'detached mesh is skipped');
 ordinaryShell.parent = holder;
 assert.equal(sceneWalks, 3, 'visibility validation does not require any extra scene traversals');
 
+// The scissor cull and shell replay may share one visible-scene enumeration.
+// Exercise the shipped culler with a temporary snapshot and compare against
+// the former second walk after the culled objects are actually hidden.
+const collectFromScissor = new Function(
+  'hasAlternateReplayPose', 'isDepthReplayInert', 'instancedReplaySphere',
+  'hasAuthoredInstanceBounds', 'isReplayCullable', 'replayFrustumIntersects',
+  'hasLayer', 'SHELL_LAYER',
+  'let lastReplayInstancedCulled=0,lastReplayInstancedKept=0,lastReplayInertCount=0;'
+  + 'let lastReplayCulledCount=0,lastReplayKeptCount=0,instancedReplaySphereReuses=0;'
+  + section('  function collectReplayCulled(', '  function cullReplayGroup(')
+  + '\nreturn collectReplayCulled;'
+)(
+  () => false, object => object.userData?.replayInert === true,
+  () => null, () => false, object => !!object.isMesh && !object.children?.length,
+  object => object.within !== false,
+  (object, layer) => !!(object.layers?.mask & (1 << layer)), 1,
+);
+const outsideShell = { isMesh: true, layers: { mask: 2 }, visible: true, userData: {}, within: false, children: [] };
+const inertSprite = { isSprite: true, layers: { mask: 1 }, visible: true, userData: { hobunjiNoOutline: true, replayInert: true }, children: [] };
+scene.children.push(outsideShell, inertSprite);
+outsideShell.parent = inertSprite.parent = scene;
+const previousWalks = sceneWalks;
+const scissorSnapshot = { depth: [], shell: [] };
+const culled = collectFromScissor(scene, new Set([xrayShell]), null, null, false, scissorSnapshot);
+assert.equal(sceneWalks, previousWalks + 1, 'scissor culling uses one full visible-scene walk');
+assert(culled.includes(outsideShell) && culled.includes(inertSprite),
+  'offscreen and inert objects are removed before the shell snapshot');
+for (const object of culled) object.visible = false;
+const secondWalk = helpers.collectShellReplayCandidates(scene);
+assert.deepEqual(scissorSnapshot.depth, secondWalk.depth, 'fused depth candidates match a second post-cull scene traversal');
+assert.deepEqual(scissorSnapshot.shell, secondWalk.shell, 'fused shell candidates match a second post-cull scene traversal');
+for (const object of culled) object.visible = true;
+scene.children.splice(-2, 2);
+
+// Sweep reproducible combinations of nested mesh parents, hidden branches,
+// inert depth participants, alpha/sprite impostors and offscreen shell meshes.
+// For every case, the fused list must equal a real second post-cull walk.
+let shellSweepSeed = 0x5c311; // Deterministic seed used only for regression scene generation.
+function shellSweepRand() {
+  shellSweepSeed ^= shellSweepSeed << 13;
+  shellSweepSeed ^= shellSweepSeed >>> 17;
+  shellSweepSeed ^= shellSweepSeed << 5;
+  return (shellSweepSeed >>> 0) / 0x100000000;
+}
+for (let trial = 0; trial < 100; trial++) {
+  const root = {
+    visible: true, children: [], parent: null,
+    traverseVisible(cb) {
+      const visit = node => {
+        if (node.visible === false) return;
+        cb(node);
+        for (const child of node.children || []) visit(child);
+      };
+      visit(this);
+    },
+  }; // Real-world visibility skips every descendant of a hidden group.
+  const keep = new Set(); // Held parts whose alternate depth participation forbids scissor culling.
+  for (let groupIndex = 0; groupIndex < 12; groupIndex++) {
+    const parent = {
+      parent: root, visible: shellSweepRand() > 0.15, children: [], isMesh: shellSweepRand() < 0.25,
+      userData: {}, layers: { mask: shellSweepRand() > 0.5 ? 2 : 1 },
+    };
+    root.children.push(parent);
+    for (let leafIndex = 0; leafIndex < 7; leafIndex++) {
+      const child = {
+        parent, children: [], visible: shellSweepRand() > 0.12,
+        isMesh: shellSweepRand() > 0.18, isSprite: false,
+        userData: {}, layers: { mask: shellSweepRand() > 0.3 ? 2 : 1 },
+        within: shellSweepRand() > 0.3,
+      };
+      if (!child.isMesh) child.isSprite = shellSweepRand() > 0.3;
+      if (child.isSprite) child.userData.hobunjiNoOutline = shellSweepRand() > 0.5;
+      child.userData.replayInert = shellSweepRand() < 0.2; // Models inert leaf depth surfaces, never parents.
+      if (shellSweepRand() < 0.08) keep.add(child);
+      parent.children.push(child);
+    }
+  }
+  const fused = { depth: [], shell: [] }; // Filled directly by the shipped scissor culler.
+  const culledSweep = collectFromScissor(root, keep, null, null, false, fused);
+  for (const object of culledSweep) object.visible = false;
+  const exact = helpers.collectShellReplayCandidates(root);
+  assert.deepEqual(fused.depth, exact.depth, 'trial ' + trial + ': depth list matches post-cull traversal');
+  assert.deepEqual(fused.shell, exact.shell, 'trial ' + trial + ': shell list matches post-cull traversal');
+  for (const object of culledSweep) object.visible = true;
+}
+
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
+assert.match(replay, /shellCandidateSnapshot = \{ depth: \[\], shell: \[\] \}/,
+  'successful scissor culling captures the depth and shell candidates in the same walk');
+assert.match(replay, /!!nearReplay, shellCandidateSnapshot\)\)/,
+  'shell replay passes its snapshot into the existing culler');
+assert.match(replay, /if \(!replayCandidates\) replayCandidates = collectShellReplayCandidates\(scene\)/,
+  'unscissored shell passes retain live traversal fallback');
 assert.match(replay, /let replayCandidates = null;/,
   'shell candidate snapshot remains in scope through the final depth restore');
 assert.match(replay, /replayCandidates = collectShellReplayCandidates\(scene\)/,
   'shell replay captures the scene after temporary culling is installed');
-assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth\)/g) || []).length, 1,
+assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth, canMaskShellColor\)/g) || []).length, 1,
   'all elevation groups and the final depth restore share one colorless-material transaction');
 assert.match(replay, /if \(depthStates\) restoreMaterialStates\(depthStates\)/,
   'depth material mutations restore once in finally even if a shell draw throws');

@@ -399,18 +399,23 @@
     return Array.isArray(material) ? material.some(isWorldTextOverlayMaterial) : isWorldTextOverlayMaterial(material);
   }
 
-  // This used to traverse the whole scene on EVERY base pass (thousands of nodes in a
-  // wilderness zone) to find the handful of popup/dialogue planes. The set of candidate meshes
-  // only changes when the scene graph changes, so it is cached per scene and re-derived when an
-  // add()/remove()/clear() happened anywhere since the last scan, plus a periodic safety rescan
-  // for a mesh whose renderOrder/material changed after it was attached. Each frame still
-  // re-checks the predicate and re-reads layer mask/visibility of the cached candidates.
+  // This used to traverse the entire scene whenever any node was attached or removed.
+  // A scene add/remove can happen dozens of times inside a frame (VFX,
+  // temporary render chunks, props). Structure epochs still serve the score
+  // actor cache below, but must not force a full-world text search each time.
+  // On an add to an already-scanned scene, inspect only the attached subtree
+  // at the next base pass; removal is handled by the live ancestor check.
+  // A periodic full scan keeps late renderOrder/material edits discoverable.
   const WORLD_TEXT_RESCAN_MS = 1000;
-  const worldTextCandidates = new WeakMap(); // scene -> { epoch, at, meshes }
-  const sceneStructureEpochs = new WeakMap(); // Only changes attached to this Scene invalidate its candidate traversal.
+  const worldTextCandidates = new WeakMap(); // Scene -> { at, meshes: Set }; reused between incidental structure changes.
+  const pendingWorldTextRoots = new WeakMap(); // Scene -> Set of newly attached roots, consumed before the next base render.
+  const sceneStructureEpochs = new WeakMap(); // Scene -> revision, still used by score-actor mesh discovery.
+  let worldTextFullScans = 0; // Shown in OutlineRenderPerformance.snapshot() to audit actual whole-scene work.
+  let worldTextIncrementalRoots = 0; // Counts attached subtrees examined without a full-scene scan.
+  let worldTextCacheHits = 0; // Counts base-pass collections using the candidate set without rescanning.
   function owningScene(object) {
     for (let node = object; node; node = node.parent) if (node.isScene) return node;
-    return null; // Mutations on detached groups must not invalidate the visible world's cache.
+    return null; // Detached groups do not belong to the active scene.
   }
   function sceneStructureEpoch(scene) { return sceneStructureEpochs.get(scene) || 0; }
 
@@ -421,12 +426,22 @@
         const previous = proto[method];
         if (typeof previous !== 'function' || previous.__hobunjiStructureEpochWrapped) continue;
         const wrapped = function structureEpochWrapped(...args) {
-          const scene = owningScene(this); // Read before remove()/clear() detach their children.
+          const scene = owningScene(this); // Read before remove()/clear() detach children.
           const result = previous.apply(this, args);
-          if (scene) sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+          if (scene) {
+            sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+            if (method === 'add' && worldTextCandidates.has(scene)) {
+              let pending = pendingWorldTextRoots.get(scene);
+              if (!pending) {
+                pending = new Set(); // Coalesces repeated reparentings inside one frame.
+                pendingWorldTextRoots.set(scene, pending);
+              }
+              for (const object of args) if (object?.isObject3D) pending.add(object);
+            }
+          }
           return result;
         };
-        Object.assign(wrapped, previous); // Other modules recognise their own wrapper on proto.add by marker properties; keep those visible.
+        Object.assign(wrapped, previous); // Preserve downstream wrappers' metadata and unwrapping.
         wrapped.__hobunjiStructureEpochWrapped = true;
         proto[method] = wrapped;
       }
@@ -438,24 +453,50 @@
     if (!scene?.traverse) return [];
     const now = performance.now();
     let cached = worldTextCandidates.get(scene);
-    if (!cached || cached.epoch !== sceneStructureEpoch(scene) || now - cached.at > WORLD_TEXT_RESCAN_MS) {
-      const meshes = [];
-      scene.traverse(object => { if (isWorldTextOverlayMesh(object)) meshes.push(object); });
-      cached = { epoch: sceneStructureEpoch(scene), at: now, meshes };
+    if (!cached || now - cached.at >= WORLD_TEXT_RESCAN_MS) {
+      const meshes = new Set(); // Rebuilt periodically; invalid candidate references are not retained forever.
+      scene.traverse(object => { if (isWorldTextOverlayMesh(object)) meshes.add(object); });
+      cached = { at: now, meshes };
       worldTextCandidates.set(scene, cached);
+      pendingWorldTextRoots.delete(scene); // The complete scan already saw all currently attached subtrees.
+      worldTextFullScans++;
+    } else {
+      const pending = pendingWorldTextRoots.get(scene);
+      if (pending?.size) {
+        for (const root of pending) {
+          if (owningScene(root) !== scene) continue; // It was removed/moved again before the next render.
+          // A whole subtree may be queued along with every child while it is
+          // assembled in the live scene. The ancestor already visits them all;
+          // rescanning each child would turn one build into quadratic work.
+          let coveredByQueuedAncestor = false; // Used only to skip redundant descendant scans in this flush.
+          for (let parent = root.parent; parent; parent = parent.parent) {
+            if (pending.has(parent)) { coveredByQueuedAncestor = true; break; }
+          }
+          if (coveredByQueuedAncestor) continue;
+          root.traverse?.(object => {
+            if (isWorldTextOverlayMesh(object)) cached.meshes.add(object);
+          });
+          worldTextIncrementalRoots++;
+        }
+        pending.clear();
+      } else worldTextCacheHits++;
     }
     const entries = [];
     for (const object of cached.meshes) {
+      // Material/renderOrder can change, or a child may have moved to a
+      // different scene. Check live ancestry before touching render layers.
       if (!isWorldTextOverlayMesh(object)) continue;
-      // A hidden parent score board is not visible even when its individual note
-      // planes remain marked visible. Skip it before scheduling a final canvas
-      // pass; the cached candidate stays eligible immediately when the player
-      // steps onto the pressure plate, with no scene-wide rescan.
-      let visible = true; // Used only by this cached-candidate visibility walk, never the per-frame world-scene traversal.
-      for (let ancestor = object; ancestor; ancestor = ancestor.parent) {
-        if (ancestor.visible === false) { visible = false; break; }
+      let visible = true;
+      let node = object;
+      while (node && node !== scene) {
+        if (node.visible === false) visible = false;
+        node = node.parent;
       }
-      if (!visible) continue;
+      if (node !== scene) {
+        cached.meshes.delete(object); // Removal never leaves a stale scene's mesh behind.
+        continue;
+      }
+      if (!visible || scene.visible === false) continue;
       entries.push({ object, originalLayerMask: object.layers.mask, originalVisible: true });
     }
     return entries;
@@ -1011,6 +1052,9 @@
         worldTextOverlayLayer: WORLD_TEXT_OVERLAY_LAYER,
         maxReuseAgeMs: BASE_REUSE_MAX_AGE_MS,
         worldTextRescanMs: WORLD_TEXT_RESCAN_MS,
+        worldTextFullScans,
+        worldTextIncrementalRoots,
+        worldTextCacheHits,
       };
     },
     classifyPass,
