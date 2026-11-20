@@ -1,5 +1,27 @@
 # Performance investigation log
 
+## 20 Nov 2026: invisible wilderness trees still drawn (the "WildernessChunk" draws)
+
+The device report's biggest draw label, `WildernessChunk_map_southern_cloud_forest_#_#` (589 draws
+in one main pass), is the Cloud Forest's procedural shadewood trees: one group per tree tile, 3-4
+meshes each (trunk, vines, leaf cards, sometimes a climb branch). In the user's save 140 were in the
+vegetation corridor, but only 37 were opaque: 103 were fading at the corridor's forward/side edge and
+**73 of those had settled at opacity 0** — drawn every pass (and again in the held replay) while
+contributing no colour. Their depth writes still left a faint ghost trunk in the mist with the
+edge-ink composite outlining it, popping as the corridor hysteresis moved.
+
+`ZoneVegetationCull` now leaves such a tree undrawn until its fade target rises (the fade then
+restarts from 0, so it reappears smoothly); the corridor hysteresis still counts it as in view.
+Headless, user's save, 1175x545: 1,833-1,845 → 1,614-1,625 draws a frame (−219/−220), chunk
+draws in the main pass 449 → 335; frames otherwise identical, ~6k pixels (≈1%) differ — only the
+ghost trunks in the far mist. A full camera turn in 45° steps hid 66-89 trees per heading and
+left none hidden once it stopped being faded out. A/B: `ZoneVegetationCull.setHideFadedOut(false)`,
+benchmark variant `fadedTreesDrawn`. Not yet measured on a device.
+
+What remains per tree is real: ~60 visible trees x 3-4 meshes. Instancing would only reach the
+opaque ones (the partly faded ones need their own transparent materials); see the next entry if
+that was done.
+
 ## 20 Nov 2026: held replays no longer go full screen for the player's neck-rigged portrait
 
 The device reports showed `held=skinned-mesh` with one full-screen held replay a frame (~700

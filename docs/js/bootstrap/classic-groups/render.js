@@ -11,13 +11,13 @@
     "js/character-visuals.js?v=20261119charVisuals1", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
     "js/world-render-pipeline.js?v=20261119visualCore1", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
-    "js/render-ab-benchmark.js?v=20261119abBench1", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
+    "js/render-ab-benchmark.js?v=20261120h1eb5bdc", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
     "js/farm-tile-render-batches.js?v=20261119h71de730",
     "js/zone-prop-render-batches.js?v=20261119hsettledEligibility2",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
-    "js/zone-tree-fade.js?v=20261118h9d25902",
-    "js/zone-vegetation-cull.js?v=20261119visualCore1", // Wilderness vegetation corridor cull; game.js calls init() and tick(dt).
+    "js/zone-tree-fade.js?v=20261120h87c4a16",
+    "js/zone-vegetation-cull.js?v=20261120he8225fb", // Wilderness vegetation corridor cull; game.js calls init() and tick(dt).
     "js/shoulder-pet-attachment-runtime.js?v=20261119hc84a0bb", // Shared pin solver, before game.js starts.
     "js/adventuring-torch-belt.js?v=20261118beltTrueSize4" // Stowed belt sprite and 30-second live torch timeout before game.js starts.
 ]; // Versioned game modules owned by this group.
