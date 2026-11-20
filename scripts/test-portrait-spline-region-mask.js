@@ -160,6 +160,16 @@ assert.deepEqual(rigidOver,pinned,'rigid overlap preserves the portrait-local po
 const bentOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1);
 assert.equal(bentOver.z,.003,'bend overlap clears the hood by the minimum depth');
 assert(bentOver.x>rigidOver.x,'bend overlap retains flexible motion');
+const hoodBehind=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,0,1);
+assert(hoodBehind.z<=-.003,'opaque hood cloth seats unmarked beard vertices BEHIND the owner depth plane');
+const hoodPinned=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,true,0,0,1);
+assert.equal(hoodPinned.z,-.0008,'pinned beard roots behind hood remain hidden instead of x-raying through');
+const hoodOpening=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,0,0,0);
+assert.equal(hoodOpening.z,.0008,'a stretched opening seats beard hair just in front of the portrait');
+const hoodOutside=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,0,0);
+assert(hoodOutside.z>0,'uncovered beard keeps its naturally authored physical depth');
+const hoodOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1,1);
+assert(hoodOver.z>=.003,'explicitly authored over-hood hair remains in front of opaque cloth');
 
 const ring=new Canvas(); // Two isolated holes and a transparent exterior share one hood PNG.
 for(let y=20;y<36;y++)for(let x=20;x<44;x++) {
