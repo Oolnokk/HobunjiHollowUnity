@@ -1305,6 +1305,7 @@ const state = {
   thumbnailObserver: null,
   thumbnailQueue: [],
   thumbnailWorkers: 0,
+  thumbnailStartupBlocked: false, // Pauses low-priority NPC portrait thumbnails while critical repository scripts and workspace initialize.
   portraitRenderChain: Promise.resolve(),
   three: {
     ready: false,
@@ -2800,8 +2801,10 @@ function enqueueThumbnail(canvas, npc) {
 }
 
 function runThumbnailQueue() {
+  if (state.thumbnailStartupBlocked) return; // The initial scene and usable Head slider take priority over list decorations.
   while (state.thumbnailWorkers < 1 && state.thumbnailQueue.length) {
     const job = state.thumbnailQueue.shift();
+    if (!job.canvas.isConnected) continue; // Skip detached thumbnails from superseded searches/source reloads.
     state.thumbnailWorkers++;
     buildAvatarRender(job.npc)
       .then(avatar => { if (job.canvas.isConnected) copyCanvas(avatar.front, job.canvas); })
@@ -2846,6 +2849,7 @@ function updateSourceDetails(settings) {
 }
 
 async function loadSource(settings = settingsFromInputs()) {
+  state.thumbnailStartupBlocked = true; // Postpone sidebar portrait jobs until the repository and author workspace are usable.
   try {
     validateSettings(settings);
     writeSettings(settings);
@@ -2889,6 +2893,9 @@ async function loadSource(settings = settingsFromInputs()) {
     log(error.stack || error.message, 'error');
     $('leftPanel').open = true;
     $('repoSettings').open = true;
+  } finally {
+    state.thumbnailStartupBlocked = false;
+    runThumbnailQueue(); // Resume visible queued thumbnails after success or failure without leaving them permanently paused.
   }
 }
 
