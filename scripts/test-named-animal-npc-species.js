@@ -176,6 +176,27 @@ assert.match(feyExtras, /patternIdsFor\(kind\)\.filter\(id => !baseColoredPatter
 assert.match(nativeAppearance, /if \(patternUsesBaseCoatColor\(kind, id\)\) continue/,
   'Character Studio Color Pools UI excludes redundant Grehlr beard paint regions');
 
+const bridgeSandbox = { // Exercises the actual named-NPC effective-genotype renderer bridge without scheduling browser polling.
+  console, location: { pathname: '/docs/index.html' },
+  document: { currentScript: null, readyState: 'loading', addEventListener() {},
+    querySelector() { return null; }, createElement() { return {}; }, head: { appendChild() {} } },
+  setTimeout() {}, setInterval() {}, clearInterval() {},
+};
+bridgeSandbox.window = bridgeSandbox;
+vm.createContext(bridgeSandbox);
+vm.runInContext(namedAnimal, bridgeSandbox, { filename: 'named-animal-npc.js' });
+const bridgeInput = { base: { color: '#445566' },
+  beard: { copies: 2, enabled: true, color: '#111111' },
+  spectacles: { copies: 1, enabled: true, color: '#222222' } }; // Old named-NPC beard pigment must be ignored after custom color overrides.
+const bridgeOutput = bridgeSandbox.NamedAnimalNpc.effectiveGenotype({ creatureKind: 'grehlr', appearance: {
+  creatureKind: 'grehlr', creatureGenotype: bridgeInput,
+  creatureColorOverrides: { base: '#AABBCC', beard: '#FFFFFF', spectacles: '#00FF00' },
+} });
+assert.equal(bridgeOutput.beard.color, bridgeOutput.base.color,
+  'Named Grehlr NPC effective genetics use their exact-hex base override for the beard as well');
+assert.equal(bridgeOutput.spectacles.color, '#00FF00', 'Other named-animal custom markings retain their own color');
+assert.equal(bridgeInput.beard.color, '#111111', 'Runtime overrides never mutate the underlying authored NPC record');
+
 const storage = new Map();
 const sandbox = {
   console,
