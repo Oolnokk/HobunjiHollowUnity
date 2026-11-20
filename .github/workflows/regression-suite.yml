@@ -60,6 +60,7 @@ jobs:
         run: |
           node scripts/test-zone-prop-render-batches.js
           node scripts/test-wilderness-distance-cull.js
+          node scripts/test-held-skinned-scissor-bounds.js
       - name: Berry bush geometry and fruit colors against real Three.js r128
         if: steps.select.outputs.needs_deps == 'true'
         run: node scripts/test-berry-bush-three-runtime.js

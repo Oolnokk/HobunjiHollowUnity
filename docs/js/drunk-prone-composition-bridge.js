@@ -372,7 +372,28 @@
   // loads. Bandit sway is also composed only for the real render call, then its
   // portrait child is restored so no tilt can contaminate next frame's yaw.
   const rendererProto = THREE.WebGLRenderer?.prototype;
-  if (rendererProto?.render && !rendererProto.__drunkProneCompositionRenderHook) {
+  if (window.RenderHooks?.register) {
+    // Registered ahead of the player-body composer (js/render-hooks.js ORDER) so
+    // the drunk channel is published before the composer resolves this frame.
+    window.RenderHooks.register({
+      id: 'drunk-prone-composition',
+      owner: 'drunk-prone-composition-bridge.js',
+      order: window.RenderHooks.ORDER.DRUNK_PRONE,
+      scope: 'frame',
+      before: () => {
+        syncDrunkComposerChannel();
+        const undo = [];
+        try {
+          prepareBanditSwayForRender(undo);
+        } catch (error) {
+          for (let i = undo.length - 1; i >= 0; i--) undo[i](); // Never leave a partial sway behind.
+          throw error;
+        }
+        return undo;
+      },
+      after: (_ctx, undo) => { for (let i = (undo?.length || 0) - 1; i >= 0; i--) undo[i](); },
+    });
+  } else if (rendererProto?.render && !rendererProto.__drunkProneCompositionRenderHook) {
     const previousRender = rendererProto.render;
     rendererProto.render = function drunkProneCompositionRender(scene, camera, ...rest) {
       syncDrunkComposerChannel();

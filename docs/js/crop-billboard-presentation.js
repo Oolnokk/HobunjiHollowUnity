@@ -186,7 +186,20 @@
   }
 
   function installRenderHook() {
-    const prototype = window.THREE?.WebGLRenderer?.prototype;
+    // Soil anchoring is applied once for every pass of a world frame and
+    // restored after the last one (js/render-hooks.js).
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'crop-billboard-presentation',
+        owner: 'crop-billboard-presentation.js',
+        order: window.RenderHooks.ORDER.CROP_BILLBOARD,
+        scope: 'frame',
+        before: ctx => prepare(ctx.scene),
+        after: (_ctx, states) => restoreTransforms(states || []),
+      });
+      return;
+    }
+    const prototype = window.THREE?.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js.
     if (!prototype || prototype.__hobunjiCropBillboardPresentationHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render;
     prototype.render = function cropBillboardPresentationRender(scene, camera, ...rest) {

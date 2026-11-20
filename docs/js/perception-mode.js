@@ -22,7 +22,7 @@
 (() => {
   'use strict';
 
-  const LAYER = 25; // Unused elsewhere (see the layer list in outline-render-performance.js / held-object-render-order.js).
+  const LAYER = globalThis.HobunjiRenderLayers?.PERCEPTION_MODE ?? 25; // Shares bit 25 with held-object-render-order.js's transient PORTRAIT_WATER_MASK; see js/render-layers.js.
   const RANGE_TILES = 14; // Highlight radius for ordinary actors and interactables.
   const LANDMARK_RANGE_TILES = Object.freeze({ caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 }); // Distinct radii used by collectTargets for discoverable wilderness features.
   const INFO_RANGE_TILES = 6; // Info lists only for close objects, so a full farm doesn't drown in text.

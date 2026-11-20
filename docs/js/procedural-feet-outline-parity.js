@@ -21,7 +21,7 @@
   const activeRigs = new Set(); // Rigs whose newly loaded/replaced foot meshes may need hooks.
   const rigStates = new WeakMap(); // Maps leg roots to their parity state for explicit async foot-replacement notifications.
   const MAX_SNAPSHOT_AGE_MS = 160;
-  const FOOT_WATER_MASK_LAYER = 26; // Mirrors HeldObjectRenderOrder's private foot-only stencil layer used during water recomposition.
+  const FOOT_WATER_MASK_LAYER = globalThis.HobunjiRenderLayers?.FOOT_WATER_MASK ?? 26; // Mirrors HeldObjectRenderOrder's private foot-only stencil layer used during water recomposition.
   const OUTLINE_THICKNESS_MULTIPLIER = 2; // Hands/feet only; shared shell uniform is restored after each limb mesh draw. // Allows the adjacent base->held-overlay->outline sequence without accepting old frames.
   const SHELL_DEPTH_OFFSET_FACTOR = 4; // Pushes foot shell back faces away from the camera so they cannot overlay the foot surface.
   const SHELL_DEPTH_OFFSET_UNITS = 4;

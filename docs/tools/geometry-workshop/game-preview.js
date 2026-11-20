@@ -1,6 +1,7 @@
 // Geometry Workshop gameplay render/texture adapter.
 // The shader and lighting functions are extracted from current game.js via
-// EnemyLoadoutSourceData.renderingFromGame; both editors share one source of truth.
+// EnemyLoadoutSourceData.renderingFromGame (shell shader from js/world-render-pipeline.js,
+// lighting from game.js); both editors share one source of truth.
 // All texture/UV overrides live on disposable DISPLAY clones; GLB exports stay untouched.
 (() => {
   'use strict';
@@ -263,18 +264,20 @@
 
     async function init() {
       try {
-        const [gameResult, outlineResult] = await Promise.all([
-          fetch('game.js'), fetch('config/outline-rendering.json'),
+        // The shell outline shader lives in js/world-render-pipeline.js; lighting is still in game.js.
+        const [gameResult, outlineResult, pipelineResult] = await Promise.all([
+          fetch('game.js'), fetch('config/outline-rendering.json'), fetch('js/world-render-pipeline.js'),
         ]);
-        if (!gameResult.ok || !outlineResult.ok) throw Error('Game visual source failed to load: HTTP ' + gameResult.status + '/' + outlineResult.status);
+        if (!gameResult.ok || !outlineResult.ok || !pipelineResult.ok) throw Error('Game visual source failed to load: HTTP ' + gameResult.status + '/' + outlineResult.status + '/' + pipelineResult.status);
         const game = await gameResult.text();
+        const pipelineSource = await pipelineResult.text();
         if (game.length > MAX_SHADER_BYTES) throw Error('Unexpected game renderer source size.');
         const outline = await outlineResult.json();
         if (!Number.isFinite(outline?.shell?.thicknessNdc)) throw Error('Game outline thickness not available.');
         if (!window.EnemyLoadoutSourceData?.renderingFromGame || !window.WeatherFX?.lightingStateFor) {
           throw Error('Shared game renderer adapter or WeatherFX is unavailable.');
         }
-        shaders = window.EnemyLoadoutSourceData.renderingFromGame(game);
+        shaders = window.EnemyLoadoutSourceData.renderingFromGame(game, pipelineSource);
         shell = shaders.makeShellMaterial(T);
         shell.uniforms.uThickness.value = outline.shell.thicknessNdc;
         for (const scene of scenes) {

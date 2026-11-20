@@ -2509,8 +2509,8 @@
     data.banditWeaponScale = visual.scale.x; // Mobile/debug readout of the applied effective scale.
   }
 
-  function makeBanditToolHolder(scene, weaponKey) {
-    const mesh = deps.makeToolPlaneMesh(weaponKey);
+  function makeBanditToolHolder(scene, weaponKey, entity = null) {
+    const mesh = deps.makeToolPlaneMesh(weaponKey, entity ? { holder: entity } : undefined); // The wielder's own mastery/metal (js/character-held-tools.js).
     if (!mesh) return null;
     const holder = new THREE.Group();
     holder.name = 'banditToolHolder';
@@ -3119,9 +3119,9 @@
     // A lighting pass can prune a still-building avatar's off-scene light
     // while async portrait/limb work yields. Register again at scene adoption.
     for (const portraitGlowLight of avatarRef.handRigAvatarRoot?.userData?.portraitGlowLights || []) window.FurnitureLightRegistry?.register(portraitGlowLight); // One per glowing eye.
-    const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey);
+    const banditToolHolder = makeBanditToolHolder(targetScene, def.weaponKey, def); // def may author weaponMasteryLevel / weaponMetalOptions for its wielder.
     if (!banditToolHolder) window.__farmLog?.(`[bandits] tool holder failed to build for "${def.weaponKey}" -- toolTextures entry missing? (fallback: bandit renders unarmed)`, 'wildlife');
-    const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey) : null;
+    const banditRangedToolHolder = def.rangedWeaponKey ? makeBanditToolHolder(targetScene, def.rangedWeaponKey, def) : null;
     if (banditRangedToolHolder) banditRangedToolHolder.visible = false;
     const banditFlaskToolHolder = rank === 'flasker' ? makeBanditFlaskToolHolder(targetScene) : null; // Separate inventory-flask visual uses the same authored grip as the Attack Editor.
     for (const holder of [banditToolHolder, banditRangedToolHolder, banditFlaskToolHolder]) {
