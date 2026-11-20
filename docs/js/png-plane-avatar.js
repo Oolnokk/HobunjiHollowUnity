@@ -1986,7 +1986,7 @@
     torsoBone.name = `${plane.name}_body_bone`;
     const headBone = new THREE.Bone(); // Pitch only: authored irregular weight map still controls nods.
     headBone.name = `${plane.name}_head_bone`;
-    const yawBone = new THREE.Bone(); // Rigid card fold: all pixels above the straight crease turn together.
+    const yawBone = new THREE.Bone(); // Rigid card fold: face-side pixels ahead of the vertical neck crease turn together.
     yawBone.name = `${plane.name}_yaw_bone`;
     const combinedBone = new THREE.Bone(); // Yaw applied after pitch preserves both motions on shared vertices.
     combinedBone.name = `${plane.name}_pitch_yaw_bone`;
