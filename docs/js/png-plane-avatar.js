@@ -1415,19 +1415,23 @@
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
     const splineLayout = skeleton.bones.length > 8; // Seven spine bones, then optionally a separate nonrotating head-placement bone.
-    const splitOffset = !!rig.headOffsetJoint && skeleton.bones.length > 9; // New species-offset rig; older 2/9-bone landmark fixtures remain supported.
-    const offsetBone = splitOffset ? 7 : -1, neckBone = splitOffset ? 8 : splineLayout ? 7 : 1, headBone = splitOffset ? 9 : splineLayout ? 8 : 2;
+    const splitOffset = !!rig.headOffsetJoint && skeleton.bones.length > 9; // Current gameplay portrait has 10 bones; older 2/9-bone fixtures still work.
+    const authorOffset = !!rig.headOffsetJoint && skeleton.bones.length === 3; // Animation Author: root(0), head placement(1), rotating neck(2).
+    const hasPlacement = splitOffset || authorOffset; // CPU landmarks must follow whichever actual GPU weight indices the portrait uses.
+    const offsetBone = splitOffset ? 7 : authorOffset ? 1 : -1;
+    const neckBone = splitOffset ? 8 : authorOffset ? 2 : splineLayout ? 7 : 1;
+    const headBone = splitOffset ? 9 : authorOffset ? 2 : splineLayout ? 8 : 2;
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
       ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0; // Same horizontal head gate as GPU.
     const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 }; // Reusable CPU scratch, keeping mobile shoulder-pet probes allocation-free.
     spline.a = 0; spline.b = 0; spline.wb = 0;
     if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
-    const offsetWeight = splitOffset ? (headWeight > 0
-      ? 1 - headWeight : headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0; // Offset bone never receives neck rotation.
-    headWeight = splitOffset ? headWeight : Math.max(headWeight, headScaleWeight); // Legacy meshes retain their original two/three-bone projection.
-    const bodyWeight = 1 - headWeight - (splitOffset ? offsetWeight : 0);
+    const offsetWeight = hasPlacement ? (headWeight > 0
+      ? 1 - headWeight : headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0; // Moving the editor's neck bone must affect source-pixel mouth probes, not only GPU vertices.
+    headWeight = hasPlacement ? headWeight : Math.max(headWeight, headScaleWeight); // Legacy meshes retain their original two/three-bone projection.
+    const bodyWeight = 1 - headWeight - offsetWeight;
     for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
-      const weight = splitOffset && i === offsetBone ? offsetWeight
+      const weight = hasPlacement && i === offsetBone ? offsetWeight
         : i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
           : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0); // Pixel probes reproduce whichever four GPU influences this vertex has.
       if (!weight) continue;
