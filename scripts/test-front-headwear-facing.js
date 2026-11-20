@@ -93,7 +93,7 @@ assert(helmLayers[1].url.endsWith("replica_bzabag's_helm-faceguard_m.png"), 'met
 assert.deepEqual(Array.from(helmLayers, layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[0], helmOption, 'male'), helmLayers[0].url, 'rear cap retains its exact source PNG');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), 'cosmetics/clothes/hat/headband.png', 'rear metal band shares Tanged Circlet behind sprite');
-assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'the rear-band pixels use the existing Tanged Circlet path');
+assert.notEqual(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'replica helm retains its own legacy rear band; only circlets use the new metallic flipped back');
 assert.equal(helmOption.variantLayers['mao-ao_female'], undefined, 'unillustrated gender does not inherit helm sprites');
 
 // The loom/icon compositor must follow the same explicit headwear rear URL as the actual portrait.
