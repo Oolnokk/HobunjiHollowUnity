@@ -1,0 +1,57 @@
+name: Generate Grehlr mint sprites
+on:
+  push:
+    branches:
+      - feature/grehlr-mint-shading-20261120
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mint-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install sprite processing dependencies
+        run: python -m pip install pillow numpy
+      - name: Downscale Grehlr frames, eyes, patterns and masks; apply mint shading
+        run: python scripts/downscale-oversized-creature-sprites.py
+      - name: Validate Grehlr art and tint rules
+        run: |
+          python - <<'PY'
+          import glob, json
+          import numpy as np
+          from PIL import Image
+          assets = sorted(glob.glob('docs/assets/creaturesprites/**/grehlr*.png', recursive=True))
+          assert len(assets) >= 13, ('missing Grehlr pattern/eye assets', len(assets))
+          for path in assets:
+              with Image.open(path) as im:
+                  assert im.size == (750, 562), (path, im.size)
+          for pose in ('idle', 'run1', 'run2'):
+              pixels = np.asarray(Image.open('docs/assets/creaturesprites/grehlr_' + pose + '.png').convert('RGBA')).astype(int)
+              green = (pixels[..., 3] > 0) & (pixels[..., 1] > pixels[..., 0] + 10) & (pixels[..., 1] > pixels[..., 2] + 10)
+              white = (pixels[..., 3] > 0) & (pixels[..., :3].min(axis=-1) > 245)
+              black = (pixels[..., 3] > 0) & (pixels[..., :3].max(axis=-1) < 10)
+              assert int(green.sum()) > 20000, (pose, 'mint coat missing')
+              assert int(white.sum()) > 3000, (pose, 'white mantle removed')
+              assert int(black.sum()) > 2000, (pose, 'black outlines removed')
+          masks = json.load(open('docs/config/creature-base-masks.json'))['grehlr']
+          assert all((v['width'], v['height']) == (750, 562) for v in masks.values())
+          print('All Grehlr frames and overlays use 750x562; mint, whites, outlines and masks verified')
+          PY
+          node --check docs/js/creature-genetics-render.js
+      - name: Commit generated binary assets to the PR branch
+        run: |
+          git add docs/assets/creaturesprites docs/config/creature-base-masks.json
+          if git diff --cached --quiet; then
+            echo 'Asset files already current'
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Apply Grehlr mint paintover and resize associated sprite overlays'
+          git push origin HEAD:feature/grehlr-mint-shading-20261120
