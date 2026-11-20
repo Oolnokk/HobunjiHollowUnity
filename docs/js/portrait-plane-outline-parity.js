@@ -65,13 +65,13 @@
         modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
         0,
       );
-      const blendHeight = Math.max(
-        modelHeight * .012,
-        Number(skinnedPlane.geometry?.userData?.blendHeight) || modelHeight * .30,
-      );
-      const neckY = Number(rig.neckLocal?.y) || 0;
-      const t = Math.max(0, Math.min(1, (localPoint.y - (neckY - blendHeight * .55)) / blendHeight));
-      let headWeight = t * t * (3 - 2 * t);
+      const authoredNeckY = Number(rig.neckLocal?.y); // Resolve the same painted sprite pivot as the GPU geometry and primary landmark resolver.
+      const geometryNeckY = Number(skinnedPlane.geometry?.userData?.neckLocal?.y); // Editor/hostile wrapper fallback when a direct neckLocal is missing.
+      const neckY = Number.isFinite(authoredNeckY) ? authoredNeckY
+        : Number.isFinite(geometryNeckY) ? geometryNeckY : 0;
+      const blendHeight = Number(skinnedPlane.geometry?.userData?.blendHeight)
+        || avatarApi.neckBlendBand(neckY, modelHeight, pixelHeight).height; // Match each species' base-head-to-short-neck strip after mesh-density changes.
+      let headWeight = avatarApi.neckBlendWeight(localPoint.y, neckY, blendHeight);
 
       // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
       // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
@@ -90,7 +90,7 @@
       const splineLayout = skeleton.bones.length > 8; // Current skeleton: spline nodes 0-6, then head-turn (7) and head-scale (8). Legacy rigs: body 0, neck 1, head 2.
       const neckBone = splineLayout ? 7 : 1, headBone = splineLayout ? 8 : 2;
       const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
-        ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight) : 0; // Match the rendered head-scale bone.
+        ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0; // Match the rendered head-scale bone.
       headWeight = Math.max(headWeight, headScaleWeight);
       const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 };
       spline.a = 0; spline.b = 0; spline.wb = 0;
