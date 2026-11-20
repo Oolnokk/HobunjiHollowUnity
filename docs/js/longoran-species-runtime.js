@@ -9,20 +9,12 @@
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const DEFAULT_GAIT_PROFILE = Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }); // Bulwark's strongest existing forward lurch.
   const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.07, sway: 0, kyphosis: 1 }); // Approved male/female author export; independent of walking gait.
-  const LEGACY_SPINE_DEFAULTS = Object.freeze([
-    Object.freeze({ hunch: 0.75, sway: 0, kyphosis: 0.8 }),
-    Object.freeze({ hunch: 0.1, sway: 0, kyphosis: 1 }),
-  ]); // Recognized former defaults in species-wide and gender-specific storage; custom profiles must survive.
-  function migrateUnchangedSpine(value) {
-    if (!value || typeof value !== 'object') return value;
-    const isFormerDefault = LEGACY_SPINE_DEFAULTS.some(previous =>
-      Number(value.hunch) === previous.hunch && Number(value.kyphosis) === previous.kyphosis
-      && (value.sway == null || Number(value.sway) === previous.sway)); // Replaces only known shipped combinations, never an edited posture.
-    return isFormerDefault ? { ...value, ...DEFAULT_SPINE_PROFILE } : value; // Preserve any independent gait settings and other authoring fields.
-  }
+  // The approved male/female export starts a new authoring generation: old v1
+  // localStorage profiles (including custom edits) must not override this baseline.
+  // New editor changes still persist in v2 and are deliberately applied on reload.
   const GAIT_PROFILE = { ...DEFAULT_GAIT_PROFILE }; // Mutable shared object: new avatars and the Animation Author read the same tuned values.
   const SPINE_PROFILE = { ...DEFAULT_SPINE_PROFILE }; // Mutable shared object: CharacterSpine uses these values on build and on preview refresh.
-  const TUNING_STORAGE_KEY = 'hobunjiLongoranSpeciesTuning.v1'; // Same-origin authoring override, read back by gameplay on the next load.
+  const TUNING_STORAGE_KEY = 'hobunjiLongoranSpeciesTuning.v2'; // Current approved-generation shared tuning; historical v1 values are ignored.
   const TUNING_LIMITS = Object.freeze({
     hunch: [0, 1], sway: [-1, 1], kyphosis: [0, 1],
     cadence: [0.4, 1.5], stance: [0.52, 0.82], dragLift: [0.01, 0.45], lurchDegrees: [0, 25],
@@ -70,9 +62,7 @@
     const saved = window.localStorage?.getItem(TUNING_STORAGE_KEY); // Authoring edits made on this origin carry through into gameplay on reload.
     if (saved) {
       const parsed = JSON.parse(saved);
-      const spine = migrateUnchangedSpine(parsed?.spineProfile);
-      applyTuning({ ...parsed, spineProfile: spine }, { persist: false });
-      if (spine !== parsed?.spineProfile) window.localStorage?.setItem(TUNING_STORAGE_KEY, JSON.stringify({ ...parsed, spineProfile: spine }));
+      applyTuning(parsed, { persist: false }); // Only v2 post-approval user edits can supersede the approved export.
     }
   } catch (error) { console.warn('[LongoranSpecies] ignored invalid saved tuning:', error); }
   const POPULATION_WEIGHTS = Object.freeze({ tletingan: 95 * 5 / 6, nuhongan: 95 / 6, longoran: 5 }); // Per-Slagothim roll: 5% Longoran, Nuhongan at 20% of Tletingan.
@@ -83,7 +73,7 @@
       : roll < POPULATION_WEIGHTS.longoran + POPULATION_WEIGHTS.nuhongan ? 'nuhongan' : DONOR;
   }
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value)); // Isolates all derived appearance and authoring records.
-  const AUTHOR_STORAGE_KEY = 'hobunjiLongoranAuthorTuning.v1'; // Per-gender editor tuning is used in gameplay on the same origin; repo defaults remain reviewable.
+  const AUTHOR_STORAGE_KEY = 'hobunjiLongoranAuthorTuning.v2'; // Post-approval gender edits; old v1 male/female values are intentionally retired.
   const isAnimationAuthor = typeof location !== 'undefined' && location.pathname.includes('/tools/animation-author/'); // Only editor pages can write gender-specific tuning.
   const authorOverrides = {}; // Species/gender posture and gait authoring edited by Full Character Scale below.
   const clamp = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback; // Validates imported and slider values.
@@ -102,8 +92,7 @@
   function tuningFor(gender) {
     const key = normalizedGender(gender);
     const saved = authorOverrides[key] || null; // Author tuning survives on this origin for later game loads.
-    const anatomy = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${ID}::${key}`]?.anatomy || null;
-    return { spine: normalizedSpine(saved?.spine || anatomy?.longoranSpine || SPINE_PROFILE), gait: normalizedGait(saved?.gait || anatomy?.longoranGait || GAIT_PROFILE) };
+    return { spine: normalizedSpine(saved?.spine || SPINE_PROFILE), gait: normalizedGait(saved?.gait || GAIT_PROFILE) }; // Rig anatomy mirrors editor state but is not a competing persisted tuning authority.
   }
   function spineFor(gender) { return tuningFor(gender).spine; } // Used by every Longoran avatar's static skinned portrait.
   function gaitFor(gender) { return tuningFor(gender).gait; } // Used by every Longoran's walking-leg solver.
@@ -134,13 +123,9 @@
   {
     try {
       const parsed = JSON.parse(window.localStorage?.getItem(AUTHOR_STORAGE_KEY) || '{}');
-      let migrated = false; // Only re-save profiles that still had the former canonical spine values.
       for (const gender of GENDERS) if (parsed[gender]) {
-        const spine = migrateUnchangedSpine(parsed[gender].spine);
-        if (spine !== parsed[gender].spine) { parsed[gender].spine = spine; migrated = true; }
-        authorOverrides[gender] = { spine: normalizedSpine(spine), gait: normalizedGait(parsed[gender].gait) };
+        authorOverrides[gender] = { spine: normalizedSpine(parsed[gender].spine), gait: normalizedGait(parsed[gender].gait) }; // Validate post-approval edits independently for each gender.
       }
-      if (migrated) window.localStorage?.setItem(AUTHOR_STORAGE_KEY, JSON.stringify(parsed));
     } catch (_) { /* Editor remains usable with defaults if storage is unavailable. */ }
   }
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
@@ -498,7 +483,7 @@
       spineProfile: { ...SPINE_PROFILE },
       populationWeights: { ...POPULATION_WEIGHTS },
       tuningStorageKey: TUNING_STORAGE_KEY,
-      latestChange: 'Longoran inherit Tletingan art and cosmetics. The author can tune standing spine curvature and Maskbound-style lurch; values persist in the same origin and use the shared gameplay solvers.',
+      latestChange: 'Approved 7%/100% Longoran spine and right-leg Maskbound lurch are canonical for both genders; legacy v1 overrides are ignored, while fresh v2 authoring persists.',
     }),
   });
 })();
