@@ -4809,12 +4809,17 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
     uvs[cursor * 2] = sourceUv.getX(sourceIndex);
     uvs[cursor * 2 + 1] = 1 - remappedPixelY / pixelHeight; // Keep head/pants PNG texture coordinates in register with the redistributed mesh.
 
-    // Root bone = 0, neck bone = 1. The only bending pixels sit immediately below the species' base-head bottom.
-    const headWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckLocal.y, blendHeight);
-    skinIndices[cursor * 4] = 0;
-    skinIndices[cursor * 4 + 1] = 1;
-    skinWeights[cursor * 4] = 1 - headWeight;
-    skinWeights[cursor * 4 + 1] = headWeight;
+    // The Rotation bone (2) only bends the exact base-head neck strip; Offset (1)
+    // shifts the head vertically without giving that short strip an inverted fold.
+    const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckLocal.y, blendHeight);
+    const offsetWeight = turnWeight > 0 ? 1 - turnWeight
+      : window.PNGPlaneAvatar.headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight); // Editor and runtime share the same broad, nonrotating placement fade.
+    skinIndices[cursor * 4] = 0; // Root torso (used below the offset-only band).
+    skinIndices[cursor * 4 + 1] = 1; // Head-offset bone, which doesn't inherit neck rotation.
+    skinIndices[cursor * 4 + 2] = 2; // Neck rotation (and this editor's optional head scale).
+    skinWeights[cursor * 4] = 1 - offsetWeight - turnWeight;
+    skinWeights[cursor * 4 + 1] = offsetWeight;
+    skinWeights[cursor * 4 + 2] = turnWeight;
     cursor++;
   };
 
@@ -4925,10 +4930,13 @@ async function buildNpcNeckRig(model, avatar, npc) {
 
   const torsoBone = new THREE.Bone();
   torsoBone.name = `${model.name}_torso_bone`;
+  const headOffsetJoint = new THREE.Bone(); // Authored vertical head placement no longer deforms the narrow bend as a head turn.
+  headOffsetJoint.name = `${model.name}_head_offset_bone`;
+  headOffsetJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
+  torsoBone.add(headOffsetJoint);
   const neckJoint = new THREE.Bone();
   neckJoint.name = `${model.name}_neck_bone`;
-  neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
-  torsoBone.add(neckJoint);
+  headOffsetJoint.add(neckJoint);
 
   const skinnedPlane = new THREE.SkinnedMesh(geometry, [frontMaterial, backMaterial]);
   skinnedPlane.name = `${model.name}_single_skinned_portrait_plane`;
@@ -4936,7 +4944,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
   skinnedPlane.renderOrder = 2;
   skinnedPlane.frustumCulled = false;
   skinnedPlane.add(torsoBone);
-  const skeleton = new THREE.Skeleton([torsoBone, neckJoint]);
+  const skeleton = new THREE.Skeleton([torsoBone, headOffsetJoint, neckJoint]);
   skinnedPlane.bind(skeleton);
   rigRoot.add(skinnedPlane);
 
@@ -4956,6 +4964,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
     skinnedPlane,
     skeleton,
     torsoBone,
+    headOffsetJoint,
     neckJoint,
     neckAxes,
     eyeMarker,
