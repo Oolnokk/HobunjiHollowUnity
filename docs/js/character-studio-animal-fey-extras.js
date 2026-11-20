@@ -31,10 +31,10 @@
   const FALLBACK_PATTERNS = Object.freeze({
     'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-    grehlr: ['mitts', 'spectacles', 'coloredstripe'],
+    grehlr: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Same draw order as the genetics renderer, even before its module loads.
     drenkirra: ['bodystripes', 'spectacles'],
     uumkaoii: ['shell'],
-    nelk: ['brushtail', 'cape', 'spectacles'],
+    nelk: ['cape', 'brushtail', 'spectacles'], // Cape under brushtail.
     nazgraku: ['spectacles'],
   });
   const ANIMAL_META = Object.freeze({
@@ -75,8 +75,12 @@
     return Array.isArray(authored) ? authored : (FALLBACK_PATTERNS[kind] || []);
   }
 
+  function baseColoredPattern(kind, patternId) {
+    const rules = window.CreatureGeneticsRender?.SPECIES?.[kind]?.baseColorPatterns; // Prefer live compositor rules; retain the same Grehlr fallback while modules load.
+    return Array.isArray(rules) ? rules.includes(patternId) : kind === 'grehlr' && patternId === 'beard';
+  }
   function colorLayersFor(kind) {
-    return ['base', ...patternIdsFor(kind)]; // Shared base/pattern model now includes Uumkao'ii's mandatory shell.
+    return ['base', ...patternIdsFor(kind).filter(id => !baseColoredPattern(kind, id))]; // Base-colored Grehlr beard has only presence, never an independent hex override.
   }
 
   function genotypeWithOverrides(appearance) {
@@ -92,16 +96,20 @@
       if (!color) continue;
       genotype[layerId] = { ...(genotype[layerId] || {}), color };
     }
+    if (kind === 'grehlr' && genotype.beard && genotype.base?.color) genotype.beard.color = genotype.base.color; // Legacy custom beard overrides cannot change the visual coat or exported preview.
     return genotype;
   }
 
   function setCustomColor(layerId, color) {
+    const kind = activeKind(parseAppearance()); // Validates against the current species before writing exact RGB overrides.
+    if (baseColoredPattern(kind, layerId)) return; // Stale Grehlr beard controls cannot create an independent tint.
     const normalized = normalizeHex(color);
     if (!normalized) { debugState.lastError = `Invalid hex color: ${color}`; refreshDebug(); return; }
     const appearance = parseAppearance();
     const overrides = { ...(appearance.creatureColorOverrides || {}), [layerId]: normalized };
     const genotype = clone(appearance.creatureGenotype || {});
     genotype[layerId] = { ...(genotype[layerId] || {}), color: normalized };
+    if (kind === 'grehlr' && layerId === 'base' && genotype.beard) genotype.beard.color = normalized; // Exact-hex base coat overrides recolor the beard simultaneously.
     writeAppearance({ ...appearance, creatureColorOverrides: overrides, creatureGenotype: genotype }, `${layerId} custom hex → ${normalized}`);
   }
 
@@ -169,7 +177,7 @@
     }).join('');
     extras.innerHTML = `
       <div class="hr"></div>
-      <div class="help"><b>Fey / custom color overrides</b><br>Breeding colors above are presets only. Each base/pattern layer has its own independent #RRGGBB override and is not clamped to animal genetics.</div>
+      <div class="help"><b>Fey / custom color overrides</b><br>Breeding colors above are presets only. Each editable coat or marking can have an independent #RRGGBB override; base-colored traits like Grehlr's beard always follow the base coat.</div>
       ${colorRows}
       <div class="hr"></div>
       <label>In-game size multiplier <input id="animalNpcScaleMultiplier" type="number" min="0.1" max="4" step="0.05" value="${scaleMultiplier}"></label>

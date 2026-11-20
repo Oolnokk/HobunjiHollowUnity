@@ -13,10 +13,10 @@
   const FALLBACK_PATTERNS = Object.freeze({
     'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-    grehlr: ['mitts', 'spectacles', 'coloredstripe'],
+    grehlr: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Fallback uses the same overlay order as gameplay, including the base-colored beard.
     drenkirra: ['bodystripes', 'spectacles'],
     uumkaoii: ['shell'],
-    nelk: ['brushtail', 'cape', 'spectacles'],
+    nelk: ['cape', 'brushtail', 'spectacles'], // Brushtail is above the cape.
     nazgraku: ['spectacles'],
   }); // Used only until creature-genetics.js finishes loading in this standalone tool.
   const PATTERN_PALETTE_RULES = Object.freeze({
@@ -164,6 +164,10 @@
     const authored = window.CreatureGenetics?.PATTERN_DEFS?.[kind]; // Preferred source of truth from the breeding module when available.
     return Array.isArray(authored) ? authored : (FALLBACK_PATTERNS[kind] || []);
   }
+  function patternUsesBaseCoatColor(kind, patternId) {
+    const authored = window.CreatureGeneticsRender?.SPECIES?.[kind]?.baseColorPatterns; // Prefer the runtime compositor when Character Studio has loaded it.
+    return Array.isArray(authored) ? authored.includes(patternId) : kind === 'grehlr' && patternId === 'beard'; // Startup fallback keeps the beard locked to its base color.
+  }
   function defaultAnimalGenotype(kind) {
     const palette = paletteFor(kind); // Supplies breeding-authored colors for initial editable genotype fields.
     const firstColor = palette[0]?.hex || '#8c7a66'; // Used as the default base/fur region color.
@@ -171,7 +175,7 @@
     const genotype = { base: { color: firstColor, copies: 2, inheritance: 'dominant' }, sizeClass: 'medium' }; // Exact base/pattern object shape expected by CreatureGeneticsRender and breeding records.
     for (const patternId of patternIdsFor(kind)) {
       const patternPalette = paletteFor(kind, patternId); // Applies breeding's pattern-specific palette rules to authored defaults too.
-      const patternColor = patternPalette[1]?.hex || patternPalette[0]?.hex || secondColor;
+      const patternColor = patternUsesBaseCoatColor(kind, patternId) ? firstColor : (patternPalette[1]?.hex || patternPalette[0]?.hex || secondColor); // Grehlr beard only inherits visibility, not a second fur color.
       const permanent = kind === 'uumkaoii' && patternId === 'shell'; // This anatomical shell is mandatory, unlike the optional Nelk markings.
       genotype[patternId] = { color: patternColor, copies: permanent ? 2 : 0, inheritance: 'dominant', enabled: permanent };
     }
@@ -190,7 +194,7 @@
       const layer = { ...(defaults[patternId] || {}), ...(genotype[patternId] || {}) }; // Normalized layer feeds both UI toggles and runtime compositor.
       const permanent = kind === 'uumkaoii' && patternId === 'shell'; // No UI/import can remove this anatomical region.
       const enabled = permanent || (layer.enabled !== false && Number(layer.copies) > 0); // Breeding renderer treats copies>0 plus non-false enabled as expressed.
-      layer.color = normalizedPaletteColor(layer.color, paletteFor(kind, patternId)); // Invalid imported colors are snapped into the same legal breeding palette for this pattern.
+      layer.color = patternUsesBaseCoatColor(kind, patternId) ? genotype.base.color : normalizedPaletteColor(layer.color, paletteFor(kind, patternId)); // Old/imported Grehlr beard colors are ignored without losing the allele.
       genotype[patternId] = { ...layer, copies: permanent ? 2 : (enabled ? Math.max(1, Number(layer.copies) || 1) : 0), inheritance: layer.inheritance || 'dominant', enabled };
     }
     return genotype;
@@ -268,6 +272,7 @@
     const regions = [];
     if (genotype?.base?.color) regions.push({ id: 'base', label: 'Base coat', color: genotype.base.color });
     for (const id of ids) {
+      if (patternUsesBaseCoatColor(kind, id)) continue; // A Grehlr beard uses base-coat Color Pools paint and must not appear as a separate region.
       const layer = genotype?.[id];
       if (!layer?.color || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
       regions.push({ id, label: title(id), color: layer.color });
@@ -392,9 +397,11 @@
             ${permanent ? '' : `<input type="checkbox" class="animalNpcPatternToggle" data-pattern="${esc(patternId)}" ${layer.enabled && Number(layer.copies) > 0 ? 'checked' : ''} style="width:auto">`}
             ${esc(title(patternId))}
           </label>
-          <span class="sectionTag">${permanent ? 'permanent shell' : 'breeding pattern'}</span>
+          <span class="sectionTag">${permanent ? 'permanent shell' : patternUsesBaseCoatColor(kind, patternId) ? 'base-colored pattern' : 'breeding pattern'}</span>
         </div>
-        <div class="selGroup" style="margin-top:7px">${swatchButtons(kind, patternId, layer.color)}</div>`;
+        ${patternUsesBaseCoatColor(kind, patternId)
+          ? '<div class="help" style="margin-top:7px">Fur color follows the base coat; only beard presence is inherited.</div>'
+          : `<div class="selGroup" style="margin-top:7px">${swatchButtons(kind, patternId, layer.color)}</div>`}`;
     }
     const cyclesEyes = (window.CreatureGeneticsRender?.SPECIES?.[kind]?.eyes?.mode || ANIMAL_META[kind]?.eyeMode) === 'cycle'; // Shared metadata enables any future chameleon-eyed species.
     const eyePreviewHtml = cyclesEyes
@@ -491,7 +498,7 @@
         const color = button.dataset.color; // Exact palette hex persisted into creatureGenotype.
         updateGenotype(genotypeDraft => {
           if (layerId === 'base') genotypeDraft.base = { ...(genotypeDraft.base || {}), color, copies: 2, inheritance: 'dominant' };
-          else genotypeDraft[layerId] = { ...(genotypeDraft[layerId] || {}), color };
+          else if (!patternUsesBaseCoatColor(kind, layerId)) genotypeDraft[layerId] = { ...(genotypeDraft[layerId] || {}), color }; // Obsolete beard swatches cannot override the current base coat.
         }, `${layerId} color → ${color}`);
       });
     });
@@ -957,7 +964,7 @@
       }
       const script = document.createElement('script'); // Loads only the breeding definition module; the Character Studio does not call its runtime init().
       script.dataset.characterStudioCreatureGenetics = '1';
-      script.src = docsUrl('js/creature-genetics.js');
+      script.src = docsUrl('js/creature-genetics.js?v=20261120grehlrAudit2'); // Prevents stale allele definitions when Character Studio loads the breeding module independently.
       script.onload = () => { debugState.lastAction = 'breeding pattern definitions loaded'; syncUi(true); resolve(true); };
       script.onerror = () => { debugState.lastError = 'creature-genetics.js failed to load; using fallback pattern ids'; resolve(false); };
       document.head.appendChild(script);

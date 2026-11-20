@@ -212,7 +212,7 @@
   const LIVESTOCK_PATTERN_DEFS = {
     'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-    grehlr: ['mitts', 'spectacles', 'coloredstripe'],
+    grehlr: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Beard presence is inherited, but its tint always follows the base coat.
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
@@ -220,10 +220,14 @@
     pingdort: [], // Wild fertile eggs and farm breeding inherit coat color and Size; no invented Pingdort pattern overlays.
     skeeri: [], // Fertile ruin eggs and breeding inherit coat color and Size via the existing system.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
-    nelk: ['brushtail', 'cape', 'spectacles'],
+    nelk: ['cape', 'brushtail', 'spectacles'], // Follow the renderer's cape-under-brushtail order in genotype tools.
     nazgraku: ['spectacles'],
     honeyfuzzle: ['tailfeathers', 'spectacles'], // Tail art is always rendered; only the differently colored secondary tail is an expressed allele.
   };
+  const LIVESTOCK_BASE_COAT_COLOR_PATTERNS = { grehlr: new Set(['beard']) }; // Used by breeding, gifting, trait UI and valuation to keep Grehlr beard fur identical to its base coat.
+  function _patternUsesBaseCoatColor(kind, id) {
+    return !!LIVESTOCK_BASE_COAT_COLOR_PATTERNS[kind]?.has(id);
+  }
   const LIVESTOCK_ALWAYS_PRESENT_PATTERNS = {
     puktuk: new Set(['belly']),
     'voorg-ass': new Set(['belly']),
@@ -318,6 +322,9 @@
 
   // Old Uumkao'ii saves stored permanent fur/plates regions; translate them to base/shell at read time.
   function normalizeLegacyGenotype(kind, genotype) {
+    if ((kind === 'grehlr' || kind === 'grehlr-den-mother') && genotype?.beard && genotype?.base?.color && genotype.beard.color !== genotype.base.color) {
+      genotype = { ...genotype, beard: { ...genotype.beard, color: genotype.base.color } }; // Older independently colored beard saves retain expression/copies but use the current base tint.
+    }
     if ((kind === 'moot' || kind === 'moot-herd-mother') && genotype?.coloredneck) {
       const { coloredneck, ...rest } = genotype; // Deprecated colored-neck allele is superseded by the full overcoat, without altering saved data.
       genotype = rest.overcoat ? rest : { ...rest, overcoat: { ...coloredneck } }; // Existing overcoat wins if both alleles are present.
@@ -436,11 +443,12 @@
         const enabled = !!layer.enabled && copies > 0; // Separates visible traits from hidden carriers.
         const carrier = !enabled && (layer.carrier || (inheritance === 'recessive' && copies === 1)); // Surfaces hidden recessive traits.
         if (!enabled && !carrier) continue;
+        const displayedColor = _patternUsesBaseCoatColor(kind, id) ? genotype.base.color : (layer.color || genotype.base.color); // Farm/Stable chips reflect the rendered beard rather than an obsolete saved pigment.
         patterns.push({
           id,
           label: _traitLabel(id),
-          color: layer.color || genotype.base.color,
-          colorName: _furPaletteName(layer.color || genotype.base.color),
+          color: displayedColor,
+          colorName: _furPaletteName(displayedColor),
           copies,
           inheritance,
           enabled,
@@ -468,7 +476,8 @@
       genotype[id].enabled = index < rank;
       genotype[id].copies = index < rank ? 2 : 0;
       genotype[id].carrier = false;
-      if (index < rank && _patternPalette(kind, id).length) genotype[id].color = rareColor(_patternPalette(kind, id));
+      if (_patternUsesBaseCoatColor(kind, id)) genotype[id].color = genotype.base.color; // Rare gifts inherit the new base color even when the beard is not expressed.
+      else if (index < rank && _patternPalette(kind, id).length) genotype[id].color = rareColor(_patternPalette(kind, id));
     }
     if (rank >= 3 && !deps.CREATURE_DB[kind]?.fixedSizeClass) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
     return genotype;
@@ -529,7 +538,7 @@
             : (1 / 3);
         const alwaysPresent = _patternAlwaysPresent(kind, id); // Keeps authored anatomical regions (Puktuk/Voorg-Ass belly) from being treated as optional genes.
         const enabled = alwaysPresent || Math.random() < chance;
-        const patternColor = _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Restricted patterns get their own valid palette roll.
+        const patternColor = _patternUsesBaseCoatColor(kind, id) ? first.hex : _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Grehlr beard has an independent visibility allele, never an independent color.
         genotype[id] = { color: patternColor, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
       }
       genotype.sizeClass = sizeClass;
@@ -564,7 +573,8 @@
     if (!baseColor || !enabledIds.length) {
       return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
     }
-    const patternColor = genotype[enabledIds[0]].color;
+    const contrastPatternId = enabledIds.find(id => !_patternUsesBaseCoatColor(kind, id)); // Base-colored beards still add pattern rarity but must not hide the contrast of another expressed marking.
+    const patternColor = contrastPatternId ? (genotype[contrastPatternId]?.color || baseColor) : baseColor; // Purely base-colored overlays contribute no false color contrast.
     const contrast = _furColorContrastScore(baseColor, patternColor);
     const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
     const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];
@@ -619,6 +629,10 @@
       if (copies === 0 && Math.random() < mutationChance) { copies = 1; mutated = true; }
       const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
       const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
+      if (_patternUsesBaseCoatColor(kind, id)) {
+        child[id] = { color: child.base.color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 }; // Presence segregates normally; inherited coat pigment is shared with the body.
+        continue;
+      }
       let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomPatternColor(kind, id));
       color = normalizePatternColor(color, kind, id); // Re-applies authored palette limits after blending inherited colors.
       if (mutated) color = mutatePatternColor(color, kind, id);

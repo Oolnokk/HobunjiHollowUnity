@@ -45,6 +45,88 @@ vm.runInContext(read('docs/js/creature-blink.js'), context, { filename: 'creatur
 const render = context.window.CreatureGeneticsRender;
 const genetics = context.window.CreatureGenetics;
 const blink = context.window.CreatureBlink;
+
+// Grehlr's user-authored 750x562 mint art replaces the old oversized gray frames.
+// Every accessory uses the same canvas, so composited eyes and inherited patterns stay aligned.
+const grehlrSpec = render.SPECIES.grehlr; // Runtime source-key config tested against the checked-in paintover.
+assert.equal(grehlrSpec.baseShadeReferenceHex, '#99BF99');
+assert.equal(grehlrSpec.baseRecolorKeyHex, '#99BF99');
+assert.equal(grehlrSpec.preferSourceKeyRecolor, true);
+assert.equal(grehlrSpec.baseRecolorMinValue, 0.12);
+assert.deepEqual(Array.from(grehlrSpec.patterns), ['mitts', 'coloredstripe', 'beard', 'spectacles'],
+  'Grehlr beard must draw over other patterns, but under spectacles');
+assert.equal(grehlrSpec.patternRecolorKeys.beard.hex, '#99BF99',
+  'Grehlr beard tint selects only green fur and preserves its black ink');
+assert.deepEqual(Array.from(grehlrSpec.baseColorPatterns), ['beard'],
+  'Grehlr beard is an inherited visibility trait that uses its body coat pigment');
+const grehlrLegacyColor = { base: { color: '#A47650' }, beard: { color: '#334455', copies: 1, enabled: true }, mitts: { color: '#889977', copies: 1, enabled: true } }; // Deliberately conflicting saved beard dye checks live tint selection.
+assert.equal(render.patternTintColor('grehlr', 'beard', grehlrLegacyColor), grehlrLegacyColor.base.color);
+assert.equal(render.patternTintColor('grehlr', 'mitts', grehlrLegacyColor), grehlrLegacyColor.mitts.color);
+assert.equal(render.patternTintColor('grehlr', 'beard', { ...grehlrLegacyColor, beard: { copies: 1, enabled: true } }), grehlrLegacyColor.base.color,
+  'Missing or legacy beard pigment cannot suppress base-colored beard fur');
+assert.equal(render.genotypeSignature('grehlr', grehlrLegacyColor),
+  render.genotypeSignature('grehlr', { ...grehlrLegacyColor, beard: { ...grehlrLegacyColor.beard, color: '#FF0000' } }),
+  'Changing only the obsolete beard dye does not make a distinct render cache key');
+const drenkirraSwapped = { base: { color: '#AABBCC' }, bodystripes: { color: '#334455', enabled: true, copies: 2 } }; // Swapped coat-color regression: body uses stripes pigment, stripes use base pigment.
+assert.equal(render.patternTintColor('drenkirra', 'bodystripes', drenkirraSwapped), drenkirraSwapped.base.color);
+assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
+  render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, color: '#DD8844' } }),
+  'Drenkirra cache signature must include the swapped body color, not only its stripe tint');
+assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
+  render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, enabled: false } }),
+  'Disabling a swapped Drenkirra stripe also changes the rendered base color');
+assert.match(read('docs/js/creature-genetics-render.js'), /paintRegionId = patternUsesBaseCoat \? 'base' : patternId/,
+  'Color Pools paint on Grehlr beard must follow the base rather than a second independent dye');
+assert.deepEqual(Array.from(render.SPECIES.nelk.patterns), ['cape', 'brushtail', 'spectacles'],
+  'Nelk brushtail must layer above cape, including the cape-aware brushtail variant');
+for (const frame of ['idle', 'run1', 'run2']) {
+  for (const path of [
+    'docs/assets/creaturesprites/grehlr_' + frame + '.png',
+    ...grehlrSpec.patterns.map(id => 'docs/assets/creaturesprites/patterns/grehlr_' + id + '_' + frame + '.png'),
+  ]) {
+    const data = fs.readFileSync(path); // PNG dimensions are read directly without resampling/decoding large images.
+    assert.equal(data.readUInt32BE(16), 750, path + ' width');
+    assert.equal(data.readUInt32BE(20), 562, path + ' height');
+  }
+}
+
+const beardArt = fs.readFileSync('docs/assets/creaturesprites/patterns/grehlr_beard_idle.png'); // Authored fur overlay shared by all three animation poses.
+for (const frame of ['run1', 'run2']) {
+  assert.deepEqual(fs.readFileSync('docs/assets/creaturesprites/patterns/grehlr_beard_' + frame + '.png'), beardArt,
+    'Grehlr beard is exactly the same pixel-aligned art in all three frames');
+}
+for (const eyeFile of [grehlrSpec.eyes.open, grehlrSpec.eyes.blink]) {
+  const image = fs.readFileSync('docs/' + eyeFile); // Keeps blink and open-eye overlays pixel-aligned with each run pose.
+  assert.equal(image.readUInt32BE(16), 750, eyeFile + ' width');
+  assert.equal(image.readUInt32BE(20), 562, eyeFile + ' height');
+}
+for (const [frame, mask] of Object.entries(JSON.parse(read('docs/config/creature-base-masks.json')).grehlr)) {
+  assert.deepEqual([mask.width, mask.height], [750, 562], 'Grehlr ' + frame + ' region mask canvas');
+}
+const grehlrSourceKey = { // Mirrors the renderer's keyed coat selection; used for actual tint regression below.
+  hex: grehlrSpec.baseRecolorKeyHex,
+  hueTolerance: grehlrSpec.baseRecolorHueTolerance,
+  minSaturationRatio: grehlrSpec.baseRecolorMinSaturationRatio,
+  minValue: grehlrSpec.baseRecolorMinValue,
+};
+const grehlrSourcePixels = new Uint8ClampedArray([
+  153, 191, 153, 255, // Mint highlight should take the chosen base genotype.
+  107, 134, 107, 255, // Darker mint fur must tint while remaining relatively darker.
+  255, 255, 255, 255, // White mantle remains authored.
+  179, 179, 179, 255, // Gray mantle shadow remains authored.
+  216, 209, 192, 255, // Beige claws remain authored.
+  0, 0, 0, 255,       // Black outline ink remains authored.
+  120, 82, 90, 255,  // Mauve muzzle remains authored.
+]); // Synthetic swatches test that source-key recoloring has no accidental non-fur reach.
+const grehlrTintedPixels = new Uint8ClampedArray(grehlrSourcePixels); // Compared with original after the production shade fill runs.
+render.recolorKeyedPixels(grehlrTintedPixels, render.hexToRgb('#A47650'),
+  grehlrSourceKey, grehlrSpec.baseShadeReferenceHex);
+assert(grehlrTintedPixels[0] !== 153 && grehlrTintedPixels[4] !== 107,
+  'Both Grehlr mint swatches must be affected by coat genotypes');
+assert(grehlrTintedPixels[0] > grehlrTintedPixels[4],
+  'Shaded fur must remain darker than its painted highlights');
+assert.deepEqual(Array.from(grehlrTintedPixels.slice(8)), Array.from(grehlrSourcePixels.slice(8)),
+  'White mantle, gray mantle, claws, outlines and muzzle cannot change with fur genetics');
 assert.equal(render.SPECIES.nelk.eyes.mode, 'cycle');
 assert.equal(render.SPECIES.uumkaoii.patterns.join(','), 'shell');
 assert.equal(render.SPECIES.uumkaoii.base.run1, "assets/creaturesprites/uumkao'ii_run1.png");
@@ -130,6 +212,25 @@ function rgbaPng(filename) {
   assert.equal(offset, inflated.length, 'PNG scanlines must decode exactly');
   return rgba;
 }
+
+// Decode the shipped art itself: no correctly sized blank/gray image should pass a header-only check.
+for (const pose of ['idle', 'run1', 'run2']) {
+  const pixels = rgbaPng('docs/assets/creaturesprites/grehlr_' + pose + '.png'); // Native 750x562 RGBA from the branch, not a re-created sample.
+  let mint = 0, whites = 0, black = 0, beige = 0; // Tracks the four protected/tintable painted regions in each pose.
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (!pixels[i + 3]) continue;
+    const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    if (g > r + 10 && g > b + 10 && g > 100) mint++;
+    if (r > 245 && g > 245 && b > 245) whites++;
+    if (r < 10 && g < 10 && b < 10) black++;
+    if (r > 150 && r > g && g > b && b > 100) beige++;
+  }
+  assert(mint > 20000, 'Grehlr ' + pose + ': mint fur not present');
+  assert(whites > 3000, 'Grehlr ' + pose + ': mantle white disappeared');
+  assert(black > 2000, 'Grehlr ' + pose + ': native black outlines disappeared');
+  assert(beige > 1000, 'Grehlr ' + pose + ': beige claws disappeared');
+}
+
 const keyHsv = context.window.ColorFill.rgbToHsv(...render.hexToRgb(eyeKey.hex)); // Authored mint skin hue.
 const minSaturation = Math.max(0.04, keyHsv.s * eyeKey.minSaturationRatio); // Shared source-key selection rule.
 for (const pose of ['A','B','C','D']) {
@@ -198,6 +299,38 @@ assert.equal(genetics.normalizeLegacyGenotype('uumkaoii', former).shell.color, '
 assert.equal(genetics.genotypeTraits('uumkaoii', former).patterns.length, 1);
 assert.equal(genetics.crossOffspring(former, former, 'uumkaoii', 0).shell.enabled, true);
 assert.equal(genetics.makeDefaultGenotype('nelk').base != null, true);
+const grehlrFresh = genetics.makeDefaultGenotype('grehlr'); // Used to check fresh Grehlr beard presence and hue are independent concerns.
+assert(grehlrFresh.beard, 'Grehlr still inherits the optional beard locus');
+assert.equal(grehlrFresh.beard.color, grehlrFresh.base.color,
+  'New Grehlr beard genes derive color from the primary coat, whether or not expressed');
+const grehlrGift = genetics.makeRareGiftGenotype('grehlr', 3); // Rare-gift base recoloring must propagate to beard pigment.
+assert.equal(grehlrGift.beard.color, grehlrGift.base.color);
+const grehlrChild = genetics.crossOffspring(
+  { base: { color: '#AABBCC' }, beard: { color: '#000000', copies: 2, enabled: true, inheritance: 'dominant' } },
+  { base: { color: '#445566' }, beard: { color: '#FFFFFF', copies: 2, enabled: true, inheritance: 'dominant' } },
+  'grehlr', 0); // Two parents with mismatched old beard pigments must produce an offspring with the blended base color.
+assert.equal(grehlrChild.beard.enabled, true);
+assert.equal(grehlrChild.beard.copies, 2);
+assert.equal(grehlrChild.beard.color, grehlrChild.base.color);
+const grehlrNormalized = genetics.normalizeLegacyGenotype('grehlr', grehlrLegacyColor); // Legacy saved pigment should be displayed consistently, without mutating its original data.
+assert.equal(grehlrNormalized.beard.color, grehlrLegacyColor.base.color);
+assert.equal(grehlrLegacyColor.beard.color, '#334455');
+assert.equal(genetics.genotypeTraits('grehlr', grehlrLegacyColor).patterns.find(p => p.id === 'beard').color,
+  grehlrLegacyColor.base.color, 'Farm/Stable trait color chips must match actual beard tint');
+assert.equal(genetics.sellValueFor({ base: grehlrLegacyColor.base, beard: grehlrLegacyColor.beard }, 'grehlr').contrastScore, 0,
+  'Beard alone has no base-versus-pattern color contrast bonus');
+const markedGrehlr = { base: { color: '#445566' }, beard: { copies: 2, enabled: true, color: '#FF0000' },
+  spectacles: { copies: 2, enabled: true, color: '#aabbcc' } }; // Exact contrasting test-palette entries avoid misleading nearest-palette matches for neutral grays. // Beard is the first expressed pattern, but spectacles still add real visible contrast.
+assert(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore > 0,
+  'A base-colored beard must not conceal the real contrast of later independent markings when computing sell value');
+assert.equal(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore,
+  genetics.sellValueFor({ ...markedGrehlr, beard: { ...markedGrehlr.beard, enabled: false } }, 'grehlr').contrastScore,
+  'Beard presence adds rarity but never changes the calculated pigment contrast of other markings');
+assert.deepEqual(Array.from(genetics.PATTERN_DEFS.grehlr), Array.from(render.SPECIES.grehlr.patterns),
+  'Grehlr authoring/breeding and rendering must agree on which pattern overlays are on top');
+assert.deepEqual(Array.from(genetics.PATTERN_DEFS.nelk), Array.from(render.SPECIES.nelk.patterns),
+  'Nelk authoring/breeding must keep brushtail above cape, as in the actual compositor');
+
 assert.equal(genetics.makeDefaultGenotype('nazgraku').base != null, true);
 
 // The game's normal portrait URLs are retained for Nazgraku riding, not the
