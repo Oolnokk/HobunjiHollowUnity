@@ -52,6 +52,9 @@
                 }
               }
             }
+          },
+          "behindImage": {
+            "url": "./assets/cosmetics/clothes/hat/headband_behind.png"
           }
         }
       }
@@ -78,6 +81,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m_behind.png"
               }
             }
           }
@@ -104,6 +110,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f_behind.png"
               }
             }
           }
@@ -130,6 +139,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/tl_headband_behind.png"
               }
             }
           }
@@ -156,6 +168,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m_behind.png"
               }
             }
           }
@@ -182,6 +197,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f_behind.png"
               }
             }
           }
@@ -208,6 +226,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind.png"
               }
             }
           }
@@ -234,6 +255,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind.png"
               }
             }
           }
@@ -260,6 +284,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind.png"
               }
             }
           }
@@ -286,6 +313,9 @@
                     }
                   }
                 }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind.png"
               }
             }
           }
