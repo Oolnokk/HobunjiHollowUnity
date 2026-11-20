@@ -179,6 +179,29 @@ api.clearFromParent(splitParent);
 assert.deepStrictEqual([splitHeadScaleJoint.scale.x, splitHeadScaleJoint.scale.y, splitHeadScaleJoint.scale.z], [1, 1, 1],
   'clearFromParent must reset headScaleJoint, not (only) neckJoint, when a headScaleJoint exists');
 
+// New short-neck rigs separate head rotation/scale from the head's broad, nonrotating
+// height compensation. A -9.5% Mashtzarr offset must not shear the short neck band.
+const splitOffsetBone = makeBone(); // Used only for independent head-height translation in this rig fixture.
+splitParent.userData.neckRig.headOffsetJoint = splitOffsetBone;
+splitParent.userData.portraitModelHeight = 2;
+const unchangedHeadScaleY = splitHeadScaleJoint.position.y;
+const headOffsetRestY = splitOffsetBone.position.y;
+api.applyToParent(splitParent, 'mashtzarr', 'male', { x: 1, y: 1, head: 1, offsetY: -0.095 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY - 0.095 * 2)) < 1e-9,
+  'author-specific offset must move the new nonrotating placement bone');
+assert.strictEqual(splitHeadScaleJoint.position.y, unchangedHeadScaleY,
+  'head-scale bone must not compress a 9.5%-height offset into the two-pixel neck');
+assert.strictEqual(splitNeckJoint.position.y, splitBaselineY,
+  'the rotating neck bone must not inherit a destructive local translation');
+api.applyToParent(splitParent, 'mashtzarr', 'male', { x: 1, y: 1, head: 1, offsetY: -0.095 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY - 0.095 * 2)) < 1e-9,
+  'reapplying head placement is idempotent');
+api.clearFromParent(splitParent);
+assert.strictEqual(splitOffsetBone.position.y, headOffsetRestY,
+  'reset must restore independent placement bone rest position');
+assert.strictEqual(splitHeadScaleJoint.position.y, unchangedHeadScaleY,
+  'reset must leave the independent head-scale bone at its original rest position');
+
 // Head Y offset is authored per species/gender as a fraction of the avatar's own
 // model height, and composes additively with a separate per-NPC age-hunch factor —
 // neither one is baked into shared profile data, both are supplied by the caller.
