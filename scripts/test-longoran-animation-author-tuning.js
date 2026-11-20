@@ -35,37 +35,44 @@ function makeContext(pathname) {
   return win;
 }
 
-// Previously stored default slider values must not override a newly approved repository posture.
-state.set('hobunjiLongoranSpeciesTuning.v1', JSON.stringify({ spineProfile: { hunch: .75, sway: 0, kyphosis: .8 }, gaitProfile: { cadence: .66 } }));
-state.set('hobunjiLongoranAuthorTuning.v1', JSON.stringify({
-  male: { spine: { hunch: .37, sway: 0, kyphosis: .8 }, gait: { lurchDegrees: 22 } },
-  female: { spine: { hunch: .75, sway: 0, kyphosis: .8 }, gait: { lurchDegrees: 19 } },
-}));
-const migrated = makeContext('/index.html');
-assert.equal(migrated.HobunjiLongoranSpecies.spineProfile.hunch, .07, 'old global default hunch migrates without changing explicit gait');
-assert.equal(migrated.HobunjiLongoranSpecies.spineProfile.kyphosis, 1);
-assert.equal(migrated.HobunjiLongoranSpecies.gaitProfile.cadence, .66);
-assert.equal(migrated.HobunjiLongoranSpecies.spineFor('female').hunch, .07, 'former female author defaults migrate');
-assert.equal(migrated.HobunjiLongoranSpecies.spineFor('female').kyphosis, 1);
-assert.equal(migrated.HobunjiLongoranSpecies.spineFor('male').hunch, .37, 'user-customized male posture survives default migration');
-assert.equal(migrated.HobunjiLongoranSpecies.gaitFor('male').lurchDegrees, 22, 'independently customized gait survives');
-assert.equal(JSON.parse(state.get('hobunjiLongoranAuthorTuning.v1')).female.spine.hunch, .07, 'migration persists across reloads');
-state.clear();
-state.set('hobunjiLongoranSpeciesTuning.v1', JSON.stringify({
-  spineProfile: { hunch: .1, sway: 0, kyphosis: 1 }, gaitProfile: { cadence: .58, dragSide: 'left' },
-})); // The immediately preceding shipped posture must also migrate, with its gait untouched.
-state.set('hobunjiLongoranAuthorTuning.v1', JSON.stringify({
-  male: { spine: { hunch: .1, sway: 0, kyphosis: 1 }, gait: { cadence: .66, dragSide: 'right' } },
+// The supplied male/female export supersedes ALL older v1 tuning, even custom
+// historical values. Future post-approval edits use v2 and remain editable.
+const previousShared = { spineProfile: { hunch: .75, sway: 0, kyphosis: .8 }, gaitProfile: { cadence: .58, dragSide: 'left' } }; // Legacy shared tuning fixture.
+const previousGenders = {
+  male: { spine: { hunch: .37, sway: .3, kyphosis: .8 }, gait: { lurchDegrees: 22, dragSide: 'left' } },
   female: { spine: { hunch: .23, sway: 0, kyphosis: 1 }, gait: { cadence: .55, dragSide: 'left' } },
-})); // An independently adjusted female posture is not an old default.
-const previousRelease = makeContext('/index.html'); // Exercises migration on real runtime initialization.
-assert.equal(previousRelease.HobunjiLongoranSpecies.spineProfile.hunch, .07, 'last release species default migrates to 7%');
-assert.equal(previousRelease.HobunjiLongoranSpecies.spineFor('male').hunch, .07, 'last release male author default migrates to 7%');
-assert.equal(previousRelease.HobunjiLongoranSpecies.spineFor('female').hunch, .23, 'customized female posture is preserved');
-assert.equal(previousRelease.HobunjiLongoranSpecies.gaitFor('female').cadence, .55, 'female gait remains independent of posture');
-assert.equal(previousRelease.HobunjiLongoranSpecies.gaitProfile.cadence, .58, 'global walking cadence survives migration');
-assert.equal(JSON.parse(state.get('hobunjiLongoranAuthorTuning.v1')).male.spine.hunch, .07, 'updated male author default is saved');
-state.clear();
+}; // Historically customized, not only stale defaults.
+state.set('hobunjiLongoranSpeciesTuning.v1', JSON.stringify(previousShared));
+state.set('hobunjiLongoranAuthorTuning.v1', JSON.stringify(previousGenders));
+const approved = makeContext('/index.html');
+const approvedApi = approved.HobunjiLongoranSpecies;
+assert.equal(approvedApi.spineProfile.hunch, .07, 'legacy species-wide posture no longer overrides the approved 7%');
+assert.equal(approvedApi.gaitProfile.cadence, .66, 'legacy species-wide walking speed no longer overrides approved gait');
+for (const gender of ['male', 'female']) {
+  assert.deepEqual(JSON.parse(JSON.stringify(approvedApi.spineFor(gender))), { hunch: .07, sway: 0, kyphosis: 1 }, gender + ' loads exact approved spine');
+  assert.deepEqual(JSON.parse(JSON.stringify(approvedApi.gaitFor(gender))), {
+    style: 'maskbound-lurch', dragSide: 'right', cadence: .66,
+    stance: .74, dragLift: .09, lurchDegrees: 19,
+  }, gender + ' loads exact approved gait');
+}
+assert.equal(state.has('hobunjiLongoranSpeciesTuning.v2'), false, 'legacy tuning does not automatically get promoted to new authoring');
+assert.equal(state.has('hobunjiLongoranAuthorTuning.v2'), false, 'historical gender overrides are not accidentally copied into v2');
+assert.equal(state.get('hobunjiLongoranSpeciesTuning.v1'), JSON.stringify(previousShared), 'old storage is left untouched for safe rollback');
+assert.equal(state.get('hobunjiLongoranAuthorTuning.v1'), JSON.stringify(previousGenders), 'old per-gender storage is left untouched');
+approved.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.longoranSpine = { hunch: .9, sway: .6, kyphosis: .4 }; // A stale rig save is not a third authoring source.
+approved.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.longoranGait = { style: 'maskbound-lurch', dragSide: 'left', cadence: 1, stance: .6, dragLift: .3, lurchDegrees: 7 };
+assert.equal(approvedApi.spineFor('male').hunch, .07, 'stale rig anatomy cannot override the approved spine');
+assert.equal(approvedApi.gaitFor('male').lurchDegrees, 19, 'stale rig anatomy cannot override approved gait');
+
+const speciesWriter = makeContext('/index.html').HobunjiLongoranSpecies; // New post-approval tuning still works through the shipped public API.
+assert.equal(speciesWriter.applyTuning({ spineProfile: { hunch: .12 }, gaitProfile: { cadence: .61 } }), true);
+assert(state.has('hobunjiLongoranSpeciesTuning.v2'), 'new species-wide edits save only under v2');
+const speciesReader = makeContext('/index.html').HobunjiLongoranSpecies;
+assert.equal(speciesReader.spineFor('female').hunch, .12, 'new species-wide posture persists on reload');
+assert.equal(speciesReader.gaitFor('male').cadence, .61, 'new species-wide gait persists on reload');
+state.delete('hobunjiLongoranSpeciesTuning.v2'); // Reset only the current generation; the old keys remain inert.
+assert.equal(makeContext('/index.html').HobunjiLongoranSpecies.spineFor('female').hunch, .07, 'retired v1 stays ignored after v2 is cleared');
+
 const author = makeContext('/tools/animation-author/index.html');
 const api = author.HobunjiLongoranSpecies;
 assert(api, 'Longoran bridge must load in Animation Author');
@@ -81,7 +88,7 @@ assert.equal(api.spineFor('female').hunch, .07, 'The female profile must not inh
 assert.equal(api.gaitFor('male').lurchDegrees, 22.5);
 assert.equal(api.gaitFor('male').dragSide, 'left');
 assert.equal(api.gaitFor('female').lurchDegrees, 19);
-assert(state.has('hobunjiLongoranAuthorTuning.v1'), 'Tuning must persist after leaving Full Character Scale');
+assert(state.has('hobunjiLongoranAuthorTuning.v2'), 'Tuning must persist after leaving Full Character Scale');
 assert.equal(author.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.longoranSpine.hunch, .91);
 assert.equal(api.exportAuthorTuning().male.gait.cadence, .59);
 assert.equal(api.setAuthorTuning('male', { spine: { hunch: .91, kyphosis: .92 } }), true);
