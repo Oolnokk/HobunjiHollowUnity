@@ -1,31 +1,28 @@
-# Character spine (static hunchback)
+# Character spine and per-species neck bend
 
-`docs/js/character-spine.js` (`window.HobunjiCharacterSpine`) gives a portrait avatar a fixed hunchback. There is no live animation: one `hunch` value (0 = upright, 1 = fully stooped) is read when the character is built and every rig layer derives its own offset from it.
+`docs/js/character-spine.js` (`window.HobunjiCharacterSpine`) provides the seven-node portrait spine for static hunch, sway and kyphosis. A hunch is authored per NPC or enemy; the bend position is **not** authored as a fixed proportion of character height.
 
-## Data sources
+## Pixel-anchored head/neck transition
 
-| Who | Where the hunch lives |
+The portrait builders render each species' **base head sprite alone** into a full-size transparent canvas. `PNGPlaneAvatar.detectHeadRigPixels` uses the last alpha-visible pixel of that canvas as the neck bend's **upper edge**, irrespective of the species' head placement. The pivot is expressed in plane-local coordinates, with X taken from the head's alpha centroid. Only when head art is absent/unreadable does the existing full-portrait fallback apply.
+
+`PNGPlaneAvatar.neckBlendBand` positions the **lower edge** approximately two source portrait pixels below that top (a 1.2%-of-height target, bounded to at least two pixels and the canvas bottom). Head-turn weight is fully 1 above the top, smoothsteps from 1 to 0 within that short strip, and is 0 below it. The independently scaled head bone uses this same vertical strip; `tight`, `legacy` and `mask` head gates continue to determine **horizontal** influence.
+
+The geometry does not gain more triangles: `neckBlendRows` redistributes existing vertical mesh rows so the short transition still has top, middle and bottom vertices. UVs follow the moved rows, preserving the authored PNG, with the editor and game sharing the identical calculation. Both `resolveSkinnedPixelWorldPosition` and its `portrait-plane-outline-parity.js` wrapper use the same weights as the GPU for head/hand/shoulder-pet attachment landmarks. The spine projection also reads the same band height for shoulder/weapon pose calculations, including hostile front/back skins.
+
+The **spine's top node** and the **head-turn pivot** are distinct. The spine runs from the posterior to the authored shoulder-neck base; the head-turn bone hangs from that final node at an offset that places it at the last base-head pixel. Moving the bend does not change the authored hip, shoulder, or hand anchors.
+
+## Hunch sources
+
+| Who | Where hunch lives |
 | --- | --- |
-| NPCs | The NPC database's `appearance.aging.hunch` (the same field that already lowered the head). An explicit `appearance.spine` / `spine` on the profile or record wins. |
-| Enemies | `docs/config/combat/enemy-loadouts.json` rule `spine: { "hunch": 0..1 }`, authored in the Enemy Loadout Workshop ("Spine hunch (%)"). Shipped: both skeletons and the three Maskbound troops. |
+| NPCs | NPC database `appearance.aging.hunch`; explicit `appearance.spine` or `spine` wins |
+| Enemies | `docs/config/combat/enemy-loadouts.json` `spine: { "hunch": 0..1 }` (Enemy Loadout Workshop) |
 
-`EnemyLoadoutRules.spineFor(kind)` reads the rule; `makeBanditEntity` puts it on the roster (`roster.spine`) so every path that rebuilds from the roster (rehydration, loot) keeps it.
+`HobunjiCharacterSpine.profileFor` returns the curve, shoulder drop, stance and stride multipliers. It reads the model's active geometry `blendHeight` when projecting anchors, so lowering NPC portrait mesh density cannot silently make the shoulders use an older neck band.
 
-## What it moves
+## Mobile diagnostics and regression
 
-The portrait is a skinned plane (`png-plane-avatar.js`): torso → **spine** → neck → head-scale bones. Every skinned portrait carries the spine bone at identity; a hunch translates it down. Vertices are weighted to it by `HobunjiCharacterSpine.weightAt` — 0 below the waist, ramping to 1 just under the shoulders — so the PNG itself stoops: the torso compresses and the shoulders, neck and head ride down together. The head bone adds the remainder of the age-hunch head drop (spine + head = `HobunjiCharacterRigScale.ageHunchFraction`, so an NPC's authored head position is unchanged).
+The Multi-Avatar Animation Author inspector displays each portrait's base-head bend top and bottom in source pixels. The Attack Animation Editor defaults to a narrow 1.2% neck-radius preview; its radius slider is a **diagnostic override only**. Normal gameplay always derives the bend from the actual head sprite.
 
-`HobunjiCharacterSpine.profileFor(hunch)` returns the numbers; drops are fractions of the avatar's own unscaled model height (the unit of `headOffsetY`), so they ride the whole-rig scale.
-
-| Layer | Field | Consumer |
-| --- | --- | --- |
-| Portrait torso / shoulders / neck | `shoulderDrop` (80% of the total head drop) | spine bone in both skeleton builders (`buildSkinnedSinglePlaneAssembly`, `upgradePlaneToAutoNeckSkin`), weights in `buildSkinnedPlaneGeometry`; the pixel resolvers (`resolveSkinnedPixelWorldPosition`, `portrait-plane-outline-parity.js`) use the same weights |
-| Head | `neckDrop` (the other 20%) | NPCs: `character-rig-scale.js` `applyHeadCompensation`; enemies: `applyAuthoredHostileRigScale` offsetY in `combat-bandit.js` |
-| Shoulder anchors | `deformDrop` | `procedural-hand-shoulder-aim.js`: anchors keep their 2D portrait coordinates and are carried through the same deformation at their own height |
-| Attack orbit centre | `orbitDrop` = `shoulderDrop` | `HobunjiSpeciesPoseScale.transformPosePoint` option `orbitDropY`: it moves precisely with the shoulders (enemy melee swing, enemy ranged hold, watchman held weapons) |
-| Feet | `stanceScale` (up to ×1.5 foot X) | `ProceduralLegAnimation.attach` option `spine`; hips, rest stance and pants follow the idle X |
-| Stride | `strideScale` (up to ×1.3) | same option; scales `fullStride` in the gait |
-
-`character-spine.js` must load before `png-plane-avatar.js` (the skin weights are baked at build time); pages that don't load it get a normal upright portrait. The Enemy Loadout Workshop lists it in `preview.js`.
-
-Tune the ratios and the waist/shoulder band at the top of `character-spine.js`; tests: `node scripts/run-tests.js character-spine`.
+Use `node scripts/run-tests.js humanoid-neck-band head-centroid-skinning skinned-pixel-output head-gate character-spine hostile-presentation` for targeted checks. Tests cover distinct head positions, correct GPU/CPU landmark parity, adaptive neck rows, and short head scaling.
