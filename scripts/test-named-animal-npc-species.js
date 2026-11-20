@@ -50,6 +50,8 @@ assert.match(namedAnimal, /syncSpeciesFromAppearance/, 'native animal form edits
 assert.match(namedAnimal, /appearance\.creatureKind = speciesId/, 'species selection must synchronize creature identity into appearance data');
 assert.match(namedAnimal, /appearance\.avatarType = 'animal'/, 'animal species must explicitly select the animal avatar route');
 assert.match(namedAnimal, /creatureColorOverrides/, 'runtime bridge must apply native editor custom-hex overrides');
+assert.match(namedAnimal, /creatureKindForProfile\(profile, options\) === 'grehlr' && genotype\.beard && genotype\.base\?\.color/,
+  'Named Grehlr NPCs must derive beard tint from the effective custom base coat, ignoring obsolete beard-only overrides');
 assert.match(namedAnimal, /animalOpacity/, 'runtime bridge must carry native editor opacity');
 assert.match(namedAnimal, /animalHatId/, 'runtime bridge must carry native editor animal headwear');
 assert.match(namedAnimal, /AnimalNpcHeadwear\.composeWithHat/, 'runtime render must reuse the restored animal headwear compositor');
