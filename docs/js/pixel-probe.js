@@ -570,6 +570,12 @@
       const curiosity = liveActivePet.shoulderCuriosity; // Used below to report the sustained shoulder pose, remaining hold, and unbiased pose chance.
       lines.push(`Size class: ${sizeClass}   expected group scale=(1.0000, ${expectedScaleY.toFixed(4)}, ${expectedScaleZ.toFixed(4)})   actual=(${actualScale.x.toFixed(4)}, ${actualScale.y.toFixed(4)}, ${actualScale.z.toFixed(4)})`);
       lines.push(`Shoulder pose: ${curiosity?.phase || 'not-started'} hold=${Math.max(0, Number(curiosity?.timer) || 0).toFixed(1)}s inwardChance=${Math.round((Number(curiosity?.inwardChance) || 0) * 100)}% bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headPitch=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}° headYaw=${Number(curiosity?.currentYawDeg || 0).toFixed(2)}°`);
+      const headRig = liveActivePet.avatarRef.headRig; // Mobile Pixel Probe identifies the live head yaw solver without devtools.
+      if (headRig) {
+        const hinge = liveActivePet.avatarRef.frontPlane?.geometry?.userData?.hobunjiAnimalYawFoldPivotX; // Current vertical neck hinge, including baby head warp.
+        const response = liveActivePet.avatarRef.headMaterialResponse?.dump?.(); // Shared material diagnostic exposes whether yaw is independent of paint.
+        lines.push(`Head yaw rig: ${headRig.yawMode || 'legacy'} mask=${headRig.yawMask || 'legacy'} hinge=${Number.isFinite(hinge) ? (hinge * 100).toFixed(1) + '% from sprite left' : '-'} materialYaw=${response?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`);
+      }
       const layerDecision = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetLayering;
       if (layerDecision) lines.push(`Shoulder occlusion: ${layerDecision.depthMode || 'ordinary-depth'} xray=${layerDecision.xrayEnabled === true ? 'ON' : 'off'}`);
       if (Math.abs(actualScale.x - 1) > 0.001 || Math.abs(actualScale.y - expectedScaleY) > 0.001 || Math.abs(actualScale.z - expectedScaleZ) > 0.001) {

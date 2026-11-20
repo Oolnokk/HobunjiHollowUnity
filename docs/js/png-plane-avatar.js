@@ -1889,6 +1889,33 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
+  // Treat the painted head as a rigid, cut-out paper card hinged at the authored neck.
+  // The Influence map decides head/body membership, NOT the amount of yaw: every
+  // head vertex receives the same yaw rotation, while chest and legs remain fixed.
+  // Keep two existing mesh columns near the vertical hinge without adding vertices.
+  function alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width) {
+    const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
+    const uv = geometry.getAttribute('uv'); // Keep texture coordinates aligned with the displaced columns.
+    if (!position?.setX || !uv?.setX || segmentsX < 3) return;
+    const pivot = clamp(pivotU, 0.001, 0.999); // Both faces divide columns in the same source sprite space.
+    const halfWidth = Math.min(0.003, pivot * 0.25, (1 - pivot) * 0.25); // A nearly one-pixel-wide narrow fold.
+    const leftColumn = clamp(Math.round(pivot * (segmentsX - 1)), 1, segmentsX - 2); // Face-side column of the crease.
+    for (let col = 0; col <= segmentsX; col++) {
+      const sourceCol = mirrorX ? segmentsX - col : col; // Reverse the same grid so rounding cannot shift the back face's crease.
+      const sourceU = sourceCol <= leftColumn
+        ? (pivot - halfWidth) * sourceCol / leftColumn
+        : pivot + halfWidth + (1 - pivot - halfWidth) * (sourceCol - leftColumn - 1) / (segmentsX - leftColumn - 1);
+      const u = mirrorX ? 1 - sourceU : sourceU; // Local UV and position for the current face.
+      for (let row = 0; row <= segmentsY; row++) {
+        const index = row * (segmentsX + 1) + col;
+        position.setX(index, (u - 0.5) * width);
+        uv.setX(index, u);
+      }
+    }
+    position.needsUpdate = true;
+    uv.needsUpdate = true;
+  }
+
   function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}, gridOverride = null, spriteWarp = null) {
     const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
     const width = finite(params.width, finite(fallbackDimensions.width, 1));
@@ -1899,6 +1926,9 @@
     const segmentsX = grid?.segmentsX ?? (mapAspect >= 1 ? maxSeg : Math.max(8, Math.round(maxSeg * mapAspect)));
     const segmentsY = grid?.segmentsY ?? (mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg);
     const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Paint and shoulder maps sample unchanged normalized UVs at the smaller grid.
+    const renderedPivot = spriteWarp?.destinationFor?.(rig.pivot) || rig.pivot; // Baby/Small sprite warp moves the fold with the visible head.
+    const pivotU = clamp(finite(renderedPivot.x, rig.pivot.x), 0, 1); // Source-side neck X, not the painted head silhouette.
+    alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width);
     const indices = geometry.index?.array; // Mirror the quad diagonals along with UVs so both faces interpolate the same skin.
     if (mirrorX && indices) {
       for (let i = 0; i < indices.length; i += 6) {
@@ -1908,8 +1938,8 @@
       }
     }
     const uv = geometry.getAttribute('uv');
-    const skinIndices = new Uint16Array(uv.count * 4); // Root/head bone indices for every plane vertex.
-    const skinWeights = new Float32Array(uv.count * 4); // Complementary body/head weights sampled from the paint map.
+    const skinIndices = new Uint16Array(uv.count * 4); // Root/pitch/yaw/combined bone indices for every plane vertex.
+    const skinWeights = new Float32Array(uv.count * 4); // Pitch follows graded paint; yaw follows a binary head cutout.
     const sourceCoordinates = spriteWarp ? new Float32Array(uv.count * 2) : null; // Keep original rig-paint UVs alongside the rendered sprite UVs.
     const source = {}; // Reused for each vertex when sampling the baby pixel warp.
     for (let i = 0; i < uv.count; i++) {
@@ -1920,12 +1950,17 @@
         sourceCoordinates[i * 2] = source.x;
         sourceCoordinates[i * 2 + 1] = source.y;
       }
-      const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV);
+      const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV); // Irregular Influence remains pitch-only.
+      const yawWeight = headWeight >= 0.5 ? 1 : 0; // Binary head ownership only: never yaw unpainted front legs/chest, and never grade yaw by irregular material weight.
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
-      skinWeights[offset] = 1 - headWeight;
-      skinWeights[offset + 1] = headWeight;
+      skinIndices[offset + 2] = 2;
+      skinIndices[offset + 3] = 3;
+      skinWeights[offset] = (1 - headWeight) * (1 - yawWeight); // Unturned body, no pitch.
+      skinWeights[offset + 1] = headWeight * (1 - yawWeight); // Authored pitch outside the yaw fold.
+      skinWeights[offset + 2] = (1 - headWeight) * yawWeight; // Rigid yaw for head-owned pixels, including pitch-neutral pixels.
+      skinWeights[offset + 3] = headWeight * yawWeight; // Combined yaw then authored pitch, retaining nods.
     }
     if (sourceCoordinates) geometry.setAttribute('hobunjiRigSourceUv', new THREE.Float32BufferAttribute(sourceCoordinates, 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndices, 4));
@@ -1934,6 +1969,9 @@
     geometry.computeBoundingSphere();
     geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
+    geometry.userData.hobunjiAnimalYawFold = true; // Material-response adapter must preserve the separate yaw skin weights.
+    geometry.userData.hobunjiAnimalYawMask = 'binary-head'; // Debug confirms no irregular yaw blending or body-front bending.
+    geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck hinge on warped sprites.
     return geometry;
   }
 
@@ -1946,14 +1984,22 @@
 
     const torsoBone = new THREE.Bone(); // Root/body bone stays at the plane origin.
     torsoBone.name = `${plane.name}_body_bone`;
-    const headBone = new THREE.Bone(); // Head bone pivots painted head influence around the authored neck point.
+    const headBone = new THREE.Bone(); // Pitch only: authored irregular weight map still controls nods.
     headBone.name = `${plane.name}_head_bone`;
+    const yawBone = new THREE.Bone(); // Rigid card fold: only head-owned pixels rotate around the neck's vertical hinge.
+    yawBone.name = `${plane.name}_yaw_bone`;
+    const combinedBone = new THREE.Bone(); // Yaw applied after pitch preserves both motions on shared vertices.
+    combinedBone.name = `${plane.name}_pitch_yaw_bone`;
     const pivotU = mirrorX ? 1 - rig.pivot.x : rig.pivot.x;
     const params = plane.geometry.parameters || {};
     const planeWidth = finite(params.width, finite(fallbackDimensions.width, 1)); // Keeps the mirrored head pivot in the same model dimensions when cloned geometry lacks parameters.
     const planeHeight = finite(params.height, finite(fallbackDimensions.height, 1)); // Matches the front card's authored height on the reverse card.
     headBone.position.set((pivotU - 0.5) * planeWidth, (0.5 - rig.pivot.y) * planeHeight, 0);
+    yawBone.position.copy(headBone.position);
+    combinedBone.position.copy(headBone.position);
     torsoBone.add(headBone);
+    torsoBone.add(yawBone);
+    torsoBone.add(combinedBone);
 
     const skinned = new THREE.SkinnedMesh(weightedGeometry, material); // Drop-in replacement: SkinnedMesh still satisfies Mesh checks used elsewhere.
     skinned.name = plane.name;
@@ -1966,9 +2012,9 @@
     skinned.userData = { ...plane.userData, hobunjiAnimalHeadRig: true };
     skinned.onBeforeRender = plane.onBeforeRender; // Preserve parent-independent shoulder-pet yaw on the rigged replacement mesh.
     skinned.add(torsoBone);
-    const skeleton = new THREE.Skeleton([torsoBone, headBone]);
+    const skeleton = new THREE.Skeleton([torsoBone, headBone, yawBone, combinedBone]);
     skinned.bind(skeleton);
-    return { mesh: skinned, weightedGeometry, skeleton, headBone };
+    return { mesh: skinned, weightedGeometry, skeleton, headBone, yawBone, combinedBone };
   }
 
   function applyAnimalHeadRig(THREE, avatarRef, rig) {
@@ -1999,6 +2045,10 @@
     const legacyDispose = typeof avatarRef.dispose === 'function' ? avatarRef.dispose.bind(avatarRef) : null; // Preserves legacy texture/material/old-geometry cleanup.
     const state = {
       rig, frontHeadBone: front.headBone, backHeadBone: back.headBone,
+      frontYawBone: front.yawBone, backYawBone: back.yawBone,
+      frontCombinedBone: front.combinedBone, backCombinedBone: back.combinedBone,
+      yawMode: 'paper-fold', // Mobile diagnostics and corpse rendering identify the independent yaw axis.
+      yawMask: 'binary-head', // The species' painted Influence is a cutout mask, never a graded yaw deformation.
       currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
       currentYawDeg: 0, targetYawDeg: 0,
     }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
@@ -2019,12 +2069,14 @@
       // shared function would also flip the nod, which is correct as-is.
       front.headBone.rotation.z = composedDeg * RAD;
       back.headBone.rotation.z = -composedDeg * RAD;
+      front.combinedBone.rotation.z = front.headBone.rotation.z;
+      back.combinedBone.rotation.z = back.headBone.rotation.z;
       return composedDeg;
     };
     applyDegrees(rig.restDeg);
 
     // Yaw ("shaking its head" side-to-side) is a separate axis from the
-    // pitch/nod bone rotation.z above — the head bone's local Y, which
+    // pitch/nod bone rotation.z above — the yaw bone's local Y, which
     // (since the plane itself is already rotated ±90° about Y to face the
     // camera) reads on-screen as a left/right turn rather than an up/down
     // nod. NOT mirrored between front/back the way applyDegrees' pitch is:
@@ -2041,8 +2093,10 @@
     // species for a readable head motion) rather than inventing a second range.
     const yawLimitDeg = Math.max(Math.abs(rig.minDeg), Math.abs(rig.maxDeg));
     const applyYawDegrees = degrees => {
-      front.headBone.rotation.y = degrees * RAD;
-      back.headBone.rotation.y = degrees * RAD;
+      front.yawBone.rotation.y = degrees * RAD;
+      back.yawBone.rotation.y = degrees * RAD;
+      front.combinedBone.rotation.y = degrees * RAD;
+      back.combinedBone.rotation.y = degrees * RAD;
     };
 
     avatarRef.setHeadRotation = degrees => {
@@ -2098,11 +2152,12 @@
       pivotTranslation ||= new THREE.Matrix4();
       state.spritePivot = next ? pivot : null; // Head material response uses the current rendered pivot for pitch.
       for (const [face, sourcePlane, mirrorX] of [[front, frontPlane, false], [back, backPlane, true]]) {
-        const head = face.headBone;
         const x = ((mirrorX ? 1 - pivot.x : pivot.x) - 0.5) * canonicalDimensions.width;
         const y = (0.5 - pivot.y) * canonicalDimensions.height;
-        face.skeleton.boneInverses[1].premultiply(pivotTranslation.makeTranslation(head.position.x - x, head.position.y - y, 0));
-        head.position.set(x, y, 0);
+        for (const [index, bone] of [[1, face.headBone], [2, face.yawBone], [3, face.combinedBone]]) {
+          face.skeleton.boneInverses[index].premultiply(pivotTranslation.makeTranslation(bone.position.x - x, bone.position.y - y, 0));
+          bone.position.set(x, y, 0); // All three bones must follow the baby warp's visible hinge, not just pitch.
+        }
         const previous = face.mesh.geometry;
         face.mesh.geometry = rebuildFace(sourcePlane, mirrorX, resolveGrid());
         previous.dispose();

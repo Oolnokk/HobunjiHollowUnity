@@ -33,14 +33,56 @@ assert.equal(api.materialWeightForBend(0.5, 0.2, 0.4, 'compress'), 0.2);
 assert.equal(api.materialWeightForBend(0.5, 0.2, 0.4, 'stretch'), 0.4);
 assert.equal(api.materialWeightForBend(0.5, 0.2, 0.4, 'neutral'), 0.5);
 assert.equal(api.materialWeightForBend(0.5, 0.9, 0.9, 'compress'), 0.5, 'material channel is reduction-only');
-assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 20), 0.35, 'positive yaw is capped by Stretchability');
-assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', -20), 0.35, 'negative yaw uses same Stretchability cap');
-assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'compress', 20), 0.2, 'pitch/yaw use stricter material reduction');
-assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 0), 0.5, 'zero yaw leaves neutral pitch at Influence');
+assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 20), 0.5, 'positive yaw leaves pitch Influence unchanged');
+assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', -20), 0.5, 'negative yaw also ignores Stretchability');
+assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'compress', 20), 0.2, 'painted pitch compression survives simultaneous yaw');
+assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'stretch', -20), 0.35, 'painted pitch stretch survives simultaneous yaw');
+assert.equal(api.materialWeightForPose(0.5, 0.2, 0.35, 'neutral', 0), 0.5, 'neutral yaw leaves pitch Influence unchanged');
 
 const runtimeSource = fs.readFileSync(path.resolve(__dirname, '../docs/js/animal-head-material-response.js'), 'utf8');
-assert(runtimeSource.includes("wrapAfter('updateHeadYaw')"), 'runtime refreshes Stretchability after yaw updates');
-assert(runtimeSource.includes('const yawActive = Math.abs'), 'yaw response is sign-independent');
+assert(runtimeSource.includes("wrapAfter('updateHeadYaw')"), 'runtime keeps mobile yaw diagnostics synchronized');
+assert(runtimeSource.includes('yawFoldWeights') && runtimeSource.includes('geometry.userData?.hobunjiAnimalYawFold'), 'material response preserves a separate hinge without using material paint for yaw');
+assert(!runtimeSource.includes('const yawActive = Math.abs'), 'no legacy yaw Stretchability response remains');
+
+// Four-bone yaw fold: painted pitch may be irregular, but every vertex keeps the same flat hinge factor.
+const makeFoldMesh = () => {
+  const weights = new Float32Array([
+    0, 0, .7, .3, // Face-side pixel: pitch Influence .3 and rigid yaw fold 1
+    .3, .2, .3, .2, // Middle of the narrow crease: Influence .4, yaw fold .5
+    .6, .4, 0, 0, // Body-side pixel: Influence .4, yaw fold 0
+  ]);
+  const uv = { count: 3, getX: i => [0, .5, 1][i], getY: i => [.95, .5, .05][i] };
+  const attr = { array: weights, count: 3, itemSize: 4, needsUpdate: false, getY(i) { return weights[i * 4 + 1]; } };
+  return { isSkinnedMesh: true, geometry: { userData: { hobunjiAnimalYawFold: true }, getAttribute: name => name === 'uv' ? uv : name === 'skinWeight' ? attr : null }, skeleton: { bones: [] }, attr };
+};
+const foldFront = makeFoldMesh(), foldBack = makeFoldMesh();
+const pitchBone = {}, backPitchBone = {};
+foldFront.skeleton.bones.push(pitchBone);
+foldBack.skeleton.bones.push(backPitchBone);
+const foldState = { frontHeadBone: pitchBone, backHeadBone: backPitchBone, appliedDeg: 0, currentYawDeg: 0, spritePivot: { y: .5 } };
+const foldAvatar = {
+  headRig: foldState, group: { children: [foldFront, foldBack], userData: {} },
+  updateHeadYaw(yaw) { foldState.currentYawDeg = yaw; return yaw; },
+  setHeadRotation(pitch) { foldState.appliedDeg = pitch; return pitch; },
+};
+api.decorateAvatar(foldAvatar, { pivot: { y: .5 }, compressibilityMap: { width: 1, height: 1, data: [32] }, stretchabilityMap: { width: 1, height: 1, data: [64] } });
+assert.equal(foldAvatar.headMaterialResponse.yawMode, 'paper-fold');
+const beforeYaw = Array.from(foldFront.attr.array);
+foldFront.attr.needsUpdate = false;
+foldAvatar.updateHeadYaw(20);
+assert.deepEqual(Array.from(foldFront.attr.array), beforeYaw, 'yaw-only turns never mutate painted pitch skin weights');
+assert.equal(foldFront.attr.needsUpdate, false, 'yaw-only frames avoid GPU skin-weight uploads');
+foldAvatar.updateHeadYaw(-20);
+assert.deepEqual(Array.from(foldFront.attr.array), beforeYaw, 'yaw folding is symmetric');
+foldAvatar.setHeadRotation(20);
+for (let i = 0; i < 3; i++) {
+  const row = Array.from(foldFront.attr.array.slice(i * 4, i * 4 + 4));
+  const foldFactor = row[2] + row[3];
+  const expectedFold = [1, .5, 0][i];
+  assert(Math.abs(foldFactor - expectedFold) < 1e-6, 'pitch repaint never changes paper-fold participation');
+  assert(Math.abs(row.reduce((a, b) => a + b, 0) - 1) < 1e-6, 'all four bone weights remain normalized');
+}
+assert.deepEqual(Array.from(foldFront.attr.array), Array.from(foldBack.attr.array), 'both sprite faces preserve the same hinge weights');
 
 const riggerDir = path.resolve(__dirname, '../docs/tools/animal-head-rig');
 const shell = fs.readFileSync(path.join(riggerDir, 'index.html'), 'utf8');
@@ -84,7 +126,7 @@ assert(coreAuthor.includes('lerp(current,base,amount)'), 'material restore moves
 assert(coreAuthor.includes("$('toolEraser').textContent=material?'Toward Influence':'Eraser'"), 'material eraser is Toward Influence');
 assert(coreAuthor.includes("paintCanvas.addEventListener('pointermove'") && !coreAuthor.includes("previewCanvas.addEventListener('pointer"), 'only upper canvas accepts paint input');
 assert(coreAuthor.includes('requestAnimationFrame(draw)'), 'brush redraw remains frame-coalesced');
-assert(shell.includes('Stretchability also limits yaw head turns in either direction.'), 'yaw/stretch authoring semantics are visible');
+assert(shell.includes('Yaw turns use a rigid paper-cutout hinge'), 'editor explains binary head ownership and pitch-only material maps');
 
 // Exercise the paint core without loading the shoulder module; shoulder behavior has
 // its own runtime regression and should not make material painting tests DOM-heavy.

@@ -12,8 +12,8 @@ const scene = { add(group) { group.parent = this; }, remove(group) { group.paren
 function avatar() {
   return { group: { parent: scene, visible:true },
     frontPlane: { visible:true, material:{map:{image:{width:64}}} },
-    headRig:{ frontHeadBone:{ scale:{setScalar(value){this.value=value;}} },
-      backHeadBone:{ scale:{setScalar(value){this.value=value;}} } } };
+    headRig:Object.fromEntries(['frontHeadBone','backHeadBone','frontYawBone','backYawBone',
+      'frontCombinedBone','backCombinedBone'].map(key=>[key,{scale:{setScalar(value){this.value=value;}}}])) }; // All visible paper-fold head bones get collapsed.
 }
 const player = { x:6000, y:6000, health:500 }; // Stay outside ordinary hunt range until the explicit player-capture check.
 const plan = require('../docs/config/locales/locale_tzatzul_nest_map_northern_cliffs_0.json').cavern.features.tzatzulNest;
@@ -125,7 +125,9 @@ W.TzatzulNestEncounter.update(.1);
   await new Promise(resolve=>setImmediate(resolve)); // Finish the actual headless-portrait preparation task.
   assert(corpses.has(seen),'the exact original carried actor is laid into the nest, never replaced by generic remains');
   assert.equal(seen.areaId,nestId);
-  assert.equal(seen.avatarRef.headRig.frontHeadBone.scale.value,.001,'animal head vertices collapse at the authored neck');
+  for (const bone of Object.values(seen.avatarRef.headRig)) {
+    assert.equal(bone.scale.value,.001,'headless Tzatzul victims collapse pitch, yaw and combined bones together');
+  }
   seen.corpseLooted=true;denNests.get(nestId).remaining=2;
   const save=JSON.parse(JSON.stringify(W.TzatzulNestEncounter.serialize()));
   assert.equal(save.nests[0].eggs,2,'native hold-to-take count is persisted');
