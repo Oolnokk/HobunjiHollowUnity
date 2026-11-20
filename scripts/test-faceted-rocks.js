@@ -1,125 +1,108 @@
 #!/usr/bin/env node
 'use strict';
 
-// Executes js/faceted-rocks.js's rock generator over many tiles: every rock
-// is a chiselled block of large flat faces (no slivers, no near-parallel
-// neighbours), stays inside its tile, is wound outward, and every face carries
-// the whole PNG — fanned from its centre with its rim on the PNG border and
-// no folds.
+// Executes js/faceted-rocks.js: ore rocks are built like the farm rocks —
+// TerrainGeometry.buildRockTileGeo's mound, the stone unwrapped into surface
+// islands by HobunjiSurfaceStretchUV (one inked PNG per island), taken off the
+// shell outline and owning its UVs; the grass rim keeps the grass material
+// and terrain edge-ID. Also checks game.js wiring and that farm rocks are
+// unchanged.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const win = {};
-win.window = win;
-const storage = new Map();
-const context = vm.createContext({ window: win, globalThis: win, console, Math, localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) } });
-win.HobunjiRenderLayers = { SHELL_OUTLINE: 1 };
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/faceted-rocks.js'), 'utf8'), context, { filename: 'faceted-rocks.js' });
-const FR = win.FacetedRocks;
+class Object3D { constructor() { this.children = []; this.userData = {}; this.name = ''; this.layers = { mask: 0b11, disable(bit) { this.mask &= ~(1 << bit); } }; } add(c) { this.children.push(c); c.parent = this; } }
+class Group extends Object3D { constructor() { super(); this.isGroup = true; } }
+class Mesh extends Object3D { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
+const geo = label => ({ label, normals: 0, computeVertexNormals() { this.normals++; } });
 
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const unit = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
-const angleDeg = (a, b) => Math.acos(Math.max(-1, Math.min(1, dot(unit(a), unit(b))))) * 180 / Math.PI;
-const key = p => p.map(v => Math.round(v * 1e5)).join(',');
-
-let rocks = 0, minDihedral = Infinity, minFaces = Infinity, maxFaces = 0, cutsTotal = 0;
-for (let col = -30; col < 60; col += 3) for (let row = -30; row < 60; row += 5) {
-  const data = FR.buildRockData(col, row);
-  rocks++;
-  const faces = Array.from(data.faces), positions = Array.from(data.positions), uvs = Array.from(data.uvs), faceIds = Array.from(data.faceIds);
-  cutsTotal += data.cuts;
-  minFaces = Math.min(minFaces, faces.length); maxFaces = Math.max(maxFaces, faces.length);
-  assert.ok(faces.length >= 8, `rock ${col},${row}: ${faces.length} faces`);
-  assert.ok(data.height > 0.2 && data.height <= 0.75, `rock ${col},${row}: height ${data.height}`);
-  for (let i = 0; i < positions.length; i += 3) {
-    assert.ok(Math.abs(positions[i]) <= 0.4801 && Math.abs(positions[i + 2]) <= 0.4801, `rock ${col},${row} stays inside its tile`);
-    assert.ok(positions[i + 1] >= -0.0601, 'nothing below the sunk base');
-  }
-  // Planar, outward, no slivers.
-  const edgeFaces = new Map();
-  faces.forEach((face, f) => {
-    const pts = Array.from(face.points, p => Array.from(p)), n = Array.from(face.normal);
-    for (const p of pts) assert.ok(Math.abs(dot(n, sub(p, pts[0]))) < 1e-7, `rock ${col},${row} face ${f} is planar`);
-    let area = [0, 0, 0];
-    for (let i = 0; i < pts.length; i++) area = area.map((v, k) => v + cross(pts[i], pts[(i + 1) % pts.length])[k]);
-    assert.ok(Math.abs(dot(area, n)) / 2 >= 0.006 - 1e-9, `rock ${col},${row} face ${f} is not a sliver`);
-    for (let i = 0; i < pts.length; i++) {
-      const e = [key(pts[i]), key(pts[(i + 1) % pts.length])].sort().join('|');
-      if (!edgeFaces.has(e)) edgeFaces.set(e, []);
-      edgeFaces.get(e).push(f);
-    }
-  });
-  for (let t = 0; t < positions.length / 9; t++) {
-    const p = k => positions.slice(t * 9 + k * 3, t * 9 + k * 3 + 3);
-    const tri = cross(sub(p(1), p(0)), sub(p(2), p(0)));
-    assert.ok(dot(tri, Array.from(faces[faceIds[t * 3]].normal)) > 0, `rock ${col},${row}: triangle ${t} wound outward`);
-  }
-  // Neighbouring faces meet at a real edge.
-  for (const owners of edgeFaces.values()) {
-    if (owners.length !== 2) continue;
-    const d = angleDeg(Array.from(faces[owners[0]].normal), Array.from(faces[owners[1]].normal));
-    minDihedral = Math.min(minDihedral, d);
-    assert.ok(d >= 15, `rock ${col},${row}: neighbouring faces only ${d.toFixed(1)} degrees apart`);
-  }
-  // UVs: centroid fan, rim on the PNG border, never folded.
-  let t = 0;
-  faces.forEach((face, f) => {
-    let sign = 0;
-    const corners = new Set();
-    for (let i = 0; i < face.points.length; i++, t++) {
-      const u = k => uvs.slice((t * 3 + k) * 2, (t * 3 + k) * 2 + 2);
-      assert.deepEqual(u(0), [0.5, 0.5], 'each face fans from the PNG centre');
-      for (const k of [1, 2]) {
-        const [x, y] = u(k);
-        assert.ok(x >= 0 && x <= 1 && y >= 0 && y <= 1, 'UVs inside the PNG');
-        assert.ok(Math.min(x, 1 - x, y, 1 - y) < 1e-9, 'face rim lies on the PNG border');
-        if ((x === 0 || x === 1) && (y === 0 || y === 1)) corners.add(x + ',' + y);
-      }
-      const area = (u(1)[0] - u(0)[0]) * (u(2)[1] - u(0)[1]) - (u(2)[0] - u(0)[0]) * (u(1)[1] - u(0)[1]);
-      assert.ok(Math.abs(area) > 1e-6, 'no collapsed UV triangle');
-      if (!sign) sign = Math.sign(area);
-      assert.equal(Math.sign(area), sign, `rock ${col},${row} face ${f}: UVs never fold`);
-    }
-    assert.equal(sign, 1, 'UVs keep the face winding (PNG not mirrored)');
-    assert.ok(corners.size >= 2, `rock ${col},${row} face ${f}: border turns at least two PNG corners`);
-  });
+function load({ withMapper = true, withNatural = false } = {}) {
+  const calls = { displace: [], mapped: [], edges: [], naturalized: [] };
+  const win = {
+    THREE: { Group, Mesh },
+    HobunjiRenderLayers: { SHELL_OUTLINE: 1 },
+    TerrainGeometry: { buildRockTileGeo: (col, row) => ({ stoneGeo: geo(`stone ${col},${row}`), grassGeo: geo(`grass ${col},${row}`), heightTiles: 0.55 }) },
+  };
+  if (withMapper) win.HobunjiSurfaceStretchUV = { mapMesh(mesh, options) { calls.mapped.push({ mesh, options }); return { patchCount: 6 }; } };
+  // The farm's naturalize call, including what its loaded wrappers do (stretch unwrap + UV owner + no shell).
+  if (withNatural) win.NaturalSurfaceMaterials = { naturalizeMesh(mesh, surface, mapping, overrides) {
+    calls.naturalized.push({ mesh, surface, mapping, tint: overrides?.tint });
+    mesh.material = { name: 'natural_rocks_' + overrides?.tint };
+    mesh.geometry.userData = { hobunjiSurfaceStretch: { patchCount: 5 } };
+    mesh.userData.naturalSurface = surface;
+    mesh.userData.naturalSurfaceUvOwner = 'HobunjiSurfaceStretchUV';
+    return mesh;
+  } };
+  win.window = win;
+  const storage = new Map();
+  const context = vm.createContext({ window: win, globalThis: win, console, localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) } });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/faceted-rocks.js'), 'utf8'), context, { filename: 'faceted-rocks.js' });
+  return { FR: win.FacetedRocks, calls, storage };
 }
-assert.ok(cutsTotal / rocks >= 2.5, `rocks are chiselled (avg ${(cutsTotal / rocks).toFixed(1)} cuts)`);
-assert.deepEqual(Array.from(FR.buildRockData(7, 9).positions), Array.from(FR.buildRockData(7, 9).positions), 'deterministic per tile');
-assert.notDeepEqual(Array.from(FR.buildRockData(7, 9).positions), Array.from(FR.buildRockData(8, 9).positions));
 
-// styleMesh: off the shell layer, owner of its UVs.
-const layers = { mask: 0b11, disable(bit) { this.mask &= ~(1 << bit); } };
-const mesh = FR.styleMesh({ layers, userData: {} });
-assert.equal(layers.mask, 0b01, 'removed from SHELL_OUTLINE');
-assert.equal(mesh.userData.noOutline, true);
-assert.equal(mesh.userData.naturalSurfaceUvOwner, 'FacetedRocks');
-assert.equal(mesh.userData.terrainJigsawIgnore, true);
+const oreMaterial = { name: 'ore' }, grassMaterial = { name: 'grass' };
+{
+  const { FR, calls, storage } = load();
+  const rock = FR.buildOreRock({
+    col: 4, row: 7, name: 'faceted_ore_rock_4_7', material: oreMaterial, grassMaterial,
+    displace: g => calls.displace.push(g.label),
+    markGrassEdge: mesh => calls.edges.push(mesh.name),
+  });
+  assert.equal(rock.heightTiles, 0.55, 'projectile cover height comes from the mound');
+  assert.deepEqual(calls.displace, ['stone 4,7'], 'ground displacement runs once on the shared buffer');
+  const [stone, grass] = rock.group.children;
+  assert.equal(rock.mesh, stone);
+  assert.equal(stone.material, oreMaterial);
+  assert.equal(calls.mapped.length, 1, 'the stone is unwrapped by the cliff stretch, like the farm rocks');
+  assert.equal(calls.mapped[0].mesh, stone);
+  assert.equal(calls.mapped[0].options.label, 'faceted_ore_rock_4_7');
+  assert.equal(stone.layers.mask, 0b01, 'off the generated shell outline');
+  assert.equal(stone.userData.facetedRock, true, 'game.js keeps it out of the chunk jigsaw bake');
+  assert.equal(stone.userData.naturalSurfaceUvOwner, 'FacetedRocks');
+  assert.equal(stone.userData.wildernessChunkOwnsGeometry, true);
+  assert.equal(stone.geometry.normals, 1);
+  assert.equal(grass.material, grassMaterial, 'the grass rim stays grass');
+  assert.deepEqual(calls.edges, ['faceted_ore_rock_4_7_grass'], 'and keeps its terrain edge-ID');
+  assert.equal(grass.userData.facetedRock, undefined);
+  assert.equal(FR.snapshot().stretched, 1);
+  assert.equal(FR.snapshot().islands, 6);
+  FR.setEnabled(false);
+  assert.equal(storage.get(FR.STORAGE_KEY), 'off');
+}
+{
+  const { FR } = load({ withMapper: false });
+  const rock = FR.buildOreRock({ col: 1, row: 1, material: oreMaterial });
+  assert.equal(rock.group.children.length, 1, 'stone only without a grass material');
+  assert.equal(FR.snapshot().unstretched, 1, 'builds without the mapper (isolated pages)');
+}
 
-// Toggle persists.
-assert.equal(FR.enabled(), true);
-FR.setEnabled(false);
-assert.equal(storage.get(FR.STORAGE_KEY), 'off');
-FR.setEnabled(true);
+{
+  // Ore rocks go through the farm rocks' own naturalize call, tinted with the ore colour.
+  const { FR, calls } = load({ withNatural: true });
+  const rock = FR.buildOreRock({ col: 2, row: 3, material: oreMaterial, tint: '#b87333', grassMaterial });
+  assert.equal(calls.naturalized.length, 1);
+  assert.equal(calls.naturalized[0].surface, 'rocks', 'same surface as the farm rocks');
+  assert.equal(calls.naturalized[0].tint, '#b87333', 'in the ore colour');
+  assert.equal(calls.mapped.length, 0, 'not unwrapped twice: the naturalize hook already did it');
+  assert.equal(rock.mesh.material.name, 'natural_rocks_#b87333');
+  assert.equal(rock.mesh.userData.naturalSurfaceUvOwner, 'HobunjiSurfaceStretchUV', 'the natural pipeline keeps owning its UVs');
+  assert.equal(rock.mesh.layers.mask, 0b01, 'still off the shell layer');
+  assert.equal(FR.snapshot().natural, 1);
+}
 
-// game.js: faceted ore rocks, no generated outline, and kept out of the chunk jigsaw UV bake.
+// game.js: wilderness ore rocks use it with the grass rim, no shell outline, out of the jigsaw bake.
 const game = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
 const wild = game.slice(game.indexOf("if (tile.rockKind === 'diggableRockOre' && window.FacetedRocks?.enabled?.())"));
 const wildBranch = wild.slice(0, wild.indexOf('continue;'));
 assert.match(wildBranch, /window\.FacetedRocks\.buildOreRock\(/);
 assert.match(wildBranch, /facetedMaterialFor\(/);
-assert.doesNotMatch(wildBranch, /_markOutline|_markTerrainEdgeId/, 'no generated outline on faceted rocks');
-assert.match(game, /wildernessChunkOwnsGeometry && !mesh\.userData\.facetedRock\) bakeTargets\.push/, 'jigsaw bake leaves faceted UVs alone');
+assert.match(wildBranch, /grassMaterial: resolveTileMat\(mapId, TileType\.GRASS\)/);
+assert.match(wildBranch, /tint: window\.OreRockTextures\.rockTintFor\?\.\(/);
+assert.doesNotMatch(wildBranch, /_markOutline\(/, 'no generated shell outline');
+assert.match(game, /wildernessChunkOwnsGeometry && !mesh\.userData\.facetedRock\) bakeTargets\.push/, 'jigsaw bake leaves the stretched islands alone');
 assert.match(game, /faceted_mine_rock_/);
+// Farm rocks are the reference look and stay on their own pipeline.
+assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../docs/js/vegetation-crop-rendering.js'), 'utf8'), /FacetedRocks/);
 
-// Farm loose rocks use it too, and the natural-surface UV passes leave its per-face UVs alone.
-const farm = fs.readFileSync(path.join(__dirname, '../docs/js/vegetation-crop-rendering.js'), 'utf8');
-assert.match(farm, /window\.FacetedRocks\.buildNaturalRock\(/);
-assert.match(fs.readFileSync(path.join(__dirname, '../docs/js/surface-stretch-uv-furniture.js'), 'utf8'), /naturalSurfaceUvOwner === 'FacetedRocks'\) return null;/);
-assert.match(fs.readFileSync(path.join(__dirname, '../docs/js/natural-surface-stretch-runtime.js'), 'utf8'), /naturalSurfaceUvOwner === 'FacetedRocks'\) return false;/);
-
-console.log(`faceted rocks: ${rocks} chiselled rocks, ${minFaces}-${maxFaces} flat faces (neighbours >= ${minDihedral.toFixed(1)} deg), whole-PNG faces, unfolded UVs`);
+console.log('faceted rocks: ore rocks reuse the farm rock mound + cliff-stretch islands, no shell outline, grass rim kept');

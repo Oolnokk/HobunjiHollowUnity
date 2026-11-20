@@ -1,15 +1,14 @@
 # Performance investigation log
 
-## 20 Nov 2026: faceted rocks (visual change, with a draw-call side effect)
+## 20 Nov 2026: ore rocks drawn like the farm rocks (visual change, small draw saving)
 
-Loose rocks (wilderness and town-mine ore rocks, farm rocks) are now chiselled low-poly blocks
-(`js/faceted-rocks.js`): 8–13 flat faces, each showing the rock PNG stretched to fit with its
-drawn border as the outline. Per ore rock that is 1 mesh instead of 2 (stone + grass cap) and
-no shell-outline draw; the user's Cloud Forest view has ~80 of them. Their per-face UVs are
-excluded from the chunk jigsaw bake (game.js) and both natural-surface remap paths
-(surface-stretch-uv-furniture.js, natural-surface-stretch-runtime.js), which had silently
-replaced them in the first in-game test. Undiggable multi-tile boulders still use the rounded
-shell.
+Wilderness and town-mine ore rocks now reuse the farm rocks' look (`js/faceted-rocks.js`): the
+same `buildRockTileGeo` mound sent through the farm's `naturalizeMesh(mesh, 'rocks')` call
+(unlit body-sprite tint, cliff-stretch surface islands each carrying the inked PNG, no shell
+outline), tinted with the ore's rock-metal colour (grey for plain stone). They dropped their
+shell-outline draw (~80 rocks in the user's Cloud Forest view). The chunk's terrain jigsaw bake
+now skips them (`userData.facetedRock`); it had been replacing their islands. A brief chiselled
+low-poly variant was dropped in favour of this irregular farm look at the user's request.
 
 ## 20 Nov 2026: GTX 1060 report — draw-call bound; enchanted-weapon motes in colourless replays
 

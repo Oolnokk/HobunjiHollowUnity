@@ -135,6 +135,9 @@
   window.OreRockTextures = {
     materialFor, fitRockMesh, smallStoneArt,
     facetedMaterialFor: (THREE, oreKey, oreDefs) => materialFor(THREE, oreKey, oreDefs, { faceted: true }),
+    // Body tint for an ore rock drawn like the farm rocks (natural 'rocks' surface): the ore's
+    // rock-metal colour, or the farm's grey for plain stone.
+    rockTintFor: (oreKey, oreDefs) => { const ore = oreDefs?.[oreKey]; return ore?.rockMetalHex || ore?.hex || '#808080'; },
     debugSnapshot: () => ({ ...Object.fromEntries(states), _surfaceMapping: { mode: 'legacy continuous UV', ...uvStats } }),
   };
 })();

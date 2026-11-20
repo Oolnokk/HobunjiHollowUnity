@@ -11107,14 +11107,17 @@
             // (ZoneTerrainFeatures.buildUndiggableBoulderMeshes, called per chunk
             // below) instead of a per-tile mound each.
             if (tile.rockKind === 'undiggableBoulder') continue;
-            // Mineable ore rocks are low-poly faceted rocks (js/faceted-rocks.js):
-            // a few flat faces, each with the rock PNG stretched to fit and its
-            // drawn border as the outline, so no shell outline / edge-ID.
+            // Mineable ore rocks look like the farm rocks (js/faceted-rocks.js):
+            // the same low-poly mound, unwrapped into irregular inked panels by
+            // the cliff stretch, in the ore's colour; no shell outline.
             if (tile.rockKind === 'diggableRockOre' && window.FacetedRocks?.enabled?.()) {
               const rock = window.FacetedRocks.buildOreRock({
                 col: c, row: r, name: `faceted_ore_rock_${c}_${r}`,
                 material: window.OreRockTextures.facetedMaterialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS),
+                tint: window.OreRockTextures.rockTintFor?.(tile.oreKey || tile.oreKind, ORE_DEFS),
+                grassMaterial: resolveTileMat(mapId, TileType.GRASS),
                 displace: geometry => displaceZoneGeometry(geometry, mapId, cx, cz),
+                markGrassEdge: mesh => _markTerrainEdgeId(mesh, _terrainCategoryFor(TileType.GRASS)),
               });
               tile.projectileCoverHeightTiles = rock.heightTiles;
               rock.group.position.set(cx, NORMAL_TOP + tierY, cz);
@@ -15130,10 +15133,11 @@
                 tile.oreKey = rock.oreKey || null;
                 tile.mineFloor = mapData.mineFloor;
               }
-              if (window.FacetedRocks?.enabled?.()) { // Same low-poly faceted ore rock as the wilderness (js/faceted-rocks.js).
+              if (window.FacetedRocks?.enabled?.()) { // Same farm-style ore rock as the wilderness (js/faceted-rocks.js); stone only, as before.
                 const faceted = window.FacetedRocks.buildOreRock({
                   col: rock.col, row: rock.row, name: `faceted_mine_rock_${rock.col}_${rock.row}`,
                   material: window.OreRockTextures.facetedMaterialFor(THREE, rock.oreKey || rock.oreKind, ORE_DEFS),
+                  tint: window.OreRockTextures.rockTintFor?.(rock.oreKey || rock.oreKind, ORE_DEFS),
                 });
                 faceted.group.position.set(rock.col + 0.5, 0, rock.row + 0.5);
                 bScene.add(faceted.group);

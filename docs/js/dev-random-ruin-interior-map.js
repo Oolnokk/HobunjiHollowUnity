@@ -1016,7 +1016,7 @@
       const libraries=[ // Shared preview versions; preserve ordering so the UV patch can wrap the natural material factory.
         ['config/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterialConfig],
         ['js/natural-surface-materials.js?v=20261027h1fb8ced',()=>!!window.NaturalSurfaceMaterials?.naturalizeMesh],
-        ['js/surface-stretch-uv-furniture.js?v=20261120h2ca0a65',()=>!!window.HobunjiSurfaceStretchUV?.mapMesh],
+        ['js/surface-stretch-uv-furniture.js?v=20261031h5856d5a',()=>!!window.HobunjiSurfaceStretchUV?.mapMesh],
       ];
       for(const [path,ready] of libraries){
         if(ready())continue;

@@ -612,7 +612,6 @@
 
   function remapNaturalTerrainMesh(mesh, label = '') {
     if (!mesh?.isMesh) return null;
-    if (mesh.userData?.naturalSurfaceUvOwner === 'FacetedRocks') return null; // Per-face PNG UVs owned by js/faceted-rocks.js.
     const crossMeshOwner = mesh.userData?.naturalSurfaceCrossMeshUvOwner; // Used to keep a combined plateau UV solve authoritative during later runtime repair.
     const position = mesh.geometry?.getAttribute?.('position'); // Used to validate that a preserved cross-mesh solve still has real geometry.
     const uv = mesh.geometry?.getAttribute?.('uv'); // Used to invalidate cross-mesh ownership automatically if downstream code actually loses its UV buffer.

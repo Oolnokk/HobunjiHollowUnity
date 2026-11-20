@@ -195,7 +195,6 @@
   function reassertIslandUvs(mesh) {
     const mapper = window.HobunjiSurfaceStretchUV; // Used to make the new surface-island unwrap authoritative after legacy runtime UV repair code runs.
     if (!mapper?.remapNaturalTerrainMesh || !mesh?.geometry) return false;
-    if (mesh.userData?.naturalSurfaceUvOwner === 'FacetedRocks') return false; // Per-face PNG UVs owned by js/faceted-rocks.js.
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const hasNaturalMaterial = materials.some((material, index) => {
       const surface = naturalSurfaceFor(mesh, material, index);
