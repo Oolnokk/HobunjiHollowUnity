@@ -101,7 +101,7 @@ footer{padding:8px 16px;text-align:center;color:var(--soft);font-size:12px}
 </section>
 <section>
 <h2>3D preview</h2>
-<p id="poseHelp">One bone runs from its anchored root to its free tip. XYZ arrows position the tip in 3D; rings adjust its maximum wind swing. Hair passing through the hood opening stays seated. Drag empty space to orbit.</p>
+<p id="poseHelp">One bone runs from its anchored root to its free tip. XYZ arrows position the tip in 3D, including behind the portrait (negative Z); rings adjust its wind swing. Hair outside the stretched opening tucks behind opaque hood cloth. Drag empty space to orbit.</p>
 <canvas id="view3d" width="540" height="380" aria-label="Interactive 3D head and hair viewer with knot translation and rotation gizmos"></canvas>
 <output id="viewerStatus" role="status" aria-live="polite">Loading 3D viewer…</output>
 <div id="poseActions">
@@ -779,7 +779,7 @@ async function init3D(){
         if(operation==='translate'){
           if(axis==='x')rig.points[1].u=clamp(value+.5,0,1);
           if(axis==='y')rig.points[1].v=clamp(.5-value,0,1);
-          if(axis==='z')rig.points[1].depth=clamp(value,.003,.35);
+          if(axis==='z')rig.points[1].depth=clamp(value,-.35,.35); // Signed 3D depth: behind the owner's portrait is an authored position, not a fake x-ray.
         }else if(rotationKey)rig.bone[rotationKey]=clamp(value,0,65);
         if(operation==='rotate')$('bone'+rotationKey[0].toUpperCase()+rotationKey.slice(1)).value=rig.bone[rotationKey];
         render();
