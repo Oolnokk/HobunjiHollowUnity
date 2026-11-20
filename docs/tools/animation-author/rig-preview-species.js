@@ -29,6 +29,7 @@
       base: { idle: 'moot_idle.png', run1: 'moot_run1.png', run2: 'moot_run2.png' },
       patterns: ['overcoat', 'mitts'], eyes: { open: 'moot_eyes.png', blink: 'moot_blink.png' }, // Mirror the runtime inheritance/render order in the standalone Animation Author.
       patternRecolorKeys: { overcoat: { hex: '#9CBD9E', hueTolerance: 20, minSaturationRatio: 0.45 } }, // Preserve authored black/grey/ivory regions when tinting the coat.
+      clipPatternsToBase: ['overcoat'], // The standalone preview must not draw overcoat's oversized black background over the scene.
     },
     'moot-herd-mother': { label: 'Moot Herd-Mother', mirrorOf: 'moot', modelWidth: 1.7 }, // Runtime variant shares Moot animation assets and genotype preview.
     tzatzul: {
@@ -105,6 +106,7 @@
           .map(([state, filename]) => [state, resolveAsset(SPRITES + filename)])) } : {}),
         ...(definition.defaultCoatPatterns ? { defaultCoatPatterns: definition.defaultCoatPatterns.map(item => ({ ...item })) } : {}),
         ...(definition.patternRecolorKeys ? { patternRecolorKeys: definition.patternRecolorKeys } : {}), // Standalone author previews use the same keyed overlay paint policy as gameplay.
+        ...(definition.clipPatternsToBase ? { clipPatternsToBase: [...definition.clipPatternsToBase] } : {}), // Keep silhouette clipping consistent with the game's compositor.
         ...Object.fromEntries(['baseShadeReferenceHex', 'baseRecolorKeyHex', 'baseRecolorHueTolerance',
           'baseRecolorMinSaturationRatio', 'fullBaseRecolor'].filter(key => definition[key] !== undefined)
           .map(key => [key, definition[key]])),
