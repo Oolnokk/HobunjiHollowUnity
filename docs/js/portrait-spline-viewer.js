@@ -156,9 +156,11 @@
         const pinned=window.PortraitSplineRig.isPinnedPixel(pins,uvX,v);
         const baseMotion=window.PortraitSplineRig.attachmentMotion(pins,uvX,v);
         const motion=!rear&&hoodFit?.aperture?.[Math.min(39999,Math.max(0,Math.floor(v*200)*200+Math.floor(u*200)))]?0:baseMotion; // Hold hair firmly in the cut hood opening.
-        const overlap=window.PortraitSplineRig.sampleHoodOverlap(hoodFit,u,v);
+        const pixel=Math.min(39999,Math.max(0,Math.floor(v*200)*200+Math.floor(u*200)));
+        const overlap=rear?0:window.PortraitSplineRig.sampleHoodOverlap(hoodFit,u,v);
+        const covered=rear?0:(hoodFit?.coverage?.[pixel]||0); // Mirror gameplay's opaque-hood depth classification in the 3D editor.
         if(pinned)anchored++;
-        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,pinned,motion,overlap);
+        const at=window.PortraitSplineRig.deformPosition(rig,posed,u,v,1,1,pinned,motion,overlap,covered);
         p.setXYZ(i,at.x,at.y,rear?-at.z:at.z);
       }
       mesh.userData.pinnedVertices=anchored; // Mobile diagnostics expose whether the same continuous mesh is physically anchored.
@@ -439,7 +441,9 @@
         seamlessSingleMesh:true,singleBone:true, // One joint and an uncut art texture per view.
         pairedOwnerDepth:{frontBeforeOwner:hairPlane.renderOrder<headPlane.renderOrder,
           depthWrite:hairPlane.material.depthWrite,depthTest:hairPlane.material.depthTest,
-          alphaTest:hairPlane.material.alphaTest},
+          alphaTest:hairPlane.material.alphaTest,
+          behindOwnerVertices:(()=>{const a=hairPlane.geometry?.attributes?.position?.array||[];
+            let count=0;for(let i=2;i<a.length;i+=3)if(a[i]<0)count++;return count;})()}, // On-demand mobile readout, no GPU readback.
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,headRear:rearHeadPlane.userData.pixelStats||null,
           hair:hairPlane.userData.pixelStats||null,rear:rearPlane.userData.pixelStats||null},
