@@ -41,7 +41,14 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips };`)(window, { now: () => 0 });
+  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+    actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
+    budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
+
+// Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
+assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
+assert.equal(api.limitDefault, 0, 'other characters\' weapons draw in the base pass by default');
+api.setOwnerLink(false); api.setLimit(Infinity); // The Settings "off" position: every weapon x-rays (the rules below).
 
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
@@ -57,6 +64,36 @@ const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, 
 assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
 assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
 
+// Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
+// with userData.hobunjiHeldPortraitOwner. With the link off they are unowned
+// (fail-safe x-ray); on (the default), they resolve to the bearer and the
+// non-player weapon budget can leave them to ordinary depth.
+const bandit = (name, x) => at(node(name, scene, {}), x, 0);
+const banditA = bandit('bandit_avatar_group', 2), banditB = bandit('bandit_avatar_group', 9), banditC = bandit('bandit_avatar_group', 5);
+const holderOf = owner => { const holder = node('banditToolHolder', scene, { hobunjiHeldPortraitOwner: owner }); holder.isObject3D = true; return node('weapon', holder); };
+for (const b of [banditA, banditB, banditC]) b.isObject3D = true;
+const weaponA = holderOf(banditA), weaponB = holderOf(banditB), weaponC = holderOf(banditC);
+assert.equal(api.actorOf(weaponA, scene), null, 'link off: a scene-sibling weapon has no owner (fail-safe path)');
+assert.equal(api.actorOf(node('hand_sprite', banditA), scene), null, 'link off: bandit body parts stay unowned too (today\'s behaviour)');
+api.setOwnerLink(true);
+assert.equal(api.actorOf(weaponA, scene)?.root, banditA, 'link on: resolved to its bearer');
+assert.equal(api.actorOf(weaponA, scene)?.isPlayer, false);
+assert.equal(api.actorOf(node('hand_sprite', banditA), scene)?.root, banditA, 'bandit_avatar_group is an actor root, as for the portrait mask');
+const allArmed = [];
+assert.deepEqual(api.split([playerBlade, weaponB, weaponA, weaponC], scene, allArmed, false, true), [playerBlade, weaponB, weaponA, weaponC], 'no budget: every weapon x-rays');
+api.setLimit(1);
+const budgetOthers = [];
+assert.deepEqual(api.split([playerBlade, weaponB, weaponA, weaponC], scene, budgetOthers, false, true), [playerBlade, weaponA],
+  'budget 1: the player plus the armed non-player nearest the camera, original order kept');
+assert.deepEqual(budgetOthers, [weaponB, weaponC], 'the rest draw with ordinary depth');
+assert.equal(api.budgetSkips(), 2);
+api.setLimit(0);
+const noneOthers = [];
+assert.deepEqual(api.split([weaponA, tallSpear, playerBlade, shortClub], scene, noneOthers, false, true), [playerBlade, shortClub],
+  'budget 0 (the default): only the player\'s and short species\' weapons x-ray');
+assert.deepEqual(noneOthers, [weaponA, tallSpear], 'hostile and NPC weapons draw with their bearer in the base pass');
+api.setLimit(Infinity); api.setOwnerLink(false);
+
 api.setPolicy('all');
 const othersAll = [];
 assert.deepEqual(api.split([tallHand, tallFoot], scene, othersAll, true), [tallHand, tallFoot], "'all' restores the previous participant set");
@@ -65,6 +102,6 @@ assert.equal(othersAll.length, 0);
 // The split runs inside collectVisible, so the replay entry points need no new names.
 assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOthers\);/);
 assert.match(source, /const feet = collectVisible\(waterOccludedRegistry, scene, replayOthers\);/);
-assert.match(source, /const othersHidden = replayOthers\.length \? suppressDraws\(replayOthers, HELD_OVERLAY_MASK\) : null;/, 'non-participants are hidden from the replays that draw the held-overlay layer');
+assert.match(source, /suppressDraws\(otherParticles\?\.length \? replayOthers\.concat\(otherParticles\) : replayOthers, HELD_OVERLAY_MASK\)/, 'non-participants (and their gear particles) are hidden from the replays that draw the held-overlay layer');
 assert.match(source, /const shortXraySpecies = new Set\(\['porakaneki'\]\);/, 'Porakaneki are on the short-species list by default');
-console.log('ok - weapons x-ray for everyone; hands for the player and short species; feet for those, near the camera only');
+console.log('ok - other characters weapons in the base pass by default (x-ray for every weapon when switched off); hands for the player and short species; feet for those, near the camera only');

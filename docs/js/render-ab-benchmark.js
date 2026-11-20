@@ -19,9 +19,23 @@
 //                   again (the old full-screen fallback, reason skinned-mesh)
 //   fadedTreesDrawn wilderness trees the corridor-edge fade has taken to
 //                   opacity 0 are drawn again (they only drew depth ghosts)
-//   treeInstancingOff
-//                   procedural wilderness trees draw one mesh at a time again
-//                   instead of as instanced batches per variant part
+//   treeInstancingOn / treeInstancingOff
+//                   procedural wilderness trees as instanced batches per
+//                   variant part, or one mesh at a time (instancing is off by
+//                   default: it measured as a net loss on a GTX 1060)
+//   propBatchesOff  still wilderness props (tents, camp furniture, berry
+//                   bushes, ore-rock stones...) drawn one mesh at a time
+//                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   gearParticlesEveryPass
+//                   particles on held gear (enchantment motes, weapon fire)
+//                   are drawn in the base pass and every replay group again
+//   npcWeaponsXray / npcWeaponsBasePass
+//                   other characters' weapons x-ray again (the old fail-safe
+//                   replay group per armed hostile), or, when Settings has
+//                   switched that back on, draw in the base pass with their
+//                   bearer (the default: HeldObjectRenderOrder owner link on,
+//                   setOtherWeaponXrayLimit(0)). Compare while armed enemies
+//                   are on screen.
 //   mistOff / rainOff / cloudsOff
 //                   hide the Cloud Forest mist, rain/blizzard planes or sky
 //                   cloud layers while drawing (only offered when present)
@@ -268,8 +282,10 @@
     const resolutionBefore = resolution?.value ?? null;
     const variants = [
       { id: 'default', apply() {}, undo() {} },
-      { id: 'frameScopeOff', apply: () => hooks.setFrameScopeEnabled(false), undo: () => hooks.setFrameScopeEnabled(true) },
     ];
+    if (hooks.getDebug?.()?.frameScopeEnabled !== false) { // Settings can turn it off; never switch it back on behind the user's choice.
+      variants.push({ id: 'frameScopeOff', apply: () => hooks.setFrameScopeEnabled(false), undo: () => hooks.setFrameScopeEnabled(true) });
+    }
     if (typeof debug?.setOutlines === 'function' && outlinesBefore === true) {
       variants.push({ id: 'outlinesOff', apply: () => debug.setOutlines(false), undo: () => debug.setOutlines(true) });
     }
@@ -296,10 +312,30 @@
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
     }
     const treeInstancer = window.WildernessTreeInstancer;
-    if (typeof treeInstancer?.setEnabled === 'function' && treeInstancer.enabled?.() === true && vegetationCull?.snapshot?.().lastCullables > 0) {
-      variants.push({ id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) });
+    if (typeof treeInstancer?.setEnabled === 'function' && vegetationCull?.snapshot?.().lastCullables > 0) {
+      const instancingBefore = treeInstancer.enabled?.() === true; // Toggled per window without persisting.
+      variants.push(instancingBefore
+        ? { id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) }
+        : { id: 'treeInstancingOn', apply: () => treeInstancer.setEnabled(true), undo: () => treeInstancer.setEnabled(false) });
+    }
+    const propBatches = window.ZonePropRenderBatches;
+    if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
+      variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {
+      variants.push({ id: 'gearParticlesEveryPass', apply: () => heldOrder.setGearParticlesOnceEnabled(false), undo: () => heldOrder.setGearParticlesOnceEnabled(true) });
+    }
+    if (typeof heldOrder?.setHeldOwnerLinkEnabled === 'function' && typeof heldOrder.setOtherWeaponXrayLimit === 'function') {
+      const linkBefore = heldOrder.snapshot?.().heldOwnerLinkEnabled === true;
+      const limitBefore = heldOrder.snapshot?.().otherWeaponXrayLimit ?? Infinity;
+      const basePass = linkBefore && limitBefore === 0; // The default; Settings can switch it off.
+      variants.push(basePass
+        ? { id: 'npcWeaponsXray', apply: () => { heldOrder.setHeldOwnerLinkEnabled(false); heldOrder.setOtherWeaponXrayLimit(Infinity); },
+          undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } }
+        : { id: 'npcWeaponsBasePass', apply: () => { heldOrder.setHeldOwnerLinkEnabled(true); heldOrder.setOtherWeaponXrayLimit(0); },
+          undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } });
+    }
     if (typeof heldOrder?.setSkinnedScissorEnabled === 'function' && heldOrder.snapshot?.().skinnedScissorEnabled !== false) {
       variants.push({ id: 'skinnedScissorOff', apply: () => heldOrder.setSkinnedScissorEnabled(false), undo: () => heldOrder.setSkinnedScissorEnabled(true) });
     }

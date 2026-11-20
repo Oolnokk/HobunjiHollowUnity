@@ -183,19 +183,35 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | Order | id | Owner | Effect |
 |---|---|---|---|
 | 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
-| 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props → merged per 8×8 cell + material |
-| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part (geometry + material + layers) |
+| 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
+| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
 | 600 | `wilderness-distance-cull` | wilderness-distance-cull.js | far static wilderness geometry hidden |
 
 Add a new draw-only cull or batch by registering a scope from its own module,
-not by editing `renderFrame`. A scope that hides meshes another pass masks by
+not by editing `renderFrame`. Every render optimisation switch (these scopes'
+`setEnabled`, the held/x-ray replay A/B setters, frame-scoped hooks, tree
+instancing, faceted rocks, rain/cloud draw hiders) has a persisted toggle in
+Settings → Render optimizations (perf testing), owned by
+`js/render-optimization-settings.js` (dev-only; last script of the render
+group). When you add a switch, add its row to that module's `TOGGLES` list. A scope that hides meshes another pass masks by
 name should flag them `userData.hobunjiDrawProxyHidden` while hidden: Perception
 Mode then still draws them into its glow mask (the tree instancer does). Prop batching groups by `material.id`: share one
 material between identical props (as `wild-berries.js` now does per colour) or
-they can never merge.
+they can never merge. A material array that repeats one material over groups
+covering the whole geometry (the natural rocks' ridge-split top/side slots)
+counts as that one material. Compile hooks block merging unless the material
+is marked `userData.hobunjiWorldBakeSafe` or the hook itself sets
+`__hobunjiWorldBakeSafe` (the held x-ray elevation hook does when what it wraps
+is safe). Cells use each mesh's world-space geometry centre, since ore rocks
+are built in world space under an identity transform. Batch meshes carry
+`userData.hobunjiRenderProxy`, set before they are added: add-time surface
+passes (natural-surface stretch runtime and runtime fixes) skip them, because
+re-unwrapping a merged copy would replace its geometry. Ore-rock grass rims
+are not merged: each has its own jigsaw material clone (a chunk texture lease)
+and the furniture-ID `onBeforeRender` hook.
 
 ## 6. Character visuals (player, NPCs, enemies, pets — one system)
 
@@ -214,6 +230,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 |---|---|---|
 | held tool/weapon planes (`character-held-tools.js`) | player, NPC, enemy | holder's own mastery/metal; metal variants per appearance |
 | held bag-item plane (game.js) | player | NPCs never hold bag items |
+| held-item x-ray through grass/ground (`held-object-render-order.js`) | player, short species (porakaneki) | other NPCs/enemies: hands ordinary depth, feet within 6 tiles only, weapons/tools in the base pass by default (user decision, ~11 ms on a GTX 1060; Settings → Render optimizations restores weapon x-ray) |
 | procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |
 | portrait life (blink/breath) | player, NPC | enemies keep static portraits |
 | render-time body composition (`player-body-transform-composer.js`) | player (+ its pet) | NPC/enemy poses go straight through rig layers |
@@ -247,7 +264,7 @@ Rules:
 | Pose/offset something only while drawing | `RenderHooks.register({ scope: 'frame', … })` |
 | Hide or merge things only while drawing | `WorldRenderPipeline.registerRenderScope(...)` |
 | Add a pass | Add it in `renderOutlinedPasses`/`renderDirectPasses` with a `pass('name')` label and a PerfProfiler bucket; add a layer to the registry; update §1 |
-| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. Drawn, opaque trees then draw as instanced batches per shared variant part (`js/wilderness-tree-instancer.js`; a fading tree keeps its own clone material and draws itself; A/B `WildernessTreeInstancer.setEnabled(false)`) |
+| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, but it is off by default (net loss on device; needs chunk-local batches first): `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
@@ -269,7 +286,7 @@ await CharacterVisuals.captureVisibilityReport() // "X is invisible": per charac
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
-                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOff / skinnedScissorOff / mistOff / rainOff / cloudsOff
+                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOn / propBatchesOff / gearParticlesEveryPass / npcWeaponsXray / skinnedScissorOff / mistOff / rainOff / cloudsOff
                                              //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
                                              //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
                                              //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.
@@ -278,6 +295,19 @@ RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings 
 ?renderContext=lean                          // reload flag: no canvas MSAA, no preserveDrawingBuffer (report shows the context attributes)
 HeldObjectRenderOrder.snapshot()             // replay scissor/fullscreen counts + reasons, culled/kept, colorOnlyDepthSkips
 HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false) // A/B: draw no-op VFX (enchantment motes) in colourless replays again
+HeldObjectRenderOrder.setGearParticlesOnceEnabled(false) // A/B: particles on held gear (enchantment motes, weapon-layer fire) drawn in the base
+                                             //   pass and every replay group again; on (default) they draw once, in the overlay of the
+                                             //   group holding their gear; that group's scissor and far depth include them (enchantment
+                                             //   motes through their plane's aura padding). VFX parented outside its gear joins with
+                                             //   linkGearParticle(particle, gearMesh) (the held dungeon-fire plume). Particles of gear that
+                                             //   does not x-ray (other characters' weapons) stay out of every overlay render
+HeldObjectRenderOrder.setHeldOwnerLinkEnabled(false)   // On by default: scene-sibling weapons (BanditCombat/walker tool holders) resolve to their
+                                             //   bearer via userData.hobunjiHeldPortraitOwner. Off: the unowned fail-safe path, which costs
+                                             //   every armed hostile on screen one extra "ordinary" held-replay group
+HeldObjectRenderOrder.setOtherWeaponXrayLimit(n)       // only the n armed non-player actors nearest the camera keep weapon x-ray. Default 0: other
+                                             //   characters' weapons and tools draw in the base pass with their bearer (fogged by mist like
+                                             //   them, plain depth against grass). Player and short-species gear keep x-ray. Settings →
+                                             //   Render optimizations → "NPC and enemy weapons in the base pass" off = link off + Infinity
 HeldObjectRenderOrder.setSkinnedScissorEnabled(false)  // A/B: skinned bodies force full-screen held/x-ray replays again (reason skinned-mesh).
                                              //   On (default) they are bounded per bone; a hook that can re-pose a mesh at draw time
                                              //   still falls back ('skinned-draw-hook') unless it publishes __hobunjiXrayBoundParity

@@ -71,6 +71,7 @@ const document = {
 let skinnedScissor = true; const skinnedScissorHistory = [];
 let hideFadedOut = true; const hideFadedOutHistory = [];
 let treeInstancing = true; const treeInstancingHistory = [];
+const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
   __hobunjiGameRenderer: { getContext: () => ({
@@ -78,8 +79,10 @@ const window = {
     readPixels() { clock += 0.5 + gpuPending; gpuPending = 0; }, // 0.5 ms round trip + whatever the GPU still has queued.
     finish() { clock += 0.5 + gpuPending; gpuPending = 0; },
   }) },
-  HeldObjectRenderOrder: { snapshot: () => ({ scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3, skinnedScissorEnabled: skinnedScissor }),
+  HeldObjectRenderOrder: { setGearParticlesOnceEnabled(v) { gearParticleHistory.push(v); }, setHeldOwnerLinkEnabled(v) { npcWeaponHistory.push('link:' + v); }, setOtherWeaponXrayLimit(n) { npcWeaponHistory.push('limit:' + n); },
+    snapshot: () => ({ heldOwnerLinkEnabled: true, otherWeaponXrayLimit: 0 /* Shipped default: NPC weapons in the base pass. */, scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3, skinnedScissorEnabled: skinnedScissor }),
     setSkinnedScissorEnabled(value) { skinnedScissor = value !== false; skinnedScissorHistory.push(skinnedScissor); return skinnedScissor; } },
+  ZonePropRenderBatches: { snapshot: () => ({ enabled: true, batches: 12 }), setEnabled(v) { propBatchHistory.push(v); return v; } },
   WildernessTreeInstancer: { enabled: () => treeInstancing, setEnabled(value) { treeInstancing = value !== false; treeInstancingHistory.push(treeInstancing); return treeInstancing; } },
   ZoneVegetationCull: { snapshot: () => ({ hideFadedOut, lastCullables: 600 }),
     setHideFadedOut(value) { hideFadedOut = value !== false; hideFadedOutHistory.push(hideFadedOut); return hideFadedOut; } },
@@ -120,7 +123,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -137,7 +140,10 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.equal(propBatchHistory.join(' '), 'false true false true', 'propBatchesOff restores prop batching after each window');
+  assert.equal(gearParticleHistory.join(' '), 'false true false true', 'gearParticlesEveryPass restores drawn-once particles after each window');
+  assert.equal(npcWeaponHistory.join(' '), 'link:false limit:Infinity link:true limit:0 link:false limit:Infinity link:true limit:0', 'npcWeaponsXray restores every weapon\'s x-ray per window and puts the base-pass default back');
   assert.equal(treeInstancingHistory.join(' '), 'false true false true', 'treeInstancingOff restores instancing after each window');
   assert.equal(hideFadedOutHistory.join(' '), 'false true false true', 'fadedTreesDrawn restores the faded-out tree skip after each window');
   assert.equal(hideFadedOut, true);

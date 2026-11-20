@@ -1,5 +1,136 @@
 # Performance investigation log
 
+## 20 Nov 2026: review of this branch's render changes
+
+A full review of the combat-perf branch found, and this entry fixes:
+- **Particles drawn once could be clipped.** Hidden from the unclipped base pass, a gear particle
+  draws only inside its group's replay scissor, which grew only for enchantment aura padding. A
+  torch or flail flame rising past its weapon's box would be cut off. Gear particles now join their
+  group's scissor and near-replay far depth (`needsParticleBounds`); enchantment motes stay
+  covered by their plane's aura padding, which is measured over exactly those motes.
+- **The held dungeon-fire plume drew under its weapon.** Off the held-overlay layer it drew only in
+  the base pass, and the weapon's overlay redraw covered its base. It is back on the overlay layer
+  with its scissor padding, linked to the weapon plane (`linkGearParticle`) so it draws once, right
+  after the weapon. A flying projectile's plume stays world-only.
+- **NPC weapon particles showed through grass.** With other characters' weapons in the base pass,
+  their particles still carried the overlay layer and redrew in every x-ray overlay. They now leave
+  the overlays with their weapon.
+- **Particles could stay hidden after an exception** between the base render and the replay; one
+  `try`/`finally` now spans the whole section.
+- Weapon-budget diagnostics were counted twice a frame (base and shell passes); the budget's
+  containers are reused. The tree instancer's cache token is bumped (main had the first version
+  under the same token). The held-item x-ray exception for other characters is recorded in the
+  `CharacterVisuals` coverage table.
+
+Headless, user's save: the enchanted weapon renders identical frames with drawn-once particles on
+and off; no replay fell back to full screen; six bandits still 2,293 → 1,881 draws and 21 → 18
+renders, and the Settings toggle restores the old frame exactly.
+
+## 20 Nov 2026: NPC and enemy weapons in the base pass by default
+
+The device benchmark measured `npcWeaponsBasePass` about 11 ms a frame faster on a GTX 1060 while
+watching a camp from afar, so it is now the default: `HeldObjectRenderOrder` resolves scene-sibling
+weapons to their bearer (owner link on) and gives other characters' weapons an x-ray budget of 0, so
+they draw in the base pass with their bearer instead of in an extra held-replay group. The player's
+and short species' gear keep x-ray. The look changes slightly: those weapons are fogged by the Cloud
+Forest mist like their bearer and layer by plain depth against grass. Headless, user's Cloud Forest
+save, 6 bandits: 2,016 → 1,836 draws and 21 → 18 scene renders a frame; 16k of 518k px differ, all on
+the bandits' weapons. Settings → Render optimizations → "NPC and enemy weapons in the base pass" off
+restores the old look exactly (owner link off, budget Infinity; switching back on reproduces the
+default frame pixel for pixel). Benchmark variant `npcWeaponsXray` measures the old look.
+
+## 20 Nov 2026: ore-rock stones merged per cell
+
+The device's top draw source was removable ore rocks: one stone mesh per rock, drawn as two
+draws (the ridge isolation's `[m, m]` top/side material pair) in the base pass and again in
+replays (218 + 212 on the GTX 1060). Ore rock groups now carry the owner tag
+`userData.facetedOreRock`, and `zone-prop-render-batches.js` merges still stones per 8×8 cell.
+Three things had blocked it: the repeated-material array (now drawn as its one material when
+the groups cover the whole geometry), the held x-ray elevation compile hook on the rock
+material (it now declares itself world-bake safe when what it wraps is), and cell keys taken
+from the mesh origin (rock vertices are world-space, so every rock sat at 0,0; cells now use
+the world geometry centre). A merged batch was also being re-unwrapped by the natural-surface
+add-time inspection (ridge split + stretch remap of the copy), so batches are now flagged
+`hobunjiRenderProxy` before they are added and those inspectors skip them.
+
+Headless, user's Cloud Forest save: stone draws 120 → 11 a frame (whole frame 1,513 → 1,368).
+Next to a 16-rock cluster: 88 → 20, of which 8 are floor-punch refill draws (a cell batch's bounds
+reach the punched patch where a single stone's did not); whole frame 1,258 → 1,186. Batching on
+and off render pixel-identical frames, and mining a visible rock removes the same 1,423 px in
+both modes. Grass rims (60-74 draws) are unchanged: each has its own jigsaw material clone and
+the furniture-ID `onBeforeRender` hook. A/B: `ZonePropRenderBatches.setEnabled(false)`,
+benchmark variant `propBatchesOff` (all props, not only rocks).
+
+## 20 Nov 2026: device report while watching a camp from afar; gear particles drawn once
+
+**Device** (GTX 1060, Cloud Forest, 3 enemies + 3 corpses in view, not fighting). The default
+window times every pass with GPU queries, so it reads slower than any variant; neutral variants
+(painterlyOff, cloudsOff, fadedTreesDrawn, halfResolution) put the real baseline at ~102-106 ms.
+Against that: `skinnedScissorOff` +15 ms (the skinned scissor fix holds up), `npcWeaponsBasePass`
+−11 ms (render CPU −9: unowned hostile weapons cost an extra replay group even at a distance),
+`treeInstancingOff` −6 ms and −350k triangles (tree instancing is a net loss on the device: its
+corridor-wide batches defeat frustum and replay culling, and the per-frame regroup costs CPU),
+`fadedTreesDrawn` ±0, `mistOff` −6, `outlinesOff` −23. Top draws: ore rocks
+(`faceted_ore_rock` 218 + grass rims 106 in main, 212 more in replays: each removable ore rock
+has always been its own stone + grass mesh pair) and the player's enchanted flail motes (76 in
+main, 152 in replays).
+
+**Gear particles drawn once.** Motes and weapon-layer fire sit on the world layer and the
+held-overlay layer so the overlay draws them after the gear it repaints. They therefore drew in
+the base pass (where the gear is suppressed: the overlay then paints the gear over them) and in
+every replay group's overlay. `HeldObjectRenderOrder` now hides them for the base pass and the
+whole replay and shows each only in the overlay render of the group holding its gear (nearest
+held ancestor; gear the replay culls keeps the old behaviour). Headless: one render draws all 77
+motes once a frame (was base + every group: 154 here, 228 on the device); 363 px differ where
+the base-pass copy used to double a translucent mote. (Corrected after review, see the entry
+above: the held dungeon-fire plume briefly left the held-overlay layer, which let the redrawn
+weapon cover its base; it is now drawn once after its weapon like the motes.) A/B:
+`setGearParticlesOnceEnabled(false)`, benchmark variant `gearParticlesEveryPass`.
+
+## 20 Nov 2026: why combat and crowds still cost frames (investigation)
+
+Headless, user's Cloud Forest save, enemies spawned around the player and kept fighting
+(`scratchpad combat-probe.js`: CPU profile + per-pass draws per scenario; render-list diffs before
+and after spawning one enemy). SwiftShader inflates wall-clock time; draws, render calls, JS time
+and shader program builds are what carry over to a device.
+
+| Scenario | Draws | Scene renders | JS / frame |
+|---|---|---|---|
+| no enemies | 1,527 | 17 | 95 ms |
+| 8 drenkirra fighting | 1,766 (+30 each) | 20 | 98 ms |
+| 6 bandits fighting | 2,101 (+96 each) | 21 | 140 ms |
+
+- **Armed humanoids, not crowds, are the multiplier.** One unarmed drenkirra: +25 draws, no extra
+  renders. One bandit: +370 draws, 350 of them inside the held replay, and +3 scene renders. Its
+  weapon is a scene-sibling `banditToolHolder`; `actorRootForXrayMesh` only walked parents, so the
+  weapon had no owner, took the fail-safe path and opened an extra "ordinary" held-replay group:
+  a depth supplement and colour overlay that redraw every grass cutout, depthless ground chunk and
+  held VFX (the player's enchantment motes) inside the group's rectangle. With 6 bandits the held
+  replay's JS went 12.5 → 25.5 ms a frame. The weapon names its bearer in
+  `userData.hobunjiHeldPortraitOwner` (the portrait mask already follows it); resolving through it
+  under the existing "weapons x-ray for everyone" rule is far worse (6 bandits: 2,216 → 5,875 draws,
+  21 → 30 renders). With a non-player weapon budget of 0 they draw in the base pass instead: 1,959
+  draws, 17 renders (−257, −4 vs today), but the weapons then look different (fogged by the Cloud
+  Forest mist, layered differently against grass and their portrait; 3.4-6k px in a 960x540
+  frame). Both switches ship off; benchmark variant `npcWeaponsBasePass` measures it on a device.
+- **A shader program rebuilt on every hit.** Every popup (damage numbers, labels, prompts) created
+  and disposed its own MeshBasicMaterial; disposing the last live one let three.js delete the
+  shared program, so the next popup compiled and linked it again: 35 rebuilds of one program in a
+  240-frame fight, 0 while idle (shader compiles are slow on ANGLE/D3D11, so this is hitching
+  rather than average frame time). `world-popup-text.js` now pools those materials (only the map
+  and opacity change): 35 → 12 rebuilds; the rest come from ranged projectiles
+  (`ranged-weapons.js` `disposeProjectile`), lunge trail stamps (`game.js`
+  `updateLungeTrailStamps`) and emoji icon effects, which create and dispose materials the same way.
+- **CPU.** `updateHostiles` +7 ms for 6 bandits (line-of-sight raycasts through
+  `computeBanditLos` ~0.3 ms per enemy), `updateCreatureMesh` +3 ms, `scanScene` +3 ms. A new animal
+  pays a one-off pattern recolour (`creature-genetics-render.js`) when it spawns.
+- **Resource rings** rebuild every ring mesh, geometry and material on each whole-point
+  Health/Stamina change: thousands of disposals a minute in a fight (inflated here by the harness
+  healing the player every frame), under ~1.3 ms a frame of CPU; GC and buffer churn more than time.
+- **Structural.** The frame already makes 17 scene renders with no enemies, each walking the whole
+  scene graph; anything that adds a render (a held-replay group, the world-text overlay pass while
+  popups exist) adds a full traversal.
+
 ## 20 Nov 2026: invisible wilderness trees still drawn (the "WildernessChunk" draws)
 
 The device report's biggest draw label, `WildernessChunk_map_southern_cloud_forest_#_#` (589 draws
@@ -20,6 +151,16 @@ benchmark variant `fadedTreesDrawn`. Not yet measured on a device.
 
 What remains per tree is real: ~60 visible trees x 3-4 meshes; the opaque ones are now instanced
 (next entry).
+
+## 20 Nov 2026: tree instancing measured on the device: a net loss, now off by default
+
+GTX 1060, Cloud Forest: `treeInstancingOff` beat the neutral variants by ~6 ms a frame and drew
+350k fewer triangles; `fadedTreesDrawn` was within noise. The instanced batches span the whole
+vegetation corridor, so Three cannot frustum-cull the trees outside the view and the held/x-ray
+replay cull cannot drop them outside a replay's scissor (32 tree-batch draws showed up in the
+x-ray shell replays alone), and the per-frame regroup costs CPU. `WildernessTreeInstancer` is
+now off by default under a new opt-in key (benchmark windows had persisted the old key as on);
+chunk-local batches with tight bounds are the version to try next (`treeInstancingOn`).
 
 ## 20 Nov 2026: procedural wilderness trees drawn instanced
 

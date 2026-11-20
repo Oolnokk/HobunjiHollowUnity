@@ -53,6 +53,7 @@ const oreMaterial = { name: 'ore' }, grassMaterial = { name: 'grass' };
   assert.deepEqual(calls.displace, ['stone 4,7'], 'ground displacement runs once on the shared buffer');
   const [stone, grass] = rock.group.children;
   assert.equal(rock.mesh, stone);
+  assert.equal(rock.group.userData.facetedOreRock, true, 'owner tag: zone-prop-render-batches.js merges still stones per cell');
   assert.equal(stone.material, oreMaterial);
   assert.equal(calls.mapped.length, 1, 'the stone is unwrapped by the cliff stretch, like the farm rocks');
   assert.equal(calls.mapped[0].mesh, stone);

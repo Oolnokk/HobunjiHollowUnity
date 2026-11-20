@@ -84,6 +84,7 @@
     if (typeof displace === 'function' && (stoneGeo || grassGeo)) displace(stoneGeo || grassGeo);
     const group = new THREE.Group();
     group.name = 'faceted_ore_rock_group';
+    group.userData.facetedOreRock = true; // Owner tag: zone-prop-render-batches.js merges still stones per 8x8 cell for the world render.
     let stone = null;
     if (stoneGeo) {
       stoneGeo.computeVertexNormals();

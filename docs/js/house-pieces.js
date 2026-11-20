@@ -6,7 +6,7 @@
   // while the farm-buildings manifest owns this bootstrap's cache versions.
   const current = document.currentScript;
   const baseUrl = current?.src ? new URL('.', current.src) : new URL('js/', document.baseURI);
-  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261113terrainpass2') : '20261113terrainpass2'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
+  const naturalSurfaceUvVersion = current?.src ? (new URL(current.src).searchParams.get('surfaceUv') || '20261120renderproxy') : '20261120renderproxy'; // Used by the natural rock/cliff UV stack below; decoupled from this bootstrap's own v= cache key so unrelated loader changes cannot invalidate the tightly-coupled surface generation.
   window.HobunjiNaturalSurfaceUvLoaderVersion = naturalSurfaceUvVersion; // Used by Pixel Probe diagnostics to show which coherent natural-surface script generation actually loaded on-device.
   const naturalSurfaceScript = (file) => `${file}?v=${encodeURIComponent(naturalSurfaceUvVersion)}`; // Used only by the tightly-coupled natural-surface UV modules so stale child scripts cannot mix generations.
   const scripts = [
@@ -16,7 +16,7 @@
     ['NaturalSurfaceMaterials', 'natural-surface-materials.js?v=20261027h1fb8ced'],
     ['WildernessTerrainCleanupConfig', '../config/wilderness-terrain-cleanup.js?v=20260812a'],
     ['WildernessTerrainCleanup', 'wilderness-terrain-cleanup.js?v=20260812a'],
-    ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20260813d'],
+    ['NaturalSurfaceRuntimeFixes', 'natural-surface-runtime-fixes.js?v=20261120h703e565'],
     // Uses the Furniture + Avatar Author's shared-edge/adjacent-normal surface recognition before mapping one complete PNG square onto each detected natural terrain surface.
     ['HobunjiSurfaceStretchUV', naturalSurfaceScript('surface-stretch-uv-furniture.js')],
     // Adds a black-only protected-band sampler to wilderness waterways and the permanent town river; waterfall curtains unfold as surface tiles in the same wilderness mapping domain.
