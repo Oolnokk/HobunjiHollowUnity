@@ -53,8 +53,12 @@ assert.equal(grehlrSpec.baseShadeReferenceHex, '#99BF99');
 assert.equal(grehlrSpec.baseRecolorKeyHex, '#99BF99');
 assert.equal(grehlrSpec.preferSourceKeyRecolor, true);
 assert.equal(grehlrSpec.baseRecolorMinValue, 0.12);
-assert.deepEqual(Array.from(grehlrSpec.patterns), ['mitts', 'spectacles', 'coloredstripe'],
-  'Grehlr must render every inherited pattern, including coloredstripe');
+assert.deepEqual(Array.from(grehlrSpec.patterns), ['mitts', 'coloredstripe', 'beard', 'spectacles'],
+  'Grehlr beard must draw over other patterns, but under spectacles');
+assert.equal(grehlrSpec.patternRecolorKeys.beard.hex, '#99BF99',
+  'Grehlr beard tint selects only green fur and preserves its black ink');
+assert.deepEqual(Array.from(render.SPECIES.nelk.patterns), ['cape', 'brushtail', 'spectacles'],
+  'Nelk brushtail must layer above cape, including the cape-aware brushtail variant');
 for (const frame of ['idle', 'run1', 'run2']) {
   for (const path of [
     'docs/assets/creaturesprites/grehlr_' + frame + '.png',
@@ -64,6 +68,12 @@ for (const frame of ['idle', 'run1', 'run2']) {
     assert.equal(data.readUInt32BE(16), 750, path + ' width');
     assert.equal(data.readUInt32BE(20), 562, path + ' height');
   }
+}
+
+const beardArt = fs.readFileSync('docs/assets/creaturesprites/patterns/grehlr_beard_idle.png'); // Authored fur overlay shared by all three animation poses.
+for (const frame of ['run1', 'run2']) {
+  assert.deepEqual(fs.readFileSync('docs/assets/creaturesprites/patterns/grehlr_beard_' + frame + '.png'), beardArt,
+    'Grehlr beard is exactly the same pixel-aligned art in all three frames');
 }
 for (const eyeFile of [grehlrSpec.eyes.open, grehlrSpec.eyes.blink]) {
   const image = fs.readFileSync('docs/' + eyeFile); // Keeps blink and open-eye overlays pixel-aligned with each run pose.
@@ -269,6 +279,8 @@ assert.equal(genetics.normalizeLegacyGenotype('uumkaoii', former).shell.color, '
 assert.equal(genetics.genotypeTraits('uumkaoii', former).patterns.length, 1);
 assert.equal(genetics.crossOffspring(former, former, 'uumkaoii', 0).shell.enabled, true);
 assert.equal(genetics.makeDefaultGenotype('nelk').base != null, true);
+assert.equal(genetics.makeDefaultGenotype('grehlr').beard != null, true,
+  'Fresh and bred Grehlr genotypes must include the independently inheritable beard locus');
 assert.equal(genetics.makeDefaultGenotype('nazgraku').base != null, true);
 
 // The game's normal portrait URLs are retained for Nazgraku riding, not the
