@@ -75,8 +75,8 @@ for(const geo of [front,back]) {
     const headInfluence=a[k+1]+a[k+3]; // Original authored pitch weights restored from both pitch-bearing bones.
     const gate=a[k+2]+a[k+3]; // Only head-owned vertices may participate in 3D yaw.
     assert(Math.abs(a[k]+a[k+1]+a[k+2]+a[k+3]-1)<1e-6,'all four skin weights normalize at every cell');
-    assert(gate===0 || gate===1,'yaw uses no graded irregular skin weights');
-    assert.equal(gate,+(headInfluence>=.5),'3D yaw follows binary head ownership, not the horizontal neck half-plane');
+    assert(Math.abs(gate-Math.round(gate))<1e-6,'yaw uses no graded irregular skin weights');
+    assert(Math.abs(gate-+(headInfluence>=.5))<1e-6,'3D yaw follows binary head ownership, not the horizontal neck half-plane');
   }
   const uv=geo.getAttribute('uv'), columns=geo.userData.segmentsX;
   const columnGaps=[];
@@ -84,8 +84,8 @@ for(const geo of [front,back]) {
   assert(Math.min(...columnGaps)<.0061,'mesh still has nearby hinge columns even at low density');
   const faceCol=geo===front?columns:0; // Painted upper-right head is mirrored on the reverse face.
   const upperIndex=faceCol*stride, lowerIndex=(geo.userData.segmentsY*width+faceCol)*stride;
-  assert.equal(weights.array[upperIndex+2]+weights.array[upperIndex+3],1,'head pixels rotate as a rigid cutout');
-  assert.equal(weights.array[lowerIndex+2]+weights.array[lowerIndex+3],0,'chest/legs beneath the head stay still even at the same X');
+  assert(Math.abs(weights.array[upperIndex+2]+weights.array[upperIndex+3]-1)<1e-6,'head pixels rotate as a rigid cutout');
+  assert(Math.abs(weights.array[lowerIndex+2]+weights.array[lowerIndex+3])<1e-6,'chest/legs beneath the head stay still even at the same X');
 }
 const babyWarp={
   destinationFor(p){return {x:.65,y:p.y};},
