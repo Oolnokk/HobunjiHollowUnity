@@ -68,6 +68,7 @@ const document = {
     addEventListener(type, fn) { this.listeners[type] = fn; }, set id(v) { this._id = v; elements.set(v, this); }, get id() { return this._id; } }),
   addEventListener() {},
 };
+let skinnedScissor = true; const skinnedScissorHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
   __hobunjiGameRenderer: { getContext: () => ({
@@ -75,7 +76,8 @@ const window = {
     readPixels() { clock += 0.5 + gpuPending; gpuPending = 0; }, // 0.5 ms round trip + whatever the GPU still has queued.
     finish() { clock += 0.5 + gpuPending; gpuPending = 0; },
   }) },
-  HeldObjectRenderOrder: { snapshot: () => ({ scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3 }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3, skinnedScissorEnabled: skinnedScissor }),
+    setSkinnedScissorEnabled(value) { skinnedScissor = value !== false; skinnedScissorHistory.push(skinnedScissor); return skinnedScissor; } },
   PainterlyPostprocess: {
     getMode: () => painterlyMode,
     setMode(mode) { painterlyMode = mode; painterlyHistory.push(mode); },
@@ -113,7 +115,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -130,7 +132,9 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'skinnedScissorOff', 'rainOff']);
+  assert.equal(skinnedScissorHistory.join(' '), 'false true false true', 'skinnedScissorOff restores the per-bone held scissor after each window');
+  assert.equal(skinnedScissor, true);
   assert.deepEqual(forestRadiusHistory.map(([type, value]) => type + ':' + value).join(' '), 'input:15 input:30 input:15 input:30', 'nearForest halves the radius each round via input events and restores it');
   assert.equal(elements.get('settingCloudForestCullRadius').value, '30');
   assert.equal(corridorUpdates, 4, 'each change forces a corridor pass');

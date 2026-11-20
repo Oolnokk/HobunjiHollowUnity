@@ -14,6 +14,9 @@
 //                   pixel fill rate is the limit, not JavaScript
 //   nearForest      Cloud Forest only: vegetation cull radius halved (fewer
 //                   dense shadewood chunks — most of that zone's triangles)
+//   skinnedScissorOff
+//                   held/x-ray replays treat neck-rigged bodies as unboundable
+//                   again (the old full-screen fallback, reason skinned-mesh)
 //   mistOff / rainOff / cloudsOff
 //                   hide the Cloud Forest mist, rain/blizzard planes or sky
 //                   cloud layers while drawing (only offered when present)
@@ -281,6 +284,10 @@
     if (forestRadius && Number.isFinite(forestRadiusBefore) && forestRadiusBefore > 10 && activeScene?.getObjectByName?.('AuthoredCloudForestDenseChunk_0')) {
       const near = Math.max(5, Math.round(forestRadiusBefore / 2));
       variants.push({ id: 'nearForest', apply: () => setForestRadius(forestRadius, near), undo: () => setForestRadius(forestRadius, forestRadiusBefore) });
+    }
+    const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setSkinnedScissorEnabled === 'function' && heldOrder.snapshot?.().skinnedScissorEnabled !== false) {
+      variants.push({ id: 'skinnedScissorOff', apply: () => heldOrder.setSkinnedScissorEnabled(false), undo: () => heldOrder.setSkinnedScissorEnabled(true) });
     }
     const hideWhileDrawing = (id, groupName) => {
       const group = activeScene?.getObjectByName?.(groupName);

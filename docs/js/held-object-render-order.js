@@ -1861,11 +1861,102 @@
   // rectangle around those meshes leaves the rest of the framebuffer's base
   // depth untouched and stops the GPU re-rasterizing the whole world 3-5
   // extra times per frame while a tool is held. Anything that can't be
-  // bounded conservatively (skinned/instanced/morphed geometry, a corner
-  // behind the camera, a partial viewport) falls back to the old full-screen
-  // passes.
+  // bounded conservatively (instanced/morphed geometry, a corner behind the
+  // camera, a partial viewport) falls back to the old full-screen passes.
+  // Skinned meshes are bounded per bone (skinnedScissorBoxes below).
   const scissorBox = new THREE.Box3();
   const scissorCorner = new THREE.Vector3();
+  // Skinned bodies (neck-rigged portraits, wings, pet overlays). r128 skins a
+  // vertex p as bindMatrixInverse · Σ wᵢ·Bᵢ·bindMatrix·p with Σ wᵢ = 1: a convex
+  // combination of p moved rigidly by each bone that influences it. So the
+  // union of every bone's influenced-vertex box, moved by that bone, contains
+  // the drawn body, and so does the screen rectangle around those corners.
+  // Before this, any wet body portrait in the tint pass forced a full-screen
+  // replay of the whole world (device report: held=skinned-mesh, ~700 extra
+  // draws a frame). Both the bone matrices last uploaded to the GPU and the
+  // current bone.matrixWorld are included, so a skeleton not yet updated this
+  // frame is still covered. Weights summing below 1 pull vertices toward the
+  // mesh origin, which is added then; anything not provably bounded (weights
+  // above 1, out-of-range bone indices, morph targets, a per-draw hook that
+  // can re-pose it) keeps the full-screen fallback.
+  let skinnedScissorEnabled = true; // A/B switch: HeldObjectRenderOrder.setSkinnedScissorEnabled(false).
+  let skinnedScissorBounds = 0; // Lifetime count of skinned meshes bounded instead of forcing full screen (snapshot()).
+  const skinnedInfluenceCache = new WeakMap(); // geometry -> per-bone bind-space boxes, keyed by attribute versions.
+  const skinnedBoneMatrix = new THREE.Matrix4();
+  const skinnedChainMatrix = new THREE.Matrix4();
+  const skinnedOriginBox = new THREE.Box3();
+  function skinnedInfluenceBoxes(geometry, boneCount) {
+    const { position, skinIndex, skinWeight } = geometry.attributes || {};
+    if (!position || !skinIndex || !skinWeight || skinIndex.count < position.count || skinWeight.count < position.count) return { reason: 'skinned-missing-weights' };
+    const key = `${position.version}:${skinIndex.version}:${skinWeight.version}:${position.count}:${boneCount}`;
+    const cached = skinnedInfluenceCache.get(geometry);
+    if (cached?.key === key) return cached;
+    const boxes = new Map(); // bone index -> Box3 of the bind-pose vertices it moves.
+    let reason = null, belowOne = false;
+    for (let v = 0; v < position.count && !reason; v++) {
+      const x = position.getX(v), y = position.getY(v), z = position.getZ(v);
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = k === 0 ? skinWeight.getX(v) : k === 1 ? skinWeight.getY(v) : k === 2 ? skinWeight.getZ(v) : skinWeight.getW(v);
+        if (!(w > 0)) { if (w < 0 || Number.isNaN(w)) reason = 'skinned-weights-unbounded'; continue; }
+        sum += w;
+        const bone = k === 0 ? skinIndex.getX(v) : k === 1 ? skinIndex.getY(v) : k === 2 ? skinIndex.getZ(v) : skinIndex.getW(v);
+        if (!(bone >= 0 && bone < boneCount)) { reason = 'skinned-bone-index'; break; }
+        let box = boxes.get(bone);
+        if (!box) boxes.set(bone, box = new THREE.Box3());
+        box.expandByPoint(scissorCorner.set(x, y, z));
+      }
+      if (sum > 1 + 1e-4) reason = 'skinned-weights-unbounded';
+      else if (sum < 1 - 1e-4) belowOne = true;
+    }
+    const entry = { key, boxes, belowOne, reason };
+    skinnedInfluenceCache.set(geometry, entry);
+    return entry;
+  }
+  function hasPerDrawHook(mesh) {
+    const hook = mesh.onBeforeRender;
+    return typeof hook === 'function' && hook !== THREE.Object3D.prototype.onBeforeRender
+      && !(mesh.__hobunjiXrayBoundParity && mesh.__hobunjiXrayBoundParity.hook === hook);
+  }
+  // Calls include(box, matrix) for each bone box and its skin matrix under one
+  // model pose. Returns a failure reason, or null when every vertex is covered.
+  function forEachSkinnedBox(mesh, poseMatrix, include) {
+    const skeleton = mesh.skeleton, bones = skeleton?.bones;
+    if (!bones?.length || !mesh.bindMatrix || !mesh.bindMatrixInverse) return 'skinned-missing-skeleton';
+    if (hasPerDrawHook(mesh)) return 'skinned-draw-hook'; // e.g. shoulder-pet yaw re-poses the bones at draw time; parity adapters are bounded above.
+    const influence = skinnedInfluenceBoxes(mesh.geometry, bones.length);
+    if (influence.reason) return influence.reason;
+    const uploaded = skeleton.boneMatrices; // What the GPU drew with if the skeleton is not refreshed this frame.
+    let towardOrigin = influence.belowOne;
+    for (const [index, box] of influence.boxes) {
+      for (let source = 0; source < (uploaded?.length >= (index + 1) * 16 ? 2 : 1); source++) {
+        if (source === 0) {
+          const bone = bones[index];
+          if (bone) skinnedBoneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[index]);
+          else skinnedBoneMatrix.copy(skeleton.boneInverses[index]); // r128 uses identity for a missing bone.
+        } else {
+          const o = index * 16; // The shader skins with a vec4 and no divide: only affine or never-uploaded (all zero) matrices are boundable.
+          if (uploaded[o + 3] !== 0 || uploaded[o + 7] !== 0 || uploaded[o + 11] !== 0) return 'skinned-bone-matrix';
+          if (uploaded[o + 15] === 0) {
+            for (let e = 0; e < 16; e++) if (uploaded[o + e] !== 0) return 'skinned-bone-matrix';
+            towardOrigin = true; // A zero matrix drops that bone's share, pulling the vertex toward the mesh origin.
+            continue;
+          }
+          if (uploaded[o + 15] !== 1) return 'skinned-bone-matrix';
+          skinnedBoneMatrix.fromArray(uploaded, o);
+        }
+        skinnedChainMatrix.multiplyMatrices(poseMatrix, mesh.bindMatrixInverse).multiply(skinnedBoneMatrix).multiply(mesh.bindMatrix);
+        const m = skinnedChainMatrix.elements;
+        if (!Number.isFinite(m[0] + m[1] + m[2] + m[4] + m[5] + m[6] + m[8] + m[9] + m[10] + m[12] + m[13] + m[14])) return 'skinned-bone-matrix';
+        if (!include(box, skinnedChainMatrix)) return lastScissorFailureReason;
+      }
+    }
+    if (towardOrigin) {
+      skinnedOriginBox.min.set(0, 0, 0); skinnedOriginBox.max.set(0, 0, 0);
+      if (!include(skinnedOriginBox, poseMatrix)) return lastScissorFailureReason;
+    }
+    return null;
+  }
   const scissorRect = new THREE.Vector4();
   const elevationScissorRect = new THREE.Vector4(); // Temporary screen bounds for one actor elevation.
   const participantFrustum = new THREE.Frustum(); // Conservative game-camera bounds for source meshes.
@@ -1931,7 +2022,10 @@
     // draw even when matrixWorld currently projects outside this viewport.
     // It is unsafe to cull these meshes against the current matrix alone.
     const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
-    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+    // An identical snapshot is no alternate pose: the cull test against matrixWorld already covers that
+    // draw. Keeps every avatar portrait (they publish the contract too) cullable in the normal case.
+    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true
+      && !(object.matrixWorld && parity.visibleMatrixWorld.equals?.(object.matrixWorld));
   }
 
   // InstancedMeshes cannot normally leave a replay: r128 bounds them by their
@@ -2158,12 +2252,15 @@
     const near = Number(camera.near) || 0;
     function includeBounds(mesh) {
       const geometry = mesh?.geometry; // Used to project one held mesh or one visible child with a live enchantment emitter.
-      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
-        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
+      const skinned = !!mesh?.isSkinnedMesh && skinnedScissorEnabled; // Bounded per bone (forEachSkinnedBox).
+      if (!geometry || (mesh.isSkinnedMesh && !skinned) || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
+        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh && !skinned ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
         return false;
       }
-      if (!geometry.boundingBox) geometry.computeBoundingBox();
-      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      if (!skinned) {
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      }
       const parity = mesh.__hobunjiXrayBoundParity;
       const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.()
         ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
@@ -2171,19 +2268,26 @@
       // each tool, NPC hand and foot during every projected x-ray bounds test.
       for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
         const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
-        scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
-        const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
-        if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
-        const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
-        if (dungeonRise > 0) {
-          const lateral = .55;
-          scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
-          scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
-          scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
-        }
-        if (!includeBox(scissorBox)) return false;
+        if (skinned) {
+          const failure = forEachSkinnedBox(mesh, matrix, (box, skinMatrix) => includeLocalBox(mesh, box, skinMatrix));
+          if (failure) { lastScissorFailureReason = failure; return false; }
+        } else if (!includeLocalBox(mesh, geometry.boundingBox, matrix)) return false;
       }
+      if (skinned) skinnedScissorBounds++;
       return true;
+    }
+    function includeLocalBox(mesh, localBox, matrix) {
+      scissorBox.copy(localBox).applyMatrix4(matrix);
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
+      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
+      if (dungeonRise > 0) {
+        const lateral = .55;
+        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
+      }
+      return includeBox(scissorBox);
     }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
@@ -4029,7 +4133,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4118,6 +4222,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
+    setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },

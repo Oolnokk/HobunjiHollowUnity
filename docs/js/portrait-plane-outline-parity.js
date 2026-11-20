@@ -215,6 +215,25 @@
       lockedDepthDraws++;
     };
 
+    // Same bounded pose change as the hand/foot adapters: a depth-only redraw
+    // may use the last visible matrix instead of matrixWorld. Advertise both so
+    // the held replay scissor (held-object-render-order.js) can bound this
+    // portrait — skinned ones included — instead of redrawing the whole screen.
+    // Only when this is the first hook: unknown chains stay unbounded.
+    if (!previousBefore || previousBefore === THREE.Object3D?.prototype?.onBeforeRender) {
+      Object.defineProperty(mesh, '__hobunjiXrayBoundParity', {
+        configurable: true,
+        value: {
+          hook: mesh.onBeforeRender,
+          visibleMatrixWorld: state.visibleMatrixWorld,
+          isFresh: () => {
+            const age = performance.now() - state.visibleCapturedAt;
+            return age >= 0 && age <= MAX_SNAPSHOT_AGE_MS;
+          },
+        },
+      });
+    }
+
     mesh.onAfterRender = function portraitOutlineParityAfter(...args) {
       previousAfter?.apply(this, args);
       const restoreMatrix = state.restoreStack.pop();

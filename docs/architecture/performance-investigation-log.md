@@ -1,5 +1,25 @@
 # Performance investigation log
 
+## 20 Nov 2026: held replays no longer go full screen for the player's neck-rigged portrait
+
+The device reports showed `held=skinned-mesh` with one full-screen held replay a frame (~700
+extra draws). In the user's Cloud Forest save it was the player's own skinned portrait
+(`..._skinned_plane_assembly`), not a wet body: `replayScissorRect` refused every SkinnedMesh,
+so the held replay re-rasterised the whole world. It now bounds them per bone: r128 skins a
+vertex as a weighted average (weights summing to 1) of the vertex moved by each influencing
+bone, so the box of the vertices each bone moves, transformed by that bone, covers the body.
+Both the uploaded and the current bone matrices are used (a skeleton not refreshed this frame
+is still covered); weights below 1 add the mesh origin; weights above 1, bad bone indices,
+morph targets and unknown per-draw hooks keep the full-screen fallback. The portrait's
+outline-parity hook (freezes depth-only redraws to the last visible matrix) now publishes the
+same two-pose `__hobunjiXrayBoundParity` contract as the hand/foot adapters, so both poses are
+bounded. Headless, user's save, standing in three water spots, 960x600: held fullscreen reason
+`skinned-mesh` → `none`, fullscreen replays 1 → 0 a frame, draws 2,130–2,160 → 1,966–1,977
+(−164 to −183); frames with the fix on, off, and with all replay scissoring off are
+pixel-identical after a warm-up frame. `scripts/test-held-skinned-scissor-bounds.js` checks
+every vertex skinned the shader's way against real three r128 (CI regression-suite step).
+Benchmark variant `skinnedScissorOff` measures it on a device. Not yet measured on a device.
+
 ## 20 Nov 2026: statue footprints hold ruin debris
 
 Generator `statue` landmarks (blocking 1x1/1x2 tiles; 56 tiles in the user's Cloud Forest) had no
