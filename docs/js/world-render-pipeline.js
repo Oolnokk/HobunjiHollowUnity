@@ -428,6 +428,10 @@
   // furniture, cliff-door caves) draw as merged 8x8-tile batches.
   registerRenderScope({ id: 'zone-prop-batches', owner: 'zone-prop-render-batches.js', order: 200,
     suspend: ctx => window.ZonePropRenderBatches?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone }) });
+  // Procedural wilderness trees/bushes the corridor cull draws (and that are
+  // not fading) draw as one InstancedMesh per shared variant part.
+  registerRenderScope({ id: 'wilderness-tree-instancing', owner: 'wilderness-tree-instancer.js', order: 250,
+    suspend: ctx => window.WildernessTreeInstancer?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone }) });
   // Walkers have a floor-anchored root but skinned/limb children that disable
   // Three's own frustum culling: off-camera NPC visuals are suspended.
   registerRenderScope({ id: 'npc-view-cull', owner: 'npc-view-frustum-cull.js', order: 300,

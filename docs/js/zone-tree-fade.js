@@ -115,8 +115,14 @@
     return !!state?.applied && state.opacity === 0 && state.target === 0;
   }
 
+  // True while the tree draws with its own transparent fade clones
+  // (WildernessTreeInstancer leaves such trees out of its shared batches).
+  function hasFade(tree) {
+    return fadeByTree.get(tree)?.applied === true;
+  }
+
   window.ZoneTreeFade = {
-    init, setTarget, reset, forget, updateAnimation, isBetweenCameraAndPlayer2D, isFadedOut,
+    init, setTarget, reset, forget, updateAnimation, isBetweenCameraAndPlayer2D, isFadedOut, hasFade,
     snapshot: () => ({ animating: activeTrees.size }),
   };
 })();

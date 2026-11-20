@@ -239,6 +239,11 @@
     isChunkInView: (sphere, wasVisible) => corridorContains(sphere, wasVisible, cullBasis()),
     setTreeOutlineEnabled,
     setHideFadedOut: value => { hideFadedOut = value !== false; accum = 999; return hideFadedOut; }, // accum: re-evaluate on the next tick.
+    // The current zone's cullable trees/bushes/grass chunks (js/wilderness-tree-instancer.js batches the drawn trees).
+    currentCullables: () => {
+      const area = deps?.getCurrentArea?.();
+      return area && deps.isZoneArea(area) ? deps.getZoneScene(area)?.cullables || null : null;
+    },
     snapshot: () => ({ ...stats, hideFadedOut }),
   });
 })();

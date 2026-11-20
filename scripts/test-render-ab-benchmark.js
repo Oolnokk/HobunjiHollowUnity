@@ -70,6 +70,7 @@ const document = {
 };
 let skinnedScissor = true; const skinnedScissorHistory = [];
 let hideFadedOut = true; const hideFadedOutHistory = [];
+let treeInstancing = true; const treeInstancingHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
   __hobunjiGameRenderer: { getContext: () => ({
@@ -79,6 +80,7 @@ const window = {
   }) },
   HeldObjectRenderOrder: { snapshot: () => ({ scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3, skinnedScissorEnabled: skinnedScissor }),
     setSkinnedScissorEnabled(value) { skinnedScissor = value !== false; skinnedScissorHistory.push(skinnedScissor); return skinnedScissor; } },
+  WildernessTreeInstancer: { enabled: () => treeInstancing, setEnabled(value) { treeInstancing = value !== false; treeInstancingHistory.push(treeInstancing); return treeInstancing; } },
   ZoneVegetationCull: { snapshot: () => ({ hideFadedOut, lastCullables: 600 }),
     setHideFadedOut(value) { hideFadedOut = value !== false; hideFadedOutHistory.push(hideFadedOut); return hideFadedOut; } },
   PainterlyPostprocess: {
@@ -118,7 +120,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -135,7 +137,8 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'skinnedScissorOff', 'rainOff']);
+  assert.equal(treeInstancingHistory.join(' '), 'false true false true', 'treeInstancingOff restores instancing after each window');
   assert.equal(hideFadedOutHistory.join(' '), 'false true false true', 'fadedTreesDrawn restores the faded-out tree skip after each window');
   assert.equal(hideFadedOut, true);
   assert.equal(skinnedScissorHistory.join(' '), 'false true false true', 'skinnedScissorOff restores the per-bone held scissor after each window');

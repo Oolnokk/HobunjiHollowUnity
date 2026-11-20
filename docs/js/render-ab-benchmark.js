@@ -19,6 +19,9 @@
 //                   again (the old full-screen fallback, reason skinned-mesh)
 //   fadedTreesDrawn wilderness trees the corridor-edge fade has taken to
 //                   opacity 0 are drawn again (they only drew depth ghosts)
+//   treeInstancingOff
+//                   procedural wilderness trees draw one mesh at a time again
+//                   instead of as instanced batches per variant part
 //   mistOff / rainOff / cloudsOff
 //                   hide the Cloud Forest mist, rain/blizzard planes or sky
 //                   cloud layers while drawing (only offered when present)
@@ -291,6 +294,10 @@
     if (typeof vegetationCull?.setHideFadedOut === 'function' && vegetationCull.snapshot?.().hideFadedOut === true
         && vegetationCull.snapshot().lastCullables > 0) {
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
+    }
+    const treeInstancer = window.WildernessTreeInstancer;
+    if (typeof treeInstancer?.setEnabled === 'function' && treeInstancer.enabled?.() === true && vegetationCull?.snapshot?.().lastCullables > 0) {
+      variants.push({ id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
     if (typeof heldOrder?.setSkinnedScissorEnabled === 'function' && heldOrder.snapshot?.().skinnedScissorEnabled !== false) {

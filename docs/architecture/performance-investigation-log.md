@@ -18,9 +18,30 @@ ghost trunks in the far mist. A full camera turn in 45° steps hid 66-89 trees p
 left none hidden once it stopped being faded out. A/B: `ZoneVegetationCull.setHideFadedOut(false)`,
 benchmark variant `fadedTreesDrawn`. Not yet measured on a device.
 
-What remains per tree is real: ~60 visible trees x 3-4 meshes. Instancing would only reach the
-opaque ones (the partly faded ones need their own transparent materials); see the next entry if
-that was done.
+What remains per tree is real: ~60 visible trees x 3-4 meshes; the opaque ones are now instanced
+(next entry).
+
+## 20 Nov 2026: procedural wilderness trees drawn instanced
+
+Tree tiles are clones of a few cached FoliageGenerator variants, so every trunk/vine/leaf/climb
+branch mesh shares its variant's geometry, and while opaque its natural-surface material
+(NaturalSurfaceMaterials caches them; only a fading tree has its own transparent clone). The new
+render scope `wilderness-tree-instancing` (`js/wilderness-tree-instancer.js`, order 250) draws the
+trees the corridor cull draws, and that are not fading, as one InstancedMesh per (geometry,
+material, layers, renderOrder, shadow flags) for the frame only, restoring the originals after it.
+The layers key keeps the corridor's per-tree outline budget; fading trees, transparent or
+multi-material parts, draw hooks and lone meshes draw themselves. Batches carry InstancedMeshBounds
+tags (instanced view cull, held replay cull) and use the trees' own materials and last rendered
+matrices (uploaded only when membership or a matrix changes: 0 uploads over 60 still frames).
+Originals hidden for a frame are flagged `hobunjiDrawProxyHidden` so Perception Mode still masks
+them.
+
+Headless, user's save, 1175x545, four camera headings: 82-102 tree meshes in 12-16 batches,
+−60 to −157 draws a frame (main −37 to −108, shell −23 to −64) on top of the previous entry. Not
+bit-identical: 0.1-0.5% of pixels differ, as speckles where vines lie almost flush on bark
+(instanced and per-mesh transforms round differently, flipping a z-fight); no silhouette, outline
+or shape changes. A/B: `WildernessTreeInstancer.setEnabled(false)`, benchmark variant
+`treeInstancingOff`. Not yet measured on a device.
 
 ## 20 Nov 2026: held replays no longer go full screen for the player's neck-rigged portrait
 
