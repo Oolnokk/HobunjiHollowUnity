@@ -883,6 +883,7 @@
     const spec = SPECIES[kind];
     if (!spec) return 'none';
     const parts = [genotype?.base?.color || ''];
+    if (usesDrenkirraBodyStripesColorSwap(kind, genotype)) parts.push('bodystripes-body:' + genotype.bodystripes.color); // The swapped body color is visible even though the stripes use genotype.base.color.
     for (const id of spec.patterns) {
       const l = genotype?.[id];
       const tintColor = patternTintColor(kind, id, genotype); // Cache tracks Grehlr beard from base hue, never obsolete independently stored beard pigments.
