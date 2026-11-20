@@ -1414,18 +1414,22 @@
     const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
-    const splineLayout = skeleton.bones.length > 8; // Current skeleton: spline nodes 0-6, then head-turn (7) and head-scale (8). Legacy rigs: body 0, neck 1, head 2.
-    const neckBone = splineLayout ? 7 : 1, headBone = splineLayout ? 8 : 2;
+    const splineLayout = skeleton.bones.length > 8; // Seven spine bones, then optionally a separate nonrotating head-placement bone.
+    const splitOffset = !!rig.headOffsetJoint && skeleton.bones.length > 9; // New species-offset rig; older 2/9-bone landmark fixtures remain supported.
+    const offsetBone = splitOffset ? 7 : -1, neckBone = splitOffset ? 8 : splineLayout ? 7 : 1, headBone = splitOffset ? 9 : splineLayout ? 8 : 2;
     const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
-      ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0; // Match the rendered head-scale bone.
-    headWeight = Math.max(headWeight, headScaleWeight);
-    const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 }; // The two neighbouring spline nodes and the upper one's share; all on bone 0 for a legacy rig.
+      ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0; // Same horizontal head gate as GPU.
+    const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 }; // Reusable CPU scratch, keeping mobile shoulder-pet probes allocation-free.
     spline.a = 0; spline.b = 0; spline.wb = 0;
-    if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline); // Same shares the geometry was skinned with.
-    const bodyWeight = 1 - headWeight;
+    if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
+    const offsetWeight = splitOffset ? (headWeight > 0
+      ? 1 - headWeight : headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0; // Offset bone never receives neck rotation.
+    headWeight = splitOffset ? headWeight : Math.max(headWeight, headScaleWeight); // Legacy meshes retain their original two/three-bone projection.
+    const bodyWeight = 1 - headWeight - (splitOffset ? offsetWeight : 0);
     for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
-      const weight = i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
-        : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0); // Body / neck / head weights without a per-query array.
+      const weight = splitOffset && i === offsetBone ? offsetWeight
+        : i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
+          : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0); // Pixel probes reproduce whichever four GPU influences this vertex has.
       if (!weight) continue;
       if (skeleton.boneMatrices?.length >= (i + 1) * 16) {
         boneMatrix.fromArray(skeleton.boneMatrices, i * 16);
