@@ -212,7 +212,7 @@
   const LIVESTOCK_PATTERN_DEFS = {
     'gar-wolf': ['colorpoint', 'foxtail', 'mitts'],
     'dabinggi-hound': ['mitts', 'spectacles', 'stripes'],
-    grehlr: ['mitts', 'spectacles', 'coloredstripe'],
+    grehlr: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Beard is a normally inherited, independently colored fur overlay.
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
