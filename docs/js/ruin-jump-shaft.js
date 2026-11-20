@@ -322,7 +322,9 @@
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
       slab.userData.hobunjiGroundTopFacesOnly = true; // Only the walkable face participates in same-level x-ray.
-      slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone'; holder.add(slab); owned.push(slab);
+      slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone';
+      supportPillars?.stretchStoneFaces?.(slab);
+      holder.add(slab); owned.push(slab);
       // Kanthic slabs show the actual oil on hazardous tiles and bare stone on safe ones.
       // Hronal and Tothal use a top-facing trim so it is hidden from the floor below.
       if (trimMaterial) {
@@ -335,7 +337,7 @@
       DS.registerSurface({ id: scope + '-' + p.id, scope, topY: p.y, priority: 4,
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
-    const platformSupports = supportPillars?.mount?.(plan,{ THREE, parent: group, slabThickness: THICKNESS }); // Grounded authored pillar per slab, no new landing supports/blockers.
+    const platformSupports = supportPillars?.mount?.(plan,{ THREE, parent: group, slabThickness: THICKNESS, material: stone }); // Grounded authored pillar per slab, no new landing supports/blockers.
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
     const slabBlockerId=scope+'-platform-slabs'; // Reuses the ordinary forced-movement blocker registry and is removed on disposal.
     const footprintBlockers=root.AreaFootprintBlockers; // One shared authority for walking, dodging, lunging and creatures.
