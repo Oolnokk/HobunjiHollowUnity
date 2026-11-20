@@ -73,8 +73,9 @@
       baseRecolorHueTolerance: 15,
       baseRecolorMinSaturationRatio: 0.60,
       baseRecolorMinValue: 0.12,
+      patternRecolorKeys: { beard: { hex: '#99BF99', hueTolerance: 15, minSaturationRatio: 0.60, minValue: 0.12 } }, // Beard inherits its own tint without recoloring its black ink.
       base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
-      patterns: ['mitts', 'spectacles', 'coloredstripe'], // Match the inheritable Grehlr pattern definition, including its brighter-stripe palette.
+      patterns: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Beard overlays the other fur patterns; spectacles alone sit above it.
       eyes: { open: 'assets/creaturesprites/grehlr_eye.png', blink: 'assets/creaturesprites/grehlr_blink.png' },
     },
     drenkirra: {
@@ -107,7 +108,7 @@
         run1: 'assets/creaturesprites/nelk_run1.png',
         run2: 'assets/creaturesprites/nelk_run2.png',
       },
-      patterns: ['brushtail', 'cape', 'spectacles'],
+      patterns: ['cape', 'brushtail', 'spectacles'], // Tail overlays cape; the cape-aware brushtail source still resolves normally.
       eyes: { mode: 'cycle', variants: ['A','B','C','D'].map(id => `assets/creaturesprites/nelk_eye-${id}.png`),
         skinRecolorKey: { hex: '#A3C89F', hueTolerance: 20, minSaturationRatio: 0.45, minValue: 0.12 },
         skinColorPattern: 'spectacles' }, // Mint skin follows expressed spectacles, falling back to the base coat; iris and outlines remain untouched.
