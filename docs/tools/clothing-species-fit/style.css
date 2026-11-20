@@ -28,3 +28,15 @@ canvas{display:block;max-width:100%;max-height:80vh;image-rendering:pixelated;to
 .threeToolbar{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;margin-bottom:7px}
 .importStatus{white-space:pre-wrap;font-size:11px;color:var(--muted);background:#0c1218;border:1px solid var(--line);border-radius:8px;padding:7px}
 @media(max-width:820px){.grid{grid-template-columns:1fr}.shell{min-height:340px}.threeHost{height:360px}}
+
+/* Touch-friendly authoring tool choice: paint/erase/sample is always visible without devtools. */
+button[aria-pressed="true"]{outline:2px solid var(--blue);background:#163247}
+
+/* Whole-spline controls remain one line per transform on narrow mobile screens. */
+.headband-whole-controls{border-top:1px solid var(--line);margin:10px 0 9px;padding-top:9px;display:grid;gap:6px}
+.headband-whole-controls h2{margin-bottom:0}
+.headband-whole-field{display:grid;grid-template-columns:minmax(58px,1fr) minmax(90px,2fr) 75px;gap:6px;align-items:center}
+.headband-whole-field label{font-size:11px;color:var(--muted);font-weight:700}
+.headband-whole-field input[type=range]{width:100%;min-width:0}
+.headband-whole-field input[type=number]{width:100%;min-width:0;padding:6px;text-align:right;font-variant-numeric:tabular-nums}
+@media(max-width:400px){.headband-whole-field{grid-template-columns:66px minmax(65px,1fr) 63px;gap:4px}}

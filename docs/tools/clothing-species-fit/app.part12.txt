@@ -52,9 +52,10 @@ async function loadBehindPatchSource(id){
   canvas._paths=[descriptor.sourceUrl];
   return{descriptor,canvas};
 }
-function warpBehindPatchCanvas(sourceCanvas,fitState=null){
+function warpBehindPatchCanvas(sourceCanvas,fitState=null,bodyPatch=false){
   if(!sourceCanvas||!R.body)throw new Error('The clothing species-fit editor is not ready to deform a behind sprite yet.');
-  return warpGarment(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
+  if(bodyPatch)return warpGarment(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height); // Corrective body pixels intentionally skip garment contour fitting.
+  return warpClothing(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height,fitState?(fitRegion()==='headwear'?fitState.headband:fitState.contour):null); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
 }
 function setMainWorkflowPatch(sourceCanvas,meta={}){
   if(!sourceCanvas)throw new Error('Cannot route an empty patch source into the main workflow.');
@@ -100,14 +101,20 @@ window.ClothingSpeciesFitTool=Object.freeze({
   logMessage:message=>log(String(message||''))
 }); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
-E.modeBtns.forEach(b=>b.onclick=()=>{mode=b.dataset.mode;saveState();render()});
+E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
 E.reload.onclick=loadRepositoryData;
 E.fitRegion.onchange=()=>{
   ++R.garmentSelectionEpoch; // Region switches invalidate any deferred catalog auto-restoration.
   // Keep the last item selection for each region and never reuse body transforms for headwear.
   R.three.portraitCache.clear();
   R.assetGeneration++;
+  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
   rebuildGarmentSelector();
+  document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
+  document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
   document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
   document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
   const patchSection=document.getElementById('behindSpritePatchSection');
@@ -211,10 +218,18 @@ if(pinnedPreviewSha&&(!savedRepo||/^https:\/\/raw\.githubusercontent\.com\/Oolno
   E.repo.value=`https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/${pinnedPreviewSha}/docs/`;
 }else if(savedRepo)E.repo.value=savedRepo;
 if(A.settings?.gender)E.gender.value=A.settings.gender;
+if(A.settings?.headbandEditCurve==='source')E.headbandEditCurve.value='source';
+if(A.settings?.headbandView==='back')E.headbandView.value='back';
+E.headbandWholeDrag.checked=!!A.settings?.headbandWholeDrag; // Restore whole-curve touch preference without changing saved spline nodes.
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
+document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
+document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
-if(!['transform','body','fit','preview'].includes(mode))mode='transform';
+if(!['transform','body','fit','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
 window.addEventListener('hobunji-clothing-fit-three-ready',()=>{
   if(startOptionalThreePreview()&&R.body)scheduleThreePreview(0);
 }); // The CDN can load after the 2D editor has already initialized.

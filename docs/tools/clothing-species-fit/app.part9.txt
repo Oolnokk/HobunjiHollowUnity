@@ -53,9 +53,12 @@ async function updateThreePreview(){
 
     const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
-    if(fitRegion()==='headwear'&&avatar.headOnlyFront&&!R.headReference?._canonical){
-      const reference=canonicalHeadReference(avatar.headOnlyFront);
-      if(reference){R.headReference=reference;render(false)}
+    if(fitRegion()==='headwear'){
+      if(avatar.headOnlyFront&&!R.headReference?._canonical)R.headReference=canonicalHeadReference(avatar.headOnlyFront);
+      if(avatar.headOnlyBack)R.headReferenceBack=canonicalHeadReference(avatar.headOnlyBack); // Actual behind portrait, never a mirrored front head.
+      if(avatar.back)R.backplaneReference=projectRuntimeFrontToFittingCanvas(avatar.back); // Optional full-body guide uses the game's bare rear portrait.
+      syncHeadbandControls(); // Clear the mobile "backplane pending" message once the canonical rear head is ready.
+      render(false);
     }
     const THREE=window.THREE;
     disposeRuntimeRig();
@@ -127,11 +130,14 @@ async function updateThreePreview(){
     // a differently tinted, layered character from raw PNGs.
     R.three.matchedFront2D={
       canvas:projectRuntimeFrontToFittingCanvas(avatar.frontComposed),
-      buildGeneration:buildId,
-      assetGeneration:R.assetGeneration,
-      species:E.species.value,
-      gender:E.gender.value
+      buildGeneration:buildId,assetGeneration:R.assetGeneration,
+      species:E.species.value,gender:E.gender.value
     };
+    R.three.matchedBack2D=avatar.backComposed?{
+      canvas:projectRuntimeFrontToFittingCanvas(avatar.backComposed),
+      buildGeneration:buildId,assetGeneration:R.assetGeneration,
+      species:E.species.value,gender:E.gender.value
+    }:null; // Both directions compare against exact game output.
     render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
     const garmentParity=avatar.canonicalGarmentPreview?'canonical game clothing renderer'
       :R.patchWorkflow.active?'custom patch overlay (approximate garment layering)'
@@ -144,7 +150,7 @@ async function updateThreePreview(){
     try{if(pendingAvatarModel)window.PNGPlaneAvatar?.disposeAvatarModel?.(pendingAvatarModel)}catch{}
     if(pendingRigGroup)disposeObjectTree(pendingRigGroup);
     disposeRuntimeRig(); // Never leave the last successful character visible after a failed new garment build.
-    R.three.matchedFront2D=null;
+    R.three.matchedFront2D=null;R.three.matchedBack2D=null;
     render(false); // Repaint the raw 2D fallback without triggering another failed 3D attempt.
     console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;
     if(E.match3D.checked)E.match3DStatus.textContent='Game-matched portrait unavailable; showing raw artwork. '+error.message;
@@ -159,15 +165,16 @@ function render(scheduleRig=true){
   if(!R.body)return;
   if(scheduleRig!==false){
     R.three.buildGeneration++; // Invalidate any in-flight portrait before an edit changes its visual inputs; avoids reinstalling an older wearer/garment during the debounce.
-    R.three.matchedFront2D=null;
+    R.three.matchedFront2D=null;R.three.matchedBack2D=null;
   }
   sizeStage();C.setTransform(1,0,0,1,0,0);C.clearRect(0,0,E.stage.width,E.stage.height);C.imageSmoothingEnabled=false;
-  const matched=E.match3D.checked&&E.showBody.checked&&
-    R.three.matchedFront2D?.buildGeneration===R.three.buildGeneration&&
-    R.three.matchedFront2D?.assetGeneration===R.assetGeneration&&
-    R.three.matchedFront2D?.species===E.species.value&&
-    R.three.matchedFront2D?.gender===E.gender.value
-    ?R.three.matchedFront2D.canvas:null; // The exact front texture used by the currently displayed 3D rig, inverse-mapped to the fit grid.
+  const rearView=fitRegion()==='headwear'&&headbandView()==='back';
+  const matchedCandidate=rearView?R.three.matchedBack2D:R.three.matchedFront2D;
+  const matched=mode!=='protect'&&mode!=='headband'&&mode!=='rear-paint'&&E.match3D.checked&&E.showBody.checked&&
+    matchedCandidate?.buildGeneration===R.three.buildGeneration&&
+    matchedCandidate?.assetGeneration===R.assetGeneration&&
+    matchedCandidate?.species===E.species.value&&
+    matchedCandidate?.gender===E.gender.value?matchedCandidate.canvas:null;
   E.match3DStatus.textContent=!E.match3D.checked
     ?'Raw sprite artwork (game tinting and head depth disabled in 2D).'
     :!E.showBody.checked
@@ -176,11 +183,23 @@ function render(scheduleRig=true){
         ?(R.extendedSource&&E.showExtended3D?.checked
           ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
           :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
-        :'Rendering game-matched front portrait; showing raw art until the rig is ready…';
+        :'Rendering game-matched '+(rearView?'backplane':'front')+' portrait; showing raw art until the rig is ready…';
   if(matched){
     C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
     R.warped=null;
   }else if(fitRegion()==='headwear'){
+    if(rearView){
+      const reference=E.headbandRearFullPlane?.checked?R.backplaneReference:R.headReferenceBack;
+      if(E.showBody.checked&&reference)C.drawImage(reference,0,0); // Actual game rear head; never mirror front artwork.
+      const rear=mode==='rear-paint'?R.headbandRearCanvas:(mode!=='body'?headwearWarpForView('back'):null);
+      const display=mode==='rear-paint'?rear:rear?flipCanvasX(rear):null;
+      if(display&&E.showGarment.checked){C.save();C.globalAlpha=+E.opacity.value;C.drawImage(display,0,0);C.restore()}
+      if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
+        const existing=R.authoredTargetCloth._behindView||R.authoredTargetCloth._front;
+        if(existing){C.save();C.globalAlpha=+E.authoredOpacity.value;C.drawImage(flipCanvasX(existing),0,0);C.restore()}
+      }
+      R.warped=null;
+    }else{
     const warpedBack=mode!=='body'?headwearWarpForView('under'):null;
     const warpedFront=mode!=='body'?headwearWarpForView('front'):null;
     if(warpedBack&&E.showGarment.checked){C.globalAlpha=+E.opacity.value;C.drawImage(warpedBack,0,0);C.globalAlpha=1}
@@ -194,10 +213,11 @@ function render(scheduleRig=true){
       if(R.authoredTargetCloth._front)C.drawImage(R.authoredTargetCloth._front,0,0);
       C.restore();
     }
+    }
   }else{
     if(E.showBody.checked)C.drawImage(R.body,0,0);
-    if(mode==='transform'||mode==='fit'||mode==='preview'){
-      R.warped=currentWarp();
+    if(mode==='transform'||mode==='fit'||mode==='preview'||mode==='protect'){
+      R.warped=mode==='protect'&&contourStroke&&R.warped?R.warped:currentWarp(); // Painting keeps the existing cloth raster until release; only the magenta mask overlay updates.
       const showRoutedSource=routedPatchIsBody()?E.showBody.checked:E.showGarment.checked;
       if(R.warped&&showRoutedSource){
         C.save();C.globalAlpha=routedPatchIsBody()?1:+E.opacity.value;C.drawImage(R.warped,0,0);C.restore();
@@ -209,7 +229,9 @@ function render(scheduleRig=true){
     }
   }
 
-  if(E.showMeshes.checked){
+  if(fitRegion()==='body'&&(mode==='protect'||(R.cloth&&R.sourceTorso&&R.targetTorso&&currentContourRecord().enabled)))paintContourOverlay(C);
+  if(mode==='headband'&&fitRegion()==='headwear')drawHeadbandOverlay(C);
+  if(E.showMeshes.checked&&mode!=='protect'&&mode!=='headband'&&mode!=='rear-paint'){
     drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed normalized starting-species source.
     drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
     if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
@@ -220,6 +242,12 @@ function render(scheduleRig=true){
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
       :mode==='body'
         ?`Grid only • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
+        :mode==='headband'
+          ?`7-point band spline • ${garmentRecord()?.label||''} • ${E.headbandEditCurve.value==='source'?'mapping original':'shaping fitted arc'}`
+        :mode==='rear-paint'
+          ?`Paint rear sprite • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
+        :mode==='protect'
+          ?`Paint protected pixels • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
         :mode==='fit'
           ?`Species Fit • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
           :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
@@ -232,6 +260,12 @@ function refreshHelp(){
       ?'First fit overall size and position: independent Scale X / Scale Y plus translation. Drag the canvas to translate quickly.'
       :mode==='body'
         ?'Edit only the local target 6×6 corrections without clothing.'
+        :mode==='headband'
+          ?'Drag the seven numbered points. Select Original to map the donor headband or Target to reshape its fitted curve; edits stay local until you lift your finger.'
+        :mode==='rear-paint'
+          ?'Draw or erase rear sprite pixels against the actual game backplane. The exported PNG is automatically mirrored for the game.'
+        :mode==='protect'
+          ?'Use your finger or mouse to paint the magenta protected pixels; transparent collar holes are included. Painted pixels remain stationary during automatic torso contour fit. Brush controls are in the left panel.'
         :mode==='fit'
           ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
           :'Switch garments to verify the same saved global transform and local corrections are reused.');

@@ -38,6 +38,10 @@
     return output.join('');
   }
   try{
+    const spline=await fetchPart('headband-spline-fit.js'); // Load sprite-only spline math before the core editor.
+    (0,eval)(spline);
+    const contour=await fetchPart('contour-fit.js'); // Pure pixel fitter loads before the editor, independently of the optional 3D renderer.
+    (0,eval)(contour);
     const core=await fetchParts('app.part',12,'clothing fit editor');
     (0,eval)(core); // The 2D tool initializes immediately, independently of Three.js and patch author.
     const behind=await fetchParts('behind.part',5,'behind-sprite extension');
