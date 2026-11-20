@@ -60,6 +60,8 @@ for(const id of ['view3d','gizmoTranslate','gizmoRotate','autoMask','undoMask','
   assert(editor.includes('id="'+id+'"'),'editor must expose '+id+' for touch and mouse authoring');
 assert(editor.includes("Rig.maskFromOverlap(sprite,head"),'auto mask uses actual cosmetic/head alpha overlap rather than seam-length heuristics');
 assert(editor.includes("rig.points[1].u=clamp(value+.5"),'3D arrows edit the single tip');
+assert(editor.includes("rig.points[1].depth=clamp(value,-.35,.35)"),
+  '3D Z arrow must permit the beard to pass behind the owner rather than clamp every point forward');
 assert(editor.includes("rig.bone[rotationKey]=clamp(value,0,65)"),'rotation rings edit one bone');
 for(const id of ['maskSelect','overlapMode','boneYaw','bonePitch','boneRoll','hoodStretchPx','windX','windY','windZ'])
   assert(editor.includes('id="'+id+'"'),'bone editor exposes '+id);
@@ -82,6 +84,12 @@ assert(runtime.includes('pairOwnerDepthOrder(mesh, ownerPortrait)')
   'game beard cannot be overlaid late or depth-write-disabled relative to its owner');
 assert(!runtime.includes('mesh.renderOrder = 4;'),
   'beard no longer uses a forced, late x-ray-style render order');
+assert(runtime.includes('hoodRayStep > 0.00001') && runtime.includes('splineEye - splineHoodPosition'),
+  'hood must intersect the physical camera ray and discard only when cloth is nearer');
+assert(runtime.includes('const behindHood = covered && !overlap'),
+  'unmarked beard under opaque hood cloth changes 3D depth instead of using fake x-ray visibility');
+assert(viewer.includes('hoodFit?.coverage?.[pixel]'),
+  '3D author uses the same signed hood geometry as gameplay');
 assert(viewer.includes("cfg.threeModuleUrl") && viewer.includes("cfg.orbitControlsModuleUrl"),'viewer reuses the pinned game Three.js modules');
 assert(viewer.includes("window.HobunjiSpritePngSurface") && viewer.includes("spriteSurface.makeCanvasTexture") && viewer.includes("spriteSurface.makeMaterial"),
   '3D appearance reuses the canonical PNG-plane texture and material API used by Pants Rig Author');
