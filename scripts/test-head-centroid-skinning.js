@@ -38,10 +38,11 @@ const context = vm.createContext({ pixelPositionScratch: null, // Extracted prod
 });
 vm.runInContext(extract(avatarSource, 'neckBlendBand'), context);
 vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
+vm.runInContext(extract(avatarSource, 'headOffsetWeightAt'), context);
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
 vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
-  neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, // The outline/parity adapter reads the same small neck band as gameplay.
+  neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 vm.runInContext(extract(paritySource, 'resolvePosition'), context);
@@ -107,4 +108,37 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   near(resolve(root, { x: 90, y: 80 }).y, -.3, 'a pixel at the posterior stays on the pinned node 0');
   near(resolve(splineFixture([0, 0, 0, 0, 0, 0, 0]), { x: 90, y: 46.5 }).y, .035, 'an upright skeleton leaves the pixel where it was');
 }
-console.log('head centroid skinning regression passed');
+// The production 10-bone rig adds a nonrotating placement bone (index 7) before
+// the neck-turn (8) and head scale (9). Both pixel resolvers must reproduce those
+// weights; a shoulder pet cannot suddenly jump when an NPC has a head Y offset.
+function offsetFixture(offset) {
+  const raw = new Matrix4(1, 0);
+  const placed = new Matrix4(1, offset);
+  const matrices = Array.from({ length: 10 }, (_, i) => i >= 7 ? placed : raw);
+  const skeleton = {
+    bones: matrices.map(matrixWorld => ({ matrixWorld })),
+    boneInverses: matrices.map(() => new Matrix4()),
+    boneMatrices: matrices.flatMap(m => { const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a; }),
+    update() {},
+  };
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+    bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+    updateMatrixWorld() {}, localToWorld(v) { return v; } };
+  return { updateMatrixWorld() {}, userData: {
+    sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
+    neckRig: { available: true, skinnedPlane, headOffsetJoint: {}, headScaleJoint: {}, neckLocal: { y: .2 },
+      spineBase: { y: .1 }, spinePosteriorY: -.3, headBoundsPx: { left: 40, right: 60 } },
+  } };
+}
+for (const placement of [-.095, .12]) {
+  const root = offsetFixture(placement);
+  const samples = [{ x: 50, y: 25 }, { x: 50, y: 30.5 }, { x: 50, y: 35 }, { x: 50, y: 50 }, { x: 50, y: 80 }];
+  for (const pixel of samples) {
+    const y = .5 - pixel.y / 100;
+    const translationWeight = y > .2 - .012 ? 1 : context.headOffsetWeightAt(y, .2, 1, .012);
+    const expected = y + placement * translationWeight;
+    for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition])
+      near(resolve(root, pixel).y, expected, 'runtime and x-ray CPU skinning match ten-bone offset-only placement');
+  }
+}
+console.log('head centroid skinning regression passed, including ten-bone offset parity');
