@@ -72,6 +72,12 @@ cullables = [...trees, grass];
 scene.updateMatrixWorld(true);
 
 const holderOf = s => s.children.find(c => c.name === 'wilderness_tree_instances');
+
+// Off by default (a net loss on the user's device); nothing happens until opted in.
+assert.equal(I.enabled(), false, 'off by default');
+assert.equal(I.suspendForRender(scene, { isZone: true }), null);
+assert.equal(I.setEnabled(true), true);
+assert.equal(storage.get(I.STORAGE_KEY), undefined, 'a plain toggle (benchmark windows) is not persisted');
 const batches = s => holderOf(s).children.filter(m => m.visible);
 
 // Not a zone / disabled / nothing to do: no scope.
@@ -170,8 +176,8 @@ restore();
 const other = new THREE.Scene();
 I.suspendForRender(other, { isZone: true });
 assert.equal(holderOf(scene), undefined, 'previous scene\'s holder removed');
-assert.equal(I.setEnabled(false), false);
-assert.equal(storage.get(I.STORAGE_KEY), 'off');
+assert.equal(I.setEnabled(false, { persist: true }), false);
+assert.equal(storage.get(I.STORAGE_KEY), '0', 'an explicit choice is persisted');
 assert.equal(I.suspendForRender(scene, { isZone: true }), null);
 I.setEnabled(true);
 
