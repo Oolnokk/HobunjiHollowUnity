@@ -57,6 +57,18 @@ assert.deepEqual(Array.from(grehlrSpec.patterns), ['mitts', 'coloredstripe', 'be
   'Grehlr beard must draw over other patterns, but under spectacles');
 assert.equal(grehlrSpec.patternRecolorKeys.beard.hex, '#99BF99',
   'Grehlr beard tint selects only green fur and preserves its black ink');
+assert.deepEqual(Array.from(grehlrSpec.baseColorPatterns), ['beard'],
+  'Grehlr beard is an inherited visibility trait that uses its body coat pigment');
+const grehlrLegacyColor = { base: { color: '#A47650' }, beard: { color: '#334455', copies: 1, enabled: true }, mitts: { color: '#889977', copies: 1, enabled: true } }; // Deliberately conflicting saved beard dye checks live tint selection.
+assert.equal(render.patternTintColor('grehlr', 'beard', grehlrLegacyColor), grehlrLegacyColor.base.color);
+assert.equal(render.patternTintColor('grehlr', 'mitts', grehlrLegacyColor), grehlrLegacyColor.mitts.color);
+assert.equal(render.patternTintColor('grehlr', 'beard', { ...grehlrLegacyColor, beard: { copies: 1, enabled: true } }), grehlrLegacyColor.base.color,
+  'Missing or legacy beard pigment cannot suppress base-colored beard fur');
+assert.equal(render.genotypeSignature('grehlr', grehlrLegacyColor),
+  render.genotypeSignature('grehlr', { ...grehlrLegacyColor, beard: { ...grehlrLegacyColor.beard, color: '#FF0000' } }),
+  'Changing only the obsolete beard dye does not make a distinct render cache key');
+assert.match(read('docs/js/creature-genetics-render.js'), /paintRegionId = patternUsesBaseCoat \? 'base' : patternId/,
+  'Color Pools paint on Grehlr beard must follow the base rather than a second independent dye');
 assert.deepEqual(Array.from(render.SPECIES.nelk.patterns), ['cape', 'brushtail', 'spectacles'],
   'Nelk brushtail must layer above cape, including the cape-aware brushtail variant');
 for (const frame of ['idle', 'run1', 'run2']) {
@@ -279,8 +291,26 @@ assert.equal(genetics.normalizeLegacyGenotype('uumkaoii', former).shell.color, '
 assert.equal(genetics.genotypeTraits('uumkaoii', former).patterns.length, 1);
 assert.equal(genetics.crossOffspring(former, former, 'uumkaoii', 0).shell.enabled, true);
 assert.equal(genetics.makeDefaultGenotype('nelk').base != null, true);
-assert.equal(genetics.makeDefaultGenotype('grehlr').beard != null, true,
-  'Fresh and bred Grehlr genotypes must include the independently inheritable beard locus');
+const grehlrFresh = genetics.makeDefaultGenotype('grehlr'); // Used to check fresh Grehlr beard presence and hue are independent concerns.
+assert(grehlrFresh.beard, 'Grehlr still inherits the optional beard locus');
+assert.equal(grehlrFresh.beard.color, grehlrFresh.base.color,
+  'New Grehlr beard genes derive color from the primary coat, whether or not expressed');
+const grehlrGift = genetics.makeRareGiftGenotype('grehlr', 3); // Rare-gift base recoloring must propagate to beard pigment.
+assert.equal(grehlrGift.beard.color, grehlrGift.base.color);
+const grehlrChild = genetics.crossOffspring(
+  { base: { color: '#AABBCC' }, beard: { color: '#000000', copies: 2, enabled: true, inheritance: 'dominant' } },
+  { base: { color: '#445566' }, beard: { color: '#FFFFFF', copies: 2, enabled: true, inheritance: 'dominant' } },
+  'grehlr', 0); // Two parents with mismatched old beard pigments must produce an offspring with the blended base color.
+assert.equal(grehlrChild.beard.enabled, true);
+assert.equal(grehlrChild.beard.copies, 2);
+assert.equal(grehlrChild.beard.color, grehlrChild.base.color);
+const grehlrNormalized = genetics.normalizeLegacyGenotype('grehlr', grehlrLegacyColor); // Legacy saved pigment should be displayed consistently, without mutating its original data.
+assert.equal(grehlrNormalized.beard.color, grehlrLegacyColor.base.color);
+assert.equal(grehlrLegacyColor.beard.color, '#334455');
+assert.equal(genetics.genotypeTraits('grehlr', grehlrLegacyColor).patterns.find(p => p.id === 'beard').color,
+  grehlrLegacyColor.base.color, 'Farm/Stable trait color chips must match actual beard tint');
+assert.equal(genetics.sellValueFor({ base: grehlrLegacyColor.base, beard: grehlrLegacyColor.beard }, 'grehlr').contrastScore, 0,
+  'Beard alone has no base-versus-pattern color contrast bonus');
 assert.deepEqual(Array.from(genetics.PATTERN_DEFS.grehlr), Array.from(render.SPECIES.grehlr.patterns),
   'Grehlr authoring/breeding and rendering must agree on which pattern overlays are on top');
 assert.deepEqual(Array.from(genetics.PATTERN_DEFS.nelk), Array.from(render.SPECIES.nelk.patterns),
