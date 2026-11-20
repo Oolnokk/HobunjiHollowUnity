@@ -281,8 +281,10 @@
     const resolutionBefore = resolution?.value ?? null;
     const variants = [
       { id: 'default', apply() {}, undo() {} },
-      { id: 'frameScopeOff', apply: () => hooks.setFrameScopeEnabled(false), undo: () => hooks.setFrameScopeEnabled(true) },
     ];
+    if (hooks.getDebug?.()?.frameScopeEnabled !== false) { // Settings can turn it off; never switch it back on behind the user's choice.
+      variants.push({ id: 'frameScopeOff', apply: () => hooks.setFrameScopeEnabled(false), undo: () => hooks.setFrameScopeEnabled(true) });
+    }
     if (typeof debug?.setOutlines === 'function' && outlinesBefore === true) {
       variants.push({ id: 'outlinesOff', apply: () => debug.setOutlines(false), undo: () => debug.setOutlines(true) });
     }

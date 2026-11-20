@@ -191,7 +191,12 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | 600 | `wilderness-distance-cull` | wilderness-distance-cull.js | far static wilderness geometry hidden |
 
 Add a new draw-only cull or batch by registering a scope from its own module,
-not by editing `renderFrame`. A scope that hides meshes another pass masks by
+not by editing `renderFrame`. Every render optimisation switch (these scopes'
+`setEnabled`, the held/x-ray replay A/B setters, frame-scoped hooks, tree
+instancing, faceted rocks, rain/cloud draw hiders) has a persisted toggle in
+Settings → Render optimizations (perf testing), owned by
+`js/render-optimization-settings.js` (dev-only; last script of the render
+group). When you add a switch, add its row to that module's `TOGGLES` list. A scope that hides meshes another pass masks by
 name should flag them `userData.hobunjiDrawProxyHidden` while hidden: Perception
 Mode then still draws them into its glow mask (the tree instancer does). Prop batching groups by `material.id`: share one
 material between identical props (as `wild-berries.js` now does per colour) or
