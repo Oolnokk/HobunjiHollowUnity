@@ -463,6 +463,7 @@
     defaultGaitProfile: DEFAULT_GAIT_PROFILE,
     defaultSpineProfile: DEFAULT_SPINE_PROFILE,
     tuningStorageKey: TUNING_STORAGE_KEY,
+    authorStorageKey: AUTHOR_STORAGE_KEY, // Allows the in-game mobile debug panel to inspect active authoring generation.
     tuningSnapshot,
     applyTuning,
     persistTuning,
@@ -483,6 +484,8 @@
       spineProfile: { ...SPINE_PROFILE },
       populationWeights: { ...POPULATION_WEIGHTS },
       tuningStorageKey: TUNING_STORAGE_KEY,
+      authorStorageKey: AUTHOR_STORAGE_KEY,
+      ignoredLegacyStorageKeys: ['hobunjiLongoranSpeciesTuning.v1', 'hobunjiLongoranAuthorTuning.v1'], // Current generation deliberately ignores previously authored Longoran values.
       latestChange: 'Approved 7%/100% Longoran spine and right-leg Maskbound lurch are canonical for both genders; legacy v1 overrides are ignored, while fresh v2 authoring persists.',
     }),
   });
