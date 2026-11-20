@@ -1,0 +1,59 @@
+name: Author rear headband and flower crown sprites
+on:
+  push:
+    branches: [assets/headband-crown-rear-flips-20261120]
+    paths:
+      - scripts/author_headwear_backs.py
+      - .github/workflows/author-headwear-backs.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/author_headwear_backs.py
+      - .github/workflows/author-headwear-backs.yml
+      - docs/assets/cosmetics/clothes/hat/*_behind*.png
+      - docs/config/cosmetics/basic_headband.json
+      - docs/config/cosmetics/leather_headband.json
+      - docs/config/cosmetics/five_blossom_crown.json
+      - docs/config/cosmetics/clothes/hat/tangedcirclet.json
+      - docs/config/scratchbones-config.js
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pixel art renderer
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Author and validate dual-flipped rear PNGs
+        run: |
+          python scripts/author_headwear_backs.py --root . --out "${RUNNER_TEMP}/headwear_behind_install.zip"
+          unzip -t "${RUNNER_TEMP}/headwear_behind_install.zip"
+      - name: Install generated assets and cosmetic references on feature branch
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          mkdir -p "${RUNNER_TEMP}/generated"
+          unzip -oq "${RUNNER_TEMP}/headwear_behind_install.zip" -d "${RUNNER_TEMP}/generated"
+          cp -a "${RUNNER_TEMP}/generated/docs/." docs/
+          git add docs/assets/cosmetics/clothes/hat/ docs/config/cosmetics/ docs/config/scratchbones-config.js
+          if git diff --cached --quiet; then
+            echo "Generated sprites and cosmetic JSON already match this branch."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Author dual-flipped rear headwear sprites and link metal-tinted circlet backs"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+      - name: Attach installable asset ZIP and visual preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: headband-flowercrown-rear-install
+          path: ${{ runner.temp }}/headwear_behind_install.zip
+          if-no-files-found: error
+          retention-days: 30
