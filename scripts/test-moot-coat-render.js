@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const WIDTH = 5; // Five independent sampled regions: overcoat, tooth, hoof, outline, and mitt.
+const WIDTH = 6; // Five real animal samples plus one outside-silhouette black background pixel.
 const HEIGHT = 1; // A tiny transparent RGBA canvas keeps this browser-free test cheap.
 const COAT = [0x9C, 0xBD, 0x9E]; // Exact native Moot coat pigment, used by keyed recoloring.
 const TOOTH = [0xE4, 0xDD, 0xCB]; // Neutral ivory inside the opaque overcoat sprite.
@@ -20,6 +20,7 @@ function pixelsFor(url) {
   const data = new Uint8ClampedArray(WIDTH * HEIGHT * 4); // Transparent unless the requested authored artwork covers this region.
   if (/moot_overcoat_idle/.test(url)) {
     for (let x = 0; x < 4; x++) data.set([...regions[x], 255], x * 4);
+    data.set([...INK, 255], 20); // Authored black overcoat padding outside the actual body must never become a halo.
   } else if (/moot_mitts_idle/.test(url)) {
     data.set([...COAT, 255], 16);
   } else if (/moot_idle/.test(url)) {
@@ -30,10 +31,13 @@ function pixelsFor(url) {
 class Canvas {
   constructor() { this.width = WIDTH; this.height = HEIGHT; this.pixels = new Uint8ClampedArray(WIDTH * HEIGHT * 4); }
   getContext() {
-    return {
+    const context = { // A minimal 2D context supporting the source-atop silhouette clip used by the real compositor.
+      globalCompositeOperation: 'source-over',
       drawImage: src => {
         for (let i = 0; i < src.pixels.length; i += 4) {
-          if (src.pixels[i + 3] === 255) this.pixels.set(src.pixels.slice(i, i + 4), i);
+          if (src.pixels[i + 3] !== 255) continue;
+          if (context.globalCompositeOperation === 'source-atop' && !this.pixels[i + 3]) continue;
+          this.pixels.set(src.pixels.slice(i, i + 4), i);
         }
       },
       getImageData: () => ({ data: new Uint8ClampedArray(this.pixels) }),
@@ -69,6 +73,7 @@ assert.equal(W.MootRegistration.ensureRendererSpecies(), true);
   assert.deepEqual(rgb(first, 1), TOOTH, 'ivory tooth in overcoat source must stay ivory');
   assert.deepEqual(rgb(first, 2), HOOF, 'grey hoof in overcoat source must stay grey');
   assert.deepEqual(rgb(first, 3), INK, 'near-black artist outline in overcoat source must stay intact');
+  assert.equal(first.pixels[5 * 4 + 3], 0, 'black overcoat pixels outside the animal silhouette must remain transparent');
   assert(rgb(first, 4)[0] > rgb(first, 4)[2], 'mitt takes its own warm color over the base coat');
   const firstPixels = Array.from(first.pixels); // Used to prove cached repeated compositions return identical pixels.
   const second = await W.CreatureGeneticsRender.composeFrame('moot', 'idle', genotype);
@@ -77,5 +82,5 @@ assert.equal(W.MootRegistration.ensureRendererSpecies(), true);
     'assets/creaturesprites/patterns/moot_overcoat_run2.png');
   assert.equal(W.CreatureGeneticsRender.patternUrl('moot', 'mitts', 'run1'),
     'assets/creaturesprites/patterns/moot_mitts_run1.png');
-  console.log('PASS Moot overcoat keyed tint preserves teeth, hooves and ink while independent mitts overlay correctly');
+  console.log('PASS Moot overcoat selective tint, silhouette clipping, and independently colored mitts');
 })().catch(err => { console.error(err); process.exitCode = 1; });
