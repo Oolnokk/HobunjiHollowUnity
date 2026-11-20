@@ -621,7 +621,7 @@ function applyPreviewNeckWeights() {
       const y = positions.getY(index);
       const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckRig.neckLocal.y, radius);
       const oldOffsetOnly = baseline && [0, 1, 2, 3].some(slot =>
-        baseline.indices[index * 4 + slot] === 8 && baseline.weights[index * 4 + slot] > 0); // Detect vertices that previously belonged to the native narrow rotation band.
+        (baseline.indices[index * 4 + slot] === 8 || baseline.indices[index * 4 + slot] === 9) && baseline.weights[index * 4 + slot] > 0); // Detect vertices that previously belonged to the native narrow rotation band.
       if (turnWeight <= 0 && !oldOffsetOnly) continue; // Preserve original spline and head-height placement below the edited transition.
       const pixelX = (positions.getX(index) / modelWidth + .5) * sourceWidth; // Same horizontal head-scale gate as the runtime portrait.
       const scaleWeight = window.PNGPlaneAvatar.headScaleWeightAt(
