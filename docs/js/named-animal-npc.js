@@ -114,6 +114,9 @@
       if (!color || !genotype[layerId] || typeof genotype[layerId] !== 'object') continue;
       genotype[layerId].color = color;
     }
+    if (creatureKindForProfile(profile, options) === 'grehlr' && genotype.beard && genotype.base?.color) {
+      genotype.beard.color = genotype.base.color; // Named NPC custom hex overrides cannot create a beard hue different from its base coat.
+    }
     return genotype;
   }
 
