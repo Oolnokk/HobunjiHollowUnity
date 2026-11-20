@@ -4,7 +4,8 @@
 CreatureTextureCache.fitGeneratedCanvas caps composed animal textures at 512-1024px
 on the long edge, so pixels beyond 1024 only cost download, decode and (above all)
 per-pixel ColorFill time. Every sprite and pattern layer of a species shares one
-canvas size, so all layers are scaled together; pixel masks in
+canvas size (750px for the user-authored Grehlr mint paintover, 1024px for
+other oversized species), so all layers are scaled together; pixel masks in
 config/creature-base-masks.json are area-resampled to the new size.
 
 Usage: python3 scripts/downscale-oversized-creature-sprites.py [--dry-run]
