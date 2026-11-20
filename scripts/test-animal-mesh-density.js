@@ -13,7 +13,7 @@ class Attribute {
   constructor(array, size) { this.array = array; this.itemSize = size; this.count = array.length / size; }
   getX(i) { return this.array[i * this.itemSize]; }
   getY(i) { return this.array[i * this.itemSize + 1]; }
-  setY(i, value) { this.array[i * this.itemSize + 1] = value; } // Fold rows must move positions and UVs together.
+  setX(i, value) { this.array[i * this.itemSize] = value; } // Fold columns must move positions and UVs together.
 }
 class PlaneGeometry {
   constructor(width, height, nx = 1, ny = 1) {
@@ -72,26 +72,28 @@ for(const geo of [front,back]) {
   for(let i=0;i<weights.count;i++){
     const k=i*stride, a=weights.array;
     assert(Math.abs(a[k]+a[k+1]+a[k+2]+a[k+3]-1)<1e-6,'all four skin weights normalize at every cell');
-    const row=Math.floor(i/width), across=i%width;
+    const row=Math.floor(i/width), col=i%width;
     const gate=a[k+2]+a[k+3];
-    if (across > 0) {
-      const previous=(i-1)*stride;
-      assert(Math.abs(gate - a[previous+2] - a[previous+3])<1e-6,'head yaw fold has no horizontally irregular weights');
+    if (row > 0) {
+      const previous=(i-width)*stride;
+      assert(Math.abs(gate - a[previous+2] - a[previous+3])<1e-6,'head yaw fold has no vertically irregular weights');
     }
-    if (row===0) assert(Math.abs(gate-1)<1e-6,'above the hinge yaw is fully rigid');
-    if (row===geo.userData.segmentsY) assert(Math.abs(gate)<1e-6,'below the hinge body never rotates in yaw');
+    const faceColumn=geo===front?0:geo.userData.segmentsX;
+    const bodyColumn=geo===front?geo.userData.segmentsX:0;
+    if (col===faceColumn) assert(Math.abs(gate-1)<1e-6,'face side of the hinge yaw is fully rigid');
+    if (col===bodyColumn) assert(Math.abs(gate)<1e-6,'body side of the hinge does not yaw');
   }
-  const uv=geo.getAttribute('uv'), rows=geo.userData.segmentsY;
-  const rowGaps=[];
-  for(let row=0;row<rows;row++) rowGaps.push(Math.abs(uv.getY((row+1)*width)-uv.getY(row*width)));
-  assert(Math.min(...rowGaps)<.0061,'mesh rows tightly surround the one-pixel paper crease even at low density');
+  const uv=geo.getAttribute('uv'), columns=geo.userData.segmentsX;
+  const columnGaps=[];
+  for(let col=0;col<columns;col++) columnGaps.push(Math.abs(uv.getX(col+1)-uv.getX(col)));
+  assert(Math.min(...columnGaps)<.0061,'mesh columns tightly surround the vertical paper crease even at low density');
 }
 const babyWarp={
-  destinationFor(p){return {x:p.x,y:.65};},
+  destinationFor(p){return {x:.65,y:p.y};},
   sourceAt(x,y,out){out.x=x;out.y=y;},
 };
 const warped=makeWeighted(THREE,original,rig,false,{width:2.1,height:.95},null,babyWarp);
-assert.equal(warped.userData.hobunjiAnimalYawFoldPivot,.65,'the fold follows the warped head rather than the adult pivot');
+assert.equal(warped.userData.hobunjiAnimalYawFoldPivotX,.65,'the vertical fold follows the warped head rather than the adult neck');
 const frontTexture={map:'genotype-front'}, backTexture={map:'genotype-back'};
 const frontMesh={isSkinnedMesh:true,geometry:front,material:frontTexture,skeleton:{id:'head-front'}};
 const backMesh={isSkinnedMesh:true,geometry:back,material:backTexture,skeleton:{id:'head-back'}};
