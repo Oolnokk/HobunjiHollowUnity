@@ -131,6 +131,7 @@ const rigPart = (key, slot, points) => ({ key, slot, rig: Rig.normalize({ ...mak
   width: 200, height: 200, getContext() { return { drawImage() {}, clearRect() {} }; },
 } });
 const front = { hobunjiSplineParts: [rigPart('hairSide:test:0', 'hairSide')] };
+front.hobunjiSplineParts[0].rig.regionMasks.front={size:200,runs:[[0,1],[123,10]]}; // Pixel (0,0) is a genuine immobile corner vertex; hood swap must re-seat it too.
 const back = { hobunjiSplineParts: [rigPart('hairSide:test:0', 'hairSide')] };
 Rig.attach(THREE, avatar, avatar, front, back, 1, 1);
 assert.equal(avatar.userData.portraitSplineParts.length, 1);
