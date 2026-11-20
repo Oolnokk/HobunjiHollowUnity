@@ -149,6 +149,10 @@
   }
 
   function effectiveGenotype(kind, genotype) {
+    if (kind === 'moot' && genotype?.coloredneck) {
+      const { coloredneck, ...rest } = genotype; // Renderer-only compatibility for older Moot saves and standalone authoring tools.
+      genotype = rest.overcoat ? rest : { ...rest, overcoat: { ...coloredneck } }; // Old colored neck renders as the new overcoat; never draw both.
+    }
     if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell)) return genotype;
     // Old saves stored permanent fur/plates. Translate their colors into base/shell at read time.
     return { ...genotype,
@@ -410,8 +414,8 @@
     rememberRecolor(key, promise);
     return promise;
   }
-  async function recoloredPattern(url, color) {
-    const key = `pattern|${url}|${color}`;
+  async function recoloredPattern(url, color, sourceKey = null, sourceReferenceHex = null) {
+    const key = `pattern|${url}|${color}|source:${sourceKey?.hex || 'all'}|ref:${sourceReferenceHex || 'auto'}`; // Separate keyed coat artwork from ordinary fully tintable masks.
     if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
@@ -419,7 +423,8 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(px, hexToRgb(color), null);
+      if (sourceKey) recolorKeyedPixels(px, hexToRgb(color), sourceKey, sourceReferenceHex, `animal-pattern:${url}`); // Preserve non-coat detail present in Moot's overcoat PNG.
+      else recolorPixels(px, hexToRgb(color), null);
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { if (_recolorCache.get(key) === promise) forgetRecolor(key); throw err; });
@@ -750,17 +755,25 @@
         // stored base color. Any other simultaneous pattern keeps its own
         // ordinary layer.color.
         const renderColor = bodyStripesColorSwap && patternId === 'bodystripes' ? storedBaseColor : layer.color; // Effective color for this overlay only.
-        const recolored = await recoloredPattern(url, renderColor);
+        const patternSourceKey = spec.patternRecolorKeys?.[patternId] || null; // Only anatomically keyed overlay regions opt into selective pigment tinting.
+        const recolored = await recoloredPattern(url, renderColor, patternSourceKey, patternSourceKey ? spec.baseShadeReferenceHex : null);
         let renderedLayer = recolored;
         try {
-          const painted = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
+          const patternPaintMask = patternSourceKey && colorPoolPaintFor(genotype, patternId)
+            ? await sourceKeyPaintMask(url, patternSourceKey) : null; // Color Pools motifs also avoid overcoat hooves, teeth and ink.
+          const painted = await applyColorPoolPaint(recolored, genotype, patternId, patternPaintMask, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
           if (colorPoolPaintFor(genotype, patternId) && !painted) incompleteLayers.push('paint:' + patternId);
           renderedLayer = painted || recolored;
         } catch (paintError) {
           window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — retryable: ${paintError.message}`, 'warn');
           incompleteLayers.push('paint:' + patternId);
         }
-        ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
+        if (spec.clipPatternsToBase?.includes(patternId)) {
+          const previousCompositeOperation = ctx.globalCompositeOperation; // Restored immediately so later independent patterns and eyes still render normally.
+          ctx.globalCompositeOperation = 'source-atop'; // Clip overcoat to the already-drawn base silhouette without a second pixel pass.
+          try { ctx.drawImage(renderedLayer, 0, 0, c.width, c.height); }
+          finally { ctx.globalCompositeOperation = previousCompositeOperation; }
+        } else ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
         if (inheritedOverlayCoverage) {
           const originalAlpha = fitMaskToImage(await artworkAlphaMask(url), bw, bh); // Use authored overlay opacity; Color Pools does not change its silhouette.
           if (originalAlpha.width !== bw || originalAlpha.height !== bh) throw new Error('Inherited coat overlay alpha dimensions differ from sprite');

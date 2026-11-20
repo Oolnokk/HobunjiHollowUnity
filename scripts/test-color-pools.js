@@ -152,7 +152,8 @@ assert(!colorPoolsSource.includes('actor._genotypeLogged = false;'), 'Color Pool
 assert(renderer.includes('function applyColorPoolPaint('), 'genetic renderer owns the region-aware Color Pools paint seam');
 assert(renderer.includes("applyColorPoolPaint(basePaintSource, genotype, 'base'"), 'base paint is applied through its dedicated region path');
 assert(renderer.includes('fullBaseRecolor ? null : basePaintMask'), 'ordinary base paint is clipped by the authored genetic base mask');
-assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, null'), 'body-pattern paint is confined by that transparent genetic overlay');
+assert(renderer.includes('applyColorPoolPaint(recolored, genotype, patternId, patternPaintMask'), 'pattern paint receives the selected overlay mask when the species needs pigment-only coverage');
+assert(renderer.includes('const patternPaintMask = patternSourceKey && colorPoolPaintFor(genotype, patternId)'), 'keyed overcoat paint excludes teeth, hooves and ink; ordinary patterns retain their inherent alpha mask');
 assert(renderer.includes('colorPoolPaintSignature(genotype)'), 'paint participates in genotype cache signatures');
 assert(renderer.includes('fusedPrimaryCount'), 'animal renderer tells the compositor to union the same-color group before its separate overpass');
 assert(renderer.includes('paint.mergedPatterns'), 'saved fused motifs survive into the runtime species renderer');
