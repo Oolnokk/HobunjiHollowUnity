@@ -457,7 +457,9 @@ let lastScaledWorldPose = { x: 0, y: 0, z: 0 }; // Debug copy of the same final 
 let avatarModel = null;
 let handCalibrationPresentationActive = false; // Dedicated hand-calibration tab hides every animation/tool visual while the neutral GLB↔paper workflow is active.
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
-let neckPreviewRadiusFrac = 0.012; // Diagnostic slider starts at the new base-head neck-strip height; larger values are deliberate preview-only overrides.
+let neckPreviewRadiusFrac = 0.012; // Diagnostic slider follows the native painted-head band until the user changes its radius.
+let neckPreviewRadiusCustomized = false; // Only an explicit radius edit may override production skin weights.
+const neckPreviewOriginalSkin = new WeakMap(); // Keeps one original skinIndex/skinWeight copy per editor geometry for reversible diagnostics.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
 let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
 let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
@@ -581,35 +583,72 @@ function updateHeadSkinVertexOverlay() {
 // matches the species' short base-head neck band; the radius slider is diagnostic
 // and never touches exported animation data.
 function applyPreviewNeckWeights() {
-  const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
+  const neckRig = avatarModel?.userData?.neckRig; // Current game-built avatar owns the actual per-species neck skin.
   const geometry = neckRig?.skinnedPlane?.geometry;
   const positions = geometry?.getAttribute?.('position');
+  const indices = geometry?.getAttribute?.('skinIndex');
   const weights = geometry?.getAttribute?.('skinWeight');
-  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Used to keep the radius visually consistent across species sizes.
-  if (!neckRig?.available || !positions || !weights || !neckRig.neckLocal) {
+  const modelHeight = Number(avatarModel?.userData?.portraitModelHeight) || MODEL_W; // Unit basis of the edit-only radius slider.
+  if (!neckRig?.available || !positions || !indices || !weights || !neckRig.neckLocal) {
     neckWeightSummary = 'neck rig unavailable';
     refreshPreviewDebug();
     return false;
   }
-
-  const radius = Math.max(modelHeight * .005, modelHeight * neckPreviewRadiusFrac); // Vertical span begins at the detected base-head bottom, like the actual game.
-  let influenced = 0;
-  let fullWeight = 0;
-  for (let index = 0; index < positions.count; index++) {
-    const y = positions.getY(index);
-    const headWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckRig.neckLocal.y, radius);
-    weights.setXYZW(index, 1 - headWeight, headWeight, 0, 0);
-    if (headWeight > 0.01) influenced++;
-    if (headWeight > 0.99) fullWeight++;
+  const originalRadius = Number(geometry.userData?.blendHeight) || modelHeight * .012; // Source of truth: native head sprite's last pixel.
+  let baseline = neckPreviewOriginalSkin.get(geometry); // The original per-vertex indices and weights allow exact reset after dragging.
+  if (neckPreviewRadiusCustomized && !baseline) {
+    baseline = { indices: indices.array.slice(), weights: weights.array.slice() }; // Copy once only after intentional diagnostic editing.
+    neckPreviewOriginalSkin.set(geometry, baseline);
   }
-  weights.needsUpdate = true;
-  const centroid = neckRig.headCentroidPx; // Used in the mobile-visible diagnostic to verify the base-head alpha scan landed on the sprite.
+  if (baseline) {
+    indices.array.set(baseline.indices);
+    weights.array.set(baseline.weights);
+    indices.needsUpdate = true;
+    weights.needsUpdate = true;
+  }
+  const radius = neckPreviewRadiusCustomized
+    ? Math.max(modelHeight * .005, modelHeight * neckPreviewRadiusFrac)
+    : originalRadius;
+  if (!neckPreviewRadiusCustomized) {
+    neckPreviewRadiusFrac = originalRadius / modelHeight; // Reflect the detected species sprite, not a hardcoded 200-pixel assumption.
+    $('neckRadius').value = String(neckPreviewRadiusFrac);
+    $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(2)}% height (native)`;
+  }
+  if (neckPreviewRadiusCustomized && neckRig.headOffsetJoint) {
+    const sourceWidth = Number(avatarModel?.userData?.sourceCanvas?.width) || 200; // Horizontal head scale gate uses the original sprite's pixel space.
+    const modelWidth = Number(avatarModel?.userData?.portraitModelWidth) || MODEL_W; // Maps the skinned vertex X back to source pixels.
+    for (let index = 0; index < positions.count; index++) {
+      const y = positions.getY(index);
+      const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckRig.neckLocal.y, radius);
+      const oldOffsetOnly = baseline && [0, 1, 2, 3].some(slot =>
+        baseline.indices[index * 4 + slot] === 8 && baseline.weights[index * 4 + slot] > 0); // Detect vertices that previously belonged to the native narrow rotation band.
+      if (turnWeight <= 0 && !oldOffsetOnly) continue; // Preserve original spline and head-height placement below the edited transition.
+      const pixelX = (positions.getX(index) / modelWidth + .5) * sourceWidth; // Same horizontal head-scale gate as the runtime portrait.
+      const scaleWeight = window.PNGPlaneAvatar.headScaleWeightAt(
+        y, neckRig.neckLocal.y, modelHeight, pixelX, neckRig.headBoundsPx, turnWeight, radius
+      ); // Don't change head-scale compensation while previewing alternative neck radii.
+      indices.setXYZW(index, 7, 8, 9, 0); // Offset, rotation, head scale, unused (current game skeleton order).
+      weights.setXYZW(index, 1 - turnWeight, turnWeight - scaleWeight, scaleWeight, 0);
+    }
+    indices.needsUpdate = true;
+    weights.needsUpdate = true;
+  }
+  let influenced = 0, fullWeight = 0;
+  for (let index = 0; index < positions.count; index++) {
+    const turnWeight = [0, 1, 2, 3].reduce((sum, slot) => {
+      const bone = indices.array[index * 4 + slot];
+      return sum + ((bone === 8 || bone === 9) ? weights.array[index * 4 + slot] : 0);
+    }, 0); // Count true neck-rotating bones; offset-only skin is not neck influence.
+    if (turnWeight > .01) influenced++;
+    if (turnWeight > .99) fullWeight++;
+  }
+  const centroid = neckRig.headCentroidPx; // Mobile-visible diagnostic verifies the base-head scan stayed at this species' source pixels.
   const centroidSummary = centroid ? ` · head centroid ${centroid.x.toFixed(1)},${centroid.y.toFixed(1)} px` : '';
-  const planeCellCount = Number(geometry.userData?.planeCellCount) || 0; // Used to confirm that the mobile-visible preview is weighting the complete PNG plane.
-  const coverageMode = geometry.userData?.coverageMode || 'unknown coverage'; // Used in the visible diagnostic to catch a regression to alpha-cropped skinning.
-  const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material]; // Used to expose the r128 skin-shader flag in the visible diagnostic.
+  const planeCellCount = Number(geometry.userData?.planeCellCount) || 0; // Original plane topology stays intact.
+  const coverageMode = geometry.userData?.coverageMode || 'unknown coverage';
+  const materials = Array.isArray(neckRig.skinnedPlane.material) ? neckRig.skinnedPlane.material : [neckRig.skinnedPlane.material];
   const skinShaderSummary = `${materials.filter(material => material?.skinning === true).length}/${materials.length} skin shaders`;
-  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% influenced · ${Math.round(fullWeight / positions.count * 100)}% full · ${planeCellCount} whole-plane grid cells · ${coverageMode} · ${skinShaderSummary} · pivot y ${neckRig.neckLocal.y.toFixed(3)}${centroidSummary}`;
+  neckWeightSummary = `${Math.round(influenced / positions.count * 100)}% rotating · ${Math.round(fullWeight / positions.count * 100)}% full · ${planeCellCount} grid cells · ${coverageMode} · ${skinShaderSummary} · bend top ${geometry.userData.neckBandPx?.top?.toFixed(1) ?? '?'} px, bottom ${geometry.userData.neckBandPx?.bottom?.toFixed(1) ?? '?'} px · ${neckPreviewRadiusCustomized ? 'radius override' : 'native'}${centroidSummary}`;
   rebuildHeadSkinVertexOverlay();
   refreshPreviewDebug();
   return true;
@@ -649,7 +688,7 @@ function syncNeckPreviewControls() {
 }
 
 $('neckStrength').addEventListener('input', syncNeckPreviewControls);
-$('neckRadius').addEventListener('input', syncNeckPreviewControls);
+$('neckRadius').addEventListener('input', () => { neckPreviewRadiusCustomized = true; syncNeckPreviewControls(); }); // Native skin weights are never overwritten by initial editor controls.
 $('neckStrength').addEventListener('change', () => logDebug(`Neck preview strength: ${Math.round(neckPreviewStrength * 100)}%`));
 $('neckRadius').addEventListener('change', () => logDebug(`Neck preview weight radius: ${(neckPreviewRadiusFrac * 100).toFixed(1)}% of avatar height`));
 $('showHeadSkinVertices').addEventListener('change', () => {
