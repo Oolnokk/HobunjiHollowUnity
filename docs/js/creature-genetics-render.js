@@ -759,7 +759,9 @@
         const recolored = await recoloredPattern(url, renderColor, patternSourceKey, patternSourceKey ? spec.baseShadeReferenceHex : null);
         let renderedLayer = recolored;
         try {
-          const painted = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
+          const patternPaintMask = patternSourceKey && colorPoolPaintFor(genotype, patternId)
+            ? await sourceKeyPaintMask(url, patternSourceKey) : null; // Color Pools motifs also avoid overcoat hooves, teeth and ink.
+          const painted = await applyColorPoolPaint(recolored, genotype, patternId, patternPaintMask, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
           if (colorPoolPaintFor(genotype, patternId) && !painted) incompleteLayers.push('paint:' + patternId);
           renderedLayer = painted || recolored;
         } catch (paintError) {
