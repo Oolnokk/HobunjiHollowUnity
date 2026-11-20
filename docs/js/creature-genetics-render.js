@@ -768,7 +768,12 @@
           window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — retryable: ${paintError.message}`, 'warn');
           incompleteLayers.push('paint:' + patternId);
         }
-        ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
+        if (spec.clipPatternsToBase?.includes(patternId)) {
+          const previousCompositeOperation = ctx.globalCompositeOperation; // Restored immediately so later independent patterns and eyes still render normally.
+          ctx.globalCompositeOperation = 'source-atop'; // Clip overcoat to the already-drawn base silhouette without a second pixel pass.
+          try { ctx.drawImage(renderedLayer, 0, 0, c.width, c.height); }
+          finally { ctx.globalCompositeOperation = previousCompositeOperation; }
+        } else ctx.drawImage(renderedLayer, 0, 0, c.width, c.height);
         if (inheritedOverlayCoverage) {
           const originalAlpha = fitMaskToImage(await artworkAlphaMask(url), bw, bh); // Use authored overlay opacity; Color Pools does not change its silhouette.
           if (originalAlpha.width !== bw || originalAlpha.height !== bh) throw new Error('Inherited coat overlay alpha dimensions differ from sprite');
