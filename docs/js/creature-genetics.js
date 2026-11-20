@@ -573,7 +573,8 @@
     if (!baseColor || !enabledIds.length) {
       return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
     }
-    const patternColor = _patternUsesBaseCoatColor(kind, enabledIds[0]) ? baseColor : genotype[enabledIds[0]].color; // Same-color beard does not fabricate color contrast for sell values.
+    const contrastPatternId = enabledIds.find(id => !_patternUsesBaseCoatColor(kind, id)); // Base-colored beards still add pattern rarity but must not hide the contrast of another expressed marking.
+    const patternColor = contrastPatternId ? (genotype[contrastPatternId]?.color || baseColor) : baseColor; // Purely base-colored overlays contribute no false color contrast.
     const contrast = _furColorContrastScore(baseColor, patternColor);
     const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
     const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];
