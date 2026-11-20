@@ -69,17 +69,20 @@ for (const face of [animal.frontPlane, animal.backPlane]) {
   assert.equal(face.skeleton.bones.length, 4, 'each card has separate pitch, yaw and combined transforms');
   assert.equal(face.geometry.userData.hobunjiAnimalYawFold, true, 'material response can preserve independent yaw weights');
   const weights = face.geometry.getAttribute('skinWeight').array;
-  const rowLength = (face.geometry.userData.segmentsX + 1) * 4;
-  const upperFold = weights[2] + weights[3];
-  const lowerFold = weights[weights.length - 2] + weights[weights.length - 1];
-  assert(Math.abs(upperFold - 1) < 1e-5, 'top of sprite belongs fully to straight yaw hinge');
-  assert(Math.abs(lowerFold) < 1e-5, 'bottom of sprite does not yaw with head');
-  const upperPitch = weights[1] + weights[3];
-  for (let offset = 0; offset < rowLength; offset += 4) {
-    assert(Math.abs(weights[offset + 2] + weights[offset + 3] - upperFold) < 1e-5,
-      'fold weight is identical across the row even with irregular head paint');
-    assert(Math.abs(weights[offset + 1] + weights[offset + 3] - upperPitch) < 1e-5,
-      'the constant test pitch weights still track author paint');
+  const width = face.geometry.userData.segmentsX + 1;
+  const faceCol = face === animal.frontPlane ? 0 : width - 1;
+  const bodyCol = face === animal.frontPlane ? width - 1 : 0;
+  const faceFold = weights[faceCol * 4 + 2] + weights[faceCol * 4 + 3];
+  const bodyFold = weights[bodyCol * 4 + 2] + weights[bodyCol * 4 + 3];
+  assert(Math.abs(faceFold - 1) < 1e-5, 'front-of-face side belongs fully to vertical yaw hinge');
+  assert(Math.abs(bodyFold) < 1e-5, 'body side does not yaw with head');
+  for (let row = 1; row <= face.geometry.userData.segmentsY; row++) {
+    for (let col = 0; col < width; col++) {
+      const current = (row * width + col) * 4;
+      const previous = ((row - 1) * width + col) * 4;
+      assert(Math.abs(weights[current + 2] + weights[current + 3] - weights[previous + 2] - weights[previous + 3]) < 1e-5,
+        'yaw has a straight vertical crease, independent of irregular pitch paint');
+    }
   }
   for (let i = 0; i < weights.length; i += 4) {
     assert(Math.abs(weights[i] + weights[i + 1] + weights[i + 2] + weights[i + 3] - 1) < 1e-5,
