@@ -73,7 +73,8 @@
       baseRecolorHueTolerance: 15,
       baseRecolorMinSaturationRatio: 0.60,
       baseRecolorMinValue: 0.12,
-      patternRecolorKeys: { beard: { hex: '#99BF99', hueTolerance: 15, minSaturationRatio: 0.60, minValue: 0.12 } }, // Beard inherits its own tint without recoloring its black ink.
+      patternRecolorKeys: { beard: { hex: '#99BF99', hueTolerance: 15, minSaturationRatio: 0.60, minValue: 0.12 } }, // Retint only green fur; preserve the beard's black ink.
+      baseColorPatterns: ['beard'], // Expression is inherited, but its fur hue (and Color Pools base-coat paint) always follows the body.
       base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
       patterns: ['mitts', 'coloredstripe', 'beard', 'spectacles'], // Beard overlays the other fur patterns; spectacles alone sit above it.
       eyes: { open: 'assets/creaturesprites/grehlr_eye.png', blink: 'assets/creaturesprites/grehlr_blink.png' },
@@ -481,6 +482,12 @@
       && !!stripes?.color;
   }
 
+  function patternTintColor(kind, patternId, genotype) {
+    if (SPECIES[kind]?.baseColorPatterns?.includes(patternId)) return genotype?.base?.color || null; // Grehlr beard always follows its current base, including older saves with a different beard.color.
+    if (patternId === 'bodystripes' && usesDrenkirraBodyStripesColorSwap(kind, genotype)) return genotype?.base?.color || null; // Preserve Drenkirra's intentional base/stripe color exchange.
+    return genotype?.[patternId]?.color || null; // All other patterns keep their own inherited pigmentation.
+  }
+
   function compactHashText(value) {
     const text = String(value || ''); // Compact deterministic cache/signature token without leaking large embedded motif data into keys.
     let hash = 2166136261;
@@ -749,26 +756,25 @@
     for (const patternId of spec.patterns) {
       if (spec.underlayPatterns?.includes(patternId)) continue; // The always-visible tail is already beneath the base, never drawn twice.
       const layer = genotype?.[patternId];
+      const renderColor = patternTintColor(kind, patternId, genotype); // Central tint resolution keeps independent beard visibility separate from inherited body pigment.
+      const patternUsesBaseCoat = spec.baseColorPatterns?.includes(patternId) === true; // Reuses the body's surface paint instead of an independent beard-only dye.
       // A layer with no `enabled` field at all (uumkaoii's permanent
       // fur/plates regions — see makeDefaultGenotype) is always on; only an
       // EXPLICIT `enabled: false` (gar-wolf/dabinggi-hound's optional
       // pattern roll) turns a layer off.
-      if (layer?.enabled === false || !(layer?.copies > 0) || !layer?.color) continue;
+      if (layer?.enabled === false || !(layer?.copies > 0) || !renderColor) continue;
       const url = patternUrl(kind, patternId, frame, genotype);
       try {
-        // Drenkirra bodystripes invert only their own two color roles: the
-        // body uses their pattern color above and these stripes use the
-        // stored base color. Any other simultaneous pattern keeps its own
-        // ordinary layer.color.
-        const renderColor = bodyStripesColorSwap && patternId === 'bodystripes' ? storedBaseColor : layer.color; // Effective color for this overlay only.
+        // The centralized tint resolver preserves Drenkirra's swap, and makes the Grehlr beard follow its current base rather than a separate allele.
         const patternSourceKey = spec.patternRecolorKeys?.[patternId] || null; // Only anatomically keyed overlay regions opt into selective pigment tinting.
         const recolored = await recoloredPattern(url, renderColor, patternSourceKey, patternSourceKey ? spec.baseShadeReferenceHex : null);
         let renderedLayer = recolored;
         try {
-          const patternPaintMask = patternSourceKey && colorPoolPaintFor(genotype, patternId)
-            ? await sourceKeyPaintMask(url, patternSourceKey) : null; // Color Pools motifs also avoid overcoat hooves, teeth and ink.
-          const painted = await applyColorPoolPaint(recolored, genotype, patternId, patternPaintMask, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
-          if (colorPoolPaintFor(genotype, patternId) && !painted) incompleteLayers.push('paint:' + patternId);
+          const paintRegionId = patternUsesBaseCoat ? 'base' : patternId; // Base-coat surface motifs carry onto the beard without an independent beard dye.
+          const patternPaintMask = patternSourceKey && colorPoolPaintFor(genotype, paintRegionId)
+            ? await sourceKeyPaintMask(url, patternSourceKey) : null; // Color Pools motifs avoid black ink and neighboring anatomy.
+          const painted = await applyColorPoolPaint(recolored, genotype, paintRegionId, patternPaintMask, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
+          if (colorPoolPaintFor(genotype, paintRegionId) && !painted) incompleteLayers.push('paint:' + patternId);
           renderedLayer = painted || recolored;
         } catch (paintError) {
           window.__farmLog?.(`[genotype-render] composeFrame(${kind},${frame}): Color Pools paint for "${patternId}" failed — retryable: ${paintError.message}`, 'warn');
@@ -879,14 +885,15 @@
     const parts = [genotype?.base?.color || ''];
     for (const id of spec.patterns) {
       const l = genotype?.[id];
-      parts.push((l?.enabled !== false && l?.copies > 0 && l?.color) ? `${id}:${l.color}` : '');
+      const tintColor = patternTintColor(kind, id, genotype); // Cache tracks Grehlr beard from base hue, never obsolete independently stored beard pigments.
+      parts.push((l?.enabled !== false && l?.copies > 0 && tintColor) ? `${id}:${tintColor}` : '');
     }
     const paintSig = colorPoolPaintSignature(genotype);
     if (paintSig) parts.push(`paint:${paintSig}`);
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, patternTintColor, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
