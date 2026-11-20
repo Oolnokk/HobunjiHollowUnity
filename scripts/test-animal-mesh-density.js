@@ -13,6 +13,7 @@ class Attribute {
   constructor(array, size) { this.array = array; this.itemSize = size; this.count = array.length / size; }
   getX(i) { return this.array[i * this.itemSize]; }
   getY(i) { return this.array[i * this.itemSize + 1]; }
+  setY(i, value) { this.array[i * this.itemSize + 1] = value; } // Fold rows must move positions and UVs together.
 }
 class PlaneGeometry {
   constructor(width, height, nx = 1, ny = 1) {
@@ -51,7 +52,7 @@ const makeWeighted=vm.runInNewContext('(() => {'+avatar.slice(weightStart,weight
 });
 const map=new Uint16Array(128*75); // Painted right-half head region, same source map for both mirrored faces.
 for(let r=0;r<75;r++)for(let c=64;c<128;c++)map[r*128+c]=255;
-const rig={meshResolution:48,weightMap:{width:128,height:75,values:map}};
+const rig={meshResolution:48,pivot:{x:.5,y:.4},weightMap:{width:128,height:75,values:map}};
 const original=new PlaneGeometry(2.1,.95);
 const build=(mirror,grid)=>makeWeighted(THREE,original,rig,mirror,{width:2.1,height:.95},grid);
 const front=build(false), back=build(true);
@@ -61,12 +62,36 @@ assert.equal(front.getAttribute('uv').count,13*8,'actual GPU vertex grid is redu
 assert.equal(back.userData.segmentsY,7);
 assert.equal(front.parameters.width,2.1,'source silhouette width unchanged');
 assert.equal(front.parameters.height,.95,'source silhouette height unchanged');
-assert.equal(front.getAttribute('skinWeight').getY(0),0,'front samples original body side');
-assert.equal(back.getAttribute('skinWeight').getY(0),1,'rear samples mirrored head side');
+const frontWeights=front.getAttribute('skinWeight'), backWeights=back.getAttribute('skinWeight');
+assert.equal(frontWeights.getY(0)+frontWeights.array[3],0,'front samples original body pitch Influence');
+assert.equal(backWeights.getY(0)+backWeights.array[3],1,'rear samples mirrored head pitch Influence');
 for(const geo of [front,back]) {
-  const weights=geo.getAttribute('skinWeight');
-  for(let i=0;i<weights.count;i++) assert(Math.abs(weights.getX(i)+weights.getY(i)-1)<1e-6,'skin weights normalize at all cells');
+  assert.equal(geo.userData.hobunjiAnimalYawFold,true,'four-bone paper fold survives mesh budget');
+  const weights=geo.getAttribute('skinWeight'), stride=weights.itemSize;
+  const width=geo.userData.segmentsX+1;
+  for(let i=0;i<weights.count;i++){
+    const k=i*stride, a=weights.array;
+    assert(Math.abs(a[k]+a[k+1]+a[k+2]+a[k+3]-1)<1e-6,'all four skin weights normalize at every cell');
+    const row=Math.floor(i/width), across=i%width;
+    const gate=a[k+2]+a[k+3];
+    if (across > 0) {
+      const previous=(i-1)*stride;
+      assert(Math.abs(gate - a[previous+2] - a[previous+3])<1e-6,'head yaw fold has no horizontally irregular weights');
+    }
+    if (row===0) assert(Math.abs(gate-1)<1e-6,'above the hinge yaw is fully rigid');
+    if (row===geo.userData.segmentsY) assert(Math.abs(gate)<1e-6,'below the hinge body never rotates in yaw');
+  }
+  const uv=geo.getAttribute('uv'), rows=geo.userData.segmentsY;
+  const rowGaps=[];
+  for(let row=0;row<rows;row++) rowGaps.push(Math.abs(uv.getY((row+1)*width)-uv.getY(row*width)));
+  assert(Math.min(...rowGaps)<.0061,'mesh rows tightly surround the one-pixel paper crease even at low density');
 }
+const babyWarp={
+  destinationFor(p){return {x:p.x,y:.65};},
+  sourceAt(x,y,out){out.x=x;out.y=y;},
+};
+const warped=makeWeighted(THREE,original,rig,false,{width:2.1,height:.95},null,babyWarp);
+assert.equal(warped.userData.hobunjiAnimalYawFoldPivot,.65,'the fold follows the warped head rather than the adult pivot');
 const frontTexture={map:'genotype-front'}, backTexture={map:'genotype-back'};
 const frontMesh={isSkinnedMesh:true,geometry:front,material:frontTexture,skeleton:{id:'head-front'}};
 const backMesh={isSkinnedMesh:true,geometry:back,material:backTexture,skeleton:{id:'head-back'}};
