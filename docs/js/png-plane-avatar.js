@@ -457,13 +457,19 @@
     const imageHeight = Number.isFinite(pixelHeight) && pixelHeight > 0 ? pixelHeight : 200; // Base portrait height maps each species' head-bottom pixel to model space.
     const safeHeight = Number.isFinite(modelHeight) && modelHeight > 0 ? modelHeight : 1; // Prevent a malformed preview model from creating a zero-width bend.
     const topPx = Math.max(0, Math.min(imageHeight - 1, (0.5 - neckY / safeHeight) * imageHeight)); // Last opaque base-head pixel, already used as the neck pivot.
-    const spanPx = Math.min(imageHeight - topPx, Math.max(2, Math.round(imageHeight * .012))); // Only ~1.2% of a portrait (2-3 px at common sizes) bends below the skull.
+    const spanPx = Math.min(imageHeight - topPx - 0.01, Math.min(3, Math.max(2, Math.round(imageHeight * .012)))); // At most three SOURCE pixels below the skull, even on high-resolution portraits; retain a tiny last body row.
     const height = spanPx / imageHeight * safeHeight; // Shared by GPU weights, CPU landmark probes, and the character-spine solver.
     return { topY: neckY, bottomY: neckY - height, height, topPx, bottomPx: topPx + spanPx };
   }
 
   function neckBlendWeight(y, topY, height) {
     return smoothstep01((y - (topY - height)) / height); // Full head weight at/above the skull's bottom; no head weight below the narrow neck.
+  }
+
+  function headOffsetWeightAt(y, topY, modelHeight, neckHeight) {
+    const bandBottom = topY - neckHeight; // Rotation stops here; only the nonrotating head-height compensation continues below.
+    const fadeHeight = Math.max(modelHeight * .24, neckHeight * 2); // Distribute up to ~12% species offset without vertically inverting cells.
+    return smoothstep01((y - (bandBottom - fadeHeight)) / fadeHeight);
   }
 
   function neckBlendRows(segmentsY, pixelHeight, topPx, bottomPx) {
@@ -539,7 +545,7 @@
   // node), chained by offset, with the head-turn bone (index NECK_BONE) and head-scale bone (HEAD_BONE) hanging off the last node. They are the
   // only body bones: no torso bone, no spine bone. Every skinned portrait carries them at rest so a hunch can be applied after build; without the
   // module they collapse to the plane origin and carry no weight.
-  const SPLINE_NODE_COUNT = 7, NECK_BONE = SPLINE_NODE_COUNT, HEAD_BONE = SPLINE_NODE_COUNT + 1;
+  const SPLINE_NODE_COUNT = 7, OFFSET_BONE = SPLINE_NODE_COUNT, NECK_BONE = SPLINE_NODE_COUNT + 1, HEAD_BONE = SPLINE_NODE_COUNT + 2; // The extra nonrotating bone absorbs species head placement without widening the neck bend.
   const spineLayoutFor = (baseX, baseY, modelHeight, posteriorY, pivotX = baseX, pivotY = baseY) => window.HobunjiCharacterSpine?.layoutFor?.(baseX, baseY, modelHeight, posteriorY, pivotX, pivotY)
     || { nodes: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), offsets: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), neck: { x: pivotX, y: pivotY, z: 0 } };
   // The neck base where the spline ends (the shoulder line, not the head-turn pivot at the head's centre / chin line); the pivot itself when unknown.
@@ -806,23 +812,11 @@
     const band = neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Species-specific bottom of its actual base-head sprite anchors the two-pixel neck transition.
     const blendHeight = band.height; // Shared by the two skin weights and the CPU world-pixel resolver.
     const rowPixels = neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx); // Reserve two mesh cells at the tiny neck strip without growing the mesh.
-    // The broad Y-band above only knows a vertex's height, not whether it's
-    // actually near the head horizontally — at head height it happily
-    // includes shoulders, collars, and wide overwear too, which is exactly
-    // what the head-TURN blend wants (a natural partial shoulder-follow).
-    // But HobunjiCharacterRigScale's head scale/offset (bone index 2, driven
-    // independently of rotation's bone index 1 below) must never drag that
-    // nearby torso/clothing along with it, so its share of headWeight is
-    // additionally gated by horizontal distance from the detected head's own
-    // silhouette (options.headBoundsPx, from detectHeadRigPixels — a plain
-    // geometric AABB test, deliberately NOT texel opacity: per-pixel alpha
-    // weighting is exactly what the coherent-rig comment above rules out,
-    // since a hat/hood/hair rendered as a separate alpha island right next
-    // to the bare head would score near-zero and be left behind when the
-    // head scales). Full weight out to 1.5x the bare head's own half-width
-    // — room for a hat brim or hood — tapering smoothly to zero by 2.5x;
-    // shoulder/collar pixels at head height sit well past that and keep
-    // their full headWeight on the rotation bone instead.
+    // The head turns only in the narrow sprite-bottom band. Head *position*
+    // must continue blending farther down: authored offsets of ~10% of body height
+    // would invert a 2px triangle strip if they were applied to the rotation bone.
+    // A separate nonrotating placement bone supplies that broad compensation;
+    // the head-scale bone retains the established horizontal width gate.
     const headBoundsPx = options.headBoundsPx || null;
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
 
@@ -834,14 +828,18 @@
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const turnWeight = neckBlendWeight(y, neckLocal.y, blendHeight);
-      const headScaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight, blendHeight);
-      const headWeight = Math.max(turnWeight, headScaleWeight);
-      const headRotateWeight = headWeight - headScaleWeight;
-      const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY); // Body weight (what the head doesn't take) goes to the two neighbouring spline nodes, measured to the neck base.
-      const bodyWeight = 1 - headWeight;
-      skinIndices.push(spline.a, NECK_BONE, HEAD_BONE, spline.b);
-      skinWeights.push(bodyWeight * (1 - spline.wb), headRotateWeight, headScaleWeight, bodyWeight * spline.wb);
+      const turnWeight = neckBlendWeight(y, neckLocal.y, blendHeight); // Short neck rotation ends just below the painted head.
+      if (turnWeight > 0) {
+        const scaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight, blendHeight); // Head-scaling gate is independent of the placement fade.
+        skinIndices.push(OFFSET_BONE, NECK_BONE, HEAD_BONE, 0);
+        skinWeights.push(1 - turnWeight, turnWeight - scaleWeight, scaleWeight, 0); // All three upper bones inherit the head placement shift.
+      } else {
+        const offsetWeight = headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight); // Unrotated head-height compensation tapers gently into the upper body.
+        const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY);
+        const bodyWeight = 1 - offsetWeight;
+        skinIndices.push(spline.a, OFFSET_BONE, spline.b, 0);
+        skinWeights.push(bodyWeight * (1 - spline.wb), offsetWeight, bodyWeight * spline.wb, 0);
+      }
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -935,10 +933,13 @@
 
     const layout = spineLayoutFor(spineBase.x, spineBase.y, modelHeight, posteriorY, neckLocal.x, neckLocal.y);
     const splineNodes = makeSplineNodes(THREE, config.name, layout);
+    const headOffsetJoint = new THREE.Bone(); // The authored species head-height compensation operates without rotating the upper torso.
+    headOffsetJoint.name = `${config.name}_head_offset_bone`;
+    headOffsetJoint.position.set(layout.neck.x, layout.neck.y, layout.neck.z); // Rest pivot still comes from the actual bottom of the base head sprite.
+    splineNodes[SPLINE_NODE_COUNT - 1].add(headOffsetJoint);
     const neckJoint = new THREE.Bone();
     neckJoint.name = `${config.name}_neck_bone`;
-    neckJoint.position.set(layout.neck.x, layout.neck.y, layout.neck.z); // Hangs off the last spline node (the neck base) at the offset that puts it exactly on the plane-space head-turn pivot (neckLocal).
-    splineNodes[SPLINE_NODE_COUNT - 1].add(neckJoint);
+    headOffsetJoint.add(neckJoint); // Rotate the head *after* nonrotating offset compensation.
     // Child of neckJoint, not a spline sibling: it inherits head-turn
     // rotation for free, while its OWN local scale/position (untouched by
     // rotation) is what HobunjiCharacterRigScale's head scale/offset drives —
@@ -956,7 +957,7 @@
     skinnedPlane.renderOrder = 2;
     skinnedPlane.frustumCulled = false;
     skinnedPlane.add(splineNodes[0]);
-    const skeleton = new THREE.Skeleton([...splineNodes, neckJoint, headScaleJoint]);
+    const skeleton = new THREE.Skeleton([...splineNodes, headOffsetJoint, neckJoint, headScaleJoint]);
     skinnedPlane.bind(skeleton);
     registerSkinnedPortrait(skinnedPlane, THREE, modelWidth, modelHeight, neckLocal, {
       pixelWidth: pxW, pixelHeight: pxH, headBoundsPx: gatedHeadBounds, posteriorY, spineBaseY: spineBase.y,
@@ -966,7 +967,7 @@
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
     group.add(skinnedPlane);
     return {
-      group, neckJoint, headScaleJoint, splineNodes, spinePosteriorY: posteriorY, spineBase, skinnedPlane, skeleton, neckLocal, pivotPx,
+      group, headOffsetJoint, neckJoint, headScaleJoint, splineNodes, spinePosteriorY: posteriorY, spineBase, skinnedPlane, skeleton, neckLocal, pivotPx,
       headCentroidPx, headCentroidLocal, headBoundsPx: gatedHeadBounds,
       detectionMethod: detectedHead.method, coverageMode: geometry.userData.coverageMode,
       planeBoundsPx: geometry.userData.planeBoundsPx,
@@ -1062,10 +1063,13 @@
 
     const layout = spineLayoutFor(spineBase.x, spineBase.y, planeHeight, posteriorY, pivotLocalX, pivotLocalY);
     const splineNodes = makeSplineNodes(THREE, plane.name, layout);
+    const headOffsetBone = new THREE.Bone(); // A separate nonrotating bone preserves large authored hostile head-height offsets.
+    headOffsetBone.name = `${plane.name}_head_offset_bone`;
+    headOffsetBone.position.set(layout.neck.x, layout.neck.y, layout.neck.z);
+    splineNodes[SPLINE_NODE_COUNT - 1].add(headOffsetBone);
     const neckBone = new THREE.Bone();
     neckBone.name = `${plane.name}_neck_bone`;
-    neckBone.position.set(layout.neck.x, layout.neck.y, layout.neck.z);
-    splineNodes[SPLINE_NODE_COUNT - 1].add(neckBone);
+    headOffsetBone.add(neckBone);
     const headScaleBone = new THREE.Bone();
     headScaleBone.name = `${plane.name}_head_scale_bone`;
     neckBone.add(headScaleBone);
@@ -1081,11 +1085,11 @@
     skinned.userData = { ...plane.userData };
     skinned.onBeforeRender = plane.onBeforeRender;
     skinned.add(splineNodes[0]);
-    const skeleton = new THREE.Skeleton([...splineNodes, neckBone, headScaleBone]);
+    const skeleton = new THREE.Skeleton([...splineNodes, headOffsetBone, neckBone, headScaleBone]);
     skinned.bind(skeleton);
     registerSkinnedPortrait(skinned, THREE, planeWidth, planeHeight, neckLocal, skinOptions, hostileMode, hostileMasked);
     // Keep the disposer bound to the current geometry after a developer slider retessellation.
-    return { mesh: skinned, get weightedGeometry() { return skinned.geometry; }, skeleton, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, spineBase, neckLocal };
+    return { mesh: skinned, get weightedGeometry() { return skinned.geometry; }, skeleton, headOffsetBone, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, spineBase, neckLocal };
   }
 
   function createSinglePlaneAssembly(THREE, config) {
@@ -1605,7 +1609,7 @@
     assembly.position.y = assemblyY;
     root.userData.neckRig = skinnedRig
       ? {
-          available: true, neckJoint: skinnedRig.neckJoint, headScaleJoint: skinnedRig.headScaleJoint, splineNodes: skinnedRig.splineNodes, spinePosteriorY: skinnedRig.spinePosteriorY, spineBase: skinnedRig.spineBase,
+          available: true, headOffsetJoint: skinnedRig.headOffsetJoint, neckJoint: skinnedRig.neckJoint, headScaleJoint: skinnedRig.headScaleJoint, splineNodes: skinnedRig.splineNodes, spinePosteriorY: skinnedRig.spinePosteriorY, spineBase: skinnedRig.spineBase,
           skinnedPlane: skinnedRig.skinnedPlane, neckLocal: skinnedRig.neckLocal,
           pivotPx: skinnedRig.pivotPx, headCentroidPx: skinnedRig.headCentroidPx,
           headCentroidLocal: skinnedRig.headCentroidLocal, headBoundsPx: skinnedRig.headBoundsPx,
@@ -1750,6 +1754,7 @@
     detectHeadRigPixels,
     neckBlendBand,
     neckBlendWeight,
+    headOffsetWeightAt,
     neckBlendRows,
     upgradePlaneToAutoNeckSkin,
     meshBudget,
