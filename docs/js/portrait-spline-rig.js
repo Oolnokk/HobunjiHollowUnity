@@ -558,7 +558,24 @@
       z: (.0008 + (z - .0008) * motion) * height };
   }
 
-  function makePart(THREE, front, rear, width, height, name) {
+  const OWNER_DEPTH_EPSILON = 0.01; // Beard renders immediately before its owner's portrait so depth, not sprite layers, determines mutual visibility.
+  function pairOwnerDepthOrder(mesh, owner) {
+    if (!owner || !mesh) return;
+    let fallback = Number(mesh.renderOrder) || 0; // Used when a custom renderer replaces the owner's order with an invalid value.
+    Object.defineProperty(mesh, 'renderOrder', {
+      configurable: true, enumerable: true,
+      get() {
+        const order = Number(owner.renderOrder);
+        return (Number.isFinite(order) ? order : fallback) - OWNER_DEPTH_EPSILON;
+      },
+      set(value) {
+        if (Number.isFinite(Number(value))) fallback = Number(value);
+      },
+    }); // Read during Three.js render-list sorting, not after sorting in onBeforeRender.
+    mesh.userData.portraitSplineOwnerDepth = { paired: true, owner: owner.name || 'portrait', beforeOwner: true };
+  }
+
+  function makePart(THREE, front, rear, width, height, name, ownerPortrait = null) {
     const rig = front.rig, geometry = strandGeometry(THREE, rig, width, height);
     const base = new Float32Array(geometry.attributes.position.array); // Stable rest data reused by every wind update.
     const rearGeometry = rear?.canvas ? strandGeometry(THREE, rig, width, height, true) : null;
@@ -575,12 +592,20 @@
       return texture;
     };
     const makeMesh = (canvas, back) => {
+      const ownerMaterial = Array.isArray(ownerPortrait?.material)
+        ? ownerPortrait.material[back ? 1 : 0] || ownerPortrait.material[0]
+        : ownerPortrait?.material;
+      const ownerAlpha = Number(ownerMaterial?.alphaTest);
       const material = new THREE.MeshBasicMaterial({ map: makeTexture(canvas, back), transparent: true,
-        alphaTest: .02, side: back ? THREE.BackSide : THREE.FrontSide, depthWrite: false });
+        alphaTest: Math.max(.02,Number.isFinite(ownerAlpha) ? ownerAlpha : .35),
+        side: back ? THREE.BackSide : THREE.FrontSide, depthTest: true, depthWrite: true });
+      // This is a real alpha-tested 3D surface. Its nearest fragments must write depth
+      // before the owner's PNG is drawn; neither side gets a forced x-ray overlay.
       material.toneMapped = false;
       const mesh = new THREE.Mesh(back ? rearGeometry : geometry, material);
       mesh.name = name + (back ? '_rear' : '_front');
-      mesh.renderOrder = 4; mesh.frustumCulled = false;
+      mesh.renderOrder = 1.99; mesh.frustumCulled = false;
+      pairOwnerDepthOrder(mesh, ownerPortrait); // Follows actor ordering, including live NPC rank and owner-specific compositor updates.
       mesh.userData.noOutline = true; // A 2D cosmetic ribbon must not get a large solid 3D outline shell.
       return mesh;
     };
@@ -675,10 +700,16 @@
     }
     host.add(holder);
     root.userData.portraitSplineHolder = holder; // Owned by this avatar and removed when its selected hairstyle changes.
+    // Use the actual color-rendering portrait, never a depth-helper or shoulder overlay.
+    // Skinned carriers have one front/back material array; rigid carriers have front/back meshes.
+    const ownerPortrait = root.userData?.neckRig?.skinnedPlane
+      || assembly.children?.find(mesh => mesh?.name === 'npc_avatar_front_plane')
+      || assembly.children?.find(mesh => mesh?.isMesh && !mesh.userData?.portraitSplineOwnerDepth)
+      || null;
     const attached = [];
     for (const part of parts) {
       if (!part.rig || !part.canvas) continue;
-      const rendered = makePart(THREE, part, part.slot === 'facialHair' ? null : rears.get(part.key), modelWidth, modelHeight, part.key);
+      const rendered = makePart(THREE, part, part.slot === 'facialHair' ? null : rears.get(part.key), modelWidth, modelHeight, part.key, ownerPortrait);
       holder.add(rendered.frontMesh);
       if (rendered.rearMesh) holder.add(rendered.rearMesh);
       rendered.signature = JSON.stringify(part.rig); // Compare authored geometry/motion without recreating on ordinary breathing refreshes.
@@ -746,6 +777,9 @@
       pieces: (root.userData?.portraitSplineParts || []).map(p => ({
         name: p.name, collisionLimits: p.frontMesh.userData.portraitSplineCollisionLimits,
         rear: !!p.rearMesh,
+        ownerDepth: p.frontMesh.userData.portraitSplineOwnerDepth || null,
+        frontDepthTest: p.frontMesh.material.depthTest, frontDepthWrite: p.frontMesh.material.depthWrite,
+        frontRenderOrder: p.frontMesh.renderOrder,
       })),
     }));
   }
