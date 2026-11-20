@@ -2013,6 +2013,46 @@
     return true;
   }
 
+  // Colour-only VFX in colourless depth submissions. Several replay draws run
+  // with the colour mask locked off (held depth rebuild, gear-depth recovery,
+  // x-ray shell depth). A visible descendant of held gear whose materials
+  // write neither depth nor stencil cannot change a pixel there — weapon
+  // enchantment motes (combat/weapon-enchantment-vfx.js, up to 24 per blade
+  // plane) are the large case: with an enchanted dual-wield flail they were
+  // hundreds of no-op draw calls a frame. Hidden for exactly those submissions;
+  // every colour pass still draws them. The material state is read at draw
+  // time, after the depth-material transactions, so anything those force to
+  // write depth stays.
+  let colorOnlyDepthSkipEnabled = true; // A/B switch: HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false).
+  let colorOnlyDepthSkips = 0; // Lifetime count of draws skipped by the rule above (snapshot()).
+  const colorOnlyScratch = []; // Reused per colourless submission.
+  function isColorOnlyHeldVfx(node) {
+    if (!(node.isSprite || node.isMesh || node.isPoints) || node.children?.length) return false;
+    if (heldRegistry.has(node) || waterOccludedRegistry.has(node)) return false; // Gear parts have their own depth rules.
+    if (node.onBeforeRender && node.onBeforeRender !== objectProto.onBeforeRender) return false;
+    const material = node.material;
+    const ignoreAlphaTest = !node.isMesh; // Same cutout rule as isAutoDepthReplayInert.
+    if (Array.isArray(material) ? !material.length || !material.every(m => materialLeavesDepthAndStencil(m, ignoreAlphaTest)) : !materialLeavesDepthAndStencil(material, ignoreAlphaTest)) return false;
+    return !(node.isMesh && (pngDepthRegistry.has(node) || protectedCoverRegistry.has(node) || tintCoverRegistry.has(node)
+      || hasLayer(node, PNG_OCCLUDER_LAYER) || isProtectedCover(node)));
+  }
+  // Call only while the colour mask is locked off; restore with restoreVisibility().
+  function hideColorOnlyHeldVfx(scene) {
+    if (!colorOnlyDepthSkipEnabled || !scene) return null;
+    colorOnlyScratch.length = 0;
+    for (const root of collectVisible(heldRegistry, scene)) {
+      if (!root.children?.length) continue;
+      root.traverseVisible(node => {
+        if (node !== root && isColorOnlyHeldVfx(node)) colorOnlyScratch.push(node);
+      });
+    }
+    if (!colorOnlyScratch.length) return null;
+    colorOnlyDepthSkips += colorOnlyScratch.length;
+    const hidden = hideObjects(colorOnlyScratch);
+    colorOnlyScratch.length = 0;
+    return hidden;
+  }
+
   function replayFrustumIntersects(object, instanceSphere = undefined) {
     if (object.isSprite) return replayCullFrustum.intersectsSprite(object);
     // The union cull may have already obtained this instanced world sphere.
@@ -3346,6 +3386,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes) : null; // Retain only depth-relevant sprites, cover, and missing-ground leaves.
         let backgroundHidden = null; // Only the colorless depth submission drops the visual horizon; the world and final depth restore retain it.
+        let colorOnlyHidden = null; // Held-gear VFX with no depth/stencil writes: no-ops while the colour mask is locked.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
@@ -3355,11 +3396,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           backgroundHidden = backgroundMeshes.length && !supplementDepth ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
           camera.layers.mask = originalCameraMask;
+          if (canLockColorMask) colorOnlyHidden = hideColorOnlyHeldVfx(scene);
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          if (colorOnlyHidden) restoreVisibility(colorOnlyHidden);
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (backgroundHidden) restoreVisibility(backgroundHidden);
           if (patchCulled) restoreVisibility(patchCulled);
@@ -3437,10 +3480,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const gearDepthStates = prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true);
         colorBuffer.setMask(false);
         colorBuffer.setLocked(true);
+        let gearColorOnly = null; // Read after the forced-depth transaction above.
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
+          gearColorOnly = hideColorOnlyHeldVfx(scene);
           rawRender.call(renderer, scene, camera);
         } finally {
+          if (gearColorOnly) restoreVisibility(gearColorOnly);
           colorBuffer.setLocked(false);
           colorBuffer.setMask(true);
           if (gearDepthStates) restoreMaterialStates(gearDepthStates);
@@ -3586,18 +3632,21 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return { depth, shell };
   }
 
-  function withShellDepthColorMask(colorBuffer, draw) {
+  function withShellDepthColorMask(colorBuffer, draw, scene = null) {
     // A locked WebGL color mask stops writes even when ordinary opaque world
     // materials retain colorWrite:true. The callback is synchronous, and a
     // failed draw must never leave the next color/shell pass muted.
     if (!colorBuffer?.setMask || !colorBuffer?.setLocked) return draw();
+    let colorOnly = null; // Held-gear VFX that cannot write anything in this colourless draw.
     try {
       colorBuffer.setMask(false);
       colorBuffer.setLocked(true);
+      colorOnly = hideColorOnlyHeldVfx(scene);
       const result = draw();
       shellMaskedDepthDraws++;
       return result;
     } finally {
+      if (colorOnly) restoreVisibility(colorOnly);
       colorBuffer.setLocked(false);
       colorBuffer.setMask(true);
     }
@@ -3709,7 +3758,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           backgroundHidden = backgroundMeshes.length ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
-          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           nonGroundDepthReplayCount++;
         } finally {
           if (backgroundHidden) restoreVisibility(backgroundHidden);
@@ -3746,12 +3795,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (nearToken && nearReplay.restore(renderer, nearToken, scissorActive ? scissorRect : null)) {
             // Saved depth is back; add the x-ray parts' own forced depth, as the full redraw below would have.
             camera.layers.mask = HELD_OVERLAY_MASK;
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           } else {
             if (nearToken) nearReplayFallbacks++;
             camera.layers.mask = MASK_ALL;
             renderer.clearDepth();
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera)); // The one original-depth transaction already covers the final unfiltered restore.
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene); // The one original-depth transaction already covers the final unfiltered restore.
           }
         }
       } finally {
@@ -3980,7 +4029,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4068,6 +4117,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
+    setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },

@@ -23,7 +23,13 @@ let gpuPending = 0; // Fake GPU work queued since the last readPixels (0.01 ms p
 let nativeRender = function (passName, draws, sceneName = 'world') {
   // Mimics RenderHooks' dispatch of the innermost hook around one native render.
   pass = passName;
-  const ctx = { scene: { name: sceneName }, renderer: { info: { render: { calls: draws, triangles: draws * 100 } } } };
+  // Render list: named trees for world passes so draw contributors can be grouped by ancestry.
+  const forest = { name: 'forest_3', parent: null };
+  const items = Array.from({ length: Math.min(draws, 3) }, (_, i) => ({ object: { name: 'tree_' + (10 + i), parent: forest } }));
+  const ctx = { scene: { name: sceneName }, depth: 0, renderer: {
+    info: { render: { calls: draws, triangles: draws * 100 } },
+    renderLists: { get: () => ({ opaque: items, transparent: passName === 'main' ? [{ object: { name: '', type: 'Mesh', parent: null } }] : [] }) },
+  } };
   for (const hook of registered) {
     const state = hook.before?.(ctx);
     clock += 1;
@@ -35,9 +41,11 @@ let nativeRender = function (passName, draws, sceneName = 'world') {
 function endFrame() {
   for (const hook of registered.filter(h => h.scope === 'frame' && h.__state)) { hook.after?.({}, hook.__state); hook.__state = null; }
 }
+let heldFullscreen = 0;
 const pipeline = {
   renderFrame() {
     clock += renderCostMs;
+    heldFullscreen++; // One unscissored held replay per frame in this fixture.
     nativeRender('main', 80); nativeRender('main', 14); nativeRender('shell', 4);
     if (painterlyMode !== 'off') { nativeRender('composite', 1, 'painterly_oil'); nativeRender('composite', 1, 'painterly_wash'); }
     nativeRender('composite', 1, 'world_render_composite');
@@ -67,6 +75,7 @@ const window = {
     readPixels() { clock += 0.5 + gpuPending; gpuPending = 0; }, // 0.5 ms round trip + whatever the GPU still has queued.
     finish() { clock += 0.5 + gpuPending; gpuPending = 0; },
   }) },
+  HeldObjectRenderOrder: { snapshot: () => ({ scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3 }) },
   PainterlyPostprocess: {
     getMode: () => painterlyMode,
     setMode(mode) { painterlyMode = mode; painterlyHistory.push(mode); },
@@ -155,6 +164,16 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.ok(synced.main.msPerFrame > synced.shell.msPerFrame, 'rows are sorted by cost');
   assert.match(window.RenderABBenchmark.lastText(), /synced CPU\+GPU ms per frame/);
   assert.match(window.RenderABBenchmark.lastText(), /painterly medium @ 800x450/);
+  // Draw contributors: one sampled default frame, grouped by named ancestry with digits collapsed.
+  const mainRows = Object.fromEntries(report.drawContributors.main);
+  assert.equal(mainRows['tree_#<forest_#'], 3, 'three tree draws grouped under one label');
+  assert.equal(mainRows.Mesh, 1, 'unnamed objects fall back to their type');
+  assert.equal(Object.fromEntries(report.drawContributors['main (replays/extra)'])['tree_#<forest_#'], 3);
+  assert.match(window.RenderABBenchmark.lastText(), /top draws in main \(one frame\): tree_#<forest_# x3; Mesh x1/);
+  // Held replay counters: deltas over the default windows only.
+  assert.equal(report.heldReplays.fullscreenPerFrame, 1, 'one fullscreen replay per default frame');
+  assert.equal(report.heldReplays.lastHeldFullscreenReason, 'skinned-mesh');
+  assert.match(window.RenderABBenchmark.lastText(), /held\/x-ray replays per frame: scissored 0, fullscreen 1 \(last reasons held=skinned-mesh shell=none\)/);
   assert.ok(report.betweenDrawsMsPerFrame >= 0);
   assert.equal(report.gpuTiming, false, 'no WebGL2 timer in the fixture');
   assert.equal(report.device.drawingBuffer.join('x'), '800x450');

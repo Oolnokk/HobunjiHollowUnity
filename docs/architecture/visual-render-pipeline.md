@@ -256,7 +256,11 @@ RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings 
                                              //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
                                              //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
                                              //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.
+                                             //   also: held/x-ray replays per frame (scissored vs fullscreen + reason) and the
+                                             //   top draws per pass for one sampled frame (what actually fills each pass)
 ?renderContext=lean                          // reload flag: no canvas MSAA, no preserveDrawingBuffer (report shows the context attributes)
+HeldObjectRenderOrder.snapshot()             // replay scissor/fullscreen counts + reasons, culled/kept, colorOnlyDepthSkips
+HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false) // A/B: draw no-op VFX (enchantment motes) in colourless replays again
 RenderHooks.setTiming(true)                  // per-hook ms
 RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names
@@ -281,3 +285,11 @@ filter passes (a 7×7 oil kernel spread ±10 px, two wash passes) plus a 9-tap
 finish inside the composite. `outlinesOff` therefore removes painterly too and
 moves the world onto the MSAA canvas, so it is not a clean "outline cost" —
 use `painterlyOff` and `halfResolution` to separate fill cost from JS.
+
+On a desktop GPU (GTX 1060 report, 20 Nov) the frame was draw-call bound: the
+held-object and x-ray replays submitted more draws than the main pass. Anything
+you parent to held gear (VFX sprites, glows) is drawn in the base pass and in
+the held colour overlay. If its material writes no depth and no stencil it is
+skipped in the colourless depth submissions (`hideColorOnlyHeldVfx`). Keep VFX
+that way (`depthWrite: false`, no stencil) unless it must occlude. Every
+separate sprite is a draw call in each colour pass that includes it.

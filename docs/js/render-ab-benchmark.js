@@ -98,6 +98,36 @@
     };
   }
 
+  // ── Who the draws are (one sampled default frame) ───────────────────────
+  // Groups each native render's render-list items by their named ancestry
+  // (digits collapsed), so a report says *what* fills a pass, not just how many.
+  function drawLabel(object) {
+    const parts = [];
+    for (let node = object; node && parts.length < 3; node = node.parent) {
+      if (node.name && !node.isScene) parts.push(node.name.replace(/\d+/g, '#'));
+    }
+    return (parts.join('<') || object?.type || '?').slice(0, 90);
+  }
+  function addDrawContributors(sink, key, ctx) {
+    const list = ctx?.renderer?.renderLists?.get?.(ctx.scene, ctx.depth || 0);
+    if (!list) return;
+    const counts = sink[key] || (sink[key] = new Map());
+    for (const items of [list.opaque, list.transmissive, list.transparent]) {
+      if (!items) continue;
+      for (const item of items) {
+        const label = drawLabel(item.object);
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+    }
+  }
+
+  // Held-object / x-ray replay counters (js/held-object-render-order.js). A
+  // replay that cannot be scissored redraws the whole scene.
+  const HELD_COUNTERS = ['scissoredReplays', 'fullscreenReplays'];
+  function heldReplaySnapshot() {
+    try { return window.HeldObjectRenderOrder?.snapshot?.() || null; } catch (_) { return null; }
+  }
+
   // painterly-postprocess.js renders its filter passes from inside the
   // composite draw; label them by scene so they are not lumped in with it.
   function passLabel(pipeline, scene) {
@@ -153,6 +183,11 @@
     let current = null; // { cpu: [], gpu: [] } of the variant being measured.
     let breakdown = null; // Per-pass accounting, active only for the default variant.
     let synced = null; // Synced per-pass accounting, active only in the extra synced window.
+    let contributorFrame = null; // pass key -> Map(label -> draws) while sampling one default frame.
+    let contributorsSampled = null;
+    let defaultFramesSeen = 0;
+    const heldDeltas = { frames: 0, scissoredReplays: 0, fullscreenReplays: 0 };
+    let heldLast = null;
     let nativeMsThisFrame = 0;
     const passSeenThisFrame = new Set();
     pipeline.renderFrame = function timedRenderFrame(now) {
@@ -160,6 +195,7 @@
       nativeMsThisFrame = 0;
       passSeenThisFrame.clear();
       if (synced) synced.frames++;
+      if (breakdown && !contributorsSampled && !contributorFrame && ++defaultFramesSeen >= 5) contributorFrame = {};
       const start = performance.now();
       try { return originalRenderFrame.call(this, now); }
       finally {
@@ -167,6 +203,7 @@
         if (query) gpuTimer.end(query, current.gpu);
         if (current) current.cpu.push(elapsed);
         if (breakdown) { breakdown.frames++; breakdown.betweenDrawsMs += Math.max(0, elapsed - nativeMsThisFrame); }
+        if (contributorFrame) { contributorsSampled = contributorFrame; contributorFrame = null; }
       }
     };
     // Innermost render hook: times every native render and labels it with the
@@ -195,7 +232,7 @@
         if (!breakdown) return { start: performance.now() };
         const key = passKey(passLabel(pipeline, ctx?.scene));
         const entry = breakdown.passes[key] || (breakdown.passes[key] = { ms: 0, draws: 0, triangles: 0, renders: 0, gpu: [] });
-        return { start: performance.now(), entry, query: gpuTimer && !(ctx?.depth > 0) ? gpuTimer.begin() : null }; // Timer queries cannot nest: a render inside a render is CPU-timed only.
+        return { start: performance.now(), entry, key, query: gpuTimer && !(ctx?.depth > 0) ? gpuTimer.begin() : null }; // Timer queries cannot nest: a render inside a render is CPU-timed only.
       },
       afterRender: (ctx, state) => {
         if (state.syncedEntry) {
@@ -213,6 +250,7 @@
         state.entry.draws += Number(ctx.renderer?.info?.render?.calls) || 0;
         state.entry.triangles += Number(ctx.renderer?.info?.render?.triangles) || 0;
         state.entry.renders++;
+        if (contributorFrame) addDrawContributors(contributorFrame, state.key, ctx);
       },
     });
 
@@ -282,7 +320,16 @@
             const sink = { cpu: [], gpu: results[variant.id].gpu, triangles: 0 };
             current = sink;
             if (variant.id === 'default') breakdown = passBreakdown;
+            const heldBefore = variant.id === 'default' ? heldReplaySnapshot() : null;
+            const framesBefore = passBreakdown.frames;
             const sample = await measureWindow(framesPerWindow, sink, gpuTimer);
+            if (heldBefore) {
+              heldLast = heldReplaySnapshot();
+              if (heldLast) {
+                for (const name of HELD_COUNTERS) heldDeltas[name] += Math.max(0, (Number(heldLast[name]) || 0) - (Number(heldBefore[name]) || 0));
+                heldDeltas.frames += passBreakdown.frames - framesBefore;
+              }
+            }
             results[variant.id].intervals.push(...sample.intervals);
             results[variant.id].cpu.push(...sink.cpu);
             results[variant.id].triangles += sink.triangles;
@@ -375,6 +422,18 @@
       },
       lastFrame: pipeline.snapshot?.().lastFrame || null,
       characters: area && window.CharacterVisuals ? window.CharacterVisuals.audit(area).characters : null,
+      drawContributors: contributorsSampled ? Object.fromEntries(Object.entries(contributorsSampled).map(([key, counts]) => [key,
+        [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)])) : null,
+      heldReplays: heldLast ? {
+        scissoredPerFrame: round2(heldDeltas.scissoredReplays / Math.max(1, heldDeltas.frames)),
+        fullscreenPerFrame: round2(heldDeltas.fullscreenReplays / Math.max(1, heldDeltas.frames)),
+        lastHeldFullscreenReason: heldLast.lastHeldFullscreenReason ?? null,
+        lastShellFullscreenReason: heldLast.lastShellFullscreenReason ?? null,
+        lastCoverage: heldLast.lastReplayScissorCoverage ?? null,
+        lastCulled: heldLast.lastReplayCulled ?? null,
+        lastKept: heldLast.lastReplayKept ?? null,
+        heldMeshes: heldLast.heldMeshes ?? null,
+      } : null,
     };
     lastText = [
       `Render A/B benchmark — ${lastReport.at} — area ${area}`,
@@ -384,6 +443,11 @@
       `weather: rain planes ${lastReport.weather.raining ? 'on' : 'off'}, mist ${lastReport.weather.mist ? 'on' : 'off'}; painterly ${lastReport.painterly?.mode ?? 'n/a'}${lastReport.painterly?.internalSize ? ` @ ${lastReport.painterly.internalSize}` : ''}`,
       `native renders/frame ${lastReport.lastFrame?.nativeRenders ?? '?'}, buffer ${lastReport.device.drawingBuffer?.join('x') ?? '?'} @ dpr ${lastReport.device.devicePixelRatio}, context antialias=${lastReport.device.context?.antialias} preserveDrawingBuffer=${lastReport.device.context?.preserveDrawingBuffer}, GPU timing ${gpuTimer ? 'on' : 'unavailable'}${lastReport.device.gpu ? `, ${lastReport.device.gpu}` : ''}`,
       `characters ${JSON.stringify(Object.fromEntries(Object.entries(lastReport.characters || {}).filter(([, n]) => n)))}`,
+      ...(lastReport.heldReplays ? [(h => `held/x-ray replays per frame: scissored ${h.scissoredPerFrame}, fullscreen ${h.fullscreenPerFrame} (last reasons held=${h.lastHeldFullscreenReason} shell=${h.lastShellFullscreenReason}); last scissor coverage ${h.lastCoverage}, culled/kept ${h.lastCulled}/${h.lastKept}, held meshes ${h.heldMeshes}`)(lastReport.heldReplays)] : []),
+      ...(lastReport.drawContributors ? Object.entries(lastReport.drawContributors)
+        .map(([key, rows]) => [key, rows, rows.reduce((sum, [, n]) => sum + n, 0)])
+        .sort((a, b) => b[2] - a[2]).slice(0, 4)
+        .map(([key, rows]) => `top draws in ${key} (one frame): ${rows.slice(0, 8).map(([label, n]) => `${label} x${n}`).join('; ')}`) : []),
       `${rounds} rounds x ${framesPerWindow} frames per variant; ${navigator.userAgent}`,
     ].join('\n');
     return lastReport;

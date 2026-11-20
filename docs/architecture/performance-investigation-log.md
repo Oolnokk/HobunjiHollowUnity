@@ -1,5 +1,40 @@
 # Performance investigation log
 
+## 20 Nov 2026: GTX 1060 report — draw-call bound; enchanted-weapon motes in colourless replays
+
+**Device** (Opera / Windows, GTX 1060 3GB via ANGLE D3D11, Cloud Forest, 1850×858, GPU timer
+queries available): default 13.2 fps, render CPU 56.9 ms, GPU 46.2 ms; `halfResolution` GPU
+46.6 ms (no change, so not fill-bound); per pass, GPU time tracks CPU time (held replays 14.7 ms
+CPU / 13.1 ms GPU), meaning the GPU waits on submission. ~2,470 draws a frame: main 772, held
+replays 972, x-ray shell replays 509, shell 194; 15.9 ms of JS between draws. Painterly was
+4.8 ms GPU. The `?renderContext=lean` run (13.2 → 16.8 fps default) is within that run's own
+variant spread (12.1–16.8 fps), so it is not conclusive. The earlier "GPU-bound" read was
+wrong: it is draw-call bound.
+
+**Reproduced** with the player's own character + world files loaded into the headless harness
+(same zone, 1175×545): ~2,400 draws, matching the device. The new per-pass "top draws" lines
+showed the enchanted dual-wield flail's motes (`weapon_enchantment_*`, up to 24 sprites per
+blade plane, each its own draw) in the base pass, every held replay and the x-ray shell
+replays. Two of the held replay's submissions and both shell depth submissions run with the
+colour mask locked, and the motes write neither depth nor stencil, so those draws changed no
+pixel.
+
+**Change.** `held-object-render-order.js` hides visible descendants of held gear whose
+materials write neither depth nor stencil for exactly those colourless submissions
+(`hideColorOnlyHeldVfx`; A/B: `HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false)`).
+
+**Measured** (player save, same frames): 2,291 → 2,050 draws a frame (−241, −10.5%); held
+replays 859 → 777, shell replays 437 → 281; render CPU 40.5 → 36.7 ms headless. Pixels:
+0 px difference skip on vs off in 4 views (back-to-back identical renders also 0 px).
+
+**Leads, not done:** the held depth rebuild is still ~480 draws on this save. Its scissor
+covered ~36% of the screen in one frame, apparently because the motes' VFX padding grows it.
+The ordinary supplement keeps alpha-cutout foliage, covers, depth-less ground and every mesh
+with a custom `onBeforeRender` (most WildernessChunk terrain). The held replay also falls back
+to fullscreen (`skinned-mesh`) when a skinned portrait enters the water-tint scissor. Main
+pass: ~146 WildernessChunk draws and ~150 mesa pieces. The benchmark now reports fullscreen
+replays per frame and the top draws per pass, so the next device report shows which matters.
+
 ## 20 Nov 2026: first on-device report (Cloud Forest) — GPU-bound; where the GPU goes
 
 **Device report** (Opera / Windows, Cloud Forest, buffer 1850×858 @ dpr 1.575, 17 native
