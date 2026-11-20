@@ -319,8 +319,8 @@ assert.equal(genetics.genotypeTraits('grehlr', grehlrLegacyColor).patterns.find(
   grehlrLegacyColor.base.color, 'Farm/Stable trait color chips must match actual beard tint');
 assert.equal(genetics.sellValueFor({ base: grehlrLegacyColor.base, beard: grehlrLegacyColor.beard }, 'grehlr').contrastScore, 0,
   'Beard alone has no base-versus-pattern color contrast bonus');
-const markedGrehlr = { base: { color: '#555555' }, beard: { copies: 2, enabled: true, color: '#FFFFFF' },
-  spectacles: { copies: 2, enabled: true, color: '#FFFFFF' } }; // Beard is the first expressed pattern, but spectacles still add real visible contrast.
+const markedGrehlr = { base: { color: '#445566' }, beard: { copies: 2, enabled: true, color: '#FF0000' },
+  spectacles: { copies: 2, enabled: true, color: '#aabbcc' } }; // Exact contrasting test-palette entries avoid misleading nearest-palette matches for neutral grays. // Beard is the first expressed pattern, but spectacles still add real visible contrast.
 assert(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore > 0,
   'A base-colored beard must not conceal the real contrast of later independent markings when computing sell value');
 assert.equal(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore,
