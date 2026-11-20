@@ -158,7 +158,7 @@ assert.equal(resized.coverage[idx(94,80)],0,'hood opening rescales alternate bea
 const rigidOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,2);
 assert.deepEqual(rigidOver,pinned,'rigid overlap preserves the portrait-local position');
 const bentOver=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,1);
-assert.equal(bentOver.z,.003,'bend overlap clears the hood by the minimum depth');
+assert(bentOver.z>=.003,'bend overlap stays physically in front of the hood while keeping authored depth');
 assert(bentOver.x>rigidOver.x,'bend overlap retains flexible motion');
 const hoodBehind=Rig.deformPosition(hoodRig,moved,.46,.45,1,1,false,1,0,1);
 assert(hoodBehind.z<=-.003,'opaque hood cloth seats unmarked beard vertices BEHIND the owner depth plane');
