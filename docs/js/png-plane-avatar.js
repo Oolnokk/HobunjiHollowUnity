@@ -1889,23 +1889,24 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  // A paper hinge must have a narrow crease even at the game's low animal-mesh density.
-  // Re-space existing rows around the pivot without adding vertices or changing UV-to-pixel mapping.
-  function alignAnimalYawFoldRows(geometry, pivotTopV, segmentsX, segmentsY, height) {
-    const position = geometry.getAttribute('position'); // Existing vertex positions receive the crease without allocating a second mesh.
-    const uv = geometry.getAttribute('uv'); // These UVs stay matched to the adjusted source-pixel positions.
-    if (!position?.setY || !uv?.setY || segmentsY < 3) return;
-    const pivot = clamp(pivotTopV, 0.001, 0.999); // Sprite-local top-down position of the flat fold.
-    const halfWidth = Math.min(0.003, pivot * 0.25, (1 - pivot) * 0.25); // About one sprite pixel; never runs past a card edge.
-    const upperRow = clamp(Math.round(pivot * (segmentsY - 1)), 1, segmentsY - 2); // Upper side of the crease.
-    for (let row = 0; row <= segmentsY; row++) {
-      const topV = row <= upperRow
-        ? (pivot - halfWidth) * row / upperRow
-        : pivot + halfWidth + (1 - pivot - halfWidth) * (row - upperRow - 1) / (segmentsY - upperRow - 1);
-      for (let col = 0; col <= segmentsX; col++) {
+  // A side-view animal is a paper card: yaw folds its face around a *vertical* neck
+  // crease, while pitch still uses the irregular painted head Influence region.
+  // Place two existing mesh columns around the crease without adding vertices.
+  function alignAnimalYawFoldColumns(geometry, pivotLocalU, segmentsX, segmentsY, width) {
+    const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
+    const uv = geometry.getAttribute('uv'); // Keep texture coordinates aligned with the displaced columns.
+    if (!position?.setX || !uv?.setX || segmentsX < 3) return;
+    const pivot = clamp(pivotLocalU, 0.001, 0.999); // Local left-to-right neck position; mirrored on reverse cards.
+    const halfWidth = Math.min(0.003, pivot * 0.25, (1 - pivot) * 0.25); // A nearly one-pixel-wide narrow fold.
+    const leftColumn = clamp(Math.round(pivot * (segmentsX - 1)), 1, segmentsX - 2); // Face-side column of the crease.
+    for (let col = 0; col <= segmentsX; col++) {
+      const u = col <= leftColumn
+        ? (pivot - halfWidth) * col / leftColumn
+        : pivot + halfWidth + (1 - pivot - halfWidth) * (col - leftColumn - 1) / (segmentsX - leftColumn - 1);
+      for (let row = 0; row <= segmentsY; row++) {
         const index = row * (segmentsX + 1) + col;
-        position.setY(index, (0.5 - topV) * height);
-        uv.setY(index, 1 - topV);
+        position.setX(index, (u - 0.5) * width);
+        uv.setX(index, u);
       }
     }
     position.needsUpdate = true;
@@ -1923,8 +1924,9 @@
     const segmentsY = grid?.segmentsY ?? (mapAspect >= 1 ? Math.max(8, Math.round(maxSeg / mapAspect)) : maxSeg);
     const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Paint and shoulder maps sample unchanged normalized UVs at the smaller grid.
     const renderedPivot = spriteWarp?.destinationFor?.(rig.pivot) || rig.pivot; // Baby/Small sprite warp moves the fold with the visible head.
-    const pivotTopV = clamp(finite(renderedPivot.y, rig.pivot.y), 0, 1); // Uniform horizontal yaw crease; never samples irregular head Influence.
-    alignAnimalYawFoldRows(geometry, pivotTopV, segmentsX, segmentsY, height);
+    const pivotU = clamp(finite(renderedPivot.x, rig.pivot.x), 0, 1); // Source-side neck X, not the painted head silhouette.
+    const pivotLocalU = mirrorX ? 1 - pivotU : pivotU; // Mirrored back cards crease at the same physical neck.
+    alignAnimalYawFoldColumns(geometry, pivotLocalU, segmentsX, segmentsY, width);
     const indices = geometry.index?.array; // Mirror the quad diagonals along with UVs so both faces interpolate the same skin.
     if (mirrorX && indices) {
       for (let i = 0; i < indices.length; i += 6) {
@@ -1947,10 +1949,10 @@
         sourceCoordinates[i * 2 + 1] = source.y;
       }
       const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV); // Irregular Influence remains pitch-only.
-      const foldHalfWidth = Math.min(0.003, pivotTopV * 0.25, (1 - pivotTopV) * 0.25); // Matches the geometry's crease.
+      const foldHalfWidth = Math.min(0.003, pivotU * 0.25, (1 - pivotU) * 0.25); // Matches the geometry's vertical crease.
       const yawWeight = foldHalfWidth > 0
-        ? clamp((pivotTopV + foldHalfWidth - sourceTopV) / (2 * foldHalfWidth), 0, 1)
-        : (sourceTopV <= pivotTopV ? 1 : 0); // All columns share one rigid yaw hinge.
+        ? clamp((pivotU + foldHalfWidth - sourceU) / (2 * foldHalfWidth), 0, 1)
+        : (sourceU <= pivotU ? 1 : 0); // Face side rotates rigidly; all rows at a given X share one fold weight.
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
@@ -1969,7 +1971,7 @@
     geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
     geometry.userData.hobunjiAnimalYawFold = true; // Material-response adapter must preserve the separate yaw skin weights.
-    geometry.userData.hobunjiAnimalYawFoldPivot = pivotTopV; // Pixel Probe/debugging can inspect the live crease on warped sprites.
+    geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck crease on warped sprites.
     return geometry;
   }
 
