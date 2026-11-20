@@ -80,8 +80,13 @@
       window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel?.(ref.textureRoot || ref.group,
         ref.frontCanvas, { backCanvas: ref.backCanvas });
     } else {
-      // Animal PNGs share the authored head-weight rig; collapse its head-only vertices at the neck.
-      for (const bone of [ref?.headRig?.frontHeadBone, ref?.headRig?.backHeadBone]) bone?.scale?.setScalar?.(.001);
+      // The paper-fold yaw has three head transforms per face. Collapse all of them so a headless
+      // victim cannot retain a visible yaw-only card while the pitch bone disappears.
+      for (const bone of [
+        ref?.headRig?.frontHeadBone, ref?.headRig?.backHeadBone,
+        ref?.headRig?.frontYawBone, ref?.headRig?.backYawBone,
+        ref?.headRig?.frontCombinedBone, ref?.headRig?.backCombinedBone,
+      ]) bone?.scale?.setScalar?.(.001);
     }
   }
   async function layVictims(mapId) {
