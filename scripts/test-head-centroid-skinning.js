@@ -41,6 +41,7 @@ vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
 vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
+  neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, // The outline/parity adapter reads the same small neck band as gameplay.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 vm.runInContext(extract(paritySource, 'resolvePosition'), context);
