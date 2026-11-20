@@ -1467,7 +1467,8 @@ async function fetchRepoText(path) {
   for (const url of candidates) {
     try {
       log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
-      return await (await fetchWithTimeout(url, { cache: 'default' })).text(); // Resolved commit URLs are immutable; reuse cached responses instead of downloading them again on every visit.
+      const stableRevision = /^[a-f0-9]{40}$/i.test(state.resolvedSha || ''); // Preserve fresh uncached reads if the GitHub API could not pin a branch name.
+      return await (await fetchWithTimeout(url, { cache: stableRevision ? 'default' : 'no-store' })).text();
     } catch (error) {
       lastError = error;
       log(`Fetch failed for ${url}: ${error.message}`, 'warn');
