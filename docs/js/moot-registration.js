@@ -76,6 +76,7 @@
       fullBaseRecolor: false, // A full-sprite fill would recolor the Moot's teeth, claws, hooves and black outlines.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: ['overcoat', 'mitts'], // Authored full-body overcoat (replacing coloredneck) lies beneath the separately inherited paw mitts.
+      patternRecolorKeys: { overcoat: { hex: COAT_SOURCE_COLOR, hueTolerance: 20, minSaturationRatio: 0.45 } }, // Only mint coat pixels are dyed; overcoat artwork also includes neutral teeth, hoof detail and black outlines.
       eyes: { open: SPRITES.eyes, blink: SPRITES.blink },
     };
     return true;
