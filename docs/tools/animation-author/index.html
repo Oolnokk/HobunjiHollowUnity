@@ -3438,7 +3438,9 @@ async function loadSingleAvatarAnimationCatalog({ force = false } = {}) {
     single.catalog = entries;
     const stillExists = entries.some(entry => entry.id === single.selectedCatalogId);
     if (!stillExists) single.selectedCatalogId = entries[0]?.id || null;
-    if (!single.animation && entries.length) loadSingleAvatarCatalogEntry(entries[0], { announce: false });
+    const untouchedFallback = single.source?.id === 'custom:fallback' && !single.dirty && animationAuthor.mode === 'single'; // A fresh Single-Avatar tab starts with neutral controls while network assets load.
+    if ((!single.animation || untouchedFallback) && entries.length)
+      loadSingleAvatarCatalogEntry(entries[0], { announce: false }); // Restore the historical first catalog animation unless the user edited the provisional pose or restored an autosave.
     log(`Loaded ${entries.length} editable single-avatar animations; excluded ${single.excludedPaths.length} tool-animation paths.`);
   } finally {
     single.loadingCatalog = false;
