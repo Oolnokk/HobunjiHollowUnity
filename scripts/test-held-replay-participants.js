@@ -45,6 +45,11 @@ const api = new Function('window', 'performance', code + `
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
+// Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
+assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
+assert.equal(api.limitDefault, 0, 'other characters\' weapons draw in the base pass by default');
+api.setOwnerLink(false); api.setLimit(Infinity); // The Settings "off" position: every weapon x-rays (the rules below).
+
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
 assert.deepEqual(held, [playerHand, playerBlade, tallSpear, shortHand, shortClub, orphanHand], 'every weapon keeps the x-ray; hands only for the player and short species');
@@ -60,11 +65,9 @@ assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the
 assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
 
 // Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
-// with userData.hobunjiHeldPortraitOwner. Off by default (today's behaviour:
-// unowned, fail-safe x-ray); on, they resolve to the bearer and the
+// with userData.hobunjiHeldPortraitOwner. With the link off they are unowned
+// (fail-safe x-ray); on (the default), they resolve to the bearer and the
 // non-player weapon budget can leave them to ordinary depth.
-assert.equal(api.ownerLinkDefault, false, 'owner link off by default: hostile weapons keep today\'s look');
-assert.equal(api.limitDefault, Infinity, 'no weapon budget by default');
 const bandit = (name, x) => at(node(name, scene, {}), x, 0);
 const banditA = bandit('bandit_avatar_group', 2), banditB = bandit('bandit_avatar_group', 9), banditC = bandit('bandit_avatar_group', 5);
 const holderOf = owner => { const holder = node('banditToolHolder', scene, { hobunjiHeldPortraitOwner: owner }); holder.isObject3D = true; return node('weapon', holder); };
@@ -87,7 +90,8 @@ assert.equal(api.budgetSkips(), 2);
 api.setLimit(0);
 const noneOthers = [];
 assert.deepEqual(api.split([weaponA, tallSpear, playerBlade, shortClub], scene, noneOthers, false, true), [playerBlade, shortClub],
-  'budget 0: only the player\'s and short species\' weapons x-ray');
+  'budget 0 (the default): only the player\'s and short species\' weapons x-ray');
+assert.deepEqual(noneOthers, [weaponA, tallSpear], 'hostile and NPC weapons draw with their bearer in the base pass');
 api.setLimit(Infinity); api.setOwnerLink(false);
 
 api.setPolicy('all');
@@ -100,4 +104,4 @@ assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOt
 assert.match(source, /const feet = collectVisible\(waterOccludedRegistry, scene, replayOthers\);/);
 assert.match(source, /const othersHidden = replayOthers\.length \? suppressDraws\(replayOthers, HELD_OVERLAY_MASK\) : null;/, 'non-participants are hidden from the replays that draw the held-overlay layer');
 assert.match(source, /const shortXraySpecies = new Set\(\['porakaneki'\]\);/, 'Porakaneki are on the short-species list by default');
-console.log('ok - weapons x-ray for everyone; hands for the player and short species; feet for those, near the camera only');
+console.log('ok - other characters weapons in the base pass by default (x-ray for every weapon when switched off); hands for the player and short species; feet for those, near the camera only');

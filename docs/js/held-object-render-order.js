@@ -2630,14 +2630,21 @@
   // keep weapon x-ray; the rest draw their weapon with ordinary depth, as
   // non-participant hands and feet already do. Player and short-species gear
   // are not limited. setOtherWeaponXrayLimit(Infinity) restores everyone.
-  let otherWeaponXrayLimit = Infinity;
-  // Off by default: with owners resolved, hostile weapons fall under the
-  // weapons rule above (x-ray for everyone): 6 bandits went 2,216 -> 5,875
-  // draws. With a budget of 0 they draw in the base pass instead (-257 draws,
-  // -4 scene renders vs today) but look different (mist/cutout/portrait
-  // layering), so that trade is left to an on-device A/B (benchmark variant
-  // npcWeaponsBasePass) rather than shipped silently.
-  let heldOwnerLinkEnabled = false;
+  // Default 0 (with the owner link below): other characters' weapons draw in
+  // the base pass with their bearer. On a GTX 1060 that measured ~11 ms a
+  // frame faster near a camp (benchmark variant npcWeaponsBasePass); they
+  // look slightly different (fogged by Cloud Forest mist like their bearer,
+  // layered by plain depth against grass). Settings → Render optimizations →
+  // "NPC and enemy weapons in the base pass" switches back (owner link off,
+  // budget Infinity: the old fail-safe x-ray for every weapon).
+  let otherWeaponXrayLimit = 0;
+  // Scene-sibling weapons (BanditCombat / walker tool holders) name their
+  // bearer in userData.hobunjiHeldPortraitOwner. Unresolved, each armed
+  // hostile took the unowned fail-safe path and opened an extra held-replay
+  // group; resolved under an unlimited budget it is far worse (6 bandits:
+  // 2,216 -> 5,875 draws). Resolved with a budget of 0: -257 draws, -4 scene
+  // renders vs the fail-safe path.
+  let heldOwnerLinkEnabled = true;
   let otherWeaponXrayBudgetSkips = 0; // Weapon meshes left to ordinary depth by the budget (snapshot()).
   let lastOtherWeaponXrayActors = 0; // Armed non-player actors seen by the last held collection.
   const shortXraySpecies = new Set(['porakaneki']);

@@ -1,5 +1,18 @@
 # Performance investigation log
 
+## 20 Nov 2026: NPC and enemy weapons in the base pass by default
+
+The device benchmark measured `npcWeaponsBasePass` about 11 ms a frame faster on a GTX 1060 while
+watching a camp from afar, so it is now the default: `HeldObjectRenderOrder` resolves scene-sibling
+weapons to their bearer (owner link on) and gives other characters' weapons an x-ray budget of 0, so
+they draw in the base pass with their bearer instead of in an extra held-replay group. The player's
+and short species' gear keep x-ray. The look changes slightly: those weapons are fogged by the Cloud
+Forest mist like their bearer and layer by plain depth against grass. Headless, user's Cloud Forest
+save, 6 bandits: 2,016 → 1,836 draws and 21 → 18 scene renders a frame; 16k of 518k px differ, all on
+the bandits' weapons. Settings → Render optimizations → "NPC and enemy weapons in the base pass" off
+restores the old look exactly (owner link off, budget Infinity; switching back on reproduces the
+default frame pixel for pixel). Benchmark variant `npcWeaponsXray` measures the old look.
+
 ## 20 Nov 2026: ore-rock stones merged per cell
 
 The device's top draw source was removable ore rocks: one stone mesh per rock, drawn as two

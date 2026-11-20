@@ -38,7 +38,7 @@ const document = {
 // --- Fake owners -------------------------------------------------------------
 const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
-let propOn = true, gearOnce = true, ownerLink = false, weaponLimit = Infinity, frameScope = true, treeOn = false, faceted = true;
+let propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
 const registered = [];
 const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, unknownSwitch: false })]]);
 const rain = { name: 'world_rain_planes', visible: true, parent: null };
@@ -88,16 +88,16 @@ for (const id of ['farmTileBatches', 'grassChunks', 'wildernessDistanceCull', 'h
 assert.equal(input('propBatches').checked, false, 'reflects the applied stored value');
 assert.equal(input('replayScissor').checked, true);
 assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by default');
-assert.equal(input('npcWeaponsBasePass').checked, false);
+assert.equal(input('npcWeaponsBasePass').checked, true, 'NPC weapons in the base pass by default');
 
 // Toggling calls the owner and stores only values that differ from the default.
 input('propBatches').checked = true; input('propBatches').dispatch('change');
 assert.equal(propOn, true);
 assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).propBatches, undefined, 'back to default: not pinned');
-input('npcWeaponsBasePass').checked = true; input('npcWeaponsBasePass').dispatch('change');
-assert.deepEqual([ownerLink, weaponLimit], [true, 0], 'owner link + x-ray budget 0');
-assert.equal(input('npcWeaponsBasePass').checked, true);
-assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).npcWeaponsBasePass, true);
+input('npcWeaponsBasePass').checked = false; input('npcWeaponsBasePass').dispatch('change');
+assert.deepEqual([ownerLink, weaponLimit], [false, Infinity], 'off: every weapon x-rays again (no owner link, no budget)');
+assert.equal(input('npcWeaponsBasePass').checked, false);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).npcWeaponsBasePass, false, 'the non-default choice is remembered');
 input('frameScopedHooks').checked = false; input('frameScopedHooks').dispatch('change');
 assert.equal(frameScope, false);
 
@@ -125,7 +125,7 @@ assert.equal(input('gearParticlesOnce').checked, true);
 
 // Set to Defaults: every switch at its shipped value, storage cleared.
 document.getElementById('settingRenderOptResetDefaults').dispatch('click');
-assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length], [true, true, false, Infinity, true, false, true, 0]);
+assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length], [true, true, true, 0, true, false, true, 0]);
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
 assert.ok(S.list().every(t => t.value === t.default), 'list() reports defaults');
 

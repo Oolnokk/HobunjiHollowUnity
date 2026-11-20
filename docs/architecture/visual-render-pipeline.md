@@ -285,7 +285,7 @@ await CharacterVisuals.captureVisibilityReport() // "X is invisible": per charac
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
-                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOn / gearParticlesEveryPass / npcWeaponsBasePass / skinnedScissorOff / mistOff / rainOff / cloudsOff
+                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOn / propBatchesOff / gearParticlesEveryPass / npcWeaponsXray / skinnedScissorOff / mistOff / rainOff / cloudsOff
                                              //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
                                              //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
                                              //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.
@@ -298,12 +298,13 @@ HeldObjectRenderOrder.setGearParticlesOnceEnabled(false) // A/B: particles on he
                                              //   pass and every replay group again; on (default) they draw once, in the overlay of the
                                              //   group holding their gear. Particles never x-ray as such: world-only fire (dungeon plume)
                                              //   stays off the held-overlay layer and never pads the replay scissor
-HeldObjectRenderOrder.setHeldOwnerLinkEnabled(true)    // A/B (off by default): scene-sibling weapons (BanditCombat/walker tool holders) resolve
-                                             //   to their bearer via userData.hobunjiHeldPortraitOwner instead of the unowned fail-safe
-                                             //   path, which costs every armed hostile on screen one extra "ordinary" held-replay group
-HeldObjectRenderOrder.setOtherWeaponXrayLimit(n)       // only the n armed non-player actors nearest the camera keep weapon x-ray (default Infinity);
-                                             //   with the owner link on and n = 0 hostile weapons draw in the base pass: cheapest, but they
-                                             //   then layer differently against mist/grass/portraits (see the perf log, 20 Nov combat entry)
+HeldObjectRenderOrder.setHeldOwnerLinkEnabled(false)   // On by default: scene-sibling weapons (BanditCombat/walker tool holders) resolve to their
+                                             //   bearer via userData.hobunjiHeldPortraitOwner. Off: the unowned fail-safe path, which costs
+                                             //   every armed hostile on screen one extra "ordinary" held-replay group
+HeldObjectRenderOrder.setOtherWeaponXrayLimit(n)       // only the n armed non-player actors nearest the camera keep weapon x-ray. Default 0: other
+                                             //   characters' weapons and tools draw in the base pass with their bearer (fogged by mist like
+                                             //   them, plain depth against grass). Player and short-species gear keep x-ray. Settings →
+                                             //   Render optimizations → "NPC and enemy weapons in the base pass" off = link off + Infinity
 HeldObjectRenderOrder.setSkinnedScissorEnabled(false)  // A/B: skinned bodies force full-screen held/x-ray replays again (reason skinned-mesh).
                                              //   On (default) they are bounded per bone; a hook that can re-pose a mesh at draw time
                                              //   still falls back ('skinned-draw-hook') unless it publishes __hobunjiXrayBoundParity

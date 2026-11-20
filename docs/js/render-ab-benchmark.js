@@ -29,12 +29,13 @@
 //   gearParticlesEveryPass
 //                   particles on held gear (enchantment motes, weapon fire)
 //                   are drawn in the base pass and every replay group again
-//   npcWeaponsBasePass
-//                   hostile/NPC weapons resolve to their bearer and draw in
-//                   the base pass instead of an extra held-replay group (a
-//                   different look: compare it while armed enemies are on
-//                   screen; HeldObjectRenderOrder.setHeldOwnerLinkEnabled +
-//                   setOtherWeaponXrayLimit(0))
+//   npcWeaponsXray / npcWeaponsBasePass
+//                   other characters' weapons x-ray again (the old fail-safe
+//                   replay group per armed hostile), or, when Settings has
+//                   switched that back on, draw in the base pass with their
+//                   bearer (the default: HeldObjectRenderOrder owner link on,
+//                   setOtherWeaponXrayLimit(0)). Compare while armed enemies
+//                   are on screen.
 //   mistOff / rainOff / cloudsOff
 //                   hide the Cloud Forest mist, rain/blizzard planes or sky
 //                   cloud layers while drawing (only offered when present)
@@ -328,9 +329,12 @@
     if (typeof heldOrder?.setHeldOwnerLinkEnabled === 'function' && typeof heldOrder.setOtherWeaponXrayLimit === 'function') {
       const linkBefore = heldOrder.snapshot?.().heldOwnerLinkEnabled === true;
       const limitBefore = heldOrder.snapshot?.().otherWeaponXrayLimit ?? Infinity;
-      variants.push({ id: 'npcWeaponsBasePass',
-        apply: () => { heldOrder.setHeldOwnerLinkEnabled(true); heldOrder.setOtherWeaponXrayLimit(0); },
-        undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } });
+      const basePass = linkBefore && limitBefore === 0; // The default; Settings can switch it off.
+      variants.push(basePass
+        ? { id: 'npcWeaponsXray', apply: () => { heldOrder.setHeldOwnerLinkEnabled(false); heldOrder.setOtherWeaponXrayLimit(Infinity); },
+          undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } }
+        : { id: 'npcWeaponsBasePass', apply: () => { heldOrder.setHeldOwnerLinkEnabled(true); heldOrder.setOtherWeaponXrayLimit(0); },
+          undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } });
     }
     if (typeof heldOrder?.setSkinnedScissorEnabled === 'function' && heldOrder.snapshot?.().skinnedScissorEnabled !== false) {
       variants.push({ id: 'skinnedScissorOff', apply: () => heldOrder.setSkinnedScissorEnabled(false), undo: () => heldOrder.setSkinnedScissorEnabled(true) });
