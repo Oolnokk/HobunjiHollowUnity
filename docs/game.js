@@ -23237,12 +23237,14 @@
       // playerMesh or one collection, so they cover every character by default.
       window.CharacterVisuals?.registerProvider({
         id: 'game',
-        each(area, visit) {
+        each(area, visit, options = null) {
           const K = window.CharacterVisuals.KINDS;
-          const here = (actor, root) => !!root?.parent && root.visible !== false && (!actor?.areaId || actor.areaId === area);
-          if (area === currentArea && playerMesh.parent && visit(K.PLAYER, playerMesh, player, null)) return;
+          const all = options?.includeHidden === true; // Diagnostics (visibility report) also list hidden/detached characters.
+          const shown = root => !!root && (all || (!!root.parent && root.visible !== false));
+          const here = (actor, root) => shown(root) && (!actor?.areaId || actor.areaId === area);
+          if (area === currentArea && (all || playerMesh.parent) && visit(K.PLAYER, playerMesh, player, null)) return;
           for (const walker of npcWalkers) {
-            if (walker?.area === area && walker.root?.parent && walker.root.visible !== false && visit(K.NPC, walker.root, walker, null)) return;
+            if (walker?.area === area && shown(walker.root) && visit(K.NPC, walker.root, walker, null)) return;
           }
           for (const hostile of hostileObjects) {
             const root = hostile?.avatarRef?.group;
@@ -23264,7 +23266,7 @@
           if (area === 'farm') {
             for (const animal of animalObjects) {
               const root = animal?.avatarRef?.group;
-              if (root?.parent && root.visible !== false && visit(K.FARM_ANIMAL, root, animal, null)) return;
+              if (shown(root) && visit(K.FARM_ANIMAL, root, animal, null)) return;
             }
           }
         },

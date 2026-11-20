@@ -491,7 +491,48 @@
     });
     row.append(label, button);
     anchor.insertAdjacentElement('afterend', row);
+    installVisibilityReportRow(row);
     return true;
+  }
+
+  // "A character is invisible": one click captures what the next frame's main
+  // pass drew and why each character part was or wasn't in it
+  // (CharacterVisuals.captureVisibilityReport, js/character-visuals.js).
+  function installVisibilityReportRow(after) {
+    if (typeof after?.insertAdjacentElement !== 'function' || document.getElementById('characterVisibilityReportBtn')) return;
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.setAttribute('data-dev-only', '');
+    const label = document.createElement('div');
+    label.className = 'settings-label';
+    const name = document.createElement('div');
+    name.className = 'settings-name';
+    name.textContent = 'Character visibility report';
+    const desc = document.createElement('div');
+    desc.className = 'settings-desc';
+    desc.textContent = 'If you, an NPC or an enemy is invisible: close the menu, then this copies why for every character here (hidden parents, position, layers, materials, whether the last frame drew it, render errors).';
+    label.append(name, desc);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.id = 'characterVisibilityReportBtn';
+    button.className = 'settings-small-btn';
+    button.textContent = 'Copy';
+    button.addEventListener('click', async () => {
+      button.textContent = 'Capturing…';
+      try {
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Time to close the menu.
+        const report = await window.CharacterVisuals.captureVisibilityReport();
+        try { await navigator.clipboard?.writeText?.(report.text); button.textContent = 'Copied'; }
+        catch (_) { button.textContent = 'Done'; }
+        window.__farmLog?.(report.text, 'info');
+      } catch (error) {
+        button.textContent = 'Failed';
+        window.__farmLog?.(`[CharacterVisibilityReport] ${error?.message || error}`, 'warn');
+      }
+      setTimeout(() => { button.textContent = 'Copy'; }, 4000);
+    });
+    row.append(label, button);
+    after.insertAdjacentElement('afterend', row);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSettingsRow, { once: true });

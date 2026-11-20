@@ -736,6 +736,7 @@
     // Read-only views for diagnostics/tests
     get materials() { return { shell: shellOutlineMat, targetAllowed: targetOutlineGreenMat, targetBlocked: targetOutlineRedMat, seamId: _furnitureIdMat, composite: _postMat }; },
     get targets() { return { main: _mainRT, seamId: _edgeIdRT }; },
+    get camera() { return deps?.camera || null; }, // The gameplay camera every world pass uses (diagnostics).
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),
     applyOutlineRenderingConfig,
     currentPass: () => currentPass,

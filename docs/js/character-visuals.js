@@ -93,7 +93,8 @@
   }
 
   // visit(kind, root, entity, ownerRoot); return true from visit to stop early.
-  function forEachCharacter(area, visit, kinds = null) {
+  // options.includeHidden: also hidden/detached characters (diagnostics only).
+  function forEachCharacter(area, visit, kinds = null, options = null) {
     let stopped = false;
     const filtered = kinds ? (kind, root, entity, owner) => {
       if (stopped || !kinds.includes(kind)) return stopped;
@@ -106,7 +107,7 @@
     };
     for (const provider of providers) {
       if (stopped) break;
-      try { provider.each(area, filtered); }
+      try { provider.each(area, filtered, options); }
       catch (error) { console.warn(`[CharacterVisuals] provider ${provider.id} failed`, error); }
     }
   }
@@ -168,6 +169,144 @@
     };
   }
 
+  // ── "Why can't I see this character?" ───────────────────────────────────
+  // For every character in the area: each portrait part's own and ancestor
+  // visibility, world position, camera layer and frustum tests, material
+  // state, and (captureVisibilityReport) whether it was actually in the main
+  // pass's draw list, plus render hook / scope / replay errors. Read-only.
+  function partsOf(root, entity) {
+    const front = entity?.avatarRef?.frontPlane || null; // Animal/pet art: separate front and back planes.
+    const back = entity?.avatarRef?.backPlane || null;
+    if (front || back) return [['front', front], ['back', back]].filter(([, part]) => part);
+    const portrait = portraitMeshOf(root);
+    return portrait ? [['portrait', portrait]] : [];
+  }
+  const NEAR_TILES = 15; // Closer than this, "hidden on purpose" is reported as suspicious.
+  const finite3 = v => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+  const round = v => Math.round(v * 100) / 100;
+  function describePart(label, mesh, ctx) {
+    const THREE = window.THREE;
+    let hiddenBy = null, inScene = false;
+    for (let node = mesh; node; node = node.parent) {
+      if (node.visible === false && !hiddenBy) hiddenBy = node === mesh ? '(self)' : (node.name || node.type);
+      if (node.isScene) inScene = node === ctx.scene;
+    }
+    const world = new THREE.Vector3();
+    mesh.updateWorldMatrix?.(true, false);
+    mesh.getWorldPosition?.(world);
+    const det = mesh.matrixWorld?.determinant?.() ?? 1;
+    const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+    let inFrustum = null;
+    if (ctx.frustum && mesh.geometry) {
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere?.();
+      const sphere = mesh.geometry.boundingSphere ? mesh.geometry.boundingSphere.clone().applyMatrix4(mesh.matrixWorld) : null;
+      if (sphere && Number.isFinite(sphere.radius)) { sphere.radius += 1; inFrustum = ctx.frustum.intersectsSphere(sphere); } // Padded: skinned parts move off their bind pose.
+    }
+    const issues = [];
+    if (hiddenBy) issues.push('hidden by ' + hiddenBy);
+    if (!inScene) issues.push('not in the active scene');
+    if (!finite3(world)) issues.push('non-finite position');
+    if (!(Math.abs(det) > 1e-12)) issues.push('zero/invalid scale');
+    if (ctx.camera && !ctx.camera.layers.test(mesh.layers)) issues.push(`layers 0x${(mesh.layers.mask >>> 0).toString(16)} not seen by camera`);
+    if (inFrustum === false) issues.push('outside camera frustum');
+    for (const m of materials) {
+      if (m.visible === false) issues.push('material hidden');
+      if (m.colorWrite === false) issues.push('colorWrite off');
+      if (m.transparent && !(m.opacity > 0.01)) issues.push(`opacity ${m.opacity}`);
+      if (m.map && !(m.map.image?.width > 0)) issues.push('texture not loaded');
+    }
+    if (ctx.drawn && !ctx.drawn.has(mesh) && !hiddenBy && inScene) issues.push('not in main-pass draw list');
+    return {
+      part: label,
+      name: mesh.name || mesh.type,
+      visibleSelf: mesh.visible !== false,
+      hiddenBy,
+      inScene,
+      position: [round(world.x), round(world.y), round(world.z)],
+      layers: '0x' + (mesh.layers.mask >>> 0).toString(16),
+      inFrustum,
+      drawnLastFrame: ctx.drawn ? ctx.drawn.has(mesh) : null,
+      renderOrder: mesh.renderOrder,
+      materials: materials.map(m => ({ name: m.name || m.type, visible: m.visible !== false, opacity: round(Number(m.opacity)), transparent: !!m.transparent,
+        depthWrite: m.depthWrite !== false, depthTest: m.depthTest !== false, colorWrite: m.colorWrite !== false, alphaTest: m.alphaTest || 0 })),
+      issues,
+    };
+  }
+  function visibilityReport(options = {}) {
+    const area = options.area ?? window.GridTileAccessors?.getCurrentArea?.() ?? null;
+    const scene = options.scene ?? window.GridTileAccessors?.getActiveScene?.() ?? null;
+    const camera = options.camera ?? window.WorldRenderPipeline?.camera ?? null;
+    const THREE = window.THREE;
+    let frustum = null;
+    if (camera?.projectionMatrix && THREE?.Frustum) {
+      camera.updateMatrixWorld?.(true);
+      frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    }
+    const ctx = { scene, camera, frustum, drawn: options.drawn || null };
+    const characters = [];
+    if (area != null) forEachCharacter(area, (kind, root, entity) => {
+      const parts = partsOf(root, entity).map(([label, mesh]) => describePart(label, mesh, ctx));
+      let rootHiddenBy = null;
+      for (let node = root; node; node = node.parent) if (node.visible === false) { rootHiddenBy = node.name || node.type; break; }
+      // Wildlife the game hides on purpose (den, distance LOD, not streamed in yet).
+      const intended = kind === KINDS.PLAYER ? null
+        : entity?._denHidden ? 'resting in its den'
+          : entity?._wildlifeVisualLodHidden ? 'far away (wildlife visual LOD)'
+            : entity?.streamVisuals && !entity?._wildlifeVisualsReleased ? 'visuals not streamed in yet' : null;
+      characters.push({ kind, name: entity?.def?.label || entity?.creatureKey || entity?.name || root?.name || kind, rootHiddenBy, parts, intended,
+        issues: parts.length ? parts.flatMap(part => part.issues.map(issue => `${part.part}: ${issue}`)) : ['no portrait mesh found'] });
+    }, null, { includeHidden: true });
+    // Distance to the player decides whether "hidden on purpose" is believable:
+    // an attacker beside the player should never be LOD- or den-hidden.
+    const playerPart = characters.find(c => c.kind === KINDS.PLAYER)?.parts[0];
+    for (const c of characters) {
+      const part = c.parts[0];
+      c.tilesFromPlayer = playerPart && part ? round(Math.hypot(part.position[0] - playerPart.position[0], part.position[2] - playerPart.position[2])) : null;
+      c.hiddenByDesign = !!c.intended && !(c.tilesFromPlayer != null && c.tilesFromPlayer < NEAR_TILES);
+    }
+    const hooks = window.RenderHooks?.getDebug?.();
+    const pipeline = window.WorldRenderPipeline?.snapshot?.();
+    const held = (() => { try { return window.HeldObjectRenderOrder?.snapshot?.() || null; } catch (_) { return null; } })();
+    return {
+      at: new Date().toISOString(),
+      area,
+      cameraPosition: camera ? [round(camera.position.x), round(camera.position.y), round(camera.position.z)] : null,
+      cameraFinite: camera ? finite3(camera.position) : null,
+      characters,
+      hookErrors: (hooks?.hooks || []).filter(hook => hook.errors).map(hook => ({ id: hook.id, errors: hook.errors, lastError: hook.lastError || null })),
+      scopeErrors: (pipeline?.scopes || []).filter(scope => scope.errors).map(scope => ({ id: scope.id, errors: scope.errors, lastError: scope.lastError || null })),
+      heldInvariantRepairs: held?.invariantRepairs ?? null,
+    };
+  }
+  // Records what the next frame's main pass actually draws, then reports.
+  async function captureVisibilityReport(options = {}) {
+    const drawn = new Set();
+    const pipeline = window.WorldRenderPipeline;
+    let captured = false;
+    let camera = null; // The camera the main pass actually used.
+    const off = window.RenderHooks?.register?.({
+      id: 'character-visibility-report', owner: 'character-visuals.js', order: 1e9 - 1,
+      afterRender: ctx => {
+        if (captured || pipeline?.currentPass?.() !== 'main') return;
+        captured = true; // The main pass's first (base) render only.
+        camera = ctx.camera || null;
+        const list = ctx.renderer?.renderLists?.get?.(ctx.scene, ctx.depth || 0);
+        for (const items of [list?.opaque, list?.transmissive, list?.transparent]) for (const item of items || []) drawn.add(item.object);
+      },
+    });
+    try {
+      for (let i = 0; i < 3 && !captured; i++) await new Promise(resolve => requestAnimationFrame(resolve));
+    } finally { off?.(); }
+    const report = visibilityReport({ camera: camera || undefined, ...options, drawn: captured ? drawn : null });
+    report.text = [
+      `Character visibility — ${report.at} — area ${report.area}; camera ${report.cameraFinite === false ? 'NON-FINITE ' : ''}${JSON.stringify(report.cameraPosition)}; main pass captured ${captured}`,
+      ...report.characters.filter(c => !c.hiddenByDesign).map(c => `${c.kind} ${c.name}${c.tilesFromPlayer != null ? ` (${c.tilesFromPlayer} tiles)` : ''}: ${c.issues.length ? c.issues.join('; ') : 'ok'}${c.intended ? ` — flagged "${c.intended}" yet close to the player` : ''} ${c.parts.map(p => `[${p.part} ${p.name} pos ${p.position.join(',')} layers ${p.layers} drawn ${p.drawnLastFrame}]`).join(' ')}`),
+      (byDesign => byDesign.length ? `hidden by design, far from the player: ${Object.entries(byDesign.reduce((acc, c) => { acc[c.intended] = (acc[c.intended] || 0) + 1; return acc; }, {})).map(([why, n]) => `${n} ${why}`).join(', ')}` : 'hidden by design: none')(report.characters.filter(c => c.hiddenByDesign)),
+      `hook errors ${JSON.stringify(report.hookErrors)}; scope errors ${JSON.stringify(report.scopeErrors)}; held invariant repairs ${report.heldInvariantRepairs}`,
+    ].join('\n');
+    return report;
+  }
+
   window.CharacterVisuals = Object.freeze({
     KINDS,
     ALL_KINDS: ALL,
@@ -178,5 +317,7 @@
     forEachCharacter,
     portraitMeshOf,
     audit,
+    visibilityReport,
+    captureVisibilityReport,
   });
 })();

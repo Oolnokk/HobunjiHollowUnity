@@ -249,6 +249,9 @@ WorldRenderPipeline.snapshot()               // last frame: native renders, scop
 WorldRenderPipeline.setScopeEnabled('zone-prop-batches', false) // A/B one scope
 RenderHooks.getDebug()                       // hooks in order: calls/applies/skips/errors
 CharacterVisuals.audit('map_western_slope')  // characters by kind + which visual systems cover them
+await CharacterVisuals.captureVisibilityReport() // "X is invisible": per character part — hidden ancestor, position, layers,
+                                             // frustum, material flags, drawn in the last main pass? + hook/scope errors
+                                             // (also Settings → Dev Tools → "Character visibility report", copies the text)
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
