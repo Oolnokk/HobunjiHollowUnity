@@ -77,6 +77,7 @@
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: ['overcoat', 'mitts'], // Authored full-body overcoat (replacing coloredneck) lies beneath the separately inherited paw mitts.
       patternRecolorKeys: { overcoat: { hex: COAT_SOURCE_COLOR, hueTolerance: 20, minSaturationRatio: 0.45 } }, // Only mint coat pixels are dyed; overcoat artwork also includes neutral teeth, hoof detail and black outlines.
+      clipPatternsToBase: ['overcoat'], // Overcoat PNGs retain opaque black pixels outside the animal's silhouette; never draw those over the world.
       eyes: { open: SPRITES.eyes, blink: SPRITES.blink },
     };
     return true;
