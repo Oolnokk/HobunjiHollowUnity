@@ -9,7 +9,10 @@ const speciesSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'ut
 const gameSource = fs.readFileSync('docs/game.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 
-assert.match(avatarSource, /function applyAnimalHeadRig\([\s\S]{0,5000}avatarRef\.updateHeadRotation =/,
+const animalRigStart = avatarSource.indexOf('function applyAnimalHeadRig('); // Anchors the head API test within its real owning function, regardless of its length.
+const animalRigEnd = avatarSource.indexOf('function installAnimalHeadRigRuntime(', animalRigStart); // Bounds the owned function so an unrelated API cannot satisfy this check.
+assert.ok(animalRigStart >= 0 && animalRigEnd > animalRigStart
+  && avatarSource.slice(animalRigStart, animalRigEnd).includes('avatarRef.updateHeadRotation ='),
   'the painted-weight avatar runtime exposes a smoothed head-rotation API');
 assert.match(avatarSource, /avatarRef\.setHeadAdditiveRotation =/,
   'the painted-weight avatar runtime exposes an additive neck-animation layer');
