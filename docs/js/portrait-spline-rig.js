@@ -334,11 +334,16 @@
           uniform bool splineOrthographic;
         `)
         .replace('#include <map_fragment>', `#include <map_fragment>
-          vec3 hoodRay = splineOrthographic ? splineViewDirection : splineHoodPosition - splineEye;
-          if (abs(hoodRay.z) > 0.00001 && texture2D(splineHoodMask, vUv).g < 0.5) {
-            vec2 hoodUV = (splineHoodPosition.xy - hoodRay.xy * (splineHoodPosition.z / hoodRay.z)) / splinePortraitSize + 0.5;
-            if (all(greaterThanEqual(hoodUV, vec2(0.0))) && all(lessThanEqual(hoodUV, vec2(1.0)))
-                && texture2D(splineHoodMask, hoodUV).r > 0.5) discard;
+          // Intersect the sightline toward the camera with the actual hood plane.
+          // A hood pixel can hide hair only if it lies BETWEEN the hair and eye.
+          vec3 hoodTowardEye = splineOrthographic ? splineViewDirection : splineEye - splineHoodPosition;
+          if (abs(hoodTowardEye.z) > 0.00001 && texture2D(splineHoodMask, vUv).g < 0.5) {
+            float hoodRayStep = -splineHoodPosition.z / hoodTowardEye.z;
+            if (hoodRayStep > 0.00001 && (splineOrthographic || hoodRayStep < 1.0)) {
+              vec2 hoodUV = (splineHoodPosition.xy + hoodTowardEye.xy * hoodRayStep) / splinePortraitSize + 0.5;
+              if (all(greaterThanEqual(hoodUV, vec2(0.0))) && all(lessThanEqual(hoodUV, vec2(1.0)))
+                  && texture2D(splineHoodMask, hoodUV).r > 0.5) discard;
+            }
           }
         `);
       shader.uniforms.splinePortraitSize = size;
@@ -471,7 +476,7 @@
     // Old multi-knot assets migrate at load: preserve the root and final tip, drop every blend-space segment.
     const points=[input.points[0],input.points[input.points.length-1]].map((point,i)=>({
       u:clamp(finite(point?.u,.5),0,1),v:clamp(finite(point?.v,.5+i*.2),0,1),
-      depth:clamp(finite(point?.depth,.012+i*.02),.003,.35),
+      depth:clamp(finite(point?.depth,.012+i*.02),-.35,.35), // Signed depth lets authored beard geometry pass behind its owner's portrait.
     }));
     if(Math.hypot(points[1].u-points[0].u,points[1].v-points[0].v)<.005)return null;
     const defaults=defaultBone(points),raw=input.bone||{};
@@ -513,7 +518,7 @@
       x:base.x+end.x,y:base.y+end.y,z:base.z+end.z,
     };
     let collisions=0;
-    if(target.z<.003){
+    if(root.depth>=.003 && tip.depth>=.003 && target.z<.003){
       collisions=1;
       const start=rest[1],denominator=start.z-target.z;
       const fraction=denominator>0?clamp((start.z-.003)/denominator,0,1):0;
@@ -537,9 +542,11 @@
     return Object.fromEntries(['x','y','z'].map(axis=>[axis,get(a,axis)*(1-t)+get(b,axis)*t]));
   }
 
-  function deformPosition(rig, posed, u, v, width, height, pinned = false, motion = pinned ? 0 : 1, overlap = 0) {
+  function deformPosition(rig, posed, u, v, width, height, pinned = false, motion = pinned ? 0 : 1, overlap = 0, covered = 0) {
     const x = u - .5, y = .5 - v;
-    if (pinned || overlap === 2) return { x: x * width, y: y * height, z: .0008 * height };
+    const behindHood = covered && !overlap; // Only real opaque hood pixels (outside its stretched opening) hide the attached strand.
+    if (pinned || overlap === 2) return { x: x * width, y: y * height,
+      z: (behindHood ? -.0008 : .0008) * height };
     let index = 0, fraction = 0, closest = Infinity;
     for (let i = 0; i < rig.points.length - 1; i++) {
       const a = rig.points[i], b = rig.points[i + 1];
@@ -552,10 +559,12 @@
     const rest = curvePoint(rig.points, 0, fraction, true); // One bone: linear root-to-tip interpolation.
     const target = curvePoint(posed, 0, fraction); // Same single-joint shape for all wind directions.
     const influence = (1 - clamp(Math.sqrt(closest) / Math.max(.01, rig.width), 0, 1) ** 2) * motion;
-    const z = overlap ? .003 : Math.max(.003, rest.z + (target.z - rest.z) * influence);
+    const authoredDepth = rest.z + (target.z - rest.z) * influence;
+    const z = behindHood ? Math.min(-.003, authoredDepth)
+      : overlap ? Math.max(.003, authoredDepth) : authoredDepth;
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
-      z: (.0008 + (z - .0008) * motion) * height };
+      z: (behindHood && motion === 0 ? -.0008 : .0008 + (z - .0008) * motion) * height };
   }
 
   const OWNER_DEPTH_EPSILON = 0.01; // Beard renders immediately before its owner's portrait so depth, not sprite layers, determines mutual visibility.
@@ -636,9 +645,10 @@
       const posed = posePoints(rig, wind);
       for (let i = 0; i < rest.count; i++) {
         const u = base[i * 3] / width + .5, v = .5 - base[i * 3 + 1] / height;
-        if (frontMotion[i] === 0) continue; // Fixed vertices were initialized directly from the portrait plane.
-        const motion=hoodFit?.aperture?.[frontPixels[i]]?0:frontMotion[i]; // The strand at the elastic hood opening stays seated even in a gust.
-        const p=deformPosition(rig,posed.points,u,v,width,height,false,motion,hoodFit?.overlap[frontPixels[i]]);
+        if (frontMotion[i] === 0 && !force) continue; // Rigid pixels need re-seating only when the hood is added, changed, or removed.
+        const pixel=frontPixels[i],motion=hoodFit?.aperture?.[pixel]?0:frontMotion[i]; // The strand at the elastic hood opening stays seated even in a gust.
+        const p=deformPosition(rig,posed.points,u,v,width,height,frontMotion[i]===0,motion,
+          hoodFit?.overlap?.[pixel] || 0,hoodFit?.coverage?.[pixel] || 0);
         rest.setXYZ(i,p.x,p.y,p.z);
       }
       if(rearPositions) for (let i = 0; i < rearPositions.count; i++) {
@@ -780,6 +790,12 @@
         ownerDepth: p.frontMesh.userData.portraitSplineOwnerDepth || null,
         frontDepthTest: p.frontMesh.material.depthTest, frontDepthWrite: p.frontMesh.material.depthWrite,
         frontRenderOrder: p.frontMesh.renderOrder,
+        signedDepth: (() => {
+          const values = p.frontMesh.geometry.attributes.position.array;
+          let front = 0, rear = 0;
+          for (let i = 2; i < values.length; i += 3) values[i] < 0 ? rear++ : front++;
+          return { frontVertices:front, behindOwnerVertices:rear };
+        })(), // Computed only when the developer requests mobile diagnostics, not per-frame.
       })),
     }));
   }
