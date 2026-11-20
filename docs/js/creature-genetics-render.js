@@ -414,8 +414,8 @@
     rememberRecolor(key, promise);
     return promise;
   }
-  async function recoloredPattern(url, color) {
-    const key = `pattern|${url}|${color}`;
+  async function recoloredPattern(url, color, sourceKey = null, sourceReferenceHex = null) {
+    const key = `pattern|${url}|${color}|source:${sourceKey?.hex || 'all'}|ref:${sourceReferenceHex || 'auto'}`; // Separate keyed coat artwork from ordinary fully tintable masks.
     if (_recolorCache.has(key)) return cachedRecolor(key);
     const promise = (async () => {
       const img = await loadImage(url);
@@ -423,7 +423,8 @@
       const c = makeCanvas(img.naturalWidth, img.naturalHeight), ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0);
       const data = ctx.getImageData(0, 0, c.width, c.height), px = data.data;
-      recolorPixels(px, hexToRgb(color), null);
+      if (sourceKey) recolorKeyedPixels(px, hexToRgb(color), sourceKey, sourceReferenceHex, `animal-pattern:${url}`); // Preserve non-coat detail present in Moot's overcoat PNG.
+      else recolorPixels(px, hexToRgb(color), null);
       ctx.putImageData(data, 0, 0);
       return c;
     })().catch(err => { if (_recolorCache.get(key) === promise) forgetRecolor(key); throw err; });
@@ -754,7 +755,8 @@
         // stored base color. Any other simultaneous pattern keeps its own
         // ordinary layer.color.
         const renderColor = bodyStripesColorSwap && patternId === 'bodystripes' ? storedBaseColor : layer.color; // Effective color for this overlay only.
-        const recolored = await recoloredPattern(url, renderColor);
+        const patternSourceKey = spec.patternRecolorKeys?.[patternId] || null; // Only anatomically keyed overlay regions opt into selective pigment tinting.
+        const recolored = await recoloredPattern(url, renderColor, patternSourceKey, patternSourceKey ? spec.baseShadeReferenceHex : null);
         let renderedLayer = recolored;
         try {
           const painted = await applyColorPoolPaint(recolored, genotype, patternId, null, `animal:${kind}:${frame}:${patternId}:${renderColor || 'native'}`);
