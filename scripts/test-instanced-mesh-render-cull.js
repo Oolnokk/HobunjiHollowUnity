@@ -323,8 +323,20 @@ assert.equal(replay.stats().lastReplayInertCount, 4, 'auto-inert leaves are coun
 assert.match(heldSource, /if \(replayFrustumIntersects\(object\)\) continue;/, 'cullReplayGroup shares the instance-aware test');
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
-assert.match(game, /const restoreGrassChunks = window\.GrassBillboardRenderChunks\?\.suspendForRender\?\.\(activeScene\);\s*\n\s*const restoreWallVisuals = window\.InstancedMeshViewCull\?\.suspendForRender\?\.\(activeScene, camera\);/, 'grass swaps to chunks before the view cull runs');
-assert.match(game, /finally \{[\s\S]{0,500}restoreWallVisuals\?\.\(\);[\s\S]{0,200}restoreGrassChunks\?\.\(\);/, 'both are restored in finally');
+{ // Render scopes are owned by js/world-render-pipeline.js: execute a frame, including a failing one.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  const events = h.frame();
+  const at = (kind, id) => events.findIndex(e => e.kind === kind && e.id === id);
+  assert(at('suspend', 'grass-chunks') >= 0 && at('suspend', 'grass-chunks') < at('suspend', 'instanced-view-cull'), 'grass swaps to chunks before the view cull runs');
+  const grassSuspend = events[at('suspend', 'grass-chunks')];
+  assert.equal(grassSuspend.args[0], h.activeScene);
+  assert.equal(events[at('suspend', 'instanced-view-cull')].args[1], h.camera);
+  assert(at('restore', 'instanced-view-cull') < at('restore', 'grass-chunks'), 'the view cull is undone before the grass chunks');
+  h.throwOn = () => true;
+  assert.throws(() => h.frame());
+  assert(h.log.some(e => e.kind === 'restore' && e.id === 'grass-chunks') && h.log.some(e => e.kind === 'restore' && e.id === 'instanced-view-cull'), 'both are restored in finally');
+}
 for (const file of ['instanced-mesh-bounds', 'instanced-mesh-view-cull', 'grass-billboard-render-chunks']) {
   assert.match(index, new RegExp(`js/${file}\\.js\\?v=[A-Za-z0-9_-]+`), `${file} is loaded by the game page`);
 }

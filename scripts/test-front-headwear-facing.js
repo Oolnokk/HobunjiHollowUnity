@@ -48,7 +48,7 @@ assert.deepEqual(headLayers(leatherHeadband), ['front'], 'Leather Headband is au
 assert.ok(headLayers(wideKasa).includes('front') && headLayers(wideKasa).includes('back'), 'Riverland Kasa keeps authored front and back art');
 assert.deepEqual(headLayers(tangedCirclet), ['front'], 'Tanged Circlet has one sprite per portrait view');
 
-const expectedTangedBack = { // Used by the loop below to keep circlet rear bands aligned with Basic Headband species art.
+const expectedTangedBack = { // Circlet uses dedicated metal-shaded rear headband silhouettes for each matching species shape.
   'mao-ao_male': 'headband.png',
   'mao-ao_female': 'headband.png',
   'tletingan_male': 'tl_headband.png',
@@ -66,12 +66,15 @@ const expectedTangedBack = { // Used by the loop below to keep circlet rear band
   'mashtzarr_male': 'mashtz_headband_m.png',
   'mashtzarr_female': 'mashtz_headband_m.png',
 };
+for (const [variant, frontName] of Object.entries(expectedTangedBack)) {
+  expectedTangedBack[variant] = frontName.replace(/\.png$/, '_behind_metal.png');
+} // Retain the current species→band-shape mapping, but assert the new dedicated rear PNG.
 const portraitContext = vm.createContext({ window: {}, console }); // Uses the shipped config and portrait implementation, including species variants.
 vm.runInContext(read('docs/config/scratchbones-config.js'), portraitContext);
 vm.runInContext(read('docs/js/portrait-utils.js'), portraitContext);
 const circletOption = portraitContext.portraitOptionFromJson({ id: 'tangedcirclet' }, tangedCirclet); // Actual runtime option, with no extra rear layer.
 for (const [variant, filename] of Object.entries(expectedTangedBack)) {
-  const layers = circletOption.variantLayers[variant]; // Exactly one front sprite is replaced when rendering the back plane.
+  const layers = circletOption.variantLayers[variant]; // One front sprite remains in front; its matching behindImage supplies the metal rear.
   assert.equal(layers.length, 1, variant + ' has no additive headband layer');
   assert.equal(layers[0].pos, 'front');
   assert.equal(layers[0].paletteColorKey, 'A', 'rear replacement retains metal material routing');
@@ -79,7 +82,7 @@ for (const [variant, filename] of Object.entries(expectedTangedBack)) {
   assert(layers[0].url.includes('tangedcirclet'), 'rear lookup does not mutate front art');
   assert(fs.existsSync('docs/assets/cosmetics/clothes/hat/' + filename));
 }
-assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circletOption, 'male'), 'cosmetics/clothes/hat/headband.png');
+assert.equal(portraitContext._getBehindLayerUrl(circletOption.layers[0], circletOption, 'male'), 'cosmetics/clothes/hat/headband_behind_metal.png');
 
 const helmOption = portraitContext.portraitOptionFromJson({ id: 'replica_bzabag_helm' }, bzabagHelm);
 const helmLayers = helmOption.variantLayers['mao-ao_male'];
@@ -90,7 +93,7 @@ assert(helmLayers[1].url.endsWith("replica_bzabag's_helm-faceguard_m.png"), 'met
 assert.deepEqual(Array.from(helmLayers, layer => layer.materialKind), ['cloth', 'metal'], 'cap and band retain independent material treatment');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[0], helmOption, 'male'), helmLayers[0].url, 'rear cap retains its exact source PNG');
 assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), 'cosmetics/clothes/hat/headband.png', 'rear metal band shares Tanged Circlet behind sprite');
-assert.equal(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'the rear-band pixels use the existing Tanged Circlet path');
+assert.notEqual(portraitContext._getBehindLayerUrl(helmLayers[1], helmOption, 'male'), portraitContext._getBehindLayerUrl(circletOption.variantLayers['mao-ao_male'][0], circletOption, 'male'), 'replica helm retains its own legacy rear band; only circlets use the new metallic flipped back');
 assert.equal(helmOption.variantLayers['mao-ao_female'], undefined, 'unillustrated gender does not inherit helm sprites');
 
 // The loom/icon compositor must follow the same explicit headwear rear URL as the actual portrait.

@@ -539,8 +539,19 @@
     assignments.forEach((button, slotIndex) => renderCombatButton(slotIndex, button));
   }
 
+  // Runs up to 10x a second (interval + mutation observers). A document-wide
+  // '#a, #b, .arc-slot' selector match walked the whole (very large) game DOM
+  // each time — the top querySelectorAll cost in a wilderness CPU profile.
+  // ID lookups plus a live class collection give the same elements for free.
+  const STATIC_ICON_IDS = ['toolBtn', 'itemBtn', 'btnWeaponSwitch', 'btnAmmoSelect', 'potionBtn'];
+  let arcSlotElements = null; // Live HTMLCollection kept current by the DOM.
   function refreshStaticIcons() {
-    document.querySelectorAll('#toolBtn, #itemBtn, #btnWeaponSwitch, #btnAmmoSelect, #potionBtn, .arc-slot').forEach(applyStaticIcon);
+    for (const id of STATIC_ICON_IDS) {
+      const element = document.getElementById(id);
+      if (element) applyStaticIcon(element);
+    }
+    if (!arcSlotElements) arcSlotElements = document.getElementsByClassName('arc-slot');
+    for (let i = 0; i < arcSlotElements.length; i++) applyStaticIcon(arcSlotElements[i]);
   }
 
   function refresh() {

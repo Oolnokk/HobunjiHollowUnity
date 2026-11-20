@@ -4,7 +4,7 @@
   // Southern Cloud Forest mist (also reused for Western Slope blowing snow) + non-invasive sky/lighting integration.
   // The original skydome/material rendering paths remain authoritative.
   // The outline pass uses the existing world depth; its mist redraw needs only the three cylinders.
-  const MIST_REDRAW_LAYER = 5;
+  const MIST_REDRAW_LAYER = globalThis.HobunjiRenderLayers?.MIST_REDRAW ?? 5; // Named in js/render-layers.js.
   let deps = null;
   let group = null;
   let redrawScene = null; // Holds lightweight copies that share the live mist geometry and materials.

@@ -86,9 +86,10 @@ if (THREE) {
     HobunjiSurfaceStretchUV: { remapNaturalTerrainMesh() {} },
   }; // Exercise policy and remapping without DOM-dependent PNG loading.
   const renderContext = vm.createContext({ window: renderWindow, THREE, console }); // Shared runtime for the feature builder and natural surface hooks.
-  const markStart = gameSource.indexOf('      function _markOutline('); // Reuse the game's outline layer registration.
-  const markEnd = gameSource.indexOf('\n      }', markStart); // End of the game function.
-  vm.runInContext(gameSource.slice(markStart, markEnd + '\n      }'.length), renderContext);
+  // Reuse the game's outline layer registration: game.js's _markOutline delegates to js/world-render-pipeline.js.
+  assert.match(gameSource, /function _markOutline\(obj\) \{ window\.WorldRenderPipeline\.markShellOutline\(obj\); \}/);
+  vm.runInContext(fs.readFileSync(path.join(repoRoot, 'docs/js/world-render-pipeline.js'), 'utf8'), renderContext);
+  renderContext._markOutline = renderWindow.WorldRenderPipeline.markShellOutline;
   vm.runInContext(outlineSource, renderContext);
   vm.runInContext(featureSource, renderContext);
   renderWindow.ZoneTerrainFeatures.init({

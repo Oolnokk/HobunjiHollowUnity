@@ -258,3 +258,43 @@ assert.equal(normalCompanion.health, 96.5, 'non-prone swimmers take no water haz
 assert.equal(normalCompanion.afflictions.windedStamina, 8, 'non-prone swimmers gain no extra Winded Stamina');
 
 console.log('animal subtle elevation + water-Y revert/prone-water regression checks passed');
+// ── With js/render-hooks.js loaded (the game page): the lift is a 'frame'
+// hook on the game renderer — applied once for every pass of a world frame and
+// restored only when the frame ends.
+{
+  function WebGLRenderer() {}
+  const hooksWindow = { THREE: { WebGLRenderer } };
+  hooksWindow.window = hooksWindow;
+  const hookContext = { ...context, window: hooksWindow, console, performance: { now: () => 0 } };
+  vm.runInNewContext(fs.readFileSync('docs/js/render-hooks.js', 'utf8'), hookContext, { filename: 'render-hooks.js' });
+  const companion2 = { id: 'companion2', areaId: 'town', isCompanion: true, avatarRef: { group: root(1) }, groundShadow: root(0.01) };
+  const seenDuringPasses = [];
+  const gameRenderer = Object.create(WebGLRenderer.prototype);
+  gameRenderer.__hobunjiR128NativeRender = () => { seenDuringPasses.push(companion2.avatarRef.group.position.y); };
+  Object.assign(hooksWindow, {
+    HobunjiTownSubtleElevation: { sampleHeightAt() { return 0.25; } },
+    HobunjiWalkableElevation: { surfaceLiftAt() { return 0.1; } },
+    Combat: { _deps: null, init(deps) { this._deps = deps; }, get deps() { return this._deps; } },
+    FarmAnimals: { init() {} },
+    PixelProbe: { init() {} },
+  });
+  vm.runInNewContext(source, hookContext, { filename: 'animal-subtle-elevation-bridge.js' });
+  hooksWindow.Combat.init({ getCurrentArea: () => 'town', hostileObjects: new Set(), companionObjects: new Set([companion2]), corpseObjects: new Set() });
+  hooksWindow.FarmAnimals.init({ getCurrentArea: () => 'town', animalObjects: new Set() });
+  hooksWindow.PixelProbe.init({ getCurrentArea: () => 'town', renderer: gameRenderer, npcWalkers: [] });
+  assert.ok(hooksWindow.RenderHooks.list().includes('animal-subtle-elevation'), 'the bridge registers a render hook instead of wrapping render()');
+  const scene = { isScene: true };
+  hooksWindow.RenderHooks.beginWorldFrame({ renderer: gameRenderer, scene });
+  for (let i = 0; i < 4; i++) gameRenderer.render(scene, {});
+  assert.deepEqual([...seenDuringPasses], [1.35, 1.35, 1.35, 1.35], 'every pass of the frame sees the same lifted companion');
+  assert.equal(companion2.avatarRef.group.position.y, 1.35, 'still lifted between passes of the frame');
+  hooksWindow.RenderHooks.endWorldFrame();
+  assert.equal(companion2.avatarRef.group.position.y, 1, 'restored once the world frame ends');
+  const hook = hooksWindow.RenderHooks.getDebug().hooks.find(entry => entry.id === 'animal-subtle-elevation');
+  assert.equal(hook.applies, 1, 'lift computed once for four passes');
+  const otherRenderer = Object.create(WebGLRenderer.prototype);
+  otherRenderer.__hobunjiR128NativeRender = () => { seenDuringPasses.push(companion2.avatarRef.group.position.y); };
+  otherRenderer.render({ isScene: true }, {});
+  assert.equal(seenDuringPasses.at(-1), 1, 'preview renderers never lift world animals');
+}
+console.log('animal subtle elevation: render-hooks frame scope ok');

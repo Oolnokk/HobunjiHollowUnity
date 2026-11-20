@@ -16,6 +16,12 @@
   <!-- Quota guard installs first; it does not access saved values. The preview now intercepts
        Storage and IndexedDB before any actual game or save writer is loaded. -->
   <script src="js/precreator-arena.js?v=20261115nativeArena2"></script>
+  <!-- Visual core, right after the quota guard / storage preview and before anything that renders or tags layers:
+       the named THREE.Layers registry, and the single render-hook registry that owns the
+       prototype render() base every presentation hook runs through.
+       See docs/architecture/visual-render-pipeline.md. -->
+  <script src="js/render-layers.js?v=20261119visualCore1"></script>
+  <script src="js/render-hooks.js?v=20261119visualCore1"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -121,10 +127,10 @@
        in bandit-camps.js/porakaneki-camps-runtime.js/deadzone-billboard.js).
        Loaded early since it has no deps of its own and any of those
        creation sites may run as soon as the game world starts building. -->
-  <script src="js/furniture-light-registry.js?v=20261015haa711bb"></script>
+  <script src="js/furniture-light-registry.js?v=20261119h1454e19"></script>
   <script src="js/cutscene-lantern-carriers.js?v=20261010lant1"></script>
   <!-- Farmhouse interior renders flat; all its lighting comes from the 2D overlay (window.FarmhouseFlatLighting). -->
-  <script src="js/farmhouse-flat-lighting.js?v=20261031farmxray2"></script>
+  <script src="js/farmhouse-flat-lighting.js?v=20261119h22e8aa8"></script>
   <!-- Wilderness zone ground-visual refresh after a runtime tile edit and
        the daily felled-tree/mined-rock regrowth ticks that call back into
        it, extracted out of game.js. Must load before game.js, which calls
@@ -147,10 +153,10 @@
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261119cfShortCull1"></script>
+  <script src="debug.js?v=20261119h41f2dc4"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
-  <script src="config/scratchbones-config.js?v=20261119pingdortShadows5"></script>
+  <script src="config/scratchbones-config.js?v=20261120h9d87715"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -193,7 +199,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261118pairedRig1"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261119dairyWild2"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261120h0800e4a"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -214,7 +220,7 @@
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/procedural-feet-outline-parity.js?v=20261117footRestoreOrder1"></script>
+  <script src="js/procedural-feet-outline-parity.js?v=20261119hd0d609c"></script>
   <!-- Livestock genetics & breeding (fur-color math, pattern layers, Size
        inheritance, sell-value scoring). Must load before game.js, which
        calls window.CreatureGenetics.init(...) during its own setup. Loads
@@ -224,12 +230,12 @@
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/pingdort-registration.js?v=20261119dairyWild1"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
   <script src="js/skeeri-livestock-registration.js?v=20261115skeeriEgg1"></script> <!-- Register fertile ruin eggs before the game snapshots livestock item kinds. -->
-  <script src="js/moot-registration.js?v=20261119dairyWild1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
-  <script src="js/creature-genetics.js?v=20261117mootMother1"></script>
+  <script src="js/moot-registration.js?v=20261120mootAudit3"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
+  <script src="js/creature-genetics.js?v=20261120mootCoats1"></script>
   <script src="js/animal-hides.js?v=20261119dairyWild1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
-  <script src="js/creature-genetics-render.js?v=20261118fusedAnimal1"></script>
+  <script src="js/creature-genetics-render.js?v=20261120mootAudit3"></script>
   <script src="js/baby-animal-head-warp.js?v=20261119h47dfbdf"></script> <!-- Idle chathead alpha mask for babies and eligible genetically Small pet variants; final art includes coat patterns and eyes. -->
   <script src="js/honeyfuzzle-swarm.js?v=20261109hfe37cae"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle color regions and backward-compatible queen genetics FIFO. -->
@@ -409,7 +415,7 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261114posobj1754"></script>
+  <script src="js/wild-berries.js?v=20261119hc6ab087"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
@@ -559,8 +565,8 @@
   <script src="js/climb-surfaces.js?v=20261108h4c58289"></script>
   <script src="js/ruin-wall-faces.js?v=20261115twoSided1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/ruin-shaft-support-pillars.js?v=20261118supportPillars3"></script> <!-- Original square furniture, vertical IKMC-style span, two/three-tile-wide bases. -->
-  <script src="js/ruin-jump-shaft.js?v=20261118supportPillars1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
+  <script src="js/ruin-shaft-support-pillars.js?v=20261120h4fa8451"></script> <!-- Original square furniture, vertical IKMC-style span, slim square bases. -->
+  <script src="js/ruin-jump-shaft.js?v=20261120h4796438"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261115twoSided1"></script>
   <script src="js/ruin-layer-plan.js?v=20261117shaftAnte1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
@@ -727,7 +733,7 @@
   <!-- Shared Cloud Forest mist cylinders: always in the forest, and wind-driven
        blowing snow on Western Slope. The zone's native sky/depth fog is unchanged. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261119katabaticSnow3"></script>
+  <script src="js/cloud-forest-fog.js?v=20261119h37fae25"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -793,7 +799,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20261112h061ef99"></script>
+  <script src="js/border-terrain.js?v=20261120hff1ec32"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,
@@ -818,7 +824,9 @@
   <script src="js/cavern-sculptor.js?v=20261114puzzleCaveVaultAudit2"></script>
   <script src="js/cavern-generator.js?v=20261117deepAuditMainMerge1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261108tzflightnest2"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
-  <script src="js/ore-rock-textures.js?v=20261118ha836fd0"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
+  <script src="js/ore-rock-textures.js?v=20261120h6fb7655"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
+  <script src="js/faceted-rocks.js?v=20261120facetedrocks1"></script> <!-- Low-poly ore rocks: flat faces each wearing the stretched rock PNG (its drawn border is the outline). -->
+  <script src="js/statue-ruin-debris.js?v=20261120statuedebris1"></script> <!-- Statue footprints hold super-ruined Debris-ifier V50 outdoor debris. -->
   <script src="js/cavern-ore-rocks.js?v=20261111stoneWallsAudit2"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
@@ -895,7 +903,7 @@
   <!-- PNG-plane avatar outline occluders: registry of sprite-plane meshes on
        outline layer 4 plus the depth-only replay game.js runs before its
        outline passes (window.PngPlaneOutlineOccluder; game.js calls init). -->
-  <script src="js/png-plane-outline-occluder.js?v=20261118pngDepthMatrix1"></script>
+  <script src="js/png-plane-outline-occluder.js?v=20261119hb8fcec5"></script>
   <!-- World-space avatar blink/breathing refresh with distance-scaled rates
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
@@ -903,7 +911,7 @@
   <script src="js/crop-growth.js?v=20261107cultivar2"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261118blossomStartCue1"></script>
+  <script src="js/perception-mode.js?v=20261119hc4f803f"></script>
   <script src="js/world-portrait-life.js?v=20261116nearbyExpressions1"></script>
 </head>
 <body>
@@ -2934,7 +2942,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261119emojiReachPatternCairnConsolidated1"></script>
+  <script src="game.js?v=20261120h1013343"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

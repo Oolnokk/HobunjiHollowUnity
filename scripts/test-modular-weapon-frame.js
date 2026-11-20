@@ -56,12 +56,22 @@ class Mesh { // Both hands/NPCs may share a geometry object.
 }
 const key = 'modular:dagger:warhammer:nativeCopper', texture = { image: { width: 450, height: 1204 } }, geometries = new Map(); // Simulates a texture that finishes composing after the item is already held.
 const browser = { ...window, HobunjiSpritePngSurface: { makeMaterial: (_three, map) => ({ map }) }, ToolMetalRecolor: { getRecoloredCanvas: async () => ({ width: 1024, height: 1024, modularFrame: { left: -400, top: -700, width: 1500, height: 3200 } }) } }; // Asynchronous recolor retains logical origin and extent.
-const runtime = vm.createContext({ window: browser, THREE: { PlaneGeometry: Geometry, Group, Mesh, DoubleSide: 2 }, TOOL_ITEM_DEFS: { [key]: { modular: {}, sprite: key, _imgW: 450, _imgH: 1204 } },
-  toolTextures: { [key]: texture }, modularToolGeometries: geometries, TOOL_MODEL_WIDTH: .5, HELD_OBJECT_RENDER_ORDER: 1.5,
-  ensureToolTexture: () => texture, metalToolRecolorOptions: () => ({ oxidationAmount: 0 }), quantizeOxidation: value => value, _markPngPlane() {} }); // Real game functions execute against these adapters.
-const source = fs.readFileSync('docs/game.js', 'utf8'); // Extracts complete owner functions without loading unrelated game systems.
-vm.runInContext(source.slice(source.indexOf('      function makeToolPlaneMesh('), source.indexOf('      function setToolMeshLoadedState(')), runtime);
-vm.runInContext(source.slice(source.indexOf('      function refreshMetalToolWorldTexture('), source.indexOf('      // Build a PNG plane mesh sized', source.indexOf('      function refreshMetalToolWorldTexture('))), runtime);
+// The held-tool factory now lives in js/character-held-tools.js (shared by the
+// player, NPCs and enemies); execute that module against these adapters.
+vm.runInNewContext(fs.readFileSync('docs/js/character-held-tools.js', 'utf8'), { window: browser }, { filename: 'character-held-tools.js' });
+const heldTools = browser.CharacterHeldTools;
+heldTools.toolTextures[key] = texture; // Already composed placeholder; ensureToolTexture returns it.
+heldTools.modularToolGeometries.clear();
+heldTools.init({
+  THREE: { PlaneGeometry: Geometry, Group, Mesh, DoubleSide: 2, NearestFilter: 1003, TextureLoader: class { load() { return texture; } } },
+  TOOL_ITEM_DEFS: { [key]: { modular: {}, sprite: key, _imgW: 450, _imgH: 1204 } },
+  markPngPlane() {},
+  playerMetalOptions: () => ({ oxidationAmount: 0 }),
+  playerMasteryLevel: () => 0,
+  baseMetalOptions: () => null,
+  quantizeOxidation: value => value,
+});
+const runtime = { makeToolPlaneMesh: (...args) => heldTools.makeToolPlaneMesh(...args), refreshMetalToolWorldTexture: itemKey => heldTools.refreshMetalToolWorldTexture(itemKey) };
 (async () => {
   const first = runtime.makeToolPlaneMesh(key), second = runtime.makeToolPlaneMesh(key); // Shared quad updates must reach already-created held copies.
   assert.equal(first.userData.toolPlane.geometry, second.userData.toolPlane.geometry);

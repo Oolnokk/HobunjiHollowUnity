@@ -25,7 +25,7 @@
     return;
   }
 
-  const MATERIAL_ID_LAYER = 3;
+  const MATERIAL_ID_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // Named in js/render-layers.js.
   // 24, not 12: the wilderness follow camera sees most of a 200x200 zone, so
   // 12-tile cells meant ~110 floor + ~85 path draws per render pass. A
   // 24-tile floor cell is still only a few thousand triangles, so the lost

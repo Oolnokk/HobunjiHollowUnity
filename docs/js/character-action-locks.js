@@ -111,7 +111,7 @@
   if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname || '')) return;
   const src = document.currentScript?.src || '';
   const base = src ? new URL('.', src).href : 'js/';
-  const chathead = new URL('animal-chathead-frame.js?v=20261119dairyWild2', base).href;
+  const chathead = new URL('animal-chathead-frame.js?v=20261120mootAudit3', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20261119dairyWild1', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20261117hd8e73f5', base).href;
@@ -123,14 +123,14 @@
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260925metromix1', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
-  const npcSocialInhibitionRuntime = new URL('npc-social-inhibition-runtime.js?v=20261118pairedPoseLock2', base).href;
+  const npcSocialInhibitionRuntime = new URL('npc-social-inhibition-runtime.js?v=20261119h11bde97', base).href;
   const socialDanceRuntime = new URL('social-action-dance-runtime.js?v=20261015h7e50202', base).href;
   const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20261115hposelease07', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20261119hsmileRace2', base).href;
   const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20261117hRigForearm1', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20261103crr3', base).href;
-  const npcPerformanceReactionLockRuntime = new URL('npc-performance-reaction-lock-runtime.js?v=20260914kurraya1', base).href; // Loads last so it can guard every social physical-reaction wrapper while an NPC is actively performing an instrument.
+  const npcPerformanceReactionLockRuntime = new URL('npc-performance-reaction-lock-runtime.js?v=20261119h3ae2935', base).href; // Loads last so it can guard every social physical-reaction wrapper while an NPC is actively performing an instrument.
   document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${controllerSelectionUi}"><\/script><script src="${archButtonLabels}"><\/script><script src="${inputDefaultsResetUi}"><\/script><script src="${bandageSystem}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script><script src="${npcPerformanceReactionLockRuntime}"><\/script>`);
 })();
 

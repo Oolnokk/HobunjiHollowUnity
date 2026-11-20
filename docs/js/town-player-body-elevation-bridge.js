@@ -786,6 +786,20 @@
 
       const result = compatibilityInit.call(this, injectedDeps);
       if (!renderer || typeof renderer.render !== 'function' || renderer.__hobunjiTownBodyElevationRenderHook) return result;
+      if (window.RenderHooks?.register) {
+        // Once per world frame, ahead of the player-body composer (js/render-hooks.js).
+        window.RenderHooks.register({
+          id: 'town-body-elevation',
+          owner: 'town-player-body-elevation-bridge.js',
+          order: window.RenderHooks.ORDER.TOWN_BODY_ELEVATION,
+          scope: 'frame',
+          appliesTo: ctx => ctx.renderer === renderer && (!ctx.frame || ctx.scene === ctx.frame.scene),
+          before: () => { syncChannel(injectedDeps); return true; },
+        });
+        renderer.__hobunjiTownBodyElevationRenderHook = true;
+        renderer.__hobunjiTransientTownHeightRepair = true;
+        return result;
+      }
 
       const baseRender = renderer.render;
       renderer.render = function townBodyElevationRender(...args) {

@@ -317,7 +317,19 @@
   }
 
   function installRenderHook() {
-    const prototype = window.THREE?.WebGLRenderer?.prototype; // Used as the shared render boundary after combat-config-loader makes r128 render hookable.
+    // Billboard facing is idempotent for one camera, so it runs once per world
+    // frame (js/render-hooks.js) instead of on every outline/replay pass.
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'crop-sprite-art',
+        owner: 'crop-sprite-art.js',
+        order: window.RenderHooks.ORDER.CROP_SPRITE_ART,
+        scope: 'frame',
+        before: ctx => updateBillboards(ctx.scene, ctx.camera),
+      });
+      return;
+    }
+    const prototype = window.THREE?.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js: wrap render() directly.
     if (!prototype || prototype.__hobunjiCropSpriteArtHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render; // Used to preserve the full existing render hook chain while crop billboards update first.
     prototype.render = function cropSpriteArtRender(scene, camera, ...rest) {

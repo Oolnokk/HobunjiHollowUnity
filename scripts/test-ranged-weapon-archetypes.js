@@ -187,13 +187,15 @@ assert.deepStrictEqual(loadedVisualEvents.map(event => event.itemKey), ['dagger_
 
 const heldPlane = { material: { map: 'daggerTexture', needsUpdate: false } }; // Synthetic live Dagger plane used to test the game-side item-identity guard.
 const heldDaggerMesh = { userData: { itemKey: 'dagger_copper', toolPlane: heldPlane } }; // Synthetic tool mesh mirrors makeToolPlaneMesh's runtime identity metadata.
+// setToolMeshLoadedState lives in js/character-held-tools.js (shared by every holder).
+const heldToolsWindow = {};
+vm.runInNewContext(fs.readFileSync('docs/js/character-held-tools.js', 'utf8'), { window: heldToolsWindow });
+Object.assign(heldToolsWindow.CharacterHeldTools.toolTextures, { dagger_copper: 'daggerTexture', kylie_copper: 'kylieTexture' });
 const heldVisualHarness = vm.runInNewContext(
   `(function(state) {
     const equipmentSlots = state.equipmentSlots;
     const toolMeshMap = state.toolMeshMap;
-    const loadedToolTextures = state.loadedToolTextures;
-    const toolTextures = state.toolTextures;
-    ${extractNamedFunction(gameSource, 'setToolMeshLoadedState')}
+    const setToolMeshLoadedState = state.setToolMeshLoadedState;
     ${extractNamedFunction(gameSource, 'setRangedLoadedVisual')}
     return { setRangedLoadedVisual };
   })`,
@@ -201,14 +203,13 @@ const heldVisualHarness = vm.runInNewContext(
 )({
   equipmentSlots: { ranged: 'dagger_copper' },
   toolMeshMap: { ranged: heldDaggerMesh },
-  loadedToolTextures: {},
-  toolTextures: { dagger_copper: 'daggerTexture', kylie_copper: 'kylieTexture' },
+  setToolMeshLoadedState: heldToolsWindow.CharacterHeldTools.setToolMeshLoadedState,
 });
 assert.strictEqual(heldVisualHarness.setRangedLoadedVisual('kylie_copper', false), false, 'game-side visual bridge must reject an unequipped Kylie update.');
 assert.strictEqual(heldPlane.material.map, 'daggerTexture', 'rejected Kylie update must leave the Dagger texture untouched.');
 assert.strictEqual(heldVisualHarness.setRangedLoadedVisual('dagger_copper', false), true, 'matching Dagger loaded-state update must still apply normally.');
 assert.strictEqual(heldDaggerMesh.userData.appliedTextureItemKey, 'dagger_copper', 'held mesh debug identity must record the item whose texture was actually applied.');
-assert.match(gameSource, /g\.userData\.itemKey = itemKey/, 'held tool meshes must retain their literal item identity for stale-update rejection and mobile diagnostics.');
+assert.match(fs.readFileSync('docs/js/character-held-tools.js', 'utf8'), /g\.userData\.itemKey = itemKey/, 'held tool meshes must retain their literal item identity for stale-update rejection and mobile diagnostics.');
 assert.match(rangedWeaponsSource, /get heldVisualState\(\) \{ return deps\?\.getHeldRangedVisualState\?\.\(\) \|\| null; \}/, 'ranged debug snapshot must expose equipped\/mesh\/applied texture identity without requiring devtools.');
 assert.match(gameSource, /function getWeaponSwingWindupPoseProgress\(\)/, 'game runtime must expose visible linear held-windup progress.');
 assert.match(gameSource, /function partialCombatPoseAtCharge\(pose, poseProgress\)/, 'game runtime must support releasing from the currently visible partial pose.');

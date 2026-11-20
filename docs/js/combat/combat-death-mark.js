@@ -194,7 +194,18 @@
   // camera (see game.js's _postScene/_postCamera composite), and recomputing per pass
   // wastes a full visuals-Map iteration only to be overwritten again next frame anyway.
   function installRenderHook() {
-    const prototype = THREE.WebGLRenderer?.prototype;
+    // js/render-hooks.js runs this once per world frame with the world camera.
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'death-mark-billboards',
+        owner: 'combat/combat-death-mark.js',
+        order: window.RenderHooks.ORDER.DEATH_MARK,
+        scope: 'frame',
+        before: ctx => updateTransforms(ctx.camera),
+      });
+      return;
+    }
+    const prototype = THREE.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js.
     if (!prototype || prototype.__hobunjiDeathMarkHooked || typeof prototype.render !== 'function') return;
     const previousRender = prototype.render;
     prototype.render = function deathMarkBillboardRender(scene, camera, ...rest) {

@@ -38,9 +38,9 @@
   const MASK_MATERIAL_ID = (1 << 3) >>> 0;
   const MASK_PNG_OCCLUDER = (1 << 4) >>> 0;
   const MASK_MIST = (1 << 5) >>> 0; // cloud-forest-fog.js mist cylinders: game.js redraws just this layer over the outline passes.
-  const TARGET_ALPHA_FILL_LAYER = 30; // Temporary per-draw layer used only to render flat alpha-cutout target cards as filled billboard silhouettes.
-  const WORLD_TEXT_OVERLAY_LAYER = 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
-  const SCORE_ACTOR_DEPTH_LAYER = 24; // Temporary colorless character silhouette pass; unlike ordinary world text, active Scratchbone notes must NOT draw over the player or NPCs.
+  const TARGET_ALPHA_FILL_LAYER = globalThis.HobunjiRenderLayers?.TARGET_ALPHA_FILL ?? 30; // Temporary per-draw layer used only to render flat alpha-cutout target cards as filled billboard silhouettes.
+  const WORLD_TEXT_OVERLAY_LAYER = globalThis.HobunjiRenderLayers?.WORLD_TEXT_OVERLAY ?? 6; // Reserved here to carry depth-disabled world text outside the shell/post-process passes.
+  const SCORE_ACTOR_DEPTH_LAYER = globalThis.HobunjiRenderLayers?.SCORE_ACTOR_DEPTH ?? 24; // Temporary colorless character silhouette pass; unlike ordinary world text, active Scratchbone notes must NOT draw over the player or NPCs.
   const WORLD_TEXT_RENDER_ORDER_MIN = 1200; // WorldPopupText is 1200/1201; AmbientDialogue text/chatheads are 1210/1211.
   const BASE_REUSE_MAX_AGE_MS = 250; // Safety guard only; sequence adjacency is the primary gate.
   const LOG_INTERVAL_MS = 5000;

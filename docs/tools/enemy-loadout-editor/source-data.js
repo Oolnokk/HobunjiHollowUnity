@@ -41,11 +41,17 @@
       throw Error('Game catalog declaration missing: ' + name);
     return Function('"use strict";return (' + expression + ');')();
   }
-  function renderingFromGame(game) {
-    const shellSource =
-      /const shellOutlineMat = (new THREE\.ShaderMaterial\([\s\S]*?\n      \}\));/.exec(
-        game,
-      )?.[1];
+  // The shell outline material comes from the shipped
+  // js/world-render-pipeline.js, evaluated in an isolated scope (it only
+  // publishes globals onto the object it is given), via its own factory.
+  function shellFactoryFromPipeline(pipelineSource) {
+    const isolated = {};
+    Function('window', 'globalThis', pipelineSource)(isolated, isolated);
+    const factory = isolated.WorldRenderPipeline?.createShellOutlineMaterial;
+    return typeof factory === 'function' ? factory : null;
+  }
+  function renderingFromGame(game, pipelineSource) {
+    const makeShellMaterial = pipelineSource ? shellFactoryFromPipeline(pipelineSource) : null;
     const lightingSource =
       /const ambientLight = new THREE\.AmbientLight[\s\S]*?scene\.add\(hemiLight\);/.exec(
         game,
@@ -54,14 +60,10 @@
       /ambientLight\.intensity = 0\.3[\s\S]*?scene\.fog\.color\.copy\(scene\.background\);/.exec(
         game,
       )?.[0];
-    if (!shellSource || !lightingSource || !lightingUpdate)
+    if (!makeShellMaterial || !lightingSource || !lightingUpdate)
       throw Error(
         'Game rendering source unavailable; preview cannot claim rendering parity',
       );
-    const makeShellMaterial = Function(
-      'THREE',
-      'return (' + shellSource + ');',
-    );
     const makeLighting = Function(
       'THREE',
       'scene',
@@ -78,7 +80,7 @@
     return { makeShellMaterial, makeLighting, applyLighting };
   }
   async function load() {
-    const [gang, porakaneki, omgurku, game, attackValues, index, npcDb] =
+    const [gang, porakaneki, omgurku, game, attackValues, index, npcDb, renderPipeline, heldToolsSource] =
       await Promise.all([
         read('config/bandits/bandit-gang-config.json?v=20261116tier8power075'),
         read('config/porakaneki-camp.json'),
@@ -90,6 +92,14 @@
         read('config/combat/attack-values.json'),
         read('config/species/index.json'),
         read('config/npcs/hobunji-starter-npc-database.json'),
+        fetch('js/world-render-pipeline.js').then((r) => {
+          if (!r.ok) throw Error('Render pipeline source HTTP ' + r.status);
+          return r.text();
+        }),
+        fetch('js/character-held-tools.js').then((r) => {
+          if (!r.ok) throw Error('Held tool source HTTP ' + r.status);
+          return r.text();
+        }),
       ]);
     const shapes = {
       ...declaration(game, 'TOOL_SHAPE_DEFS'),
@@ -118,26 +128,20 @@
     )(metals);
     // Evaluate the live game's shader and lighting setup, just as we read its
     // immutable equipment tables. The workshop never maintains a shader copy.
-    const { makeShellMaterial, makeLighting, applyLighting } = renderingFromGame(game);
-    const toolMeshSource =
-      /function makeToolPlaneMesh\(itemKey, opts = \{\}\) \{[\s\S]*?\n      \}/.exec(
-        game,
-      )?.[0];
-    if (!toolMeshSource)
+    const { makeShellMaterial, makeLighting, applyLighting } = renderingFromGame(game, renderPipeline);
+    // Weapons come from the game's own held-tool module (js/character-held-tools.js),
+    // evaluated in an isolated scope whose reads fall through to this page's
+    // globals (ModularWeapons, HobunjiSpritePngSurface, weapon assemblies).
+    const heldTools = (() => {
+      const isolated = Object.create(window);
+      Function('window', heldToolsSource)(isolated);
+      return isolated.CharacterHeldTools;
+    })();
+    if (typeof heldTools?.createToolPlaneFactory !== 'function')
       throw Error('Game weapon mesh factory unavailable');
-    const weaponMeshFactory = Function(
-      'THREE',
-      'TOOL_ITEM_DEFS',
-      'ensureToolTexture',
-      'toolTextures',
-      'HELD_OBJECT_RENDER_ORDER',
-      '_markPngPlane',
-      'metalToolRecolorOptions', // Resolved by the weapon-assembly runtime when it recolors/ignites a held weapon.
-      'toolMasteryLevel',
-      'const TOOL_MODEL_WIDTH=0.5;const modularToolGeometries=new Map();return (' +
-        toolMeshSource +
-        ');',
-    );
+    // Same argument order the preview has always passed.
+    const weaponMeshFactory = (THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel) =>
+      heldTools.createToolPlaneFactory({ THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel });
     const rangedItems = {};
     for (const id of ['crossbow', 'scatterbow']) {
       const literal = new RegExp(
@@ -154,10 +158,7 @@
       rangedItems,
       weaponMeshFactory,
       outline: await read('config/outline-rendering.json'),
-      heldObjectRenderOrder:
-        Number(
-          /const HELD_OBJECT_RENDER_ORDER = ([0-9.]+);/.exec(game)?.[1],
-        ) || 1.5,
+      heldObjectRenderOrder: Number(heldTools.HELD_OBJECT_RENDER_ORDER) || 1.5,
       npcs: npcDb.npcs || npcDb,
       metalDamage,
       gang,

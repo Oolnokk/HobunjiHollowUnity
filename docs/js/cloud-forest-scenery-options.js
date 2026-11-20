@@ -10,7 +10,7 @@
   const TREE_WALL_KEY = 'hobunji_cloud_forest_tree_wall_v1';
   const NORTH_DEPTH = 18;
   const DENSITY_KEEP = 0.25;
-  const OUTLINE_LAYER = 1;
+  const OUTLINE_LAYER = globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1; // Named in js/render-layers.js.
   const PATH_RECIPE_ID = 'cloud_forest_town_path_surface';
   const PATH_CHUNK_SIZE = 10;
   const PATH_STYLE = Object.freeze({

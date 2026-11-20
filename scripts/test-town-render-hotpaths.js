@@ -412,12 +412,15 @@ assert.match(testedWaterMaterial.fragmentShader,
 assert.match(pixelProbe, /Water depth at probed pixel:[\s\S]*?BEHIND OPAQUE SURFACE/,
   'Pixel Probe continues diagnosing opaque foreground grass before the flood');
 
-assert.match(game, /stencilBuffer: needsStencil/,
-  'outline render targets explicitly opt into stencil only when requested');
-assert.match(game, /_mainRT\s*=\s*_makeSceneRT\(1, 1, true\)/,
-  'the offscreen main gameplay target carries stencil for held-vs-foot water compositing');
-assert.match(game, /THREE\.DepthStencilFormat[\s\S]{0,120}THREE\.UnsignedInt248Type/,
-  'the main target uses a packed sampleable depth-stencil texture');
+{ // Render targets are built by js/world-render-pipeline.js: check the live objects.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  const { main, seamId } = h.pipeline.targets;
+  assert.equal(seamId.stencilBuffer, false, 'outline render targets explicitly opt into stencil only when requested');
+  assert.equal(main.stencilBuffer, true, 'the offscreen main gameplay target carries stencil for held-vs-foot water compositing');
+  assert.equal(main.depthTexture.format, h.THREE.DepthStencilFormat, 'the main target uses a packed sampleable depth-stencil texture');
+  assert.equal(main.depthTexture.type, h.THREE.UnsignedInt248Type);
+}
 assert.match(game, /window\.PixelProbe\?\.armed \|\| menuOpen/,
   'desktop viewport gameplay rejects a pointer while Pixel Probe owns it');
 assert.match(pixelProbe, /stopImmediatePropagation\?\.\(\)/,
