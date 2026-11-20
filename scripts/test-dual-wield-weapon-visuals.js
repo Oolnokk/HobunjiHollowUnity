@@ -94,14 +94,17 @@ const mirrorStart = dual.indexOf('  function mirrorQuaternionAcrossLocalX('); //
 const mirrorEnd = dual.indexOf('  function currentPlanePose(', mirrorStart);
 const socketStart = dual.indexOf('  function transformSocketForHand('); // Bounds of the production per-hand dispatch.
 const socketEnd = dual.indexOf('  function resetPoseHistory(', socketStart);
-const socketResolver = vm.runInNewContext(`${dual.slice(mirrorStart, mirrorEnd)}\n(${dual.slice(socketStart, socketEnd).trim()})`, {
-  syncNow: () => gripState,
+let syncCalls = 0; // Lean sync: both hands of one rig solve share one sync.
+const socketScope = {
+  syncNow: () => { syncCalls++; return gripState; },
+  leanSync: true, stats: { syncs: 0, solveReuses: 0 },
   state: null,
   ACTIVE_EPSILON: 0.0001,
   hierarchyWorldQuaternion: (node, target) => target.set(node.quaternion.x, node.quaternion.y, node.quaternion.z, node.quaternion.w),
   DUPLICATE_Z_GAP: 0.15,
   MAIN_HAND_LAG_MS: 45,
-}); // Exercises the real branch selecting the offhand frame even though neither weapon is reflected.
+};
+const socketResolver = vm.runInNewContext(`${dual.slice(mirrorStart, mirrorEnd)}\n(${dual.slice(socketStart, socketEnd).trim()})`, socketScope); // Exercises the real branch selecting the offhand frame even though neither weapon is reflected.
 const authoredSocket = { position: new GripPoint(-0.04, -0.04, -0.1), quaternion: new GripQuaternion(0.5, -0.5, 0.5, 0.5) }; // A normalized nontrivial grip makes yaw/roll reversal observable.
 const rightGrip = socketResolver({}, 'right', authoredSocket); // Main hand keeps the authored direction.
 const leftGrip = socketResolver({}, 'left', authoredSocket); // Offhand flips its grip while remaining on its own visible weapon.
@@ -112,6 +115,27 @@ assert.equal(rightGrip.dualWield.mirroredGripFrame, false);
 assert.equal(leftGrip.position.x, authoredSocket.position.x);
 assert(Math.abs(leftGrip.position.z - (authoredSocket.position.z + 0.075)) < 1e-9);
 assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mutate the shared authored grip');
+// Lean sync: one rig solve (procedural-hand-frame-driver.js passes the same object for both hands) syncs once,
+// and both hands still resolve exactly the frames they resolve with a sync each.
+{
+  const record = {}, solve = {};
+  syncCalls = 0;
+  const right = socketResolver(record, 'right', authoredSocket, solve), left = socketResolver(record, 'left', authoredSocket, solve);
+  assert.equal(syncCalls, 1, 'both hands of one solve share one sync');
+  assert.equal(socketScope.stats.solveReuses, 1);
+  assert.deepEqual([right.quaternion.x, right.quaternion.y, right.quaternion.z, right.quaternion.w], [rightGrip.quaternion.x, rightGrip.quaternion.y, rightGrip.quaternion.z, rightGrip.quaternion.w]);
+  assert.deepEqual([left.quaternion.x, left.quaternion.y, left.quaternion.z, left.quaternion.w], [leftGrip.quaternion.x, leftGrip.quaternion.y, leftGrip.quaternion.z, leftGrip.quaternion.w]);
+  socketResolver(record, 'right', authoredSocket, {}); // A new solve syncs again.
+  socketResolver({}, 'left', authoredSocket, solve); // A different actor never reuses another's sync.
+  assert.equal(syncCalls, 3);
+  socketScope.leanSync = false; syncCalls = 0;
+  const fresh = {};
+  socketResolver(record, 'right', authoredSocket, fresh); socketResolver(record, 'left', authoredSocket, fresh);
+  assert.equal(syncCalls, 2, 'full sync (Settings off): one sync per hand, as before');
+  socketScope.leanSync = true;
+}
+assert.match(driver, /const dualSolve = \{\};[\s\S]*transformSocketForHand\?\.\(record, 'right', primarySocket, dualSolve\)[\s\S]*transformSocketForHand\?\.\(record, 'left', offhandBaseSocket, dualSolve\)/, 'the driver shares one solve object across both hands');
+assert.match(dual, /if \(holderPassSkipsCopies\) return;/, 'copy roots skip the holder bake under lean sync');
 
 const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.
 const runtimeContext = vm.runInNewContext(`(${dual.slice(dual.indexOf('  function currentContext('), dual.indexOf('  function currentDualState(')).trim()})`, {

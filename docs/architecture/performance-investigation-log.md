@@ -1,5 +1,36 @@
 # Performance investigation log
 
+## 20 Nov 2026: user's town trace; lean dual-wield weapon sync
+
+A Chrome DevTools trace from the user's desktop build (town, DevTools recording + the in-game
+Performance Profiler on): ~12 fps, ~72 ms of script per frame (median), main thread saturated.
+Before the recording, `CpuProfiler::StartProfiling` blocked the main thread for 1.9 s: that is
+DevTools' "Profiling overhead" (it indexes every loaded script), a one-off of the recording, not
+the game. Correcting a first reading of the profile: minified three.js `At` is `projectObject`
+(render-list building), not a matrix update, and recursive functions must be counted once per
+sample. The held/x-ray replays already reuse the base pass's matrices (`scene.autoUpdate` off: 1-3
+matrix visits per replay render vs 8,092 for the base pass in the user's save).
+
+Real per-frame costs in that trace (profiled, so inflated): render passes ~32 ms; the held replay
+~12.6 ms and shell x-ray ~10.5 ms (draw submission, not visibility bookkeeping: the
+`restoreVisibility` frames above the shell depth draws are inlining); the dual-wield weapon sync
+~6.3 ms; the action bar's processing-wheel eligibility checks ~5.3 ms (`refreshActionBar` →
+`butterChurnWheelEligible`, `inventoryHeldWheelEligibility`, `isWheelEligible`);
+`checkTransitionSpots` ~5 ms; the replay cull scene walk ~4.3 ms; NPC walkers / pathfinding
+collision checks a few ms more.
+
+**Lean dual-wield sync (fixed).** Every `HobunjiDualWieldWeaponVisuals.syncNow` (per hand, per rig
+sync, plus the scheduler sync and the render-time sentinel) recomputed the weapon copies' matrices
+three times: the holder bake descended into both copy roots with their previous pose, the roots
+were re-posed and updated again, and each hand's socket updated its copy once more. Armed NPCs hold
+an invisible offhand copy at idle, so in town every armed NPC paid this. Now the holder bake skips
+the copy roots, a hand reads its copy straight from the root update, and both hands of one rig solve
+share one sync (`procedural-hand-frame-driver.js` passes the same solve object). Headless, user's
+Cloud Forest save (6 dual-wield states, 32 rigs): dual-wield matrix work per rig sync 544 → 113
+visits (whole rig sync 2,144 → 1,713); frames are pixel-identical with lean sync on and off.
+A/B: Settings → Render optimizations → "Lean dual-wield weapon sync", benchmark variant
+`dualWieldFullSync`, `HobunjiDualWieldWeaponVisuals.setLeanSyncEnabled(false)`.
+
 ## 20 Nov 2026: review of this branch's render changes
 
 A full review of the combat-perf branch found, and this entry fixes:

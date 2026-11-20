@@ -132,6 +132,11 @@
       read: () => heldSnap().heldOwnerLinkEnabled === true && heldSnap().otherWeaponXrayLimit === 0,
       write: on => { held().setHeldOwnerLinkEnabled(on); held().setOtherWeaponXrayLimit(on ? 0 : Infinity); } },
 
+    { group: 'Characters', id: 'leanDualWieldSync', name: 'Lean dual-wield weapon sync', on: true,
+      desc: 'Weapon copies held for dual wield (and the invisible offhand copy armed NPCs hold at idle) are re-posed once per hand solve and recomputed once, instead of three times per hand. Off: the old full sync.',
+      available: () => typeof window.HobunjiDualWieldWeaponVisuals?.setLeanSyncEnabled === 'function',
+      read: () => window.HobunjiDualWieldWeaponVisuals.leanSyncEnabled?.(), write: on => window.HobunjiDualWieldWeaponVisuals.setLeanSyncEnabled(on) },
+
     { group: 'Frame', id: 'frameScopedHooks', name: 'Frame-scoped render hooks', on: true,
       desc: 'Per-frame visual fix-ups apply once per frame instead of around every render call.',
       available: () => typeof hooks()?.setFrameScopeEnabled === 'function',

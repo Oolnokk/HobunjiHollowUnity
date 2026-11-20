@@ -26,6 +26,16 @@
   const PLAYER_KEY = 'player'; // The local player's state; every other actor is keyed by its avatar root.
   const states = new Map(); // key -> per-actor duplicate state.
   let editorOffhandAuthoring = false; // Attack Editor only: the holder IS the offhand weapon while its idle stance is being dragged.
+  // Lean sync (Settings → Render optimizations → "Lean dual-wield weapon sync"; setLeanSyncEnabled(false) is the A/B).
+  // Every sync used to recompute the copies' matrices three times: the holder pass that bakes the source stance
+  // descended into both copy roots (with their previous pose), the roots were then re-posed and updated again, and
+  // each hand's socket updated its copy once more. With many armed NPCs in town that was ~5 ms a frame. Lean: the
+  // holder pass skips the copy roots (nothing reads them before they are re-posed), a hand reads its copy straight
+  // from the root update, and both hands of one rig solve share one sync (procedural-hand-frame-driver.js passes
+  // the same solve object for both; the weapon pose cannot change within that synchronous solve).
+  let leanSync = true;
+  let holderPassSkipsCopies = false; // True only inside the holder's own matrix pass.
+  const stats = { syncs: 0, solveReuses: 0 };
 
   function clamp01(value) {
     const n = Number(value);
@@ -158,6 +168,13 @@
     root.position.set?.(0, 0, 0);
     root.quaternion.identity?.();
     root.scale.set?.(1, 1, 1);
+    const baseUpdate = RootCtor.prototype?.updateMatrixWorld;
+    if (typeof baseUpdate === 'function') {
+      root.updateMatrixWorld = function dualWieldRootUpdateMatrixWorld(force) {
+        if (holderPassSkipsCopies) return; // Re-posed and fully updated right after the holder pass (lean sync).
+        return baseUpdate.call(this, force);
+      };
+    }
     return root;
   }
 
@@ -513,6 +530,7 @@
   }
 
   function syncNow(record = null) {
+    stats.syncs++;
     const key = keyFor(record);
     const context = key === PLAYER_KEY ? currentContext() : actorContext(record);
     if (!context.visual || !context.plane) {
@@ -548,7 +566,10 @@
     // Bake the source first. Runtime idle stances are temporarily applied by
     // the holder's updateMatrixWorld owner, so updateWorldMatrix would bypass them.
     if (inAttackEditor()) current.plane.updateWorldMatrix?.(true, false);
-    else current.holder?.updateMatrixWorld?.(true);
+    else if (leanSync) {
+      holderPassSkipsCopies = true;
+      try { current.holder?.updateMatrixWorld?.(true); } finally { holderPassSkipsCopies = false; }
+    } else current.holder?.updateMatrixWorld?.(true);
     const scratch = frameScratch(current);
     // Authoring the offhand stance: the gizmo/Neutral sliders move the offhand weapon directly (it stays
     // on the holder), and the main-hand copy is placed from its saved stance instead.
@@ -582,12 +603,21 @@
     return current;
   }
 
-  function transformSocketForHand(record, side, socketFrame) {
-    const current = syncNow(record);
+  function transformSocketForHand(record, side, socketFrame, solve = null) {
+    // solve: optional object shared by both hands of one synchronous rig solve (procedural-hand-frame-driver.js);
+    // with lean sync the second hand reuses the first hand's sync instead of repeating it.
+    let current;
+    if (leanSync && solve && solve.dualWieldSynced === true && solve.dualWieldRecord === record) {
+      current = solve.dualWieldState;
+      stats.solveReuses++;
+    } else {
+      current = syncNow(record);
+      if (solve) { solve.dualWieldSynced = true; solve.dualWieldRecord = record; solve.dualWieldState = current; }
+    }
     if (!current || current.influence <= ACTIVE_EPSILON || !socketFrame?.position || !socketFrame?.quaternion) return socketFrame;
     const weapon = side === 'right' ? current.mainMesh : current.offMesh;
     if (!weapon?.matrixWorld || !current.plane?.matrixWorld) return socketFrame;
-    weapon.updateMatrixWorld?.(true);
+    if (!leanSync) weapon.updateMatrixWorld?.(true); // Lean: syncNow's root update (this solve) already computed it.
 
     // Reconstruct the canonical grip IN THE ORIGINAL WEAPON PLANE'S LOCAL SPACE,
     // then resolve that exact local frame through the visible child weapon. The
@@ -725,6 +755,9 @@
     editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.
     editorOffhandCopy: () => { const state = states.get(PLAYER_KEY); return state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null; }, // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,
+    leanSyncEnabled: () => leanSync,
+    setLeanSyncEnabled(value) { leanSync = value !== false; return leanSync; },
+    syncStats: () => ({ leanSync, ...stats }),
     constants: Object.freeze({ DUPLICATE_Z_GAP, HALF_Z_SEPARATION, MAIN_HAND_LAG_MS }),
   };
 
