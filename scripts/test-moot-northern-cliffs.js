@@ -133,6 +133,7 @@ assert.deepEqual(Array.from(windowStub.CreatureGeneticsRender.SPECIES.moot.patte
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.fullBaseRecolor, false, 'Moot must not tint claws, teeth, hooves or outlines');
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.baseRecolorKeyHex, '#9CBD9E', 'Moot coat tint uses only its mint-green authored pigment family');
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.patternRecolorKeys.overcoat.hex, '#9CBD9E', 'Overcoat selectively recolors mint pigment instead of teeth/hooves');
+assert.deepEqual(Array.from(windowStub.CreatureGeneticsRender.SPECIES.moot.clipPatternsToBase), ['overcoat'], 'Only overcoat opaque padding is clipped to the animal silhouette');
 
 assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingHerdSpecies)), ['voorg-ass', 'moot'], 'Moot joins Voorg-Ass in the daily herd species pool');
 assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingForagerSpecies)), ['nazgraku'], 'Nazgraku keeps its own dedicated forager slot');
@@ -203,4 +204,3 @@ assert.match(authorSource, /SEED_SOURCES[^\n]*moot: 'uumkaoii'/, 'Moot rig value
 
 
 console.log('PASS Moot wild/farm registry, overcoat+mitts sprites/inheritance, coloredneck migration, drops and mobile diagnostics');
-require('./test-moot-coat-render.js'); // The real compositor must keep teeth, hooves and black ink neutral while applying both independent alleles.
