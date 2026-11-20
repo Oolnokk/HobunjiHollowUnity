@@ -1,5 +1,15 @@
 # Performance investigation log
 
+## 20 Nov 2026: statue footprints hold ruin debris
+
+Generator `statue` landmarks (blocking 1x1/1x2 tiles; 56 tiles in the user's Cloud Forest) had no
+renderer and fell into the merged, outlined rock mound. `js/statue-ruin-debris.js` now fills them
+with Debris-ifier V50 debris generated in a hidden iframe (`?devRuntime=1`, local transport): 5
+seeded variants per zone, each a tiny outdoor ruin pushed through the damage pass and merged into
+one unlit stone mesh (~4.2k triangles, one draw, no shell). Headless generation took ~32 s for the
+pool on SwiftShader (first furniture load included); footprints fill when it resolves. If the
+generator cannot start, footprints get a farm-style stone instead.
+
 ## 20 Nov 2026: ore rocks drawn like the farm rocks (visual change, small draw saving)
 
 Wilderness and town-mine ore rocks now reuse the farm rocks' look (`js/faceted-rocks.js`): the

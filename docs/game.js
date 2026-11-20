@@ -11009,6 +11009,7 @@
         const resetState = options.resetState !== false; // Controls one-time per-zone indexes versus additive chunk builds.
         const vegetationByTile = resetState ? new Map() : (_zoneVegetationMeshes.get(mapId) || new Map()); // Used for O(1) runtime foliage removal by tile.
         const mineableRocksByTile = resetState ? new Map() : (_zoneMineableRockMeshes.get(mapId) || new Map()); // Used for O(1) runtime ore-rock removal by tile.
+        const statueDebrisTiles = []; // Statue footprints filled with ruin debris after the tile pass (js/statue-ruin-debris.js).
         _zoneVegetationMeshes.set(mapId, vegetationByTile);
         _zoneMineableRockMeshes.set(mapId, mineableRocksByTile);
         if (resetState) window.ClimbSystem?.resetAreaBranches(mapId); // Loaded shadewood chunks re-register their climbable branches below.
@@ -11107,6 +11108,14 @@
             // (ZoneTerrainFeatures.buildUndiggableBoulderMeshes, called per chunk
             // below) instead of a per-tile mound each.
             if (tile.rockKind === 'undiggableBoulder') continue;
+            // Generated statue landmarks have no model of their own: their
+            // blocking footprint holds super-ruined Debris-ifier debris
+            // instead of the generic outlined mound (js/statue-ruin-debris.js).
+            if (tile.rockKind === 'statue' && window.StatueRuinDebris?.enabled?.()) {
+              tile.projectileCoverHeightTiles = 0.55; // A low debris heap still covers like a rock.
+              statueDebrisTiles.push({ c, r, x: cx, z: cz, y: NORMAL_TOP + tierY });
+              continue;
+            }
             // Mineable ore rocks look like the farm rocks (js/faceted-rocks.js):
             // the same low-poly mound, unwrapped into irregular inked panels by
             // the cliff stretch, in the ore's colour; no shell outline.
@@ -11307,6 +11316,31 @@
           if (tile.mesaGroundOwned && [TileType.GRASS, TileType.WEEDS, TileType.PATH].includes(tile.type)) continue; // Painted child tiles reuse the continuous mesa lid; paths still receive separate paving.
           const matKey = tile.type === TileType.PATH ? TileType.GRASS : (tileMats[tile.type] ? tile.type : TileType.GRASS);
           _addToBucket(matKey, window.TerrainGeometry.makeFloorGeo(c, r), cx, tileYCenter(tile.type) + tierY, cz);
+        }
+
+        if (statueDebrisTiles.length) {
+          window.StatueRuinDebris.fill({
+            group: zScene, mapId, tiles: statueDebrisTiles,
+            groundLift: (x, z) => { // The zone's ground displacement at the footprint centre.
+              const probe = new THREE.BufferGeometry();
+              probe.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+              displaceZoneGeometry(probe, mapId, x, z);
+              const lift = probe.getAttribute('position').getY(0);
+              probe.dispose();
+              return lift;
+            },
+            fallback: (group, t) => { // Generator unavailable: a farm-style stone, never an invisible blocker.
+              const rock = window.FacetedRocks?.buildOreRock?.({
+                col: t.c, row: t.r, name: `statue_fallback_rock_${t.c}_${t.r}`,
+                material: window.OreRockTextures.facetedMaterialFor(THREE, null, ORE_DEFS), tint: '#808080',
+                grassMaterial: resolveTileMat(mapId, TileType.GRASS),
+                displace: geometry => displaceZoneGeometry(geometry, mapId, t.x, t.z),
+              });
+              if (!rock) return;
+              rock.group.position.set(t.x, t.y, t.z);
+              group.add(rock.group);
+            },
+          });
         }
 
         for (const [matKey, entries] of _floorBuckets) {

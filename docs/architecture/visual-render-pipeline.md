@@ -240,6 +240,7 @@ Rules:
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
 | Change loose rocks (look) | Farm rocks: `TerrainGeometry.buildRockTileGeo` mound + `NaturalSurfaceMaterials.naturalizeMesh(mesh, 'rocks')` (cliff-stretch islands, no shell). Ore rocks reuse it via `js/faceted-rocks.js` `buildOreRock` (tinted with `OreRockTextures.rockTintFor`) and are kept out of the chunk jigsaw bake (`userData.facetedRock`) |
+| Change what fills wilderness statue footprints | `js/statue-ruin-debris.js`: Debris-ifier V50 outdoor `tiny` ruins (topple/burial/density max) + per-piece damage pass (`SUPER_RUINED`), merged per variant, placed by `game.js`'s zone floor builder on `rockKind: 'statue'` tiles |
 
 ## 8. Debugging
 
