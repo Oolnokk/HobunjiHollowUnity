@@ -95,12 +95,9 @@
   }
 
   function materialWeightForPose(baseInfluence, compressibilityWeight, stretchabilityWeight, pitchKind, yawDeg) {
-    const pitchWeight = materialWeightForBend(baseInfluence, compressibilityWeight, stretchabilityWeight, pitchKind);
-    if (Math.abs(finite(yawDeg, 0)) <= RESPONSE_EPSILON) return pitchWeight;
-    // Yaw pulls the painted neck seam outward regardless of left/right sign, so
-    // the same Stretchability channel limits both yaw directions. If pitch is
-    // simultaneously more restrictive (e.g. compression), the stricter weight wins.
-    return Math.min(pitchWeight, clamp(finite(stretchabilityWeight, pitchWeight), 0, 1));
+    // The yaw argument is retained for existing callers; the separate paper-fold bones
+    // turn the head without ever consulting uneven Influence or Stretchability paint.
+    return materialWeightForBend(baseInfluence, compressibilityWeight, stretchabilityWeight, pitchKind);
   }
 
   function mapsForRig(rawRig) {
@@ -126,41 +123,48 @@
     const compressibilityWeights = new Float32Array(count); // Pre-sampled inside-bend effective head weights.
     const stretchabilityWeights = new Float32Array(count); // Pre-sampled outside-bend/yaw effective head weights.
     const sourceTopVs = new Float32Array(count); // Used to decide which side of the pitch bend each vertex occupies.
+    const hasYawFold = geometry.userData?.hobunjiAnimalYawFold === true && skinWeight.itemSize >= 4; // New four-bone rigs keep yaw independent of pitch maps.
+    const yawFoldWeights = hasYawFold ? new Float32Array(count) : null; // Immutable per-vertex straight-fold weights survive pose updates.
     for (let i = 0; i < count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples horizontally mirrored author maps.
       const sourceTopV = 1 - uv.getY(i); // Author maps use top-left origin; Three UVs use bottom-left origin.
-      const base = clamp(skinWeight.getY(i), 0, 1);
+      const offset = i * skinWeight.itemSize;
+      const base = clamp(skinWeight.getY(i) + (hasYawFold ? skinWeight.array[offset + 3] : 0), 0, 1); // Recover pitch Influence from both pitch-bearing bones.
       baseHeadWeights[i] = base;
+      if (hasYawFold) yawFoldWeights[i] = clamp(skinWeight.array[offset + 2] + skinWeight.array[offset + 3], 0, 1); // Straight hinge, unchanged by material response.
       compressibilityWeights[i] = sampleMaterialMap(decoded.compressibility, decoded.influence, sourceUv?.getX(i) ?? sourceU, sourceUv?.getY(i) ?? sourceTopV, base);
       stretchabilityWeights[i] = sampleMaterialMap(decoded.stretchability, decoded.influence, sourceUv?.getX(i) ?? sourceU, sourceUv?.getY(i) ?? sourceTopV, base);
       sourceTopVs[i] = sourceTopV;
     }
-    return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, mirrorX, lastAppliedDeg: NaN, lastAppliedYawDeg: NaN };
+    return { mesh, skinWeight, baseHeadWeights, compressibilityWeights, stretchabilityWeights, sourceTopVs, yawFoldWeights, mirrorX, lastAppliedDeg: NaN, lastAppliedYawDeg: NaN };
   }
 
   function applyMeshResponse(meshState, angleDeg, pivotTopV, yawDeg = 0) {
     if (!meshState) return { changed: false, compressed: 0, stretched: 0, yawStretched: 0, neutral: 0 };
     if (Number.isFinite(meshState.lastAppliedDeg)
-      && Number.isFinite(meshState.lastAppliedYawDeg)
-      && Math.abs(meshState.lastAppliedDeg - angleDeg) <= RESPONSE_EPSILON
-      && Math.abs(meshState.lastAppliedYawDeg - yawDeg) <= RESPONSE_EPSILON) {
+      && Math.abs(meshState.lastAppliedDeg - angleDeg) <= RESPONSE_EPSILON) {
+      meshState.lastAppliedYawDeg = yawDeg; // Diagnostics still follow live yaw, but yaw-only frames incur no GPU skin uploads.
       return { changed: false, compressed: 0, stretched: 0, yawStretched: 0, neutral: 0 };
     }
     const weights = meshState.skinWeight.array;
-    const yawActive = Math.abs(finite(yawDeg, 0)) > RESPONSE_EPSILON; // Both positive and negative yaw use the same Stretchability map.
     let compressed = 0, stretched = 0, yawStretched = 0, neutral = 0;
     for (let i = 0; i < meshState.baseHeadWeights.length; i++) {
       const base = meshState.baseHeadWeights[i];
       const kind = responseKindForVertex(angleDeg, meshState.sourceTopVs[i], pivotTopV);
       const effective = materialWeightForPose(base, meshState.compressibilityWeights[i], meshState.stretchabilityWeights[i], kind, yawDeg);
       const offset = i * meshState.skinWeight.itemSize;
-      weights[offset] = 1 - effective;
-      weights[offset + 1] = effective;
-      for (let component = 2; component < meshState.skinWeight.itemSize; component++) weights[offset + component] = 0;
+      const yawFold = meshState.yawFoldWeights?.[i] || 0; // Fold weight is geometric; never altered by pitch material maps.
+      weights[offset] = (1 - effective) * (1 - yawFold);
+      weights[offset + 1] = effective * (1 - yawFold);
+      if (meshState.yawFoldWeights) {
+        weights[offset + 2] = (1 - effective) * yawFold;
+        weights[offset + 3] = effective * yawFold;
+      } else {
+        for (let component = 2; component < meshState.skinWeight.itemSize; component++) weights[offset + component] = 0; // Legacy two-bone tests/rigs.
+      }
       if (kind === 'compress') compressed++;
       else if (kind === 'stretch') stretched++;
       else neutral++;
-      if (yawActive && meshState.stretchabilityWeights[i] + RESPONSE_EPSILON < base) yawStretched++;
     }
     meshState.skinWeight.needsUpdate = true;
     meshState.lastAppliedDeg = angleDeg;
@@ -186,15 +190,17 @@
       lastYawDeg: NaN,
       lastFront: null,
       lastBack: null,
+      yawMode: front?.yawFoldWeights && back?.yawFoldWeights ? 'paper-fold' : 'legacy',
       maps: {
         compressibility: !!decoded.compressibility,
         stretchability: !!decoded.stretchability,
+        yawUsesMaterialMaps: false,
       },
     }; // Mobile-visible avatarRef diagnostic; no console is required to confirm the feature is active.
 
     const applyCurrentResponse = () => {
       const angleDeg = finite(state.appliedDeg, state.currentDeg || 0); // Includes additive nods because png-plane-avatar stores the composed pitch angle here.
-      const yawDeg = finite(state.currentYawDeg, 0); // Same Stretchability map applies to left and right yaw by magnitude/sign-independent activation.
+      const yawDeg = finite(state.currentYawDeg, 0); // Report active yaw for mobile diagnostics; only pitch changes alter skin weights.
       if (Number.isFinite(debug.lastAngleDeg)
         && Number.isFinite(debug.lastYawDeg)
         && Math.abs(debug.lastAngleDeg - angleDeg) <= RESPONSE_EPSILON
@@ -224,7 +230,8 @@
     avatarRef.refreshHeadMaterialGeometry = () => {
       front = buildMeshResponseState(frontMesh, rawRig, decoded, false);
       back = buildMeshResponseState(backMesh, rawRig, decoded, true);
-      debug.lastAngleDeg = NaN; debug.lastYawDeg = NaN; // Force the current pitch/yaw material response into the new skin arrays.
+      debug.yawMode = front?.yawFoldWeights && back?.yawFoldWeights ? 'paper-fold' : 'legacy';
+      debug.lastAngleDeg = NaN; debug.lastYawDeg = NaN; // Apply pitch response once to the rebuilt four-bone skin arrays.
       applyCurrentResponse();
       return !!(front && back);
     };
@@ -234,6 +241,7 @@
       lastAngleDeg: debug.lastAngleDeg,
       lastYawDeg: debug.lastYawDeg,
       maps: { ...debug.maps },
+      yawMode: debug.yawMode,
       front: debug.lastFront ? { ...debug.lastFront } : null,
       back: debug.lastBack ? { ...debug.lastBack } : null,
     });
