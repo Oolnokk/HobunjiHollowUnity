@@ -313,7 +313,7 @@ const server=http.createServer((req,res)=>{
       sprite.getContext('2d').fillRect(0,0,1,1);
       const material=new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sprite)});
       const geometry=new THREE.PlaneGeometry(.08,.08);
-      geometry.translate(.16,0,.32); // Oblique rays hit the hood at x=0, while a straight-on ray misses.
+      geometry.translate(-.16,0,-.32); // Beard behind cloth: oblique sightlines cross the opaque hood at x=0.
       const mesh=new THREE.Mesh(geometry,material);
       const clip=window.PortraitSplineRig.hoodOcclusion(THREE,material);
       const coverage=new Uint8Array(40000),overlap=new Uint8Array(40000);
@@ -335,13 +335,17 @@ const server=http.createServer((req,res)=>{
       const covered=[read(parallel,1,2),read(perspective,1,2)];
       overlap.fill(1);clip.update({coverage,overlap},1,1);
       const permitted=[read(parallel,1,2),read(perspective,1,2)];
+      overlap.fill(0);clip.update({coverage,overlap},1,1);
+      geometry.translate(.32,0,.64); // The same strand is now IN FRONT of the hood without a painted override.
+      const trulyInFront=[read(parallel,1,2),read(perspective,1,2)];
       clip.update(null,1,1);
       const removed=read(parallel,1,2);
       clip.dispose();geometry.dispose();material.map.dispose();material.dispose();target.dispose();renderer.dispose();
-      return {covered,permitted,removed};
+      return {covered,permitted,trulyInFront,removed};
     });
-    assert.deepEqual(projected,{covered:[false,false],permitted:[true,true],removed:true},
-      'actual WebGL fragments follow the hood under oblique perspective and orthographic cameras');
+    assert.deepEqual(projected,{covered:[false,false],permitted:[true,true],
+      trulyInFront:[true,true],removed:true},
+      'actual WebGL fragments are hidden only when opaque hood is in front, not x-rayed away when beard is nearer');
     await page.locator('#maskMode').click();
     await page.locator('#maskSelect').selectOption('opening');
     await page.locator('#paintMode').click();await clickMaskPixel();
