@@ -147,13 +147,18 @@
   function headJoints(data) {
     const named = data?.rigRoot?.userData?.neckRig;
     const avatar = data?.hostAvatar;
-    return [avatar?.headScaleJoint?.front, avatar?.headScaleJoint?.back, named?.headScaleJoint].filter(Boolean);
+    return [
+      { scale: avatar?.headScaleJoint?.front, offset: avatar?.headOffsetJoint?.front },
+      { scale: avatar?.headScaleJoint?.back, offset: avatar?.headOffsetJoint?.back },
+      { scale: named?.headScaleJoint, offset: named?.headOffsetJoint },
+    ].filter(pair => pair.scale); // Legacy actors without a separate placement bone still stretch normally.
   }
 
   function backupBones(state) {
-    state.bones = headJoints({ ...state.portrait, hostAvatar: state.host?.avatarRef }).map(joint => ({
-      joint, scale: joint.scale.clone(), position: joint.position.clone(),
-    })); // Exact existing skull pose is restored even after an interrupted stretch.
+    state.bones = headJoints({ ...state.portrait, hostAvatar: state.host?.avatarRef }).map(({ scale, offset }) => {
+      const positionJoint = offset || scale; // Large Headtaker yanks act on the nonrotating bone, not on the tiny neck strip.
+      return { joint: scale, scale: scale.scale.clone(), positionJoint, position: positionJoint.position.clone() };
+    }); // Both the skull scale and placement are fully restorable after an interrupted attack.
   }
 
   function stretch(state, amount) {
@@ -161,8 +166,8 @@
     for (const bone of state.bones) {
       bone.joint.scale.copy(bone.scale);
       bone.joint.scale.y *= 1 + amount;
-      bone.joint.position.copy(bone.position);
-      bone.joint.position.y += state.portrait.height * amount * 0.18;
+      bone.positionJoint.position.copy(bone.position);
+      bone.positionJoint.position.y += state.portrait.height * amount * 0.18;
     }
   }
 
@@ -458,7 +463,7 @@
     }
     for (const bone of state.bones || []) {
       bone.joint.scale.copy(bone.scale);
-      bone.joint.position.copy(bone.position);
+      bone.positionJoint.position.copy(bone.position); // Reset the nonrotating placement bone too after a canceled Headtaker stretch.
     }
   }
 
