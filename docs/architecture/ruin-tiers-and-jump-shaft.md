@@ -42,8 +42,9 @@ reach (`compose().checks`, also run by `scripts/test-ruin-tiers-jump-shaft.js`).
   to the slab's **underside**. `RuinShaftSupportPillars` reads the original editable
   `assets/models/furniture/data/pillar_square.json`; its runtime-only recipe uses the
   same fixed-foot / stretchy-middle / fixed-cap `FurnitureTileSpan` solver as the
-  IKMC ceiling ladder. An even rounded slab width gives a **2×2** footing; odd gives
-  **3×3**. Bases are centered on the slab; capitals are limited to the slab width.
+  IKMC ceiling ladder. An even rounded slab width gives a **1.5×1.5** footing and
+  an odd width gives **2.25×2.25**. Bases are centered under their slabs and
+  capitals fit within them. The slabs and supports share the same carved stone material.
   These are deliberately visual-only: they add no landing surface, climbing
   collision or safe floor inside the fatal pit. A temporary stone silhouette upgrades
   to authored parts on asset load. See `getState().supportPillars` for counts/failures;
