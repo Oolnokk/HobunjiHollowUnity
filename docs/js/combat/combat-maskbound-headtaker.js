@@ -463,7 +463,7 @@
     }
     for (const bone of state.bones || []) {
       bone.joint.scale.copy(bone.scale);
-      bone.joint.position.copy(bone.position);
+      bone.positionJoint.position.copy(bone.position); // Reset the nonrotating placement bone too after a canceled Headtaker stretch.
     }
   }
 
