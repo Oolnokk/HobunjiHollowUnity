@@ -13,7 +13,7 @@
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261116maoPerch2', base).href,
     new URL('nuhongan-species-runtime.js?v=20261116maoPerch2', base).href,
-    new URL('longoran-species-runtime.js?v=20261120longoran07', base).href,
+    new URL('longoran-species-runtime.js?v=20261120longoranApprovedV2', base).href,
     new URL('harlyao-species-runtime.js?v=20261116maoPerch2', base).href,
     new URL('omgurku-connector-rig.js?v=20261022pantsFallback1', base).href,
     new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,
