@@ -64,17 +64,51 @@ const headRig={enabled:true,pivot:{x:.35,y:.5},meshResolution:48,minDeg:-30,maxD
 const animal=windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE,'animal.png',
   {name:'gar-wolf',modelWidth:2.1,modelHeight:.95,headRig});
 assert(animal.frontPlane.isSkinnedMesh&&animal.backPlane.isSkinnedMesh,'both faces upgraded to skinned live cards');
+assert.equal(animal.headRig.yawMode, 'paper-fold', 'yaw mode is visible to the mobile diagnostics');
+for (const face of [animal.frontPlane, animal.backPlane]) {
+  assert.equal(face.skeleton.bones.length, 4, 'each card has separate pitch, yaw and combined transforms');
+  assert.equal(face.geometry.userData.hobunjiAnimalYawFold, true, 'material response can preserve independent yaw weights');
+  const weights = face.geometry.getAttribute('skinWeight').array;
+  const rowLength = (face.geometry.userData.segmentsX + 1) * 4;
+  const upperFold = weights[2] + weights[3];
+  const lowerFold = weights[weights.length - 2] + weights[weights.length - 1];
+  assert(Math.abs(upperFold - 1) < 1e-5, 'top of sprite belongs fully to straight yaw hinge');
+  assert(Math.abs(lowerFold) < 1e-5, 'bottom of sprite does not yaw with head');
+  const upperPitch = weights[1] + weights[3];
+  for (let offset = 0; offset < rowLength; offset += 4) {
+    assert(Math.abs(weights[offset + 2] + weights[offset + 3] - upperFold) < 1e-5,
+      'fold weight is identical across the row even with irregular head paint');
+    assert(Math.abs(weights[offset + 1] + weights[offset + 3] - upperPitch) < 1e-5,
+      'the constant test pitch weights still track author paint');
+  }
+  for (let i = 0; i < weights.length; i += 4) {
+    assert(Math.abs(weights[i] + weights[i + 1] + weights[i + 2] + weights[i + 3] - 1) < 1e-5,
+      'four-way skin weights remain normalized');
+  }
+}
 assert.equal(animal.frontPlane.geometry.userData.segmentsX,12);
 assert.equal(animal.backPlane.geometry.userData.segmentsY,7);
 assert.equal(meshBudget.portraitDensityDebug().animalFaces,2,'both head skins are registered');
 const headBone=animal.headRig.frontHeadBone, material=animal.frontPlane.material, oldGeometry=animal.frontPlane.geometry;
 animal.setHeadRotation(18);
 const oldAngle=headBone.rotation.z;
+animal.updateHeadYaw(18, 1);
+assert.equal(animal.headRig.frontYawBone.rotation.y, animal.headRig.backYawBone.rotation.y,
+  'both side-view cards yaw with the same handedness');
+assert.equal(animal.headRig.frontCombinedBone.rotation.y, animal.headRig.frontYawBone.rotation.y,
+  'combined head transform carries the independent rigid hinge yaw');
+assert.equal(animal.headRig.frontCombinedBone.rotation.z, oldAngle,
+  'combined transform retains painted pitch while the head turns');
+assert.equal(animal.headRig.backCombinedBone.rotation.z, -oldAngle,
+  'reverse-facing pitch keeps its normal handedness');
+assert.equal(headBone.rotation.y, 0, 'legacy painted pitch bone never receives yaw');
 assert.equal(meshBudget.setPortraitDensityPercent(100),true);
 assert.equal(animal.frontPlane.geometry.userData.segmentsX,30);
 assert.equal(animal.backPlane.geometry.userData.segmentsY,18);
 assert.strictEqual(animal.headRig.frontHeadBone,headBone,'existing animated head bone retained');
 assert.equal(headBone.rotation.z,oldAngle,'posed head angle remains unchanged through retessellation');
+assert.equal(animal.headRig.frontCombinedBone.rotation.z, oldAngle, 'pitch part of folding yaw survives retessellation');
+assert.equal(animal.headRig.frontCombinedBone.rotation.y, animal.headRig.frontYawBone.rotation.y, 'yaw survives retessellation');
 assert.strictEqual(animal.frontPlane.material,material,'genotype material and map are retained');
 assert(oldGeometry.disposed,'old GPU buffer freed after replacement');
 meshBudget.setPortraitWireframeEnabled(true);
