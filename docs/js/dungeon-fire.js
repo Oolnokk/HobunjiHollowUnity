@@ -45,8 +45,7 @@
         visual.update?.(1/stream.rate,true); // Prime a visible ignition particle in the very first frame.
         if(visual.points){
           visual.points.renderOrder=3; // Flame draws above PNG without disabling world depth.
-          const overlay=window.HeldObjectRenderOrder?.HELD_OVERLAY_LAYER;
-          if(Number.isInteger(overlay)&&overlay>0&&overlay<32)visual.points.layers?.enable?.(overlay);
+          // World layer only: fire particles never x-ray (design decision); held/x-ray replays leave them alone.
         }
         emitters.push(visual);
       }
@@ -221,7 +220,7 @@
     WORLD_POINT.set(state.anchor?.x || 0, state.anchor?.y || 0, 0);
     state.plane.localToWorld(WORLD_POINT);
     state.worldFlame.position.copy(WORLD_POINT);
-    if (state.plane.userData) state.plane.userData.hobunjiDungeonFireVfxPadding = HELD_REPLAY_PADDING; // Kept independent of other enchantment emitters.
+    // No replay scissor padding: the plume never x-rays, so it must not widen the held weapon's replay rectangle.
     const step = Math.max(0, Math.min(.05, Number(dt) || 0)); // Stable particle simulation during stalls or UI pauses.
     state.age += step;
     tickWorldFlame(state.worldFlame, step, state.age);

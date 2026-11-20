@@ -59,6 +59,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
     hideColorOnlyHeldVfx: () => null, // Colour-only VFX skip has its own test (test-held-color-only-depth-skip.js).
+    showGroupGearParticles: () => null, // Drawn-once gear particles have their own test (test-held-gear-particles-once.js).
     collectVisible: registry => registry === 'png' ? [cutout] : registry === 'background' ? [sky] : [cover],
     pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),

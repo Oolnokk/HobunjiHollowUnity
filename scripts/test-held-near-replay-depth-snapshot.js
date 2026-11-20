@@ -159,6 +159,7 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch
     hideObjects: objects => { const states = new Map(); for (const o of objects) { states.set(o, o.visible); o.visible = false; } return states; },
     restoreVisibility: states => { for (const [o, v] of states) o.visible = v; },
     hideColorOnlyHeldVfx: () => null, // Colour-only VFX skip has its own test (test-held-color-only-depth-skip.js).
+    showGroupGearParticles: () => null, // Drawn-once gear particles have their own test (test-held-gear-particles-once.js).
     collectVisible: () => [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => { log.push('full-depth-materials'); return new Map(); },
     restoreMaterialStates() {}, prepareGroundDepthMaterials: () => new Map(),

@@ -301,10 +301,13 @@ async function main() {
     'the charged fire uses production player-held plane and assembled modular source exports');
   assert(rangedCode.includes('window.DungeonFire?.updateHeldVisual?.(dt)'),
     'the regular ranged frame must animate the already-armed held weapon before firing');
-  const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
-  assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
-    /held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(expandClassicScriptGroups(fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'))), // Any token: the pre-game services manifest owns held overlay cache refresh independently of the HUD adapter.
-    'the authored flame padding is supported and the parser-ordered rendering manifest carries its cache token');
+  // Fire particles never x-ray (design decision): the plume stays on the world layer and no longer
+  // widens the held weapon's replay scissor, so held/x-ray replays leave it alone.
+  const fireCode = fs.readFileSync(path.join(root, 'docs/js/dungeon-fire.js'), 'utf8');
+  assert(!/HELD_OVERLAY_LAYER/.test(fireCode), 'the dungeon fire plume never joins the held-overlay layer');
+  assert(!/hobunjiDungeonFireVfxPadding\s*=\s*HELD_REPLAY_PADDING/.test(fireCode), 'the plume does not pad the held replay scissor');
+  assert(/held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(expandClassicScriptGroups(fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'))), // Any token: the pre-game services manifest owns held overlay cache refresh independently of the HUD adapter.
+    'the parser-ordered rendering manifest carries the held overlay cache token');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
     rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
     'only one player projectile in a volley consumes the one-shot fire charge');

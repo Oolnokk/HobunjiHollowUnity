@@ -2147,6 +2147,86 @@
     return hidden;
   }
 
+  // ── Gear particles: drawn once, after their own gear ─────────────────────
+  // Particles riding on held gear (enchantment motes, weapon-layer fire) sit on
+  // the world layer AND the held-overlay layer so the overlay draws them after
+  // the gear it redraws. That drew each one in the base pass (where the gear
+  // itself is suppressed, so the overlay then paints the gear over it: wasted)
+  // and again in EVERY group's overlay render, whichever group held its gear:
+  // 76 + 152 draws a frame for an enchanted dual flail on the user's GTX 1060.
+  // Now each is hidden for the base pass and the whole replay, and shown only
+  // for the overlay render of the group holding its gear: one draw, still on
+  // top of its gear. Particles of gear the replay culled as off-screen keep the
+  // old behaviour. A/B: HeldObjectRenderOrder.setGearParticlesOnceEnabled(false).
+  let gearParticlesOnceEnabled = true;
+  let gearParticleSkips = 0; // Lifetime particle draws avoided (snapshot()).
+  let lastGearParticles = 0; // Particles managed in the last wrapped render.
+  let activeGearParticles = null; // owner mesh -> its particles, during one wrapped render.
+  let pendingGearParticleRestore = null; // Safety net: restored at the next render if a frame threw.
+  function isGearParticle(node) {
+    return !node.children?.length && hasLayer(node, HELD_OVERLAY_LAYER) && isColorOnlyHeldVfx(node);
+  }
+  function collectGearParticles(owners) {
+    const ownerSet = new Set(owners);
+    const byOwner = new Map();
+    for (const owner of owners) {
+      if (!owner?.children?.length) continue;
+      owner.traverseVisible(node => {
+        if (node === owner || !isGearParticle(node)) return;
+        let nearest = null;
+        for (let parent = node.parent; parent; parent = parent.parent) if (ownerSet.has(parent)) { nearest = parent; break; }
+        if (nearest !== owner) return; // Each particle belongs to its nearest held ancestor only.
+        let list = byOwner.get(owner);
+        if (!list) byOwner.set(owner, list = []);
+        list.push(node);
+      });
+    }
+    return byOwner;
+  }
+  // Hides every gear particle of these participants; returns the restore record or null.
+  function beginGearParticles(owners) {
+    if (pendingGearParticleRestore) { restoreVisibility(pendingGearParticleRestore); pendingGearParticleRestore = null; }
+    activeGearParticles = null;
+    lastGearParticles = 0;
+    if (!gearParticlesOnceEnabled) return null;
+    const byOwner = collectGearParticles(owners);
+    if (!byOwner.size) return null;
+    const all = [];
+    for (const list of byOwner.values()) all.push(...list);
+    activeGearParticles = byOwner;
+    lastGearParticles = all.length;
+    gearParticleSkips += all.length; // The base pass no longer draws them.
+    pendingGearParticleRestore = hideObjects(all);
+    return pendingGearParticleRestore;
+  }
+  // Gear the replay will not redraw (culled off-screen) keeps the old behaviour.
+  function releaseUnreplayedGearParticles(replayed) {
+    if (!activeGearParticles) return;
+    for (const [owner, list] of activeGearParticles) {
+      if (replayed.has(owner)) continue;
+      for (const particle of list) particle.visible = pendingGearParticleRestore?.get(particle) ?? true;
+      activeGearParticles.delete(owner);
+    }
+  }
+  function showGroupGearParticles(meshes) {
+    if (!activeGearParticles) return null;
+    let shown = null;
+    for (const mesh of meshes) {
+      const list = activeGearParticles.get(mesh);
+      if (!list) continue;
+      for (const particle of list) { particle.visible = true; (shown || (shown = [])).push(particle); }
+    }
+    let managed = 0;
+    for (const list of activeGearParticles.values()) managed += list.length;
+    gearParticleSkips += managed - (shown ? shown.length : 0);
+    return shown;
+  }
+  function endGearParticles(hidden) {
+    if (hidden) restoreVisibility(hidden);
+    if (hidden === pendingGearParticleRestore) pendingGearParticleRestore = null;
+    activeGearParticles = null;
+  }
+
   function replayFrustumIntersects(object, instanceSphere = undefined) {
     if (object.isSprite) return replayCullFrustum.intersectsSprite(object);
     // The union cull may have already obtained this instanced world sphere.
@@ -3599,6 +3679,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const overlayStates = tintOverlay
           ? prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef, portraitGearIds)
           : portraitGearIds ? preparePortraitGearStencilMaterials(group.meshes, portraitGearIds) : null;
+        const ownParticles = showGroupGearParticles(group.meshes); // Only this group's gear particles, once, after their gear.
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
@@ -3606,6 +3687,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           window.PerfProfiler?.end(overlayPerf);
           selectiveOverlayCount++;
         } finally {
+          if (ownParticles) for (const particle of ownParticles) particle.visible = false;
           if (overlayStates) restoreMaterialStates(overlayStates);
           for (const mesh of group.meshes) mesh.layers.mask = 0;
         }
@@ -4104,6 +4186,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // Draw held items and procedural feet exactly once, after reconstructed
     // cover depth. Normal water uses depthWrite=false, so feet left in this
     // base pass could otherwise render visibly over the water surface.
+    const gearParticlesHidden = beginGearParticles([...held, ...feet]); // Drawn once, in their gear's group overlay.
     const heldDraws = suppressDraws([...held, ...feet]);
     let result;
     const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
@@ -4126,10 +4209,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // Non-participants were drawn normally above; keep them out of the replays,
     // whose overlay passes draw everything on the held-overlay layer.
     const othersHidden = replayOthers.length ? suppressDraws(replayOthers, HELD_OVERLAY_MASK) : null;
+    releaseUnreplayedGearParticles(new Set([...visibleHeld, ...visibleFeet]));
     try {
       replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
     } finally {
       if (othersHidden) restoreDraws(othersHidden);
+      endGearParticles(gearParticlesHidden);
     }
     window.PerfProfiler?.end(replayPerf);
     // The replays are renders of their own that the outline wrapper sees after the base pass, and they
@@ -4197,7 +4282,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4291,6 +4376,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
     setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
+    setGearParticlesOnceEnabled: value => { gearParticlesOnceEnabled = value !== false; return gearParticlesOnceEnabled; },
     setHeldOwnerLinkEnabled: value => { heldOwnerLinkEnabled = value !== false; participantCache = new WeakMap(); return heldOwnerLinkEnabled; },
     setOtherWeaponXrayLimit: count => { const n = Number(count); if (n === Infinity || (Number.isInteger(n) && n >= 0)) otherWeaponXrayLimit = n; return otherWeaponXrayLimit; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.

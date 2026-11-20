@@ -22,6 +22,9 @@
 //   treeInstancingOff
 //                   procedural wilderness trees draw one mesh at a time again
 //                   instead of as instanced batches per variant part
+//   gearParticlesEveryPass
+//                   particles on held gear (enchantment motes, weapon fire)
+//                   are drawn in the base pass and every replay group again
 //   npcWeaponsBasePass
 //                   hostile/NPC weapons resolve to their bearer and draw in
 //                   the base pass instead of an extra held-replay group (a
@@ -306,6 +309,9 @@
       variants.push({ id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {
+      variants.push({ id: 'gearParticlesEveryPass', apply: () => heldOrder.setGearParticlesOnceEnabled(false), undo: () => heldOrder.setGearParticlesOnceEnabled(true) });
+    }
     if (typeof heldOrder?.setHeldOwnerLinkEnabled === 'function' && typeof heldOrder.setOtherWeaponXrayLimit === 'function') {
       const linkBefore = heldOrder.snapshot?.().heldOwnerLinkEnabled === true;
       const limitBefore = heldOrder.snapshot?.().otherWeaponXrayLimit ?? Infinity;

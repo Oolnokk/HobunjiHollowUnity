@@ -269,7 +269,7 @@ await CharacterVisuals.captureVisibilityReport() // "X is invisible": per charac
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
-                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOff / npcWeaponsBasePass / skinnedScissorOff / mistOff / rainOff / cloudsOff
+                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOff / gearParticlesEveryPass / npcWeaponsBasePass / skinnedScissorOff / mistOff / rainOff / cloudsOff
                                              //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
                                              //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
                                              //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.
@@ -278,6 +278,10 @@ RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings 
 ?renderContext=lean                          // reload flag: no canvas MSAA, no preserveDrawingBuffer (report shows the context attributes)
 HeldObjectRenderOrder.snapshot()             // replay scissor/fullscreen counts + reasons, culled/kept, colorOnlyDepthSkips
 HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false) // A/B: draw no-op VFX (enchantment motes) in colourless replays again
+HeldObjectRenderOrder.setGearParticlesOnceEnabled(false) // A/B: particles on held gear (enchantment motes, weapon-layer fire) drawn in the base
+                                             //   pass and every replay group again; on (default) they draw once, in the overlay of the
+                                             //   group holding their gear. Particles never x-ray as such: world-only fire (dungeon plume)
+                                             //   stays off the held-overlay layer and never pads the replay scissor
 HeldObjectRenderOrder.setHeldOwnerLinkEnabled(true)    // A/B (off by default): scene-sibling weapons (BanditCombat/walker tool holders) resolve
                                              //   to their bearer via userData.hobunjiHeldPortraitOwner instead of the unowned fail-safe
                                              //   path, which costs every armed hostile on screen one extra "ordinary" held-replay group

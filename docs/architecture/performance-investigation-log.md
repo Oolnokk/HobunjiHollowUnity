@@ -1,5 +1,31 @@
 # Performance investigation log
 
+## 20 Nov 2026: device report while watching a camp from afar; gear particles drawn once
+
+**Device** (GTX 1060, Cloud Forest, 3 enemies + 3 corpses in view, not fighting). The default
+window times every pass with GPU queries, so it reads slower than any variant; neutral variants
+(painterlyOff, cloudsOff, fadedTreesDrawn, halfResolution) put the real baseline at ~102-106 ms.
+Against that: `skinnedScissorOff` +15 ms (the skinned scissor fix holds up), `npcWeaponsBasePass`
+−11 ms (render CPU −9: unowned hostile weapons cost an extra replay group even at a distance),
+`treeInstancingOff` −6 ms and −350k triangles (tree instancing is a net loss on the device: its
+corridor-wide batches defeat frustum and replay culling, and the per-frame regroup costs CPU),
+`fadedTreesDrawn` ±0, `mistOff` −6, `outlinesOff` −23. Top draws: ore rocks
+(`faceted_ore_rock` 218 + grass rims 106 in main, 212 more in replays: each removable ore rock
+has always been its own stone + grass mesh pair) and the player's enchanted flail motes (76 in
+main, 152 in replays).
+
+**Gear particles drawn once.** Motes and weapon-layer fire sit on the world layer and the
+held-overlay layer so the overlay draws them after the gear it repaints. They therefore drew in
+the base pass (where the gear is suppressed: the overlay then paints the gear over them) and in
+every replay group's overlay. `HeldObjectRenderOrder` now hides them for the base pass and the
+whole replay and shows each only in the overlay render of the group holding its gear (nearest
+held ancestor; gear the replay culls keeps the old behaviour). Headless: one render draws all 77
+motes once a frame (was base + every group: 154 here, 228 on the device); 363 px differ where
+the base-pass copy used to double a translucent mote. Particles were never meant to x-ray as
+such (user decision): the dungeon-fire plume, a separate world object, left the held-overlay
+layer and no longer pads the weapon's replay scissor. A/B:
+`setGearParticlesOnceEnabled(false)`, benchmark variant `gearParticlesEveryPass`.
+
 ## 20 Nov 2026: why combat and crowds still cost frames (investigation)
 
 Headless, user's Cloud Forest save, enemies spawned around the player and kept fighting
