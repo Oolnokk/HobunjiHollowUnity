@@ -640,7 +640,7 @@
     characterBuildStatus.stage = 'leg-rig';
     const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, spine: roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
-      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase }, spine, modelHeight);
+      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase, blendHeight: frontNeckSkin.weightedGeometry?.userData?.blendHeight }, spine, modelHeight); // Hostile shoulder and attack orbit calculations sample the same short base-head neck band as the portrait.
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
