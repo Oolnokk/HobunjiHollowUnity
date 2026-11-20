@@ -67,6 +67,14 @@ assert.equal(render.patternTintColor('grehlr', 'beard', { ...grehlrLegacyColor, 
 assert.equal(render.genotypeSignature('grehlr', grehlrLegacyColor),
   render.genotypeSignature('grehlr', { ...grehlrLegacyColor, beard: { ...grehlrLegacyColor.beard, color: '#FF0000' } }),
   'Changing only the obsolete beard dye does not make a distinct render cache key');
+const drenkirraSwapped = { base: { color: '#AABBCC' }, bodystripes: { color: '#334455', enabled: true, copies: 2 } }; // Swapped coat-color regression: body uses stripes pigment, stripes use base pigment.
+assert.equal(render.patternTintColor('drenkirra', 'bodystripes', drenkirraSwapped), drenkirraSwapped.base.color);
+assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
+  render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, color: '#DD8844' } }),
+  'Drenkirra cache signature must include the swapped body color, not only its stripe tint');
+assert.notEqual(render.genotypeSignature('drenkirra', drenkirraSwapped),
+  render.genotypeSignature('drenkirra', { ...drenkirraSwapped, bodystripes: { ...drenkirraSwapped.bodystripes, enabled: false } }),
+  'Disabling a swapped Drenkirra stripe also changes the rendered base color');
 assert.match(read('docs/js/creature-genetics-render.js'), /paintRegionId = patternUsesBaseCoat \? 'base' : patternId/,
   'Color Pools paint on Grehlr beard must follow the base rather than a second independent dye');
 assert.deepEqual(Array.from(render.SPECIES.nelk.patterns), ['cape', 'brushtail', 'spectacles'],
@@ -311,6 +319,13 @@ assert.equal(genetics.genotypeTraits('grehlr', grehlrLegacyColor).patterns.find(
   grehlrLegacyColor.base.color, 'Farm/Stable trait color chips must match actual beard tint');
 assert.equal(genetics.sellValueFor({ base: grehlrLegacyColor.base, beard: grehlrLegacyColor.beard }, 'grehlr').contrastScore, 0,
   'Beard alone has no base-versus-pattern color contrast bonus');
+const markedGrehlr = { base: { color: '#555555' }, beard: { copies: 2, enabled: true, color: '#FFFFFF' },
+  spectacles: { copies: 2, enabled: true, color: '#FFFFFF' } }; // Beard is the first expressed pattern, but spectacles still add real visible contrast.
+assert(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore > 0,
+  'A base-colored beard must not conceal the real contrast of later independent markings when computing sell value');
+assert.equal(genetics.sellValueFor(markedGrehlr, 'grehlr').contrastScore,
+  genetics.sellValueFor({ ...markedGrehlr, beard: { ...markedGrehlr.beard, enabled: false } }, 'grehlr').contrastScore,
+  'Beard presence adds rarity but never changes the calculated pigment contrast of other markings');
 assert.deepEqual(Array.from(genetics.PATTERN_DEFS.grehlr), Array.from(render.SPECIES.grehlr.patterns),
   'Grehlr authoring/breeding and rendering must agree on which pattern overlays are on top');
 assert.deepEqual(Array.from(genetics.PATTERN_DEFS.nelk), Array.from(render.SPECIES.nelk.patterns),
