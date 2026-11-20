@@ -2493,7 +2493,7 @@
     return Number.isFinite(localY) ? localY : NaN;
   }
 
-  function actorRootForXrayMesh(mesh, scene) {
+  function actorRootForXrayMesh(mesh, scene, ownerDepth = 0) {
     const composer = window.PlayerBodyTransformComposer;
     const playerMesh = composer?.getPlayerMesh?.();
     if (playerMesh && isDescendantOf(mesh, playerMesh)) return { root: playerMesh, isPlayer: true };
@@ -2508,8 +2508,18 @@
       const data = node.userData || {};
       if (data.hobunjiXrayActorRoot === true
           || data.hobunjiCharacterRigScaleRoot === true
-          || String(node.name || '').startsWith('npc_walker_')) {
+          || String(node.name || '').startsWith('npc_walker_')
+          || (heldOwnerLinkEnabled && node.name === 'bandit_avatar_group')) { // Gated with the owner link: today these parts are unowned.
         return { root: node, isPlayer: false };
+      }
+      // Scene-sibling weapons (BanditCombat/captain/cultural tool holders,
+      // walker watchman and station tools) name their bearer explicitly; the
+      // portrait mask already follows this link. Without it a hostile's weapon
+      // had no owner, took the fail-safe path and forced an extra "ordinary"
+      // held replay group (3 scene renders, ~350 draws in the user's fight).
+      const owner = heldOwnerLinkEnabled ? data.hobunjiHeldPortraitOwner : null;
+      if (owner?.isObject3D && owner !== node && ownerDepth < 2) {
+        return actorRootForXrayMesh(owner, scene, ownerDepth + 1) || { root: owner, isPlayer: false };
       }
       if (!namedAnimalRoot && data.namedAnimalNpc === true) namedAnimalRoot = node;
     }
@@ -2531,11 +2541,30 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
+  // Non-player weapon x-ray budget. An armed character whose gear can reach
+  // the floor gets its own x-ray group whenever its screen rectangle overlaps
+  // another holder's, and in a fight everyone crowds the player: in the user's
+  // Cloud Forest save one bandit added 3 scene renders and ~350 draws (the
+  // group's depth rebuild and colour overlay), the dominant cost of combat.
+  // Only the otherWeaponXrayLimit armed non-player actors nearest the camera
+  // keep weapon x-ray; the rest draw their weapon with ordinary depth, as
+  // non-participant hands and feet already do. Player and short-species gear
+  // are not limited. setOtherWeaponXrayLimit(Infinity) restores everyone.
+  let otherWeaponXrayLimit = Infinity;
+  // Off by default: with owners resolved, hostile weapons fall under the
+  // weapons rule above (x-ray for everyone): 6 bandits went 2,216 -> 5,875
+  // draws. With a budget of 0 they draw in the base pass instead (-257 draws,
+  // -4 scene renders vs today) but look different (mist/cutout/portrait
+  // layering), so that trade is left to an on-device A/B (benchmark variant
+  // npcWeaponsBasePass) rather than shipped silently.
+  let heldOwnerLinkEnabled = false;
+  let otherWeaponXrayBudgetSkips = 0; // Weapon meshes left to ordinary depth by the budget (snapshot()).
+  let lastOtherWeaponXrayActors = 0; // Armed non-player actors seen by the last held collection.
   const shortXraySpecies = new Set(['porakaneki']);
   let feetXrayDistance = 6; // World units (tiles) from the camera.
   let replayCameraPosition = null; // Set by wrappedRender before it collects participants.
   let nonParticipantReplaySkips = 0; // Meshes left to ordinary depth by the policy (snapshot()).
-  const participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
+  let participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
   const actorSpeciesCache = new WeakMap(); // actor root -> species id (or '')
   const PARTICIPANT_CACHE_MS = 250;
   function actorSpecies(root) {
@@ -2584,7 +2613,42 @@
         nonParticipantReplaySkips++;
       }
     }
-    return keep;
+    return repairHeld && !isFoot ? limitOtherWeaponParticipants(keep, scene, others) : keep;
+  }
+  // Keeps weapon x-ray for the otherWeaponXrayLimit nearest armed non-player
+  // actors (by root distance to the camera); preserves the original order,
+  // which the screen-space group batching depends on.
+  function limitOtherWeaponParticipants(keep, scene, others) {
+    const cam = replayCameraPosition;
+    let actors = null; // root -> { d2, meshes }
+    for (const mesh of keep) {
+      if (mesh.userData?.hobunjiProceduralHand === true || participantOwner(mesh, scene) !== 'other') continue;
+      const root = actorRootForXrayMesh(mesh, scene)?.root;
+      if (!root) continue;
+      actors = actors || new Map();
+      let entry = actors.get(root);
+      if (!entry) {
+        const e = root.matrixWorld?.elements;
+        const d2 = cam && e ? (e[12] - cam.x) ** 2 + (e[13] - cam.y) ** 2 + (e[14] - cam.z) ** 2 : 0;
+        actors.set(root, entry = { d2, meshes: [] });
+      }
+      entry.meshes.push(mesh);
+    }
+    lastOtherWeaponXrayActors = actors ? actors.size : 0;
+    if (!actors || !(actors.size > otherWeaponXrayLimit)) return keep;
+    const dropped = new Set();
+    [...actors.values()].sort((a, b) => a.d2 - b.d2).forEach((entry, rank) => {
+      if (rank >= otherWeaponXrayLimit) for (const mesh of entry.meshes) dropped.add(mesh);
+    });
+    const kept = [];
+    for (const mesh of keep) {
+      if (!dropped.has(mesh)) { kept.push(mesh); continue; }
+      enforceHeldMesh(mesh); // Same ordinary-depth path as any non-participant held mesh.
+      others.push(mesh);
+      nonParticipantReplaySkips++;
+      otherWeaponXrayBudgetSkips++;
+    }
+    return kept;
   }
 
   function actorXrayScope(mesh, scene, cache) {
@@ -4133,7 +4197,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4227,6 +4291,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
     setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
+    setHeldOwnerLinkEnabled: value => { heldOwnerLinkEnabled = value !== false; participantCache = new WeakMap(); return heldOwnerLinkEnabled; },
+    setOtherWeaponXrayLimit: count => { const n = Number(count); if (n === Infinity || (Number.isInteger(n) && n >= 0)) otherWeaponXrayLimit = n; return otherWeaponXrayLimit; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.

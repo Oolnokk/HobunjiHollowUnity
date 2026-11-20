@@ -1,5 +1,49 @@
 # Performance investigation log
 
+## 20 Nov 2026: why combat and crowds still cost frames (investigation)
+
+Headless, user's Cloud Forest save, enemies spawned around the player and kept fighting
+(`scratchpad combat-probe.js`: CPU profile + per-pass draws per scenario; render-list diffs before
+and after spawning one enemy). SwiftShader inflates wall-clock time; draws, render calls, JS time
+and shader program builds are what carry over to a device.
+
+| Scenario | Draws | Scene renders | JS / frame |
+|---|---|---|---|
+| no enemies | 1,527 | 17 | 95 ms |
+| 8 drenkirra fighting | 1,766 (+30 each) | 20 | 98 ms |
+| 6 bandits fighting | 2,101 (+96 each) | 21 | 140 ms |
+
+- **Armed humanoids, not crowds, are the multiplier.** One unarmed drenkirra: +25 draws, no extra
+  renders. One bandit: +370 draws, 350 of them inside the held replay, and +3 scene renders. Its
+  weapon is a scene-sibling `banditToolHolder`; `actorRootForXrayMesh` only walked parents, so the
+  weapon had no owner, took the fail-safe path and opened an extra "ordinary" held-replay group:
+  a depth supplement and colour overlay that redraw every grass cutout, depthless ground chunk and
+  held VFX (the player's enchantment motes) inside the group's rectangle. With 6 bandits the held
+  replay's JS went 12.5 → 25.5 ms a frame. The weapon names its bearer in
+  `userData.hobunjiHeldPortraitOwner` (the portrait mask already follows it); resolving through it
+  under the existing "weapons x-ray for everyone" rule is far worse (6 bandits: 2,216 → 5,875 draws,
+  21 → 30 renders). With a non-player weapon budget of 0 they draw in the base pass instead: 1,959
+  draws, 17 renders (−257, −4 vs today), but the weapons then look different (fogged by the Cloud
+  Forest mist, layered differently against grass and their portrait; 3.4-6k px in a 960x540
+  frame). Both switches ship off; benchmark variant `npcWeaponsBasePass` measures it on a device.
+- **A shader program rebuilt on every hit.** Every popup (damage numbers, labels, prompts) created
+  and disposed its own MeshBasicMaterial; disposing the last live one let three.js delete the
+  shared program, so the next popup compiled and linked it again: 35 rebuilds of one program in a
+  240-frame fight, 0 while idle (shader compiles are slow on ANGLE/D3D11, so this is hitching
+  rather than average frame time). `world-popup-text.js` now pools those materials (only the map
+  and opacity change): 35 → 12 rebuilds; the rest come from ranged projectiles
+  (`ranged-weapons.js` `disposeProjectile`), lunge trail stamps (`game.js`
+  `updateLungeTrailStamps`) and emoji icon effects, which create and dispose materials the same way.
+- **CPU.** `updateHostiles` +7 ms for 6 bandits (line-of-sight raycasts through
+  `computeBanditLos` ~0.3 ms per enemy), `updateCreatureMesh` +3 ms, `scanScene` +3 ms. A new animal
+  pays a one-off pattern recolour (`creature-genetics-render.js`) when it spawns.
+- **Resource rings** rebuild every ring mesh, geometry and material on each whole-point
+  Health/Stamina change: thousands of disposals a minute in a fight (inflated here by the harness
+  healing the player every frame), under ~1.3 ms a frame of CPU; GC and buffer churn more than time.
+- **Structural.** The frame already makes 17 scene renders with no enemies, each walking the whole
+  scene graph; anything that adds a render (a held-replay group, the world-text overlay pass while
+  popups exist) adds a full traversal.
+
 ## 20 Nov 2026: invisible wilderness trees still drawn (the "WildernessChunk" draws)
 
 The device report's biggest draw label, `WildernessChunk_map_southern_cloud_forest_#_#` (589 draws

@@ -22,6 +22,12 @@
 //   treeInstancingOff
 //                   procedural wilderness trees draw one mesh at a time again
 //                   instead of as instanced batches per variant part
+//   npcWeaponsBasePass
+//                   hostile/NPC weapons resolve to their bearer and draw in
+//                   the base pass instead of an extra held-replay group (a
+//                   different look: compare it while armed enemies are on
+//                   screen; HeldObjectRenderOrder.setHeldOwnerLinkEnabled +
+//                   setOtherWeaponXrayLimit(0))
 //   mistOff / rainOff / cloudsOff
 //                   hide the Cloud Forest mist, rain/blizzard planes or sky
 //                   cloud layers while drawing (only offered when present)
@@ -300,6 +306,13 @@
       variants.push({ id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setHeldOwnerLinkEnabled === 'function' && typeof heldOrder.setOtherWeaponXrayLimit === 'function') {
+      const linkBefore = heldOrder.snapshot?.().heldOwnerLinkEnabled === true;
+      const limitBefore = heldOrder.snapshot?.().otherWeaponXrayLimit ?? Infinity;
+      variants.push({ id: 'npcWeaponsBasePass',
+        apply: () => { heldOrder.setHeldOwnerLinkEnabled(true); heldOrder.setOtherWeaponXrayLimit(0); },
+        undo: () => { heldOrder.setHeldOwnerLinkEnabled(linkBefore); heldOrder.setOtherWeaponXrayLimit(limitBefore); } });
+    }
     if (typeof heldOrder?.setSkinnedScissorEnabled === 'function' && heldOrder.snapshot?.().skinnedScissorEnabled !== false) {
       variants.push({ id: 'skinnedScissorOff', apply: () => heldOrder.setSkinnedScissorEnabled(false), undo: () => heldOrder.setSkinnedScissorEnabled(true) });
     }

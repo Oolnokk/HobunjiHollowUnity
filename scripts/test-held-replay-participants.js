@@ -41,7 +41,9 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips };`)(window, { now: () => 0 });
+  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+    actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
+    budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
@@ -56,6 +58,37 @@ const feetOthers = [];
 const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar], scene, feetOthers, true);
 assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
 assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
+
+// Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
+// with userData.hobunjiHeldPortraitOwner. Off by default (today's behaviour:
+// unowned, fail-safe x-ray); on, they resolve to the bearer and the
+// non-player weapon budget can leave them to ordinary depth.
+assert.equal(api.ownerLinkDefault, false, 'owner link off by default: hostile weapons keep today\'s look');
+assert.equal(api.limitDefault, Infinity, 'no weapon budget by default');
+const bandit = (name, x) => at(node(name, scene, {}), x, 0);
+const banditA = bandit('bandit_avatar_group', 2), banditB = bandit('bandit_avatar_group', 9), banditC = bandit('bandit_avatar_group', 5);
+const holderOf = owner => { const holder = node('banditToolHolder', scene, { hobunjiHeldPortraitOwner: owner }); holder.isObject3D = true; return node('weapon', holder); };
+for (const b of [banditA, banditB, banditC]) b.isObject3D = true;
+const weaponA = holderOf(banditA), weaponB = holderOf(banditB), weaponC = holderOf(banditC);
+assert.equal(api.actorOf(weaponA, scene), null, 'link off: a scene-sibling weapon has no owner (fail-safe path)');
+assert.equal(api.actorOf(node('hand_sprite', banditA), scene), null, 'link off: bandit body parts stay unowned too (today\'s behaviour)');
+api.setOwnerLink(true);
+assert.equal(api.actorOf(weaponA, scene)?.root, banditA, 'link on: resolved to its bearer');
+assert.equal(api.actorOf(weaponA, scene)?.isPlayer, false);
+assert.equal(api.actorOf(node('hand_sprite', banditA), scene)?.root, banditA, 'bandit_avatar_group is an actor root, as for the portrait mask');
+const allArmed = [];
+assert.deepEqual(api.split([playerBlade, weaponB, weaponA, weaponC], scene, allArmed, false, true), [playerBlade, weaponB, weaponA, weaponC], 'no budget: every weapon x-rays');
+api.setLimit(1);
+const budgetOthers = [];
+assert.deepEqual(api.split([playerBlade, weaponB, weaponA, weaponC], scene, budgetOthers, false, true), [playerBlade, weaponA],
+  'budget 1: the player plus the armed non-player nearest the camera, original order kept');
+assert.deepEqual(budgetOthers, [weaponB, weaponC], 'the rest draw with ordinary depth');
+assert.equal(api.budgetSkips(), 2);
+api.setLimit(0);
+const noneOthers = [];
+assert.deepEqual(api.split([weaponA, tallSpear, playerBlade, shortClub], scene, noneOthers, false, true), [playerBlade, shortClub],
+  'budget 0: only the player\'s and short species\' weapons x-ray');
+api.setLimit(Infinity); api.setOwnerLink(false);
 
 api.setPolicy('all');
 const othersAll = [];
