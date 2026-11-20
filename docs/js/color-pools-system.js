@@ -61,6 +61,7 @@
     const regions = [];
     if (genotype.base?.color) regions.push({ id: 'base', label: 'Base coat', color: genotype.base.color });
     for (const patternId of spec.patterns || []) {
+      if (spec.baseColorPatterns?.includes(patternId)) continue; // Grehlr beard shares the base coat dye and motif; never offer an independent paintable beard region.
       const layer = genotype[patternId];
       if (!layer?.color || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
       regions.push({ id: patternId, label: title(patternId), color: layer.color });
