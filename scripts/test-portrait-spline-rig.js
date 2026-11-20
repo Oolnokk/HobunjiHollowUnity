@@ -46,6 +46,12 @@ assert(right.points[1].x>rest.points[1].x&&left.points[1].x<rest.points[1].x,
   'the one bone swings in both horizontal directions');
 assert(rest.points.every(p=>p.z>=.003)&&right.points.every(p=>p.z>=.003),
   'no wind drives the joint behind the portrait');
+const signedRig=Rig.normalize({...makeRig(),points:[{u:.5,v:.3,depth:.02},{u:.54,v:.7,depth:-.05}]});
+assert.equal(signedRig.points[1].depth,-.05,'explicit negative tip depth remains behind the owner portrait');
+const signedRest=Rig.posePoints(signedRig);
+assert(signedRest.points[1].z<0,'an intentionally rearward tip is not incorrectly clamped forward');
+assert(Rig.deformPosition(signedRig,signedRest.points,.54,.7,1,1).z<0,
+  'rigged hair can physically pass behind the owner and lose the normal depth test');
 const neutralDepth=rest.points[1].z;
 assert(Rig.posePoints(normalized,{z:1}).points[1].z>neutralDepth,
   'a toward-view gust moves hanging hair forward');
