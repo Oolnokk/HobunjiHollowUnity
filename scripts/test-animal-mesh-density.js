@@ -50,8 +50,8 @@ const makeWeighted=vm.runInNewContext('(() => {'+avatar.slice(weightStart,weight
   clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
   finite:(v,f)=>Number.isFinite(Number(v))?Number(v):f,
 });
-const map=new Uint16Array(128*75); // Painted right-half head region, same source map for both mirrored faces.
-for(let r=0;r<75;r++)for(let c=64;c<128;c++)map[r*128+c]=255;
+const map=new Uint16Array(128*75); // Synthetic irregular head cutout; bottom-right body must never follow a head yaw.
+for(let r=0;r<37;r++)for(let c=64;c<128;c++)map[r*128+c]=255; // Only the upper-right quadrant is head-owned.
 const rig={meshResolution:48,pivot:{x:.5,y:.4},weightMap:{width:128,height:75,values:map}};
 const original=new PlaneGeometry(2.1,.95);
 const build=(mirror,grid)=>makeWeighted(THREE,original,rig,mirror,{width:2.1,height:.95},grid);
@@ -67,26 +67,25 @@ assert.equal(frontWeights.getY(0)+frontWeights.array[3],0,'front samples origina
 assert.equal(backWeights.getY(0)+backWeights.array[3],1,'rear samples mirrored head pitch Influence');
 for(const geo of [front,back]) {
   assert.equal(geo.userData.hobunjiAnimalYawFold,true,'four-bone paper fold survives mesh budget');
+  assert.equal(geo.userData.hobunjiAnimalYawMask,'binary-head','yaw ownership is binary, never gradient-painted');
   const weights=geo.getAttribute('skinWeight'), stride=weights.itemSize;
   const width=geo.userData.segmentsX+1;
   for(let i=0;i<weights.count;i++){
     const k=i*stride, a=weights.array;
+    const headInfluence=a[k+1]+a[k+3]; // Original authored pitch weights restored from both pitch-bearing bones.
+    const gate=a[k+2]+a[k+3]; // Only head-owned vertices may participate in 3D yaw.
     assert(Math.abs(a[k]+a[k+1]+a[k+2]+a[k+3]-1)<1e-6,'all four skin weights normalize at every cell');
-    const row=Math.floor(i/width), col=i%width;
-    const gate=a[k+2]+a[k+3];
-    if (row > 0) {
-      const previous=(i-width)*stride;
-      assert(Math.abs(gate - a[previous+2] - a[previous+3])<1e-6,'head yaw fold has no vertically irregular weights');
-    }
-    const faceColumn=geo===front?0:geo.userData.segmentsX;
-    const bodyColumn=geo===front?geo.userData.segmentsX:0;
-    if (col===faceColumn) assert(Math.abs(gate-1)<1e-6,'face side of the hinge yaw is fully rigid');
-    if (col===bodyColumn) assert(Math.abs(gate)<1e-6,'body side of the hinge does not yaw');
+    assert(gate===0 || gate===1,'yaw uses no graded irregular skin weights');
+    assert.equal(gate,+(headInfluence>=.5),'3D yaw follows binary head ownership, not the horizontal neck half-plane');
   }
   const uv=geo.getAttribute('uv'), columns=geo.userData.segmentsX;
   const columnGaps=[];
   for(let col=0;col<columns;col++) columnGaps.push(Math.abs(uv.getX(col+1)-uv.getX(col)));
-  assert(Math.min(...columnGaps)<.0061,'mesh columns tightly surround the vertical paper crease even at low density');
+  assert(Math.min(...columnGaps)<.0061,'mesh still has nearby hinge columns even at low density');
+  const faceCol=geo===front?columns:0; // Painted upper-right head is mirrored on the reverse face.
+  const upperIndex=faceCol*stride, lowerIndex=(geo.userData.segmentsY*width+faceCol)*stride;
+  assert.equal(weights.array[upperIndex+2]+weights.array[upperIndex+3],1,'head pixels rotate as a rigid cutout');
+  assert.equal(weights.array[lowerIndex+2]+weights.array[lowerIndex+3],0,'chest/legs beneath the head stay still even at the same X');
 }
 const babyWarp={
   destinationFor(p){return {x:.65,y:p.y};},
