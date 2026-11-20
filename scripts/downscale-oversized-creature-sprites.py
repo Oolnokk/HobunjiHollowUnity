@@ -15,6 +15,7 @@ import numpy as np
 from PIL import Image
 
 MAX_EDGE = 1024
+GREHLR_EDGE = 750  # User-authored mint Grehlr canvas; keeps body, eyes, patterns and masks registered.
 ROOT = os.path.join(os.path.dirname(__file__), '..', 'docs')
 SPRITES = os.path.join(ROOT, 'assets', 'creaturesprites')
 MASKS = os.path.join(ROOT, 'config', 'creature-base-masks.json')
@@ -23,8 +24,8 @@ MASKS = os.path.join(ROOT, 'config', 'creature-base-masks.json')
 PREFIXES = ('grehlr', 'voorg-ass')
 dry = '--dry-run' in sys.argv
 
-def new_size(w, h):
-    s = MAX_EDGE / max(w, h)
+def new_size(w, h, edge=MAX_EDGE):
+    s = edge / max(w, h)
     return max(1, round(w * s)), max(1, round(h * s))
 
 def lum(a):
@@ -70,8 +71,9 @@ changed = {}
 for path in sorted(glob.glob(os.path.join(SPRITES, '**', '*.png'), recursive=True)):
     if not os.path.basename(path).startswith(PREFIXES): continue
     im = Image.open(path)
-    if max(im.size) <= MAX_EDGE: continue
-    size = new_size(*im.size)
+    target_edge = GREHLR_EDGE if os.path.basename(path).startswith('grehlr') else MAX_EDGE  # All Grehlr layers follow the mint reference resolution.
+    if max(im.size) <= target_edge: continue
+    size = new_size(*im.size, target_edge)
     changed[os.path.basename(path)] = (im.size, size)
     if dry: continue
     src = im.convert('RGBA')
@@ -100,8 +102,9 @@ masks = json.load(open(MASKS))
 for kind, frames in masks.items():
     if not kind.startswith(PREFIXES): continue
     for frame, e in frames.items():
-        if max(e['width'], e['height']) <= MAX_EDGE: continue
-        w, h = new_size(e['width'], e['height'])
+        target_edge = GREHLR_EDGE if kind.startswith('grehlr') else MAX_EDGE  # Mask pixel indices must match the new native PNG dimensions.
+        if max(e['width'], e['height']) <= target_edge: continue
+        w, h = new_size(e['width'], e['height'], target_edge)
         print('mask', kind, frame, (e['width'], e['height']), '->', (w, h))
         if dry: continue
         cover = Image.fromarray(decode(e) * 255).resize((w, h), Image.BOX)  # Box = exact area coverage per new pixel.
