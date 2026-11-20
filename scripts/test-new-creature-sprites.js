@@ -281,6 +281,11 @@ assert.equal(genetics.crossOffspring(former, former, 'uumkaoii', 0).shell.enable
 assert.equal(genetics.makeDefaultGenotype('nelk').base != null, true);
 assert.equal(genetics.makeDefaultGenotype('grehlr').beard != null, true,
   'Fresh and bred Grehlr genotypes must include the independently inheritable beard locus');
+assert.deepEqual(Array.from(genetics.PATTERN_DEFS.grehlr), Array.from(render.SPECIES.grehlr.patterns),
+  'Grehlr authoring/breeding and rendering must agree on which pattern overlays are on top');
+assert.deepEqual(Array.from(genetics.PATTERN_DEFS.nelk), Array.from(render.SPECIES.nelk.patterns),
+  'Nelk authoring/breeding must keep brushtail above cape, as in the actual compositor');
+
 assert.equal(genetics.makeDefaultGenotype('nazgraku').base != null, true);
 
 // The game's normal portrait URLs are retained for Nazgraku riding, not the
