@@ -21492,7 +21492,19 @@
       // guaranteed identical between two separate render() invocations,
       // especially on a tile-based mobile GPU. Keeping the buffer around
       // lets the probe read back the literal frame the user actually saw.
-      const renderer  = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+      // Opt-in experiment (?renderContext=lean, or localStorage hobunjiRenderContext=lean):
+      // no canvas MSAA — with outlines on (the default) the world is drawn into
+      // an offscreen target and the canvas only receives the full-screen
+      // composite quad plus overlays, so canvas MSAA never antialiases the
+      // world there — and no preserveDrawingBuffer (lets the browser skip a per-frame buffer
+      // copy; Pixel Probe screenshots may come back blank in this mode). Context
+      // attributes are fixed at creation, so this needs a reload; compare with
+      // Settings → Dev Tools → "Render A/B benchmark", which reports the attributes.
+      const leanRenderContext = (() => {
+        try { return new URLSearchParams(location.search).get('renderContext') === 'lean' || localStorage.getItem('hobunjiRenderContext') === 'lean'; }
+        catch (_) { return false; }
+      })();
+      const renderer  = new THREE.WebGLRenderer({ antialias: !leanRenderContext, alpha: false, preserveDrawingBuffer: !leanRenderContext });
       renderer.setPixelRatio(window.MobileRenderBudget?.pixelRatio(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight) ?? Math.min(window.devicePixelRatio, 2));
       renderer.setSize(threeRect.width || window.innerWidth, threeRect.height || window.innerHeight);
       renderer.shadowMap.enabled = true;

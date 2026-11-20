@@ -1,5 +1,54 @@
 # Performance investigation log
 
+## 20 Nov 2026: first on-device report (Cloud Forest) — GPU-bound; where the GPU goes
+
+**Device report** (Opera / Windows, Cloud Forest, buffer 1850×858 @ dpr 1.575, 17 native
+renders/frame, player + companion + shoulder pet, 3 rounds × 90 frames):
+
+| Variant | fps | avg / p90 frame | render "JS" |
+| --- | --- | --- | --- |
+| default | 14.8 | 67.7 / 100 ms | 56.1 ms |
+| frameScopeOff | 12.7 | 78.9 / 100.1 ms | 53.9 ms |
+| outlinesOff | 16.1 | 62.0 / 83.3 ms | 37.8 ms |
+
+The same view headless spends ~6 ms of CPU in the world render (156 draws), so 56 ms there is
+almost certainly the CPU blocked on a GPU that is behind: the device is GPU-bound. That also
+explains why outlinesOff cut "render JS" by 18 ms but frame time by only 6 ms. outlinesOff is not a
+pure outline A/B either: it also removes the painterly filter and moves the world onto the
+4×-MSAA canvas.
+
+**What the frame asks of the GPU** (headless capture + readPixels-synced per pass; SwiftShader,
+so absolute ms mean nothing, proportions roughly do):
+- Main pass ~1.0 M triangles; `AuthoredCloudForestDenseChunk_*` (border-terrain.js dense
+  shadewood wall) is 81 draws / 930 k triangles of that, ~9 chunk groups inside the corridor.
+- Painterly (`js/painterly-postprocess.js`, default `medium`, full resolution): three filter
+  passes (49-tap oil kernel spread ±10 px, 7-tap wash, 8-tap tone) plus a 9-tap finish in the
+  composite. Pure fill cost: 34.8 ms at 480×270 → 114 ms at 960×450 (×3.3 for ×3.3 pixels);
+  painterlyOff was +38% fps headless in two separate runs (6.8 → 9.4, 7.1 → 9.8 fps).
+- Shell-pass x-ray replays (held-object-render-order.js depth rebuilds): ~70 k triangles,
+  ~42–56 ms synced headless, flat with resolution (geometry/setup bound in SwiftShader;
+  unknown on a real GPU).
+
+**Changes.**
+- `js/render-ab-benchmark.js`: variants `painterlyOff`, `halfResolution`, `nearForest` (Cloud
+  Forest cull radius halved), `mistOff` / `rainOff` / `cloudsOff`; GPU time via
+  `EXT_disjoint_timer_query_webgl2` where exposed, otherwise one extra readPixels-synced window
+  that times every pass CPU+GPU (not used for fps); per-pass draws/triangles; painterly filter
+  passes labelled separately from the composite; device GPU, context attributes, painterly mode.
+- `?renderContext=lean` (or `localStorage.hobunjiRenderContext = 'lean'`): opt-in context with no
+  canvas MSAA and no preserveDrawingBuffer, to measure what those cost on the device. With
+  outlines on, the canvas only receives the composite quad plus overlays, so its MSAA never
+  antialiases the world. Pixel Probe captures may be blank in this mode.
+- Dense shadewood chunks are tagged with `InstancedMeshBounds` so `instanced-view-cull` and the
+  replay cull can skip ones wholly off-camera. Measured: 0 px change; at the default corridor only
+  1 of 108 meshes is off-camera (the wall really is on screen), so this is a small saving, not a fix.
+  Halving the cull radius (`nearForest`) cut triangles only 1,137 k → 1,095 k at the spawn view.
+
+**Open:** which of painterly fill, the dense-wall triangles, the x-ray replays or MSAA /
+preserveDrawingBuffer dominates on the real GPU. That needs the device report from the new
+benchmark (normal link and `?renderContext=lean`); reducing any of them changes visuals
+(painterly resolution, tree LOD), so it is a decision for after that report.
+
 ## 19 Nov 2026: render wrapper chain → RenderHooks; world pipeline extracted (headless, measured)
 
 **What a wilderness frame was doing.** A quiet Western Slope frame makes **17 native

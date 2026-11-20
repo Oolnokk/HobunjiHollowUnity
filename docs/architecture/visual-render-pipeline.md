@@ -251,8 +251,12 @@ RenderHooks.getDebug()                       // hooks in order: calls/applies/sk
 CharacterVisuals.audit('map_western_slope')  // characters by kind + which visual systems cover them
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
-RenderABBenchmark.run()                      // ON-DEVICE: ~18 s, as shipped vs hooks-per-pass vs outlines off: fps, p90, render JS
-                                             // (also Settings → Dev Tools → "Render A/B benchmark", copies the report)
+RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
+                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / mistOff / rainOff / cloudsOff
+                                             //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
+                                             //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
+                                             //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.
+?renderContext=lean                          // reload flag: no canvas MSAA, no preserveDrawingBuffer (report shows the context attributes)
 RenderHooks.setTiming(true)                  // per-hook ms
 RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names
@@ -269,3 +273,11 @@ See `docs/architecture/performance-investigation-log.md` for measurements. In
 the wilderness the frame is small in geometry; cost is draw submission plus the
 JS around each render call. Per-pass JS is multiplied by ~17, which is why
 presentation work belongs in `frame` hooks and why new wrappers are banned.
+
+On real devices the GPU side matters as much: with outlines on (the default)
+every pixel goes through the main pass into `_mainRT`, then the composite, and
+`js/painterly-postprocess.js` (default `medium`) adds three full-resolution
+filter passes (a 7×7 oil kernel spread ±10 px, two wash passes) plus a 9-tap
+finish inside the composite. `outlinesOff` therefore removes painterly too and
+moves the world onto the MSAA canvas, so it is not a clean "outline cost" —
+use `painterlyOff` and `halfResolution` to separate fill cost from JS.
