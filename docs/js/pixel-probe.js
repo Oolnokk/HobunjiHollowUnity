@@ -574,7 +574,7 @@
       if (headRig) {
         const hinge = liveActivePet.avatarRef.frontPlane?.geometry?.userData?.hobunjiAnimalYawFoldPivotX; // Current vertical neck hinge, including baby head warp.
         const response = liveActivePet.avatarRef.headMaterialResponse?.dump?.(); // Shared material diagnostic exposes whether yaw is independent of paint.
-        lines.push(`Head yaw rig: ${headRig.yawMode || 'legacy'} hinge=${Number.isFinite(hinge) ? (hinge * 100).toFixed(1) + '% from sprite top' : '-'} materialYaw=${response?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`);
+        lines.push(`Head yaw rig: ${headRig.yawMode || 'legacy'} hinge=${Number.isFinite(hinge) ? (hinge * 100).toFixed(1) + '% from sprite left' : '-'} materialYaw=${response?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`);
       }
       const layerDecision = liveActivePet.avatarRef.group.userData?.hobunjiShoulderPetLayering;
       if (layerDecision) lines.push(`Shoulder occlusion: ${layerDecision.depthMode || 'ordinary-depth'} xray=${layerDecision.xrayEnabled === true ? 'ON' : 'off'}`);
