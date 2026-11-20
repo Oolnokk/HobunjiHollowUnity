@@ -149,6 +149,10 @@
   }
 
   function effectiveGenotype(kind, genotype) {
+    if (kind === 'moot' && genotype?.coloredneck) {
+      const { coloredneck, ...rest } = genotype; // Renderer-only compatibility for older Moot saves and standalone authoring tools.
+      genotype = rest.overcoat ? rest : { ...rest, overcoat: { ...coloredneck } }; // Old colored neck renders as the new overcoat; never draw both.
+    }
     if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell)) return genotype;
     // Old saves stored permanent fur/plates. Translate their colors into base/shell at read time.
     return { ...genotype,
