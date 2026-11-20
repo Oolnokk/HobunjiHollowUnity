@@ -43,6 +43,7 @@ class Canvas {
       getImageData: () => ({ data: new Uint8ClampedArray(this.pixels) }),
       putImageData: imageData => { this.pixels = new Uint8ClampedArray(imageData.data); },
     };
+    return context; // The compositor calls context.drawImage after creation; never return undefined from the fake canvas.
   }
 }
 class Image {
