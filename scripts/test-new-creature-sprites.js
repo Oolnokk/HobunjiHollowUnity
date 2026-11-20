@@ -45,6 +45,58 @@ vm.runInContext(read('docs/js/creature-blink.js'), context, { filename: 'creatur
 const render = context.window.CreatureGeneticsRender;
 const genetics = context.window.CreatureGenetics;
 const blink = context.window.CreatureBlink;
+
+// Grehlr's user-authored 750x562 mint art replaces the old oversized gray frames.
+// Every accessory uses the same canvas, so composited eyes and inherited patterns stay aligned.
+const grehlrSpec = render.SPECIES.grehlr; // Runtime source-key config tested against the checked-in paintover.
+assert.equal(grehlrSpec.baseShadeReferenceHex, '#99BF99');
+assert.equal(grehlrSpec.baseRecolorKeyHex, '#99BF99');
+assert.equal(grehlrSpec.preferSourceKeyRecolor, true);
+assert.equal(grehlrSpec.baseRecolorMinValue, 0.12);
+assert.deepEqual(Array.from(grehlrSpec.patterns), ['mitts', 'spectacles', 'coloredstripe'],
+  'Grehlr must render every inherited pattern, including coloredstripe');
+for (const frame of ['idle', 'run1', 'run2']) {
+  for (const path of [
+    'docs/assets/creaturesprites/grehlr_' + frame + '.png',
+    ...grehlrSpec.patterns.map(id => 'docs/assets/creaturesprites/patterns/grehlr_' + id + '_' + frame + '.png'),
+  ]) {
+    const data = fs.readFileSync(path); // PNG dimensions are read directly without resampling/decoding large images.
+    assert.equal(data.readUInt32BE(16), 750, path + ' width');
+    assert.equal(data.readUInt32BE(20), 562, path + ' height');
+  }
+}
+for (const eyeFile of [grehlrSpec.eyes.open, grehlrSpec.eyes.blink]) {
+  const image = fs.readFileSync('docs/' + eyeFile); // Keeps blink and open-eye overlays pixel-aligned with each run pose.
+  assert.equal(image.readUInt32BE(16), 750, eyeFile + ' width');
+  assert.equal(image.readUInt32BE(20), 562, eyeFile + ' height');
+}
+for (const [frame, mask] of Object.entries(JSON.parse(read('docs/config/creature-base-masks.json')).grehlr)) {
+  assert.deepEqual([mask.width, mask.height], [750, 562], 'Grehlr ' + frame + ' region mask canvas');
+}
+const grehlrSourceKey = { // Mirrors the renderer's keyed coat selection; used for actual tint regression below.
+  hex: grehlrSpec.baseRecolorKeyHex,
+  hueTolerance: grehlrSpec.baseRecolorHueTolerance,
+  minSaturationRatio: grehlrSpec.baseRecolorMinSaturationRatio,
+  minValue: grehlrSpec.baseRecolorMinValue,
+};
+const grehlrSourcePixels = new Uint8ClampedArray([
+  153, 191, 153, 255, // Mint highlight should take the chosen base genotype.
+  107, 134, 107, 255, // Darker mint fur must tint while remaining relatively darker.
+  255, 255, 255, 255, // White mantle remains authored.
+  179, 179, 179, 255, // Gray mantle shadow remains authored.
+  216, 209, 192, 255, // Beige claws remain authored.
+  0, 0, 0, 255,       // Black outline ink remains authored.
+  120, 82, 90, 255,  // Mauve muzzle remains authored.
+]); // Synthetic swatches test that source-key recoloring has no accidental non-fur reach.
+const grehlrTintedPixels = new Uint8ClampedArray(grehlrSourcePixels); // Compared with original after the production shade fill runs.
+render.recolorKeyedPixels(grehlrTintedPixels, render.hexToRgb('#A47650'),
+  grehlrSourceKey, grehlrSpec.baseShadeReferenceHex);
+assert(grehlrTintedPixels[0] !== 153 && grehlrTintedPixels[4] !== 107,
+  'Both Grehlr mint swatches must be affected by coat genotypes');
+assert(grehlrTintedPixels[0] > grehlrTintedPixels[4],
+  'Shaded fur must remain darker than its painted highlights');
+assert.deepEqual(Array.from(grehlrTintedPixels.slice(8)), Array.from(grehlrSourcePixels.slice(8)),
+  'White mantle, gray mantle, claws, outlines and muzzle cannot change with fur genetics');
 assert.equal(render.SPECIES.nelk.eyes.mode, 'cycle');
 assert.equal(render.SPECIES.uumkaoii.patterns.join(','), 'shell');
 assert.equal(render.SPECIES.uumkaoii.base.run1, "assets/creaturesprites/uumkao'ii_run1.png");
@@ -130,6 +182,25 @@ function rgbaPng(filename) {
   assert.equal(offset, inflated.length, 'PNG scanlines must decode exactly');
   return rgba;
 }
+
+// Decode the shipped art itself: no correctly sized blank/gray image should pass a header-only check.
+for (const pose of ['idle', 'run1', 'run2']) {
+  const pixels = rgbaPng('docs/assets/creaturesprites/grehlr_' + pose + '.png'); // Native 750x562 RGBA from the branch, not a re-created sample.
+  let mint = 0, whites = 0, black = 0, beige = 0; // Tracks the four protected/tintable painted regions in each pose.
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (!pixels[i + 3]) continue;
+    const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    if (g > r + 10 && g > b + 10 && g > 100) mint++;
+    if (r > 245 && g > 245 && b > 245) whites++;
+    if (r < 10 && g < 10 && b < 10) black++;
+    if (r > 150 && r > g && g > b && b > 100) beige++;
+  }
+  assert(mint > 20000, 'Grehlr ' + pose + ': mint fur not present');
+  assert(whites > 3000, 'Grehlr ' + pose + ': mantle white disappeared');
+  assert(black > 2000, 'Grehlr ' + pose + ': native black outlines disappeared');
+  assert(beige > 1000, 'Grehlr ' + pose + ': beige claws disappeared');
+}
+
 const keyHsv = context.window.ColorFill.rgbToHsv(...render.hexToRgb(eyeKey.hex)); // Authored mint skin hue.
 const minSaturation = Math.max(0.04, keyHsv.s * eyeKey.minSaturationRatio); // Shared source-key selection rule.
 for (const pose of ['A','B','C','D']) {
