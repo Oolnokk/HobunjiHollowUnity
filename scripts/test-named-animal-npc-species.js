@@ -92,6 +92,7 @@ assert.match(nativeAppearance, /humanCard\.style\.display = animal \? 'none' : '
 assert.match(nativeAppearance, /creatureGenotype/, 'native editor must persist breeding-compatible genotype data');
 assert.match(nativeAppearance, /class=\"colorSwatch animalNpcColor/, 'native editor must retain its original coat/pattern swatches');
 assert.match(nativeAppearance, /animalNpcPatternToggle/, 'native editor must retain per-pattern expression toggles');
+assert.match(nativeAppearance, /Fur color follows the base coat; only beard presence is inherited\./, 'Character Studio labels the Grehlr beard as base-colored rather than offering a dead swatch');
 assert.match(nativeAppearance, /animalNpcRepoPatternScale/, 'native animal editor must expose normalized surface-pattern scale per painted region');
 assert.match(nativeAppearance, /min="7" max="14"/, 'animal pattern scale cannot drop below the 7× minimum and leaves headroom beyond 10×');
 assert.match(nativeAppearance, /patternScale/, 'normalized animal pattern scale must persist in colorPoolPaint data rather than mutating the reusable repo pattern');
@@ -117,7 +118,7 @@ assert.ok(repoPicker.indexOf("color-fill.js") < repoPicker.indexOf("sprite-recol
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
 assert.match(feyExtras, /id=\"animalNpcScaleMultiplier\"/, 'Fey/custom appearance controls must expose the named-animal in-game size multiplier next to the other non-genetic overrides');
 assert.match(feyExtras, /creatureScaleMultiplier/, 'Fey/custom appearance must persist the generic scale multiplier on the appearance record');
-assert.match(feyExtras, /Each base\/pattern layer has its own independent #RRGGBB override/, 'hex overrides must remain intentionally independent of breeding presets');
+assert.match(feyExtras, /Each editable coat or marking can have an independent #RRGGBB override; base-colored traits like Grehlr's beard always follow the base coat/, 'Fey/custom colors must not pretend the Grehlr beard has an independently selectable pigment');
 assert.match(feyExtras, /id=\"animalNpcOpacity\" type=\"range\"/, 'native extension must retain animal opacity control');
 assert.match(feyExtras, /id=\"animalNpcHatSelect\"/, 'native extension must retain animal hat selection');
 assert.match(feyExtras, /controlsSignature/, 'native extension must avoid rebuilding focused hex/select controls during polling');
@@ -129,6 +130,49 @@ assert.match(repoPicker, /character-studio-animal-fey-extras\.js/, 'Character St
 assert.match(repoPicker, /animal-npc-headwear\.js/, 'Character Studio must load animal headwear before the fey extras');
 assert.match(chathead, /banubu: 'grehlr'/, 'legacy Banubu chathead mapping remains backward compatibility only');
 assert.match(chathead, /hiki_hiki: 'drenkirra'/, 'legacy Hiki-hiki chathead mapping remains backward compatibility only');
+
+const editorSandbox = { // Directly executes both Character Studio animal modules without opening a DOM or starting polling loops.
+  console,
+  document: { readyState: 'loading', currentScript: null, addEventListener() {} },
+  location: { pathname: '/tools/character-studio/index.html' },
+  URL,
+  setInterval() {},
+  setTimeout() {},
+  SCRATCHBONES_CONFIG: { game: { creatureGenetics: { palettes: { default: [
+    { id: 'light', name: 'Light', hex: '#AABBCC', weight: 1 },
+    { id: 'dark', name: 'Dark', hex: '#445566', weight: 1 },
+  ] } } } },
+};
+editorSandbox.window = editorSandbox;
+vm.createContext(editorSandbox);
+vm.runInContext(nativeAppearance, editorSandbox, { filename: 'character-studio-animal-appearance.js' });
+vm.runInContext(feyExtras, editorSandbox, { filename: 'character-studio-animal-fey-extras.js' });
+const animalEditor = editorSandbox.CharacterStudioAnimalAppearance;
+const animalFey = editorSandbox.CharacterStudioAnimalFeyExtras;
+assert.deepEqual(Array.from(animalEditor.patternIdsFor('grehlr')), ['mitts', 'coloredstripe', 'beard', 'spectacles'],
+  'Character Studio fallback includes Grehlr beard in the correct painter/compositor order');
+assert.deepEqual(Array.from(animalEditor.patternIdsFor('nelk')), ['cape', 'brushtail', 'spectacles'],
+  'Character Studio Nelk fallback places brushtail above cape');
+const freshEditorGrehlr = animalEditor.defaultAnimalGenotype('grehlr'); // No separate beard pigment is created even if its expression is disabled.
+assert.equal(freshEditorGrehlr.beard.color, freshEditorGrehlr.base.color);
+const oldEditorGrehlr = animalEditor.normalizeGenotype('grehlr', {
+  base: { color: '#778899' }, beard: { color: '#FF0000', copies: 1, enabled: true },
+});
+assert.equal(oldEditorGrehlr.beard.color, oldEditorGrehlr.base.color,
+  'Character Studio normalizes a stale or independently imported Grehlr beard to its base coat');
+const customEditorGrehlr = animalFey.genotypeWithOverrides({
+  creatureKind: 'grehlr', creatureGenotype: oldEditorGrehlr,
+  creatureColorOverrides: { base: '#223344', beard: '#FFFFFF', spectacles: '#554433' },
+});
+assert.equal(customEditorGrehlr.base.color, '#223344');
+assert.equal(customEditorGrehlr.beard.color, customEditorGrehlr.base.color,
+  'Fey exact-hex override on the base coat must also recolor the beard, ignoring old beard-only hex overrides');
+assert.equal(customEditorGrehlr.spectacles.color, '#554433',
+  'Other inherited markings continue supporting independent hex overrides');
+assert.match(feyExtras, /patternIdsFor\(kind\)\.filter\(id => !baseColoredPattern\(kind, id\)\)/,
+  'Character Studio Fey hex controls exclude the Grehlr beard');
+assert.match(nativeAppearance, /if \(patternUsesBaseCoatColor\(kind, id\)\) continue/,
+  'Character Studio Color Pools UI excludes redundant Grehlr beard paint regions');
 
 const storage = new Map();
 const sandbox = {
