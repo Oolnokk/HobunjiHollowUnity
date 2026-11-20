@@ -65,6 +65,46 @@ async function noRunawayBuffer() {
   assert.equal(started.length, 12, 'all sources resume after the initial dependency');
 }
 
+function visibleThumbnailOnly() {
+  const first = { dataset: { maaThumb: 'first' }, isConnected: true }; // One visible NPC thumbnail, not a required startup image.
+  const second = { dataset: { maaThumb: 'second' }, isConnected: true }; // Remains hidden until an observer callback arrives.
+  const requests = []; // Captures only actual portrait-render work queued by the editor.
+  const observers = []; // Lets the regression simulate a viewport intersection without Chromium.
+  const container = {
+    innerHTML: '',
+    querySelectorAll(selector) {
+      if (selector === '[data-add-npc]') return [{ dataset: { addNpc: 'first' }, addEventListener() {} }];
+      if (selector === 'canvas[data-maa-thumb]') return [first, second];
+      return [];
+    },
+  };
+  const documentState = {
+    state: { npcs: [{ id: 'first', name: 'First' }, { id: 'second', name: 'Second' }] },
+    $: id => id === 'maaNpcResults' ? container : { value: '' },
+    matchesNpc: () => true, escapeHtml: String,
+    enqueueThumbnail: (canvas, npc) => requests.push(npc.id),
+    addNpcAnimationActor() {},
+    IntersectionObserver: class {
+      constructor(callback) { this.callback = callback; this.stopped = false; observers.push(this); }
+      disconnect() { this.stopped = true; }
+      observe() {}
+      unobserve() {}
+    },
+  }; // Minimal DOM and visibility proxy for the real editor's NPC library builder.
+  const start = page.indexOf('let maaNpcThumbnailObserver = null;');
+  const end = page.indexOf('\\nfunction makePortraitCanvas(', start);
+  assert.ok(start > 0 && end > start, 'library function is independently inspectable');
+  const render = new Function(...Object.keys(documentState),
+    page.slice(start, end) + '\\nreturn renderAnimationNpcLibrary;')(...Object.values(documentState));
+  render();
+  assert.deepEqual(requests, [], 'hidden NPC portraits never begin rendering on library initialization');
+  assert.equal(observers.length, 1, 'observer registered once on first render');
+  observers[0].callback([{ target: first, isIntersecting: true }]);
+  assert.deepEqual(requests, ['first'], 'entering the viewport queues only the visible portrait');
+  render();
+  assert.equal(observers[0].stopped, true, 'a library redraw disconnects stale image observers');
+}
+
 async function failurePaths() {
   const completed = []; // Records what ran before a simulated failed network response.
   await assert.rejects(
@@ -88,6 +128,7 @@ async function failurePaths() {
 (async () => {
   await orderedAndBounded();
   await noRunawayBuffer();
+  visibleThumbnailOnly();
   await failurePaths();
   console.log('Animation Author startup: ordered bounded downloads, lazy previews, lazy catalog and failure handling PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
