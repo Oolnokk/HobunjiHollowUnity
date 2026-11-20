@@ -248,7 +248,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <b>Longoran spine — hunch &amp; kyphosis</b>
           <span class="longoranIntro">Hunch lowers the shoulders; kyphosis curls the neck forward. Both are independently authored for males and females.</span>
           <div class="longoranRows">
-            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 10)}
+            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 7)}
             ${longoranRow('Kyphosis', 'Kyphosis (%)', 0, 100, 1, 100)}
           </div>
           <div class="longoranTuningActions">
