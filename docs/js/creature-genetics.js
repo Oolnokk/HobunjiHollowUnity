@@ -220,7 +220,7 @@
     pingdort: [], // Wild fertile eggs and farm breeding inherit coat color and Size; no invented Pingdort pattern overlays.
     skeeri: [], // Fertile ruin eggs and breeding inherit coat color and Size via the existing system.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
-    nelk: ['brushtail', 'cape', 'spectacles'],
+    nelk: ['cape', 'brushtail', 'spectacles'], // Follow the renderer's cape-under-brushtail order in genotype tools.
     nazgraku: ['spectacles'],
     honeyfuzzle: ['tailfeathers', 'spectacles'], // Tail art is always rendered; only the differently colored secondary tail is an expressed allele.
   };
