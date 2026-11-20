@@ -114,6 +114,8 @@ env.document = { createElement() { return { width: 200, height: 200, getContext(
     putImageData() {}, };
 } }; } };
 const avatar = new FakeGroup(); avatar.name = 'unit_test_avatar';
+const portraitOwner = new FakeMesh(new FakeGeometry(),new FakeMaterial({alphaTest:.45,depthTest:true,depthWrite:false})); // Simulates an owner whose depth writes were disabled by the actor compositor.
+portraitOwner.name='npc_avatar_front_plane';portraitOwner.renderOrder=2;avatar.add(portraitOwner);
 const rigPart = (key, slot, points) => ({ key, slot, rig: Rig.normalize({ ...makeRig(), ...(points ? { points } : {}) }), canvas: {
   width: 200, height: 200, getContext() { return { drawImage() {}, clearRect() {} }; },
 } });
@@ -128,6 +130,17 @@ assert(fz > 0 && rz < 0, 'rear hair protrudes behind the rear plane, not through
 assert(Math.abs(fz + rz) < 1e-7, 'front/rear strand depths match');
 assert.equal(part.frontMesh.material.side, THREE.FrontSide);
 assert.equal(part.rearMesh.material.side, THREE.BackSide);
+for(const mesh of [part.frontMesh,part.rearMesh]){
+  assert.equal(mesh.material.depthTest,true,'beard and braid always obey physical depth');
+  assert.equal(mesh.material.depthWrite,true,'visible strands write depth, even if their owner does not');
+  assert.equal(mesh.material.alphaTest,.45,'solid depth uses the same silhouette cutoff as the owner');
+  assert.equal(mesh.renderOrder,portraitOwner.renderOrder-.01,'strand draws immediately before its owner');
+  assert.equal(mesh.userData.portraitSplineOwnerDepth?.paired,true,'mesh identifies its depth-paired portrait');
+}
+portraitOwner.renderOrder=17.25; // Dynamic actor sorting must never separate an owner from their beard.
+assert.equal(part.frontMesh.renderOrder,17.24,'beard follows live actor ordering before render-list sort');
+assert.equal(part.rearMesh.renderOrder,17.24,'back hair follows the same owner');
+portraitOwner.renderOrder=2;
 const previous = part.frontMesh.geometry;
 Rig.refresh(avatar, { hobunjiSplineParts: [rigPart('hairSide:test:0', 'hairSide',
   [{u:.49,v:.3,depth:.02},{u:.52,v:.5,depth:.03},{u:.54,v:.7,depth:.06}])] }, back);
