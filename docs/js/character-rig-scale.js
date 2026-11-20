@@ -248,7 +248,8 @@
     const found = findNeckRig(root);
     if (!found) return false;
     const { rig, modelHeight } = found;
-    const target = rig.headScaleJoint || rig.neckJoint;
+    const target = rig.headScaleJoint || rig.neckJoint; // Scaling remains on the head-only rig bone.
+    const offsetTarget = rig.headOffsetJoint || target; // Separate unrotated offset bone prevents authored head-height shifts folding the short neck bend.
     const resolved = scaleFor(species, gender);
     const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
@@ -264,7 +265,7 @@
       ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Explicit character spine overrides still win over the subspecies default.
     const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction;
     const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // The spline contributes its own shoulder share.
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare, modelHeight);
+    applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare, modelHeight);
     return true;
   }
 
@@ -306,13 +307,17 @@
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
     const found = findNeckRig(parent);
-    const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint;
+    const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint; // Scaling stays on the head-scale bone.
+    const offsetTarget = found?.rig?.headOffsetJoint || target; // Restore the separately offset parent as well when resetting a portrait.
     if (target) {
       target.scale.set(1, 1, 1);
-      if (Number.isFinite(target.userData?.hobunjiHeadOffsetBaseY)) {
-        target.position.y = target.userData.hobunjiHeadOffsetBaseY;
-      }
       target.updateMatrix?.();
+    }
+    if (offsetTarget) {
+      if (Number.isFinite(offsetTarget.userData?.hobunjiHeadOffsetBaseY)) {
+        offsetTarget.position.y = offsetTarget.userData.hobunjiHeadOffsetBaseY;
+      }
+      offsetTarget.updateMatrix?.();
     }
     return true;
   }
