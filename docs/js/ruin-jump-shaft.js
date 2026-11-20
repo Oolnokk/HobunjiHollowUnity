@@ -281,9 +281,10 @@
     const group = new THREE.Group(); group.name = 'jump-shaft'; parent.add(group);
     const tradition = String(deps.tradition || plan.options.theme || 'hronal').toLowerCase();
     const owned = [], materials = [], columns = new Map();
-    const stone = root.ProceduralFurniture?.makePartMaterial?.({ materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialFillMode: 'never', color: '#726d63' })
-      || new THREE.MeshBasicMaterial({ color: 0x726d63 });
-    materials.push(stone);
+    const makeStone = () => root.ProceduralFurniture?.makePartMaterial?.({ materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialFillMode: 'never', color: '#726d63' })
+      || new THREE.MeshBasicMaterial({ color: 0x726d63 }); // Slabs and pillars reuse the same finish and cached PNG.
+    const stone = makeStone(), pillarStone = makeStone(); // Floor x-ray uniforms affect slabs only.
+    materials.push(stone, pillarStone);
     const basic = (color, extra = {}) => { const m = new THREE.MeshBasicMaterial({ color, ...extra }); materials.push(m); return m; };
     const iceMaterial = basic(0x8bcdf5, { transparent: true, opacity: .42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const tradeTrim = { tothal: 0xb7ecfa, hronal: 0xff7a30 }[tradition] || 0xb7ecfa;
@@ -337,7 +338,7 @@
       DS.registerSurface({ id: scope + '-' + p.id, scope, topY: p.y, priority: 4,
         bounds: { minX: p.x - p.w / 2, maxX: p.x + p.w / 2, minZ: p.z - p.d / 2, maxZ: p.z + p.d / 2 } });
     }
-    const platformSupports = supportPillars?.mount?.(plan,{ THREE, parent: group, slabThickness: THICKNESS, material: stone }); // Grounded authored pillar per slab, no new landing supports/blockers.
+    const platformSupports = supportPillars?.mount?.(plan,{ THREE, parent: group, slabThickness: THICKNESS, material: pillarStone }); // Grounded authored pillar per slab, no new landing supports/blockers.
     let disposed = false, hazardsAttached = false, plasmHandles = [], fallEvents = 0;
     const slabBlockerId=scope+'-platform-slabs'; // Reuses the ordinary forced-movement blocker registry and is removed on disposal.
     const footprintBlockers=root.AreaFootprintBlockers; // One shared authority for walking, dodging, lunging and creatures.

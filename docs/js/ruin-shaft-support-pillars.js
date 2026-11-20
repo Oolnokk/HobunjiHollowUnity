@@ -122,7 +122,7 @@
     if(!THREE?.Group||!THREE?.BoxGeometry||!parent?.add)throw new Error('Shaft pillar mounting requires THREE and a parent');
     const pitY=Number(plan?.pit?.bottomY); // All supports share the real hazard basin elevation, including upper-story platforms.
     const placements=[];
-    const stone=material||new THREE.MeshBasicMaterial({color:0x726d63}); // The jump shaft owns a supplied slab material, including teardown.
+    const stone=material||new THREE.MeshBasicMaterial({color:0x726d63}); // The jump shaft owns the supplied pillar material, including teardown.
     let disposed=false,upgraded=0,failures=0,reason=null; // Exposed in the shaft's mobile diagnostics.
     for(const platform of plan?.platforms||[]){
       const geometry=layout(platform,pitY,slabThickness);

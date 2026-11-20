@@ -24,7 +24,7 @@ class Geometry {
   dispose(){this.disposed=true;}
 }
 class Material {
-  constructor(){this.disposals=0;}
+  constructor(options={}){Object.assign(this,options);this.disposals=0;}
   dispose(){this.disposals++;}
 }
 class Mesh extends Node {
@@ -96,8 +96,8 @@ async function run(){
     globalThis.FurnitureTileSpan={release(mesh){released.push(mesh);}}; // A stretched authored part must release its hidden original geometry.
     const plan=Jump.compose({shaft:37,spacing:10,floors:3,theme:'tothal',seed:101});
     const root=new Node();
-    const slabStone=new Material(); // Model the material borrowed from the slab.
-    const runtime=Supports.mount(plan,{THREE,parent:root,slabThickness:.45,material:slabStone,loadTemplate:()=>source});
+    const pillarStone=new Material(); // Model the material borrowed from the shaft runtime.
+    const runtime=Supports.mount(plan,{THREE,parent:root,slabThickness:.45,material:pillarStone,loadTemplate:()=>source});
     assert.equal(root.children.length,plan.platforms.length,'placeholder exists immediately for every slab');
     assert.equal(runtime.getState().fallback,plan.platforms.length);
     assert(root.children.every(holder=>holder.children.length===1),'exactly one temporary pillar per slab');
@@ -106,7 +106,7 @@ async function run(){
       const pieces=new Map(fallback.children.map(node=>[node.name,node]));
       const foot=pieces.get('foot'),shaft=pieces.get('stone-shaft'),capital=pieces.get('capital');
       near(foot.geometry.dimensions[0],Supports.footprintTiles(slab)*.75,'loading foot matches slim even/odd sizing');
-      assert(fallback.children.every(piece=>piece.material===slabStone),'loading pieces use the slab material');
+      assert(fallback.children.every(piece=>piece.material===pillarStone),'loading pieces use the supplied material');
       assert(capital.geometry.dimensions[0]<=slab.w,'fallback capital does not overhang platform width');
       assert(capital.geometry.dimensions[2]<=slab.d,'fallback capital does not overhang platform depth');
       near(shaft.position.y-shaft.geometry.dimensions[1]/2,.16,'fallback shaft meets foot');
@@ -136,10 +136,10 @@ async function run(){
       assert(parts.get('pillar_square_shaft').transform.sx<parts.get('pillar_square_cap').transform.sx,'shaft tapers beneath capital');
       assert.equal(visual.userData.devRuinFootprintIgnore,true,'pillar does not block walking or provide fall support');
       assert(visual.children.every(child=>child.userData.devRuinFootprintIgnore),'every authored mesh stays non-physical');
-      assert(visual.children.every(piece=>piece.material===slabStone),'authored pieces use the slab material');
+      assert(visual.children.every(piece=>piece.material===pillarStone),'authored pieces use the supplied material');
     }
     runtime.dispose();
-    assert.equal(slabStone.disposals,0,'disposing supports leaves the slab material to its owner');
+    assert.equal(pillarStone.disposals,0,'disposing supports leaves their material to its owner');
     assert.equal(root.children.length,0,'no old pillar group survives zone teardown');
     assert.equal(released.length,plan.platforms.length*5,'every authored part releases tile-span source');
     const until=buildCalls.length;
@@ -180,23 +180,38 @@ async function run(){
       assert.equal(requests,2,'second ruin must retry the original authored asset');
       assert.equal(recovered.getState().authored,plan.platforms.length,'recovered asset upgrades every pillar');
       recovered.dispose();
-      for(const theme of ['hronal','tothal','kanthic']){
-        const themedPlan=Jump.compose({shaft:37,spacing:10,floors:3,theme,seed:101});
-        const parent=new Node();
-        const shaft=Jump.mount(themedPlan,{THREE,parent,DynamicSurfaces:{registerSurface(){},clearScope(){}}});
-        const meshes=()=>themedPlan.platforms.map(p=>{
-          const group=parent.children[0];
-          const slab=group.children.find(node=>node.name===p.id).children[0];
-          const pillar=group.children.find(node=>node.name==='shaft-structural-pillar-'+p.id).children[0];
-          return {slab,pillar};
-        }); // Read the scene graph through the normal shaft mount.
-        for(const {slab,pillar} of meshes())assert(pillar.children.every(piece=>piece.material===slab.material));
-        await new Promise(resolve=>setImmediate(resolve));
-        assert.equal(shaft.getState().supportPillars.authored,themedPlan.platforms.length);
-        for(const {slab,pillar} of meshes())assert(pillar.children.every(piece=>piece.material===slab.material));
-        const stone=meshes()[0].slab.material;
-        shaft.dispose();
-        assert.equal(stone.disposals,1,'the shaft releases the shared material exactly once');
+      const previousFactory=globalThis.ProceduralFurniture;
+      const texture={name:'carved_smooth.png'}; // Model the shared texture cache on the production material path.
+      globalThis.ProceduralFurniture={makePartMaterial:part=>new Material({...part,map:texture})};
+      try{
+        for(const theme of ['hronal','tothal','kanthic']){
+          const themedPlan=Jump.compose({shaft:37,spacing:10,floors:3,theme,seed:101});
+          const parent=new Node();
+          const shaft=Jump.mount(themedPlan,{THREE,parent,DynamicSurfaces:{registerSurface(){},clearScope(){}}});
+          const meshes=()=>themedPlan.platforms.map(p=>{
+            const group=parent.children[0];
+            const slab=group.children.find(node=>node.name===p.id).children[0];
+            const pillar=group.children.find(node=>node.name==='shaft-structural-pillar-'+p.id).children[0];
+            return {slab,pillar};
+          }); // Read the scene graph through the normal shaft mount.
+          const slabFinish=meshes()[0].slab.material;
+          const pillarFinish=meshes()[0].pillar.children[0].material;
+          assert.notEqual(pillarFinish,slabFinish,'ground X-ray edits must stay on the slab');
+          assert.deepEqual(pillarFinish,slabFinish,'the pillar and slab have identical carved stone finishes');
+          assert.equal(pillarFinish.map,slabFinish.map,'the two materials share one texture');
+          slabFinish.colorWrite=false; // Simulate the compositor preparing the slab for depth replay.
+          assert.notEqual(pillarFinish.colorWrite,false,'pillars remain outside the floor material transaction');
+          for(const {pillar} of meshes())assert(pillar.children.every(piece=>piece.material===pillarFinish));
+          await new Promise(resolve=>setImmediate(resolve));
+          assert.equal(shaft.getState().supportPillars.authored,themedPlan.platforms.length);
+          for(const {pillar} of meshes())assert(pillar.children.every(piece=>piece.material===pillarFinish));
+          shaft.dispose();
+          assert.equal(slabFinish.disposals,1,'the shaft releases the slab material exactly once');
+          assert.equal(pillarFinish.disposals,1,'the shaft releases the pillar material exactly once');
+        }
+      }finally{
+        if(previousFactory===undefined)delete globalThis.ProceduralFurniture;
+        else globalThis.ProceduralFurniture=previousFactory;
       }
     }finally{
       if(previousDocument===undefined)delete globalThis.document;
