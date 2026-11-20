@@ -57,6 +57,22 @@
     return report;
   }
 
+  // The farm rocks' surfacing for any hard-edged stone mesh (visual-authoring
+  // contract §2): NaturalSurfaceMaterials 'rocks' (its loaded hook unwraps
+  // each detected surface into its own inked PNG), or the stretch unwrap
+  // directly where that stack is absent; then off the generated shell.
+  // tint: the rock colour (null keeps the farm rocks' own grey). Used by ore
+  // rocks and by the statue ruin debris (statue-ruin-debris.js).
+  function surfaceStone(mesh, { tint = null, label = '' } = {}) {
+    const natural = window.NaturalSurfaceMaterials;
+    if (typeof natural?.naturalizeMesh === 'function') {
+      natural.naturalizeMesh(mesh, 'rocks', null, tint ? { tint } : null);
+      stats.natural++;
+    }
+    if (!mesh.geometry.userData?.hobunjiSurfaceStretch) stretchToSurfaces(mesh, label || mesh.name); // The naturalize hook already unwrapped it when loaded.
+    return styleMesh(mesh);
+  }
+
   // One removable ore rock: a group with the mound's stone (stretched ore PNG)
   // and its grass rim, exactly as the farm rock is built.
   // displace(geometry): the zone's ground displacement (game.js
@@ -73,13 +89,8 @@
       stoneGeo.computeVertexNormals();
       stone = new THREE.Mesh(stoneGeo, material);
       stone.name = name || 'faceted_ore_rock';
-      const natural = window.NaturalSurfaceMaterials;
-      if (tint && typeof natural?.naturalizeMesh === 'function') {
-        natural.naturalizeMesh(stone, 'rocks', null, { tint }); // The farm rocks' call, in the ore's colour.
-        stats.natural++;
-      }
-      if (!stone.geometry.userData?.hobunjiSurfaceStretch) stretchToSurfaces(stone, stone.name); // The naturalize hook already unwrapped it when loaded.
-      styleMesh(stone);
+      if (tint) surfaceStone(stone, { tint, label: stone.name }); // The farm rocks' call, in the ore's colour.
+      else { stretchToSurfaces(stone, stone.name); styleMesh(stone); } // No tint: keep the ore's metal recolour material, unwrapped.
       stone.castShadow = stone.receiveShadow = true;
       stone.userData.wildernessChunkOwnsGeometry = true;
       group.add(stone);
@@ -107,6 +118,7 @@
     },
     styleMesh,
     stretchToSurfaces,
+    surfaceStone,
     buildOreRock,
     snapshot: () => ({ enabled, ...stats }),
   });

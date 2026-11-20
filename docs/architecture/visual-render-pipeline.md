@@ -5,6 +5,14 @@ what you must not break. It exists so a change to one visual (an outline, a
 billboard, a pose, a cull) does not silently change another. If you add or move
 a visual owner, update this file in the same change.
 
+It pairs with [`visual-authoring.md`](visual-authoring.md), the repository's
+contract for what each visible component may look like: authored ink on PNG
+portraits/pants/billboards (never a generated outline), one inked PNG stretched
+over each detected hard-edged surface, generated outlines only on curved 3D
+parts (hands, feet, trees), and the player campfire as the only flame source.
+That document says *what* is drawn; this one says *how and when* it is drawn
+and how to check it. Read both before a visual change.
+
 ## 1. One frame, end to end
 
 ```
@@ -239,8 +247,8 @@ Rules:
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
-| Change loose rocks (look) | Farm rocks: `TerrainGeometry.buildRockTileGeo` mound + `NaturalSurfaceMaterials.naturalizeMesh(mesh, 'rocks')` (cliff-stretch islands, no shell). Ore rocks reuse it via `js/faceted-rocks.js` `buildOreRock` (tinted with `OreRockTextures.rockTintFor`) and are kept out of the chunk jigsaw bake (`userData.facetedRock`) |
-| Change what fills wilderness statue footprints | `js/statue-ruin-debris.js`: Debris-ifier V50 outdoor `tiny` ruins (topple/burial/density max) + per-piece damage pass (`SUPER_RUINED`), merged per variant, placed by `game.js`'s zone floor builder on `rockKind: 'statue'` tiles |
+| Change loose rocks (look) | Farm rocks: `TerrainGeometry.buildRockTileGeo` mound + `NaturalSurfaceMaterials.naturalizeMesh(mesh, 'rocks')` (cliff-stretch islands, no shell). Ore rocks reuse it via `js/faceted-rocks.js` `buildOreRock` (tinted with `OreRockTextures.rockTintFor`) and are kept out of the chunk jigsaw bake (`userData.facetedRock`). Any other hard-edged stone mesh: `FacetedRocks.surfaceStone(mesh, { tint })` (visual-authoring.md §2) |
+| Change what fills wilderness statue footprints | `js/statue-ruin-debris.js`: Debris-ifier V50 outdoor `tiny` ruins (topple/burial/density max) + per-piece damage pass (`SUPER_RUINED`), merged per variant and surfaced once with `FacetedRocks.surfaceStone` (inked rock PNG per detected face, no shell), placed by `game.js`'s zone floor builder on `rockKind: 'statue'` tiles |
 
 ## 8. Debugging
 

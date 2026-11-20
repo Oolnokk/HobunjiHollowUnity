@@ -12,7 +12,11 @@
 //   2. every piece of it then goes through the single-model damage pass
 //      (low cut, max jagged/crumble, upper part fallen, rubble) — "super
 //      ruined";
-//   3. the result is merged into one unlit carved-stone mesh (one draw).
+//   3. the result is merged into one stone mesh (one draw), surfaced like the
+//      farm rocks (FacetedRocks.surfaceStone): every detected chunk face
+//      carries the inked rock PNG stretched to its edges and there is no
+//      generated outline — the visual-authoring contract for hard-edged
+//      meshes (docs/architecture/visual-authoring.md §2).
 //
 // A few such variants are generated per zone (seeded by zone, so a zone
 // always shows the same debris) in a hidden iframe running the tool in its
@@ -44,7 +48,9 @@
   let frame = null, apiPromise = null, queue = Promise.resolve();
   let material = null;
   const pools = new Map(); // mapId -> Promise<[{ geometry, sizeX, sizeZ }]>
-  const stats = { variants: 0, filled: 0, fallbacks: 0, failures: 0, lastError: null, generationMs: 0 };
+  const stats = { variants: 0, filled: 0, fallbacks: 0, failures: 0, lastError: null, generationMs: 0, surfaced: 0, unsurfaced: 0 };
+  const STONE_TINT = '#7a746b';
+  const SURFACE_KEYS = ['naturalSurface', 'naturalSurfaceUvOwner', 'facetedRock', 'facetedSurfaceTextureOutline', 'shellOutlineDisabledReason']; // Copied to every placement of a surfaced variant.
 
   function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
@@ -75,6 +81,21 @@
       if (!el) continue;
       if (el.type === 'checkbox') el.checked = !!value; else el.value = String(value);
     }
+  }
+
+  // Hard-edged debris: one inked rock PNG per detected face, no generated
+  // outline (visual-authoring.md §2). Done once per variant; placements share
+  // the surfaced geometry and material.
+  function surfaceVariant(geometry, label) {
+    const THREE = window.THREE;
+    const template = new THREE.Mesh(geometry, stoneMaterial());
+    template.name = label;
+    const rocks = window.FacetedRocks;
+    if (typeof rocks?.surfaceStone === 'function') { rocks.surfaceStone(template, { tint: STONE_TINT, label }); stats.surfaced++; }
+    else stats.unsurfaced++; // Isolated pages without the rock stack: plain stone.
+    const userData = {};
+    for (const key of SURFACE_KEYS) if (template.userData[key] !== undefined) userData[key] = template.userData[key];
+    return { geometry: template.geometry, material: template.material, userData };
   }
 
   function stoneMaterial() {
@@ -140,7 +161,7 @@
     geometry.translate(-(box.min.x + box.max.x) / 2, 0, -(box.min.z + box.max.z) / 2);
     geometry.computeBoundingBox(); geometry.computeBoundingSphere();
     const size = geometry.boundingBox.getSize(new THREE.Vector3());
-    return { geometry, sizeX: Math.max(0.01, size.x), sizeZ: Math.max(0.01, size.z) };
+    return { ...surfaceVariant(geometry, `statue_ruin_debris_${seed}`), sizeX: Math.max(0.01, size.x), sizeZ: Math.max(0.01, size.z) };
   }
 
   function poolFor(mapId) {
@@ -219,14 +240,14 @@
         const seedKey = `${mapId}|${footprint.c},${footprint.r}`;
         const variant = variants[hash(seedKey) % variants.length];
         const { rotationY, scale } = placement(variant, footprint, seedKey);
-        const mesh = new THREE.Mesh(variant.geometry, stoneMaterial());
+        const mesh = new THREE.Mesh(variant.geometry, variant.material || stoneMaterial());
         mesh.name = `statue_ruin_debris_${footprint.c}_${footprint.r}`;
         mesh.rotation.y = rotationY;
         mesh.scale.setScalar(scale);
         mesh.position.set(footprint.x, footprint.y + (groundLift ? groundLift(footprint.x, footprint.z) : 0), footprint.z);
         mesh.castShadow = mesh.receiveShadow = true;
         mesh.layers.disable(globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1);
-        Object.assign(mesh.userData, { statueRuinDebris: true, noOutline: true, terrainJigsawIgnore: true, footprint: { c: footprint.c, r: footprint.r, w: footprint.w, h: footprint.h } });
+        Object.assign(mesh.userData, variant.userData || {}, { statueRuinDebris: true, noOutline: true, terrainJigsawIgnore: true, footprint: { c: footprint.c, r: footprint.r, w: footprint.w, h: footprint.h } });
         group.add(mesh);
         stats.filled++;
       }
@@ -252,6 +273,7 @@
     fill,
     footprintsOf,
     placement,
+    surfaceVariant,
     snapshot: () => ({ enabled, pools: [...pools.keys()], ...stats }),
   });
 })();

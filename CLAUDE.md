@@ -45,7 +45,9 @@ that edits `game.js`, not just the one it was added in.
 
 ## Visual code
 
-Any change that affects what is drawn starts at
+Any change that affects what is drawn starts at two documents:
+`docs/architecture/visual-authoring.md` (the mandatory contract for what each
+component may look like — see the top of this file) and
 `docs/architecture/visual-render-pipeline.md`: pass order and owners
 (`js/world-render-pipeline.js`), render-time hooks (`js/render-hooks.js` —
 never wrap `renderer.render` yourself), named layers (`js/render-layers.js`),

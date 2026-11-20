@@ -10,7 +10,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function load({ debugText = 'Debris-ifier bootstrap: FAILED — test' } = {}) {
+class FakeMesh { constructor(geometry, material) { this.isMesh = true; this.geometry = geometry; this.material = material; this.userData = {}; this.layers = { mask: 0b11, disable(bit) { this.mask &= ~(1 << bit); } }; } }
+class FakeBasicMaterial { constructor(params) { Object.assign(this, params); this.userData = {}; } }
+
+function load({ debugText = 'Debris-ifier bootstrap: FAILED — test', extra = {} } = {}) {
   const appended = [];
   const document = {
     body: { appendChild(el) { appended.push(el); } },
@@ -20,7 +23,7 @@ function load({ debugText = 'Debris-ifier bootstrap: FAILED — test' } = {}) {
     }),
   };
   const storage = new Map();
-  const win = { HobunjiRenderLayers: { SHELL_OUTLINE: 1 } };
+  const win = { HobunjiRenderLayers: { SHELL_OUTLINE: 1 }, THREE: { Mesh: FakeMesh, MeshBasicMaterial: FakeBasicMaterial }, ...extra };
   win.window = win;
   const context = vm.createContext({ window: win, globalThis: win, document, console, Promise, setTimeout, performance: { now: () => Date.now() }, localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, String(v)) } });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/statue-ruin-debris.js'), 'utf8'), context, { filename: 'statue-ruin-debris.js' });
@@ -71,6 +74,34 @@ function load({ debugText = 'Debris-ifier bootstrap: FAILED — test' } = {}) {
   assert.equal(SRD.SUPER_RUINED.crumble, 100);
   assert.equal(SRD.SUPER_RUINED.jagged, 40);
   assert.equal(SRD.SUPER_RUINED.upperMode, 'fall');
+
+  // Visual-authoring contract §2: debris is hard-edged, so each variant is surfaced like the
+  // farm rocks once (inked PNG per detected face, no generated outline) and placements share it.
+  {
+    const surfaced = [];
+    const rocks = { surfaceStone(mesh, options) {
+      surfaced.push({ label: options.label, tint: options.tint });
+      mesh.geometry = { label: 'unwrapped', userData: { hobunjiSurfaceStretch: { patchCount: 40 } } };
+      mesh.material = { name: 'natural_rocks' };
+      mesh.layers.disable(1);
+      Object.assign(mesh.userData, { naturalSurface: 'rocks', naturalSurfaceUvOwner: 'HobunjiSurfaceStretchUV', facetedRock: true, facetedSurfaceTextureOutline: true, noOutline: true });
+      return mesh;
+    } };
+    const { SRD: surfacedSRD } = load({ extra: { FacetedRocks: rocks } });
+    const variant = surfacedSRD.surfaceVariant({ label: 'merged' }, 'statue_ruin_debris_seed');
+    assert.deepEqual(surfaced, [{ label: 'statue_ruin_debris_seed', tint: '#7a746b' }]);
+    assert.equal(variant.geometry.label, 'unwrapped', 'placements share the unwrapped geometry');
+    assert.equal(variant.material.name, 'natural_rocks', 'and the natural rock material');
+    assert.equal(variant.userData.naturalSurface, 'rocks');
+    assert.equal(variant.userData.naturalSurfaceUvOwner, 'HobunjiSurfaceStretchUV', 'the natural pipeline owns its UVs');
+    assert.equal(variant.userData.facetedSurfaceTextureOutline, true);
+    assert.equal(surfacedSRD.snapshot().surfaced, 1);
+    // Without the rock stack (isolated pages) it still builds, as plain stone.
+    const plainVariant = SRD.surfaceVariant({ label: 'merged' }, 'x');
+    assert.equal(plainVariant.geometry.label, 'merged');
+    assert.equal(plainVariant.material.color, 0x7a746b);
+    assert.equal(SRD.snapshot().unsurfaced, 1);
+  }
 
   // game.js: statue tiles go to the debris filler instead of the rock bucket.
   const game = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');

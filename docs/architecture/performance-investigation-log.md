@@ -30,6 +30,13 @@ one unlit stone mesh (~4.2k triangles, one draw, no shell). Headless generation 
 pool on SwiftShader (first furniture load included); footprints fill when it resolves. If the
 generator cannot start, footprints get a farm-style stone instead.
 
+After merging main's visual-authoring contract (hard-edged meshes carry one inked PNG per detected
+surface and no generated outline), each variant is now surfaced once with
+`FacetedRocks.surfaceStone` (~1,400 surface islands per variant; every placement shares the
+result). Before, only faces that kept the generator's box UVs showed ink and the fallen shards were
+smeared. Pool generation went 27.6 s → 37.4 s headless for 5 variants (once per zone, before the
+footprints fill); draws unchanged (one per footprint).
+
 ## 20 Nov 2026: ore rocks drawn like the farm rocks (visual change, small draw saving)
 
 Wilderness and town-mine ore rocks now reuse the farm rocks' look (`js/faceted-rocks.js`): the

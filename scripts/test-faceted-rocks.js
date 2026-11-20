@@ -91,6 +91,21 @@ const oreMaterial = { name: 'ore' }, grassMaterial = { name: 'grass' };
   assert.equal(FR.snapshot().natural, 1);
 }
 
+{
+  // surfaceStone: the shared farm-rock surfacing (statue debris uses it too).
+  const { FR, calls } = load({ withNatural: true });
+  const plain = new Mesh(geo('debris'), { name: 'stone' });
+  assert.equal(FR.surfaceStone(plain, { label: 'debris' }), plain);
+  assert.equal(calls.naturalized.at(-1).surface, 'rocks');
+  assert.equal(calls.naturalized.at(-1).tint, undefined, 'no tint: the farm rocks\' own grey');
+  assert.equal(plain.layers.mask, 0b01, 'off the shell layer');
+  assert.equal(plain.userData.facetedRock, true);
+  assert.equal(plain.userData.naturalSurfaceUvOwner, 'HobunjiSurfaceStretchUV');
+  FR.surfaceStone(new Mesh(geo('tinted'), {}), { tint: '#7a746b' });
+  assert.equal(calls.naturalized.at(-1).tint, '#7a746b');
+  assert.equal(calls.mapped.length, 0, 'the naturalize hook unwrapped them; no second unwrap');
+}
+
 // game.js: wilderness ore rocks use it with the grass rim, no shell outline, out of the jigsaw bake.
 const game = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
 const wild = game.slice(game.indexOf("if (tile.rockKind === 'diggableRockOre' && window.FacetedRocks?.enabled?.())"));
