@@ -160,8 +160,8 @@ canvas{display:block;width:100%;height:100%}
         <input id="neckStrength" type="range" min="0" max="2" step="0.05" value="1">
       </div>
       <div class="field">
-        <label>Neck weight radius <span id="neckRadiusVal">30.0% height</span></label>
-        <input id="neckRadius" type="range" min="0.01" max="0.30" step="0.005" value="0.30">
+        <label>Neck weight radius <span id="neckRadiusVal">1.2% height</span></label>
+        <input id="neckRadius" type="range" min="0.005" max="0.30" step="0.001" value="0.012">
       </div>
       <label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="showHeadSkinVertices" style="width:auto;margin-right:6px">Show head-skinned vertices</label>
       <div class="help">These controls affect only the preview rig and are never exported with the animation.</div>
@@ -457,7 +457,7 @@ let lastScaledWorldPose = { x: 0, y: 0, z: 0 }; // Debug copy of the same final 
 let avatarModel = null;
 let handCalibrationPresentationActive = false; // Dedicated hand-calibration tab hides every animation/tool visual while the neutral GLB↔paper workflow is active.
 let neckPreviewStrength = 1; // Used by applyPoseToRig() to scale the preview-only automatic head counter-turn.
-let neckPreviewRadiusFrac = 0.30; // Used by applyPreviewNeckWeights() as the broad default shoulder-to-head blend relative to avatar height.
+let neckPreviewRadiusFrac = 0.012; // Diagnostic slider starts at the new base-head neck-strip height; larger values are deliberate preview-only overrides.
 let neckWeightSummary = 'neck rig pending'; // Used by refreshPreviewDebug() for mobile-visible weight diagnostics.
 let headSkinVertexOverlay = null; // Used to dispose and replace the optional head-weight marker cloud when the avatar or radius changes.
 let headSkinVertexCount = 0; // Used by refreshPreviewDebug() so mobile users can confirm that the overlay found weighted vertices.
@@ -577,9 +577,9 @@ function updateHeadSkinVertexOverlay() {
   markerPositions.needsUpdate = true;
 }
 
-// Rewrites only the preview mesh's two skin-weight channels. The default
-// radius reproduces png-plane-avatar.js's 30%-of-height full-body falloff;
-// changing it is diagnostic and never touches exported animation data.
+// Rewrites only the preview mesh's two skin-weight channels. By default it
+// matches the species' short base-head neck band; the radius slider is diagnostic
+// and never touches exported animation data.
 function applyPreviewNeckWeights() {
   const neckRig = avatarModel?.userData?.neckRig; // Used to reach the current avatar's skinned preview plane and detected pivot.
   const geometry = neckRig?.skinnedPlane?.geometry;
@@ -592,12 +592,12 @@ function applyPreviewNeckWeights() {
     return false;
   }
 
-  const radius = Math.max(modelHeight * 0.01, modelHeight * neckPreviewRadiusFrac); // Used as the vertical root-to-head weight transition band.
+  const radius = Math.max(modelHeight * .005, modelHeight * neckPreviewRadiusFrac); // Vertical span begins at the detected base-head bottom, like the actual game.
   let influenced = 0;
   let fullWeight = 0;
   for (let index = 0; index < positions.count; index++) {
     const y = positions.getY(index);
-    const headWeight = smoothstep01((y - (neckRig.neckLocal.y - radius * 0.55)) / radius);
+    const headWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckRig.neckLocal.y, radius);
     weights.setXYZW(index, 1 - headWeight, headWeight, 0, 0);
     if (headWeight > 0.01) influenced++;
     if (headWeight > 0.99) fullWeight++;
@@ -642,7 +642,7 @@ function refreshPreviewDebug() {
 
 function syncNeckPreviewControls() {
   neckPreviewStrength = Math.max(0, Math.min(2, Number($('neckStrength').value) || 0));
-  neckPreviewRadiusFrac = Math.max(0.01, Math.min(0.30, Number($('neckRadius').value) || 0.30));
+  neckPreviewRadiusFrac = Math.max(0.005, Math.min(0.30, Number($('neckRadius').value) || 0.012));
   $('neckStrengthVal').textContent = `${Math.round(neckPreviewStrength * 100)}%`;
   $('neckRadiusVal').textContent = `${(neckPreviewRadiusFrac * 100).toFixed(1)}% height`;
   applyPreviewNeckWeights();
