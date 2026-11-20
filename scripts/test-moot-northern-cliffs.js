@@ -9,11 +9,21 @@ const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Allows tests to 
 const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Used to validate the files actually committed to Git.
 const basePath = 'docs/assets/creaturesprites/'; // All five Moot assets live beside the other animal animation frames.
 const expected = ['moot_idle.png', 'moot_run1.png', 'moot_run2.png', 'moot_eyes.png', 'moot_blink.png']; // Required art, including open and shut eyes.
+const coatPatterns = ['overcoat', 'mitts']; // Authored overlay draw order; coloredneck is retired rather than a third inheritable allele.
 for (const name of expected) {
   const bytes = fs.readFileSync(path.join(ROOT, basePath, name));
   assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
   assert.equal(bytes.readUInt32BE(16), 1617, `${name} must retain the base frame's width`);
   assert.equal(bytes.readUInt32BE(20), 1000, `${name} must retain the base frame's height`);
+}
+for (const pattern of coatPatterns) for (const frame of ['idle', 'run1', 'run2']) {
+  const name = `moot_${pattern}_${frame}.png`; // Required on all three animation poses so a visible allele never makes the compositor retry a missing frame.
+  const bytes = fs.readFileSync(path.join(ROOT, basePath, 'patterns', name));
+  assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
+  assert.equal(bytes.readUInt32BE(16), 1617, `${name} must align with Moot's base width`);
+  assert.equal(bytes.readUInt32BE(20), 1000, `${name} must align with Moot's base height`);
+  assert.equal(bytes[24], 8, `${name} must have 8-bit sprite channels`);
+  assert.equal(bytes[25], 6, `${name} must be RGBA, preserving transparency`);
 }
 
 function pngVisibleCoverage(relativePath) {
@@ -119,7 +129,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(creatureDb.moot.sprites)), {
 });
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.eyes.open, api.SPRITES.eyes);
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.eyes.blink, api.SPRITES.blink);
-assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.patterns.length, 0);
+assert.deepEqual(Array.from(windowStub.CreatureGeneticsRender.SPECIES.moot.patterns), coatPatterns, 'Runtime renders overcoat under independently inherited mitts');
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.fullBaseRecolor, false, 'Moot must not tint claws, teeth, hooves or outlines');
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.baseRecolorKeyHex, '#9CBD9E', 'Moot coat tint uses only its mint-green authored pigment family');
 
@@ -142,13 +152,39 @@ assert(log.some(x => /\[moot\].*northernCliffs=ok.*herds=\[voorg-ass,moot\]/.tes
 vm.runInContext(read('docs/js/creature-genetics.js'), context, { filename: 'creature-genetics.js' });
 windowStub.CreatureGenetics.init({ CREATURE_DB: creatureDb, clamp: (v, a, b) => Math.max(a, Math.min(b, v)) });
 assert.equal(windowStub.CreatureGenetics.SPECIES_ALIAS['moot-herd-mother'], 'moot', 'Mother inherits Moot recolor/eye/rig identity');
-const parentA = windowStub.CreatureGenetics.makeDefaultGenotype('moot'); // Genotype uses the generic species color inheritance, even with zero authored patterns.
+const parentA = windowStub.CreatureGenetics.makeDefaultGenotype('moot'); // Uses the existing optional-pattern roll and color inheritance for both Moot markings.
 const parentB = windowStub.CreatureGenetics.makeDefaultGenotype('moot');
 const child = windowStub.CreatureGenetics.crossOffspring(parentA, parentB, 'moot');
 assert.equal(parentA.sizeClass, 'large');
 assert.equal(child.sizeClass !== undefined, true);
 assert(/^#[a-f0-9]{6}$/i.test(child.base.color));
-assert.deepEqual(Object.keys(child).sort(), ['base', 'sizeClass'], 'Moot breeding cannot invent missing pattern assets');
+assert.deepEqual(Object.keys(child).sort(), ['base', 'mitts', 'overcoat', 'sizeClass'], 'Both authored patterns inherit their own alleles');
+for (const pattern of coatPatterns) {
+  assert(/^#[a-f0-9]{6}$/i.test(parentA[pattern].color), `${pattern} receives a valid coat color`);
+  assert.equal(typeof child[pattern].enabled, 'boolean', `${pattern} has an independent expressed state`);
+  assert(child[pattern].copies >= 0 && child[pattern].copies <= 2, `${pattern} inherits Mendelian allele copies`);
+}
+assert(!('coloredneck' in child), 'Colored neck is not a competing new genotype');
+const originalOvercoat = parentA.overcoat; // Only legacy input is overwritten below; actual generated specimens remain unchanged.
+const legacyMoot = { ...parentA, coloredneck: { color: '#c7aa77', copies: 2, enabled: true, inheritance: 'dominant' } }; // Simulates an older saved marking and its exact pigmentation.
+delete legacyMoot.overcoat;
+const migrated = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', legacyMoot); // Read-time migration keeps old saves and wild bloodlines intact.
+assert.equal(migrated.overcoat.color, '#c7aa77', 'Colored neck now appears as overcoat without losing its color');
+assert.equal(migrated.overcoat.copies, 2, 'Migration preserves inherited allele strength');
+assert(!('coloredneck' in migrated), 'Legacy marking is removed from the active genome');
+assert.equal(legacyMoot.overcoat, undefined, 'Read-time migration must not mutate the saved object');
+assert.equal(parentA.overcoat, originalOvercoat, 'Existing modern genetics remain unchanged');
+const legacyChild = windowStub.CreatureGenetics.crossOffspring(legacyMoot, legacyMoot, 'moot', 0); // Both parents give one guaranteed overcoat allele.
+assert.equal(legacyChild.overcoat.copies, 2, 'Offspring inherits a migrated overcoat from both parents');
+assert.equal(legacyChild.overcoat.enabled, true, 'Legacy coat remains visibly expressed after breeding');
+const modernWins = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', { ...legacyMoot, overcoat: parentA.overcoat }); // New allele always takes precedence.
+assert.equal(modernWins.overcoat, parentA.overcoat);
+assert(!('coloredneck' in modernWins));
+const traitNames = windowStub.CreatureGenetics.genotypeTraits('moot', migrated).patterns.map(pattern => pattern.label); // Reuses Farm/Stable trait-chip formatting.
+assert(traitNames.includes('Overcoat'), 'Migrated overcoat appears in the genotype UI');
+assert(!traitNames.includes('Coloredneck'), 'Retired colored neck is absent from trait chips');
+assert.match(read('docs/js/creature-genetics-render.js'), /kind === 'moot' && genotype\?\.coloredneck/, 'Standalone renderer also translates legacy colored-neck genotypes');
+assert.match(read('docs/tools/animation-author/rig-preview-species.js'), /patterns:\s*\['overcoat', 'mitts'\]/, 'Animation Author recognizes the same two patterns');
 assert.equal(windowStub.CreatureGenetics.creatureSizeScale('moot', 'large').x, 1.3, 'Moot borrows Uumkao\'ii size calibration until a dedicated rig is authored');
 
 const loot = JSON.parse(read('docs/config/loot/loot-pools.json')); // Live corpse loot table used by game.js.
@@ -165,4 +201,4 @@ assert.match(authorSource, /REQUIRED_KINDS[^\n]*'moot'/, 'Moot is part of the au
 assert.match(authorSource, /SEED_SOURCES[^\n]*moot: 'uumkaoii'/, 'Moot rig values are editable as a borrowed first-pass seed');
 
 
-console.log('PASS Moot wild/farm registry, live Herd-Mother, eye sprites, inherited coat, drops and mobile diagnostics');
+console.log('PASS Moot wild/farm registry, overcoat+mitts sprites/inheritance, coloredneck migration, drops and mobile diagnostics');
