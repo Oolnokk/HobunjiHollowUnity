@@ -50,7 +50,15 @@
 
   let deps = null;
   let accum = 999; // Forces a real pass on the first tick.
-  const stats = { updates: 0, lastCullables: 0, lastVisible: 0 };
+  const stats = { updates: 0, lastCullables: 0, lastVisible: 0, lastFadedOutHidden: 0 };
+  // A tree the corridor-edge fade has taken fully to opacity 0 drew no
+  // colour, only depth: four or so draws per pass (and again in every
+  // held/x-ray replay) whose only visible effect was a ghost silhouette — the
+  // mist stopped at it and the edge-ink composite outlined it. In the user's
+  // Cloud Forest view that was 73 trees / 222 draws a frame. Such a tree is
+  // left undrawn until its fade target rises again (the fade then starts from
+  // 0, so it reappears smoothly). A/B: ZoneVegetationCull.setHideFadedOut(false).
+  let hideFadedOut = true;
 
   // deps: { camera, getCamTargetX, getCamTargetZ, getCurrentArea, isZoneArea,
   //         getZoneScene(area), exteriorZones, getPlayerTile(out),
@@ -153,14 +161,19 @@
     const shoulderSurf = deps.isShoulderSurf();
     const fadeStartFrac = deps.settings.cloudForestFadeStartFrac();
     const outlineFrac = deps.settings.cloudForestOutlineFrac();
-    let visibleCount = 0;
+    let visibleCount = 0, fadedOutHidden = 0;
     for (const obj of cullables) {
       const s = obj.userData.cullSphere;
       const isGrassChunk = obj.userData.isWildernessGrassChunk === true;
-      const show = corridorContains(s, obj.visible, basis);
-      if (force || show !== obj.visible) obj.visible = show;
+      // Hysteresis: a drawn tree was in the corridor, and so was one this
+      // cull left undrawn only because it is faded out (flag below).
+      const wasInCorridor = obj.visible === true || obj.userData._vegetationFadedOutHidden === true;
+      const show = corridorContains(s, wasInCorridor, basis);
       if (show) visibleCount++;
-      if (isGrassChunk) continue;
+      if (isGrassChunk) {
+        if (force || show !== obj.visible) obj.visible = show;
+        continue;
+      }
 
       if (show) {
         const occlusionRadius = (s.xzRadius ?? s.radius) * OCCLUSION_XZ_RADIUS_MUL;
@@ -193,10 +206,16 @@
       } else {
         treeFade.reset(obj);
       }
+      const fadedOut = show && hideFadedOut && treeFade.isFadedOut?.(obj) === true;
+      if (fadedOut) fadedOutHidden++;
+      obj.userData._vegetationFadedOutHidden = fadedOut;
+      const drawn = show && !fadedOut;
+      if (force || drawn !== obj.visible) obj.visible = drawn;
     }
     stats.updates++;
     stats.lastCullables = cullables.length;
     stats.lastVisible = visibleCount;
+    stats.lastFadedOutHidden = fadedOutHidden;
   }
 
   // Throttled to ~7 Hz from gameLoop; drives the tree-fade targets (opacity
@@ -219,6 +238,12 @@
     corridorContains,
     isChunkInView: (sphere, wasVisible) => corridorContains(sphere, wasVisible, cullBasis()),
     setTreeOutlineEnabled,
-    snapshot: () => ({ ...stats }),
+    setHideFadedOut: value => { hideFadedOut = value !== false; accum = 999; return hideFadedOut; }, // accum: re-evaluate on the next tick.
+    // The current zone's cullable trees/bushes/grass chunks (js/wilderness-tree-instancer.js batches the drawn trees).
+    currentCullables: () => {
+      const area = deps?.getCurrentArea?.();
+      return area && deps.isZoneArea(area) ? deps.getZoneScene(area)?.cullables || null : null;
+    },
+    snapshot: () => ({ ...stats, hideFadedOut }),
   });
 })();

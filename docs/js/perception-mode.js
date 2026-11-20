@@ -479,7 +479,11 @@
           : maskMaterialFor(original, target.category, skinned, target.color);
         const hadLayer = (mesh.layers.mask & (1 << LAYER)) !== 0; // r128 Layers has no isEnabled().
         mesh.layers.enable(LAYER);
-        swapped.push({ mesh, original, hadLayer });
+        // Hidden only because a render-scope batch draws it this frame (e.g. an
+        // instanced wilderness tree): still the source of its own glow mask.
+        const proxyHidden = mesh.visible === false && mesh.userData?.hobunjiDrawProxyHidden === true;
+        if (proxyHidden) mesh.visible = true;
+        swapped.push({ mesh, original, hadLayer, proxyHidden });
       }
     }
     if (!swapped.length) return;
@@ -513,6 +517,7 @@
       for (const entry of swapped) {
         entry.mesh.material = entry.original;
         if (!entry.hadLayer) entry.mesh.layers.disable(LAYER);
+        if (entry.proxyHidden) entry.mesh.visible = false;
       }
       scene.background = previousBackground;
       scene.overrideMaterial = previousOverride;

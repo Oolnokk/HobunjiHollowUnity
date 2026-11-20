@@ -106,8 +106,23 @@
     return Math.hypot(px - cx, pz - cz) < radius;
   }
 
+  // True once a tree's fade has settled fully transparent and is meant to
+  // stay there (the corridor-edge fade at its far end). It draws no colour
+  // then, only depth. ZoneVegetationCull stops drawing it until the target
+  // rises again.
+  function isFadedOut(tree) {
+    const state = fadeByTree.get(tree);
+    return !!state?.applied && state.opacity === 0 && state.target === 0;
+  }
+
+  // True while the tree draws with its own transparent fade clones
+  // (WildernessTreeInstancer leaves such trees out of its shared batches).
+  function hasFade(tree) {
+    return fadeByTree.get(tree)?.applied === true;
+  }
+
   window.ZoneTreeFade = {
-    init, setTarget, reset, forget, updateAnimation, isBetweenCameraAndPlayer2D,
+    init, setTarget, reset, forget, updateAnimation, isBetweenCameraAndPlayer2D, isFadedOut, hasFade,
     snapshot: () => ({ animating: activeTrees.size }),
   };
 })();

@@ -291,6 +291,27 @@ assert.deepStrictEqual(renderer.passes, ['mask', 'composite']);
 assert.ok(PM.debugSnapshot().rendered > 0);
 assertRestored('normal frame');
 renderer.passes.length = 0;
+
+// A target mesh hidden only because a render-scope batch draws it this frame
+// (userData.hobunjiDrawProxyHidden, e.g. an instanced wilderness tree) still
+// draws its own glow mask; a mesh hidden by game code stays hidden.
+{
+  const realRender = renderer.render;
+  let maskSawVisible = null;
+  renderer.render = function (renderScene, cam) { if (renderScene === scene) maskSawVisible = targetMesh.visible; return realRender.call(this, renderScene, cam); };
+  targetMesh.visible = false;
+  targetMesh.userData.hobunjiDrawProxyHidden = true;
+  PM.renderOverlay(renderer, scene, camera);
+  assert.strictEqual(maskSawVisible, true, 'proxy-hidden target is drawn in the mask pass');
+  assert.strictEqual(targetMesh.visible, false, 'and hidden again for the rest of the frame');
+  delete targetMesh.userData.hobunjiDrawProxyHidden;
+  PM.renderOverlay(renderer, scene, camera);
+  assert.strictEqual(maskSawVisible, false, 'an authored-hidden target is not revealed by the mask');
+  targetMesh.visible = true;
+  renderer.render = realRender;
+  renderer.passes.length = 0;
+  assertRestored('proxy-hidden frames');
+}
 renderer.failMask = true;
 assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
 assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');

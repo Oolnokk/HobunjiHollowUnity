@@ -25,9 +25,11 @@ const state = {
   zoneScenes: new Map(),
 };
 const fades = new Map(); // Tracks the real module's requested tree opacity and reset.
+const fadedOut = new Set(); // Trees the fade double reports as settled at opacity 0.
 const windowObject = {
   ZoneTreeFade: {
     init() {},
+    isFadedOut(obj) { return fadedOut.has(obj); },
     setTarget(obj, opacity, blocking) { fades.set(obj, { opacity, blocking }); },
     reset(obj) { fades.delete(obj); },
     isBetweenCameraAndPlayer2D() { return false; },
@@ -112,6 +114,39 @@ state.camTargetZ = 1;
 apply(distant, side);
 assert.equal(distant.visible, true, 'Cloud Forest A/B toggle restores normal 42-tile forward corridor');
 assert.equal(side.visible, true, 'normal wilderness half-width is 15 tiles');
+
+// A tree the edge fade has settled at opacity 0 is left undrawn (it only drew depth ghosts),
+// keeps its corridor hysteresis, and is drawn again once its fade target rises.
+state.s_cloudForestShortCull = true;
+state.camTargetX = 0;
+state.camTargetZ = 1;
+const ghost = tree(0, 20);
+apply(ghost);
+assert.equal(ghost.visible, true, 'in the corridor, fading');
+fadedOut.add(ghost);
+apply(ghost);
+assert.equal(ghost.visible, false, 'faded fully out: not drawn');
+assert.equal(cullApi.snapshot().lastFadedOutHidden, 1);
+assert.equal(cullApi.snapshot().lastVisible, 1, 'still counted as in the corridor');
+const ghostEdge = tree(10.2, 5);
+ghostEdge.visible = true;
+apply(ghostEdge);
+assert.equal(ghostEdge.visible, true, 'hysteresis holds the edge tree');
+fadedOut.add(ghostEdge);
+apply(ghostEdge);
+assert.equal(ghostEdge.visible, false);
+fadedOut.delete(ghostEdge);
+apply(ghostEdge);
+assert.equal(ghostEdge.visible, true, 'an undrawn faded-out tree keeps its hysteresis, so it returns rather than flickering out');
+fadedOut.delete(ghost);
+apply(ghost);
+assert.equal(ghost.visible, true, 'drawn again when no longer faded out');
+fadedOut.add(ghost);
+assert.equal(cullApi.setHideFadedOut(false), false);
+apply(ghost);
+assert.equal(ghost.visible, true, 'A/B: faded-out trees drawn as before');
+cullApi.setHideFadedOut(true);
+fadedOut.clear();
 
 state.s_cloudForestShortCull = true;
 state.currentArea = 'map_western_slope';
