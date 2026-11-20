@@ -572,7 +572,7 @@
       lines.push(`Shoulder pose: ${curiosity?.phase || 'not-started'} hold=${Math.max(0, Number(curiosity?.timer) || 0).toFixed(1)}s inwardChance=${Math.round((Number(curiosity?.inwardChance) || 0) * 100)}% bodyLean=${Number(curiosity?.currentLeanDeg || 0).toFixed(2)}° headPitch=${Number(curiosity?.currentPitchDeg || 0).toFixed(2)}° headYaw=${Number(curiosity?.currentYawDeg || 0).toFixed(2)}°`);
       const headRig = liveActivePet.avatarRef.headRig; // Mobile Pixel Probe identifies the live head yaw solver without devtools.
       if (headRig) {
-        const hinge = liveActivePet.avatarRef.frontPlane?.geometry?.userData?.hobunjiAnimalYawFoldPivot; // Current visible hinge, including baby head warp.
+        const hinge = liveActivePet.avatarRef.frontPlane?.geometry?.userData?.hobunjiAnimalYawFoldPivotX; // Current vertical neck hinge, including baby head warp.
         const response = liveActivePet.avatarRef.headMaterialResponse?.dump?.(); // Shared material diagnostic exposes whether yaw is independent of paint.
         lines.push(`Head yaw rig: ${headRig.yawMode || 'legacy'} hinge=${Number.isFinite(hinge) ? (hinge * 100).toFixed(1) + '% from sprite top' : '-'} materialYaw=${response?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`);
       }
