@@ -30,6 +30,10 @@ const library = page.slice(page.indexOf('function renderAnimationNpcLibrary()'),
 assert.match(library, /new IntersectionObserver\(/, 'NPC previews are lazily observed');
 assert.match(library, /enqueueThumbnail\(canvas, npc\)/, 'visible previews reuse the existing single-render worker');
 assert.doesNotMatch(library, /buildAvatarRender\(npc\)/, 'hidden NPCs are not rendered eagerly in a burst');
+assert.match(page, /thumbnailStartupBlocked: false/, 'the repository loader owns a startup thumbnail gate');
+assert.match(page, /if \(state\.thumbnailStartupBlocked\) return;/, 'background rendering cannot start before the workspace is ready');
+assert.match(page, /finally \{\s*state\.thumbnailStartupBlocked = false;\s*runThumbnailQueue\(\);/,
+  'thumbnail rendering resumes on both successful startup and failure');
 
 async function orderedAndBounded() {
   const inputs = Array.from({ length: 20 }, (_, i) => i); // Numbered stand-in script paths used to test original dependency order.
