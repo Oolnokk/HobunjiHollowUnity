@@ -638,6 +638,19 @@ assert.ok(standardGroundShader.vertexShader.includes('mat3(modelMatrix) * hobunj
 assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
 assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
+// World-bake safety (zone-prop-render-batches.js merges still props into world-space copies): the injection reads world
+// position/normal through modelMatrix, so it is safe on its own, and stays only as safe as the hook it wraps.
+assert.equal(groundMaterial.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'the elevation hook alone is world-bake safe');
+const wrapsUnknown = { userData: {}, onBeforeCompile: function ownerShader() {}, needsUpdate: false };
+installElevationShader(wrapsUnknown);
+assert.equal(wrapsUnknown.onBeforeCompile.__hobunjiWorldBakeSafe, false, 'wrapping an unknown compile hook is not bake safe');
+const ownerSafe = function ownerSafeShader() {}; ownerSafe.__hobunjiWorldBakeSafe = true;
+const wrapsSafe = { userData: {}, onBeforeCompile: ownerSafe, needsUpdate: false };
+installElevationShader(wrapsSafe);
+assert.equal(wrapsSafe.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'wrapping a hook that vouches for itself stays bake safe');
+const markedMaterial = { userData: { hobunjiWorldBakeSafe: true }, onBeforeCompile: function reagentShader() {}, needsUpdate: false };
+installElevationShader(markedMaterial);
+assert.equal(markedMaterial.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'a material its owner marked bake safe stays so');
 assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
 const copiedGroundMaterial = {
   userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.

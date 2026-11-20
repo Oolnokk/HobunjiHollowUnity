@@ -14,7 +14,7 @@
     "js/render-ab-benchmark.js?v=20261120h1eb5bdc", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
     "js/farm-tile-render-batches.js?v=20261119h71de730",
-    "js/zone-prop-render-batches.js?v=20261119hsettledEligibility2",
+    "js/zone-prop-render-batches.js?v=20261120ha35bf3b",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261120h87c4a16",
     "js/zone-vegetation-cull.js?v=20261120he8225fb", // Wilderness vegetation corridor cull; game.js calls init() and tick(dt).

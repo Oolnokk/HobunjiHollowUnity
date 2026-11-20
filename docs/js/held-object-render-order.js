@@ -3095,6 +3095,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     material.onBeforeCompile.__hobunjiXrayElevationState = state; // Used to detect stale copied userData after a terrain material clone.
     material.onBeforeCompile.__hobunjiXrayMaterialOwner = material; // The function belongs to this material even if another clone shares its metadata reference.
     material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
+    // World-bake safe (zone-prop-render-batches.js) when what it wraps is: the injection reads world position and normal
+    // through modelMatrix, which a world-space merged copy under an identity transform reproduces.
+    material.onBeforeCompile.__hobunjiWorldBakeSafe = !previousCompile || previousCompile === globalThis.THREE?.Material?.prototype?.onBeforeCompile // Three's own no-op default.
+      || previousCompile.__hobunjiWorldBakeSafe === true || material.userData.hobunjiWorldBakeSafe === true;
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
       return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-circle-xray-v6';
     };

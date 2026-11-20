@@ -321,6 +321,7 @@
   function inspectObject(root) {
     root?.traverse?.((obj) => {
       if (!obj?.isMesh) return;
+      if (obj.userData?.hobunjiRenderProxy === true) return; // Merged render copy (zone-prop-render-batches.js): its members were already repaired.
       naturalizeLegacyRock(obj);
       fixSingleMaterialCliffUv(obj);
       applyNaturalSurfaceTint(obj);

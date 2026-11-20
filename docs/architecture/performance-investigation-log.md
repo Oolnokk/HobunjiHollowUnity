@@ -1,5 +1,27 @@
 # Performance investigation log
 
+## 20 Nov 2026: ore-rock stones merged per cell
+
+The device's top draw source was removable ore rocks: one stone mesh per rock, drawn as two
+draws (the ridge isolation's `[m, m]` top/side material pair) in the base pass and again in
+replays (218 + 212 on the GTX 1060). Ore rock groups now carry the owner tag
+`userData.facetedOreRock`, and `zone-prop-render-batches.js` merges still stones per 8×8 cell.
+Three things had blocked it: the repeated-material array (now drawn as its one material when
+the groups cover the whole geometry), the held x-ray elevation compile hook on the rock
+material (it now declares itself world-bake safe when what it wraps is), and cell keys taken
+from the mesh origin (rock vertices are world-space, so every rock sat at 0,0; cells now use
+the world geometry centre). A merged batch was also being re-unwrapped by the natural-surface
+add-time inspection (ridge split + stretch remap of the copy), so batches are now flagged
+`hobunjiRenderProxy` before they are added and those inspectors skip them.
+
+Headless, user's Cloud Forest save: stone draws 120 → 11 a frame (whole frame 1,513 → 1,368).
+Next to a 16-rock cluster: 88 → 20, of which 8 are floor-punch refill draws (a cell batch's bounds
+reach the punched patch where a single stone's did not); whole frame 1,258 → 1,186. Batching on
+and off render pixel-identical frames, and mining a visible rock removes the same 1,423 px in
+both modes. Grass rims (60-74 draws) are unchanged: each has its own jigsaw material clone and
+the furniture-ID `onBeforeRender` hook. A/B: `ZonePropRenderBatches.setEnabled(false)`,
+benchmark variant `propBatchesOff` (all props, not only rocks).
+
 ## 20 Nov 2026: device report while watching a camp from afar; gear particles drawn once
 
 **Device** (GTX 1060, Cloud Forest, 3 enemies + 3 corpses in view, not fighting). The default

@@ -23,6 +23,9 @@
 //                   procedural wilderness trees as instanced batches per
 //                   variant part, or one mesh at a time (instancing is off by
 //                   default: it measured as a net loss on a GTX 1060)
+//   propBatchesOff  still wilderness props (tents, camp furniture, berry
+//                   bushes, ore-rock stones...) drawn one mesh at a time
+//                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
 //   gearParticlesEveryPass
 //                   particles on held gear (enchantment motes, weapon fire)
 //                   are drawn in the base pass and every replay group again
@@ -311,6 +314,10 @@
       variants.push(instancingBefore
         ? { id: 'treeInstancingOff', apply: () => treeInstancer.setEnabled(false), undo: () => treeInstancer.setEnabled(true) }
         : { id: 'treeInstancingOn', apply: () => treeInstancer.setEnabled(true), undo: () => treeInstancer.setEnabled(false) });
+    }
+    const propBatches = window.ZonePropRenderBatches;
+    if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
+      variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
     if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {

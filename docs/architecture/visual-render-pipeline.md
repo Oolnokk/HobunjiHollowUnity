@@ -183,7 +183,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | Order | id | Owner | Effect |
 |---|---|---|---|
 | 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
-| 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props → merged per 8×8 cell + material |
+| 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
 | 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
@@ -195,7 +195,18 @@ not by editing `renderFrame`. A scope that hides meshes another pass masks by
 name should flag them `userData.hobunjiDrawProxyHidden` while hidden: Perception
 Mode then still draws them into its glow mask (the tree instancer does). Prop batching groups by `material.id`: share one
 material between identical props (as `wild-berries.js` now does per colour) or
-they can never merge.
+they can never merge. A material array that repeats one material over groups
+covering the whole geometry (the natural rocks' ridge-split top/side slots)
+counts as that one material. Compile hooks block merging unless the material
+is marked `userData.hobunjiWorldBakeSafe` or the hook itself sets
+`__hobunjiWorldBakeSafe` (the held x-ray elevation hook does when what it wraps
+is safe). Cells use each mesh's world-space geometry centre, since ore rocks
+are built in world space under an identity transform. Batch meshes carry
+`userData.hobunjiRenderProxy`, set before they are added: add-time surface
+passes (natural-surface stretch runtime and runtime fixes) skip them, because
+re-unwrapping a merged copy would replace its geometry. Ore-rock grass rims
+are not merged: each has its own jigsaw material clone (a chunk texture lease)
+and the furniture-ID `onBeforeRender` hook.
 
 ## 6. Character visuals (player, NPCs, enemies, pets — one system)
 

@@ -244,6 +244,21 @@ async function run() {
     throw new Error('Scene receiver bypass did not reach the nested object inspection hook');
   }
 
+  // A merged render proxy (zone-prop-render-batches.js) copies its members' final, already-unwrapped vertices. Adding it
+  // to a live group must not re-run the island unwrap on the merged copy (or replace its geometry).
+  const proxy = makeReportedMesh('rocks', { mapping: 'surface-island' });
+  proxy.mesh.userData.hobunjiRenderProxy = true;
+  const remapsBeforeProxy = remaps.length;
+  const proxyGeometry = proxy.mesh.geometry;
+  group.add(proxy.mesh);
+  await new Promise(resolve => setImmediate(resolve));
+  if (remaps.length !== remapsBeforeProxy || proxy.mesh.geometry !== proxyGeometry) {
+    throw new Error('A render proxy was re-unwrapped by the add-time natural-surface inspection');
+  }
+  if (!(windowMock.NaturalSurfaceStretchRuntime.snapshot().renderProxiesSkipped >= 1)) {
+    throw new Error('Skipped render proxies are not counted in the snapshot');
+  }
+
   console.log(JSON.stringify({
     direct: {
       source: direct.texture.userData.hobunjiAuthoredSurfacePath,
