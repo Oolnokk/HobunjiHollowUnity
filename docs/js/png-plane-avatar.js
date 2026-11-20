@@ -1889,9 +1889,10 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  // A side-view animal is a paper card: yaw folds its face around a *vertical* neck
-  // crease, while pitch still uses the irregular painted head Influence region.
-  // Place two existing mesh columns around the crease without adding vertices.
+  // Treat the painted head as a rigid, cut-out paper card hinged at the authored neck.
+  // The Influence map decides head/body membership, NOT the amount of yaw: every
+  // head vertex receives the same yaw rotation, while chest and legs remain fixed.
+  // Keep two existing mesh columns near the vertical hinge without adding vertices.
   function alignAnimalYawFoldColumns(geometry, pivotLocalU, segmentsX, segmentsY, width) {
     const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
     const uv = geometry.getAttribute('uv'); // Keep texture coordinates aligned with the displaced columns.
@@ -1937,7 +1938,7 @@
     }
     const uv = geometry.getAttribute('uv');
     const skinIndices = new Uint16Array(uv.count * 4); // Root/pitch/yaw/combined bone indices for every plane vertex.
-    const skinWeights = new Float32Array(uv.count * 4); // Pitch follows paint; yaw follows a straight horizontal hinge.
+    const skinWeights = new Float32Array(uv.count * 4); // Pitch follows graded paint; yaw follows a binary head cutout.
     const sourceCoordinates = spriteWarp ? new Float32Array(uv.count * 2) : null; // Keep original rig-paint UVs alongside the rendered sprite UVs.
     const source = {}; // Reused for each vertex when sampling the baby pixel warp.
     for (let i = 0; i < uv.count; i++) {
@@ -1949,10 +1950,7 @@
         sourceCoordinates[i * 2 + 1] = source.y;
       }
       const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV); // Irregular Influence remains pitch-only.
-      const foldHalfWidth = Math.min(0.003, pivotU * 0.25, (1 - pivotU) * 0.25); // Matches the geometry's vertical crease.
-      const yawWeight = foldHalfWidth > 0
-        ? clamp((pivotU + foldHalfWidth - sourceU) / (2 * foldHalfWidth), 0, 1)
-        : (sourceU <= pivotU ? 1 : 0); // Face side rotates rigidly; all rows at a given X share one fold weight.
+      const yawWeight = headWeight >= 0.5 ? 1 : 0; // Binary head ownership only: never yaw unpainted front legs/chest, and never grade yaw by irregular material weight.
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
@@ -1960,7 +1958,7 @@
       skinIndices[offset + 3] = 3;
       skinWeights[offset] = (1 - headWeight) * (1 - yawWeight); // Unturned body, no pitch.
       skinWeights[offset + 1] = headWeight * (1 - yawWeight); // Authored pitch outside the yaw fold.
-      skinWeights[offset + 2] = (1 - headWeight) * yawWeight; // Rigid yaw, independent of painted Influence.
+      skinWeights[offset + 2] = (1 - headWeight) * yawWeight; // Rigid yaw for head-owned pixels, including pitch-neutral pixels.
       skinWeights[offset + 3] = headWeight * yawWeight; // Combined yaw then authored pitch, retaining nods.
     }
     if (sourceCoordinates) geometry.setAttribute('hobunjiRigSourceUv', new THREE.Float32BufferAttribute(sourceCoordinates, 2));
@@ -1971,7 +1969,8 @@
     geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
     geometry.userData.hobunjiAnimalYawFold = true; // Material-response adapter must preserve the separate yaw skin weights.
-    geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck crease on warped sprites.
+    geometry.userData.hobunjiAnimalYawMask = 'binary-head'; // Debug confirms no irregular yaw blending or body-front bending.
+    geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck hinge on warped sprites.
     return geometry;
   }
 
@@ -1986,7 +1985,7 @@
     torsoBone.name = `${plane.name}_body_bone`;
     const headBone = new THREE.Bone(); // Pitch only: authored irregular weight map still controls nods.
     headBone.name = `${plane.name}_head_bone`;
-    const yawBone = new THREE.Bone(); // Rigid card fold: face-side pixels ahead of the vertical neck crease turn together.
+    const yawBone = new THREE.Bone(); // Rigid card fold: only head-owned pixels rotate around the neck's vertical hinge.
     yawBone.name = `${plane.name}_yaw_bone`;
     const combinedBone = new THREE.Bone(); // Yaw applied after pitch preserves both motions on shared vertices.
     combinedBone.name = `${plane.name}_pitch_yaw_bone`;
@@ -2048,6 +2047,7 @@
       frontYawBone: front.yawBone, backYawBone: back.yawBone,
       frontCombinedBone: front.combinedBone, backCombinedBone: back.combinedBone,
       yawMode: 'paper-fold', // Mobile diagnostics and corpse rendering identify the independent yaw axis.
+      yawMask: 'binary-head', // The species' painted Influence is a cutout mask, never a graded yaw deformation.
       currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
       currentYawDeg: 0, targetYawDeg: 0,
     }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
