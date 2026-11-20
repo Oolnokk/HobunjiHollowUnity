@@ -8,13 +8,17 @@
   const AUTHORED_PERCH_SCALES = Object.freeze({ male: 1.632601, female: 1.733272 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const DEFAULT_GAIT_PROFILE = Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }); // Bulwark's strongest existing forward lurch.
-  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.1, sway: 0, kyphosis: 1 }); // User-exported male/female posture; independent of walking gait.
-  const LEGACY_SPINE_DEFAULT = Object.freeze({ hunch: 0.75, sway: 0, kyphosis: 0.8 }); // Identifies untouched author saves from before the canonical posture update.
+  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.07, sway: 0, kyphosis: 1 }); // Approved male/female author export; independent of walking gait.
+  const LEGACY_SPINE_DEFAULTS = Object.freeze([
+    Object.freeze({ hunch: 0.75, sway: 0, kyphosis: 0.8 }),
+    Object.freeze({ hunch: 0.1, sway: 0, kyphosis: 1 }),
+  ]); // Recognized former defaults in species-wide and gender-specific storage; custom profiles must survive.
   function migrateUnchangedSpine(value) {
     if (!value || typeof value !== 'object') return value;
-    if (Number(value.hunch) !== LEGACY_SPINE_DEFAULT.hunch || Number(value.kyphosis) !== LEGACY_SPINE_DEFAULT.kyphosis
-        || (value.sway != null && Number(value.sway) !== LEGACY_SPINE_DEFAULT.sway)) return value;
-    return { ...value, ...DEFAULT_SPINE_PROFILE }; // Only stale defaults migrate; custom spine settings and gait values remain intact.
+    const isFormerDefault = LEGACY_SPINE_DEFAULTS.some(previous =>
+      Number(value.hunch) === previous.hunch && Number(value.kyphosis) === previous.kyphosis
+      && (value.sway == null || Number(value.sway) === previous.sway)); // Replaces only known shipped combinations, never an edited posture.
+    return isFormerDefault ? { ...value, ...DEFAULT_SPINE_PROFILE } : value; // Preserve any independent gait settings and other authoring fields.
   }
   const GAIT_PROFILE = { ...DEFAULT_GAIT_PROFILE }; // Mutable shared object: new avatars and the Animation Author read the same tuned values.
   const SPINE_PROFILE = { ...DEFAULT_SPINE_PROFILE }; // Mutable shared object: CharacterSpine uses these values on build and on preview refresh.
