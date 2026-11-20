@@ -846,7 +846,7 @@
   async function prewarm(kinds) {
     const t0 = performance.now();
     const targets = kinds && kinds.length ? kinds : Object.keys(SPECIES);
-    try { if (targets.some(kind => SPECIES[kind] && !SPECIES[kind].fullBaseRecolor)) await loadBaseMasks(); }
+    try { if (targets.some(kind => SPECIES[kind] && !SPECIES[kind].fullBaseRecolor && !SPECIES[kind].preferSourceKeyRecolor)) await loadBaseMasks(); }
     catch (error) {
       // Prewarm is opportunistic: a transient mask failure must not cancel the
       // rest of the sprite prefetch or become an unhandled rejection at startup.
