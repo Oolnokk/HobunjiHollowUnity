@@ -47,7 +47,7 @@ assert(!runtimeSource.includes('const yawActive = Math.abs'), 'no legacy yaw Str
 // Four-bone yaw fold: painted pitch may be irregular, but every vertex keeps the same flat hinge factor.
 const makeFoldMesh = () => {
   const weights = new Float32Array([
-    0, 0, .7, .3, // Pixel above neck: pitch Influence .3 and rigid yaw fold 1
+    0, 0, .7, .3, // Face-side pixel: pitch Influence .3 and rigid yaw fold 1
     .3, .2, .3, .2, // Middle of the narrow crease: Influence .4, yaw fold .5
     .6, .4, 0, 0, // Pixel below neck: Influence .4, yaw fold 0
   ]);
