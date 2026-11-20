@@ -92,10 +92,10 @@ function visibleThumbnailOnly() {
     },
   }; // Minimal DOM and visibility proxy for the real editor's NPC library builder.
   const start = page.indexOf('let maaNpcThumbnailObserver = null;');
-  const end = page.indexOf('\\nfunction makePortraitCanvas(', start);
+  const end = page.indexOf('\nfunction makePortraitCanvas(', start);
   assert.ok(start > 0 && end > start, 'library function is independently inspectable');
   const render = new Function(...Object.keys(documentState),
-    page.slice(start, end) + '\\nreturn renderAnimationNpcLibrary;')(...Object.values(documentState));
+    page.slice(start, end) + '\nreturn renderAnimationNpcLibrary;')(...Object.values(documentState));
   render();
   assert.deepEqual(requests, [], 'hidden NPC portraits never begin rendering on library initialization');
   assert.equal(observers.length, 1, 'observer registered once on first render');
