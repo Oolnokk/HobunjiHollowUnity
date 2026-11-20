@@ -112,6 +112,11 @@ class FakeTexture {
 const THREE = {
   PlaneGeometry: FakeGeometry, Group: FakeGroup, Mesh: FakeMesh,
   MeshBasicMaterial: FakeMaterial, CanvasTexture: FakeTexture, FrontSide: 1, BackSide: 2,
+  Vector2: class { constructor(x,y) { this.x=x;this.y=y; } set(x,y) { this.x=x;this.y=y; } },
+  Vector3: class {},
+  Matrix4: class {},
+  DataTexture: class { constructor(data) { this.image={data}; } dispose() { this.disposed=true; } },
+  RGBAFormat: 1, NearestFilter: 1,
 };
 env.window.DeadzoneBillboard = null;
 env.document = { createElement() { return { width: 200, height: 200, getContext() {
@@ -147,6 +152,16 @@ portraitOwner.renderOrder=17.25; // Dynamic actor sorting must never separate an
 assert.equal(part.frontMesh.renderOrder,17.24,'beard follows live actor ordering before render-list sort');
 assert.equal(part.rearMesh.renderOrder,17.24,'back hair follows the same owner');
 portraitOwner.renderOrder=2;
+const cover=new Uint8Array(40000);cover.fill(1); // Simulated opaque hood covering the entire test strand.
+const fit={coverage:cover,overlap:new Uint8Array(40000),aperture:new Uint8Array(40000)};
+part.setHood(fit);
+const beneath=part.frontMesh.geometry.attributes.position.array;
+assert(Array.from({length:beneath.length/3},(_,i)=>beneath[i*3+2]).every(z=>z<0),
+  'attaching a hood physically tucks all covered vertices behind the owner');
+part.setHood(null);
+const restored=part.frontMesh.geometry.attributes.position.array;
+assert(Array.from({length:restored.length/3},(_,i)=>restored[i*3+2]).every(z=>z>0),
+  'removing the hood immediately restores every vertex, including rigid ones');
 const previous = part.frontMesh.geometry;
 Rig.refresh(avatar, { hobunjiSplineParts: [rigPart('hairSide:test:0', 'hairSide',
   [{u:.49,v:.3,depth:.02},{u:.52,v:.5,depth:.03},{u:.54,v:.7,depth:.06}])] }, back);
