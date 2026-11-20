@@ -14,7 +14,7 @@
   // noticeably bigger than the character actually looks -- raise the floor
   // here so only meaningfully-opaque pixels count as "this is really there."
   const DEPTH_OCCLUDER_MIN_ALPHA_TEST = 0.5;
-  const records = new Map(); // Owns one reusable depth helper for the player and each attached shoulder-pet portrait face.
+  const records = new Map(); // One reusable depth helper per character portrait part (player, NPCs, enemies, creatures, pets).
   let mistGroup = null;
   let lastMistSearchScene = null;
 
@@ -204,6 +204,45 @@
     for (const record of records.values()) if (record.depthMesh) record.depthMesh.visible = false;
   }
 
+  // Every character in the mist, not just the player and their pet
+  // (js/character-visuals.js enumerates player, NPCs, enemies, creatures,
+  // companions, mounts, shoulder pets, corpses). A helper is built per
+  // portrait part but only drawn while that portrait's own material skips
+  // depth writes, so characters that already write depth cost nothing.
+  const seenKeys = new Set(); // Reused per sync; records not seen are disposed.
+  const characterKeys = new WeakMap(); // root -> stable record keys for its portrait parts.
+  let syncScene = null;
+  function keysFor(kind, root) {
+    let keys = characterKeys.get(root);
+    if (!keys) {
+      // The player and its shoulder pet keep their historical keys (snapshot()/diagnostics).
+      const id = kind === 'player' ? 'player' : kind === 'shoulderPet' ? 'shoulder_pet' : `${kind}:${root.uuid || root.id}`;
+      keys = kind === 'player'
+        ? { portrait: 'player', front: 'player_front', back: 'player_back' }
+        : { portrait: id, front: id + '_front', back: id + '_back' };
+      characterKeys.set(root, keys);
+    }
+    return keys;
+  }
+  function syncKey(key, source) {
+    if (!source) return;
+    seenKeys.add(key);
+    syncRecord(key, source);
+  }
+  function visitCharacter(kind, root, entity) {
+    if (!belongsToScene(root, syncScene)) return;
+    if (kind === 'shoulderPet' && !(entity?.health > 0)) return;
+    const keys = keysFor(kind, root);
+    const front = entity?.avatarRef?.frontPlane || null; // Animal/pet art: separate front and back planes.
+    const back = entity?.avatarRef?.backPlane || null;
+    if (front || back) {
+      syncKey(keys.front, front);
+      syncKey(keys.back, back);
+      return;
+    }
+    syncKey(keys.portrait, kind === 'player' ? playerPortraitMesh() : window.CharacterVisuals.portraitMeshOf(root));
+  }
+
   function sync() {
     const activeScene = activeMistScene();
     if (!activeScene) {
@@ -211,6 +250,17 @@
       return;
     }
 
+    const area = window.GridTileAccessors?.getCurrentArea?.();
+    if (window.CharacterVisuals?.forEachCharacter && area) {
+      seenKeys.clear();
+      syncScene = activeScene;
+      window.CharacterVisuals.forEachCharacter(area, visitCharacter);
+      syncScene = null;
+      for (const key of records.keys()) if (!seenKeys.has(key)) disposeRecord(key); // Despawned/left characters release their helpers (Map iteration tolerates deletion).
+      return;
+    }
+
+    // Fallback without the character registry (isolated pages): player + pet.
     syncRecord('player', playerPortraitMesh());
 
     const pet = activeShoulderPet(activeScene); // Combat exposes the same live companion collection already used by PNG-plane shoulder-pet facing code.

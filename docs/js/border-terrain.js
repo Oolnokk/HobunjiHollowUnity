@@ -757,6 +757,14 @@
           // transformed instance cloud.
           mesh.frustumCulled = false;
           mesh.userData.backgroundScenery = true;
+          // Instance-cloud bounds (js/instanced-mesh-bounds.js): the render-only
+          // camera cull (instanced-mesh-view-cull.js) and the held-object /
+          // x-ray replay cull skip this chunk while all of it is off-camera.
+          // The corridor cull above still owns the group's visibility; this
+          // only trims corridor-visible chunks the frustum misses (at the
+          // default corridor ~9 groups / ~930k triangles stay drawn, nearly
+          // all genuinely on screen — the cull-radius setting is the lever).
+          window.InstancedMeshBounds?.tag?.(mesh);
           group.add(mesh);
         }
       }

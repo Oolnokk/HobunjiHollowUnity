@@ -33,6 +33,7 @@ Drawn from the commit history (~9k commits) and the periodic review-fix commits.
 9. **Missing-key math.** Inventory/stat lookups that can be `undefined` become `NaN`, and every `NaN < cost` comparison is false — which makes things free. Default missing keys to `0`.
 10. **New CI workflows.** Don't add them; `scripts/test-*.js` is picked up by `regression-suite.yml` automatically (per-feature workflows and ones scoped to scratch branches have gone stale before).
 11. **Forking attack-pose math.** The swing timeline, per-style rest poses, mirroring, legacy thrust/chop/sweep arcs and Light/Heavy stance baking live once in `docs/js/combat/shared-attack-pose.js` (`window.SharedAttackPose`) and drive the player *and* every `BanditCombat` humanoid (bandits, ghouls, skeletons, …). Change them there; don't re-implement a lerp or a neutral table in `game.js`, `combat-bandit.js` or a stance adapter. See `docs/architecture/shared-attack-pose.md`.
+12. **Wrapping `renderer.render`.** ~20 modules used to monkey-patch `WebGLRenderer.prototype.render`; each wrapper ran on every one of a frame's ~17 render calls and their nesting depended on load order. Register a hook with `RenderHooks.register` (`scope: 'frame'` for anything that should apply once per frame), hide/merge draw-only objects with `WorldRenderPipeline.registerRenderScope`, and name layer bits in `js/render-layers.js`. See `docs/architecture/visual-render-pipeline.md`.
 
 Before finishing: `node --check` the files you touched, `node scripts/check-cache-busts.js --fix`, then `node scripts/run-tests.js`.
 
@@ -47,6 +48,12 @@ Camera shake, controller rumble, hit-stop, the hurt flash, puzzle progress/solve
 ## Ruin size, shaft traversal and witch-bombs
 
 Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.TIERS`; the shaft is a free-jump platform staircase (`docs/js/ruin-jump-shaft.js`), not the old obelisk timing puzzle; witch-bombs are three variants (Hronal / Tothal frost / Kanthic plasm) of one pipeline that follow the ruin's tradition. Read [`docs/architecture/ruin-tiers-and-jump-shaft.md`](docs/architecture/ruin-tiers-and-jump-shaft.md) before changing wing counts, shaft size, platform hazards or bomb behaviour, and extend `TIERS` / `VARIANTS` rather than adding another special case.
+
+## Visual changes: render pipeline, hooks and layers
+
+Before changing anything that draws — outlines, passes, sprites, billboards, culls, batches, render-time poses — read [`docs/architecture/visual-authoring.md`](docs/architecture/visual-authoring.md) (what each component may look like; mandatory, see the top of this file) and [`docs/architecture/visual-render-pipeline.md`](docs/architecture/visual-render-pipeline.md) (how and when it is drawn). The pipeline doc lists the frame's passes in order, who owns each visual system, the named `THREE.Layers` registry (`js/render-layers.js`), the render-time presentation hooks (`js/render-hooks.js`) and render scopes (`js/world-render-pipeline.js`), plus the debug calls (`WorldRenderPipeline.captureFrame()`, `RenderHooks.getDebug()`) that show what each pass actually drew.
+
+Character visuals are one system: anything the player's character can show (held items, hands, pants, shoulder pets, terrain/weather response) is written for any character — NPCs, enemies, creatures, companions — and never decorates someone else with the player's state. Enumerate characters with `CharacterVisuals.forEachCharacter` (`js/character-visuals.js`), build held tools with `CharacterHeldTools.makeToolPlaneMesh(key, { holder })`, and keep the `CAPABILITIES` coverage table there accurate (§6 of the pipeline doc).
 
 ## Runtime frame ownership
 

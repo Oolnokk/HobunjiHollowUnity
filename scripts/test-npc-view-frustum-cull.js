@@ -102,10 +102,20 @@ try {
 } catch(error) { assert.match(String(error),/simulated renderer failure/); }
 assert.equal(offscreen.visible,true,'renderer error must never strand an NPC hidden between simulation frames');
 
-assert.match(game,/NpcViewFrustumCull\?\.suspendForRender\?\.\(npcWalkers, activeScene, camera\)/,
-  'game world render invokes one coarse cull across all its draw/depth/outline passes');
-assert.match(game,/\} finally \{\s*window\.ActorRenderOcclusion\?\.endFrame\?\.\(\);[^\n]*\n\s*restoreNpcVisuals\?\.\(\)/,
-  'all camera-visible NPC roots are restored in a finally block');
+{ // The world render (js/world-render-pipeline.js) wraps every pass in one coarse NPC cull.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  const events = h.frame();
+  const suspend = events.find(e => e.kind === 'suspend' && e.id === 'npc-view-cull');
+  assert(suspend && suspend.args[0] === h.npcWalkers && suspend.args[1] === h.activeScene && suspend.args[2] === h.camera,
+    'game world render invokes one coarse cull across all its draw/depth/outline passes');
+  assert.equal(events.filter(e => e.kind === 'suspend' && e.id === 'npc-view-cull').length, 1);
+  h.throwOn = () => true;
+  assert.throws(() => h.frame());
+  const end = h.log.findIndex(e => e.id === 'endFrame');
+  const restore = h.log.findIndex(e => e.kind === 'restore' && e.id === 'npc-view-cull');
+  assert(end >= 0 && restore > end, 'all camera-visible NPC roots are restored in a finally block, after actor occlusion ends');
+}
 assert.match(fs.readFileSync('docs/js/house-pieces.js','utf8'),/npc-view-frustum-cull\.js\?v=/,
   'core loader delivers the culler before game.js starts');
 assert.equal((fs.readFileSync('docs/js/held-object-render-order.js','utf8').match(/suspendOutsideReplayRect/g)||[]).length,2,

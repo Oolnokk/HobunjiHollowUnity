@@ -13,7 +13,7 @@
 
   if (window.FarmhouseFlatLighting) return;
 
-  const OVERLAY_ONLY_LIGHT_LAYER = 31; // Used below to keep legacy/local Three.js lights available as overlay data while excluding them from WebGL lighting.
+  const OVERLAY_ONLY_LIGHT_LAYER = globalThis.HobunjiRenderLayers?.OVERLAY_ONLY_LIGHT ?? 31; // Used below to keep legacy/local Three.js lights available as overlay data while excluding them from WebGL lighting.
   const BASELINE_LIGHT_NAME = 'hobunji_overlay_flat_baseline'; // Used below to identify the one neutral render-only ambient baseline that must remain visible to Lambert materials.
   const stats = { installed: false, installs: 0, authoredBuildingInstalls: 0, overlayOnlyLights: 0, lastMapId: null, lastError: null }; // Exposed below for mobile-friendly lighting diagnostics.
   let buildingSceneMap = null; // Captured from GridTileAccessors.init so authored building scene creation can be routed through the same flat-lighting path as the farmhouse.

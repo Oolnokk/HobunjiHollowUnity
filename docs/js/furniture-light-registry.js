@@ -7,7 +7,7 @@
   // cannot shade Three.js materials. Sources that deliberately set
   // userData.furnitureLightMask are then consumed by WeatherFX/CloudForestFog
   // as fake 2D light pools.
-  const OVERLAY_ONLY_LIGHT_LAYER = 31; // Used by every constructed local light so local lighting stays out of WebGLRenderer's light list.
+  const OVERLAY_ONLY_LIGHT_LAYER = globalThis.HobunjiRenderLayers?.OVERLAY_ONLY_LIGHT ?? 31; // Used by every constructed local light so local lighting stays out of WebGLRenderer's light list.
   const lights = []; // Registered local-light data sources scanned by list() instead of traversing the active scene.
   let routedToOverlay = 0; // Mobile/debug count of local lights removed from Three.js rendering by this registry.
   const bridgedConstructors = new Set(); // Debug set proving PointLight/SpotLight construction is routed away from WebGL lighting.

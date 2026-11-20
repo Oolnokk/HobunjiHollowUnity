@@ -216,7 +216,7 @@
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
-    moot: [], // Moot inherits its single coat color and Size without requiring unauthored pattern sprites.
+    moot: ['overcoat', 'mitts'], // Both authored patterns inherit independently; older coloredneck maps to overcoat on read.
     pingdort: [], // Wild fertile eggs and farm breeding inherit coat color and Size; no invented Pingdort pattern overlays.
     skeeri: [], // Fertile ruin eggs and breeding inherit coat color and Size via the existing system.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
@@ -318,6 +318,10 @@
 
   // Old Uumkao'ii saves stored permanent fur/plates regions; translate them to base/shell at read time.
   function normalizeLegacyGenotype(kind, genotype) {
+    if ((kind === 'moot' || kind === 'moot-herd-mother') && genotype?.coloredneck) {
+      const { coloredneck, ...rest } = genotype; // Deprecated colored-neck allele is superseded by the full overcoat, without altering saved data.
+      genotype = rest.overcoat ? rest : { ...rest, overcoat: { ...coloredneck } }; // Existing overcoat wins if both alleles are present.
+    }
     if (kind !== 'uumkaoii' || !genotype || (genotype.base && genotype.shell) || !(genotype.fur || genotype.plates)) return genotype;
     const base = genotype.base || genotype.fur, shell = genotype.shell || genotype.plates;
     const { fur, plates, ...rest } = genotype;

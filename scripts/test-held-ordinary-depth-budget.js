@@ -58,6 +58,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     splitXrayGroupsForTint: groups => groups.map(group => ({ ...group, tintStencilRef: 1 })),
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Other tests execute the production shader helper; this depth-budget fixture owns only its pass transactions.
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
+    hideColorOnlyHeldVfx: () => null, // Colour-only VFX skip has its own test (test-held-color-only-depth-skip.js).
     collectVisible: registry => registry === 'png' ? [cutout] : registry === 'background' ? [sky] : [cover],
     pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),

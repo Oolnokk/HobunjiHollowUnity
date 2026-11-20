@@ -4,7 +4,7 @@
   const THREE = window.THREE; // Used to capture farm-border scene additions and remove redundant shell-layer participation from the finished cliff skins.
   if (!THREE || window.FarmCliffRockOutline?.installed) return;
 
-  const SHELL_LAYER = 1; // Existing inverted-shell layer explicitly disabled once the authored rock texture provides the cliff edge treatment.
+  const SHELL_LAYER = globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1; // Existing inverted-shell layer explicitly disabled once the authored rock texture provides the cliff edge treatment.
   const SOURCE_SURFACE = 'cliffs'; // Used to identify only the stone skins generated for the farm border.
   const TARGET_SURFACE = 'rocks'; // Used to route farm cliffs through the exact rock natural-surface pipeline.
   const POSITION_KEY_SCALE = 100000; // Used to match the base terrain's Float32 triangles to the coplanar cliff-skin triangles robustly.

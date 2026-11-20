@@ -25,7 +25,7 @@
     const debugLog = typeof deps.debugLog === 'function' ? deps.debugLog : () => {};
     const scene = deps.scene || null;
     const PLAYER_HOUSE_LOGICAL_HEIGHT = 0.6; // Used when building the runtime subtle-elevation override and reporting debug state.
-    const TERRAIN_EDGE_LAYER = 3; // Material-ID terrain layer set by game.js; used to identify visible farm ground meshes on Three r128.
+    const TERRAIN_EDGE_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // Material-ID terrain layer set by game.js; used to identify visible farm ground meshes on Three r128.
 
     let visualHeights = {}; // Current shared-algorithm center samples, used when deforming farm terrain meshes.
     let footprintFingerprint = ''; // Union-of-module footprint signature; skips terrain work for roof/feature-only rebuilds.

@@ -41,20 +41,20 @@
   }; // Reused only inside the synchronous classifier to avoid one hint-object allocation per mesh.
 
   const LEGACY_HELD_RENDER_ORDER = 1.5;
-  const DEFAULT_LAYER = 0;
-  const SHELL_LAYER = 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
+  const DEFAULT_LAYER = globalThis.HobunjiRenderLayers?.WORLD ?? 0; // Named in js/render-layers.js.
+  const SHELL_LAYER = globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
   const SHELL_MASK = (1 << SHELL_LAYER) >>> 0;
-  const MATERIAL_ID_LAYER = 3;
-  const PNG_OCCLUDER_LAYER = 4;
-  const FRONT_PORTRAIT_MASK_LAYER = 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
+  const MATERIAL_ID_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // Named in js/render-layers.js.
+  const PNG_OCCLUDER_LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Named in js/render-layers.js.
+  const FRONT_PORTRAIT_MASK_LAYER = globalThis.HobunjiRenderLayers?.FRONT_PORTRAIT_MASK ?? 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
   const FRONT_PORTRAIT_STENCIL_MASK = 0xFC; // Bits 2..7 identify up to 63 distinct owners; bit 0 stays reserved for water tint.
   const FRONT_PORTRAIT_MAX_OWNERS = 63; // Stencil owner IDs share one draw without hiding weapons in front of unrelated NPCs.
   const FRONT_PORTRAIT_MASK = (1 << FRONT_PORTRAIT_MASK_LAYER) >>> 0; // The camera layer for the one front-portrait stamp pass.
-  const PORTRAIT_WATER_MASK = 1 << 25; // Temporary colorless silhouette for eligible front and rear actor art.
-  const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
-  const WATER_REPLAY_LAYER = 27;
-  const GROUND_REPLAY_LAYER = 28;
-  const HELD_OVERLAY_LAYER = 29;
+  const PORTRAIT_WATER_MASK = 1 << (globalThis.HobunjiRenderLayers?.PORTRAIT_WATER_MASK ?? 25); // Temporary colorless silhouette for eligible front and rear actor art.
+  const FOOT_WATER_MASK_LAYER = globalThis.HobunjiRenderLayers?.FOOT_WATER_MASK ?? 26; // Used only to stamp procedural feet that should remain subject to translucent water.
+  const WATER_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.WATER_REPLAY ?? 27; // Named in js/render-layers.js.
+  const GROUND_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.GROUND_REPLAY ?? 28; // Named in js/render-layers.js.
+  const HELD_OVERLAY_LAYER = globalThis.HobunjiRenderLayers?.HELD_OVERLAY ?? 29; // Named in js/render-layers.js.
   const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
@@ -1861,11 +1861,102 @@
   // rectangle around those meshes leaves the rest of the framebuffer's base
   // depth untouched and stops the GPU re-rasterizing the whole world 3-5
   // extra times per frame while a tool is held. Anything that can't be
-  // bounded conservatively (skinned/instanced/morphed geometry, a corner
-  // behind the camera, a partial viewport) falls back to the old full-screen
-  // passes.
+  // bounded conservatively (instanced/morphed geometry, a corner behind the
+  // camera, a partial viewport) falls back to the old full-screen passes.
+  // Skinned meshes are bounded per bone (skinnedScissorBoxes below).
   const scissorBox = new THREE.Box3();
   const scissorCorner = new THREE.Vector3();
+  // Skinned bodies (neck-rigged portraits, wings, pet overlays). r128 skins a
+  // vertex p as bindMatrixInverse · Σ wᵢ·Bᵢ·bindMatrix·p with Σ wᵢ = 1: a convex
+  // combination of p moved rigidly by each bone that influences it. So the
+  // union of every bone's influenced-vertex box, moved by that bone, contains
+  // the drawn body, and so does the screen rectangle around those corners.
+  // Before this, any wet body portrait in the tint pass forced a full-screen
+  // replay of the whole world (device report: held=skinned-mesh, ~700 extra
+  // draws a frame). Both the bone matrices last uploaded to the GPU and the
+  // current bone.matrixWorld are included, so a skeleton not yet updated this
+  // frame is still covered. Weights summing below 1 pull vertices toward the
+  // mesh origin, which is added then; anything not provably bounded (weights
+  // above 1, out-of-range bone indices, morph targets, a per-draw hook that
+  // can re-pose it) keeps the full-screen fallback.
+  let skinnedScissorEnabled = true; // A/B switch: HeldObjectRenderOrder.setSkinnedScissorEnabled(false).
+  let skinnedScissorBounds = 0; // Lifetime count of skinned meshes bounded instead of forcing full screen (snapshot()).
+  const skinnedInfluenceCache = new WeakMap(); // geometry -> per-bone bind-space boxes, keyed by attribute versions.
+  const skinnedBoneMatrix = new THREE.Matrix4();
+  const skinnedChainMatrix = new THREE.Matrix4();
+  const skinnedOriginBox = new THREE.Box3();
+  function skinnedInfluenceBoxes(geometry, boneCount) {
+    const { position, skinIndex, skinWeight } = geometry.attributes || {};
+    if (!position || !skinIndex || !skinWeight || skinIndex.count < position.count || skinWeight.count < position.count) return { reason: 'skinned-missing-weights' };
+    const key = `${position.version}:${skinIndex.version}:${skinWeight.version}:${position.count}:${boneCount}`;
+    const cached = skinnedInfluenceCache.get(geometry);
+    if (cached?.key === key) return cached;
+    const boxes = new Map(); // bone index -> Box3 of the bind-pose vertices it moves.
+    let reason = null, belowOne = false;
+    for (let v = 0; v < position.count && !reason; v++) {
+      const x = position.getX(v), y = position.getY(v), z = position.getZ(v);
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = k === 0 ? skinWeight.getX(v) : k === 1 ? skinWeight.getY(v) : k === 2 ? skinWeight.getZ(v) : skinWeight.getW(v);
+        if (!(w > 0)) { if (w < 0 || Number.isNaN(w)) reason = 'skinned-weights-unbounded'; continue; }
+        sum += w;
+        const bone = k === 0 ? skinIndex.getX(v) : k === 1 ? skinIndex.getY(v) : k === 2 ? skinIndex.getZ(v) : skinIndex.getW(v);
+        if (!(bone >= 0 && bone < boneCount)) { reason = 'skinned-bone-index'; break; }
+        let box = boxes.get(bone);
+        if (!box) boxes.set(bone, box = new THREE.Box3());
+        box.expandByPoint(scissorCorner.set(x, y, z));
+      }
+      if (sum > 1 + 1e-4) reason = 'skinned-weights-unbounded';
+      else if (sum < 1 - 1e-4) belowOne = true;
+    }
+    const entry = { key, boxes, belowOne, reason };
+    skinnedInfluenceCache.set(geometry, entry);
+    return entry;
+  }
+  function hasPerDrawHook(mesh) {
+    const hook = mesh.onBeforeRender;
+    return typeof hook === 'function' && hook !== THREE.Object3D.prototype.onBeforeRender
+      && !(mesh.__hobunjiXrayBoundParity && mesh.__hobunjiXrayBoundParity.hook === hook);
+  }
+  // Calls include(box, matrix) for each bone box and its skin matrix under one
+  // model pose. Returns a failure reason, or null when every vertex is covered.
+  function forEachSkinnedBox(mesh, poseMatrix, include) {
+    const skeleton = mesh.skeleton, bones = skeleton?.bones;
+    if (!bones?.length || !mesh.bindMatrix || !mesh.bindMatrixInverse) return 'skinned-missing-skeleton';
+    if (hasPerDrawHook(mesh)) return 'skinned-draw-hook'; // e.g. shoulder-pet yaw re-poses the bones at draw time; parity adapters are bounded above.
+    const influence = skinnedInfluenceBoxes(mesh.geometry, bones.length);
+    if (influence.reason) return influence.reason;
+    const uploaded = skeleton.boneMatrices; // What the GPU drew with if the skeleton is not refreshed this frame.
+    let towardOrigin = influence.belowOne;
+    for (const [index, box] of influence.boxes) {
+      for (let source = 0; source < (uploaded?.length >= (index + 1) * 16 ? 2 : 1); source++) {
+        if (source === 0) {
+          const bone = bones[index];
+          if (bone) skinnedBoneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[index]);
+          else skinnedBoneMatrix.copy(skeleton.boneInverses[index]); // r128 uses identity for a missing bone.
+        } else {
+          const o = index * 16; // The shader skins with a vec4 and no divide: only affine or never-uploaded (all zero) matrices are boundable.
+          if (uploaded[o + 3] !== 0 || uploaded[o + 7] !== 0 || uploaded[o + 11] !== 0) return 'skinned-bone-matrix';
+          if (uploaded[o + 15] === 0) {
+            for (let e = 0; e < 16; e++) if (uploaded[o + e] !== 0) return 'skinned-bone-matrix';
+            towardOrigin = true; // A zero matrix drops that bone's share, pulling the vertex toward the mesh origin.
+            continue;
+          }
+          if (uploaded[o + 15] !== 1) return 'skinned-bone-matrix';
+          skinnedBoneMatrix.fromArray(uploaded, o);
+        }
+        skinnedChainMatrix.multiplyMatrices(poseMatrix, mesh.bindMatrixInverse).multiply(skinnedBoneMatrix).multiply(mesh.bindMatrix);
+        const m = skinnedChainMatrix.elements;
+        if (!Number.isFinite(m[0] + m[1] + m[2] + m[4] + m[5] + m[6] + m[8] + m[9] + m[10] + m[12] + m[13] + m[14])) return 'skinned-bone-matrix';
+        if (!include(box, skinnedChainMatrix)) return lastScissorFailureReason;
+      }
+    }
+    if (towardOrigin) {
+      skinnedOriginBox.min.set(0, 0, 0); skinnedOriginBox.max.set(0, 0, 0);
+      if (!include(skinnedOriginBox, poseMatrix)) return lastScissorFailureReason;
+    }
+    return null;
+  }
   const scissorRect = new THREE.Vector4();
   const elevationScissorRect = new THREE.Vector4(); // Temporary screen bounds for one actor elevation.
   const participantFrustum = new THREE.Frustum(); // Conservative game-camera bounds for source meshes.
@@ -1931,7 +2022,10 @@
     // draw even when matrixWorld currently projects outside this viewport.
     // It is unsafe to cull these meshes against the current matrix alone.
     const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
-    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+    // An identical snapshot is no alternate pose: the cull test against matrixWorld already covers that
+    // draw. Keeps every avatar portrait (they publish the contract too) cullable in the normal case.
+    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true
+      && !(object.matrixWorld && parity.visibleMatrixWorld.equals?.(object.matrixWorld));
   }
 
   // InstancedMeshes cannot normally leave a replay: r128 bounds them by their
@@ -2011,6 +2105,46 @@
       || hasLayer(object, PNG_OCCLUDER_LAYER) || isProtectedCover(object))) return false;
     autoInertReplayCount++;
     return true;
+  }
+
+  // Colour-only VFX in colourless depth submissions. Several replay draws run
+  // with the colour mask locked off (held depth rebuild, gear-depth recovery,
+  // x-ray shell depth). A visible descendant of held gear whose materials
+  // write neither depth nor stencil cannot change a pixel there — weapon
+  // enchantment motes (combat/weapon-enchantment-vfx.js, up to 24 per blade
+  // plane) are the large case: with an enchanted dual-wield flail they were
+  // hundreds of no-op draw calls a frame. Hidden for exactly those submissions;
+  // every colour pass still draws them. The material state is read at draw
+  // time, after the depth-material transactions, so anything those force to
+  // write depth stays.
+  let colorOnlyDepthSkipEnabled = true; // A/B switch: HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false).
+  let colorOnlyDepthSkips = 0; // Lifetime count of draws skipped by the rule above (snapshot()).
+  const colorOnlyScratch = []; // Reused per colourless submission.
+  function isColorOnlyHeldVfx(node) {
+    if (!(node.isSprite || node.isMesh || node.isPoints) || node.children?.length) return false;
+    if (heldRegistry.has(node) || waterOccludedRegistry.has(node)) return false; // Gear parts have their own depth rules.
+    if (node.onBeforeRender && node.onBeforeRender !== objectProto.onBeforeRender) return false;
+    const material = node.material;
+    const ignoreAlphaTest = !node.isMesh; // Same cutout rule as isAutoDepthReplayInert.
+    if (Array.isArray(material) ? !material.length || !material.every(m => materialLeavesDepthAndStencil(m, ignoreAlphaTest)) : !materialLeavesDepthAndStencil(material, ignoreAlphaTest)) return false;
+    return !(node.isMesh && (pngDepthRegistry.has(node) || protectedCoverRegistry.has(node) || tintCoverRegistry.has(node)
+      || hasLayer(node, PNG_OCCLUDER_LAYER) || isProtectedCover(node)));
+  }
+  // Call only while the colour mask is locked off; restore with restoreVisibility().
+  function hideColorOnlyHeldVfx(scene) {
+    if (!colorOnlyDepthSkipEnabled || !scene) return null;
+    colorOnlyScratch.length = 0;
+    for (const root of collectVisible(heldRegistry, scene)) {
+      if (!root.children?.length) continue;
+      root.traverseVisible(node => {
+        if (node !== root && isColorOnlyHeldVfx(node)) colorOnlyScratch.push(node);
+      });
+    }
+    if (!colorOnlyScratch.length) return null;
+    colorOnlyDepthSkips += colorOnlyScratch.length;
+    const hidden = hideObjects(colorOnlyScratch);
+    colorOnlyScratch.length = 0;
+    return hidden;
   }
 
   function replayFrustumIntersects(object, instanceSphere = undefined) {
@@ -2118,12 +2252,15 @@
     const near = Number(camera.near) || 0;
     function includeBounds(mesh) {
       const geometry = mesh?.geometry; // Used to project one held mesh or one visible child with a live enchantment emitter.
-      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
-        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
+      const skinned = !!mesh?.isSkinnedMesh && skinnedScissorEnabled; // Bounded per bone (forEachSkinnedBox).
+      if (!geometry || (mesh.isSkinnedMesh && !skinned) || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
+        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh && !skinned ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
         return false;
       }
-      if (!geometry.boundingBox) geometry.computeBoundingBox();
-      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      if (!skinned) {
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      }
       const parity = mesh.__hobunjiXrayBoundParity;
       const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.()
         ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
@@ -2131,19 +2268,26 @@
       // each tool, NPC hand and foot during every projected x-ray bounds test.
       for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
         const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
-        scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
-        const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
-        if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
-        const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
-        if (dungeonRise > 0) {
-          const lateral = .55;
-          scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
-          scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
-          scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
-        }
-        if (!includeBox(scissorBox)) return false;
+        if (skinned) {
+          const failure = forEachSkinnedBox(mesh, matrix, (box, skinMatrix) => includeLocalBox(mesh, box, skinMatrix));
+          if (failure) { lastScissorFailureReason = failure; return false; }
+        } else if (!includeLocalBox(mesh, geometry.boundingBox, matrix)) return false;
       }
+      if (skinned) skinnedScissorBounds++;
       return true;
+    }
+    function includeLocalBox(mesh, localBox, matrix) {
+      scissorBox.copy(localBox).applyMatrix4(matrix);
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
+      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
+      if (dungeonRise > 0) {
+        const lateral = .55;
+        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
+      }
+      return includeBox(scissorBox);
     }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
@@ -3346,6 +3490,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes) : null; // Retain only depth-relevant sprites, cover, and missing-ground leaves.
         let backgroundHidden = null; // Only the colorless depth submission drops the visual horizon; the world and final depth restore retain it.
+        let colorOnlyHidden = null; // Held-gear VFX with no depth/stencil writes: no-ops while the colour mask is locked.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
@@ -3355,11 +3500,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           backgroundHidden = backgroundMeshes.length && !supplementDepth ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
           camera.layers.mask = originalCameraMask;
+          if (canLockColorMask) colorOnlyHidden = hideColorOnlyHeldVfx(scene);
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          if (colorOnlyHidden) restoreVisibility(colorOnlyHidden);
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (backgroundHidden) restoreVisibility(backgroundHidden);
           if (patchCulled) restoreVisibility(patchCulled);
@@ -3437,10 +3584,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const gearDepthStates = prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true);
         colorBuffer.setMask(false);
         colorBuffer.setLocked(true);
+        let gearColorOnly = null; // Read after the forced-depth transaction above.
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
+          gearColorOnly = hideColorOnlyHeldVfx(scene);
           rawRender.call(renderer, scene, camera);
         } finally {
+          if (gearColorOnly) restoreVisibility(gearColorOnly);
           colorBuffer.setLocked(false);
           colorBuffer.setMask(true);
           if (gearDepthStates) restoreMaterialStates(gearDepthStates);
@@ -3586,18 +3736,21 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return { depth, shell };
   }
 
-  function withShellDepthColorMask(colorBuffer, draw) {
+  function withShellDepthColorMask(colorBuffer, draw, scene = null) {
     // A locked WebGL color mask stops writes even when ordinary opaque world
     // materials retain colorWrite:true. The callback is synchronous, and a
     // failed draw must never leave the next color/shell pass muted.
     if (!colorBuffer?.setMask || !colorBuffer?.setLocked) return draw();
+    let colorOnly = null; // Held-gear VFX that cannot write anything in this colourless draw.
     try {
       colorBuffer.setMask(false);
       colorBuffer.setLocked(true);
+      colorOnly = hideColorOnlyHeldVfx(scene);
       const result = draw();
       shellMaskedDepthDraws++;
       return result;
     } finally {
+      if (colorOnly) restoreVisibility(colorOnly);
       colorBuffer.setLocked(false);
       colorBuffer.setMask(true);
     }
@@ -3709,7 +3862,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           backgroundHidden = backgroundMeshes.length ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
-          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           nonGroundDepthReplayCount++;
         } finally {
           if (backgroundHidden) restoreVisibility(backgroundHidden);
@@ -3746,12 +3899,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (nearToken && nearReplay.restore(renderer, nearToken, scissorActive ? scissorRect : null)) {
             // Saved depth is back; add the x-ray parts' own forced depth, as the full redraw below would have.
             camera.layers.mask = HELD_OVERLAY_MASK;
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           } else {
             if (nearToken) nearReplayFallbacks++;
             camera.layers.mask = MASK_ALL;
             renderer.clearDepth();
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera)); // The one original-depth transaction already covers the final unfiltered restore.
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene); // The one original-depth transaction already covers the final unfiltered restore.
           }
         }
       } finally {
@@ -3980,7 +4133,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4068,6 +4221,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
+    setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
+    setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },

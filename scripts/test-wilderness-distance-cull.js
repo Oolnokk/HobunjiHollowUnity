@@ -252,13 +252,18 @@ assert.equal(attributes['aria-pressed'], 'false', 'accessible control state trac
 cullButton.click();
 assert.equal(api.snapshot().enabled, true, 'second tap re-enables the runtime culler');
 assert.equal(attributes['aria-pressed'], 'true', 'accessible state follows the live culler');
-const batchIndex = game.indexOf('const restoreZonePropBatches = window.ZonePropRenderBatches?.suspendForRender');
-const distanceIndex = game.indexOf('const restoreWildernessDistance = window.WildernessDistanceCull?.suspendForRender');
-const renderTryIndex = game.indexOf('        try {\n        // Frame-scoped whole-actor suppression', distanceIndex);
-assert(batchIndex >= 0 && distanceIndex > batchIndex && renderTryIndex > distanceIndex,
-  'distance cull begins after prop batching, before every world render pass');
-const releaseIndex = game.indexOf('restoreWildernessDistance?.();');
-const wallReleaseIndex = game.indexOf('restoreWallVisuals?.();', releaseIndex);
-assert(releaseIndex > renderTryIndex && wallReleaseIndex > releaseIndex,
-  'distance cull is restored by renderWorldPasses finally before wall/prop restore');
+{ // Executes the shipped world render pipeline (js/world-render-pipeline.js).
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  const events = h.frame();
+  const at = (kind, id) => events.findIndex(e => e.kind === kind && e.id === id);
+  const firstRender = events.findIndex(e => e.kind === 'render');
+  assert(at('suspend', 'zone-prop-batches') >= 0 && at('suspend', 'wilderness-distance-cull') > at('suspend', 'zone-prop-batches')
+    && firstRender > at('suspend', 'wilderness-distance-cull'),
+    'distance cull begins after prop batching, before every world render pass');
+  assert(at('restore', 'wilderness-distance-cull') > events.findLastIndex(e => e.kind === 'render')
+    && at('restore', 'instanced-view-cull') > at('restore', 'wilderness-distance-cull')
+    && at('restore', 'zone-prop-batches') > at('restore', 'wilderness-distance-cull'),
+    'distance cull is restored after the last pass, before wall/prop restore');
+}
 console.log('PASS wilderness distance cull: pre-split terrain sources, terrain hooks/bucket bounds, geographic owner names, explicit opt-outs, batches, chunks, instances, exclusions, streaming, hysteresis, camera, mobile A/B, restore and fail-open');

@@ -96,9 +96,12 @@ for (const correction of [-Math.PI * 0.85, 0.7, Math.PI * 0.95]) {
 
 // Exercise the production render wrapper, including the case where pose composition
 // fails BEFORE WebGLRenderer.render (which used to bypass the late finally guard).
+// The shipped compose/restore helpers plus the per-render wrapper built from
+// them (used when js/render-hooks.js is absent; with it the same helpers run as
+// a once-per-world-frame hook, see scripts/test-render-hooks.js).
 const wrapperSource = between(composerSource,
-  '    proto.render = function composedPlayerBodyRender(scene, camera) {',
-  '    // held-object-render-order.js'); // The actual render owner, not a reimplementation.
+  '  function playerBodyRenderApplies(scene) {',
+  '  // ── end of render-time composition ──'); // The actual render owner, not a reimplementation.
 let temporaryYaw = 0; // Represents a render-scoped visual rotation that must never persist.
 let failDuringPose = false; // Deliberately throws after the visual correction has registered its undo.
 let failDuringDraw = false; // Also checks the existing WebGL error path.
@@ -112,7 +115,7 @@ const renderWrapper = new Function(
   'originalRender', 'playerMesh', 'applyRenderedFacingDeadzone',
   'applyPlayerHeadAim', 'applyPlayerNeckYawLimit', 'window', 'performance', 'expireStaleChannels', 'postHeadAimHooks', 'isDescendantOf', 'pantsCalls', 'readYaw', 'readKnee',
   'let renderSequence = 0, unrelatedSceneSkips = 0, lastRenderDebug = null, pendingCapture = null; const playerLegHandle = { pants: { update(renderOnly) { pantsCalls.push({ renderOnly, yaw: readYaw(), knee: readKnee() }); } } }; const proto = {};'
-    + wrapperSource + '\nproto.render.getDebug = () => lastRenderDebug; proto.render.getSkipCount = () => unrelatedSceneSkips; return proto.render;'
+    + wrapperSource + '\nproto.render = makeLegacyComposerRender(originalRender); proto.render.getDebug = () => lastRenderDebug; proto.render.getSkipCount = () => unrelatedSceneSkips; return proto.render;'
 )(
   () => { drawCalls++; if (failDuringDraw) throw new Error('synthetic render failure'); return 'drawn'; },
   wrappedPlayer, (_camera, undo) => {
