@@ -41,11 +41,14 @@
 
       <section>
         <h2>Mode</h2>
-        <div class="modes" style="grid-template-columns:repeat(4,1fr)">
+        <div class="modes" style="grid-template-columns:repeat(3,minmax(0,1fr))">
           <button data-mode="transform" class="active">Base transform</button>
           <button data-mode="body">Grid only</button>
           <button data-mode="fit">Species fit</button>
           <button data-mode="preview">Preview</button>
+          <button data-mode="protect">Protect pixels</button>
+          <button data-mode="headband">Band spline</button>
+          <button data-mode="rear-paint">Paint rear</button>
         </div>
         <div id="help" class="help" style="margin-top:6px"></div>
       </section>
@@ -86,6 +89,78 @@
           <button id="redo">Redo</button>
         </div>
         <div class="small">Orange is the normalized starting-sprite source, green is the recorded base transform, and blue adds the local 6×6 corrections.</div>
+      </section>
+
+      <section id="contourFitSection">
+        <h2>Automatic torso outline fit</h2>
+        <div class="row"><label class="small"><input id="contourEnabled" type="checkbox"> fit garment to torso silhouette</label><label class="small"><input id="contourShowOutline" type="checkbox" checked> trace outlines</label></div>
+        <div class="field"><label for="contourStrength">Fit strength</label><input id="contourStrength" type="range" min="0" max="1" step="0.05" value="1"></div>
+        <div class="field"><label for="contourFeather">Protected-area falloff (pixels)</label><input id="contourFeather" type="range" min="4" max="40" step="1" value="14"></div>
+        <div class="row"><button type="button" id="contourPaintMode">Paint protected pixels</button><button type="button" id="contourEraseMode">Erase protection</button></div>
+        <div class="field"><label for="contourBrush">Brush radius (pixels)</label><input id="contourBrush" type="range" min="1" max="24" step="1" value="4"></div>
+        <div class="row"><button type="button" id="contourClear">Clear protected mask</button><button type="button" id="contourMaskPng">Export mask PNG</button></div>
+        <div id="contourStatus" class="small" aria-live="polite">Load a body garment to trace its donor and target torsos.</div>
+        <div class="small">Select <b>Protect pixels</b>, then paint directly over the neck opening or any artwork that must stay fixed. Transparent holes can be protected too. The cyan lines show the target torso edges, the orange lines the starting torso. Protected pixels are tinted magenta. Use a wider falloff for smooth fabric transitions. Every garment/source/target combination saves its own mask; exports bake the result into each PNG layer.</div>
+      </section>
+
+      <section id="headbandSplineSection" hidden>
+        <h2>Seven-point headband / flower crown spline</h2>
+        <div class="row"><label class="small"><input id="headbandEnabled" type="checkbox"> Deform artwork along editable spline</label></div>
+        <div class="field"><label for="headbandEditCurve">Drag which seven nodes?</label>
+          <select id="headbandEditCurve"><option value="source">Map original band (orange)</option><option value="target" selected>Shape fitted band (cyan)</option></select>
+        </div>
+        <div class="field"><label for="headbandView">Head plane to edit</label><select id="headbandView"><option value="front">Front head</option><option value="back">Backplane head (rear)</option></select></div>
+        <div class="row"><button type="button" id="headbandFlipH">Flip selected curve horizontally</button><button type="button" id="headbandFlipV">Flip selected curve vertically</button></div>
+
+        <div class="headband-whole-controls" id="headbandWholeSection">
+          <h2>Whole spline · selected curve</h2>
+          <div class="small">Move, resize or rotate all seven nodes together around the curve's center. Applies to the selected original/target curve on the chosen front/back plane.</div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeX">X position (px)</label>
+            <input id="headbandWholeX" type="range" min="-120" max="120" step="0.1" value="0">
+            <input id="headbandWholeXNumber" type="number" min="-120" max="120" step="0.01" value="0" aria-label="X position px">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeY">Y position (px)</label>
+            <input id="headbandWholeY" type="range" min="-120" max="120" step="0.1" value="0">
+            <input id="headbandWholeYNumber" type="number" min="-120" max="120" step="0.01" value="0" aria-label="Y position px">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeScaleX">Width (%)</label>
+            <input id="headbandWholeScaleX" type="range" min="20" max="250" step="0.1" value="100">
+            <input id="headbandWholeScaleXNumber" type="number" min="20" max="250" step="0.01" value="100" aria-label="Width %">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeScaleY">Height (%)</label>
+            <input id="headbandWholeScaleY" type="range" min="20" max="250" step="0.1" value="100">
+            <input id="headbandWholeScaleYNumber" type="number" min="20" max="250" step="0.01" value="100" aria-label="Height %">
+          </div>
+          <div class="headband-whole-field">
+            <label for="headbandWholeRotation">Rotation (°)</label>
+            <input id="headbandWholeRotation" type="range" min="-60" max="60" step="0.1" value="0">
+            <input id="headbandWholeRotationNumber" type="number" min="-60" max="60" step="0.01" value="0" aria-label="Rotation °">
+          </div>
+          <div class="row"><label class="small"><input type="checkbox" id="headbandWholeDrag"> Drag whole curve instead of individual nodes</label></div>
+          <div class="row"><button type="button" id="headbandWholeReset">Reset whole transform</button><button type="button" id="headbandWholeBake">Bake as new baseline</button></div>
+          <div id="headbandWholeStatus" class="small" aria-live="polite">Whole-curve position, width, height and rotation are saved with this garment.</div>
+          <div class="small">The editor limits any edit that would leave the sprite or reverse the left-to-right node order. Individual node dragging or flipping bakes the current whole-curve transform as its new baseline.</div>
+        </div>
+        <div class="row"><button type="button" id="headbandTraceSource">Auto-map original</button><button type="button" id="headbandTraceTarget">Trace authored target</button></div>
+        <div class="row"><button type="button" id="headbandCopy">Copy original to target</button><button type="button" id="headbandReset">Reset both curves</button></div>
+        <div id="headbandRearSection" hidden>
+          <h2>Backplane sprite authoring</h2>
+          <div class="row"><button type="button" id="headbandRearFromFront">Create rear from fitted front</button><button type="button" id="headbandRearFromExisting">Copy existing rear sprite</button></div>
+          <div class="row"><button type="button" id="headbandRearBlank">Blank rear canvas</button><button type="button" id="headbandRearRemove">Remove authored rear</button></div>
+          <div class="field"><label for="headbandRearImport">Import existing rear PNG (native game orientation)</label><input type="file" id="headbandRearImport" accept="image/png"></div>
+          <div class="row"><button type="button" id="headbandRearExport">Export rear PNG (game orientation)</button><button type="button" id="headbandRearEdit">Paint rear pixels</button></div>
+          <div class="row"><button type="button" id="headbandRearDraw">Draw</button><button type="button" id="headbandRearErase">Erase</button><button type="button" id="headbandRearSample">Pick color</button></div>
+          <div class="row"><label class="small">Brush color <input id="headbandRearColor" type="color" value="#a8d0a7" aria-label="Rear sprite paint color"></label><label class="small">Brush radius <input id="headbandRearBrush" type="range" min="1" max="18" step="1" value="2" aria-label="Rear sprite brush radius"></label></div>
+          <div class="row"><label class="small"><input type="checkbox" id="headbandRearFullPlane"> Show full backplane body reference</label></div>
+          <div id="headbandRearStatus" class="small" aria-live="polite">The actual game back-facing head is the tracing reference. Create or import a rear sprite to paint.</div>
+          <div class="small">Painting is in the *visible backplane* orientation. Export reverses the game's behind-view horizontal flip automatically. A distinct <code>behindImage</code> is included in the fitted layers ZIP and the 3D preview. The front image remains unchanged. Use Backplane + Band spline to shape its own seven-node rear curve; use Paint rear to edit unwarped pixels.</div>
+        </div>
+        <div id="headbandStatus" class="small" aria-live="polite">Choose a headband, then drag seven points in Band spline mode.</div>
+        <div class="small">Start with the normal 6×6 transform, then switch to <b>Band spline</b>. Map seven orange points across the original band or crown, then drag seven cyan points into the desired curved position. The whole sprite bends with the spline, preserving its transparency and pixel-art edges. Source and target curves are saved independently for each garment/species pair. Works for headbands, flower crowns and other narrow headwear; ordinary hats and hoods retain their existing grid fitting unless explicitly enabled.</div>
       </section>
 
       <section id="bodyMaskSection">

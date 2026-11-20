@@ -182,7 +182,19 @@
   }
 
   function installReticleRenderHook() {
-    const prototype = window.THREE?.WebGLRenderer?.prototype;
+    // The reticle material choice is idempotent within a frame: once per
+    // world frame (js/render-hooks.js) instead of on every pass.
+    if (window.RenderHooks?.register) {
+      window.RenderHooks.register({
+        id: 'held-seed-reticle',
+        owner: 'held-seed-action-bridge.js',
+        order: window.RenderHooks.ORDER.HELD_SEED_RETICLE,
+        scope: 'frame',
+        before: ctx => applyPlantReticle(ctx.scene),
+      });
+      return;
+    }
+    const prototype = window.THREE?.WebGLRenderer?.prototype; // Fallback for pages without render-hooks.js.
     if (!prototype || prototype.__heldSeedReticleHookInstalled || typeof prototype.render !== 'function') return;
     previousRendererRender = prototype.render; // Used to chain after PlayerBodyTransformComposer/other renderer wrappers already installed by the loader.
     prototype.render = function heldSeedAwareRender(scene, camera, ...rest) {

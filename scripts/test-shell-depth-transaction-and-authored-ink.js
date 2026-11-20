@@ -115,9 +115,10 @@ function fixture(failAt=0, useGpuMask=false) {
     restoreVisibility(states){for(const [mesh,v]of states)mesh.visible=v;},
     MASK_ALL:0xffffffff,SHELL_MASK:2,
     nearReplaySupport:()=>null, // No depth-snapshot support in this fake renderer: the original redraw path runs.
+    hideColorOnlyHeldVfx:()=>null, // Exercised by test-held-color-only-depth-skip.js.
   }; // Only production dependencies that execute when replay scissoring is disabled.
   const run=new Function('deps','getCounters',[
-    'const {nearReplaySupport,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,MASK_ALL,SHELL_MASK}=deps;',
+    'const {nearReplaySupport,rawRender,collectGroundElevationMaterials,setGroundElevationFilter,collectShellReplayCandidates,prepareNonGroundDepthMaterials,forEachMaterial,saveMaterialState,restoreMaterialStates,hideNonXrayShellMeshes,restoreVisibility,hideColorOnlyHeldVfx,MASK_ALL,SHELL_MASK}=deps;',
     'const xrayRule=()=>"original"; // Preserve the original shell test scope; horizon exclusions have their own coverage.',
     'let internalReplay=false,fullscreenReplayCount=0,shellSceneTraversalsAvoided=0,nonGroundDepthReplayCount=0,shellXrayPassCount=0,shellXrayMeshDrawCount=0,shellMaskedDepthDraws=0;',
     block('  function withShellDepthColorMask(', '  // Replays shell outlines for the same meshes'),

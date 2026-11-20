@@ -257,6 +257,7 @@
 
   function inspectMesh(mesh) {
     if (!mesh?.isMesh) return;
+    if (mesh.userData?.hobunjiRenderProxy === true) { stats.renderProxiesSkipped = (stats.renderProxiesSkipped || 0) + 1; return; } // A merged render copy of already-final member vertices (zone-prop-render-batches.js): re-unwrapping it would rebuild its geometry.
     stats.inspectedMeshes++;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Used to repair every natural-surface material slot on one terrain mesh.
     for (let index = 0; index < materials.length; index++) {

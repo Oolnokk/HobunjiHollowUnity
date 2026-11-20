@@ -45,30 +45,53 @@
     };
   }
 
-  function materialFor(THREE, oreKey, oreDefs) {
+  // Faceted rocks (js/faceted-rocks.js) map the whole PNG onto each flat face,
+  // so their map is used once per face (repeat 1, clamped) instead of the
+  // mounds' 0.7 world tiling; the drawn border must reach every face edge.
+  function setFacetTextureOptions(texture, THREE) {
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.repeat.set(1, 1);
+    if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+    else if (THREE.sRGBEncoding != null) texture.encoding = THREE.sRGBEncoding; // Three r128 support.
+    return texture;
+  }
+  let facetStoneMap = null; // Shared once-per-face stone map.
+  function facetStone(THREE) {
+    if (!facetStoneMap) facetStoneMap = setFacetTextureOptions(new THREE.TextureLoader().load(sourceUrl()), THREE);
+    return facetStoneMap;
+  }
+
+  function materialFor(THREE, oreKey, oreDefs, options = {}) {
+    const faceted = options.faceted === true;
     const key = oreDefs?.[oreKey] ? oreKey : 'stone'; // Only valid ore keys can affect the rock.
-    if (materials.has(key)) return materials.get(key);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff, map: baseStone(THREE), roughness: 0.94,
-    }); // Original lit metal-like rock treatment, before the stone-island redesign.
+    const cacheKey = faceted ? 'faceted:' + key : key;
+    if (materials.has(cacheKey)) return materials.get(cacheKey);
+    const textureOptions = faceted ? setFacetTextureOptions : setOriginalTextureOptions;
+    // Faceted rocks are unlit like the cliffs: each face shows the PNG's own
+    // drawn shading and border at the same brightness from any side, so the
+    // faces read through their inked edges rather than through lighting.
+    const material = faceted
+      ? new THREE.MeshBasicMaterial({ color: 0xffffff, map: facetStone(THREE) })
+      : new THREE.MeshStandardMaterial({ color: 0xffffff, map: baseStone(THREE), roughness: 0.94 }); // Original lit metal-like rock treatment, before the stone-island redesign.
     material.userData.sharedOreRockMaterial = true; // Removing one cave rock must not dispose shared resources.
-    materials.set(key, material);
-    states.set(key, key === 'stone' ? 'stone' : 'loading');
+    if (faceted) material.userData.facetedRockMaterial = true;
+    materials.set(cacheKey, material);
+    states.set(cacheKey, key === 'stone' ? 'stone' : 'loading');
 
     if (key !== 'stone') {
       const recolorer = window.ToolMetalRecolor; // Already loaded earlier in docs/index.html.
       if (typeof recolorer?.getRecoloredCanvas !== 'function') {
-        states.set(key, 'stone fallback (recolor unavailable)');
+        states.set(cacheKey, 'stone fallback (recolor unavailable)');
         window.__farmLog?.('[ore rocks] Missing metal recolorer: ' + key, 'warn', 'assets');
       } else {
         Promise.resolve().then(() => recolorer.getRecoloredCanvas(sourceUrl(), recolorOptions(oreDefs[key], key))).then(canvas => {
-          const texture = setOriginalTextureOptions(new THREE.CanvasTexture(canvas), THREE);
+          const texture = textureOptions(new THREE.CanvasTexture(canvas), THREE);
           texture.needsUpdate = true;
           material.map = texture;
           material.needsUpdate = true;
-          states.set(key, 'ready');
+          states.set(cacheKey, 'ready');
         }).catch(error => {
-          states.set(key, 'stone fallback');
+          states.set(cacheKey, 'stone fallback');
           window.__farmLog?.('[ore rocks] ' + key + ': ' + (error?.message || error), 'warn', 'assets');
         });
       }
@@ -111,6 +134,10 @@
 
   window.OreRockTextures = {
     materialFor, fitRockMesh, smallStoneArt,
+    facetedMaterialFor: (THREE, oreKey, oreDefs) => materialFor(THREE, oreKey, oreDefs, { faceted: true }),
+    // Body tint for an ore rock drawn like the farm rocks (natural 'rocks' surface): the ore's
+    // rock-metal colour, or the farm's grey for plain stone.
+    rockTintFor: (oreKey, oreDefs) => { const ore = oreDefs?.[oreKey]; return ore?.rockMetalHex || ore?.hex || '#808080'; },
     debugSnapshot: () => ({ ...Object.fromEntries(states), _surfaceMapping: { mode: 'legacy continuous UV', ...uvStats } }),
   };
 })();

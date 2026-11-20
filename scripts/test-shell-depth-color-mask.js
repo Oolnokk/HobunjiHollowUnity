@@ -29,10 +29,12 @@ const dependency = {
   setSurfaceOcclusionDepthOnly: (material, enabled) => { material.depthOnly = enabled; },
   isProtectedCover: object => object.kind === 'cover',
   useSpriteOcclusionCutout: (object, material) => { material.cutoutSeen = true; },
+  hideColorOnlyHeldVfx: () => null, // Exercised by test-held-color-only-depth-skip.js.
+  restoreVisibility() {},
 };
 
 const runtime = new Function('d', [
-  'const {objectProto,hasLayer,PNG_OCCLUDER_LAYER,forEachMaterial,saveMaterialState,setSurfaceOcclusionDepthOnly,isProtectedCover,useSpriteOcclusionCutout}=d;',
+  'const {objectProto,hasLayer,PNG_OCCLUDER_LAYER,forEachMaterial,saveMaterialState,setSurfaceOcclusionDepthOnly,isProtectedCover,useSpriteOcclusionCutout,hideColorOnlyHeldVfx,restoreVisibility}=d;',
   'let shellOpaqueMaterialWritesAvoided=0, shellMaskedDepthDraws=0;',
   section('  function isStillVisibleForShellReplay(', '  function collectShellReplayCandidates('),
   section('  function prepareNonGroundDepthMaterials(', '  function prepareCutoutDepthMaterials('),

@@ -137,6 +137,44 @@
     return metrics.center.clone().add(new state.deps.THREE.Vector3(xOffset, yOffset, 0));
   }
 
+  // Popup text materials are pooled, not disposed. Every damage number, label,
+  // prompt and stacked row used to create one MeshBasicMaterial and dispose it
+  // when it faded; whenever the last live one went, three.js deleted their shared
+  // shader program and the next popup compiled and linked it again. In one
+  // headless bandit fight that program was rebuilt 35 times (0 while idle): a
+  // shader compile per hit, which is slow on ANGLE/D3D11 and shows as stutter.
+  // A released material waits here (still holding the program) and only its map
+  // and opacity change on reuse; r128 does not rebuild a program for a new map.
+  const POPUP_MATERIAL_POOL_MAX = 32;
+  const popupMaterialPool = [];
+  const popupMaterialStats = { created: 0, reused: 0, disposed: 0 };
+  const poolableMaterials = new WeakSet(); // Materials made by popupTextMaterial (the only ones the pool accepts).
+  function popupTextMaterial(THREE, texture) {
+    const pooled = popupMaterialPool.pop();
+    if (pooled) {
+      popupMaterialStats.reused++;
+      pooled.map = texture;
+      pooled.opacity = 1;
+      pooled.visible = true;
+      return pooled;
+    }
+    popupMaterialStats.created++;
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    poolableMaterials.add(material);
+    return material;
+  }
+  function releasePopupTextMaterial(material) {
+    if (!material) return;
+    if (poolableMaterials.has(material) && popupMaterialPool.length < POPUP_MATERIAL_POOL_MAX
+        && !popupMaterialPool.includes(material)) {
+      material.map = null; // The popup's own texture is disposed by its owner; the next popup brings a new one.
+      popupMaterialPool.push(material);
+      return;
+    }
+    popupMaterialStats.disposed++;
+    material.dispose();
+  }
+
   function makePlane(text, kind, layout) {
     const THREE = state.deps.THREE;
     const size = layout.worldHeight;
@@ -163,7 +201,7 @@
     texture.minFilter = THREE.LinearFilter;
     const aspect = canvas.width / canvas.height;
     const geometry = new THREE.PlaneGeometry(aspect, 1);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const material = popupTextMaterial(THREE, texture);
     const plane = new THREE.Mesh(geometry, material);
     plane.scale.setScalar(size);
     plane.renderOrder = POPUP_RENDER_ORDER;
@@ -212,7 +250,7 @@
     texture.minFilter = THREE.LinearFilter;
     const aspect = canvas.width / canvas.height;
     const geometry = new THREE.PlaneGeometry(aspect, 1);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const material = popupTextMaterial(THREE, texture);
     const plane = new THREE.Mesh(geometry, material);
     plane.scale.setScalar(size);
     plane.renderOrder = 1200;
@@ -277,7 +315,7 @@
     texture.minFilter = THREE.LinearFilter;
     const aspect = canvas.width / canvas.height; // Used to prevent horizontal stretching of mixed-size text.
     const geometry = new THREE.PlaneGeometry(aspect, 1); // Used as the row's camera-facing surface.
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }); // Used to keep prompts readable through their target.
+    const material = popupTextMaterial(THREE, texture); // Used to keep prompts readable through their target.
     const plane = new THREE.Mesh(geometry, material); // Added to the active scene by setInteractionPrompts.
     plane.scale.setScalar(size);
     plane.renderOrder = 1200;
@@ -320,7 +358,7 @@
     texture.minFilter = THREE.LinearFilter;
     const aspect = canvas.width / canvas.height;
     const geometry = new THREE.PlaneGeometry(aspect, 1);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const material = popupTextMaterial(THREE, texture);
     const plane = new THREE.Mesh(geometry, material);
     const totalHeight = layout.worldHeight * Math.max(2.7, chars.length * 0.82); // Each stacked glyph reads at roughly the same scale as one centered reward-list row.
     plane.scale.setScalar(totalHeight);
@@ -346,7 +384,7 @@
       return;
     }
     event.geometry.dispose();
-    event.material.dispose();
+    releasePopupTextMaterial(event.material);
     event.texture.dispose();
   }
 
@@ -1080,6 +1118,7 @@
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
       infoLists: [...state.infoLists.keys()],
       rewardReadout: window.RewardReadout?.debugSnapshot?.() || null, // Mobile debug surfaces can inspect the five visible and remaining queued gains.
+      popupMaterials: { ...popupMaterialStats, pooled: popupMaterialPool.length }, // Reuse keeps the shared shader program alive between popups.
     }),
   };
   window.WorldPopupText = api;

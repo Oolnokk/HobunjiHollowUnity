@@ -58,7 +58,7 @@ function positionedPatchOnly(){
 function composeBodyExport(baseCanvas,patchCanvas,transform,fitState=null){
   const positioned=positionedPatchCanvas(baseCanvas,patchCanvas,transform);
   if(!positioned)return null;
-  const warpedPatch=api.warpBehindPatchCanvas(positioned,fitState); // Apply the exact export fit snapshot to corrective pixels only.
+  const warpedPatch=api.warpBehindPatchCanvas(positioned,fitState,true); // Apply the exact export fit snapshot to corrective pixels only.
   const out=document.createElement('canvas');out.width=baseCanvas.width;out.height=baseCanvas.height;
   const context=out.getContext('2d',{alpha:true});context.imageSmoothingEnabled=false;
   context.drawImage(baseCanvas,0,0); // Critical invariant: the selected target-species body raster is copied 1:1 and is never passed through the clothing deformation grid.
@@ -77,7 +77,7 @@ function currentWorkflowSource(){
 function currentWorkflowOutput(){
   const source=currentWorkflowSource();
   if(!source)return null;
-  return api.warpBehindPatchCanvas(source); // Patch-author output preview mirrors the same patch-only/body vs composite/clothing source that is routed into the main workflow.
+  return api.warpBehindPatchCanvas(source,null,currentSource?.descriptor?.kind==='body'); // Patch-author output preview mirrors the same patch-only/body vs composite/clothing source that is routed into the main workflow.
 }
 function currentFinishedBehindOutput(fitState=null){
   const descriptor=currentSource?.descriptor||null;

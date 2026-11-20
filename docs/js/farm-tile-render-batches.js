@@ -24,7 +24,7 @@
   if (window.FarmTileRenderBatches) return;
 
   const CELL_TILES = 8;
-  const MATERIAL_ID_LAYER = 3; // game.js _markTerrainEdgeId / TerrainRenderChunks.
+  const MATERIAL_ID_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // game.js _markTerrainEdgeId / TerrainRenderChunks.
   const GROUND_TAGS = ['mapEditorTerrain', 'hobunjiGroundSurface', 'hobunjiGroundXray', 'hachutuGroundRoot', 'cavernWalkableFloor'];
   let enabled = true;
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }

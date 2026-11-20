@@ -193,6 +193,34 @@ listeners.get('DOMContentLoaded')();
 assert.deepEqual(Array.from(snapshot().visible, entry => entry.text), ['+3 Willow Leaf', '+5 Foraging XP']);
 hud.clear();
 
+// Popup text materials are pooled, not disposed: disposing the last one let three.js
+// delete their shared shader program, so the next damage number recompiled it.
+{
+  const added = [];
+  const realAdd = scene.add;
+  scene.add = function (plane) { added.push(plane); return realAdd.call(this, plane); };
+  world.clear();
+  const pooledBefore = world.debugSnapshot().popupMaterials;
+  world.showChange('damage', -7, { text: '-7', mode: 'floatPlus', root: playerRoot });
+  flushMicrotasks();
+  const first = added.at(-1);
+  assert.ok(first?.material, 'a damage popup plane was added');
+  const firstMap = first.material.map;
+  world.update(now + 60000); // Long past its lifetime: disposed.
+  world.showChange('damage', -9, { text: '-9', mode: 'floatPlus', root: playerRoot });
+  flushMicrotasks();
+  const second = added.at(-1);
+  assert.notEqual(second, first, 'a new popup plane');
+  assert.equal(second.material, first.material, 'the faded popup\'s material (and its compiled program) is reused');
+  assert.ok(second.material.map && second.material.map !== firstMap, 'with the new popup\'s own texture');
+  assert.equal(second.material.opacity, 1, 'opacity reset for the new popup');
+  const pooled = world.debugSnapshot().popupMaterials;
+  assert.ok(pooled.reused > pooledBefore.reused, 'reuse counted');
+  assert.equal(pooled.disposed, 0, 'pooled materials are never disposed while the pool has room');
+  world.clear();
+  scene.add = realAdd;
+}
+
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Ensures the browser loads the HUD before the world popup calls it.
 assert(html.indexOf('js/reward-readout.js?') < html.indexOf('js/world-popup-text.js?'));
 const css = fs.readFileSync('docs/style.css', 'utf8'); // Ensures missing HUD styling cannot silently ship.

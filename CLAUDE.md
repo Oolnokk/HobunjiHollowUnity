@@ -43,6 +43,24 @@ old call site that the existing extractions do.
 This is a standing instruction, not a one-off: it applies to every session
 that edits `game.js`, not just the one it was added in.
 
+## Visual code
+
+Any change that affects what is drawn starts at two documents:
+`docs/architecture/visual-authoring.md` (the mandatory contract for what each
+component may look like — see the top of this file) and
+`docs/architecture/visual-render-pipeline.md`: pass order and owners
+(`js/world-render-pipeline.js`), render-time hooks (`js/render-hooks.js` —
+never wrap `renderer.render` yourself), named layers (`js/render-layers.js`),
+render scopes, and the capture/debug calls that show what each pass drew.
+Extracting more visual clusters out of `game.js` into owners listed there is
+exactly the kind of opportunistic decoupling described above.
+
+Character visuals are written for every character, not just the player:
+NPCs, enemies, creatures, companions and shoulder pets get the same held-item,
+body, terrain and weather presentation through `js/character-visuals.js`
+(enumeration + coverage table) and `js/character-held-tools.js` (holder-scoped
+weapons). See §6 of `docs/architecture/visual-render-pipeline.md`.
+
 ## Headless testing
 
 Use the `headless-game-test` skill before claiming a rendering/behavior

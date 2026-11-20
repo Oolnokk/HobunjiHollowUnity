@@ -54,11 +54,26 @@
     // mesh each (~330 extra draws per pass in a berry zone). Berries are
     // never picked individually — the whole bush group is removed — so
     // nothing needs them as separate objects.
-    const berries = new THREE.Mesh(_mergedBerryGeometry(offsets), new THREE.MeshLambertMaterial({ color }));
+    const berries = new THREE.Mesh(_mergedBerryGeometry(offsets), _berryMaterial(color));
     berries.name = 'wild_berry_cluster';
     group.add(berries);
     group.userData.berryKey = berryKey;
     return group;
+  }
+
+  // One material per berry colour, shared by every bush. Nothing mutates a
+  // single bush's berry material, and js/zone-prop-render-batches.js groups
+  // still props by material id, so per-bush instances kept every cluster in
+  // its own draw call (8 extra draws per pass in a Western Slope view).
+  const _berryMaterials = new Map();
+  function _berryMaterial(color) {
+    let material = _berryMaterials.get(color);
+    if (!material) {
+      material = new THREE.MeshLambertMaterial({ color });
+      material.name = 'wild_berry_shared';
+      _berryMaterials.set(color, material);
+    }
+    return material;
   }
 
   let _berrySphere = null; // Template sphere, shared across bushes; only its arrays are read.

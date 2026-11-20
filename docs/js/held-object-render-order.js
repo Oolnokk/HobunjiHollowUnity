@@ -41,20 +41,20 @@
   }; // Reused only inside the synchronous classifier to avoid one hint-object allocation per mesh.
 
   const LEGACY_HELD_RENDER_ORDER = 1.5;
-  const DEFAULT_LAYER = 0;
-  const SHELL_LAYER = 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
+  const DEFAULT_LAYER = globalThis.HobunjiRenderLayers?.WORLD ?? 0; // Named in js/render-layers.js.
+  const SHELL_LAYER = globalThis.HobunjiRenderLayers?.SHELL_OUTLINE ?? 1; // Existing inverted-hull outline pass; its x-ray replay shares the object's visibility exceptions.
   const SHELL_MASK = (1 << SHELL_LAYER) >>> 0;
-  const MATERIAL_ID_LAYER = 3;
-  const PNG_OCCLUDER_LAYER = 4;
-  const FRONT_PORTRAIT_MASK_LAYER = 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
+  const MATERIAL_ID_LAYER = globalThis.HobunjiRenderLayers?.MATERIAL_SEAM_ID ?? 3; // Named in js/render-layers.js.
+  const PNG_OCCLUDER_LAYER = globalThis.HobunjiRenderLayers?.PNG_OCCLUDER ?? 4; // Named in js/render-layers.js.
+  const FRONT_PORTRAIT_MASK_LAYER = globalThis.HobunjiRenderLayers?.FRONT_PORTRAIT_MASK ?? 24; // Private stencil-only draw for player/NPC front art, separate from public appearance layers.
   const FRONT_PORTRAIT_STENCIL_MASK = 0xFC; // Bits 2..7 identify up to 63 distinct owners; bit 0 stays reserved for water tint.
   const FRONT_PORTRAIT_MAX_OWNERS = 63; // Stencil owner IDs share one draw without hiding weapons in front of unrelated NPCs.
   const FRONT_PORTRAIT_MASK = (1 << FRONT_PORTRAIT_MASK_LAYER) >>> 0; // The camera layer for the one front-portrait stamp pass.
-  const PORTRAIT_WATER_MASK = 1 << 25; // Temporary colorless silhouette for eligible front and rear actor art.
-  const FOOT_WATER_MASK_LAYER = 26; // Used only to stamp procedural feet that should remain subject to translucent water.
-  const WATER_REPLAY_LAYER = 27;
-  const GROUND_REPLAY_LAYER = 28;
-  const HELD_OVERLAY_LAYER = 29;
+  const PORTRAIT_WATER_MASK = 1 << (globalThis.HobunjiRenderLayers?.PORTRAIT_WATER_MASK ?? 25); // Temporary colorless silhouette for eligible front and rear actor art.
+  const FOOT_WATER_MASK_LAYER = globalThis.HobunjiRenderLayers?.FOOT_WATER_MASK ?? 26; // Used only to stamp procedural feet that should remain subject to translucent water.
+  const WATER_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.WATER_REPLAY ?? 27; // Named in js/render-layers.js.
+  const GROUND_REPLAY_LAYER = globalThis.HobunjiRenderLayers?.GROUND_REPLAY ?? 28; // Named in js/render-layers.js.
+  const HELD_OVERLAY_LAYER = globalThis.HobunjiRenderLayers?.HELD_OVERLAY ?? 29; // Named in js/render-layers.js.
   const FOOT_WATER_MASK = (1 << FOOT_WATER_MASK_LAYER) >>> 0;
   const WATER_REPLAY_MASK = (1 << WATER_REPLAY_LAYER) >>> 0;
   const GROUND_REPLAY_MASK = (1 << GROUND_REPLAY_LAYER) >>> 0;
@@ -1861,11 +1861,102 @@
   // rectangle around those meshes leaves the rest of the framebuffer's base
   // depth untouched and stops the GPU re-rasterizing the whole world 3-5
   // extra times per frame while a tool is held. Anything that can't be
-  // bounded conservatively (skinned/instanced/morphed geometry, a corner
-  // behind the camera, a partial viewport) falls back to the old full-screen
-  // passes.
+  // bounded conservatively (instanced/morphed geometry, a corner behind the
+  // camera, a partial viewport) falls back to the old full-screen passes.
+  // Skinned meshes are bounded per bone (skinnedScissorBoxes below).
   const scissorBox = new THREE.Box3();
   const scissorCorner = new THREE.Vector3();
+  // Skinned bodies (neck-rigged portraits, wings, pet overlays). r128 skins a
+  // vertex p as bindMatrixInverse · Σ wᵢ·Bᵢ·bindMatrix·p with Σ wᵢ = 1: a convex
+  // combination of p moved rigidly by each bone that influences it. So the
+  // union of every bone's influenced-vertex box, moved by that bone, contains
+  // the drawn body, and so does the screen rectangle around those corners.
+  // Before this, any wet body portrait in the tint pass forced a full-screen
+  // replay of the whole world (device report: held=skinned-mesh, ~700 extra
+  // draws a frame). Both the bone matrices last uploaded to the GPU and the
+  // current bone.matrixWorld are included, so a skeleton not yet updated this
+  // frame is still covered. Weights summing below 1 pull vertices toward the
+  // mesh origin, which is added then; anything not provably bounded (weights
+  // above 1, out-of-range bone indices, morph targets, a per-draw hook that
+  // can re-pose it) keeps the full-screen fallback.
+  let skinnedScissorEnabled = true; // A/B switch: HeldObjectRenderOrder.setSkinnedScissorEnabled(false).
+  let skinnedScissorBounds = 0; // Lifetime count of skinned meshes bounded instead of forcing full screen (snapshot()).
+  const skinnedInfluenceCache = new WeakMap(); // geometry -> per-bone bind-space boxes, keyed by attribute versions.
+  const skinnedBoneMatrix = new THREE.Matrix4();
+  const skinnedChainMatrix = new THREE.Matrix4();
+  const skinnedOriginBox = new THREE.Box3();
+  function skinnedInfluenceBoxes(geometry, boneCount) {
+    const { position, skinIndex, skinWeight } = geometry.attributes || {};
+    if (!position || !skinIndex || !skinWeight || skinIndex.count < position.count || skinWeight.count < position.count) return { reason: 'skinned-missing-weights' };
+    const key = `${position.version}:${skinIndex.version}:${skinWeight.version}:${position.count}:${boneCount}`;
+    const cached = skinnedInfluenceCache.get(geometry);
+    if (cached?.key === key) return cached;
+    const boxes = new Map(); // bone index -> Box3 of the bind-pose vertices it moves.
+    let reason = null, belowOne = false;
+    for (let v = 0; v < position.count && !reason; v++) {
+      const x = position.getX(v), y = position.getY(v), z = position.getZ(v);
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = k === 0 ? skinWeight.getX(v) : k === 1 ? skinWeight.getY(v) : k === 2 ? skinWeight.getZ(v) : skinWeight.getW(v);
+        if (!(w > 0)) { if (w < 0 || Number.isNaN(w)) reason = 'skinned-weights-unbounded'; continue; }
+        sum += w;
+        const bone = k === 0 ? skinIndex.getX(v) : k === 1 ? skinIndex.getY(v) : k === 2 ? skinIndex.getZ(v) : skinIndex.getW(v);
+        if (!(bone >= 0 && bone < boneCount)) { reason = 'skinned-bone-index'; break; }
+        let box = boxes.get(bone);
+        if (!box) boxes.set(bone, box = new THREE.Box3());
+        box.expandByPoint(scissorCorner.set(x, y, z));
+      }
+      if (sum > 1 + 1e-4) reason = 'skinned-weights-unbounded';
+      else if (sum < 1 - 1e-4) belowOne = true;
+    }
+    const entry = { key, boxes, belowOne, reason };
+    skinnedInfluenceCache.set(geometry, entry);
+    return entry;
+  }
+  function hasPerDrawHook(mesh) {
+    const hook = mesh.onBeforeRender;
+    return typeof hook === 'function' && hook !== THREE.Object3D.prototype.onBeforeRender
+      && !(mesh.__hobunjiXrayBoundParity && mesh.__hobunjiXrayBoundParity.hook === hook);
+  }
+  // Calls include(box, matrix) for each bone box and its skin matrix under one
+  // model pose. Returns a failure reason, or null when every vertex is covered.
+  function forEachSkinnedBox(mesh, poseMatrix, include) {
+    const skeleton = mesh.skeleton, bones = skeleton?.bones;
+    if (!bones?.length || !mesh.bindMatrix || !mesh.bindMatrixInverse) return 'skinned-missing-skeleton';
+    if (hasPerDrawHook(mesh)) return 'skinned-draw-hook'; // e.g. shoulder-pet yaw re-poses the bones at draw time; parity adapters are bounded above.
+    const influence = skinnedInfluenceBoxes(mesh.geometry, bones.length);
+    if (influence.reason) return influence.reason;
+    const uploaded = skeleton.boneMatrices; // What the GPU drew with if the skeleton is not refreshed this frame.
+    let towardOrigin = influence.belowOne;
+    for (const [index, box] of influence.boxes) {
+      for (let source = 0; source < (uploaded?.length >= (index + 1) * 16 ? 2 : 1); source++) {
+        if (source === 0) {
+          const bone = bones[index];
+          if (bone) skinnedBoneMatrix.multiplyMatrices(bone.matrixWorld, skeleton.boneInverses[index]);
+          else skinnedBoneMatrix.copy(skeleton.boneInverses[index]); // r128 uses identity for a missing bone.
+        } else {
+          const o = index * 16; // The shader skins with a vec4 and no divide: only affine or never-uploaded (all zero) matrices are boundable.
+          if (uploaded[o + 3] !== 0 || uploaded[o + 7] !== 0 || uploaded[o + 11] !== 0) return 'skinned-bone-matrix';
+          if (uploaded[o + 15] === 0) {
+            for (let e = 0; e < 16; e++) if (uploaded[o + e] !== 0) return 'skinned-bone-matrix';
+            towardOrigin = true; // A zero matrix drops that bone's share, pulling the vertex toward the mesh origin.
+            continue;
+          }
+          if (uploaded[o + 15] !== 1) return 'skinned-bone-matrix';
+          skinnedBoneMatrix.fromArray(uploaded, o);
+        }
+        skinnedChainMatrix.multiplyMatrices(poseMatrix, mesh.bindMatrixInverse).multiply(skinnedBoneMatrix).multiply(mesh.bindMatrix);
+        const m = skinnedChainMatrix.elements;
+        if (!Number.isFinite(m[0] + m[1] + m[2] + m[4] + m[5] + m[6] + m[8] + m[9] + m[10] + m[12] + m[13] + m[14])) return 'skinned-bone-matrix';
+        if (!include(box, skinnedChainMatrix)) return lastScissorFailureReason;
+      }
+    }
+    if (towardOrigin) {
+      skinnedOriginBox.min.set(0, 0, 0); skinnedOriginBox.max.set(0, 0, 0);
+      if (!include(skinnedOriginBox, poseMatrix)) return lastScissorFailureReason;
+    }
+    return null;
+  }
   const scissorRect = new THREE.Vector4();
   const elevationScissorRect = new THREE.Vector4(); // Temporary screen bounds for one actor elevation.
   const participantFrustum = new THREE.Frustum(); // Conservative game-camera bounds for source meshes.
@@ -1931,7 +2022,10 @@
     // draw even when matrixWorld currently projects outside this viewport.
     // It is unsafe to cull these meshes against the current matrix alone.
     const parity = object?.__hobunjiXrayBoundParity; // Existing trusted per-rig draw-hook registration.
-    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true;
+    // An identical snapshot is no alternate pose: the cull test against matrixWorld already covers that
+    // draw. Keeps every avatar portrait (they publish the contract too) cullable in the normal case.
+    return !!parity && parity.hook === object?.onBeforeRender && !!parity.visibleMatrixWorld && parity.isFresh?.() === true
+      && !(object.matrixWorld && parity.visibleMatrixWorld.equals?.(object.matrixWorld));
   }
 
   // InstancedMeshes cannot normally leave a replay: r128 bounds them by their
@@ -2011,6 +2105,171 @@
       || hasLayer(object, PNG_OCCLUDER_LAYER) || isProtectedCover(object))) return false;
     autoInertReplayCount++;
     return true;
+  }
+
+  // Colour-only VFX in colourless depth submissions. Several replay draws run
+  // with the colour mask locked off (held depth rebuild, gear-depth recovery,
+  // x-ray shell depth). A visible descendant of held gear whose materials
+  // write neither depth nor stencil cannot change a pixel there — weapon
+  // enchantment motes (combat/weapon-enchantment-vfx.js, up to 24 per blade
+  // plane) are the large case: with an enchanted dual-wield flail they were
+  // hundreds of no-op draw calls a frame. Hidden for exactly those submissions;
+  // every colour pass still draws them. The material state is read at draw
+  // time, after the depth-material transactions, so anything those force to
+  // write depth stays.
+  let colorOnlyDepthSkipEnabled = true; // A/B switch: HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false).
+  let colorOnlyDepthSkips = 0; // Lifetime count of draws skipped by the rule above (snapshot()).
+  const colorOnlyScratch = []; // Reused per colourless submission.
+  function isColorOnlyHeldVfx(node) {
+    if (!(node.isSprite || node.isMesh || node.isPoints) || node.children?.length) return false;
+    if (heldRegistry.has(node) || waterOccludedRegistry.has(node)) return false; // Gear parts have their own depth rules.
+    if (node.onBeforeRender && node.onBeforeRender !== objectProto.onBeforeRender) return false;
+    const material = node.material;
+    const ignoreAlphaTest = !node.isMesh; // Same cutout rule as isAutoDepthReplayInert.
+    if (Array.isArray(material) ? !material.length || !material.every(m => materialLeavesDepthAndStencil(m, ignoreAlphaTest)) : !materialLeavesDepthAndStencil(material, ignoreAlphaTest)) return false;
+    return !(node.isMesh && (pngDepthRegistry.has(node) || protectedCoverRegistry.has(node) || tintCoverRegistry.has(node)
+      || hasLayer(node, PNG_OCCLUDER_LAYER) || isProtectedCover(node)));
+  }
+  // Call only while the colour mask is locked off; restore with restoreVisibility().
+  function hideColorOnlyHeldVfx(scene) {
+    if (!colorOnlyDepthSkipEnabled || !scene) return null;
+    colorOnlyScratch.length = 0;
+    for (const root of collectVisible(heldRegistry, scene)) {
+      if (!root.children?.length) continue;
+      root.traverseVisible(node => {
+        if (node !== root && isColorOnlyHeldVfx(node)) colorOnlyScratch.push(node);
+      });
+    }
+    if (!colorOnlyScratch.length) return null;
+    colorOnlyDepthSkips += colorOnlyScratch.length;
+    const hidden = hideObjects(colorOnlyScratch);
+    colorOnlyScratch.length = 0;
+    return hidden;
+  }
+
+  // ── Gear particles: drawn once, after their own gear ─────────────────────
+  // Particles riding on held gear (enchantment motes, weapon-layer fire) sit on
+  // the world layer AND the held-overlay layer so the overlay draws them after
+  // the gear it redraws. That drew each one in the base pass (where the gear
+  // itself is suppressed, so the overlay then paints the gear over it: wasted)
+  // and again in EVERY group's overlay render, whichever group held its gear:
+  // 76 + 152 draws a frame for an enchanted dual flail on the user's GTX 1060.
+  // Now each is hidden for the base pass and the whole replay, and shown only
+  // for the overlay render of the group holding its gear: one draw, still on
+  // top of its gear. Particles of gear the replay culled as off-screen keep the
+  // old behaviour. A/B: HeldObjectRenderOrder.setGearParticlesOnceEnabled(false).
+  // Since they no longer draw in the unclipped base pass, each group's replay
+  // scissor and far depth include its particles (replayScissorRect,
+  // replayFarViewDepth); particles inside a padded aura are already covered.
+  // VFX parented outside the gear (the dungeon-fire plume) joins through
+  // linkGearParticle(particle, ownerMesh). Particles of gear that does not
+  // x-ray (replayOthers) are kept out of every overlay render: they draw once,
+  // with their gear, in the base pass.
+  let gearParticlesOnceEnabled = true;
+  let gearParticleSkips = 0; // Lifetime particle draws avoided (snapshot()).
+  let lastGearParticles = 0; // Particles managed in the last wrapped render.
+  let activeGearParticles = null; // owner mesh -> its particles, during one wrapped render.
+  let pendingGearParticleRestore = null; // Safety net: restored at the next render if a frame threw.
+  const linkedGearParticles = new Map(); // particle -> owner gear mesh, for VFX parented outside its gear.
+  function isGearParticle(node) {
+    return !node.children?.length && hasLayer(node, HELD_OVERLAY_LAYER) && isColorOnlyHeldVfx(node);
+  }
+  // Pass owner null to unlink (the owner disposes it).
+  function linkGearParticle(particle, owner) {
+    if (!particle) return false;
+    if (owner) linkedGearParticles.set(particle, owner);
+    else linkedGearParticles.delete(particle);
+    return !!owner;
+  }
+  function shownInScene(node) {
+    for (let n = node; n; n = n.parent) { if (n.visible === false) return false; if (n.isScene) return true; }
+    return false;
+  }
+  function collectGearParticles(owners) {
+    const ownerSet = new Set(owners);
+    const byOwner = new Map();
+    const add = (owner, particle) => { let list = byOwner.get(owner); if (!list) byOwner.set(owner, list = []); list.push(particle); };
+    for (const owner of owners) {
+      if (!owner?.children?.length) continue;
+      owner.traverseVisible(node => {
+        if (node === owner || !isGearParticle(node)) return;
+        let nearest = null;
+        for (let parent = node.parent; parent; parent = parent.parent) if (ownerSet.has(parent)) { nearest = parent; break; }
+        if (nearest !== owner) return; // Each particle belongs to its nearest held ancestor only.
+        add(owner, node);
+      });
+    }
+    for (const [particle, owner] of linkedGearParticles) if (ownerSet.has(owner) && shownInScene(particle)) add(owner, particle);
+    return byOwner;
+  }
+  // Flat list of the particles riding on these (non-participant) gear meshes.
+  function gearParticlesOf(owners) {
+    const out = [];
+    for (const list of collectGearParticles(owners).values()) out.push(...list);
+    return out;
+  }
+  // An enchantment mote is inside its plane's live aura padding already: weapon-enchantment-vfx.js measures that
+  // padding over exactly these motes. Any other particle (weapon-layer fire on the same weapon) needs its own bounds.
+  function insidePaddedAura(node, gear) {
+    if (node.parent?.userData?.weaponEnchantmentVfx !== true) return false;
+    for (let n = node.parent; n; n = n.parent) {
+      if (Number(n.userData?.hobunjiHeldOverlayVfxPadding) > 0) return true;
+      if (n === gear) return false;
+    }
+    return false;
+  }
+  // Gear particles the base pass no longer draws: their extent must join the group's scissor and far depth.
+  function needsParticleBounds(node, gear) {
+    return gearParticlesOnceEnabled && isGearParticle(node) && !insidePaddedAura(node, gear);
+  }
+  // World centre and conservative radius of a billboard sprite (any rotation, any centre within its quad).
+  function spriteWorldExtent(sprite, outCenter) {
+    const e = sprite.matrixWorld.elements;
+    outCenter.set(e[12], e[13], e[14]);
+    return Math.hypot(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]));
+  }
+  // Hides every gear particle of these participants; returns the restore record or null.
+  function beginGearParticles(owners) {
+    if (pendingGearParticleRestore) { restoreVisibility(pendingGearParticleRestore); pendingGearParticleRestore = null; }
+    activeGearParticles = null;
+    lastGearParticles = 0;
+    if (!gearParticlesOnceEnabled) return null;
+    const byOwner = collectGearParticles(owners);
+    if (!byOwner.size) return null;
+    const all = [];
+    for (const list of byOwner.values()) all.push(...list);
+    activeGearParticles = byOwner;
+    lastGearParticles = all.length;
+    gearParticleSkips += all.length; // The base pass no longer draws them.
+    pendingGearParticleRestore = hideObjects(all);
+    return pendingGearParticleRestore;
+  }
+  // Gear the replay will not redraw (culled off-screen) keeps the old behaviour.
+  function releaseUnreplayedGearParticles(replayed) {
+    if (!activeGearParticles) return;
+    for (const [owner, list] of activeGearParticles) {
+      if (replayed.has(owner)) continue;
+      for (const particle of list) particle.visible = pendingGearParticleRestore?.get(particle) ?? true;
+      activeGearParticles.delete(owner);
+    }
+  }
+  function showGroupGearParticles(meshes) {
+    if (!activeGearParticles) return null;
+    let shown = null;
+    for (const mesh of meshes) {
+      const list = activeGearParticles.get(mesh);
+      if (!list) continue;
+      for (const particle of list) { particle.visible = true; (shown || (shown = [])).push(particle); }
+    }
+    let managed = 0;
+    for (const list of activeGearParticles.values()) managed += list.length;
+    gearParticleSkips += managed - (shown ? shown.length : 0);
+    return shown;
+  }
+  function endGearParticles(hidden) {
+    if (hidden) restoreVisibility(hidden);
+    if (hidden === pendingGearParticleRestore) pendingGearParticleRestore = null;
+    activeGearParticles = null;
   }
 
   function replayFrustumIntersects(object, instanceSphere = undefined) {
@@ -2118,12 +2377,15 @@
     const near = Number(camera.near) || 0;
     function includeBounds(mesh) {
       const geometry = mesh?.geometry; // Used to project one held mesh or one visible child with a live enchantment emitter.
-      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
-        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
+      const skinned = !!mesh?.isSkinnedMesh && skinnedScissorEnabled; // Bounded per bone (forEachSkinnedBox).
+      if (!geometry || (mesh.isSkinnedMesh && !skinned) || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
+        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh && !skinned ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
         return false;
       }
-      if (!geometry.boundingBox) geometry.computeBoundingBox();
-      if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      if (!skinned) {
+        if (!geometry.boundingBox) geometry.computeBoundingBox();
+        if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
+      }
       const parity = mesh.__hobunjiXrayBoundParity;
       const capturedPose = parity && parity.hook === mesh.onBeforeRender && parity.isFresh?.()
         ? parity.visibleMatrixWorld : null; // May be the alternative matrix in the real parity draw.
@@ -2131,19 +2393,34 @@
       // each tool, NPC hand and foot during every projected x-ray bounds test.
       for (let poseIndex = 0; poseIndex < (capturedPose ? 2 : 1); poseIndex++) {
         const matrix = poseIndex === 0 ? mesh.matrixWorld : capturedPose;
-        scissorBox.copy(geometry.boundingBox).applyMatrix4(matrix);
-        const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
-        if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
-        const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
-        if (dungeonRise > 0) {
-          const lateral = .55;
-          scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
-          scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
-          scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
-        }
-        if (!includeBox(scissorBox)) return false;
+        if (skinned) {
+          const failure = forEachSkinnedBox(mesh, matrix, (box, skinMatrix) => includeLocalBox(mesh, box, skinMatrix));
+          if (failure) { lastScissorFailureReason = failure; return false; }
+        } else if (!includeLocalBox(mesh, geometry.boundingBox, matrix)) return false;
       }
+      if (skinned) skinnedScissorBounds++;
       return true;
+    }
+    function includeLocalBox(mesh, localBox, matrix) {
+      scissorBox.copy(localBox).applyMatrix4(matrix);
+      const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
+      if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+      const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
+      if (dungeonRise > 0) {
+        const lateral = .55;
+        scissorBox.min.x -= lateral; scissorBox.max.x += lateral;
+        scissorBox.min.z -= lateral; scissorBox.max.z += lateral;
+        scissorBox.min.y -= lateral; scissorBox.max.y += dungeonRise;
+      }
+      return includeBox(scissorBox);
+    }
+    function includeParticleBounds(particle) {
+      if (!particle.isSprite) return includeBounds(particle);
+      const radius = spriteWorldExtent(particle, scissorCorner);
+      if (!(radius >= 0 && radius < Infinity)) return false;
+      scissorBox.min.set(scissorCorner.x - radius, scissorCorner.y - radius, scissorCorner.z - radius);
+      scissorBox.max.set(scissorCorner.x + radius, scissorCorner.y + radius, scissorCorner.z + radius);
+      return includeBox(scissorBox);
     }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
@@ -2173,8 +2450,10 @@
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
       let valid = true; // Used to conservatively disable scissoring if a child emitter has unreliable bounds.
       mesh.traverseVisible(child => {
-        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0)) return;
-        if (!includeBounds(child)) valid = false;
+        if (!valid || child === mesh) return;
+        if (Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0) {
+          if (!includeBounds(child)) valid = false;
+        } else if (needsParticleBounds(child, mesh) && !includeParticleBounds(child)) valid = false; // Drawn only inside this scissor now.
       });
       if (!valid) {
         lastScissorFailureReason = 'unbounded-child-emitter';
@@ -2349,7 +2628,7 @@
     return Number.isFinite(localY) ? localY : NaN;
   }
 
-  function actorRootForXrayMesh(mesh, scene) {
+  function actorRootForXrayMesh(mesh, scene, ownerDepth = 0) {
     const composer = window.PlayerBodyTransformComposer;
     const playerMesh = composer?.getPlayerMesh?.();
     if (playerMesh && isDescendantOf(mesh, playerMesh)) return { root: playerMesh, isPlayer: true };
@@ -2364,8 +2643,18 @@
       const data = node.userData || {};
       if (data.hobunjiXrayActorRoot === true
           || data.hobunjiCharacterRigScaleRoot === true
-          || String(node.name || '').startsWith('npc_walker_')) {
+          || String(node.name || '').startsWith('npc_walker_')
+          || (heldOwnerLinkEnabled && node.name === 'bandit_avatar_group')) { // Gated with the owner link: today these parts are unowned.
         return { root: node, isPlayer: false };
+      }
+      // Scene-sibling weapons (BanditCombat/captain/cultural tool holders,
+      // walker watchman and station tools) name their bearer explicitly; the
+      // portrait mask already follows this link. Without it a hostile's weapon
+      // had no owner, took the fail-safe path and forced an extra "ordinary"
+      // held replay group (3 scene renders, ~350 draws in the user's fight).
+      const owner = heldOwnerLinkEnabled ? data.hobunjiHeldPortraitOwner : null;
+      if (owner?.isObject3D && owner !== node && ownerDepth < 2) {
+        return actorRootForXrayMesh(owner, scene, ownerDepth + 1) || { root: owner, isPlayer: false };
       }
       if (!namedAnimalRoot && data.namedAnimalNpc === true) namedAnimalRoot = node;
     }
@@ -2387,11 +2676,37 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
+  // Non-player weapon x-ray budget. An armed character whose gear can reach
+  // the floor gets its own x-ray group whenever its screen rectangle overlaps
+  // another holder's, and in a fight everyone crowds the player: in the user's
+  // Cloud Forest save one bandit added 3 scene renders and ~350 draws (the
+  // group's depth rebuild and colour overlay), the dominant cost of combat.
+  // Only the otherWeaponXrayLimit armed non-player actors nearest the camera
+  // keep weapon x-ray; the rest draw their weapon with ordinary depth, as
+  // non-participant hands and feet already do. Player and short-species gear
+  // are not limited. setOtherWeaponXrayLimit(Infinity) restores everyone.
+  // Default 0 (with the owner link below): other characters' weapons draw in
+  // the base pass with their bearer. On a GTX 1060 that measured ~11 ms a
+  // frame faster near a camp (benchmark variant npcWeaponsBasePass); they
+  // look slightly different (fogged by Cloud Forest mist like their bearer,
+  // layered by plain depth against grass). Settings → Render optimizations →
+  // "NPC and enemy weapons in the base pass" switches back (owner link off,
+  // budget Infinity: the old fail-safe x-ray for every weapon).
+  let otherWeaponXrayLimit = 0;
+  // Scene-sibling weapons (BanditCombat / walker tool holders) name their
+  // bearer in userData.hobunjiHeldPortraitOwner. Unresolved, each armed
+  // hostile took the unowned fail-safe path and opened an extra held-replay
+  // group; resolved under an unlimited budget it is far worse (6 bandits:
+  // 2,216 -> 5,875 draws). Resolved with a budget of 0: -257 draws, -4 scene
+  // renders vs the fail-safe path.
+  let heldOwnerLinkEnabled = true;
+  let otherWeaponXrayBudgetSkips = 0; // Weapon meshes left to ordinary depth by the budget (snapshot()).
+  let lastOtherWeaponXrayActors = 0; // Armed non-player actors seen by the last held collection.
   const shortXraySpecies = new Set(['porakaneki']);
   let feetXrayDistance = 6; // World units (tiles) from the camera.
   let replayCameraPosition = null; // Set by wrappedRender before it collects participants.
   let nonParticipantReplaySkips = 0; // Meshes left to ordinary depth by the policy (snapshot()).
-  const participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
+  let participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
   const actorSpeciesCache = new WeakMap(); // actor root -> species id (or '')
   const PARTICIPANT_CACHE_MS = 250;
   function actorSpecies(root) {
@@ -2440,7 +2755,50 @@
         nonParticipantReplaySkips++;
       }
     }
-    return keep;
+    return repairHeld && !isFoot ? limitOtherWeaponParticipants(keep, scene, others) : keep;
+  }
+  // Keeps weapon x-ray for the otherWeaponXrayLimit nearest armed non-player
+  // actors (by root distance to the camera); preserves the original order,
+  // which the screen-space group batching depends on.
+  const budgetActors = new Map(); // root -> { d2, meshes }; reused every collect (twice a frame).
+  const budgetRanked = [];
+  const budgetDropped = new Set();
+  function limitOtherWeaponParticipants(keep, scene, others) {
+    const cam = replayCameraPosition;
+    const actors = budgetActors;
+    actors.clear();
+    for (const mesh of keep) {
+      if (mesh.userData?.hobunjiProceduralHand === true || participantOwner(mesh, scene) !== 'other') continue;
+      const root = actorRootForXrayMesh(mesh, scene)?.root;
+      if (!root) continue;
+      let entry = actors.get(root);
+      if (!entry) {
+        const e = root.matrixWorld?.elements;
+        const d2 = cam && e ? (e[12] - cam.x) ** 2 + (e[13] - cam.y) ** 2 + (e[14] - cam.z) ** 2 : 0;
+        actors.set(root, entry = { d2, meshes: [] });
+      }
+      entry.meshes.push(mesh);
+    }
+    lastOtherWeaponXrayActors = actors.size;
+    if (!(actors.size > otherWeaponXrayLimit)) { actors.clear(); return keep; }
+    const dropped = budgetDropped;
+    dropped.clear();
+    budgetRanked.length = 0;
+    for (const entry of actors.values()) budgetRanked.push(entry);
+    budgetRanked.sort((a, b) => a.d2 - b.d2);
+    for (let rank = otherWeaponXrayLimit; rank < budgetRanked.length; rank++) for (const mesh of budgetRanked[rank].meshes) dropped.add(mesh);
+    budgetRanked.length = 0;
+    actors.clear(); // Holds no actor roots between frames.
+    const kept = [];
+    for (const mesh of keep) {
+      if (!dropped.has(mesh)) { kept.push(mesh); continue; }
+      enforceHeldMesh(mesh); // Same ordinary-depth path as any non-participant held mesh.
+      others.push(mesh);
+      nonParticipantReplaySkips++;
+      otherWeaponXrayBudgetSkips++;
+    }
+    dropped.clear();
+    return kept;
   }
 
   function actorXrayScope(mesh, scene, cache) {
@@ -2807,6 +3165,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     material.onBeforeCompile.__hobunjiXrayElevationState = state; // Used to detect stale copied userData after a terrain material clone.
     material.onBeforeCompile.__hobunjiXrayMaterialOwner = material; // The function belongs to this material even if another clone shares its metadata reference.
     material.onBeforeCompile.__hobunjiXrayBaseCompile = previousCompile; // A cloned material rebuilds its shader without nesting two elevation injections.
+    // World-bake safe (zone-prop-render-batches.js) when what it wraps is: the injection reads world position and normal
+    // through modelMatrix, which a world-space merged copy under an identity transform reproduces.
+    material.onBeforeCompile.__hobunjiWorldBakeSafe = !previousCompile || previousCompile === globalThis.THREE?.Material?.prototype?.onBeforeCompile // Three's own no-op default.
+      || previousCompile.__hobunjiWorldBakeSafe === true || material.userData.hobunjiWorldBakeSafe === true;
     material.customProgramCacheKey = function hobunjiElevationAwareGroundCacheKey() {
       return (previousCacheKey ? previousCacheKey.call(this) : '') + '|hobunji-ground-circle-xray-v6';
     };
@@ -3093,9 +3455,17 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       include(mesh);
       if (!bounded) return Infinity;
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
-      mesh.traverseVisible(child => { // Same rule as the scissor: only descendants with a live aura extend the part.
+      mesh.traverseVisible(child => { // Same rule as the scissor: descendants with a live aura, and gear particles drawn only in the replay.
         if (!bounded || child === mesh) return;
         if (Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0) include(child);
+        else if (needsParticleBounds(child, mesh)) {
+          if (!child.isSprite) { include(child); return; }
+          const radius = spriteWorldExtent(child, nearScratchPoint);
+          nearScratchPoint.applyMatrix4(camera.matrixWorldInverse);
+          const depth = -nearScratchPoint.z + radius;
+          if (!(depth <= Infinity)) { bounded = false; return; }
+          if (depth > far) far = depth;
+        }
       });
       if (!bounded) return Infinity;
     }
@@ -3346,6 +3716,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         let npcReplayRestore = null; // Remove off-scissor uncullable NPC rigs only during this depth submission.
         const redundantDepth = supplementDepth ? hideOrdinaryDepthRedraws(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes) : null; // Retain only depth-relevant sprites, cover, and missing-ground leaves.
         let backgroundHidden = null; // Only the colorless depth submission drops the visual horizon; the world and final depth restore retain it.
+        let colorOnlyHidden = null; // Held-gear VFX with no depth/stencil writes: no-ops while the colour mask is locked.
         try {
           if (groupScissored && groupCullCandidates) groupCulled = cullReplayGroup(camera, groupCullCandidates);
           if (nearToken && !supplementDepth) farCulled = hideBeyondViewDepth(camera, nearCandidates, replayFarViewDepth(camera, group.meshes));
@@ -3355,11 +3726,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           backgroundHidden = backgroundMeshes.length && !supplementDepth ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
           camera.layers.mask = originalCameraMask;
+          if (canLockColorMask) colorOnlyHidden = hideColorOnlyHeldVfx(scene);
           const depthRebuildPerf = window.PerfProfiler?.begin('held-overlay: elevation depth rebuild');
           rawRender.call(renderer, scene, camera);
           window.PerfProfiler?.end(depthRebuildPerf);
           nonGroundDepthReplayCount++;
         } finally {
+          if (colorOnlyHidden) restoreVisibility(colorOnlyHidden);
           npcReplayRestore?.(); // Restore NPC appearance before the held/stencil color draw.
           if (backgroundHidden) restoreVisibility(backgroundHidden);
           if (patchCulled) restoreVisibility(patchCulled);
@@ -3388,6 +3761,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const overlayStates = tintOverlay
           ? prepareSubmergedOverlayStencilMaterials(group.meshes, group.tintStencilRef, portraitGearIds)
           : portraitGearIds ? preparePortraitGearStencilMaterials(group.meshes, portraitGearIds) : null;
+        const ownParticles = showGroupGearParticles(group.meshes); // Only this group's gear particles, once, after their gear.
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
           const overlayPerf = window.PerfProfiler?.begin('held-overlay: elevation overlay render');
@@ -3395,6 +3769,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           window.PerfProfiler?.end(overlayPerf);
           selectiveOverlayCount++;
         } finally {
+          if (ownParticles) for (const particle of ownParticles) particle.visible = false;
           if (overlayStates) restoreMaterialStates(overlayStates);
           for (const mesh of group.meshes) mesh.layers.mask = 0;
         }
@@ -3437,10 +3812,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         const gearDepthStates = prepareSubmergedOverlayStencilMaterials(overlayMeshes, 0, portraitGearIds, true);
         colorBuffer.setMask(false);
         colorBuffer.setLocked(true);
+        let gearColorOnly = null; // Read after the forced-depth transaction above.
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
+          gearColorOnly = hideColorOnlyHeldVfx(scene);
           rawRender.call(renderer, scene, camera);
         } finally {
+          if (gearColorOnly) restoreVisibility(gearColorOnly);
           colorBuffer.setLocked(false);
           colorBuffer.setMask(true);
           if (gearDepthStates) restoreMaterialStates(gearDepthStates);
@@ -3586,18 +3964,21 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return { depth, shell };
   }
 
-  function withShellDepthColorMask(colorBuffer, draw) {
+  function withShellDepthColorMask(colorBuffer, draw, scene = null) {
     // A locked WebGL color mask stops writes even when ordinary opaque world
     // materials retain colorWrite:true. The callback is synchronous, and a
     // failed draw must never leave the next color/shell pass muted.
     if (!colorBuffer?.setMask || !colorBuffer?.setLocked) return draw();
+    let colorOnly = null; // Held-gear VFX that cannot write anything in this colourless draw.
     try {
       colorBuffer.setMask(false);
       colorBuffer.setLocked(true);
+      colorOnly = hideColorOnlyHeldVfx(scene);
       const result = draw();
       shellMaskedDepthDraws++;
       return result;
     } finally {
+      if (colorOnly) restoreVisibility(colorOnly);
       colorBuffer.setLocked(false);
       colorBuffer.setMask(true);
     }
@@ -3709,7 +4090,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             scene, camera, elevationScissorRect, scissorTargetWidth, scissorTargetHeight, group.meshes);
           backgroundHidden = backgroundMeshes.length ? hideObjects(backgroundMeshes) : null;
           if (backgroundHidden) backgroundDepthMeshesExcluded += backgroundHidden.size;
-          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+          withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           nonGroundDepthReplayCount++;
         } finally {
           if (backgroundHidden) restoreVisibility(backgroundHidden);
@@ -3746,12 +4127,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           if (nearToken && nearReplay.restore(renderer, nearToken, scissorActive ? scissorRect : null)) {
             // Saved depth is back; add the x-ray parts' own forced depth, as the full redraw below would have.
             camera.layers.mask = HELD_OVERLAY_MASK;
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera));
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene);
           } else {
             if (nearToken) nearReplayFallbacks++;
             camera.layers.mask = MASK_ALL;
             renderer.clearDepth();
-            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera)); // The one original-depth transaction already covers the final unfiltered restore.
+            withShellDepthColorMask(canMaskShellColor ? shellColorBuffer : null, () => rawRender.call(renderer, scene, camera), scene); // The one original-depth transaction already covers the final unfiltered restore.
           }
         }
       } finally {
@@ -3782,8 +4163,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
+      const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
       const feet = collectVisible(waterOccludedRegistry, scene, shellOthers);
+      nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; // Counted once a frame, by the base pass.
       const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
@@ -3887,39 +4270,49 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // Draw held items and procedural feet exactly once, after reconstructed
     // cover depth. Normal water uses depthWrite=false, so feet left in this
     // base pass could otherwise render visibly over the water surface.
-    const heldDraws = suppressDraws([...held, ...feet]);
-    let result;
-    const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
-    try {
-      result = renderBase();
-    } finally {
-      window.PerfProfiler?.end(basePerf);
-      restoreDraws(heldDraws);
-    }
+    const gearParticlesHidden = beginGearParticles([...held, ...feet]); // Drawn once, in their gear's group overlay.
+    try { // Whatever throws below, the particles hidden above are shown again before this render returns.
+      const heldDraws = suppressDraws([...held, ...feet]);
+      let result;
+      const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
+      try {
+        result = renderBase();
+      } finally {
+        window.PerfProfiler?.end(basePerf);
+        restoreDraws(heldDraws);
+      }
 
-    const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
-    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
-    const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
-    const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
-    const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
-    lastWaterPortraits = bodyTint?.portraits.length || 0;
-    lastBaseReplayCandidates = held.length + feet.length;
-    lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
-    const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
-    // Non-participants were drawn normally above; keep them out of the replays,
-    // whose overlay passes draw everything on the held-overlay layer.
-    const othersHidden = replayOthers.length ? suppressDraws(replayOthers, HELD_OVERLAY_MASK) : null;
-    try {
-      replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
+      const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
+      window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
+      const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
+      const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
+      const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
+      lastWaterPortraits = bodyTint?.portraits.length || 0;
+      lastBaseReplayCandidates = held.length + feet.length;
+      lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
+      const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
+      // Non-participants were drawn normally above; keep them out of the replays,
+      // whose overlay passes draw everything on the held-overlay layer.
+      // Their particles (enchantment, weapon fire) too: they drew once with their gear in the base pass
+      // and must not show through grass in an overlay their gear is not part of.
+      const otherParticles = replayOthers.length ? gearParticlesOf(replayOthers) : null;
+      const othersHidden = replayOthers.length
+        ? suppressDraws(otherParticles?.length ? replayOthers.concat(otherParticles) : replayOthers, HELD_OVERLAY_MASK) : null;
+      releaseUnreplayedGearParticles(new Set([...visibleHeld, ...visibleFeet]));
+      try {
+        replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
+      } finally {
+        if (othersHidden) restoreDraws(othersHidden);
+      }
+      window.PerfProfiler?.end(replayPerf);
+      // The replays are renders of their own that the outline wrapper sees after the base pass, and they
+      // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
+      // pass's matrices are still current: re-arm the sequence for the PNG-depth/shell/mist/text passes.
+      window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
+      return result;
     } finally {
-      if (othersHidden) restoreDraws(othersHidden);
+      endGearParticles(gearParticlesHidden);
     }
-    window.PerfProfiler?.end(replayPerf);
-    // The replays are renders of their own that the outline wrapper sees after the base pass, and they
-    // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
-    // pass's matrices are still current: re-arm the sequence for the PNG-depth/shell/mist/text passes.
-    window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
-    return result;
   }
 
   wrappedRender.__hobunjiHeldRenderOrderWrapped = true;
@@ -3978,9 +4371,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       groupScissors: groupScissorCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       replayCullEnabled,
+      replayScissorEnabled, autoInertReplayEnabled, // Read by the Settings toggles (render-optimization-settings.js).
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4068,10 +4462,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
     setNearReplayEnabled: value => { nearReplayEnabled = value !== false; return nearReplayEnabled; },
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
+    setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
+    setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
     setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
+    setGearParticlesOnceEnabled: value => { gearParticlesOnceEnabled = value !== false; return gearParticlesOnceEnabled; },
+    linkGearParticle, // (particle, ownerGearMesh | null): VFX parented outside its gear, drawn once after that gear (dungeon-fire.js).
+    setHeldOwnerLinkEnabled: value => { heldOwnerLinkEnabled = value !== false; participantCache = new WeakMap(); return heldOwnerLinkEnabled; },
+    setOtherWeaponXrayLimit: count => { const n = Number(count); if (n === Infinity || (Number.isInteger(n) && n >= 0)) otherWeaponXrayLimit = n; return otherWeaponXrayLimit; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.
     get enabled() { return enabled; },
     // Retained as a compatibility no-op for the former camera-mode toggle.

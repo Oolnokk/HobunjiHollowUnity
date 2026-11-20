@@ -1020,8 +1020,8 @@ assert.match(creatureRendererSource, /'gar-wolf':[\s\S]*?baseShadeReferenceHex: 
   'Gar-wolf base recolor uses its authored #565047 full-strength coat anchor');
 assert.match(creatureRendererSource, /'dabinggi-hound':[\s\S]*?baseShadeReferenceHex: '#585E5D'/,
   'Dabingi-hound base recolor uses its authored #585E5D full-strength coat anchor');
-assert.match(creatureRendererSource, /grehlr:[\s\S]*?baseShadeReferenceHex: '#424242'/,
-  'Grehlr base recolor uses its authored #424242 full-strength coat anchor');
+assert.match(creatureRendererSource, /grehlr:[\s\S]*?baseShadeReferenceHex: '#99BF99'/,
+  'Grehlr base recolor uses the authored #99BF99 mint highlight anchor');
 assert.match(creatureRendererSource, /recoloredBase\(baseUrl, baseColor, mask, fullBaseRecolor, spec\.baseShadeReferenceHex \|\| null, kind[,)]/,
   'runtime base recolor passes the species-authored anchor instead of rediscovering a peak from sprite pixels');
 assert.match(creatureRendererSource, /shadeReference = \{[\s\S]*?baseValue: referenceValue,[\s\S]*?peakLuminance: referenceValue,[\s\S]*?referenceHex: sourceReferenceHex\.toUpperCase\(\)/,

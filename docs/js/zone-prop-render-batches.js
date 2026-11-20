@@ -20,12 +20,20 @@
 //     last STILL_MS is drawn normally until it settles (flames, billboards that
 //     turn to the camera, doors mid-swing, a harvest animation);
 //   - transparent materials (a merged copy would lose per-object depth sort),
-//     custom onBeforeRender hooks, array materials, morph/skinned/instanced
-//     meshes, partial draw ranges;
+//     custom onBeforeRender hooks, morph/skinned/instanced meshes, partial
+//     draw ranges, and material arrays with more than one distinct material
+//     (an array that repeats ONE material over groups that cover the whole
+//     geometry, like the natural rocks' ridge-isolated top/side slots, draws
+//     the same as that material alone);
 //   - ShaderMaterials and onBeforeCompile shaders, unless the material is
 //     marked userData.hobunjiWorldBakeSafe (its vertex stage reads nothing
 //     per-object from modelMatrix beyond the vertex position, so baking the
-//     vertices into world space draws the same pixels).
+//     vertices into world space draws the same pixels), or its compile hook
+//     declares itself bake-safe (onBeforeCompile.__hobunjiWorldBakeSafe; the
+//     held-object x-ray elevation shader does when what it wraps is).
+// Cells are chosen by each mesh's world-space geometry centre, not its origin:
+// ore rocks (faceted-rocks.js) are built with world-space vertices under an
+// identity transform, so their origins all sit at 0,0.
 // A batch is rebuilt only when its member set, a member's world matrix or its
 // geometry/attribute versions change. ZonePropRenderBatches.setEnabled(false)
 // is the A/B switch; snapshot() reports counts and per-reason rejections.
@@ -44,6 +52,7 @@
     ['rootTotemWorldVisual', 'rootTotem'], // zone-den-totem-features.js world totems.
     ['authoredFurnitureKey', 'furniture'], // Authored camp/locale furniture placed in a zone.
     ['tzatzulNest', 'tzatzulNest'],
+    ['facetedOreRock', 'oreRock'], // faceted-rocks.js ore rock groups (wilderness loose ore).
   ];
   const OWNER_NAME_PREFIXES = [['puzzle-cave-cliff-door-puzzle', 'cliffDoorPuzzle']];
   const RESCAN_MS = 1000; // Owner roots are found by a full scene walk at most this often; each frame walks only their subtrees.
@@ -78,11 +87,39 @@
     return true;
   }
 
+  // The one material a mesh draws with: itself, or the single material an array repeats over groups that tile the whole
+  // geometry (each group would be one more draw of the same program and state). Anything else: null.
+  function drawnMaterial(mesh) {
+    const material = mesh.material;
+    if (!Array.isArray(material)) return material || null;
+    const first = material[0];
+    if (!first) return null;
+    for (let i = 1; i < material.length; i++) if (material[i] !== first) return null;
+    const geometry = mesh.geometry, groups = geometry?.groups;
+    if (!groups?.length) return null; // three draws nothing for an array material without groups.
+    const fullCount = geometry.index ? geometry.index.count : geometry.attributes?.position?.count;
+    let end = 0;
+    for (const group of groups) { // Contiguous, in order, every slot real: the merged draw covers exactly these triangles.
+      if (group.start !== end || !(group.count > 0) || material[group.materialIndex] !== first) return null;
+      end += group.count;
+    }
+    return end === fullCount ? first : null;
+  }
+
+  function isCustomShader(material) {
+    return material.isShaderMaterial || material.isRawShaderMaterial || (!!defaultBeforeCompile && material.onBeforeCompile !== defaultBeforeCompile);
+  }
+
+  function bakeSafe(material) {
+    if (material.userData?.hobunjiWorldBakeSafe === true) return true;
+    if (material.isShaderMaterial || material.isRawShaderMaterial) return false; // A whole custom program: only its owner can vouch for it.
+    return material.onBeforeCompile?.__hobunjiWorldBakeSafe === true;
+  }
+
   function materialEligible(material) {
-    if (!material || Array.isArray(material)) return reject('multiMaterial');
+    if (!material) return reject('multiMaterial');
     if (material.transparent) return reject('transparent');
-    const custom = material.isShaderMaterial || material.isRawShaderMaterial || (defaultBeforeCompile && material.onBeforeCompile !== defaultBeforeCompile);
-    if (custom && material.userData?.hobunjiWorldBakeSafe !== true) return reject('customShader');
+    if (isCustomShader(material) && !bakeSafe(material)) return reject('customShader');
     return true;
   }
 
@@ -104,9 +141,9 @@
     if (!mesh.isMesh || mesh.isInstancedMesh || mesh.isSkinnedMesh) return false;
     if (mesh.userData?.hobunjiZonePropBatch) return false;
     if (mesh.onBeforeRender !== defaultBeforeRender) return reject('hook');
-    if (!materialEligible(mesh.material)) return false;
-    const material = mesh.material, builtIn = !material.isShaderMaterial && !material.isRawShaderMaterial && (!defaultBeforeCompile || material.onBeforeCompile === defaultBeforeCompile);
-    return geometryEligible(mesh.geometry, builtIn);
+    const material = drawnMaterial(mesh);
+    if (!materialEligible(material)) return false;
+    return geometryEligible(mesh.geometry, !isCustomShader(material));
   }
 
   // Per-mesh motion signature: world matrix + geometry identity/versions. Any change restarts the still timer.
@@ -138,9 +175,12 @@
   }
 
   function groupKey(mesh, owner) {
-    const e = mesh.matrixWorld.elements;
-    const cx = Math.floor(e[12] / CELL_TILES), cz = Math.floor(e[14] / CELL_TILES);
-    return cx + ',' + cz + '|' + owner.kind + '|' + mesh.material.id + '|' + (mesh.layers.mask >>> 0) + '|' + (mesh.castShadow ? 1 : 0) + (mesh.receiveShadow ? 1 : 0)
+    const e = mesh.matrixWorld.elements, geometry = mesh.geometry;
+    if (!geometry.boundingSphere) geometry.computeBoundingSphere(); // Three computes it for frustum culling anyway.
+    const c = geometry.boundingSphere.center;
+    const wx = e[0] * c.x + e[4] * c.y + e[8] * c.z + e[12], wz = e[2] * c.x + e[6] * c.y + e[10] * c.z + e[14];
+    const cx = Math.floor(wx / CELL_TILES), cz = Math.floor(wz / CELL_TILES);
+    return cx + ',' + cz + '|' + owner.kind + '|' + drawnMaterial(mesh).id + '|' + (mesh.layers.mask >>> 0) + '|' + (mesh.castShadow ? 1 : 0) + (mesh.receiveShadow ? 1 : 0)
       + '|' + mesh.renderOrder + '|' + vertexLayoutKey(mesh.geometry);
   }
 
@@ -220,6 +260,7 @@
     copy(members[0].userData);
     data.hobunjiZonePropBatch = true;
     data.hobunjiZonePropKind = owner.kind;
+    data.hobunjiRenderProxy = true; // A render-only copy of final member vertices: add-time surface passes must not re-unwrap it (natural-surface-stretch-runtime.js, natural-surface-runtime-fixes.js).
     return data;
   }
 
@@ -232,17 +273,18 @@
     const first = members[0];
     const geometry = mergeWorldGeometry(THREE, members);
     if (!batch.mesh) {
-      batch.mesh = new THREE.Mesh(geometry, first.material);
+      batch.mesh = new THREE.Mesh(geometry, drawnMaterial(first));
       batch.mesh.name = 'zone_prop_render_batch';
       batch.mesh.matrixAutoUpdate = false; // World-space geometry under an identity holder.
       batch.mesh.raycast = noRaycast; // The props themselves keep answering raycasts.
+      batch.mesh.userData = carriedUserData(members, owner); // Before add(): add-time classifiers read it.
       record.holder.add(batch.mesh);
     } else {
       batch.mesh.geometry.dispose();
       batch.mesh.geometry = geometry;
     }
     const mesh = batch.mesh;
-    mesh.material = first.material;
+    mesh.material = drawnMaterial(first);
     mesh.layers.mask = first.layers.mask;
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;
@@ -329,12 +371,11 @@
   // matrix or buffer version (for example a drawRange edit or shader hook).
   // Recheck those small render contracts on the fast path, without constructing
   // owner groups or allocating attribute-name arrays per frame.
-  function settledMemberEligible(mesh) {
-    const material = mesh.material, geometry = mesh.geometry;
-    if (!material || Array.isArray(material) || material.transparent || !geometry?.attributes?.position) return false;
-    const custom = material.isShaderMaterial || material.isRawShaderMaterial
-      || (defaultBeforeCompile && material.onBeforeCompile !== defaultBeforeCompile);
-    if (custom && material.userData?.hobunjiWorldBakeSafe !== true) return false;
+  function settledMemberEligible(mesh, material) {
+    const geometry = mesh.geometry;
+    if (!material || material.transparent || !geometry?.attributes?.position) return false;
+    const custom = isCustomShader(material);
+    if (custom && !bakeSafe(material)) return false;
     const fullCount = geometry.index ? geometry.index.count : geometry.attributes.position.count;
     const drawRange = geometry.drawRange;
     if (drawRange && (drawRange.start !== 0 || (Number.isFinite(drawRange.count) && drawRange.count !== fullCount))) return false;
@@ -357,10 +398,10 @@
         if (!attachedTo(member, scene) || !effectivelyVisible(member)
           || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
           || member.onBeforeRender !== defaultBeforeRender
-          || member.material !== drawn.material || member.material?.transparent
+          || (Array.isArray(member.material) ? drawnMaterial(member) : member.material) !== drawn.material
           || member.layers.mask !== drawn.layers.mask
           || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
-          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member)
+          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member, drawn.material)
           || !isStill(member, t)) return null;
         hidden.push(member);
       }

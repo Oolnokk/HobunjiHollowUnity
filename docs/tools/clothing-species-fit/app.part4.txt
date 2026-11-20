@@ -118,7 +118,9 @@ async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
   const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
-  R.body=null;R.sourceBody=null;R.cloth=null;R.headReference=null;R.authoredTargetCloth=null;
+  R.body=null;R.sourceBody=null;R.sourceTorso=null;R.targetTorso=null;R.cloth=null;R.headReference=null;R.headReferenceBack=null;R.backplaneReference=null;R.headbandRearCanvas=null;R.headbandRearKey=null;R.authoredTargetCloth=null;
+  R.contourSourceCache=null;R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;
+  R.headbandGridCache=new WeakMap();R.headbandWarpStats=null; // Do not reuse a previous garment/source species' spline base raster. // Selection changes invalidate all pixel masks and contour rasters held in memory.
   E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
   // Clear the previous character immediately. An unavailable target, failed
   // image, or slower response must never leave Mao-ao (or another old wearer)
@@ -145,8 +147,9 @@ async function refreshAssets(){
     const authored=garmentId
       ?await buildVariantGarmentCanvas(garmentId,species,gender,body.width,body.height)
       :null;
+    const torsos=region==='body'?await Promise.all([buildTorsoCanvas(sourceSpecies,sourceGender,sourceBody.width,sourceBody.height),buildTorsoCanvas(species,gender,body.width,body.height)]):[null,null]; // Missing torso layers disable contour fitting without affecting ordinary garment fitting.
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
-    R.body=body;R.sourceBody=sourceBody;R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
+    R.body=body;R.sourceBody=sourceBody;R.sourceTorso=torsos[0];R.targetTorso=torsos[1];R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
     const layerCount=cloth?._layers?.length||0; // Distinct authored source rasters, including explicit alternate behind-view images.
     E.clothPng.disabled=!cloth;E.compositePng.disabled=!cloth;
     E.clothPng.textContent=layerCount>1?`Export ${layerCount} fitted layers ZIP`:(region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
@@ -158,7 +161,13 @@ async function refreshAssets(){
     E.authoredStatus.textContent=authored
       ?`Authored ${species}_${gender} variant available.`
       :'No authored target variant for this garment/species/gender.';
-    ensureTargetData(species,gender);syncTransformControls();syncMaskTransformControls();
+    sizeStage(); // Use the new native dimensions before tracing and loading rear artwork.
+    ensureTargetData(species,gender);
+    try{await hydrateHeadbandRearArt()}catch(error){log('Saved rear art: '+error.message)}
+    if(generation!==R.assetGeneration)return; // Async PNG hydration may finish after another species selection.
+    syncTransformControls();syncMaskTransformControls();syncContourControls();syncHeadbandControls();
+    E.exportHeadwearBack.disabled=region!=='headwear'||!(cloth?._behindView||cloth?._back||R.headbandRearCanvas);
+    if(R.headbandRearCanvas&&region==='headwear')E.clothPng.textContent='Export fitted front + authored back ZIP';
     saveState();render();
     window.dispatchEvent(new CustomEvent('hobunji-clothing-fit-assets-refreshed',{detail:{species,gender,garmentId}}));
   }catch(error){
@@ -196,6 +205,55 @@ function drawGrid(ctx,points,color,active){
   }
   for(const p of px){ctx.beginPath();ctx.arc(p.x,p.y,HANDLE_RADIUS,0,Math.PI*2);ctx.fill()}
   ctx.restore();
+}
+function warpedSourceTorso(grid,width,height){
+  if(!R.sourceTorso)return null;
+  const signature=width+'x'+height+'|'+grid.map(p=>p.x.toFixed(5)+','+p.y.toFixed(5)).join(';'); // Reuses the expensive 6×6 donor torso warp across mask strokes and garment layers.
+  if(R.contourSourceCache?.signature===signature&&R.contourSourceCache.source===R.sourceTorso)return R.contourSourceCache.canvas;
+  const canvas=warpGarment(R.sourceTorso,grid,width,height);
+  R.contourSourceCache={signature,source:R.sourceTorso,canvas};
+  return canvas;
+}
+function cachedHeadbandGridWarp(source,grid,width,height){
+  if(!source)return null;
+  const key=width+'x'+height+'|'+grid.map(point=>point.x.toFixed(5)+','+point.y.toFixed(5)).join(';'); // Reuses authored 6x6 raster while only seven spline nodes are dragged.
+  const existing=R.headbandGridCache.get(source);
+  if(existing?.key===key)return existing.canvas;
+  const canvas=warpGarment(source,grid,width,height);
+  R.headbandGridCache.set(source,{key,canvas});
+  return canvas;
+}
+function applyHeadbandSplineWarp(garment,state,width,height){
+  if(!state?.enabled||!window.ClothingHeadbandSpline.valid(state.source)||!window.ClothingHeadbandSpline.valid(state.target))return garment;
+  const ctx=garment.getContext('2d',{alpha:true});
+  const rgba=ctx.getImageData(0,0,width,height);
+  const warped=window.ClothingHeadbandSpline.warp(rgba.data,width,height,state.source,state.target);
+  const result=document.createElement('canvas');result.width=width;result.height=height;
+  const targetCtx=result.getContext('2d',{alpha:true}),image=targetCtx.createImageData(width,height);
+  image.data.set(warped);targetCtx.putImageData(image,0,0);
+  return result; // PNG alpha and black outlines remain authored pixels, not regenerated outlines.
+}
+function warpClothing(source,grid,width,height,fitContourState=null){
+  const isHeadwear=fitRegion()==='headwear';
+  const state=fitContourState||(isHeadwear?currentHeadbandRecord():currentContourRecord());
+  const garment=isHeadwear&&state?.enabled
+    ?cachedHeadbandGridWarp(source,grid,width,height)
+    :warpGarment(source,grid,width,height);
+  if(isHeadwear)return applyHeadbandSplineWarp(garment,state,width,height);
+  if(routedPatchIsBody()||!R.sourceTorso||!R.targetTorso)return garment;
+  if(!state?.enabled)return garment;
+  const mask=fitContourState?.maskPixels||currentContourMask();
+  const start=warpedSourceTorso(grid,width,height);
+  if(!start||R.targetTorso.width!==width||R.targetTorso.height!==height)return garment;
+  const data=garment.getContext('2d').getImageData(0,0,width,height);
+  const donor=start.getContext('2d').getImageData(0,0,width,height);
+  const target=R.targetTorso.getContext('2d').getImageData(0,0,width,height);
+  const result=window.ClothingContourFit.fitPixels(data.data,donor.data,target.data,mask,width,height,state);
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const context=canvas.getContext('2d',{alpha:true}),pixels=context.createImageData(width,height);
+  pixels.data.set(result.pixels);context.putImageData(pixels,0,0); // Uses the existing browser canvas API on mobile without needing a global ImageData constructor.
+  R.contourLastFit={rows:result.rows,limitedRows:result.limitedRows}; // Mobile diagnostics show when an extreme row needed contraction backoff.
+  return canvas;
 }
 function warpGridForMode(){return mode==='transform'?transformedSourceGrid():targetGrid()}
 function layerMatchesRoutedClothingPatch(layer){

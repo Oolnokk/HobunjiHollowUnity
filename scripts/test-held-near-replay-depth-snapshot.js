@@ -158,6 +158,8 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch
     beginWaterReplayClip: () => new Map(), endWaterReplayClip() {}, // Snapshot tests stub the unrelated owner shader clipping transaction.
     hideObjects: objects => { const states = new Map(); for (const o of objects) { states.set(o, o.visible); o.visible = false; } return states; },
     restoreVisibility: states => { for (const [o, v] of states) o.visible = v; },
+    hideColorOnlyHeldVfx: () => null, // Colour-only VFX skip has its own test (test-held-color-only-depth-skip.js).
+    showGroupGearParticles: () => null, // Drawn-once gear particles have their own test (test-held-gear-particles-once.js).
     collectVisible: () => [cover], pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => { log.push('full-depth-materials'); return new Map(); },
     restoreMaterialStates() {}, prepareGroundDepthMaterials: () => new Map(),
@@ -267,7 +269,7 @@ const shellBody = heldSource.slice(sBegin, sEnd);
 assert.match(shellBody, /nearToken = nearReplay\.save\(renderer, scissored \? scissorRect : null\);/);
 assert.match(shellBody, /if \(nearToken\) farCulled = hideBeyondViewDepth\(camera, nearCandidates, replayFarViewDepth\(camera, group\.meshes\)\);/);
 assert.match(shellBody, /nearReplay\.restore\(renderer, nearToken, scissorActive \? scissorRect : null\)[\s\S]{0,260}camera\.layers\.mask = HELD_OVERLAY_MASK;/, 'shell restore is a depth copy plus the x-ray parts');
-assert.match(shellBody, /camera\.layers\.mask = MASK_ALL;\s*\n\s*renderer\.clearDepth\(\);\s*\n\s*withShellDepthColorMask\(canMaskShellColor \? shellColorBuffer : null, \(\) => rawRender\.call\(renderer, scene, camera\)\);/, 'the full redraw remains as the fallback');
+assert.match(shellBody, /camera\.layers\.mask = MASK_ALL;\s*\n\s*renderer\.clearDepth\(\);\s*\n\s*withShellDepthColorMask\(canMaskShellColor \? shellColorBuffer : null, \(\) => rawRender\.call\(renderer, scene, camera\), scene\);/, 'the full redraw remains as the fallback');
 
 assert.match(index, /js\/scissor-depth-snapshot\.js\?v=[A-Za-z0-9_-]+/, 'snapshot module is loaded by the game page');
 console.log('held near replay + depth snapshot: ok');

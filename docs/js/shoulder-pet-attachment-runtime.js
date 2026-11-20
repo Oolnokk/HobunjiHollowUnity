@@ -1,15 +1,22 @@
 // Canonical shoulder-pet grip/perch world transform and rendered-root pin.
 // Gameplay owns its update cadence and passes live dependencies through getters.
 // This module never animates sprites or writes game state outside the pet root.
+//
+// Owner-generic: create() one instance per owner character with
+// getOwnerMesh/getOwnerNeckJoint (the player today; any NPC or enemy that
+// carries a pet can get its own instance). The older getPlayerMesh/
+// getPlayerNeckJoint names are accepted as aliases, and "player" in the
+// internal names and diagnostic labels below means "the owner".
+// See js/character-visuals.js (shoulder-pet-perch).
 (() => {
   'use strict';
 
-  function create({ THREE, getPlayerMesh, getPlayerNeckJoint, getRotationSource,
-    getInvertRotationSource, getCancelRotationalOffset } = {}) {
+  function create({ THREE, getOwnerMesh, getOwnerNeckJoint, getPlayerMesh = getOwnerMesh, getPlayerNeckJoint = getOwnerNeckJoint,
+    getRotationSource, getInvertRotationSource, getCancelRotationalOffset } = {}) {
     if (!THREE?.Quaternion || !THREE?.Vector3 || typeof getPlayerMesh !== 'function'
       || typeof getPlayerNeckJoint !== 'function' || typeof getRotationSource !== 'function'
       || typeof getInvertRotationSource !== 'function' || typeof getCancelRotationalOffset !== 'function') {
-      throw new TypeError('ShoulderPetAttachmentRuntime requires THREE and live owner/configuration getters.');
+      throw new TypeError('ShoulderPetAttachmentRuntime requires THREE and live owner (getOwnerMesh/getOwnerNeckJoint) and configuration getters.');
     }
 
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.

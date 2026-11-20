@@ -29,6 +29,13 @@ vm.runInContext(threeSource, win, { filename: 'three.min.js' });
 vm.runInContext(fs.readFileSync('docs/js/zone-prop-render-batches.js', 'utf8'), win, { filename: 'zone-prop-render-batches.js' });
 const THREE = win.THREE, Batches = win.ZonePropRenderBatches;
 assert(Batches, 'module installed');
+// Add-time surface passes (natural-surface-stretch-runtime.js wraps Object3D.add) must see a batch already marked as a render proxy.
+const batchFlagsAtAdd = [];
+const plainAdd = THREE.Object3D.prototype.add;
+THREE.Object3D.prototype.add = function spyAdd(...objects) {
+  for (const o of objects) if (o?.name === 'zone_prop_render_batch') batchFlagsAtAdd.push(o.userData.hobunjiRenderProxy === true && o.userData.hobunjiZonePropBatch === true);
+  return plainAdd.apply(this, objects);
+};
 
 const scene = new THREE.Scene();
 const canvas = new THREE.MeshLambertMaterial({ color: 0x886644 });
@@ -154,6 +161,69 @@ clock += 1000;
 restore = frame();
 assert(tents[0].children.every(m => !m.visible), 'removing the hook restores legal batching');
 restore();
+
+// Ore rocks (faceted-rocks.js): world-space vertices under an identity transform, the ridge isolation's [m, m] top/side
+// material pair, and the x-ray elevation compile hook (which declares itself bake-safe).
+const rockMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+rockMat.onBeforeCompile = function elevationLike() {};
+rockMat.onBeforeCompile.__hobunjiWorldBakeSafe = true;
+const otherRockMat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+function oreRock(col, row, { material = [rockMat, rockMat], groups = 'full' } = {}) {
+  const geometry = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  geometry.translate(col + 0.5, 0.5, row + 0.5); // Built in world space, like TerrainGeometry.buildRockTileGeo.
+  const count = geometry.attributes.position.count;
+  geometry.clearGroups(); // BoxGeometry's six face groups; keep only the ridge split's two.
+  geometry.addGroup(0, 12, 0);
+  if (groups === 'full') geometry.addGroup(12, count - 12, 1);
+  const group = new THREE.Group();
+  group.name = 'faceted_ore_rock_group';
+  group.userData.facetedOreRock = true;
+  const stone = new THREE.Mesh(geometry, material);
+  group.add(stone);
+  scene.add(group);
+  return stone;
+}
+const cellA = [oreRock(100, 100), oreRock(102, 101)]; // Cell 12,12.
+const cellB = [oreRock(130, 100), oreRock(131, 102)]; // Cell 16,12.
+const mixed = oreRock(101, 103, { material: [rockMat, otherRockMat] });
+const partial = oreRock(103, 103, { groups: 'top-only' });
+const rockShaderMat = new THREE.ShaderMaterial({ vertexShader: 'void main(){gl_Position=vec4(0.);}', fragmentShader: 'void main(){gl_FragColor=vec4(1.);}' });
+rockShaderMat.onBeforeCompile = rockMat.onBeforeCompile; // A flagged hook cannot vouch for a whole custom program.
+const shaderRock = oreRock(104, 100, { material: [rockShaderMat, rockShaderMat] });
+const rockBatches = () => holder().children.filter(m => m.visible && m.userData.hobunjiZonePropKind === 'oreRock');
+clock += 1000;
+frame()?.(); // The owner rescan (RESCAN_MS) finds the new rocks; first sight starts their still period.
+clock += 1000;
+restore = frame();
+let rejects = Batches.snapshot().rejectReasons;
+assert.strictEqual(rockBatches().length, 2, 'cells come from the world-space geometry centre, not the shared 0,0 origin');
+for (const stone of [...cellA, ...cellB]) assert.strictEqual(stone.visible, false, 'stones batched');
+for (const batch of rockBatches()) {
+  assert.strictEqual(batch.material, rockMat, 'a repeated material draws once, as itself');
+  assert.strictEqual(batch.geometry.index.count, 72, 'both stones, every triangle of every group');
+  assert.strictEqual(batch.geometry.groups.length, 0);
+  assert.strictEqual(batch.userData.hobunjiRenderProxy, true);
+}
+assert(mixed.visible && rejects['oreRock:multiMaterial'] >= 1, 'two different materials stay a multi-material mesh');
+assert(partial.visible, 'groups that leave triangles undrawn are not merged (the batch would draw them)');
+assert(shaderRock.visible && rejects['oreRock:customShader'] >= 1, 'a ShaderMaterial needs its owner\'s userData mark');
+restore();
+restore = frame(); // Settled frame: the fast path compares the array's one material with the batch's.
+assert([...cellA, ...cellB].every(stone => !stone.visible), 'settled stones stay batched');
+restore();
+cellA[1].material = [rockMat, otherRockMat]; // A recolour that splits the slots: drops out at once.
+restore = frame();
+assert.strictEqual(cellA[1].visible, true);
+assert.strictEqual(cellA[0].visible, true, 'its cell partner is alone now: a lone mesh is left as it is');
+restore?.();
+cellA[1].material = [rockMat, rockMat];
+// Mining removes the rock group: the batch drops it.
+cellB[1].parent.parent.remove(cellB[1].parent);
+restore = frame();
+assert.strictEqual(cellB[0].visible, true, 'the remaining lone stone draws itself');
+restore?.();
+assert(batchFlagsAtAdd.length >= 3 && batchFlagsAtAdd.every(Boolean), 'every batch is a marked render proxy when it is added');
+for (const stone of [...cellA, cellB[0], mixed, partial, shaderRock]) scene.remove(stone.parent);
 
 // Hidden owners draw nothing and leave the batch; disabling restores everything.
 tents[2].visible = false;

@@ -87,6 +87,13 @@ for(const geo of [front,back]) {
   assert(Math.abs(weights.array[upperIndex+2]+weights.array[upperIndex+3]-1)<1e-6,'head pixels rotate as a rigid cutout');
   assert(Math.abs(weights.array[lowerIndex+2]+weights.array[lowerIndex+3])<1e-6,'chest/legs beneath the head stay still even at the same X');
 }
+const frontUv = front.getAttribute('uv'); // Compare the two faces in shared sprite space.
+const backUv = back.getAttribute('uv'); // The back face traverses the sprite columns in reverse.
+const lastColumn = front.userData.segmentsX;
+for (let col = 0; col <= lastColumn; col++) {
+  assert(Math.abs(frontUv.getX(col) + backUv.getX(lastColumn - col) - 1) < 1e-6,
+    'front and back hinge geometry must mirror exactly, even when the centered pivot rounds halfway between columns');
+}
 const babyWarp={
   destinationFor(p){return {x:.65,y:p.y};},
   sourceAt(x,y,out){out.x=x;out.y=y;},

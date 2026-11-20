@@ -86,7 +86,9 @@ function captureFitState(){
     transform:{scaleX:+tr.scaleX,scaleY:+tr.scaleY,translateX:+tr.translateX,translateY:+tr.translateY},
     offsets:currentOffsets().map(point=>({x:+point.x,y:+point.y})),
     outputWidth:R.body?.width||Math.max(1,E.stage.width||234),
-    outputHeight:R.body?.height||Math.max(1,E.stage.height||173)
+    outputHeight:R.body?.height||Math.max(1,E.stage.height||173),
+    contour:captureContourState(), // Snapshots painted collar mask pixels, separate from spline headwear.
+    headband:captureHeadbandState() // Seven target/source nodes travel with final PNG and behind-sprite export snapshots.
   }; // Used by PNG/ZIP exports so the complete fitted state cannot change between authoring and baking.
 }
 function targetGridFromFitState(fitState){
@@ -101,6 +103,265 @@ function targetGridFromFitState(fitState){
     const px=(p.x-.5)*w*sx+w*.5+tx,py=(p.y-.5)*h*sy+h*.5+ty;
     return{x:px/w+(Number.isFinite(+offsets[i].x)?+offsets[i].x:0),y:py/h+(Number.isFinite(+offsets[i].y)?+offsets[i].y:0)};
   }); // Explicitly reapplies the saved base transform first, then the saved local 6×6 offsets.
+}
+function contourSelectionKey(){
+  return targetKey(E.species.value,E.gender.value)+'::'+E.garment.value; // Per garment + donor species/gender + target; other clothing never shares protected pixels.
+}
+function currentContourRecord(){
+  A.contourFits ||= {}; // Persisted options are separate from the 6×6 node data.
+  const key=contourSelectionKey();
+  if(!A.contourFits[key])A.contourFits[key]={enabled:false,strength:1,feather:14,mask:null};
+  return A.contourFits[key];
+}
+function currentContourMask(){
+  const w=R.body?.width||E.stage.width,h=R.body?.height||E.stage.height,key=contourSelectionKey();
+  if(!R.contourMask||R.contourMaskKey!==key||R.contourMask.length!==w*h){
+    R.contourMask=window.ClothingContourFit.unpack(currentContourRecord().mask,w,h);
+    R.contourMaskKey=key;R.contourMaskOverlay=null;
+  }
+  return R.contourMask;
+}
+function saveContourMask(){
+  currentContourRecord().mask=window.ClothingContourFit.pack(currentContourMask(),R.body.width,R.body.height);
+  R.contourMaskOverlay=null;saveState(); // Masks persist locally, not on a game-time per-frame update loop.
+}
+function captureContourState(){
+  if(!R.body)return{enabled:false,strength:1,feather:14,maskPixels:null};
+  const record=currentContourRecord();
+  return{enabled:!!record.enabled,strength:+record.strength||0,feather:+record.feather||14,maskPixels:currentContourMask().slice()};
+}
+function syncContourControls(){
+  const record=currentContourRecord();
+  const ready=fitRegion()==='body'&&!!R.body&&!!R.cloth&&!!R.sourceTorso&&!!R.targetTorso;
+  E.contourEnabled.checked=!!record.enabled;E.contourEnabled.disabled=!ready;
+  E.contourStrength.value=String(Number.isFinite(+record.strength)?record.strength:1);
+  E.contourFeather.value=String(Number.isFinite(+record.feather)?record.feather:14);
+  for(const node of [E.contourPaintMode,E.contourEraseMode,E.contourClear,E.contourMaskPng,E.contourStrength,E.contourFeather,E.contourBrush])node.disabled=!ready;
+  const protectedCount=ready?currentContourMask().reduce((n,v)=>n+v,0):0;
+  E.contourStatus.textContent=ready
+    ?'Torso-only outlines available. '+protectedCount+' protected pixels. '+(record.enabled?'Auto fit active.':'Auto fit currently off.')
+    :'No isolated donor/target torso PNG or garment loaded; normal 6×6 fitting remains available.';
+}
+function paintContourOverlay(ctx){
+  if(fitRegion()!=='body'||!R.body||!R.cloth)return;
+  const w=R.body.width,h=R.body.height;
+  if(E.contourShowOutline.checked&&(mode==='protect'||currentContourRecord().enabled)&&R.sourceTorso&&R.targetTorso){
+    const donor=warpedSourceTorso(warpGridForMode(),w,h);
+    const sources=[[R.targetTorso,'#54f0e6'],[donor,'#ffaf50']];
+    ctx.save();ctx.lineWidth=1;ctx.globalAlpha=.9;
+    for(const [canvas,color] of sources){
+      if(!canvas)continue;
+      const image=canvas.getContext('2d').getImageData(0,0,w,h);
+      const edges=window.ClothingContourFit.trace(image.data,w,h);
+      ctx.fillStyle=color;
+      for(let y=0;y<h;y++){
+        if(!edges.valid[y])continue;
+        ctx.fillRect(Math.round(edges.left[y]),y,1,1);
+        ctx.fillRect(Math.round(edges.right[y]),y,1,1);
+      }
+    }
+    ctx.restore();
+  }
+  if(mode!=='protect')return;
+  const mask=currentContourMask();
+  if(!R.contourMaskOverlay){
+    const overlay=document.createElement('canvas');overlay.width=w;overlay.height=h;
+    const context=overlay.getContext('2d',{alpha:true});
+    const img=context.createImageData(w,h);
+    for(let i=0;i<mask.length;i++)if(mask[i]){
+      img.data[i*4]=235;img.data[i*4+1]=45;img.data[i*4+2]=210;img.data[i*4+3]=150;
+    }
+    context.putImageData(img,0,0);
+    R.contourMaskOverlay=overlay; // Paint once after each brush stroke; redraws only blit a prebuilt canvas.
+  }
+  ctx.drawImage(R.contourMaskOverlay,0,0);
+}
+
+function headbandSelectionKey(){return contourSelectionKey()} // targetKey already isolates donor species/gender, target species/gender, region and garment.
+function traceHeadbandCanvas(canvas){
+  if(!canvas)return null;
+  const data=canvas.getContext('2d',{alpha:true}).getImageData(0,0,canvas.width,canvas.height);
+  return window.ClothingHeadbandSpline.trace(data.data,canvas.width,canvas.height);
+}
+function copyHeadbandCanvas(source){
+  if(!source)return null;
+  const out=Object.assign(document.createElement('canvas'),{width:source.width,height:source.height});
+  out.getContext('2d',{alpha:true}).drawImage(source,0,0);
+  return out; // Frozen rear pixels for exports and undo.
+}
+function headbandView(){return E.headbandView.value==='back'?'back':'front'}
+function headbandSourceCanvas(view='front'){return view==='back'?R.headbandRearCanvas:(R.cloth?._front||R.cloth)}
+function autoHeadbandSourceNodes(view='front'){
+  const art=headbandSourceCanvas(view);
+  if(!R.body||!art)return null;
+  return traceHeadbandCanvas(view==='back'?art:cachedHeadbandGridWarp(art,targetGrid(),R.body.width,R.body.height));
+}
+function autoHeadbandTargetNodes(view='front'){
+  if(view==='back'){
+    const art=R.authoredTargetCloth?._behindView||R.authoredTargetCloth?._front;
+    return art?traceHeadbandCanvas(flipCanvasX(art)):null; // Original PNG orientation differs from visible backplane.
+  }
+  return traceHeadbandCanvas(R.authoredTargetCloth?._front||R.authoredTargetCloth);
+}
+function currentHeadbandRecord(){
+  if(!R.body||!R.cloth||fitRegion()!=='headwear')return null;
+  A.headbandSplines ||= {}; // Persistent source/target maps are isolated from the normal 6x6 grid.
+  const key=headbandSelectionKey(),valid=window.ClothingHeadbandSpline.valid;
+  const duplicateKey=key+'::donor::'+E.sourceSpecies.value+'_'+E.sourceGender.value; // Compatibility with one intermediate development revision that appended an unnecessary donor suffix.
+  const duplicate=A.headbandSplines[duplicateKey];
+  if(duplicate&&valid(duplicate.source)&&valid(duplicate.target)){
+    A.headbandSplines[key]=clone(duplicate); // Preserve newer work performed with the suffixed key before dropping the duplicate.
+    delete A.headbandSplines[duplicateKey];
+  }
+  const saved=A.headbandSplines[key];
+  if(saved&&valid(saved.source)&&valid(saved.target))return saved;
+  const source=autoHeadbandSourceNodes();
+  if(!source)return null;
+  const target=autoHeadbandTargetNodes()||source.map(p=>({...p}));
+  return A.headbandSplines[key]={enabled:/headband|flower.?crown|blossom.?crown|wreath/i.test(E.garment.value),source,target};
+}
+function currentHeadbandViewRecord(){
+  const record=currentHeadbandRecord();
+  if(!record)return null;
+  if(headbandView()==='front')return record;
+  if(!R.headbandRearCanvas)return null;
+  const valid=window.ClothingHeadbandSpline.valid;
+  if(!valid(record.back?.source)||!valid(record.back?.target)){
+    const source=autoHeadbandSourceNodes('back');if(!source)return null;
+    record.back={enabled:false,source,target:autoHeadbandTargetNodes('back')||source.map(p=>({...p}))};
+  }
+  return record.back; // Rear curve never changes the front seven-node mapping.
+}
+function bakeHeadbandWhole(record,curve){
+  if(!record||!['source','target'].includes(curve)||!window.ClothingHeadbandSpline.valid(record[curve]))return;
+  record.whole ||= {}; // Each independent source/target curve has its own fitted baseline.
+  record.whole[curve]={
+    base:record[curve].map(point=>({...point})),
+    settings:window.ClothingHeadbandSpline.defaultWholeTransform()
+  };
+}
+function headbandWholeEntry(record,curve){
+  if(!record||!R.body||!['source','target'].includes(curve))return null;
+  const engine=window.ClothingHeadbandSpline;
+  const entry=record.whole?.[curve];
+  const computed=entry&&engine.valid(entry.base)&&engine.validWholeTransform(entry.settings)
+    ?engine.transformWhole(entry.base,entry.settings,R.body.width,R.body.height):null;
+  // Imported points and manual node changes become a baseline rather than producing slider jumps.
+  if(!computed||computed.some((p,i)=>Math.abs(p.x-record[curve][i].x)>1e-5||Math.abs(p.y-record[curve][i].y)>1e-5)){
+    bakeHeadbandWhole(record,curve);
+  }
+  return record.whole[curve];
+}
+function selectedHeadbandWhole(){
+  const record=currentHeadbandViewRecord();
+  if(!record)return null;
+  const curve=E.headbandEditCurve.value==='source'?'source':'target';
+  const entry=headbandWholeEntry(record,curve);
+  return entry?{record,curve,entry}:null; // Shared by sliders and whole-curve drag.
+}
+function syncHeadbandWholeControls(){
+  const selected=selectedHeadbandWhole(),settings=selected?.entry.settings;
+  for(const [controls,extent] of [[[E.headbandWholeX,E.headbandWholeXNumber],R.body?.width||120],[[E.headbandWholeY,E.headbandWholeYNumber],R.body?.height||120]]){
+    const limit=Math.max(120,Math.round(extent)); // Whole-curve translation works on any native portrait size, not just a 234×173 sprite.
+    for(const control of controls){control.min=String(-limit);control.max=String(limit)}
+  }
+  const bindings=[
+    [E.headbandWholeX,E.headbandWholeXNumber,settings?.x],
+    [E.headbandWholeY,E.headbandWholeYNumber,settings?.y],
+    [E.headbandWholeScaleX,E.headbandWholeScaleXNumber,settings?.scaleX*100],
+    [E.headbandWholeScaleY,E.headbandWholeScaleYNumber,settings?.scaleY*100],
+    [E.headbandWholeRotation,E.headbandWholeRotationNumber,settings?.rotation]
+  ];
+  for(const [slider,number,value] of bindings){
+    slider.disabled=!settings;number.disabled=!settings;
+    if(!settings)continue;
+    const formatted=String(Math.round(value*1000)/1000);
+    slider.value=formatted;
+    if(document.activeElement!==number)number.value=formatted; // Preserve an in-progress negative/decimal value and its cursor on mobile.
+  }
+  for(const button of [E.headbandWholeReset,E.headbandWholeBake])button.disabled=!settings;
+  E.headbandWholeDrag.disabled=!settings;
+  E.headbandWholeStatus.textContent=!settings
+    ?'Select a traceable headband curve to move, resize and rotate all seven points.'
+    :(headbandView()==='back'?'Rear':'Front')+' '+selected.curve+' curve. Position in native pixels; width/height as a percentage. '+(R.headbandWholeWarning||'Edits pivot around the curve center.');
+}
+async function hydrateHeadbandRearArt(){
+  const record=currentHeadbandRecord(),key=headbandSelectionKey(),generation=R.assetGeneration;
+  R.headbandRearCanvas=null;R.headbandRearKey=null;
+  if(!record?.rearArtPng)return;
+  const img=await loadImage(record.rearArtPng); // Data-URL PNG is decoded once, not on each drag.
+  if(generation!==R.assetGeneration||key!==headbandSelectionKey()||!R.body)return;
+  if(img.naturalWidth!==R.body.width||img.naturalHeight!==R.body.height)throw Error('Saved rear sprite size differs from the target portrait.');
+  const canvas=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+  canvas.getContext('2d',{alpha:true}).drawImage(img,0,0);
+  R.headbandRearCanvas=canvas;R.headbandRearKey=key;
+}
+function saveHeadbandRearArt(){
+  const record=currentHeadbandRecord();
+  if(!record||!R.body)return;
+  record.rearArtPng=R.headbandRearCanvas?.toDataURL('image/png')||null; // Compact PNG saved only on commit, never on each pointer move.
+  R.headbandRearKey=R.headbandRearCanvas?headbandSelectionKey():null;
+  if(!record.rearArtPng)record.back=null;
+  saveState();syncHeadbandControls();
+}
+function headbandRearDisplay(state=null){
+  const art=state?.rearCanvas||R.headbandRearCanvas,record=state||currentHeadbandRecord();
+  if(!art)return null;
+  return applyHeadbandSplineWarp(art,record?.back,art.width,art.height);
+}
+function captureHeadbandState(){
+  const record=currentHeadbandRecord();
+  return record?{
+    enabled:!!record.enabled,source:record.source.map(p=>({...p})),target:record.target.map(p=>({...p})),
+    whole:record.whole?clone(record.whole):null, // Numeric group transforms and saved baseline accompany exported mapping.
+    back:record.back?{enabled:!!record.back.enabled,source:record.back.source.map(p=>({...p})),target:record.back.target.map(p=>({...p})),whole:record.back.whole?clone(record.back.whole):null}:null,
+    rearCanvas:R.headbandRearKey===headbandSelectionKey()?copyHeadbandCanvas(R.headbandRearCanvas):null
+  }:null; // Immutable front/back snapshots for asynchronous PNG exports.
+}
+function syncHeadbandControls(){
+  const active=currentHeadbandViewRecord(),ready=!!active,back=headbandView()==='back';
+  E.headbandRearSection.hidden=!back;
+  E.headbandEnabled.disabled=!ready;E.headbandEnabled.checked=!!active?.enabled;
+  E.headbandTraceSource.disabled=!ready;
+  E.headbandTraceTarget.disabled=!ready||!autoHeadbandTargetNodes(headbandView());
+  E.headbandCopy.disabled=!ready;E.headbandReset.disabled=!ready;E.headbandEditCurve.disabled=!ready;
+  E.headbandFlipH.disabled=!ready;E.headbandFlipV.disabled=!ready;
+  for(const control of [E.headbandRearDraw,E.headbandRearErase,E.headbandRearSample,E.headbandRearExport,E.headbandRearEdit])
+    control.disabled=!R.headbandRearCanvas;
+  E.headbandRearRemove.disabled=!R.headbandRearCanvas;
+  const rearGuide=R.headReferenceBack?'Actual game back-facing head reference loaded.':'Game rear-head reference pending; use Retry runtime if it remains blank.';
+  E.headbandRearStatus.textContent=(R.headbandRearCanvas
+    ?'Rear art ready. Paint visible backplane pixels or switch to Band spline to shape the independent rear curve.'
+    :'No authored rear PNG yet. Copy fitted front, copy existing rear, import PNG or create a blank image.')+' '+rearGuide;
+  E.headbandStatus.textContent=ready
+    ?'Seven source and target points for '+(back?'rear':'front')+'. '+(active.enabled?'Spline ON.':'Spline OFF.')
+    :back?'Create a rear sprite to map seven independent back nodes.':'No traceable headband pixels.';
+  syncHeadbandWholeControls();
+}
+function drawHeadbandOverlay(ctx){
+  const record=currentHeadbandViewRecord();if(!record)return;
+  const width=E.stage.width,height=E.stage.height,active=E.headbandEditCurve.value==='source'?'source':'target';
+  const colors={source:'#ffaf50',target:'#4ff1ed'};
+  ctx.save();
+  for(const kind of ['source','target']){
+    const nodes=record[kind];
+    ctx.beginPath();
+    for(let i=0;i<=72;i++){
+      const p=window.ClothingHeadbandSpline.curveAt(nodes,6*i/72);
+      if(i===0)ctx.moveTo(p.x*(width-1),p.y*(height-1));
+      else ctx.lineTo(p.x*(width-1),p.y*(height-1));
+    }
+    ctx.lineWidth=kind===active?2.25:1;ctx.strokeStyle=colors[kind];ctx.globalAlpha=kind===active?1:.65;
+    ctx.setLineDash(kind===active?[]:[3,3]);ctx.stroke();ctx.setLineDash([]);
+    if(kind!==active)continue;
+    ctx.font='8px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.globalAlpha=1;
+    nodes.forEach((p,index)=>{
+      const x=p.x*(width-1),y=p.y*(height-1);ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);
+      ctx.fillStyle='#101820';ctx.fill();ctx.lineWidth=1.8;ctx.strokeStyle=colors[kind];ctx.stroke();
+      ctx.fillStyle=colors[kind];ctx.fillText(String(index+1),x,y);
+    });
+  }
+  ctx.restore();
 }
 function syncTransformControls(){
   const tr=currentTransform();

@@ -48,7 +48,7 @@ assert.match(source, /function poseQuaternion\(pose, foldBodyYaw = false\)/, 'he
 
 // Watchmen should use the exact player/bandit plane factory, preserving material/texture conventions; recolor swaps pixels on a clone of that texture.
 assert.match(source, /banditDeps\?\.makeToolPlaneMesh/, 'v4 must capture the shared player\/bandit tool-plane factory');
-assert.match(source, /factory\(loadout\.toolKey\)/, 'watchman construction must request the shared shape from that factory');
+assert.match(source, /factory\(loadout\.toolKey, \{ holder:/, 'watchman construction must request the shared shape from that factory');
 assert.match(source, /const texture = source\?\.clone\?\.\(\)[\s\S]*texture\.image = canvas/, 'verdigris should replace only the cloned shared texture image');
 assert.match(source, /alphaTest: \.08, side: three\.DoubleSide/, 'fallback construction must match the player/editor alpha-cutout convention');
 assert.doesNotMatch(source, /applyPrimaryCorrection\(/, 'watchman build must not call the retired inverse-weapon grip correction');

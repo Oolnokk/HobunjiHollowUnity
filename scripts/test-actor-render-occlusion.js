@@ -8,10 +8,21 @@ const html = require('./classic-script-group-index.js').expandClassicScriptGroup
 const game = fs.readFileSync('docs/game.js','utf8'); // Production world passes must use the actor query for both render modes.
 assert(html.includes('js/npc-view-frustum-cull.js?v='),'existing NPC frustum culler is actually loaded');
 assert(html.includes('js/actor-render-occlusion.js?v='),'actor GPU occlusion module is actually loaded');
-assert(game.includes('window.ActorRenderOcclusion?.beginFrame?.('),'renderWorldPasses enters actor culling');
-assert.equal(game.split('window.ActorRenderOcclusion?.probeAfterBase?.()').length-1,2,
-  'outlines enabled and disabled both call the depth query');
-assert(game.includes('window.ActorRenderOcclusion?.endFrame?.()'),'all world render passes restore actors in finally');
+assert(game.includes('window.WorldRenderPipeline.renderFrame(now)'),'gameLoop renders through the world render pipeline');
+{ // Execute the shipped pipeline (js/world-render-pipeline.js) in both render modes.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  for (const outlines of [true, false]) {
+    const h = createWorldRenderPipelineHarness().init();
+    h.settings.outlines = outlines;
+    const events = h.frame();
+    const begin = events.findIndex(e => e.id === 'beginFrame');
+    assert(begin >= 0 && begin < events.findIndex(e => e.kind === 'render'), `actor culling begins before the first pass (outlines ${outlines})`);
+    assert.equal(events.filter(e => e.id === 'probeAfterBase').length, 1, `the depth query runs once (outlines ${outlines})`);
+    h.throwOn = () => true;
+    assert.throws(() => h.frame());
+    assert(h.log.some(e => e.id === 'endFrame'), `actors are restored even when a pass throws (outlines ${outlines})`);
+  }
+}
 
 
 class Vector3 {

@@ -12,7 +12,7 @@ const occluderSource = fs.readFileSync('docs/js/png-plane-outline-occluder.js', 
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 
 assert.match(occluderSource,
-  /const LAYER = 4;/,
+  /const LAYER = (?:globalThis\.HobunjiRenderLayers\?\.PNG_OCCLUDER \?\? )?4;/,
   'PNG avatars have a dedicated outline-occlusion layer');
 assert.match(occluderSource,
   /function markPngPlane\(obj\)[\s\S]*?child\.layers\.enable\(LAYER\);/,
@@ -32,10 +32,17 @@ assert.doesNotMatch(occluderSource,
 assert.match(occluderSource,
   /material\.depthTest = state\.depthTest;[\s\S]{0,100}material\.depthFunc = state\.depthFunc;/,
   'portrait depth-test state must be restored immediately after the outline-occluder replay');
-const pngDepthAt = gameSource.indexOf('window.PngPlaneOutlineOccluder.renderDepth(activeScene);');
-const shellAt = gameSource.indexOf('activeScene.overrideMaterial = shellOutlineMat;', pngDepthAt);
-assert(pngDepthAt >= 0 && shellAt > pngDepthAt && shellAt - pngDepthAt < 2000,
-  'avatar occlusion depth and actor visibility queries precede furniture shell outlines');
+// The pass order now lives in js/world-render-pipeline.js: execute one frame.
+{
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  const events = h.frame();
+  const pngDepthAt = events.findIndex(e => e.id === 'pngDepth');
+  const probeAt = events.findIndex(e => e.id === 'probeAfterBase');
+  const shellAt = events.findIndex(e => e.kind === 'render' && e.override === h.pipeline.materials.shell);
+  assert(pngDepthAt >= 0 && probeAt > pngDepthAt && shellAt > probeAt,
+    'avatar occlusion depth and actor visibility queries precede furniture shell outlines');
+}
 assert.match(gameSource,
   /const camera = new THREE\.PerspectiveCamera\([^\n]*\n\s*window\.PngPlaneOutlineOccluder\.init\(\{ renderer, camera \}\);/,
   'the occluder module receives the live renderer and camera once both exist');
@@ -43,8 +50,12 @@ assert.ok(
   indexSource.indexOf('js/png-plane-outline-occluder.js') >= 0
     && indexSource.indexOf('js/png-plane-outline-occluder.js') < indexSource.indexOf('src="game.js'),
   'the occluder module loads before game.js');
-assert.match(gameSource,
-  /tSceneDepth\.value\s*=\s*_mainRT\.depthTexture;/,
-  'furniture seam compositing reads the avatar-augmented scene depth');
+{ // Composite inputs are bound by js/world-render-pipeline.js each frame.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness().init();
+  h.frame();
+  assert.equal(h.pipeline.materials.composite.uniforms.tSceneDepth.value, h.pipeline.targets.main.depthTexture,
+    'furniture seam compositing reads the avatar-augmented scene depth');
+}
 
 console.log('avatar outline occlusion tests passed');

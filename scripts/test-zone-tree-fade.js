@@ -77,4 +77,21 @@ assert.strictEqual(branch.material, original);
 Fade.forget(tree);
 Fade.forget(tree);
 assert.strictEqual(disposed, 1, 'unloading releases only the owned clone, once');
+
+// isFadedOut: only a fade that has settled at 0 with target 0 (ZoneVegetationCull then stops drawing it).
+const edgeBranch = { material: { ...original, clone: original.clone } };
+const edgeTree = { children: [edgeBranch] };
+assert.strictEqual(Fade.isFadedOut(edgeTree), false, 'never-faded tree');
+Fade.setTarget(edgeTree, 0.5, false);
+Fade.setTarget(edgeTree, 0, false);
+assert.strictEqual(Fade.isFadedOut(edgeTree), false, 'still animating toward 0: drawn');
+Fade.updateAnimation(0.05);
+assert.strictEqual(Fade.isFadedOut(edgeTree), false);
+Fade.updateAnimation(1);
+assert.strictEqual(edgeBranch.material.opacity, 0);
+assert.strictEqual(Fade.isFadedOut(edgeTree), true, 'settled fully transparent');
+Fade.setTarget(edgeTree, 0.4, false);
+assert.strictEqual(Fade.isFadedOut(edgeTree), false, 'target rising: drawn again, fading in from 0');
+Fade.reset(edgeTree);
+assert.strictEqual(Fade.isFadedOut(edgeTree), false, 'reset tree is opaque');
 console.log('ok zone tree fade');

@@ -16,7 +16,7 @@ const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Haft gri
 
 new Function(source); // Compile check for syntax errors without executing browser-dependent code.
 assert.match(html, /src="js\/weapon-sprite-assemblies\.js/);
-assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.decorate\(g, itemKey, def, \{ THREE, metalOptions:/);
+assert.match(fs.readFileSync('docs/js/character-held-tools.js', 'utf8'), /HobunjiWeaponSpriteAssemblies\?\.decorate\(g, itemKey, def, \{ THREE: T, metalOptions,/); // Factory lives in js/character-held-tools.js for every holder.
 assert.match(game, /HobunjiWeaponSpriteAssemblies\?\.setAction\(toolMeshMap\[activeTool\]/);
 assert.match(game, /hachutuTorchFlail: \{ label: 'Hachutu Torch-Flail'/);
 assert.match(game, /spriteLayers: shape\.spriteLayers/);

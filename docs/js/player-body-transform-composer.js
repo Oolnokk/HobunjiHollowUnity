@@ -591,129 +591,182 @@
   };
   legApi.__playerBodyTransformComposerWrapped = true;
 
-  if (THREE.WebGLRenderer && !THREE.WebGLRenderer.prototype.__playerBodyTransformComposerRenderHook) {
-    const proto = THREE.WebGLRenderer.prototype;
-    const originalRender = proto.render;
-    proto.render = function composedPlayerBodyRender(scene, camera) {
-      // WebGLRenderer is shared by the main world and standalone preview
-      // scenes. An unrelated scene's camera must never advance the player's
-      // private deadzone history, run post-head hooks, or consume the next
-      // live-world transform dump. The real world scene still uses the full
-      // composition path, including secondary renders of that same scene.
-      if (playerMesh?.isObject3D && scene?.isScene && !isDescendantOf(playerMesh, scene)) {
-        unrelatedSceneSkips++;
-        return originalRender.call(this, scene, camera);
-      }
-      const undo = [];
-      const pantsDuringRender = playerLegHandle?.pants || null; // Reskins the player's actual garment after render-only joint transforms and again after rollback.
-      const renderDebug = {
-        sequence: ++renderSequence,
-        timestampMs: performance.now(),
-        appliedOrder: [],
-        portraitFaceCulling: 'material-frontside',
-        forcedPortraitDoubleSide: false,
-        baseWorldEulerDeg: null,
-        composedWorldEulerDeg: null,
-        neckYaw: null,
-        baseFacingYaw: null, // Gameplay root yaw sampled before any render-only attack/idle-stance contributions.
-        authoredAbsoluteYaw: false, // Crawl/bed author a complete heading and still need the final composed-yaw clamp.
-      }; // Persisted below before temporary transforms are restored.
-      renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
-      renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
-      let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
-      try {
-      if (playerMesh?.isObject3D) {
-        renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
-        renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
-      }
-      const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
-      if (playerMesh && !poseLocked) {
-        const bodyDelta = resolveDelta('player');
-        const externalDelta = resolveDelta('external');
-        renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
-        if (hasResolvedDelta(bodyDelta) || hasResolvedDelta(externalDelta)) {
-          playerMesh.updateWorldMatrix?.(true, false);
-          const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
-          renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
-          renderDebug.authoredAbsoluteYaw = Number.isFinite(bodyDelta.absoluteYaw); // A complete authored crawl/bed yaw intentionally replaces the gameplay heading.
-          applyAbsoluteYaw(bodyDelta, baseWorldQuaternion);
-          const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
-          const legsTranslation = playerLegRoot ? resolveAbsoluteLegsTranslation() : null;
-          if (legsTranslation) {
-            playerLegRoot.updateWorldMatrix?.(true, false);
-            absoluteLegsBase = {
-              position: playerLegRoot.getWorldPosition(new THREE.Vector3()),
-              quaternion: hierarchyWorldQuaternion(playerLegRoot),
-              translation: legsTranslation.applyQuaternion(baseWorldQuaternion),
-            };
-          }
-          for (const entry of currentOwnedRootEntries()) {
-            const delta = entry.kind === 'player' ? bodyDelta : externalDelta;
-            if (!hasResolvedDelta(delta)) continue;
-            const worldRotation = baseWorldQuaternion.clone()
-              .multiply(delta.rotation)
-              .multiply(baseWorldQuaternion.clone().invert());
-            const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
-            applyWorldDelta(entry.root, pivotWorld, worldRotation, worldTranslation, undo);
-          }
-          renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
-        }
-      }
+  // ── Render-time composition ───────────────────────────────────────────
+  // The player's render-only contributions (channel deltas, camera deadzone,
+  // head aim, neck limit, post-head attachment hooks, pants re-skin) are
+  // applied by composePlayerBodyForRender() and rolled back by
+  // restorePlayerBodyAfterRender(). With js/render-hooks.js loaded (the game
+  // and every page that loads it) they run as a 'frame' hook: applied once
+  // before the first pass of a world frame that draws the player and undone
+  // once after the last pass, so the main, PNG-depth, shell and held-object
+  // replay passes all draw the same composed body. Without RenderHooks the
+  // historical per-render prototype wrapper (makeLegacyComposerRender) is used.
+  function playerBodyRenderApplies(scene) {
+    // WebGLRenderer is shared by the main world and standalone preview
+    // scenes. An unrelated scene's camera must never advance the player's
+    // private deadzone history, run post-head hooks, or consume the next
+    // live-world transform dump. The real world scene still uses the full
+    // composition path, including secondary renders of that same scene.
+    if (playerMesh?.isObject3D && scene?.isScene && !isDescendantOf(playerMesh, scene)) {
+      unrelatedSceneSkips++;
+      return false;
+    }
+    return true;
+  }
 
-      if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
+  // Returns the state restorePlayerBodyAfterRender() needs. A failure part-way
+  // rolls back whatever was already applied and rethrows, so a caller never
+  // draws (or leaves behind) a half-composed body.
+  function composePlayerBodyForRender(camera) {
+    const undo = [];
+    const pantsDuringRender = playerLegHandle?.pants || null; // Reskins the player's actual garment after render-only joint transforms and again after rollback.
+    const renderDebug = {
+      sequence: ++renderSequence,
+      timestampMs: performance.now(),
+      appliedOrder: [],
+      portraitFaceCulling: 'material-frontside',
+      forcedPortraitDoubleSide: false,
+      baseWorldEulerDeg: null,
+      composedWorldEulerDeg: null,
+      neckYaw: null,
+      baseFacingYaw: null, // Gameplay root yaw sampled before any render-only attack/idle-stance contributions.
+      authoredAbsoluteYaw: false, // Crawl/bed author a complete heading and still need the final composed-yaw clamp.
+    }; // Persisted below before temporary transforms are restored.
+    renderDebug.expiredPoseChannels = expireStaleChannels(renderDebug.timestampMs); // Recover abandoned additive/override poses before any render pass applies them.
+    renderDebug.expiredRigLayers = window.ActorRigCompositor?.expireStale?.(renderDebug.timestampMs) ?? 0; // Also recover NPC/animal quaternion and per-node axis leases on the same render clock.
+    const state = { undo, pantsDuringRender, renderDebug }; // Everything restorePlayerBodyAfterRender needs.
+    let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
+    try {
+    if (playerMesh?.isObject3D) {
+      renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
+      renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
+    }
+    const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
+    if (playerMesh && !poseLocked) {
+      const bodyDelta = resolveDelta('player');
+      const externalDelta = resolveDelta('external');
+      renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
+      if (hasResolvedDelta(bodyDelta) || hasResolvedDelta(externalDelta)) {
+        playerMesh.updateWorldMatrix?.(true, false);
+        const baseWorldQuaternion = hierarchyWorldQuaternion(playerMesh);
+        renderDebug.baseWorldEulerDeg = quaternionEulerDegrees(baseWorldQuaternion);
+        renderDebug.authoredAbsoluteYaw = Number.isFinite(bodyDelta.absoluteYaw); // A complete authored crawl/bed yaw intentionally replaces the gameplay heading.
+        applyAbsoluteYaw(bodyDelta, baseWorldQuaternion);
+        const pivotWorld = playerMesh.localToWorld(new THREE.Vector3(0, playerPosteriorY, 0));
+        const legsTranslation = playerLegRoot ? resolveAbsoluteLegsTranslation() : null;
+        if (legsTranslation) {
+          playerLegRoot.updateWorldMatrix?.(true, false);
+          absoluteLegsBase = {
+            position: playerLegRoot.getWorldPosition(new THREE.Vector3()),
+            quaternion: hierarchyWorldQuaternion(playerLegRoot),
+            translation: legsTranslation.applyQuaternion(baseWorldQuaternion),
+          };
+        }
+        for (const entry of currentOwnedRootEntries()) {
+          const delta = entry.kind === 'player' ? bodyDelta : externalDelta;
+          if (!hasResolvedDelta(delta)) continue;
+          const worldRotation = baseWorldQuaternion.clone()
+            .multiply(delta.rotation)
+            .multiply(baseWorldQuaternion.clone().invert());
+          const worldTranslation = delta.translation.clone().applyQuaternion(baseWorldQuaternion);
+          applyWorldDelta(entry.root, pivotWorld, worldRotation, worldTranslation, undo);
+        }
+        renderDebug.composedWorldEulerDeg = quaternionEulerDegrees(hierarchyWorldQuaternion(playerMesh));
+      }
+    }
+
+    if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
+    lastRenderDebug = renderDebug;
+    if (pantsDuringRender?.update) {
+      try { pantsDuringRender.update(true); renderDebug.pantsPoseResynced = true; }
+      catch (error) { renderDebug.pantsPoseError = String(error?.message || error); } // Garment failure must never block rendering the actor.
+    }
+
+    return state;
+    } catch (error) {
+      renderDebug.renderError = String(error?.message || error); // Mobile diagnostics retain the failed compose phase.
       lastRenderDebug = renderDebug;
-      if (pantsDuringRender?.update) {
-        try { pantsDuringRender.update(true); renderDebug.pantsPoseResynced = true; }
-        catch (error) { renderDebug.pantsPoseError = String(error?.message || error); } // Garment failure must never block rendering the actor.
-      }
+      restorePlayerBodyAfterRender(state);
+      throw error;
+    }
+  }
 
+  function restorePlayerBodyAfterRender(state) {
+    if (!state) return;
+    const { undo, pantsDuringRender } = state;
+    const renderDebug = state.renderDebug;
+    // Pre-render failure must restore all temporary transforms. If one
+    // rollback itself fails, continue restoring the others rather than
+    // letting a single stale attachment leave the feet turned all session.
+    let rollbackIndex = undo.length - 1; // Reverse-order undo index; the normal path has no per-item try/catch cost.
+    try {
+      for (; rollbackIndex >= 0; rollbackIndex--) undo[rollbackIndex]();
+    } catch (error) {
+      renderDebug.rollbackErrors = [String(error?.message || error)]; // Inspect from the existing mobile composer snapshot.
+      for (rollbackIndex--; rollbackIndex >= 0; rollbackIndex--) {
+        try { undo[rollbackIndex](); }
+        catch (nextError) { renderDebug.rollbackErrors.push(String(nextError?.message || nextError)); }
+      }
+      lastRenderDebug = renderDebug;
+    }
+    if (pantsDuringRender?.update) {
+      try { pantsDuringRender.update(true); } // Restore the exact uncomposed IK garment for the next simulation/depth pass.
+      catch (error) { renderDebug.pantsPoseRestoreError = String(error?.message || error); lastRenderDebug = renderDebug; }
+    }
+  }
+
+  // Fires the one-shot captureNextRenderTransforms() callback after the real
+  // draw (so anything that re-syncs itself off playerMesh/toolHolder inside
+  // that render, e.g. the procedural hand sockets' onBeforeRender sentinel,
+  // has already used THIS frame's composed transform) but before the delta is
+  // undone — the one point where playerMesh, toolHolder, and the hand sockets
+  // are all simultaneously in the exact state actually shown on screen.
+  function capturePlayerBodyAfterRender() {
+    if (!pendingCapture) return;
+    const callback = pendingCapture;
+    pendingCapture = null;
+    try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
+  }
+
+  // Fallback for pages without js/render-hooks.js: compose, draw and undo
+  // around every render() call of a scene containing the player.
+  function makeLegacyComposerRender(originalRender) {
+    return function composedPlayerBodyRender(scene, camera) {
+      if (!playerBodyRenderApplies(scene)) return originalRender.call(this, scene, camera);
+      const state = composePlayerBodyForRender(camera);
+      try {
         const result = originalRender.call(this, scene, camera);
-        // Fires after the real render (so anything that re-syncs itself off
-        // playerMesh/toolHolder inside that render, e.g. the procedural hand
-        // sockets' onBeforeRender sentinel, has already used THIS frame's
-        // composed transform) but before the delta below is undone — the one
-        // point where playerMesh, toolHolder, and the hand sockets are all
-        // simultaneously in the exact state actually shown on screen.
-        if (pendingCapture) {
-          const callback = pendingCapture;
-          pendingCapture = null;
-          try { callback(); } catch (_) { /* diagnostic-only; must never break rendering */ }
-        }
+        capturePlayerBodyAfterRender();
         return result;
       } catch (error) {
-        renderDebug.renderError = String(error?.message || error); // Mobile diagnostics retain the failed compose/draw phase.
-        lastRenderDebug = renderDebug;
+        state.renderDebug.renderError = String(error?.message || error); // Mobile diagnostics retain the failed draw phase.
+        lastRenderDebug = state.renderDebug;
         throw error;
       } finally {
-        // Pre-render failure must restore all temporary transforms. If one
-        // rollback itself fails, continue restoring the others rather than
-        // letting a single stale attachment leave the feet turned all session.
-        let rollbackIndex = undo.length - 1; // Reverse-order undo index; the normal path has no per-item try/catch cost.
-        try {
-          for (; rollbackIndex >= 0; rollbackIndex--) undo[rollbackIndex]();
-        } catch (error) {
-          renderDebug.rollbackErrors = [String(error?.message || error)]; // Inspect from the existing mobile composer snapshot.
-          for (rollbackIndex--; rollbackIndex >= 0; rollbackIndex--) {
-            try { undo[rollbackIndex](); }
-            catch (nextError) { renderDebug.rollbackErrors.push(String(nextError?.message || nextError)); }
-          }
-          lastRenderDebug = renderDebug;
-        }
-        if (pantsDuringRender?.update) {
-          try { pantsDuringRender.update(true); } // Restore the exact uncomposed IK garment for the next simulation/depth pass.
-          catch (error) { renderDebug.pantsPoseRestoreError = String(error?.message || error); lastRenderDebug = renderDebug; }
-        }
+        restorePlayerBodyAfterRender(state);
       }
     };
-    // held-object-render-order.js's internal depth-replay passes need the
-    // TRUE, undecorated render() — no visual-delta wrapper applied — and
-    // find it by walking a chain of __hobunji*Original markers left by each
-    // wrapper (see its unwrapRendererRender). Without this marker on this
-    // wrap specifically, that unwrap stopped one link too early and those
-    // replay passes still ran this wrap's full apply-delta/render/undo cycle
-    // (with scene.autoUpdate forced false around them, so the freshly-applied
-    // delta never propagated into matrixWorld for that one call) instead of
-    // the plain pass-through the depth-replay design intends.
+  }
+  // ── end of render-time composition ──
+
+  if (window.RenderHooks?.register) {
+    window.RenderHooks.register({
+      id: 'player-body-composer',
+      owner: 'player-body-transform-composer.js',
+      order: window.RenderHooks.ORDER.PLAYER_BODY_COMPOSER,
+      scope: 'frame',
+      appliesTo: ctx => playerBodyRenderApplies(ctx.scene) && (!ctx.frame || ctx.scene === ctx.frame.scene),
+      before: ctx => composePlayerBodyForRender(ctx.camera),
+      afterRender: () => capturePlayerBodyAfterRender(),
+      after: (_ctx, state) => restorePlayerBodyAfterRender(state),
+    });
+  } else if (THREE.WebGLRenderer && !THREE.WebGLRenderer.prototype.__playerBodyTransformComposerRenderHook) {
+    const proto = THREE.WebGLRenderer.prototype;
+    const originalRender = proto.render;
+    proto.render = makeLegacyComposerRender(originalRender);
+    // held-object-render-order.js's unwrapRendererRender walks __hobunji*Original
+    // markers looking for the undecorated render; keep this one so its chain
+    // walk behaves exactly as before on pages that still use this wrapper.
     proto.render.__hobunjiPlayerBodyComposerOriginal = originalRender;
     proto.__playerBodyTransformComposerRenderHook = true;
   }

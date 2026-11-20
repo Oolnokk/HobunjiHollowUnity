@@ -17,7 +17,7 @@ assert.match(source, /if \(sourceAlpha < uTargetAlphaCutoff\) discard;/, 'transp
 assert.match(source, /const alphaCutoff = Number\(sourceMaterial\?\.alphaTest\);/, 'each target mesh must reuse its own authored alpha-test cutoff');
 assert.match(source, /if \(alphaMap\.matrixAutoUpdate !== false\) alphaMap\.updateMatrix\?\.\(\);/, 'target alpha sampling must honor live texture transforms');
 assert.match(source, /uniforms\.uTargetUsesAlphaMap\.value = 0;/, 'alpha masking must be reset after each draw so solid target meshes stay solid');
-assert.match(source, /const TARGET_ALPHA_FILL_LAYER = 30;/, 'flat alpha-cutout targets need an isolated temporary fill layer');
+assert.match(source, /const TARGET_ALPHA_FILL_LAYER = (?:globalThis\.HobunjiRenderLayers\?\.TARGET_ALPHA_FILL \?\? )?30;/, 'flat alpha-cutout targets need an isolated temporary fill layer');
 assert.match(source, /object\.userData\?\.noOutline === true[\s\S]{0,180}fillEntries\.push/, 'flat no-shell alpha cards must be routed into the billboard-style fill pass');
 assert.match(source, /suppressTargetAlphaFillFromShell[\s\S]{0,180}layers\?\.disable\?\.\(2\)/, 'leaf cards must be removed from the volumetric target-shell draw');
 assert.match(source, /depthFunc: THREE\.LessEqualDepth[\s\S]{0,120}blending: THREE\.AdditiveBlending[\s\S]{0,80}side: THREE\.DoubleSide/, 'leaf target fill must match weed-billboard depth, additive blending, and double-sided rendering');

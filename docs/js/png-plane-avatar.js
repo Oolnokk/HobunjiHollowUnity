@@ -1893,17 +1893,19 @@
   // The Influence map decides head/body membership, NOT the amount of yaw: every
   // head vertex receives the same yaw rotation, while chest and legs remain fixed.
   // Keep two existing mesh columns near the vertical hinge without adding vertices.
-  function alignAnimalYawFoldColumns(geometry, pivotLocalU, segmentsX, segmentsY, width) {
+  function alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width) {
     const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
     const uv = geometry.getAttribute('uv'); // Keep texture coordinates aligned with the displaced columns.
     if (!position?.setX || !uv?.setX || segmentsX < 3) return;
-    const pivot = clamp(pivotLocalU, 0.001, 0.999); // Local left-to-right neck position; mirrored on reverse cards.
+    const pivot = clamp(pivotU, 0.001, 0.999); // Both faces divide columns in the same source sprite space.
     const halfWidth = Math.min(0.003, pivot * 0.25, (1 - pivot) * 0.25); // A nearly one-pixel-wide narrow fold.
     const leftColumn = clamp(Math.round(pivot * (segmentsX - 1)), 1, segmentsX - 2); // Face-side column of the crease.
     for (let col = 0; col <= segmentsX; col++) {
-      const u = col <= leftColumn
-        ? (pivot - halfWidth) * col / leftColumn
-        : pivot + halfWidth + (1 - pivot - halfWidth) * (col - leftColumn - 1) / (segmentsX - leftColumn - 1);
+      const sourceCol = mirrorX ? segmentsX - col : col; // Reverse the same grid so rounding cannot shift the back face's crease.
+      const sourceU = sourceCol <= leftColumn
+        ? (pivot - halfWidth) * sourceCol / leftColumn
+        : pivot + halfWidth + (1 - pivot - halfWidth) * (sourceCol - leftColumn - 1) / (segmentsX - leftColumn - 1);
+      const u = mirrorX ? 1 - sourceU : sourceU; // Local UV and position for the current face.
       for (let row = 0; row <= segmentsY; row++) {
         const index = row * (segmentsX + 1) + col;
         position.setX(index, (u - 0.5) * width);
@@ -1926,8 +1928,7 @@
     const geometry = new THREE.PlaneGeometry(width, height, segmentsX, segmentsY); // Paint and shoulder maps sample unchanged normalized UVs at the smaller grid.
     const renderedPivot = spriteWarp?.destinationFor?.(rig.pivot) || rig.pivot; // Baby/Small sprite warp moves the fold with the visible head.
     const pivotU = clamp(finite(renderedPivot.x, rig.pivot.x), 0, 1); // Source-side neck X, not the painted head silhouette.
-    const pivotLocalU = mirrorX ? 1 - pivotU : pivotU; // Mirrored back cards crease at the same physical neck.
-    alignAnimalYawFoldColumns(geometry, pivotLocalU, segmentsX, segmentsY, width);
+    alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width);
     const indices = geometry.index?.array; // Mirror the quad diagonals along with UVs so both faces interpolate the same skin.
     if (mirrorX && indices) {
       for (let i = 0; i < indices.length; i += 6) {

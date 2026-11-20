@@ -32,5 +32,13 @@ const index = require('./classic-script-group-index.js').expandClassicScriptGrou
 const mod = index.search(/js\/outline-composite-material\.js\?v=[A-Za-z0-9_-]+/);
 const game = index.search(/src="game\.js\?v=/);
 assert.ok(mod > 0 && game > mod, 'module is loaded (via the render group) before game.js');
-assert.match(read('docs/game.js'), /const _postMat = window\.OutlineCompositeMaterial\.create\(THREE\);/, 'game.js builds its composite through the module');
+const pipelineAt = index.search(/js\/world-render-pipeline\.js\?v=[A-Za-z0-9_-]+/);
+assert.ok(pipelineAt > mod && game > pipelineAt, 'the world render pipeline loads after this module and before game.js');
+{ // js/world-render-pipeline.js builds its composite through the module.
+  const { createWorldRenderPipelineHarness } = require('./lib/world-render-pipeline-harness.js');
+  const h = createWorldRenderPipelineHarness();
+  h.window.OutlineCompositeMaterial = { create: T => { const m = new T.ShaderMaterial({ uniforms: a.uniforms }); m.fromModule = true; return m; } };
+  h.init();
+  assert.equal(h.pipeline.materials.composite.fromModule, true, 'the pipeline builds its composite through the module');
+}
 console.log('ok - outline composite material module is wired and skips seam reads when seams are off');

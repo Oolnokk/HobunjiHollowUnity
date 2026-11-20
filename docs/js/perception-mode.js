@@ -22,7 +22,7 @@
 (() => {
   'use strict';
 
-  const LAYER = 25; // Unused elsewhere (see the layer list in outline-render-performance.js / held-object-render-order.js).
+  const LAYER = globalThis.HobunjiRenderLayers?.PERCEPTION_MODE ?? 25; // Shares bit 25 with held-object-render-order.js's transient PORTRAIT_WATER_MASK; see js/render-layers.js.
   const RANGE_TILES = 14; // Highlight radius for ordinary actors and interactables.
   const LANDMARK_RANGE_TILES = Object.freeze({ caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 }); // Distinct radii used by collectTargets for discoverable wilderness features.
   const INFO_RANGE_TILES = 6; // Info lists only for close objects, so a full farm doesn't drown in text.
@@ -479,7 +479,11 @@
           : maskMaterialFor(original, target.category, skinned, target.color);
         const hadLayer = (mesh.layers.mask & (1 << LAYER)) !== 0; // r128 Layers has no isEnabled().
         mesh.layers.enable(LAYER);
-        swapped.push({ mesh, original, hadLayer });
+        // Hidden only because a render-scope batch draws it this frame (e.g. an
+        // instanced wilderness tree): still the source of its own glow mask.
+        const proxyHidden = mesh.visible === false && mesh.userData?.hobunjiDrawProxyHidden === true;
+        if (proxyHidden) mesh.visible = true;
+        swapped.push({ mesh, original, hadLayer, proxyHidden });
       }
     }
     if (!swapped.length) return;
@@ -513,6 +517,7 @@
       for (const entry of swapped) {
         entry.mesh.material = entry.original;
         if (!entry.hadLayer) entry.mesh.layers.disable(LAYER);
+        if (entry.proxyHidden) entry.mesh.visible = false;
       }
       scene.background = previousBackground;
       scene.overrideMaterial = previousOverride;
