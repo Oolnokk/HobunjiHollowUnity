@@ -26381,9 +26381,8 @@
           return;
         }
 
-        const prePausePerf = window.PerfProfiler?.begin('popups+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
+        const prePausePerf = window.PerfProfiler?.begin('perception+music'); // Runs even while paused, so kept separate from the gated gameplay buckets below.
         window.PerceptionMode?.update(now); // Syncs its info lists before WorldPopupText positions them.
-        worldPopupRuntime?.update(now);
 
         updateSceneTransition(dt);
         window.CinematicCameraRuntime?.update?.(dt); // Authored dialogue shots fade/restore pets without a second RAF loop.
@@ -26752,6 +26751,7 @@
         // so those other writers cannot hide the player or invalidate the next
         // frame's pose checkpoint. The two dancers are finalized together.
         window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
+        worldPopupRuntime?.update(now); // Billboards use the final camera and portrait poses for this frame, including during pause.
 
         // ── Render active scene ──────────────────────────────────
         // An opaque loading/introduction screen covers the whole canvas, so

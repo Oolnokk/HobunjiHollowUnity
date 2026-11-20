@@ -1206,11 +1206,11 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      when it isn't (e.g. fetched standalone from a different docs root). -->
 <script src="../../config/attachment-rig-profiles.js?v=20261119h8c212ef"></script>
 <script src="../../js/local-db-overrides.js?v=20261109nohuknukRoam1"></script> <!-- Reuses the gameplay NPC species composer. -->
-<script src="../../js/animal-chathead-frame.js?v=20261116skeeriChathead2"></script>
+<script src="../../js/animal-chathead-frame.js?v=20261120mootAudit3"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261119h7c67489"></script>
 <script src="../../js/animation-author-creature-gameplay-parity.js?v=20261118nativeSizeFloor1"></script> <!-- Shared game creature dimensions and floor solver. -->
-<script src="rig-preview-species.js?v=20261117mootMother1"></script>
+<script src="rig-preview-species.js?v=20261120mootAudit3"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261119classGround1"></script>
 <script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script>
 <script src="../../js/belt-stow-rig.js?v=20261118BeltTrueSize3"></script> <!-- Shared belt-stow coordinates and torch art with gameplay. -->
@@ -1225,7 +1225,7 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261119h2d01c57', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261120h6514935', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
 const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261119hb945df1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.

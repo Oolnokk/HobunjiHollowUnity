@@ -185,6 +185,30 @@ stacks (~0.5 ms here); the held-object replays remain the largest extra draw sou
 rain/blizzard planes are separate transparent draws (merging them would change their
 depth sort against the player sprite).
 
+## 19 Nov 2026: precipitation textures and stable row assignments
+
+Three r128 uploads each precipitation texture clone separately even when
+the clones point to the same canvas. Rain now shares one texture, and the
+Western Slope blizzard shares one for each of its three depth families.
+Each sheet saves its own rain and snow phases in a material UV uniform.
+The meshes qualify for the usual held-object depth replay skips. Snow
+artwork is generated on first use.
+
+The renderer now keeps row assignments while the front and rear row
+indices and spacing match. Camera placement, fades and UV animation
+still update every frame. The existing rain debug snapshot exposes
+`precipitationTextureCount` and `rowAssignmentPasses`.
+
+The executable regression checks texture sharing and separate UV phases,
+movement within and across row intervals, arena layout changes, and
+scene and weather transitions. A Three r128 Chromium WebGL comparison
+against the old renderer matched all pixels over 74 frames covering
+movement, camera rotation, layout changes, clear weather, and blizzard
+transitions. In that fixture, the rain uploaded 17 → 1 precipitation
+textures. After rendering rain and the expanded blizzard bands, the
+cumulative count was 41 → 4. Frame times on player hardware are still
+unmeasured.
+
 ## 19 Nov 2026: actual Chrome CPU profile — repeated scene traversals
 
 Inspected the attached `Trace-20261118T215416.json.gz` as a sampled Chrome

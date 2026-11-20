@@ -104,14 +104,20 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         registeredTribes:window.TribeCamps?.list?.().map(tribe=>tribe.tribeId)||[],
         failedScriptGroups:window.HobunjiClassicScriptGroups?.failedGroups||[]};
     });
-    console.log('Omgurku camp readiness on entry:',JSON.stringify(await campReadiness()));
+    const campsAreReady=snapshot=>[snapshot.porakaneki,snapshot.omgurku].every(
+      camp=>camp.exists&&camp.configReady&&camp.localesReady&&camp.combatDepsReady
+    ); // Validate the actual network snapshots on Node's clock; software WebGL can starve page-side polling.
+    let readiness=await campReadiness(); // Reuse this first snapshot for both diagnostics and the readiness assertion.
+    console.log('Omgurku camp readiness on entry:',JSON.stringify(readiness));
+    const readyDeadline=Date.now()+60000; // Bound a genuinely missing or still-loading camp network.
     try {
-      await page.waitForFunction(()=>[window.PorakanekiCamps,window.OmgurkuCamps].every(api=>{
-        const snapshot=api?.debugSnapshot(); // Both real camp networks must load config, locales and combat dependencies.
-        return snapshot?.configReady&&snapshot.localesReady&&snapshot.combatDepsReady;
-      }),null,{timeout:60000,polling:250});
+      while(!campsAreReady(readiness)&&Date.now()<readyDeadline){
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        readiness=await campReadiness();
+      }
+      assert(campsAreReady(readiness),'both real camp networks must load config, locales and combat dependencies');
     }catch(error){
-      console.error('Omgurku camp readiness timeout:',JSON.stringify(await campReadiness()));
+      console.error('Omgurku camp readiness timeout:',JSON.stringify(readiness));
       console.error('Browser page errors:',JSON.stringify(errors.slice(-12)));
       throw error; // Never turn an actual missing network into a green test.
     }

@@ -354,11 +354,23 @@
     if (!piecesReady) piecesReady = Promise.all(PIECES.map(key => A.load(key)));
     return piecesReady;
   }
+  function prepareStaticPieceCulling(group) {
+    group.traverse?.(node => {
+      if (!node.isMesh || node.isSkinnedMesh || node.isInstancedMesh || !node.geometry?.getAttribute?.('position')) return;
+      if (node.frustumCulled === false) return; // Billboards, camera-facing decals and shader-displaced effects opt out intentionally.
+      node.frustumCulled = true; // Ordinary static ruin parts use the actual local bounds in the Three.js camera pass.
+      node.userData.hobunjiWildernessDistanceCull = true; // Only normal static geometry enters the existing render-only distance pass.
+      if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere?.(); // Calculate once at build time instead of on the first frame in view.
+    });
+  }
+
   function build(key) {
     const data = A.peek(key);
     if (!data) return null;
     const group = A.buildGroup(data);
+    if (!group) return null;
     group.userData.ruinSiteKey = key;
+    prepareStaticPieceCulling(group); // Doors, tunnels, pillars, rubble and burrow meshes share the same per-part frustum policy.
     return group;
   }
 

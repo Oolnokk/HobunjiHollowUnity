@@ -471,7 +471,10 @@ assert.match(driverSource, /secondaryGripForTool/, 'driver must support an optio
 assert.match(driverSource, /applyFallbackSide\(record, 'left'\)/, 'left hand must use locomotion fallback on one-handed tools');
 assert.match(driverSource, /profile: options\.profile \|\| null/, 'avatar profile must be retained for post-build shoulder scanning');
 assert.match(driverSource, /profile: record\.profile/, 'hand attachment must receive the original avatar profile');
-assert.doesNotMatch(driverSource, /clampDeltaWorld|armLength|elbow/, 'driver must never perform arm reach correction');
+assert.match(driverSource, /function liftHeldItemIntoReach\(record, target, scratch\)/,
+  'held-item presentation must move the object with its wrist when the grip exceeds anatomical reach');
+assert.doesNotMatch(driverSource, /clampDeltaWorld|adjustedTool/,
+  'held tool/weapon grip positions must remain authored, not clamped independently of their artwork');
 const garanki = npcDatabase.npcs.find(npc => npc.id === 'garanki_gabu');
 assert(!garanki?.tags?.includes('child'), 'Garanki must not carry the shared child avatar/anatomy scale marker');
 assert.strictEqual(garanki.ageBand, 'adult', 'Garanki adult classification must remain visible in authoring tools');

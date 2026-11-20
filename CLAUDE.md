@@ -8,6 +8,10 @@ Read `AGENTS.md` too: its "Recurring mistakes" list, test-running rules, and
 cache-bust tooling (`node scripts/check-cache-busts.js --fix`) apply to every
 agent working here.
 
+## Mandatory visual authoring rules
+
+**Read [docs/architecture/visual-authoring.md](docs/architecture/visual-authoring.md) BEFORE modifying or making furniture, 3D meshes, scenery, avatar parts, PNG billboards, or fire VFX.** It defines the four-part portrait/pants/3D-feet/3D-hands body, authored-ink vs. generated-outline split, farm-cliff-style detected-surface PNG stretch, no generated outlines on any PNG billboard, and the single player-campfire VFX source. **Repair old violations as well as avoiding new ones.** The full rules and verification checklist are in that document; do not rely on this summary alone.
+
 ## `game.js` is being decoupled incrementally — keep pushing that forward
 
 `game.js` started as one monolithic closure and is being carved down over

@@ -2,6 +2,10 @@
 
 This file records project-specific implementation rules that are easy to miss when working from an isolated bug report. Treat these as repository invariants unless a task explicitly calls for changing them.
 
+## MANDATORY visual-authoring preflight
+
+**Before editing ANY furniture, mesh, prop, avatar/body visual, billboard/PNG plane, terrain/cliff, or flame/fire effect, agents MUST read [docs/architecture/visual-authoring.md](docs/architecture/visual-authoring.md) in full.** Its rules are repository invariants for **existing** content as well as new content: PNG portrait (head/torso/shoulders) and pants already carry black ink; generated outlines are for 3D curved hands, feet, trees, and similarly rounded meshes; hard-edged surfaces use the farm-cliff-style per-surface outlined PNG stretch and **no** generated outlines; PNG billboards NEVER get generated outlines; all flames reuse player-built campfire authored particle VFX, with optional palette changes. Audit and fix preexisting violations in the code you touch instead of silently copying them. Do not confuse a PNG depth-occlusion replay with permission to outline the PNG.
+
 ## Running tests
 
 - Run only the tests related to what you changed: `node scripts/run-tests.js <name-fragment> [...]` (e.g. `node scripts/run-tests.js livestock`). Run the whole fast suite (`node scripts/run-tests.js`, ~10s) once before finishing, not after every edit.
@@ -67,7 +71,7 @@ Canonical API:
 - Prefer `HobunjiSpritePngSurface.makeMaterial(THREE, texture, debugName, overrides)` for the matching unlit material.
 - Use `HobunjiSpritePngSurface.alphaTest()` rather than inventing a new cutout threshold.
 
-The avatar plane, body sprites, hands/feet, held tools/weapons, and same-style authored PNG surfaces are expected to share this appearance path. If a new PNG plane behaves differently from existing sprites, first compare it against this API rather than adding special-case material flags.
+The avatar **portrait and pants PNG planes**, held tools/weapons drawn on PNG planes, and other authored sprite-like planes should share this appearance path. **Modeled 3D hands and feet are not PNG billboards**: they still need their own 3D-generated outlines even if their textures are sourced from PNG art. If a new PNG plane behaves differently from existing sprites, compare it against this API before adding special-case material flags.
 
 ## Canvas/WebGL image loading: CORS is required
 

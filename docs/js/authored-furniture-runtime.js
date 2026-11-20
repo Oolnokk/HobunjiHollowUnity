@@ -58,26 +58,7 @@
         map:texture,color:0xffffff,transparent:true,alphaTest:.1,
         depthTest:true,depthWrite:true,side:Three.DoubleSide,toneMapped:false
       }),
-      flameMaterial:null,
     }; // Shared geometry and material keep multiple torches cheap.
-    if (typeof document !== 'undefined' && Three.CanvasTexture && Three.SpriteMaterial) {
-      const canvas = document.createElement('canvas'); // One fire glow texture shared by every lit wall torch.
-      canvas.width = 24; canvas.height = 48;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const glow = ctx.createLinearGradient(0,0,0,48);
-        glow.addColorStop(0,'rgba(255,238,170,0)');
-        glow.addColorStop(.32,'rgba(255,238,170,.92)');
-        glow.addColorStop(.68,'rgba(255,140,45,.8)');
-        glow.addColorStop(1,'rgba(255,74,16,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.ellipse(12,24,8,21,0,0,Math.PI*2);ctx.fill();
-        art.flameMaterial = new Three.SpriteMaterial({
-          map:new Three.CanvasTexture(canvas), transparent:true,depthTest:true,depthWrite:false,
-          blending:Three.AdditiveBlending
-        });
-      }
-    }
     wallTorchArtCaches.set(Three,art);
     return art;
   }
@@ -101,15 +82,16 @@
     png.position.set(0,.35,.017);
     png.userData.nonInteractive = true;
     png.raycast = () => {}; // Pixel art never blocks fixture selection or game interactions.
+    png.userData.noOutline = true; // The authored torch PNG already has its own black silhouette ink.
+    png.userData.hobunjiSharedWallTorchArt = true; // FurnitureVesselRuntime preserves this cached geometry/material when discarding a temporary fallback.
+    png.layers?.disable?.(1); // A billboard must never inherit the 3D generated-shell outline pass.
     pivot.add(png);
-    if (shared.flameMaterial && Three.Sprite) {
-      const glow = new Three.Sprite(shared.flameMaterial);
-      glow.name = 'wall_torch_flame_sprite';
-      glow.position.set(0,.73,.038);
-      glow.scale.set(.15,.24,1);
-      glow.raycast = () => {};
-      pivot.add(glow);
-    }
+    const flameAnchor = new Three.Group(); // World/player-campfire particles follow the torch's existing tilted grip.
+    flameAnchor.name = 'wall_torch_campfire_flame_anchor';
+    flameAnchor.position.set(0,.73,.038);
+    pivot.add(flameAnchor);
+    group.userData = group.userData || {};
+    group.userData.wallTorchFireAnchor = flameAnchor; // InteriorFireFloorRuntime uses this anchor for the canonical emitter.
     if (Three.PointLight && options.light !== false) {
       const light = new Three.PointLight(0xffa04a,.85,5,2); // Preserve existing wall-torch light mask behavior.
       light.name = 'WallTorchLight';
@@ -121,6 +103,12 @@
     }
     pivot.userData.wallTorchSpriteUrl = wallTorchSpriteUrl; // Mobile-visible inspection of loaded sprite provenance.
     group.add(pivot);
+    group.addEventListener?.('added', () => {
+      // Only a mounted host owns ambient fire. FurnitureVesselRuntime may create an
+      // unattached temporary authored group and move its children into the live one.
+      // Registering on that temporary group used to allocate an orphan emitter.
+      window.InteriorFireFloorRuntime?.onAuthoredFurnitureReady?.(group, null, 'wallTorch');
+    }); // House-mounted torches bypass the normal furniture builder but still join the shared ambient scheduler.
     return pivot;
   }
 
@@ -646,10 +634,14 @@
     const colorA = new THREE.Color(emitter.colorA || '#ffffff');
     const colorB = new THREE.Color(emitter.colorB || '#ffffff');
     const particles = [];
+    const emissionOrigins = Array.isArray(emitter.emissionOrigins) && emitter.emissionOrigins.length
+      ? emitter.emissionOrigins.filter(origin => Number.isFinite(origin?.x) && Number.isFinite(origin?.y) && Number.isFinite(origin?.z))
+      : null; // Optional multiple wick origins share ONE canonical authored Points emitter/draw call.
+    let nextEmissionOrigin = 0; // Round-robin spawn distribution prevents the first few candles monopolizing a frame.
     let spawnAccum = 0;
 
     function update(dt, active, override) {
-      const live = Object.assign({}, emitter, override || {});
+      const live = override ? { ...emitter, ...override } : emitter; // Most ambient campfire emitters have no per-frame override; avoid allocating a copy every tick.
       const rate = active && live.enabled !== false ? (live.rate || 0) : 0;
       mat.size = Math.max(.01, live.size || .05);
       colorA.set(live.colorA || '#ffffff'); colorB.set(live.colorB || '#ffffff');
@@ -659,9 +651,10 @@
           spawnAccum -= 1;
           const spread = live.spread || 0.05, radius = live.radius || 0, speed = live.speed || 0.5;
           const jr = Math.random() * radius, ja = Math.random() * Math.PI * 2;
+          const origin = emissionOrigins?.length ? emissionOrigins[nextEmissionOrigin++ % emissionOrigins.length] : null; // Selected once per spawned particle; single-origin effects behave exactly as before.
           particles.push({
             age: 0, life: Math.max(0.05, live.lifetime || 0.6),
-            x: Math.cos(ja) * jr, y: 0, z: Math.sin(ja) * jr,
+            x: (origin?.x || 0) + Math.cos(ja) * jr, y: origin?.y || 0, z: (origin?.z || 0) + Math.sin(ja) * jr,
             vx: baseDir.x * speed + (Math.random() - 0.5) * spread,
             vy: baseDir.y * speed + (Math.random() - 0.5) * spread,
             vz: baseDir.z * speed + (Math.random() - 0.5) * spread,
@@ -682,8 +675,11 @@
         if (i < particles.length) {
           const p = particles[i];
           posAttr.setXYZ(i, p.x, p.y, p.z);
-          const c = colorA.clone().lerp(colorB, p.age / p.life);
-          colorAttr.setXYZ(i, c.r, c.g, c.b);
+          const fade = p.age / p.life; // Reuse the authored campfire gradient without allocating a THREE.Color per particle per frame.
+          colorAttr.setXYZ(i,
+            colorA.r + (colorB.r - colorA.r) * fade,
+            colorA.g + (colorB.g - colorA.g) * fade,
+            colorA.b + (colorB.b - colorA.b) * fade);
         } else {
           posAttr.setXYZ(i, 0, -9999, 0);
         }

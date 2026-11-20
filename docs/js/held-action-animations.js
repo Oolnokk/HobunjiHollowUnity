@@ -395,8 +395,9 @@
   };
   window.HeldActionAnimations = Object.freeze({ torchIdle, blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
 
-  // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
-  // rotating arm sprites. Shoulder coordinates are either manually authored in
+  // Shared direct-hand bootstrap. There are no arm bones or IK; ordinary held
+  // objects may move with their grips to remain within measured wrist reach.
+  // Shoulder coordinates are either manually authored in
   // Animation Author or resolved by the raw-arm main-mass fallback. Per-pose axis
   // weights then blend smoothly with the same pose timeline as the held item.
   const configuredDocsBase = window.__HobunjiHandBootstrapDocsBase || null; // Lets repository-backed authoring tools keep every hand dependency on the selected commit.
@@ -491,7 +492,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261116boneyKasaRig1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261119rigIdleHand2', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261118captainWeapon1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261119heldReachReview2', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time

@@ -22,6 +22,7 @@ function buildContext(withScheduler = true) {
   const registered = new Map();
   const setEnabledCalls = [];
   const visuals = [];
+  const emitterCalls = []; // Captures real emitter arguments for batched canonical fire regression checks.
 
   function makeVisual() {
     const v = { updates: [], disposed: false, update(dt, ambient) { v.updates.push({ dt, ambient }); }, dispose() { v.disposed = true; } };
@@ -48,19 +49,19 @@ function buildContext(withScheduler = true) {
     buildFurnitureGroup(key, color) { return { key, color, parent: null, userData: {} }; },
   };
   const authoredData = {
-    campfire: { key: 'campfire', particleEmitters: [{ id: 'flame', enabled: true }] },
+    campfire: { key: 'campfire', particleEmitters: [{ id: 'flame', type: 'fire', enabled: true, size: .19, rate: 38, speed: .7, radius: .13, spread: .3, gravity: -.05, lifetime: .72, colorA: '#ffd45a', colorB: '#ff3d12' }] },
     hearth: { key: 'hearth', particleEmitters: [{ id: 'hearth_fire', enabled: true, attachedPartId: 'hearth_ash' }] },
   };
   context.AuthoredFurniture = {
     load: key => Promise.resolve(authoredData[key] || null),
     buildGroup: () => null,
     peek: key => authoredData[key] || null,
-    createEmitterVisual: (group, emitter) => makeVisual(),
+    createEmitterVisual: (group, emitter, capacity) => { emitterCalls.push({ group, emitter, capacity }); return makeVisual(); },
   };
 
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'interior-fire-floor-runtime.js' });
-  return { context, registered, setEnabledCalls, visuals, scheduler };
+  return { context, registered, setEnabledCalls, visuals, scheduler, emitterCalls };
 }
 
 const { context, registered, setEnabledCalls, visuals } = buildContext();
@@ -133,6 +134,43 @@ assert.equal(visuals[0].disposed, true, 'losing its scene parent after having be
 assert.equal(entry.options.enabled, false, 'the subscriber disables itself once no ambient records remain');
 assert.equal(setEnabledCalls.filter(c => c.id === 'interior-ambient-vfx').length >= 2, true, 'setEnabled toggled at least once on and once off across the lifecycle');
 
+// A house or inventory wall torch may be assembled independently of an ordinary
+// furniture catalog entry: its real tilted tip still gets the player's campfire
+// particle VFX, and the same ambient subscriber disposes it on removal.
+const torchAnchor = { add() {} }; // The authored-furniture runtime positions this real Three.Group-like anchor under the handheld sprite pivot.
+const replacementAnchor = { add() {} }; // Simulates a newly authored sprite replacing a provisional procedural fallback.
+const torchVisuals = []; // Tracks every emitter to ensure a replacement disposes its predecessor exactly once.
+let torchOpts = null; // Confirm a size-only adaptation, not a new flame renderer.
+context.PersistentGroundFire = {
+  attachCampfireFlame(anchor, options) {
+    assert([torchAnchor, replacementAnchor].includes(anchor), 'fire only attaches to one of the live torch tip anchors');
+    torchOpts = options;
+    const visual = { anchor, updates: [], disposed: false, update(dt, lit) { this.updates.push({ dt, lit }); }, dispose() { this.disposed = true; } };
+    torchVisuals.push(visual);
+    return visual;
+  },
+};
+const torchGroup = { userData: { wallTorchFireAnchor: torchAnchor }, parent: {} };
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wallTorch');
+assert(torchOpts && torchOpts.scale > 0 && torchOpts.rateScale > 0, 'wall torch asks the existing campfire VFX renderer for a smaller flame');
+assert.equal(context.InteriorFireFloorRuntime.debugSnapshot().lastAmbientKey, 'wallTorch', 'mobile ambient snapshot identifies torches');
+tick({ timestamp: 40 });
+assert.equal(torchVisuals[0].updates.length, 1, 'wall torch receives the same scheduler update as all ambient flames');
+torchGroup.userData.wallTorchFireAnchor = replacementAnchor;
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wallTorch');
+assert.equal(torchVisuals.length, 2, 'upgrading a fallback torch rebinds its flame to the newly authored tip');
+assert.equal(torchVisuals[0].disposed, true, 'the orphaned fallback-anchor emitter is disposed on upgrade');
+assert.equal(torchVisuals[1].anchor, replacementAnchor, 'the replacement uses the new authored tip rather than the removed sprite');
+assert.equal(context.InteriorFireFloorRuntime.debugSnapshot().ambientGroups, 1, 'a live torch upgrade must keep only one ambient record');
+context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(torchGroup, null, 'wallTorch');
+assert.equal(torchVisuals.length, 2, 'repeat notifications for the same tip never double-attach flames');
+tick({ timestamp: 50 });
+assert.equal(torchVisuals[1].updates.length, 1, 'the live replacement flame receives scheduled ticks');
+torchGroup.parent = null;
+tick({ timestamp: 56 });
+assert.equal(torchVisuals[1].disposed, true, 'removing the upgraded torch disposes its live campfire emitter');
+assert.equal(entry.options.enabled, false, 'torch removal releases the ambient subscriber when no other flames remain');
+
 // The stand-alone interior editor may load furniture before the game scheduler.
 // It must still boot, author floor/furniture and attach later when a scheduler appears.
 const standalone = buildContext(false);
@@ -145,3 +183,52 @@ standalone.context.ProceduralFurniture.buildFurnitureGroup('campfire', 0x6d3e20)
 assert(standalone.registered.has('interior-ambient-vfx'), 'later scheduler is registered when a new visual needs animation');
 assert.equal(standalone.registered.get('interior-ambient-vfx').options.enabled, true, 'late-registered scheduler starts the existing emitters');
 console.log('interior ambient fire VFX scheduler migration and scheduler-free editor startup passed');
+
+// The numerous festival candle clusters retain one GPU particle emitter per
+// 16-wick cluster, but the emitter must now be the real authored CAMPFIRE source.
+(async function checkCanonicalBatchedCandleFlames() {
+  const clustered = buildContext();
+  const key = 'candleCluster';
+  const parts = Array.from({ length: 16 }, (_, index) => ({
+    id: 'wax_' + index,
+    transform: { x: (index % 4) * .1, y: .3, z: Math.floor(index / 4) * .1, sy: .18 },
+  }));
+  const emitters = parts.map((part, index) => ({
+    id: 'candle_' + index, type: 'fire', enabled: true,
+    attachedPartId: part.id, size: .047,
+  }));
+  const group = { parent: {}, userData: { meshById: new Map(parts.map(part => [part.id, {}])) } };
+  clustered.context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(group, { key, parts, particleEmitters: emitters }, key);
+  await Promise.resolve(); await Promise.resolve(); // Allow the actual authored campfire load and visual creation to settle.
+  assert.equal(clustered.emitterCalls.length, 1, 'sixteen candle tips use exactly one authored emitter instance');
+  const { emitter, capacity } = clustered.emitterCalls[0];
+  assert.equal(emitter.type, 'fire', 'cluster source is the campfire flame rather than a one-off Points renderer');
+  assert.equal(emitter.emissionOrigins.length, 16, 'all editable candle tips are present in the batched source');
+  assert.deepEqual([emitter.colorA, emitter.colorB], ['#ffd45a', '#ff3d12'], 'cluster uses the normal campfire flame palette');
+  assert(capacity <= 55, 'particle capacity remains close to the prior 48-particle budget');
+  const fxTick = clustered.registered.get('interior-ambient-vfx').fn;
+  fxTick({ timestamp: 20 });
+  assert.equal(clustered.visuals[0].updates.length, 1, 'the shared ambient subscriber advances the canonical candle emitter');
+  group.parent = null;
+  fxTick({ timestamp: 40 });
+  assert.equal(clustered.visuals[0].disposed, true, 'cluster cleanup disposes its shared authored emitter');
+  // Building Interior Editor deliberately omits PersistentGroundFire. It must still
+  // create authentic campfire flames for wall torches, not silently render none.
+  const editor = buildContext();
+  const editorAnchor = { add() {} }; // The fallback uses this standalone 3D anchor rather than the world-ground helper.
+  const editorTorch = { parent: {}, userData: { wallTorchFireAnchor: editorAnchor } };
+  editor.context.InteriorFireFloorRuntime.onAuthoredFurnitureReady(editorTorch, null, 'wallTorch');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(editor.emitterCalls.length, 1, 'standalone editor creates one campfire VFX emitter without PersistentGroundFire');
+  assert.equal(editor.emitterCalls[0].group, editorAnchor, 'standalone torch flame follows its actual authored tip');
+  assert.equal(editor.emitterCalls[0].emitter.type, 'fire', 'standalone torch uses the actual authored fire-emitter type');
+  assert.equal(editor.emitterCalls[0].emitter.colorA, '#ffd45a', 'standalone torch uses the player-campfire palette');
+  const editorTick = editor.registered.get('interior-ambient-vfx').fn;
+  editorTick({ timestamp: 20 });
+  assert(editor.visuals[0].updates.length >= 2, 'standalone flame is primed and also receives ambient updates');
+  editorTorch.parent = null;
+  editorTick({ timestamp: 40 });
+  assert.equal(editor.visuals[0].disposed, true, 'standalone torch emitter is disposed when removed');
+
+  console.log('canonical campfire wall-torch and batched candle-cluster VFX passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });
