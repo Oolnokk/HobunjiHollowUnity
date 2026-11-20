@@ -49,7 +49,7 @@ const makeFoldMesh = () => {
   const weights = new Float32Array([
     0, 0, .7, .3, // Face-side pixel: pitch Influence .3 and rigid yaw fold 1
     .3, .2, .3, .2, // Middle of the narrow crease: Influence .4, yaw fold .5
-    .6, .4, 0, 0, // Pixel below neck: Influence .4, yaw fold 0
+    .6, .4, 0, 0, // Body-side pixel: Influence .4, yaw fold 0
   ]);
   const uv = { count: 3, getX: i => [0, .5, 1][i], getY: i => [.95, .5, .05][i] };
   const attr = { array: weights, count: 3, itemSize: 4, needsUpdate: false, getY(i) { return weights[i * 4 + 1]; } };
