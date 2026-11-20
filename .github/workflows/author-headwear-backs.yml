@@ -41,7 +41,10 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/generated"
           unzip -oq "${RUNNER_TEMP}/headwear_behind_install.zip" -d "${RUNNER_TEMP}/generated"
           cp -a "${RUNNER_TEMP}/generated/docs/." docs/
-          git add docs/assets/cosmetics/clothes/hat/ docs/config/cosmetics/ docs/config/scratchbones-config.js
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          node scripts/check-cache-busts.js --fix origin/main
+          node scripts/check-cache-busts.js origin/main
+          git add docs scripts/test-*.js
           if git diff --cached --quiet; then
             echo "Generated sprites and cosmetic JSON already match this branch."
           else
@@ -50,6 +53,36 @@ jobs:
             git commit -m "Author dual-flipped rear headwear sprites and link metal-tinted circlet backs"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
+      - name: Include cache-safe loader pages in installable ZIP
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          python - <<'PY'
+          import hashlib, json, os, subprocess, tempfile, zipfile
+          from pathlib import Path
+          bundle=Path(os.environ["RUNNER_TEMP"])/"headwear_behind_install.zip"
+          with zipfile.ZipFile(bundle) as z:
+              items={name:z.read(name) for name in z.namelist()}
+          changed=subprocess.check_output(
+              ["git","diff","--name-only","origin/main","--","docs"],text=True
+          ).splitlines()
+          for name in changed:
+              file=Path(name)
+              if file.is_file():
+                  items[name]=file.read_bytes()
+          items["SHA256.json"]=(json.dumps({
+              name:hashlib.sha256(data).hexdigest()
+              for name,data in sorted(items.items()) if name!="SHA256.json"
+          },indent=2)+"\\n").encode("utf-8")
+          output=bundle.with_suffix(".verified.zip")
+          with zipfile.ZipFile(output,"w",zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for name,data in sorted(items.items()):
+                  z.writestr(name,data)
+          output.replace(bundle)
+          with zipfile.ZipFile(bundle) as z:
+              assert all(z.read(name)==data for name,data in items.items())
+          print("Cache-safe install ZIP:",len(items),"files; loader updates:",
+                len([name for name in changed if name not in ("docs/config/scratchbones-config.js",)]))
+          PY
       - name: Attach installable asset ZIP and visual preview
         uses: actions/upload-artifact@v4
         with:
