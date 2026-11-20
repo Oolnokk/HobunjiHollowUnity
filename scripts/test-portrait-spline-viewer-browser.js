@@ -257,6 +257,53 @@ const server=http.createServer((req,res)=>{
     assert(gameplay.openingPixels>1,'elastic opening expands around connected hair');
     assert.equal(gameplay.overlap,1,'marked hair can still overlap opaque hood cloth');
     assert.equal(gameplay.hasIslandVertex,true,'small flexible islands remain deformable');
+    // Independent real-WebGL owner/beard depth contract: the owner's color may
+    // have depthWrite disabled for shoulder-pet/actor sorting, but the beard
+    // still wins only when its geometry is genuinely closer to the camera.
+    const pairedDepth=await page.evaluate(async()=>{
+      const THREE=await import('https://esm.sh/three@0.128.0');
+      const renderer=new THREE.WebGLRenderer({antialias:false,preserveDrawingBuffer:false});
+      const target=new THREE.WebGLRenderTarget(64,64,{depthBuffer:true});
+      const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,10);
+      camera.position.set(0,0,2);camera.lookAt(0,0,0);
+      scene.background=new THREE.Color(0xffffff);
+      const skin=document.createElement('canvas');skin.width=skin.height=4;
+      const ctx=skin.getContext('2d');ctx.fillStyle='#001aff';ctx.fillRect(0,0,2,4);
+      const tex=new THREE.CanvasTexture(skin);tex.magFilter=tex.minFilter=THREE.NearestFilter;
+      const ownerMat=new THREE.MeshBasicMaterial({map:tex,transparent:true,alphaTest:.35,
+        depthTest:true,depthWrite:false,side:THREE.FrontSide});
+      const beardMat=new THREE.MeshBasicMaterial({color:0xff0000,transparent:true,
+        alphaTest:.35,depthTest:true,depthWrite:true,side:THREE.FrontSide});
+      const plane=new THREE.PlaneGeometry(1.8,1.8);
+      const owner=new THREE.Mesh(plane,ownerMat),beard=new THREE.Mesh(plane,beardMat);
+      owner.renderOrder=2;beard.renderOrder=1.99;
+      scene.add(owner,beard);
+      const sample=(front,x)=>{
+        beard.position.z=front?.2:-.2;
+        renderer.setRenderTarget(target);
+        renderer.clear(true,true,true);
+        renderer.render(scene,camera);
+        const pixels=new Uint8Array(64*64*4);
+        renderer.readRenderTargetPixels(target,0,0,64,64,pixels);
+        const at=(32*64+x)*4;
+        return [...pixels.slice(at,at+3)];
+      };
+      const frontOpaque=sample(true,16),behindOpaque=sample(false,16);
+      const behindTransparent=sample(false,48);
+      // A wrong late-pass x-ray would return red for behindOpaque; a wrong
+      // depthWrite=false early beard would return blue for frontOpaque.
+      ownerMat.dispose();beardMat.dispose();tex.dispose();plane.dispose();target.dispose();renderer.dispose();
+      return {frontOpaque,behindOpaque,behindTransparent};
+    });
+    assert(pairedDepth.frontOpaque[0]>200&&pairedDepth.frontOpaque[2]<60,
+      'front beard prevents its owner painting through 3D geometry: '+JSON.stringify(pairedDepth));
+    assert(pairedDepth.behindOpaque[2]>200&&pairedDepth.behindOpaque[0]<60,
+      'opaque owner hides beard geometry physically behind it, even without owner depth writes');
+    assert(pairedDepth.behindTransparent[0]>200&&pairedDepth.behindTransparent[2]<60,
+      'a real alpha opening in the owner does not hide otherwise visible beard pixels');
+    assert(before.viewer.pairedOwnerDepth.depthTest&&before.viewer.pairedOwnerDepth.depthWrite
+      &&before.viewer.pairedOwnerDepth.frontBeforeOwner,
+      'live 3D author matches gameplay depth and actor-order pairing');
     const projected=await page.evaluate(async()=>{
       const THREE=await import('https://esm.sh/three@0.128.0');
       const renderer=new THREE.WebGLRenderer();
