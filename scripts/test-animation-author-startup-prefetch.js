@@ -26,6 +26,8 @@ assert.doesNotMatch(ready, /await loadSingleAvatarAnimationCatalog\(/,
 const mode = page.slice(page.indexOf('async function setAnimationAuthorMode('), page.indexOf('\nfunction renderAnimationModeChrome('));
 assert.match(mode, /mode === 'single' && !animationAuthor\.single\.catalog\.length/,
   'Single-Avatar mode starts its catalog when requested');
+assert.match(page, /const untouchedFallback = single\.source\?\.id === 'custom:fallback' && !single\.dirty/,
+  'the first catalog animation replaces only an untouched temporary Single-Avatar default');
 const library = page.slice(page.indexOf('function renderAnimationNpcLibrary()'), page.indexOf('\nfunction makePortraitCanvas(', page.indexOf('function renderAnimationNpcLibrary()')));
 assert.match(library, /new IntersectionObserver\(/, 'NPC previews are lazily observed');
 assert.match(library, /enqueueThumbnail\(canvas, npc\)/, 'visible previews reuse the existing single-render worker');
