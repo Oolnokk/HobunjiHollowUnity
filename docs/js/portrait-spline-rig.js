@@ -564,7 +564,9 @@
       : overlap ? Math.max(.003, authoredDepth) : authoredDepth;
     return { x: (x + (target.x - rest.x) * influence) * width,
       y: (y + (target.y - rest.y) * influence) * height,
-      z: (behindHood && motion === 0 ? -.0008 : .0008 + (z - .0008) * motion) * height };
+      // A partly anchored edge must stay BEHIND the cloth for every motion weight, not fade back through z=0.
+      z: (behindHood ? -.0008 + (z + .0008) * motion
+        : .0008 + (z - .0008) * motion) * height };
   }
 
   const OWNER_DEPTH_EPSILON = 0.01; // Beard renders immediately before its owner's portrait so depth, not sprite layers, determines mutual visibility.
