@@ -53,6 +53,18 @@ for (const kind of ['voorg-ass', 'voorg-ass-herd-mother']) {
   assert.deepEqual(JSON.parse(JSON.stringify(api.regionsFor(entry).map(region => region.id))),
     ['base', 'belly'], kind + ' offers base coat and belly paint but never an independent beard/hoof selector');
 }
+context.CreatureGeneticsRender.SPECIES.grehlr = {
+  patterns: ['mitts', 'coloredstripe', 'beard', 'spectacles'],
+  baseColorPatterns: ['beard'],
+}; // The same renderer metadata used in-game suppresses a redundant Grehlr beard paint selector.
+const grehlrEntry = { kind: 'grehlr', genotype: {
+  base: { color: '#A47650', copies: 2 },
+  coloredstripe: { color: '#C9B69B', copies: 1, enabled: true },
+  beard: { color: '#FF00FF', copies: 2, enabled: true },
+  colorPoolPaint: { layers: { beard: { dyeHex: '#FF00FF' } } }, // Legacy beard-only paint is not a separate active region.
+} };
+assert.deepEqual(JSON.parse(JSON.stringify(api.regionsFor(grehlrEntry).map(region => region.id))),
+  ['base', 'coloredstripe'], 'Grehlr beard is painted with base coat and never exposed as a separate dye region');
 assert.equal(api.stableMaxLevel(), 10, 'Color Pools reads the live refined Stable level cap');
 assert.equal(api.overpassUnlocked(), false, 'unfinished Quest 2 cannot add an overpass');
 assert.equal(api.__test.setOverpassPattern('base', 'overpass'), false, 'direct call cannot bypass quest gate');
