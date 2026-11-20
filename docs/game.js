@@ -11107,6 +11107,22 @@
             // (ZoneTerrainFeatures.buildUndiggableBoulderMeshes, called per chunk
             // below) instead of a per-tile mound each.
             if (tile.rockKind === 'undiggableBoulder') continue;
+            // Mineable ore rocks are low-poly faceted rocks (js/faceted-rocks.js):
+            // a few flat faces, each with the rock PNG stretched to fit and its
+            // drawn border as the outline, so no shell outline / edge-ID.
+            if (tile.rockKind === 'diggableRockOre' && window.FacetedRocks?.enabled?.()) {
+              const rock = window.FacetedRocks.buildOreRock({
+                col: c, row: r, name: `faceted_ore_rock_${c}_${r}`,
+                material: window.OreRockTextures.facetedMaterialFor(THREE, tile.oreKey || tile.oreKind, ORE_DEFS),
+                displace: geometry => displaceZoneGeometry(geometry, mapId, cx, cz),
+              });
+              tile.projectileCoverHeightTiles = rock.heightTiles;
+              rock.group.position.set(cx, NORMAL_TOP + tierY, cz);
+              zScene.add(rock.group);
+              meshes.push(rock.group);
+              mineableRocksByTile.set(`${c},${r}`, rock.group);
+              continue;
+            }
             const { stoneGeo, grassGeo, heightTiles } = window.TerrainGeometry.buildRockTileGeo(c, r);
             tile.projectileCoverHeightTiles = heightTiles; // Projectile tile checks reuse the generated mound height without inspecting meshes per frame.
             if (tile.rockKind === 'diggableRockOre') {
@@ -11565,7 +11581,7 @@
           for (const object of [...payload.floorMeshes, ...payload.featureMeshes]) window.NaturalSurfaceRuntimeFixes?.inspectObject?.(object);
           const bakeTargets = [];
           for (const object of [...payload.floorMeshes, ...payload.featureMeshes]) {
-            object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry) bakeTargets.push(mesh); });
+            object.traverse?.(mesh => { if (mesh.isMesh && mesh.userData?.wildernessChunkOwnsGeometry && !mesh.userData.facetedRock) bakeTargets.push(mesh); }); // Faceted rocks own their per-face PNG UVs (js/faceted-rocks.js).
           }
           for (const mesh of bakeTargets) {
             const baked = window.TerrainJigsawUV?.bakeMesh?.(mesh, { shareChunkTexture: true });
@@ -15113,6 +15129,16 @@
                 tile.oreKind = rock.oreKind;
                 tile.oreKey = rock.oreKey || null;
                 tile.mineFloor = mapData.mineFloor;
+              }
+              if (window.FacetedRocks?.enabled?.()) { // Same low-poly faceted ore rock as the wilderness (js/faceted-rocks.js).
+                const faceted = window.FacetedRocks.buildOreRock({
+                  col: rock.col, row: rock.row, name: `faceted_mine_rock_${rock.col}_${rock.row}`,
+                  material: window.OreRockTextures.facetedMaterialFor(THREE, rock.oreKey || rock.oreKind, ORE_DEFS),
+                });
+                faceted.group.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+                bScene.add(faceted.group);
+                oreRockMeshes.set(`${rock.col},${rock.row}`, faceted.group);
+                continue;
               }
               const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
               if (!stoneGeo) continue;

@@ -239,6 +239,7 @@ Rules:
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
+| Change loose rocks (shape, faces, look) | `js/faceted-rocks.js` (chiselled low-poly geometry, per-face PNG UVs, no shell outline); ore colour: `js/ore-rock-textures.js` `facetedMaterialFor`. Keep their UVs out of the terrain jigsaw / natural-surface remappers (`naturalSurfaceUvOwner: 'FacetedRocks'`) |
 
 ## 8. Debugging
 

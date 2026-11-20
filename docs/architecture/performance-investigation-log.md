@@ -1,5 +1,16 @@
 # Performance investigation log
 
+## 20 Nov 2026: faceted rocks (visual change, with a draw-call side effect)
+
+Loose rocks (wilderness and town-mine ore rocks, farm rocks) are now chiselled low-poly blocks
+(`js/faceted-rocks.js`): 8–13 flat faces, each showing the rock PNG stretched to fit with its
+drawn border as the outline. Per ore rock that is 1 mesh instead of 2 (stone + grass cap) and
+no shell-outline draw; the user's Cloud Forest view has ~80 of them. Their per-face UVs are
+excluded from the chunk jigsaw bake (game.js) and both natural-surface remap paths
+(surface-stretch-uv-furniture.js, natural-surface-stretch-runtime.js), which had silently
+replaced them in the first in-game test. Undiggable multi-tile boulders still use the rounded
+shell.
+
 ## 20 Nov 2026: GTX 1060 report — draw-call bound; enchanted-weapon motes in colourless replays
 
 **Device** (Opera / Windows, GTX 1060 3GB via ANGLE D3D11, Cloud Forest, 1850×858, GPU timer

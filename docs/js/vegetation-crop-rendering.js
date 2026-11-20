@@ -952,6 +952,17 @@
       _addFarmTileObject(floorMesh);
       tileMeshes[i] = floorMesh;
       deps.markTerrainEdgeId(floorMesh, TileType.GRASS);
+      // Low-poly faceted rock (js/faceted-rocks.js): flat faces, each with the
+      // rock PNG stretched to fit; its drawn border is the outline.
+      if (window.FacetedRocks?.enabled?.()) {
+        const { mesh } = window.FacetedRocks.buildNaturalRock({ col, row, material: deps.resolveTileMat('farm', TileType.ROCK), name: `faceted_farm_rock_${col}_${row}` });
+        mesh.userData.farmLooseRockMound = true;
+        mesh.position.set(col + 0.5, deps.NORMAL_TOP, row + 0.5);
+        _addFarmTileObject(mesh);
+        mesh._windAmp = 0; // wind loop skips _windAmp=0
+        setVegFoliageMesh(i, mesh);
+        return;
+      }
       // Plateau mound: stone for elevated/cliff cells, grass for ground-level base
       const { stoneGeo, grassGeo } = window.TerrainGeometry.buildRockTileGeo(col, row);
       let moundRoot = null;
