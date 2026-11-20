@@ -1,5 +1,31 @@
 # Performance investigation log
 
+## 20 Nov 2026: review of this branch's render changes
+
+A full review of the combat-perf branch found, and this entry fixes:
+- **Particles drawn once could be clipped.** Hidden from the unclipped base pass, a gear particle
+  draws only inside its group's replay scissor, which grew only for enchantment aura padding. A
+  torch or flail flame rising past its weapon's box would be cut off. Gear particles now join their
+  group's scissor and near-replay far depth (`needsParticleBounds`); enchantment motes stay
+  covered by their plane's aura padding, which is measured over exactly those motes.
+- **The held dungeon-fire plume drew under its weapon.** Off the held-overlay layer it drew only in
+  the base pass, and the weapon's overlay redraw covered its base. It is back on the overlay layer
+  with its scissor padding, linked to the weapon plane (`linkGearParticle`) so it draws once, right
+  after the weapon. A flying projectile's plume stays world-only.
+- **NPC weapon particles showed through grass.** With other characters' weapons in the base pass,
+  their particles still carried the overlay layer and redrew in every x-ray overlay. They now leave
+  the overlays with their weapon.
+- **Particles could stay hidden after an exception** between the base render and the replay; one
+  `try`/`finally` now spans the whole section.
+- Weapon-budget diagnostics were counted twice a frame (base and shell passes); the budget's
+  containers are reused. The tree instancer's cache token is bumped (main had the first version
+  under the same token). The held-item x-ray exception for other characters is recorded in the
+  `CharacterVisuals` coverage table.
+
+Headless, user's save: the enchanted weapon renders identical frames with drawn-once particles on
+and off; no replay fell back to full screen; six bandits still 2,293 → 1,881 draws and 21 → 18
+renders, and the Settings toggle restores the old frame exactly.
+
 ## 20 Nov 2026: NPC and enemy weapons in the base pass by default
 
 The device benchmark measured `npcWeaponsBasePass` about 11 ms a frame faster on a GTX 1060 while
@@ -56,9 +82,9 @@ every replay group's overlay. `HeldObjectRenderOrder` now hides them for the bas
 whole replay and shows each only in the overlay render of the group holding its gear (nearest
 held ancestor; gear the replay culls keeps the old behaviour). Headless: one render draws all 77
 motes once a frame (was base + every group: 154 here, 228 on the device); 363 px differ where
-the base-pass copy used to double a translucent mote. Particles were never meant to x-ray as
-such (user decision): the dungeon-fire plume, a separate world object, left the held-overlay
-layer and no longer pads the weapon's replay scissor. A/B:
+the base-pass copy used to double a translucent mote. (Corrected after review, see the entry
+above: the held dungeon-fire plume briefly left the held-overlay layer, which let the redrawn
+weapon cover its base; it is now drawn once after its weapon like the motes.) A/B:
 `setGearParticlesOnceEnabled(false)`, benchmark variant `gearParticlesEveryPass`.
 
 ## 20 Nov 2026: why combat and crowds still cost frames (investigation)

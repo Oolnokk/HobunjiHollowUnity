@@ -12,9 +12,10 @@ const end = rendererSource.indexOf('  function restoreRendererScissor(', start);
 assert(start >= 0 && end > start, 'the production held-overlay scissor function exists');
 const rectSource = rendererSource.slice(start, end); // Used by the isolated geometry-only projection harness.
 
+const point = (x = 0, y = 0, z = 0) => ({ x, y, z, set(a, b, c) { this.x = a; this.y = b; this.z = c; return this; } }); // Vector3 subset.
 class Box {
-  constructor() { this.min = {}; this.max = {}; }
-  copy(box) { this.min = { ...box.min }; this.max = { ...box.max }; return this; }
+  constructor() { this.min = point(); this.max = point(); }
+  copy(box) { this.min = point(box.min.x, box.min.y, box.min.z); this.max = point(box.max.x, box.max.y, box.max.z); return this; }
   applyMatrix4(m) {
     for (const axis of ['x', 'y', 'z']) {
       this.min[axis] += m[axis] || 0;
@@ -40,10 +41,13 @@ class Vector {
     return this;
   }
 }
-const projection = new Function('scissorDrawingSize', 'scissorViewport', 'scissorBox', 'scissorCorner', 'SCISSOR_MARGIN_PX', // Projection scratch belongs to the real held renderer.
+const extentStart = rendererSource.indexOf('  function spriteWorldExtent('); // The shipped billboard extent used for gear particles.
+const extentSource = rendererSource.slice(extentStart, rendererSource.indexOf('  // Hides every gear particle', extentStart));
+assert(extentStart > 0 && extentSource.length > 0, 'the production sprite extent function exists');
+const projection = new Function('scissorDrawingSize', 'scissorViewport', 'scissorBox', 'scissorCorner', 'SCISSOR_MARGIN_PX', 'needsParticleBounds', // Projection scratch belongs to the real held renderer.
   'let scissorTargetWidth = 0, scissorTargetHeight = 0, lastReplayScissorCoverage = 1;\n' +
-  rectSource + '\nreturn replayScissorRect;'
-)(new Vector(), new Vector(), new Box(), new Vector(), 4);
+  extentSource + rectSource + '\nreturn replayScissorRect;'
+)(new Vector(), new Vector(), new Box(), new Vector(), 4, child => child.drawnOnlyInReplay === true); // Which particles need bounds: test-held-gear-particles-once.js.
 const renderer = {
   getRenderTarget: () => null,
   getDrawingBufferSize: out => out.set(1000, 1000, 0, 0),
@@ -93,4 +97,19 @@ main.userData.hobunjiDungeonFireVfxPadding = 0; // Extinguishing Dungeon Fire mu
 assert.strictEqual(projection(renderer, camera, [source], rect), true);
 assert(rect.x > 450 && rect.x + rect.z < 550,
   'extinguished Dungeon Fire does not permanently enlarge held-object scissoring');
+// A gear particle the base pass no longer draws (a torch or flail flame rising past its weapon, no aura
+// padding) is drawn only inside this scissor, so its billboard extent must be inside it too.
+const flame = {
+  name: 'torch flame', visible: true, isSprite: true, drawnOnlyInReplay: true, children: [], userData: {},
+  matrixWorld: { elements: [0.05, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 1, 0, 0, 0.8, 0, 1] }, // 0.05-wide sprite 0.8 above the blade.
+  traverseVisible(fn) { if (this.visible) fn(this); },
+};
+source.children.push(flame);
+assert.strictEqual(projection(renderer, camera, [source], rect), true);
+assert(rect.y + rect.w > 930, 'the flame\'s whole billboard (0.8 + its rotated half-diagonal) is inside the scissor');
+assert(rect.x > 450 && rect.x + rect.z < 550, 'without widening it sideways');
+flame.drawnOnlyInReplay = false; // Particles that still draw in the unclipped base pass do not enlarge the replay.
+assert.strictEqual(projection(renderer, camera, [source], rect), true);
+assert(rect.y + rect.w < 550, 'a base-pass particle leaves the scissor at the blade');
+source.children.pop();
 console.log('enchantment aura held-overlay bounds tests passed');

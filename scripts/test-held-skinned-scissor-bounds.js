@@ -35,6 +35,7 @@ const api = new Function('THREE', [
   'let lastReplayScissorCoverage = 1, lastScissorFailureReason = "none";',
   'const scissorViewport = new THREE.Vector4(), scissorDrawingSize = new THREE.Vector2(), SCISSOR_MARGIN_PX = 4;',
   'let scissorTargetWidth = 0, scissorTargetHeight = 0, scissorMinimumWorldY = Infinity;',
+  'const needsParticleBounds = () => false; // Gear-particle bounds: test-enchanted-weapon-overlay-bounds.js.',
   slice('  const scissorBox = new THREE.Box3();', '  const scissorRect = new THREE.Vector4();'),
   slice('  function replayScissorRect(', '  function restoreRendererScissor('),
   'return { replayScissorRect, reason: () => lastScissorFailureReason, setSkinned: v => { skinnedScissorEnabled = v; }, count: () => skinnedScissorBounds };',

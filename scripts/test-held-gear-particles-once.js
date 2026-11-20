@@ -24,6 +24,7 @@ const api = new Function(`
   function restoreVisibility(states) { for (const [o, v] of states) o.visible = v; }
   ${source.slice(start, end)}
   return { beginGearParticles, releaseUnreplayedGearParticles, showGroupGearParticles, endGearParticles,
+    linkGearParticle, gearParticlesOf, needsParticleBounds, spriteWorldExtent,
     setEnabled: v => { gearParticlesOnceEnabled = v; }, skips: () => gearParticleSkips, managed: () => lastGearParticles };
 `)();
 
@@ -36,11 +37,12 @@ function node(name, extra = {}) {
 const particle = name => node(name, { isSprite: true, material: { depthWrite: false }, layers: { mask: (1 | (1 << OVERLAY)) >>> 0 } });
 
 // Main blade with motes; a flail head nested under the off-hand weapon, with its own motes.
-const mainBlade = node('main_blade', { isMesh: true });
+const scene = node('scene', { isScene: true });
+const mainBlade = scene.add(node('main_blade', { isMesh: true }));
 const motesA = [particle('a1'), particle('a2'), particle('a3')];
 const emitterA = mainBlade.add(node('weapon_enchantment_metal_particles'));
 motesA.forEach(m => emitterA.add(m));
-const offWeapon = node('off_weapon', { isMesh: true });
+const offWeapon = scene.add(node('off_weapon', { isMesh: true }));
 const flailHead = offWeapon.add(node('flail_head', { isMesh: true }));
 const motesB = [particle('b1'), particle('b2')];
 motesB.forEach(m => flailHead.add(m));
@@ -78,6 +80,45 @@ assert.equal(motesA[0].visible, false);
 api.beginGearParticles([]); // Next frame, no participants.
 assert.equal(motesA[0].visible, true, 'safety net restores particles left hidden by an interrupted frame');
 
+// VFX parented outside its gear (the dungeon-fire plume rises from a weapon but lives in the scene):
+// linked to the gear, it is managed exactly like a child particle, and unlinked when its owner disposes it.
+const plume = scene.add(particle('plume'));
+api.linkGearParticle(plume, mainBlade);
+const withPlume = api.beginGearParticles(owners);
+assert.equal(plume.visible, false, 'a linked particle is hidden for the base pass');
+assert.deepEqual(api.showGroupGearParticles([mainBlade]).map(m => m.name).sort(), ['a1', 'a2', 'a3', 'plume'], 'and drawn in its gear\'s group overlay');
+api.endGearParticles(withPlume);
+assert.equal(plume.visible, true);
+const detached = particle('detached'); api.linkGearParticle(detached, mainBlade); // Not in a scene: never managed.
+api.endGearParticles(api.beginGearParticles(owners));
+assert.equal(api.managed(), 6, 'motes + plume; a linked particle outside the scene is ignored');
+api.linkGearParticle(plume, null); api.linkGearParticle(detached, null);
+api.endGearParticles(api.beginGearParticles(owners));
+assert.equal(api.managed(), 5, 'unlinked: no longer managed');
+
+// Gear that does not x-ray (an NPC's weapon under the weapon budget): its particles are found so the
+// replay can keep them out of every overlay render.
+const npcWeapon = scene.add(node('npc_weapon', { isMesh: true }));
+const npcFire = [npcWeapon.add(particle('npc_fire_1')), npcWeapon.add(particle('npc_fire_2'))];
+assert.deepEqual(api.gearParticlesOf([npcWeapon]).map(m => m.name).sort(), ['npc_fire_1', 'npc_fire_2']);
+assert.deepEqual(api.gearParticlesOf([node('bare_hand', { isMesh: true })]), [], 'gear without particles: nothing');
+
+// Bounds: particles the base pass no longer draws join their group's scissor, unless a padded aura covers them.
+emitterA.userData = { weaponEnchantmentVfx: true }; // weapon-enchantment-vfx.js's mote group.
+assert.equal(api.needsParticleBounds(motesA[0], mainBlade), true, 'a mote without live aura padding needs its own bounds');
+mainBlade.userData = { hobunjiHeldOverlayVfxPadding: 0.4 }; // The aura padding is measured over these motes.
+assert.equal(api.needsParticleBounds(motesA[0], mainBlade), false, 'an enchantment mote is inside its plane\'s padded aura already');
+const torchFlame = mainBlade.add(particle('torch_flame')); // Weapon-layer fire on the same, enchanted weapon.
+assert.equal(api.needsParticleBounds(torchFlame, mainBlade), true, 'other particles are not covered by the mote padding');
+mainBlade.children.splice(mainBlade.children.indexOf(torchFlame), 1);
+mainBlade.userData = {}; emitterA.userData = {};
+assert.equal(api.needsParticleBounds(worldOnly, mainBlade), false, 'world-only sprites still draw in the base pass');
+const extent = api.spriteWorldExtent({ matrixWorld: { elements: [0.3,0,0,0, 0,0.4,0,0, 0,0,1,0, 5,6,7,1] } }, { set(x, y, z) { this.x = x; this.y = y; this.z = z; } });
+assert.ok(Math.abs(extent - 0.5) < 1e-9, 'sprite radius covers its 0.3 x 0.4 quad at any rotation or centre');
+assert.match(source, /needsParticleBounds\(child, mesh\) && !includeParticleBounds\(child\)/, 'the replay scissor includes them');
+assert.match(source, /else if \(needsParticleBounds\(child, mesh\)\) \{/, 'and so does the near-replay far depth');
+assert.match(source, /const otherParticles = replayOthers\.length \? gearParticlesOf\(replayOthers\) : null;/, 'non-participant gear particles leave the overlays');
+
 // A/B off: nothing is hidden.
 api.setEnabled(false);
 assert.equal(api.beginGearParticles(owners), null);
@@ -87,5 +128,11 @@ assert.equal(motesA[0].visible, true);
 assert.match(source, /const gearParticlesHidden = beginGearParticles\(\[\.\.\.held, \.\.\.feet\]\);/);
 assert.match(source, /const ownParticles = showGroupGearParticles\(group\.meshes\);/);
 assert.match(source, /endGearParticles\(gearParticlesHidden\);/);
+// One try/finally spans from hiding to the end of the replay: a throw anywhere in between shows them again
+// before the render returns (not only at a later frame that reaches beginGearParticles).
+const wrapped = source.slice(source.indexOf('const gearParticlesHidden = beginGearParticles('), source.indexOf('wrappedRender.__hobunjiHeldRenderOrderWrapped'));
+assert.match(wrapped, /^const gearParticlesHidden = beginGearParticles\([^\n]*\n\s*try \{/, 'the try opens right after hiding');
+assert.match(wrapped, /\} finally \{\n\s*endGearParticles\(gearParticlesHidden\);\n\s*\}\n\s*\}\s*$/, 'and its finally ends the wrapped render');
+assert.match(source, /linkGearParticle, \/\/ \(particle, ownerGearMesh \| null\)/, 'linking is public (dungeon-fire.js)');
 assert.match(source, /setGearParticlesOnceEnabled: value =>/);
 console.log('held gear particles: hidden for the base pass, drawn once in their own group\'s overlay, nearest owner, culled-gear fallback, safety net');

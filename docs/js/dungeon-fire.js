@@ -29,7 +29,8 @@
   const PLUME_LIFETIME = 1.3; // Longer than regular campfire's .72 seconds.
   const PLUME_SPEED = 2.35; // World-up rise ~3 units, vs regular campfire's ~0.5.
   const HELD_REPLAY_PADDING = PLUME_SPEED * PLUME_LIFETIME + .35; // Includes the whole tall plume in the existing scissored held-object x-ray redraw.
-  function createWorldFlame() {
+  // heldPlane: the player-held weapon plane this plume rises from (null for a flying projectile).
+  function createWorldFlame(heldPlane=null) {
     const group = new THREE.Group();
     group.name='dungeonFire_worldUprightFlame';
     group.userData.dungeonFireVisual=true;
@@ -45,7 +46,14 @@
         visual.update?.(1/stream.rate,true); // Prime a visible ignition particle in the very first frame.
         if(visual.points){
           visual.points.renderOrder=3; // Flame draws above PNG without disabling world depth.
-          // World layer only: fire particles never x-ray (design decision); held/x-ray replays leave them alone.
+          // A held weapon's plume is drawn once, right after that weapon in its held replay
+          // (HeldObjectRenderOrder.linkGearParticle), so the redrawn weapon PNG never covers its base.
+          // A projectile's plume stays on the world layer only.
+          const held=window.HeldObjectRenderOrder, overlay=held?.HELD_OVERLAY_LAYER;
+          if(heldPlane&&Number.isInteger(overlay)&&overlay>0&&overlay<32){
+            visual.points.layers?.enable?.(overlay);
+            held.linkGearParticle?.(visual.points,heldPlane);
+          }
         }
         emitters.push(visual);
       }
@@ -59,7 +67,10 @@
     for(const visual of group?.userData?.fireEmitterVisuals||[])visual.update?.(dt,true,{size:.22*pulse});
   }
   function disposeWorldFlame(group) {
-    for(const visual of group?.userData?.fireEmitterVisuals||[])visual.dispose?.();
+    for(const visual of group?.userData?.fireEmitterVisuals||[]){
+      if(visual.points)window.HeldObjectRenderOrder?.linkGearParticle?.(visual.points,null);
+      visual.dispose?.();
+    }
     group?.parent?.remove(group);
     if(group?.userData)group.userData.fireEmitterVisuals=[];
   }
@@ -198,7 +209,7 @@
     if (!state || state.visual !== source.visual || state.plane !== source.plane
       || state.key !== source.key || state.spritePath !== source.spritePath || state.scene !== source.scene) {
       disposeHeldVisual();
-      const worldFlame = createWorldFlame(); // One room-owned world-upright effect follows this precise player-held PNG.
+      const worldFlame = createWorldFlame(source.plane); // One room-owned world-upright effect follows this precise player-held PNG.
       worldFlame.name = 'dungeonFire_chargedHeldWeapon';
       source.scene.add(worldFlame);
       state = { ...source, worldFlame, anchor:null, anchorKind:'pending', age:0 }; // Tracks pulsing and the modular metal pixel position.
@@ -220,7 +231,7 @@
     WORLD_POINT.set(state.anchor?.x || 0, state.anchor?.y || 0, 0);
     state.plane.localToWorld(WORLD_POINT);
     state.worldFlame.position.copy(WORLD_POINT);
-    // No replay scissor padding: the plume never x-rays, so it must not widen the held weapon's replay rectangle.
+    if (state.plane.userData) state.plane.userData.hobunjiDungeonFireVfxPadding = HELD_REPLAY_PADDING; // The weapon's replay scissor covers the whole plume it now draws.
     const step = Math.max(0, Math.min(.05, Number(dt) || 0)); // Stable particle simulation during stalls or UI pauses.
     state.age += step;
     tickWorldFlame(state.worldFlame, step, state.age);

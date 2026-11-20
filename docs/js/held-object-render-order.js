@@ -2158,17 +2158,37 @@
   // for the overlay render of the group holding its gear: one draw, still on
   // top of its gear. Particles of gear the replay culled as off-screen keep the
   // old behaviour. A/B: HeldObjectRenderOrder.setGearParticlesOnceEnabled(false).
+  // Since they no longer draw in the unclipped base pass, each group's replay
+  // scissor and far depth include its particles (replayScissorRect,
+  // replayFarViewDepth); particles inside a padded aura are already covered.
+  // VFX parented outside the gear (the dungeon-fire plume) joins through
+  // linkGearParticle(particle, ownerMesh). Particles of gear that does not
+  // x-ray (replayOthers) are kept out of every overlay render: they draw once,
+  // with their gear, in the base pass.
   let gearParticlesOnceEnabled = true;
   let gearParticleSkips = 0; // Lifetime particle draws avoided (snapshot()).
   let lastGearParticles = 0; // Particles managed in the last wrapped render.
   let activeGearParticles = null; // owner mesh -> its particles, during one wrapped render.
   let pendingGearParticleRestore = null; // Safety net: restored at the next render if a frame threw.
+  const linkedGearParticles = new Map(); // particle -> owner gear mesh, for VFX parented outside its gear.
   function isGearParticle(node) {
     return !node.children?.length && hasLayer(node, HELD_OVERLAY_LAYER) && isColorOnlyHeldVfx(node);
+  }
+  // Pass owner null to unlink (the owner disposes it).
+  function linkGearParticle(particle, owner) {
+    if (!particle) return false;
+    if (owner) linkedGearParticles.set(particle, owner);
+    else linkedGearParticles.delete(particle);
+    return !!owner;
+  }
+  function shownInScene(node) {
+    for (let n = node; n; n = n.parent) { if (n.visible === false) return false; if (n.isScene) return true; }
+    return false;
   }
   function collectGearParticles(owners) {
     const ownerSet = new Set(owners);
     const byOwner = new Map();
+    const add = (owner, particle) => { let list = byOwner.get(owner); if (!list) byOwner.set(owner, list = []); list.push(particle); };
     for (const owner of owners) {
       if (!owner?.children?.length) continue;
       owner.traverseVisible(node => {
@@ -2176,12 +2196,37 @@
         let nearest = null;
         for (let parent = node.parent; parent; parent = parent.parent) if (ownerSet.has(parent)) { nearest = parent; break; }
         if (nearest !== owner) return; // Each particle belongs to its nearest held ancestor only.
-        let list = byOwner.get(owner);
-        if (!list) byOwner.set(owner, list = []);
-        list.push(node);
+        add(owner, node);
       });
     }
+    for (const [particle, owner] of linkedGearParticles) if (ownerSet.has(owner) && shownInScene(particle)) add(owner, particle);
     return byOwner;
+  }
+  // Flat list of the particles riding on these (non-participant) gear meshes.
+  function gearParticlesOf(owners) {
+    const out = [];
+    for (const list of collectGearParticles(owners).values()) out.push(...list);
+    return out;
+  }
+  // An enchantment mote is inside its plane's live aura padding already: weapon-enchantment-vfx.js measures that
+  // padding over exactly these motes. Any other particle (weapon-layer fire on the same weapon) needs its own bounds.
+  function insidePaddedAura(node, gear) {
+    if (node.parent?.userData?.weaponEnchantmentVfx !== true) return false;
+    for (let n = node.parent; n; n = n.parent) {
+      if (Number(n.userData?.hobunjiHeldOverlayVfxPadding) > 0) return true;
+      if (n === gear) return false;
+    }
+    return false;
+  }
+  // Gear particles the base pass no longer draws: their extent must join the group's scissor and far depth.
+  function needsParticleBounds(node, gear) {
+    return gearParticlesOnceEnabled && isGearParticle(node) && !insidePaddedAura(node, gear);
+  }
+  // World centre and conservative radius of a billboard sprite (any rotation, any centre within its quad).
+  function spriteWorldExtent(sprite, outCenter) {
+    const e = sprite.matrixWorld.elements;
+    outCenter.set(e[12], e[13], e[14]);
+    return Math.hypot(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]));
   }
   // Hides every gear particle of these participants; returns the restore record or null.
   function beginGearParticles(owners) {
@@ -2369,6 +2414,14 @@
       }
       return includeBox(scissorBox);
     }
+    function includeParticleBounds(particle) {
+      if (!particle.isSprite) return includeBounds(particle);
+      const radius = spriteWorldExtent(particle, scissorCorner);
+      if (!(radius >= 0 && radius < Infinity)) return false;
+      scissorBox.min.set(scissorCorner.x - radius, scissorCorner.y - radius, scissorCorner.z - radius);
+      scissorBox.max.set(scissorCorner.x + radius, scissorCorner.y + radius, scissorCorner.z + radius);
+      return includeBox(scissorBox);
+    }
     function includeBox({ min, max }) {
       minWorldY = Math.min(minWorldY, min.y);
       for (let corner = 0; corner < 8; corner++) {
@@ -2397,8 +2450,10 @@
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
       let valid = true; // Used to conservatively disable scissoring if a child emitter has unreliable bounds.
       mesh.traverseVisible(child => {
-        if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0)) return;
-        if (!includeBounds(child)) valid = false;
+        if (!valid || child === mesh) return;
+        if (Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0) {
+          if (!includeBounds(child)) valid = false;
+        } else if (needsParticleBounds(child, mesh) && !includeParticleBounds(child)) valid = false; // Drawn only inside this scissor now.
       });
       if (!valid) {
         lastScissorFailureReason = 'unbounded-child-emitter';
@@ -2705,14 +2760,17 @@
   // Keeps weapon x-ray for the otherWeaponXrayLimit nearest armed non-player
   // actors (by root distance to the camera); preserves the original order,
   // which the screen-space group batching depends on.
+  const budgetActors = new Map(); // root -> { d2, meshes }; reused every collect (twice a frame).
+  const budgetRanked = [];
+  const budgetDropped = new Set();
   function limitOtherWeaponParticipants(keep, scene, others) {
     const cam = replayCameraPosition;
-    let actors = null; // root -> { d2, meshes }
+    const actors = budgetActors;
+    actors.clear();
     for (const mesh of keep) {
       if (mesh.userData?.hobunjiProceduralHand === true || participantOwner(mesh, scene) !== 'other') continue;
       const root = actorRootForXrayMesh(mesh, scene)?.root;
       if (!root) continue;
-      actors = actors || new Map();
       let entry = actors.get(root);
       if (!entry) {
         const e = root.matrixWorld?.elements;
@@ -2721,12 +2779,16 @@
       }
       entry.meshes.push(mesh);
     }
-    lastOtherWeaponXrayActors = actors ? actors.size : 0;
-    if (!actors || !(actors.size > otherWeaponXrayLimit)) return keep;
-    const dropped = new Set();
-    [...actors.values()].sort((a, b) => a.d2 - b.d2).forEach((entry, rank) => {
-      if (rank >= otherWeaponXrayLimit) for (const mesh of entry.meshes) dropped.add(mesh);
-    });
+    lastOtherWeaponXrayActors = actors.size;
+    if (!(actors.size > otherWeaponXrayLimit)) { actors.clear(); return keep; }
+    const dropped = budgetDropped;
+    dropped.clear();
+    budgetRanked.length = 0;
+    for (const entry of actors.values()) budgetRanked.push(entry);
+    budgetRanked.sort((a, b) => a.d2 - b.d2);
+    for (let rank = otherWeaponXrayLimit; rank < budgetRanked.length; rank++) for (const mesh of budgetRanked[rank].meshes) dropped.add(mesh);
+    budgetRanked.length = 0;
+    actors.clear(); // Holds no actor roots between frames.
     const kept = [];
     for (const mesh of keep) {
       if (!dropped.has(mesh)) { kept.push(mesh); continue; }
@@ -2735,6 +2797,7 @@
       nonParticipantReplaySkips++;
       otherWeaponXrayBudgetSkips++;
     }
+    dropped.clear();
     return kept;
   }
 
@@ -3392,9 +3455,17 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       include(mesh);
       if (!bounded) return Infinity;
       if (!mesh.children?.length || !mesh.traverseVisible) continue;
-      mesh.traverseVisible(child => { // Same rule as the scissor: only descendants with a live aura extend the part.
+      mesh.traverseVisible(child => { // Same rule as the scissor: descendants with a live aura, and gear particles drawn only in the replay.
         if (!bounded || child === mesh) return;
         if (Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0) include(child);
+        else if (needsParticleBounds(child, mesh)) {
+          if (!child.isSprite) { include(child); return; }
+          const radius = spriteWorldExtent(child, nearScratchPoint);
+          nearScratchPoint.applyMatrix4(camera.matrixWorldInverse);
+          const depth = -nearScratchPoint.z + radius;
+          if (!(depth <= Infinity)) { bounded = false; return; }
+          if (depth > far) far = depth;
+        }
       });
       if (!bounded) return Infinity;
     }
@@ -4092,8 +4163,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
+      const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
       const feet = collectVisible(waterOccludedRegistry, scene, shellOthers);
+      nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; // Counted once a frame, by the base pass.
       const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
@@ -4198,41 +4271,48 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     // cover depth. Normal water uses depthWrite=false, so feet left in this
     // base pass could otherwise render visibly over the water surface.
     const gearParticlesHidden = beginGearParticles([...held, ...feet]); // Drawn once, in their gear's group overlay.
-    const heldDraws = suppressDraws([...held, ...feet]);
-    let result;
-    const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
-    try {
-      result = renderBase();
-    } finally {
-      window.PerfProfiler?.end(basePerf);
-      restoreDraws(heldDraws);
-    }
+    try { // Whatever throws below, the particles hidden above are shown again before this render returns.
+      const heldDraws = suppressDraws([...held, ...feet]);
+      let result;
+      const basePerf = window.PerfProfiler?.begin('held-overlay: base render');
+      try {
+        result = renderBase();
+      } finally {
+        window.PerfProfiler?.end(basePerf);
+        restoreDraws(heldDraws);
+      }
 
-    const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
-    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
-    const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
-    const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
-    const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
-    lastWaterPortraits = bodyTint?.portraits.length || 0;
-    lastBaseReplayCandidates = held.length + feet.length;
-    lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
-    const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
-    // Non-participants were drawn normally above; keep them out of the replays,
-    // whose overlay passes draw everything on the held-overlay layer.
-    const othersHidden = replayOthers.length ? suppressDraws(replayOthers, HELD_OVERLAY_MASK) : null;
-    releaseUnreplayedGearParticles(new Set([...visibleHeld, ...visibleFeet]));
-    try {
-      replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
+      const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
+      window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
+      const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
+      const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
+      const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
+      lastWaterPortraits = bodyTint?.portraits.length || 0;
+      lastBaseReplayCandidates = held.length + feet.length;
+      lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
+      const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
+      // Non-participants were drawn normally above; keep them out of the replays,
+      // whose overlay passes draw everything on the held-overlay layer.
+      // Their particles (enchantment, weapon fire) too: they drew once with their gear in the base pass
+      // and must not show through grass in an overlay their gear is not part of.
+      const otherParticles = replayOthers.length ? gearParticlesOf(replayOthers) : null;
+      const othersHidden = replayOthers.length
+        ? suppressDraws(otherParticles?.length ? replayOthers.concat(otherParticles) : replayOthers, HELD_OVERLAY_MASK) : null;
+      releaseUnreplayedGearParticles(new Set([...visibleHeld, ...visibleFeet]));
+      try {
+        replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder);
+      } finally {
+        if (othersHidden) restoreDraws(othersHidden);
+      }
+      window.PerfProfiler?.end(replayPerf);
+      // The replays are renders of their own that the outline wrapper sees after the base pass, and they
+      // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
+      // pass's matrices are still current: re-arm the sequence for the PNG-depth/shell/mist/text passes.
+      window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
+      return result;
     } finally {
-      if (othersHidden) restoreDraws(othersHidden);
       endGearParticles(gearParticlesHidden);
     }
-    window.PerfProfiler?.end(replayPerf);
-    // The replays are renders of their own that the outline wrapper sees after the base pass, and they
-    // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
-    // pass's matrices are still current: re-arm the sequence for the PNG-depth/shell/mist/text passes.
-    window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
-    return result;
   }
 
   wrappedRender.__hobunjiHeldRenderOrderWrapped = true;
@@ -4389,6 +4469,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
     setFeetXrayDistance: units => { const n = Number(units); if (Number.isFinite(n) && n >= 0) feetXrayDistance = n; return feetXrayDistance; },
     setGearParticlesOnceEnabled: value => { gearParticlesOnceEnabled = value !== false; return gearParticlesOnceEnabled; },
+    linkGearParticle, // (particle, ownerGearMesh | null): VFX parented outside its gear, drawn once after that gear (dungeon-fire.js).
     setHeldOwnerLinkEnabled: value => { heldOwnerLinkEnabled = value !== false; participantCache = new WeakMap(); return heldOwnerLinkEnabled; },
     setOtherWeaponXrayLimit: count => { const n = Number(count); if (n === Infinity || (Number.isInteger(n) && n >= 0)) otherWeaponXrayLimit = n; return otherWeaponXrayLimit; },
     get replayingDepth() { return internalReplay; }, // The outline compositor must not start a new frame from an internal held/shell replay.

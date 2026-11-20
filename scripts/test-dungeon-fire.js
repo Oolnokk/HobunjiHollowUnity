@@ -103,9 +103,14 @@ const THREE = {
 const window = { THREE };
 const fireStreams = []; // Captures authored particle emitter definitions for the palette/rise regression.
 let heldWeapon = null; // Simulated player-owned modular ranged weapon presented by the shared hand renderer.
+const createdPoints = []; // Every plume emitter's points, to check which ones join the held overlay.
+const gearLinks = new Map(); // HeldObjectRenderOrder.linkGearParticle records: points -> owner weapon plane.
+window.HeldObjectRenderOrder = { HELD_OVERLAY_LAYER: 29, linkGearParticle(particle, owner) { if (owner) gearLinks.set(particle, owner); else gearLinks.delete(particle); return !!owner; } };
 window.AuthoredFurniture = { createEmitterVisual(group, emitter, capacity) {
   fireStreams.push({ group, emitter, capacity });
   const points = new Object3D();
+  points.layers = { mask: 1, enable(layer) { this.mask = (this.mask | (1 << layer)) >>> 0; } };
+  createdPoints.push(points);
   group.add(points);
   return { points, update() {}, dispose() { group.remove(points); } };
 } };
@@ -217,6 +222,8 @@ async function main() {
   api.disposeProjectile(thrown.projectile);
   api.disposeProjectile(arrow.projectile);
   assert.equal(api.debugSnapshot().activeVisuals, 0, 'projectile disposal releases every attached flame');
+  assert.ok(createdPoints.length > 0 && createdPoints.every(points => points.layers.mask === 1), 'a flying projectile\'s plume stays on the world layer only');
+  assert.equal(gearLinks.size, 0, 'and is never a gear particle');
   const scene = new Object3D();
   const holder = new Object3D(), plane = new Object3D();
   heldWeapon = new Object3D();
@@ -231,11 +238,21 @@ async function main() {
   assert.equal(api.debugSnapshot().heldAnchorKind, 'metal', 'modular fishing mace uses its assembled metal mask');
   assert.equal(api.debugSnapshot().heldWeaponKey, 'test-bow');
   assert.equal(fireStreams.length, 9, 'held weapons use the same three-stream particle system as projectiles');
+  // The held plume is drawn once, right after its weapon in the held replay (so the redrawn weapon PNG never
+  // covers its base): every emitter joins the held-overlay layer and is linked to the weapon plane, whose
+  // replay scissor is padded to the plume's full rise.
+  const heldPoints = [...gearLinks.keys()];
+  assert.equal(heldPoints.length, 3, 'the three held plume streams are linked as gear particles');
+  assert.ok([...gearLinks.values()].every(owner => owner === plane), 'linked to the held weapon plane');
+  assert.ok(heldPoints.every(points => ((points.layers.mask >>> 29) & 1) === 1), 'on the held-overlay layer');
+  assert.ok(plane.userData.hobunjiDungeonFireVfxPadding > 2, 'the weapon\'s replay scissor covers the plume rise');
   const formerFlame = scene.children.find(child => child.name === 'dungeonFire_chargedHeldWeapon'); // Captures room-owned fire before a simulated ruin-room transition.
   const secondRoom = new Object3D(); // Tests an actual reparent instead of a stale Combat.deps.scene pointer.
   secondRoom.add(holder);
   assert.equal(api.updateHeldVisual(.016), true, 'a charged weapon resumes fire after changing scenes');
   assert.equal(formerFlame.parent, null, 'changing rooms removes particles from the previous scene');
+  assert.ok(heldPoints.every(points => !gearLinks.has(points)), 'the old room\'s plume is unlinked when disposed');
+  assert.equal(gearLinks.size, 3, 'only the new plume is linked');
   assert(secondRoom.children.some(child => child.name === 'dungeonFire_chargedHeldWeapon'),
     'charged fire is created in the weapon\'s new scene');
   holder.visible = false;
@@ -248,6 +265,8 @@ async function main() {
 
   assert.equal(api.consumeNextProjectile(), true, 'firing transfers one charge away from the weapon');
   assert.equal(api.debugSnapshot().heldFire, false, 'the in-hand fire disappears when consumed');
+  assert.equal(gearLinks.size, 0, 'no linked plume outlives the held fire');
+  assert.equal(plane.userData.hobunjiDungeonFireVfxPadding, undefined, 'and the weapon\'s scissor padding is cleared');
   assert.equal(api.armNextProjectile(), true);
   assert.equal(api.debugSnapshot().heldFire, true);
   api.clear();
@@ -301,11 +320,6 @@ async function main() {
     'the charged fire uses production player-held plane and assembled modular source exports');
   assert(rangedCode.includes('window.DungeonFire?.updateHeldVisual?.(dt)'),
     'the regular ranged frame must animate the already-armed held weapon before firing');
-  // Fire particles never x-ray (design decision): the plume stays on the world layer and no longer
-  // widens the held weapon's replay scissor, so held/x-ray replays leave it alone.
-  const fireCode = fs.readFileSync(path.join(root, 'docs/js/dungeon-fire.js'), 'utf8');
-  assert(!/HELD_OVERLAY_LAYER/.test(fireCode), 'the dungeon fire plume never joins the held-overlay layer');
-  assert(!/hobunjiDungeonFireVfxPadding\s*=\s*HELD_REPLAY_PADDING/.test(fireCode), 'the plume does not pad the held replay scissor');
   assert(/held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(expandClassicScriptGroups(fs.readFileSync(path.join(root, 'docs/index.html'), 'utf8'))), // Any token: the pre-game services manifest owns held overlay cache refresh independently of the HUD adapter.
     'the parser-ordered rendering manifest carries the held overlay cache token');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&

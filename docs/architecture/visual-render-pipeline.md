@@ -230,6 +230,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 |---|---|---|
 | held tool/weapon planes (`character-held-tools.js`) | player, NPC, enemy | holder's own mastery/metal; metal variants per appearance |
 | held bag-item plane (game.js) | player | NPCs never hold bag items |
+| held-item x-ray through grass/ground (`held-object-render-order.js`) | player, short species (porakaneki) | other NPCs/enemies: hands ordinary depth, feet within 6 tiles only, weapons/tools in the base pass by default (user decision, ~11 ms on a GTX 1060; Settings → Render optimizations restores weapon x-ray) |
 | procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |
 | portrait life (blink/breath) | player, NPC | enemies keep static portraits |
 | render-time body composition (`player-body-transform-composer.js`) | player (+ its pet) | NPC/enemy poses go straight through rig layers |
@@ -296,8 +297,10 @@ HeldObjectRenderOrder.snapshot()             // replay scissor/fullscreen counts
 HeldObjectRenderOrder.setColorOnlyDepthSkipEnabled(false) // A/B: draw no-op VFX (enchantment motes) in colourless replays again
 HeldObjectRenderOrder.setGearParticlesOnceEnabled(false) // A/B: particles on held gear (enchantment motes, weapon-layer fire) drawn in the base
                                              //   pass and every replay group again; on (default) they draw once, in the overlay of the
-                                             //   group holding their gear. Particles never x-ray as such: world-only fire (dungeon plume)
-                                             //   stays off the held-overlay layer and never pads the replay scissor
+                                             //   group holding their gear; that group's scissor and far depth include them (enchantment
+                                             //   motes through their plane's aura padding). VFX parented outside its gear joins with
+                                             //   linkGearParticle(particle, gearMesh) (the held dungeon-fire plume). Particles of gear that
+                                             //   does not x-ray (other characters' weapons) stay out of every overlay render
 HeldObjectRenderOrder.setHeldOwnerLinkEnabled(false)   // On by default: scene-sibling weapons (BanditCombat/walker tool holders) resolve to their
                                              //   bearer via userData.hobunjiHeldPortraitOwner. Off: the unowned fail-safe path, which costs
                                              //   every armed hostile on screen one extra "ordinary" held-replay group
