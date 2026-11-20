@@ -190,8 +190,10 @@ module.exports=async function runNativeV50Playthrough(page){
       if(!torch)fail('permanent adventuring torch is unavailable',record,stage);
       torch.onSelect(); // Equip through the actual tool registry, not a fabricated carried-weapon record.
       await put({...ordered[0].p,y:floorY(record)},record,stage);
-      if(!hit.debugLightAdventuringTorchAtSource?.(ordered[0].object))
-        fail('lit fire hazard could not ignite the equipped permanent torch',record,stage,{source:ordered[0].p,torch:adventuring?.debug});
+      // The same torch can still be burning after it was stowed on a previous story.
+      if(!adventuring.isHoldingTorch()||
+          (!adventuring.isLit()&&!hit.debugLightAdventuringTorchAtSource?.(ordered[0].object)))
+        fail('could not ready a lit permanent torch',record,stage,{source:ordered[0].p,torch:adventuring.debug});
       await put({...target,y:floorY(record)},record,stage);
       if(!hit.debugIgniteTarget(actor)){
         const status=hit.snapshot?.()||{};

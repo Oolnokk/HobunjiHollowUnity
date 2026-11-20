@@ -10,6 +10,7 @@
   const SOURCE='assets/models/furniture/data/pillar_square.json'; // Canonical editable square pillar, loaded only when a jump shaft mounts.
   const PART={foot:'pillar_square_base0',rise:'pillar_square_base1',shaft:'pillar_square_shaft',
     neck:'pillar_square_collar',cap:'pillar_square_cap'}; // Existing authored parts assigned fixed/stretch roles in the runtime overlay.
+  const WIDTH_SCALE=.75; // Slab supports use a slimmer version of the authored silhouette.
   let sourcePromise=null; // Reused across ruins so a large dungeon never fetches one template per platform.
 
   function footprintTiles(platform){
@@ -54,16 +55,19 @@
         startTiles:1,middleTiles:1,endTiles:1,totalTiles:3,tileSize:1}};
     return {data,bottom,footWidth:Number(foot.sx),footDepth:Number(foot.sz)};
   }
-  function recipeForPlatform(profile,placement){
-    const tiles=placement.footprintTiles; // Both footing axes use the same 2×2 or 3×3 instance tile count.
+  function widthsForPlatform(placement){
+    const tiles=placement.footprintTiles; // Preserve even/odd sizing before narrowing the horizontal dimensions.
     const slabSpan=Math.max(.1,Math.min(placement.slabWidth,placement.slabDepth)); // Capital stays under even the narrowest slab.
     const capital=Math.min(tiles*.96,slabSpan*.92);
-    const widths={
-      [PART.foot]:tiles,[PART.rise]:tiles*.82,
-      [PART.shaft]:Math.min(tiles*.64,capital*.76),
-      [PART.neck]:Math.min(tiles*.76,capital*.86),
-      [PART.cap]:capital,
-    }; // The broad plinth tapers to a slab-sized capital; a 3-tile foot must not stick through a 1-tile landing.
+    return {
+      [PART.foot]:tiles*WIDTH_SCALE,[PART.rise]:tiles*.82*WIDTH_SCALE,
+      [PART.shaft]:Math.min(tiles*.64,capital*.76)*WIDTH_SCALE,
+      [PART.neck]:Math.min(tiles*.76,capital*.86)*WIDTH_SCALE,
+      [PART.cap]:capital*WIDTH_SCALE,
+    };
+  }
+  function recipeForPlatform(profile,placement){
+    const widths=widthsForPlatform(placement); // Shared by the authored pillar and its loading geometry.
     return {...profile.data,parts:profile.data.parts.map(part=>{
       const width=widths[part.id];
       return width?{...part,transform:{...part.transform,sx:width,sz:width}}:part;
@@ -82,7 +86,13 @@
     group.traverse?.(node=>{node.userData ||= {};node.userData.devRuinFootprintIgnore=true;});
     group.userData ||= {};group.userData.devRuinFootprintIgnore=true; // Structural visuals must not turn the pit into a standable floor or block jumps.
   }
-  function disposeVisual(visual,authored){
+  function stretchStoneFaces(mesh,retainSource=false){
+    const source=mesh.geometry; // Authored parts retain their source geometry until TileSpan releases it.
+    root.HobunjiSurfaceStretchUV?.mapMesh?.(mesh);
+    if(!retainSource&&mesh.geometry!==source)source.dispose?.();
+    mesh.layers?.disable(1); // The carved stone PNG already inks each face edge.
+  }
+  function disposeVisual(visual,authored,stone){
     if(!visual)return;
     const seen=new Set(); // Avoid double-freeing a material shared among one pillar's parts.
     visual.traverse?.(node=>{
@@ -91,28 +101,28 @@
       node.geometry.dispose?.();
       if(!authored)return; // Placeholders share one material disposed when the entire shaft is released.
       const materials=Array.isArray(node.material)?node.material:[node.material];
-      for(const material of materials)if(material&&!seen.has(material)){seen.add(material);material.dispose?.();}
+      for(const material of materials)if(material&&material!==stone&&!seen.has(material)){seen.add(material);material.dispose?.();}
     });
   }
   function placeholder(THREE,placement,material){
-    const {footprintTiles:footprint,height,slabWidth,slabDepth}=placement; // Both the final geometry and loading fallback share the same platform constraints.
-    const topWidth=Math.min(footprint*.96,Math.max(.1,Math.min(slabWidth,slabDepth))*.92); // The capital must never project through a narrower slab.
-    const shaftWidth=Math.min(footprint*.64,topWidth*.76); // Match the authored pillar's tapered cross-section.
+    const {height}=placement;
+    const widths=widthsForPlatform(placement); // Keep the same width at each corresponding piece when the asset loads.
     const group=new THREE.Group();group.name='shaft-support-loading-placeholder';
-    const make=(name,w,h,d,y)=>{
-      const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
-      mesh.name=name;mesh.position.set(0,y,0);group.add(mesh);
+    const make=(name,w,h,y)=>{
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,w),material);
+      mesh.name=name;mesh.position.set(0,y,0);stretchStoneFaces(mesh);group.add(mesh);
     };
-    make('foot',footprint,.16,footprint,.08);
-    make('stone-shaft',shaftWidth,Math.max(.1,height-.30),shaftWidth,.16+Math.max(.1,height-.30)/2);
-    make('capital',topWidth,.14,topWidth,height-.07);
+    make('foot',widths[PART.foot],.16,.08);
+    make('stone-shaft',widths[PART.shaft],Math.max(.1,height-.30),.16+Math.max(.1,height-.30)/2);
+    make('capital',widths[PART.cap],.14,height-.07);
     markVisualOnly(group);
     return group;
   }
-  function mount(plan,{THREE,parent,slabThickness=.45,loadTemplate}={}){
+  function mount(plan,{THREE,parent,slabThickness=.45,material,loadTemplate}={}){
     if(!THREE?.Group||!THREE?.BoxGeometry||!parent?.add)throw new Error('Shaft pillar mounting requires THREE and a parent');
     const pitY=Number(plan?.pit?.bottomY); // All supports share the real hazard basin elevation, including upper-story platforms.
-    const placements=[],material=new THREE.MeshBasicMaterial({color:0x726d63});
+    const placements=[];
+    const stone=material||new THREE.MeshBasicMaterial({color:0x726d63}); // The jump shaft owns the supplied pillar material, including teardown.
     let disposed=false,upgraded=0,failures=0,reason=null; // Exposed in the shaft's mobile diagnostics.
     for(const platform of plan?.platforms||[]){
       const geometry=layout(platform,pitY,slabThickness);
@@ -120,7 +130,7 @@
       const holder=new THREE.Group();holder.name='shaft-structural-pillar-'+platform.id;
       holder.position.set(geometry.x,geometry.bottomY,geometry.z);
       holder.userData.devRuinFootprintIgnore=true;
-      const visual=placeholder(THREE,geometry,material);
+      const visual=placeholder(THREE,geometry,stone);
       holder.add(visual);parent.add(holder);
       placements.push({holder,visual,geometry,authored:false}); // Each pillar can be replaced independently when its authored data arrives.
     }
@@ -142,6 +152,11 @@
             const span=furniture.setTileSpan(visual,placement.geometry.height); // IKMC ladder solver: fixed foot, stretched shaft, rigid capital.
             if(!span?.enabled||span.errors?.length||visual.userData?.tileSpanDiagnostics?.errors?.length)
               throw new Error('Vertical tile-span could not resolve the shaft attachments');
+            for(const mesh of visual.userData.meshById.values()){
+              stretchStoneFaces(mesh,true); // Fit the texture to the finished height, including the stretched shaft.
+              mesh.material.dispose?.();
+              mesh.material=stone;
+            }
             visual.position.y=-recipe.bottom;
             markVisualOnly(visual);
             visual.name='authored-pillar-square-'+placement.geometry.id;
@@ -150,7 +165,7 @@
             disposeVisual(placement.visual,false);
             placement.visual=visual;placement.authored=true;upgraded++;
           }catch(error){
-            if(visual){visual.parent?.remove?.(visual);disposeVisual(visual,true);}
+            if(visual){visual.parent?.remove?.(visual);disposeVisual(visual,true,stone);}
             failures++;reason=error.message;
           }
         }
@@ -163,18 +178,18 @@
     return {
       ready,
       getState:()=>({total:placements.length,authored:upgraded,fallback:placements.length-upgraded,
-        bases2x2:placements.filter(p=>p.geometry.footprintTiles===2).length,
-        bases3x3:placements.filter(p=>p.geometry.footprintTiles===3).length,failures,reason}),
+        narrowBases:placements.filter(p=>p.geometry.footprintTiles===2).length,
+        wideBases:placements.filter(p=>p.geometry.footprintTiles===3).length,failures,reason}),
       dispose(){
         if(disposed)return;disposed=true;
         for(const placement of placements){
           placement.holder.parent?.remove?.(placement.holder);
-          disposeVisual(placement.visual,placement.authored);
+          disposeVisual(placement.visual,placement.authored,stone);
         }
-        material.dispose?.();
+        if(!material)stone.dispose?.();
         placements.length=0; // A late fetch cannot resurrect supports in a disposed ruin.
       },
     };
   }
-  return Object.freeze({SOURCE,footprintTiles,layout,recipeFromSquarePillar,recipeForPlatform,mount});
+  return Object.freeze({SOURCE,footprintTiles,layout,recipeFromSquarePillar,recipeForPlatform,stretchStoneFaces,mount});
 });
