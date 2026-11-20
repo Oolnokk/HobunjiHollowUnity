@@ -72,7 +72,7 @@ jobs:
           items["SHA256.json"]=(json.dumps({
               name:hashlib.sha256(data).hexdigest()
               for name,data in sorted(items.items()) if name!="SHA256.json"
-          },indent=2)+"\\n").encode("utf-8")
+          },indent=2)+"\n").encode("utf-8")
           output=bundle.with_suffix(".verified.zip")
           with zipfile.ZipFile(output,"w",zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               for name,data in sorted(items.items()):
