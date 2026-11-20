@@ -88,19 +88,23 @@
       bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
       deformed.set(0, 0, 0);
       const splineLayout = skeleton.bones.length > 8; // Seven authored spine bones precede the head-control bones.
-      const splitOffset = !!rig.headOffsetJoint && skeleton.bones.length > 9; // New sprite-bottom rig has independent nonrotating head placement.
-      const offsetBone = splitOffset ? 7 : -1, neckBone = splitOffset ? 8 : splineLayout ? 7 : 1, headBone = splitOffset ? 9 : splineLayout ? 8 : 2;
+      const splitOffset = !!rig.headOffsetJoint && skeleton.bones.length > 9; // Game portraits use the 10-bone spline/placement/rotation/scale rig.
+      const authorOffset = !!rig.headOffsetJoint && skeleton.bones.length === 3; // Animation Author uses root(0), nonrotating offset(1), head-turn(2).
+      const hasPlacement = splitOffset || authorOffset; // Both rigs use the same short rotation band and long offset-only fade.
+      const offsetBone = splitOffset ? 7 : authorOffset ? 1 : -1;
+      const neckBone = splitOffset ? 8 : authorOffset ? 2 : splineLayout ? 7 : 1;
+      const headBone = splitOffset ? 9 : authorOffset ? 2 : splineLayout ? 8 : 2;
       const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
         ? avatarApi.headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0;
       const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 };
       spline.a = 0; spline.b = 0; spline.wb = 0;
       if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
-      const offsetWeight = splitOffset ? (headWeight > 0
+      const offsetWeight = hasPlacement ? (headWeight > 0
         ? 1 - headWeight : avatarApi.headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0;
-      headWeight = splitOffset ? headWeight : Math.max(headWeight, headScaleWeight);
-      const bodyWeight = 1 - headWeight - (splitOffset ? offsetWeight : 0);
+      headWeight = hasPlacement ? headWeight : Math.max(headWeight, headScaleWeight);
+      const bodyWeight = 1 - headWeight - offsetWeight;
       for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
-        const weight = splitOffset && i === offsetBone ? offsetWeight
+        const weight = hasPlacement && i === offsetBone ? offsetWeight
           : i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
             : (i === spline.a ? bodyWeight * (1 - spline.wb) : 0) + (i === spline.b ? bodyWeight * spline.wb : 0);
         if (!weight) continue;
