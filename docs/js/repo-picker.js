@@ -264,7 +264,7 @@
   const weavingSource = moduleUrl('clothing-weaving-system.js', '20261103furpaint2');
   const creatureRendererSource = moduleUrl('creature-genetics-render.js', '20261104nelkRig1');
   const headwearSource = moduleUrl('animal-npc-headwear.js', '20261115animalhat1');
-  const bridgeSource = moduleUrl('animal-chathead-frame.js', '20260915perf1');
+  const bridgeSource = moduleUrl('animal-chathead-frame.js', '20261120mootCoats1');
   const source = moduleUrl('character-studio-animal-appearance.js', '20261118fusedAnimal1');
   const extrasSource = moduleUrl('character-studio-animal-fey-extras.js', '20261020animal2');
 
