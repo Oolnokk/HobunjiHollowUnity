@@ -40,9 +40,12 @@
     const rearHeadPlane = makeSheet(null,0,THREE.BackSide,'spline_character_rear');
     const hairPlane = makeSheet(null,0,THREE.FrontSide,'spline_hair');
     const rearPlane = makeSheet(null,0,THREE.BackSide,'spline_rear');
-    hairPlane.material.depthWrite=rearPlane.material.depthWrite=false;
-    hairPlane.renderOrder=rearPlane.renderOrder=4;
-    hairPlane.material.alphaTest=.02;rearPlane.material.alphaTest=.02; // Match the in-game uncut cosmetic: no shadow from almost transparent PNG fringes.
+    hairPlane.material.depthWrite=rearPlane.material.depthWrite=true;
+    hairPlane.material.depthTest=rearPlane.material.depthTest=true;
+    // The 3D author uses the same pre-owner alpha-tested depth policy as gameplay.
+    // A genuinely nearer beard fragment wins; nearer opaque character pixels cover it.
+    hairPlane.renderOrder=rearPlane.renderOrder=headPlane.renderOrder-.01;
+    hairPlane.material.alphaTest=rearPlane.material.alphaTest=Math.max(.02,headPlane.material.alphaTest||.35);
     sheetGroup.add(headPlane,rearHeadPlane,hairPlane,rearPlane);
     let mode='translate', state=null, disposed=false, dirty=false;
     let verifiedTexturePair=''; // One on-screen GPU-health warning per loaded head/hair pair; avoids mobile readback every pose frame.
@@ -245,6 +248,8 @@
         rearPlane.position.x=next.rearAligned?0:rig.rearOffset.u;
         rearPlane.position.y=next.rearAligned?0:-rig.rearOffset.v; // Masked rear artwork is already shifted before its pixels are partitioned.
       }
+      // The preview's real portrait can change draw order during runtime emulation.
+      hairPlane.renderOrder=rearPlane.renderOrder=headPlane.renderOrder-.01;
       if(next.editKnots!==false){
         pickable.length=0;addKnots(posed.points);addGizmo(posed.points);
       }else{
@@ -432,6 +437,9 @@
         pinnedFrontVertices:hairPlane.userData.pinnedVertices||0,
         pinnedRearVertices:rearPlane.userData.pinnedVertices||0,
         seamlessSingleMesh:true,singleBone:true, // One joint and an uncut art texture per view.
+        pairedOwnerDepth:{frontBeforeOwner:hairPlane.renderOrder<headPlane.renderOrder,
+          depthWrite:hairPlane.material.depthWrite,depthTest:hairPlane.material.depthTest,
+          alphaTest:hairPlane.material.alphaTest},
         headLoaded:!!headPlane.material.map,hairLoaded:!!hairPlane.material.map,
         textures:{head:headPlane.userData.pixelStats||null,headRear:rearHeadPlane.userData.pixelStats||null,
           hair:hairPlane.userData.pixelStats||null,rear:rearPlane.userData.pixelStats||null},
