@@ -138,7 +138,7 @@ assert.equal(avatar.userData.portraitSplineParts.length, 1);
 const part = avatar.userData.portraitSplineParts[0];
 assert(part.rearMesh, 'side hair uses a separately textured rear surface');
 const fz = part.frontMesh.geometry.attributes.position.array[5], rz = part.rearMesh.geometry.attributes.position.array[5]; // Vertex 1 is unpinned on both sides; vertex 0 intentionally tests a rigid root.
-assert.equal(part.frontMesh.geometry.attributes.position.array[2],.0008,
+assert(Math.abs(part.frontMesh.geometry.attributes.position.array[2]-.0008)<1e-7,
   'the authored hard-pin pixel stays fixed on the portrait plane before a hood is equipped');
 assert(fz > 0 && rz < 0, 'rear hair protrudes behind the rear plane, not through the skull');
 assert(Math.abs(fz + rz) < 1e-7, 'front/rear strand depths match');
