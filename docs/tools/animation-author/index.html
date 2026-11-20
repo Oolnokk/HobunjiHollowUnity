@@ -1467,7 +1467,7 @@ async function fetchRepoText(path) {
   for (const url of candidates) {
     try {
       log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
-      return await (await fetchWithTimeout(url)).text();
+      return await (await fetchWithTimeout(url, { cache: 'default' })).text(); // Resolved commit URLs are immutable; reuse cached responses instead of downloading them again on every visit.
     } catch (error) {
       lastError = error;
       log(`Fetch failed for ${url}: ${error.message}`, 'warn');
@@ -1562,6 +1562,35 @@ async function executeClassicScript(code, sourceUrl) {
   } finally { URL.revokeObjectURL(blobUrl); }
 }
 
+// Fetch future runtime scripts up to four slots ahead but *execute in original order*.
+// This avoids one network round trip per script while bounding mobile peak memory.
+async function executeOrderedPrefetch(items, fetchItem, runItem, parallel = 4) {
+  const slots = new Array(items.length); // Each slot stores one settled download result, never a rejected/unhandled promise.
+  let next = 0; // Next item whose download can be started.
+  let active = 0; // In-flight HTTP downloads; capped by parallel.
+  let consumed = 0; // Completed executions; limits how far ahead we may buffer sources.
+  let stopped = false; // Stops scheduling further downloads after an execution or fetch error.
+  const pump = () => {
+    while (!stopped && active < parallel && next < Math.min(items.length, consumed + parallel)) {
+      const index = next++; // Reserve this slot before invoking asynchronous fetch code.
+      active++;
+      slots[index] = Promise.resolve().then(() => fetchItem(items[index], index))
+        .then(value => ({ value }), error => ({ error }))
+        .finally(() => { active--; pump(); }); // A failure is a *value* until consumed; no unhandled rejections.
+    }
+  };
+  pump();
+  try {
+    for (let index = 0; index < items.length; index++) {
+      const outcome = await slots[index];
+      if (outcome.error) throw outcome.error;
+      await runItem(outcome.value, index);
+      consumed = index + 1;
+      pump();
+    }
+  } finally { stopped = true; }
+}
+
 async function loadRepositoryRuntime(settings) {
   const key = repoKey(settings);
   if (state.runtimeKey === key && window.NpcAvatarPreview && window.PNGPlaneAvatar && window.CreatureGeneticsRender) return;
@@ -1572,22 +1601,27 @@ async function loadRepositoryRuntime(settings) {
     throw new Error('Reloading for a clean repository runtime.');
   }
 
-  for (const relativePath of REQUIRED_SCRIPTS) {
-    const path = settings.docsRoot + relativePath;
+  const runtimeStartMs = performance.now(); // Mobile-visible timing of the full runtime download/execute path.
+  await executeOrderedPrefetch(REQUIRED_SCRIPTS, async relativePath => {
+    const path = settings.docsRoot + relativePath; // Retains the repository-relative path for diagnostics and sourceURL.
     const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
       : relativePath === 'js/character-spine.js' ? AUTHOR_SPINE_RUNTIME_SCRIPT
       : relativePath === 'js/png-plane-avatar.js' ? AUTHOR_PORTRAIT_RUNTIME_SCRIPT
       : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
         : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT
-        : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Hands, feet and shoulder rigs must match this author page's preview contract.
-    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
+        : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Exact matching tool/game source revision for rig components.
+    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Recorded in Diagnostics when a download fails.
     const sourceCode = authorPairedRuntimeUrl
-      ? await (await fetchWithTimeout(sourceUrl)).text()
+      ? await (await fetchWithTimeout(sourceUrl, { cache: 'default' })).text()
       : await fetchRepoText(path);
-    const code = prepareRepositoryScript(sourceCode, relativePath, settings);
-    await executeClassicScript(code, sourceUrl);
-    log(`Loaded runtime script ${path}`);
-  }
+    return { relativePath, path, sourceUrl, sourceCode };
+  }, async ({ relativePath, path, sourceUrl, sourceCode }, index) => {
+    $('overlayDetail').textContent = `Loading runtime ${index + 1}/${REQUIRED_SCRIPTS.length}: ${relativePath}`; // Visible on phones without browser DevTools.
+    const started = performance.now(); // Per-script parse/evaluation timing for the existing Diagnostics log.
+    await executeClassicScript(prepareRepositoryScript(sourceCode, relativePath, settings), sourceUrl);
+    log(`Loaded runtime ${index + 1}/${REQUIRED_SCRIPTS.length}: ${path} (${Math.round(performance.now() - started)} ms to execute)`);
+  }, 4); // Four in-flight sources at most; large compositor bundles are not all retained simultaneously.
+  log(`Repository runtime scripts ready in ${Math.round(performance.now() - runtimeStartMs)} ms (4-way bounded prefetch; ordered execution).`);
   if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
   const attachmentProfileReady = window.applyHobunjiAttachmentRigProfileCorrections?.(); // Feeds config-order failures into the author's built-in mobile-accessible Diagnostics panel.
   if (window.applyHobunjiAttachmentRigProfileCorrections && !attachmentProfileReady) {
@@ -2820,6 +2854,8 @@ async function loadSource(settings = settingsFromInputs()) {
     state.resolvedSha = await resolveCommit(settings);
     configureBases(settings, state.resolvedSha);
     updateSourceDetails(settings);
+    const databaseDownload = fetchRepoJson(settings.dbPath)
+      .then(value => ({ value }), error => ({ error })); // Start the independent NPC database download while shared runtime scripts load.
 
     setStatus('Loading portrait runtime…', 'warn');
     showOverlay('Loading portrait runtime', 'Fetching the same shared scripts used by the Character Studio.', true);
@@ -2827,8 +2863,9 @@ async function loadSource(settings = settingsFromInputs()) {
 
     setStatus('Loading NPC database…', 'warn');
     showOverlay('Loading NPC database', settings.dbPath, true);
-    const rawDb = await fetchRepoJson(settings.dbPath);
-    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(rawDb), settings);
+    const databaseResult = await databaseDownload;
+    if (databaseResult.error) throw databaseResult.error; // Database errors still surface at the same stage, without an unhandled promise.
+    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(databaseResult.value), settings);
     state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
     if (!state.npcs.length) throw new Error('The NPC database contains no NPC records.');
     state.renderCache.clear();
@@ -3224,6 +3261,11 @@ async function setAnimationAuthorMode(mode) {
   if (animationAuthor.modeRoots[mode]) animationAuthor.modeRoots[mode].visible = true;
   for (const line of animationAuthor.relationLines.values()) line.visible = true;
   document.body.dataset.animationAuthorMode = mode;
+  if (mode === 'single' && !animationAuthor.single.catalog.length && !animationAuthor.single.loadingCatalog && state.runtimeKey) {
+    loadSingleAvatarAnimationCatalog().catch(error => { // Background catalog fills its selector without blocking the initial Single-Avatar viewport.
+      log('Single-Avatar animation catalog could not load: ' + (error.stack || error.message), 'warn');
+    });
+  }
   if (mode === 'single' && !animationAuthor.single.animation) loadDefaultSingleAvatarAnimation();
   if (mode === 'single' && !animationAuthor.actors.length && state.npcs.length) {
     const npcId = animationAuthor.single.preferredNpcId || state.npcs[0].id || state.npcs[0].name;
@@ -4454,7 +4496,9 @@ async function onAnimationRepositoryReady() {
   await initAnimationWorkspaceScene();
   loadViewportDeadzoneDefaultsFromRepository();
   populateAnimationCreatureSpecies();
-  await loadSingleAvatarAnimationCatalog();
+  // A full GitHub recursive-tree scan and serial animation JSON downloads are
+  // only needed in Single-Avatar mode. Skip that network work for Multi, Rig,
+  // and Full Character Scale so their initial preview is not held hostage.
   hydrateSingleAvatarAutosave(animationAuthor.single.pendingProject);
   animationAuthor.single.pendingProject = null;
   renderAnimationNpcLibrary();
@@ -4578,9 +4622,11 @@ function refreshAnimationCreatureFrames() {
   else if (frames.includes('idle')) select.value = 'idle';
 }
 
+let maaNpcThumbnailObserver = null; // Tracks only on-screen Multi-Avatar NPC thumbnails instead of decoding every library portrait at startup.
 function renderAnimationNpcLibrary() {
   const container = $('maaNpcResults');
   if (!container) return;
+  maaNpcThumbnailObserver?.disconnect(); // A search or mode redraw must stop observing detached canvases.
   const query = $('maaNpcSearch')?.value.trim().toLowerCase() || '';
   const matches = state.npcs.filter(npc => matchesNpc(npc, query)).slice(0, 40);
   if (!matches.length) {
@@ -4596,11 +4642,24 @@ function renderAnimationNpcLibrary() {
     </button>`;
   }).join('');
   container.querySelectorAll('[data-add-npc]').forEach(button => button.addEventListener('click', () => addNpcAnimationActor(button.dataset.addNpc)));
-  container.querySelectorAll('canvas[data-maa-thumb]').forEach(canvas => {
+  const thumbnails = container.querySelectorAll('canvas[data-maa-thumb]'); // At most forty eligible previews; none render until visible.
+  const queueThumbnail = canvas => {
+    if (!canvas.isConnected) return;
     const npc = state.npcs.find(item => String(item.id || item.name) === canvas.dataset.maaThumb);
-    if (!npc) return;
-    buildAvatarRender(npc).then(avatar => { if (canvas.isConnected) copyCanvas(avatar.front, canvas); }).catch(() => {});
-  });
+    if (npc) enqueueThumbnail(canvas, npc); // Shares the existing single-worker render queue with the repository NPC drawer.
+  };
+  if (typeof IntersectionObserver !== 'function') {
+    [...thumbnails].slice(0, 5).forEach(queueThumbnail); // Older browsers retain a small useful fallback without forty startup jobs.
+    return;
+  }
+  maaNpcThumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      maaNpcThumbnailObserver.unobserve(entry.target);
+      queueThumbnail(entry.target);
+    }
+  }, { rootMargin: '80px 0px', threshold: 0.01 }); // Viewport intersection also respects closed/hidden author panels.
+  thumbnails.forEach(canvas => maaNpcThumbnailObserver.observe(canvas));
 }
 
 
