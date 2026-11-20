@@ -36,7 +36,10 @@
               }
             }
           },
-          "layerRole": "base"
+          "layerRole": "base",
+          "behindImage": {
+            "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+          }
         }
       }
     }
@@ -63,7 +66,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -90,7 +96,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -117,7 +126,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/tl_headband_behind_metal.png"
+              }
             }
           }
         }
@@ -144,7 +156,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/tl_headband_behind_metal.png"
+              }
             }
           }
         }
@@ -171,7 +186,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m_behind_metal.png"
+              }
             }
           }
         }
@@ -198,7 +216,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f_behind_metal.png"
+              }
             }
           }
         }
@@ -225,7 +246,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_m_behind_metal.png"
+              }
             }
           }
         }
@@ -252,7 +276,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_headband_f_behind_metal.png"
+              }
             }
           }
         }
@@ -279,7 +306,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -306,7 +336,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -333,7 +366,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -360,7 +396,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -387,7 +426,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -414,7 +456,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/headband_behind_metal.png"
+              }
             }
           }
         }
@@ -441,7 +486,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind_metal.png"
+              }
             }
           }
         }
@@ -468,7 +516,10 @@
                   }
                 }
               },
-              "layerRole": "base"
+              "layerRole": "base",
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hat/mashtz_headband_m_behind_metal.png"
+              }
             }
           }
         }
