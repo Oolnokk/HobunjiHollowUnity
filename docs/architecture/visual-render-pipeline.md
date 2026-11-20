@@ -184,7 +184,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 |---|---|---|---|
 | 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props → merged per 8×8 cell + material |
-| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part (geometry + material + layers) |
+| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
@@ -247,7 +247,7 @@ Rules:
 | Pose/offset something only while drawing | `RenderHooks.register({ scope: 'frame', … })` |
 | Hide or merge things only while drawing | `WorldRenderPipeline.registerRenderScope(...)` |
 | Add a pass | Add it in `renderOutlinedPasses`/`renderDirectPasses` with a `pass('name')` label and a PerfProfiler bucket; add a layer to the registry; update §1 |
-| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. Drawn, opaque trees then draw as instanced batches per shared variant part (`js/wilderness-tree-instancer.js`; a fading tree keeps its own clone material and draws itself; A/B `WildernessTreeInstancer.setEnabled(false)`) |
+| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, but it is off by default (net loss on device; needs chunk-local batches first): `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
@@ -269,7 +269,7 @@ await CharacterVisuals.captureVisibilityReport() // "X is invisible": per charac
 CharacterHeldTools.snapshot()                // player vs holder meshes, per-appearance metal variants
 CloudForestAvatarDepthOccluder.snapshot()    // mist depth helpers per character part
 RenderABBenchmark.run()                      // ON-DEVICE (~45 s; also Settings → Dev Tools → "Render A/B benchmark", copies the report):
-                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOff / gearParticlesEveryPass / npcWeaponsBasePass / skinnedScissorOff / mistOff / rainOff / cloudsOff
+                                             //   variants default / outlinesOff / painterlyOff / halfResolution / nearForest / fadedTreesDrawn / treeInstancingOn / gearParticlesEveryPass / npcWeaponsBasePass / skinnedScissorOff / mistOff / rainOff / cloudsOff
                                              //   (+ frameScopeOff via { variants: [...] }): fps, p90, render CPU, triangles, GPU where timer queries exist;
                                              //   per-pass CPU+draws for default, plus a readPixels-synced per-pass CPU+GPU window where
                                              //   timer queries are missing. halfResolution much faster ⇒ GPU fill-bound, not JS.

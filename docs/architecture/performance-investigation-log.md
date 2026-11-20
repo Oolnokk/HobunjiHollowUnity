@@ -91,6 +91,16 @@ benchmark variant `fadedTreesDrawn`. Not yet measured on a device.
 What remains per tree is real: ~60 visible trees x 3-4 meshes; the opaque ones are now instanced
 (next entry).
 
+## 20 Nov 2026: tree instancing measured on the device: a net loss, now off by default
+
+GTX 1060, Cloud Forest: `treeInstancingOff` beat the neutral variants by ~6 ms a frame and drew
+350k fewer triangles; `fadedTreesDrawn` was within noise. The instanced batches span the whole
+vegetation corridor, so Three cannot frustum-cull the trees outside the view and the held/x-ray
+replay cull cannot drop them outside a replay's scissor (32 tree-batch draws showed up in the
+x-ray shell replays alone), and the per-frame regroup costs CPU. `WildernessTreeInstancer` is
+now off by default under a new opt-in key (benchmark windows had persisted the old key as on);
+chunk-local batches with tight bounds are the version to try next (`treeInstancingOn`).
+
 ## 20 Nov 2026: procedural wilderness trees drawn instanced
 
 Tree tiles are clones of a few cached FoliageGenerator variants, so every trunk/vine/leaf/climb

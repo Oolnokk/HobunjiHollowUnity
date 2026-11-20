@@ -23,17 +23,24 @@
 //
 // Members hidden here are flagged userData.hobunjiDrawProxyHidden while
 // hidden, so a pass that masks specific meshes (Perception Mode) can still
-// draw them. A/B: WildernessTreeInstancer.setEnabled(false), or
-// localStorage hobunjiTreeInstancing=off; benchmark variant treeInstancingOff.
+// draw them.
+//
+// OFF BY DEFAULT. On the user's GTX 1060 it measured as a net loss
+// (treeInstancingOff: -6 ms a frame and -350k triangles): the batches span the
+// whole vegetation corridor, so neither Three's frustum cull nor the held/x-ray
+// replay cull can drop the trees outside a pass's view or scissor, and the
+// per-frame regrouping costs CPU. Chunk-local batches with tight bounds are the
+// fix to try before turning it back on. Opt in: setEnabled(true, { persist: true })
+// or localStorage hobunjiTreeInstancingOptIn=1; benchmark variant treeInstancingOn.
 (() => {
   'use strict';
 
   if (window.WildernessTreeInstancer) return;
 
-  const STORAGE_KEY = 'hobunjiTreeInstancing';
+  const STORAGE_KEY = 'hobunjiTreeInstancingOptIn'; // New key: benchmark runs had persisted the old one as 'on'.
   const PROXY_FLAG = 'hobunjiDrawProxyHidden';
   let enabled = (() => {
-    try { return localStorage.getItem(STORAGE_KEY) !== 'off'; } catch (_) { return true; }
+    try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (_) { return false; }
   })();
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }
   let lastScene = null;
@@ -215,10 +222,11 @@
     };
   }
 
-  function setEnabled(value) {
+  // persist: remember the choice (benchmark windows toggle without persisting).
+  function setEnabled(value, { persist = false } = {}) {
     enabled = value !== false;
     stats.enabled = enabled;
-    try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch (_) {}
+    if (persist) { try { localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0'); } catch (_) {} }
     if (!enabled && lastScene) { disposeRecord(lastScene); lastScene = null; }
     return enabled;
   }
