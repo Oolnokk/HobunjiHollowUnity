@@ -67,9 +67,14 @@
     },
     grehlr: {
       prefix: 'grehlr',
-      baseShadeReferenceHex: '#424242', // Authored full-strength Grehlr coat color; exact source anchor for genotype recoloring.
+      baseShadeReferenceHex: '#99BF99', // Mint highlight is the authored peak: genotype tint retains the darker green shadows.
+      preferSourceKeyRecolor: true, // Paint only the mint coat; the white mantle, pink muzzle, claws and outlines remain native colors.
+      baseRecolorKeyHex: '#99BF99', // Selects both mint highlight and its dark-green shading by hue instead of the old gray mask.
+      baseRecolorHueTolerance: 15,
+      baseRecolorMinSaturationRatio: 0.60,
+      baseRecolorMinValue: 0.12,
       base: { idle: 'assets/creaturesprites/grehlr_idle.png', run1: 'assets/creaturesprites/grehlr_run1.png', run2: 'assets/creaturesprites/grehlr_run2.png' },
-      patterns: ['mitts', 'spectacles'],
+      patterns: ['mitts', 'spectacles', 'coloredstripe'], // Match the inheritable Grehlr pattern definition, including its brighter-stripe palette.
       eyes: { open: 'assets/creaturesprites/grehlr_eye.png', blink: 'assets/creaturesprites/grehlr_blink.png' },
     },
     drenkirra: {
@@ -642,7 +647,7 @@
       return null;
     }
     const baseUrl = spec.base[frame] || spec.base.idle;
-    const masks = spec.fullBaseRecolor ? null : await loadBaseMasks(); // Full-recolor species such as Nelk do not need base masks; unrelated fetch errors must never block their eyes or patterns.
+    const masks = spec.fullBaseRecolor || spec.preferSourceKeyRecolor ? null : await loadBaseMasks(); // Mint Grehlr and full-recolor species bypass legacy gray masks; hue-selected coats must not tint unrelated anatomy.
     const tMasks = performance.now();
     const mask = masks?.[kind]?.[frame];
     const storedBaseColor = genotype?.base?.color; // Retained for the bodystripes overlay when its Drenkirra color roles swap.
@@ -650,7 +655,7 @@
     const baseColor = bodyStripesColorSwap ? genotype.bodystripes.color : storedBaseColor; // Effective body fill color for this frame.
     const fullBaseRecolor = spec.fullBaseRecolor === true; // Used by species whose base sprite itself is the recolorable coat instead of requiring a separate region mask.
     const sourceKey = !mask && !fullBaseRecolor && spec.baseRecolorKeyHex // Mask-less species whose coat is identified by its authored source color.
-      ? { hex: spec.baseRecolorKeyHex, hueTolerance: spec.baseRecolorHueTolerance, minSaturationRatio: spec.baseRecolorMinSaturationRatio }
+      ? { hex: spec.baseRecolorKeyHex, hueTolerance: spec.baseRecolorHueTolerance, minSaturationRatio: spec.baseRecolorMinSaturationRatio, minValue: spec.baseRecolorMinValue }
       : null;
     // Only worth a warning if there was actually a base color to apply —
     // uumkaoii's genotype has no `base` layer at all (its two regions are
