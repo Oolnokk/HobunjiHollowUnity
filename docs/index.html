@@ -176,7 +176,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261119hb945df1"></script>
+  <script src="js/png-plane-avatar.js?v=20261120hpaperavatar2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -237,7 +237,7 @@
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
-  <script src="js/creature-head-cache.js?v=20261119hb943daa"></script>
+  <script src="js/creature-head-cache.js?v=20261120hpapercache2"></script>
   <!-- Per-instance eye-blink timer shared by wild/hostile creatures
        (game.js) and farm livestock (farm-animals.js). -->
   <script src="js/creature-blink.js?v=20261118NineAuthoredRigs2"></script>
@@ -588,7 +588,7 @@
   <script src="js/tzatzul-live-visuals.js?v=20261118hTzPortrait4"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261118combatOrbit1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
-  <script src="js/tzatzul-nest-encounter.js?v=20261118combatOrbit1"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
+  <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
