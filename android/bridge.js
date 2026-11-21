@@ -255,16 +255,21 @@
       }
       const status = save?.getStatus?.();
       if (status?.state === 'ready' && status.autoSyncArmed) {
+        const runtime = window.HobunjiRuntimeSave; // Live serializer must be ready before any cloud overwrite.
+        if (window.__hobunjiGameStarted === true &&
+            (runtime?.isReady?.() !== true || typeof runtime.captureSnapshot !== 'function')) {
+          return { ok: false, error: 'Live save capture is not ready; Google Drive was not overwritten.' };
+        }
         const result = await save.syncNow({ reason: 'android-quit' });
-        if (!result || result.state !== 'ready' || result.dataLossRisk ||
-            /error|blocked|risk/i.test(result.lastAction || '')) {
+        const committed = /^(?:saved-browser-to-folder|saved-primary-recovery-error|autosaved-browser-to-folder|autosaved-primary-recovery-error|autosync-skipped-unchanged)$/.test(String(result?.lastAction || '')); // Only canonical commits or verified no-op are success.
+        if (!result || result.state !== 'ready' || result.dataLossRisk || !committed) {
           return { ok: false, error: result?.lastError || result?.dataLossRisk || 'Folder save was not completed.' };
         }
         return { ok: true, mode: 'folder' };
       }
       if (window.__hobunjiGameStarted) {
         const result = await window.HobunjiRuntimeSave?.flushNow?.({ reason: 'android-quit' }); // Await the actual browser write before permitting an update or quit.
-        if (result?.ok !== true) return { ok: false, error: result?.error || 'Could not save the live game.' };
+        if (result?.ok !== true || result.captured !== true) return { ok: false, error: result?.error || 'Live gameplay was not captured; refusing to close with a stale save.' };
         if (status?.folderName) return { ok: false, error: 'Save folder disconnected or not armed. Only browser storage was saved.' };
       }
       return { ok: true, mode: 'browser' };
