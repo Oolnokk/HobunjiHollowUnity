@@ -95,7 +95,7 @@ for (const key of literatureKeys) {
 // does not catch a future regression in list filtering or catalog integration.
 const ownedLiterature = Object.fromEntries(literatureKeys.map(key => [key, 1])); // Every generated lesson is owned, like a save containing many unsold drops.
 ownedLiterature.log = 2; // Ordinary material control must remain outside Plans & Scrolls.
-const stackBuilderSource = between(gameSource, '      function matchesPackCategory(cat, key) {', '      const inventoryWheelCache ='); // Real game-owned filter and stack builder, not a reconstruction.
+const stackBuilderSource = between(gameSource, '      function matchesPackCategory(cat, key) {', "      // The item wheel's list (owned, wheel-eligible stacks)"); // Real game-owned filter and stack builder, not a reconstruction.
 const getInventoryStackKeys = vm.runInNewContext(stackBuilderSource + '\ngetInventoryStackKeys', { ITEM_DEFS: itemDefs, inventory: ownedLiterature, inventoryItems: registeredItems.inventoryItems });
 const planStackKeys = Array.from(getInventoryStackKeys('plans')); // Full Pack result for the user's Plans & Scrolls selection.
 assert.deepEqual(planStackKeys.slice().sort(), literatureKeys.slice().sort(), 'Pack Plans & Scrolls lists every owned mastery tablet, scroll, technique scroll, and combat manual');

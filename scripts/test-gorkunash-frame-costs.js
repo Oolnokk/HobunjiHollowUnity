@@ -4,16 +4,20 @@ const assert = require('node:assert/strict'); // Behavioral assertions for the t
 const fs = require('node:fs'); // Loads the shipped implementations rather than copies of their logic.
 const vm = require('node:vm'); // Runs the owners with controlled inventory, audio, and DOM dependencies.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Inventory owner under test.
-const wheelSource = game.slice(game.indexOf('      function matchesPackCategory('), game.indexOf('      function getActiveInventoryItem(')); // Includes the frame cache and both list builders.
+const wheelSource = game.slice(game.indexOf('      function matchesPackCategory('), game.indexOf('      function getActiveInventoryItem(')); // Both list builders and the delegation to js/inventory-wheel-list.js (which owns the cache).
 const defs = { food: { label: 'Food' }, material: { label: 'Material' }, seed: { label: 'Seed' } }; // Mutable catalog exercises runtime registration.
 const stock = { food: 2, material: 4, gold: 99 }; // Count-only changes must not rebuild the wheel.
 const catalog = [{ key: 'food' }, { key: 'material' }, { key: 'seed' }]; // Authoritative display order, including non-wheel items.
 let eligibilityCalls = 0; // Counts expensive recipe classification across repeated consumers.
+let wheelClock = 0; // The wheel list's safety refresh (REFRESH_MS) runs on performance.now().
 const context = vm.createContext({
   inventory: stock, ITEM_DEFS: defs, inventoryItems: catalog, gameFrameSerial: 1, manualHeldItem: null,
+  performance: { now: () => wheelClock }, Map, Object,
   window: { ItemProcessing: { isWheelEligible: key => { eligibilityCalls++; return key !== 'material'; } } },
 }); // Shared VM exposes real frame and manual-hold mutations below.
+vm.runInContext(fs.readFileSync('docs/js/inventory-wheel-list.js', 'utf8'), context); // Loaded before game.js, as in index.html.
 vm.runInContext(wheelSource, context);
+const wheelList = context.window.InventoryWheelList;
 const wheel = () => vm.runInContext('getInventoryStackItems()', context); // Calls the real builder without exporting production internals.
 const keys = () => Array.from(wheel(), item => item.key); // Normalizes cross-realm arrays for assertions.
 assert.deepEqual(keys(), ['food']);
@@ -47,15 +51,24 @@ context.manualHeldItem = { kind: 'bagItem', key: 'food' };
 const beforeHold = wheel(); // Manual hold identity changes must invalidate wrapped eligibility.
 context.manualHeldItem = null;
 assert.notEqual(wheel(), beforeHold);
-const beforeFrame = wheel(); // A new frame must reclassify recipes even when ownership and catalog identities are unchanged.
-context.gameFrameSerial++;
-assert.deepEqual(keys(), ['material']);
-assert.notEqual(wheel(), beforeFrame, 'eligibility is refreshed on the next game frame');
+const beforeFrame = wheel(); // Unchanged inputs: the list is reused across frames (the user's town trace rebuilt it every frame).
+const callsBeforeFrames = eligibilityCalls;
+for (let i = 0; i < 5; i++) { context.gameFrameSerial++; wheelClock += 16; assert.equal(wheel(), beforeFrame, 'reused on the next frames'); }
+assert.equal(eligibilityCalls, callsBeforeFrames, 'without reclassifying any recipe');
+context.gameFrameSerial++; wheelClock += wheelList.REFRESH_MS + 1;
+assert.notEqual(wheel(), beforeFrame, 'and reclassified once REFRESH_MS has passed, for changes no input check can see');
 context.window.ItemProcessing.isWheelEligible = key => !!defs[key].isCookedFood;
 assert.deepEqual(keys(), []);
-defs.newFood.isCookedFood = true;
-context.gameFrameSerial++;
-assert.deepEqual(keys(), ['newFood'], 'in-place recipe registration becomes eligible on the next frame');
+defs.newFood.isCookedFood = true; // In-place recipe registration: no owned key, definition or catalog identity changed.
+context.gameFrameSerial++; wheelClock += 16;
+assert.deepEqual(keys(), [], 'not seen within the refresh window');
+context.gameFrameSerial++; wheelClock += wheelList.REFRESH_MS + 1;
+assert.deepEqual(keys(), ['newFood'], 'in-place recipe registration becomes eligible within REFRESH_MS');
+defs.newFood.isCookedFood = false;
+wheelList.setCrossFrameEnabled(false); // Settings → Render optimizations → "Reuse the item wheel list across frames" off.
+context.gameFrameSerial++; wheelClock += 16;
+assert.deepEqual(keys(), [], 'with cross-frame reuse off, the next frame reclassifies (the previous behaviour)');
+wheelList.setCrossFrameEnabled(true);
 
 const lyre = fs.readFileSync('docs/assets/minigames/lyre-performance.html', 'utf8'); // Shared visible and ambient performance owner.
 function functionSource(name) {

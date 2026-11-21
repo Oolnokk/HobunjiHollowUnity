@@ -31,6 +31,21 @@ visits (whole rig sync 2,144 → 1,713); frames are pixel-identical with lean sy
 A/B: Settings → Render optimizations → "Lean dual-wield weapon sync", benchmark variant
 `dualWieldFullSync`, `HobunjiDualWieldWeaponVisuals.setLeanSyncEnabled(false)`.
 
+**Item wheel list reused across frames (fixed).** `checkTransitionSpots` and the action bar were one
+cost: `checkTransitionSpots` calls `refreshActionBar()` every frame, and two thirds of that was
+rebuilding the item wheel's list (`getInventoryStackItems`), which runs `ItemProcessing.isWheelEligible`
+(processing outputs for every method, the churn check, a catalog scan) over every owned item: 2.9 ms a
+build for the user's 157 wheel items. Its cache was valid for one frame only, although every read
+already checks every input that can change the list (owned keys, their definitions, the catalog, the
+manually held item, the eligibility provider). The list and its cache moved to
+`js/inventory-wheel-list.js` (extracted from game.js; `getInventoryStackItems()` delegates) and a valid
+list is now reused across frames, rebuilt at least every 500 ms for what the checks cannot see
+(late-loaded recipe/alchemy data, a definition edited in place). At the user's ~12 fps that is one
+build every ~6 frames (~2.4 ms a frame saved); at 60 fps ~97% of builds. The rest of
+`refreshActionBar` (~1.7 ms in the trace: action buttons, aimed object, editor button visibility,
+prayer prompt) is unchanged. A/B: Settings → Render optimizations → "Reuse the item wheel list across
+frames", benchmark variant `wheelListEveryFrame`.
+
 ## 20 Nov 2026: review of this branch's render changes
 
 A full review of the combat-perf branch found, and this entry fixes:
