@@ -151,6 +151,9 @@ async function run() {
     'android/app/src/main/java/com/oolnokk/hobunjihollow/MainActivity.java'),'utf8');
   assert.match(backend,/verifyUnchanged\(write\)/);
   assert.match(backend,/X-HTTP-Method-Override/, 'Android PATCH operations must use a Google-supported method override');
+  assert.match(backend,/uploadResumable\(session, metadata\)/, 'Files over 5 MiB require resumable uploads');
+  assert.match(backend,/setFixedLengthStreamingMode\(length\)/, 'Large uploads must stream from disk, not memory');
+  assert.match(backend,/getHeaderField\("Location"\)/, 'Resumable sessions must use Google's issued upload location');
   assert.match(backend,/setRequestMethod\("POST"\)/, 'Never rely on unsupported HttpURLConnection PATCH');
   assert.match(backend,/getString\("tree"\)|optString\("tree"\)/);
   assert.match(backend,/\.hobunji-previous-/);
