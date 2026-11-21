@@ -114,7 +114,7 @@ The Google OAuth consent screen must allow the account being used for testing.
 5. On the PC, use **Google Drive for Desktop** to mirror that same Drive folder
    to a local directory, then select it in Hobunji Hollow on the PC.
 
-Direct Drive access requires an internet connection. The app keeps the browser
+Direct Drive access requires an internet connection. Saves over 5 MiB use Drive's resumable upload protocol with bounded streaming from Android's private staging cache; smaller JSON/PNG files use multipart uploads. A failed upload must not rename or replace the canonical remote save. The app keeps the browser
 save as a local fallback, but a failed Drive write must never be described as
 a completed cloud save. Remote commits are staged, compared against the version
 observed when the write began, and backed up before publication. Drive v3
