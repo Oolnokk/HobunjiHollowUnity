@@ -3,6 +3,14 @@ package com.oolnokk.hobunjihollow;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.IntentSender;
+import java.io.IOException;
+import android.os.SystemClock;
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.common.api.Scope;
+import java.util.Arrays;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -33,9 +41,15 @@ public final class MainActivity extends Activity {
     private static final String GAME_URL = GAME_ORIGIN + "/assets/game/index.html";
     private static final int PICK_FOLDER = 1201;
     private static final int PICK_FILE = 1202;
+    private static final int PICK_DRIVE_AUTH = 1203;
+    private static final long DRIVE_TOKEN_REFRESH_MS = 45L * 60L * 1000L; // Reauthorize in native code ahead of access-token expiry.
 
     private final ExecutorService io = Executors.newSingleThreadExecutor(); // Serializes SAF file operations and keeps large saves off the UI thread.
     private AndroidFolderBackend files; // Owns selected-directory permission and open read/write sessions.
+    private AndroidDriveBackend drive; // Google Drive REST adapter; shares the existing game's file-handle operations.
+    private long driveTokenAt; // Refresh threshold for the native-only Google access token.
+    private boolean drivePickerActive; // Distinguishes folder-selection consent from normal reconnect consent.
+    private boolean driveAuthorizationBusy; // One native authorization dialog at a time.
     private AndroidUpdateController updates; // Checks signed main releases without touching the game's saves.
     private WebView web; // Persistent WebView storage is the game's browser fallback.
     private JavaScriptReplyProxy pickerReply; // Outstanding user-initiated folder-choice response.
@@ -46,6 +60,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle savedState) {
         super.onCreate(savedState);
         files = new AndroidFolderBackend(this);
+        drive = new AndroidDriveBackend(this); // No Google account or scope is requested until the player chooses Drive.
         updates = new AndroidUpdateController(this, this::askGameToSaveForUpdate); // Shared final-save gate before opening Android's installer.
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -137,21 +152,46 @@ public final class MainActivity extends Activity {
             JSONObject args = packet.optJSONObject("args");
             if (args == null) args = new JSONObject();
             if ("choose".equals(op)) {
-                if (pickerReply != null) {
-                    reply(proxy, id, null, new IllegalStateException("A folder chooser is already open."));
+                if (pickerReply != null || driveAuthorizationBusy) {
+                    reply(proxy, id, null, new IllegalStateException("A save-folder chooser is already open."));
                     return;
                 }
                 pickerReply = proxy;
                 pickerRequestId = id;
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-                try { startActivityForResult(intent, PICK_FOLDER); }
-                catch (Exception error) {
-                    pickerReply = null;
-                    pickerRequestId = -1;
-                    reply(proxy, id, null, error);
+                new AlertDialog.Builder(this).setTitle("Where should Hobunji Hollow save?")
+                        .setItems(new String[] { "Google Drive (direct connection)", "Folder on this phone" },
+                                (dialog, which) -> {
+                                    if (which == 0) startDriveAuthorization(true, true);
+                                    else startPhoneFolderPicker();
+                                })
+                        .setOnCancelListener(dialog -> finishFolderChoice(null,
+                                new android.os.OperationCanceledException("Save folder selection cancelled.")))
+                        .show();
+                return;
+            }
+            if ("driveAuthorize".equals(op)) {
+                String chosenTree = args.optString("tree");
+                if (!drive.rootTree().equals(chosenTree) || drive.rootId().isEmpty()) {
+                    reply(proxy, id, null, new SecurityException("This Google Drive folder has not been chosen."));
+                    return;
                 }
+                if (pickerReply != null || driveAuthorizationBusy) {
+                    reply(proxy, id, null, new IllegalStateException("Another save-folder authorization is running."));
+                    return;
+                }
+                pickerReply = proxy;
+                pickerRequestId = id;
+                startDriveAuthorization(false, true);
+                return;
+            }
+            if ("permission".equals(op) && args.optString("tree").startsWith("drive:")) {
+                final JSONObject requested = args;
+                if (!drive.rootTree().equals(requested.optString("tree"))) {
+                    reply(proxy, id, new JSONObject().put("granted", false), null);
+                    return;
+                }
+                ensureDriveToken(false, (allowed, error) ->
+                        reply(proxy, id, new JSONObject().put("granted", allowed), null));
                 return;
             }
             if ("nelkArtDiagnostics".equals(op)) {
@@ -169,16 +209,141 @@ public final class MainActivity extends Activity {
                 return;
             }
             final JSONObject requested = args;
-            io.execute(() -> {
-                try {
-                    JSONObject result = files.dispatch(op, requested);
-                    reply(proxy, id, result, null);
-                } catch (Exception error) {
-                    Log.e(TAG, "Android save operation " + op + " failed", error);
-                    reply(proxy, id, null, error);
+            final boolean usesDrive = requested.optString("tree").startsWith("drive:");
+            if (usesDrive) {
+                if (!drive.rootTree().equals(requested.optString("tree"))) {
+                    reply(proxy, id, null, new SecurityException("The requested Drive folder was not approved by Google Picker."));
+                    return;
                 }
-            });
+                ensureDriveToken(false, (allowed, error) -> {
+                    if (!allowed) {
+                        reply(proxy, id, null, error == null
+                                ? new SecurityException("Reconnect your Google Drive folder in Local Save Folder.")
+                                : error);
+                        return;
+                    }
+                    dispatchFileRequest(true, op, requested, proxy, id);
+                });
+            } else {
+                dispatchFileRequest(false, op, requested, proxy, id);
+            }
         } catch (Exception error) { Log.e(TAG, "Invalid Android save request", error); }
+    }
+
+    /** Only the selected app-origin WebView may submit these operations. */
+    private void dispatchFileRequest(boolean usesDrive, String op, JSONObject requested,
+                                     JavaScriptReplyProxy proxy, int id) {
+        io.execute(() -> {
+            try {
+                reply(proxy, id, usesDrive ? drive.dispatch(op, requested) : files.dispatch(op, requested), null);
+            } catch (Exception error) {
+                if (usesDrive && error instanceof SecurityException) driveTokenAt = 0; // Retry native authorization on next request.
+                Log.e(TAG, "Save operation " + op + " failed", error);
+                reply(proxy, id, null, error);
+            }
+        });
+    }
+
+    private void startPhoneFolderPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try { startActivityForResult(intent, PICK_FOLDER); }
+        catch (Exception error) { finishFolderChoice(null, error); }
+    }
+
+    private void finishFolderChoice(JSONObject payload, Exception error) {
+        JavaScriptReplyProxy to = pickerReply; // Only the currently pending user request receives the selected handle.
+        int requestId = pickerRequestId;
+        pickerReply = null;
+        pickerRequestId = -1;
+        driveAuthorizationBusy = false;
+        if (to != null) reply(to, requestId, payload, error);
+    }
+
+    private interface TokenCallback { void done(boolean allowed, Exception error); }
+
+    private AuthorizationRequest driveRequest(boolean showPicker) {
+        AuthorizationRequest.Builder request = AuthorizationRequest.builder()
+                .setRequestedScopes(Arrays.asList(new Scope("https://www.googleapis.com/auth/drive.file")))
+                .setOptOutIncludingGrantedScopes(true);
+        if (showPicker) {
+            request.addResourceParameter(AuthorizationRequest.ResourceParameter.PICKER_OAUTH_TRIGGER, "true");
+            request.addResourceParameter(AuthorizationRequest.ResourceParameter.PICKER_ALLOW_FOLDER_SELECTION, "true");
+            request.addResourceParameter(AuthorizationRequest.ResourceParameter.PICKER_ALLOW_MULTIPLE, "false");
+            request.setPrompt(AuthorizationRequest.Prompt.CONSENT | AuthorizationRequest.Prompt.SELECT_ACCOUNT);
+        }
+        return request.build();
+    }
+
+    private void applyToken(AuthorizationResult result) {
+        drive.setToken(result.getAccessToken());
+        driveTokenAt = SystemClock.elapsedRealtime();
+    }
+
+    private void startDriveAuthorization(boolean showPicker, boolean interactive) {
+        drivePickerActive = showPicker;
+        driveAuthorizationBusy = true;
+        Identity.getAuthorizationClient(this).authorize(driveRequest(showPicker))
+                .addOnSuccessListener(result -> {
+                    if (result.hasResolution()) {
+                        if (!interactive) {
+                            driveAuthorizationBusy = false;
+                            return;
+                        }
+                        try {
+                            startIntentSenderForResult(result.getPendingIntent().getIntentSender(),
+                                    PICK_DRIVE_AUTH, null, 0, 0, 0);
+                        } catch (IntentSender.SendIntentException error) {
+                            finishFolderChoice(null, error);
+                        }
+                    } else {
+                        driveAuthorizationBusy = false;
+                        completeDriveAuthorization(result);
+                    }
+                })
+                .addOnFailureListener(error -> finishFolderChoice(null, error));
+    }
+
+    private void completeDriveAuthorization(AuthorizationResult result) {
+        try { applyToken(result); }
+        catch (Exception error) { finishFolderChoice(null, error); return; }
+        if (!drivePickerActive) {
+            try { finishFolderChoice(new JSONObject().put("granted", true), null); }
+            catch (Exception error) { finishFolderChoice(null, error); }
+            return;
+        }
+        String selected = result.getTokenResponseParams() == null ? ""
+                : result.getTokenResponseParams().getString("picked_file_ids", "");
+        if (selected.isEmpty() || selected.contains(",")) {
+            finishFolderChoice(null, new IOException("Choose exactly one Google Drive save folder."));
+            return;
+        }
+        final String id = selected; // The only source of a new Drive root is Google's own Picker result.
+        io.execute(() -> {
+            try {
+                drive.rememberRoot(id, "Google Drive saves");
+                finishFolderChoice(new JSONObject().put("tree", drive.rootTree())
+                        .put("name", drive.rootName()), null);
+            } catch (Exception error) { finishFolderChoice(null, error); }
+        });
+    }
+
+    private void ensureDriveToken(boolean interactive, TokenCallback callback) {
+        if (driveTokenAt != 0 && SystemClock.elapsedRealtime() - driveTokenAt < DRIVE_TOKEN_REFRESH_MS) {
+            callback.done(true, null);
+            return;
+        }
+        Identity.getAuthorizationClient(this).authorize(driveRequest(false))
+                .addOnSuccessListener(result -> {
+                    if (result.hasResolution()) {
+                        callback.done(false, new SecurityException("Google Drive sign-in is required. Use Reconnect in Local Save Folder."));
+                    } else {
+                        try { applyToken(result); callback.done(true, null); }
+                        catch (Exception error) { callback.done(false, error); }
+                    }
+                })
+                .addOnFailureListener(error -> callback.done(false, error));
     }
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
@@ -188,6 +353,17 @@ public final class MainActivity extends Activity {
                 filePickerCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data));
                 filePickerCallback = null;
             }
+            return;
+        }
+        if (code == PICK_DRIVE_AUTH) {
+            driveAuthorizationBusy = false;
+            if (pickerReply == null) return;
+            if (result != RESULT_OK || data == null) {
+                finishFolderChoice(null, new android.os.OperationCanceledException("Google Drive authorization was cancelled."));
+                return;
+            }
+            try { completeDriveAuthorization(Identity.getAuthorizationClient(this).getAuthorizationResultFromIntent(data)); }
+            catch (Exception error) { finishFolderChoice(null, error); }
             return;
         }
         if (code != PICK_FOLDER || pickerReply == null) return;
@@ -314,7 +490,10 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (updates != null) updates.close();
-        io.execute(() -> files.close());
+        io.execute(() -> {
+            files.close();
+            drive.close();
+        });
         io.shutdown();
         if (filePickerCallback != null) {
             filePickerCallback.onReceiveValue(null);
