@@ -91,7 +91,13 @@ app verification before wide public distribution.
 Before testing, enable **Google Drive API** and **Google Picker API** in a Google
 Cloud project and register an **Android OAuth client** for package
 `com.oolnokk.hobunjihollow` with the APK's correct signing-certificate
-SHA-1. The debug APK and stable release signer may require separate clients.
+SHA-1. The debug APK and stable release signer require **separately registered
+Android OAuth clients** if signed by different keys. The Windows/desktop
+credentials are not interchangeable. For a PR debug build, open its Android
+GitHub Actions run and find the "Print debug APK SHA-1" step: its fingerprint
+corresponds to **that exact APK only** because PR test signing can change on
+the next run. Prefer configuring the permanent signed release APK for normal
+use.
 The Google OAuth consent screen must allow the account being used for testing.
 
 1. From Hobunji Hollow's Local Save Folder controls choose **Change/Choose
