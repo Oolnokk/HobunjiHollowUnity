@@ -102,6 +102,8 @@
   const _denFurnitureDataCache = new Map(); // Furniture key -> authored JSON promise reused by every generated den instance.
   const _denEntranceCollisionCache = new WeakMap(); // Den identity -> translated rectangles, reused by tile queries and rebuilt when geometry/template changes.
   const _denCollisionStats = { hits: 0, builds: 0, invalidations: 0 }; // On-demand Pixel Probe counters, not per-frame formatting.
+  // Bumped whenever a den's collision state is (re)computed; grid-tile-accessors.js keeps its per-task memo of
+  // den states only while this is unchanged, so any recompute (locale edit, source switch) reaches movement at once.
 
   function denEntranceLocaleId(den) {
     const id = String(den?.entranceTemplateId || ''); // Generator-chosen template; unknown/legacy ids fall back to the shared full-size template.
@@ -267,9 +269,13 @@
     const state = { useLegacyCave, rects, bounds: { x:minX, y:minY, w:maxX-minX, h:maxY-minY } }; // Conservative broad-phase for GridTileAccessors.
     _denEntranceCollisionCache.set(den, { locale, x, y, w, h, templateId, mouthX, mouthY, state });
     _denCollisionStats.builds++;
+    _denCollisionGeneration++;
     if (cached) _denCollisionStats.invalidations++;
     return state;
   }
+
+  let _denCollisionGeneration = 0;
+  function denCollisionGeneration() { return _denCollisionGeneration; }
 
   function denCollisionDebugSnapshot() {
     return { ..._denCollisionStats }; // Requested only by Pixel Probe, never allocated during steady-state collision checks.
@@ -629,7 +635,7 @@
     return group;
   }
 
-  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, denCollisionDebugSnapshot, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, updateBanubuVisibility, banubuCaveAlpha };
+  const api = { init, canonicalRootTotemRecipe, denEntranceLocaleFor: den => activeAnimalDenEntranceLocale(den), denCaveVariantFor, denEntranceCollisionFor, denEntranceCollisionState, denCollisionGeneration, denCollisionDebugSnapshot, loadAnimalDenEntranceLocale, loadAnimalDenEntranceLocaleObject, buildAnimalDenMeshes, syncAnimalDenVisual, buildRootTotemMeshes, updateBanubuVisibility, banubuCaveAlpha };
   Object.defineProperty(api, 'CANONICAL_ROOT_TOTEM_RECIPE', { enumerable: true, get: canonicalRootTotemRecipe });
   window.ZoneDenTotemFeatures = api;
 })();

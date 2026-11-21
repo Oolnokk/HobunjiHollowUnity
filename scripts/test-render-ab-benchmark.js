@@ -71,7 +71,7 @@ const document = {
 let skinnedScissor = true; const skinnedScissorHistory = [];
 let hideFadedOut = true; const hideFadedOutHistory = [];
 let treeInstancing = true; const treeInstancingHistory = [];
-const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = [];
+const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = []; const dualSyncHistory = []; const wheelListHistory = []; const denMemoHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
   __hobunjiGameRenderer: { getContext: () => ({
@@ -82,6 +82,8 @@ const window = {
   HeldObjectRenderOrder: { setGearParticlesOnceEnabled(v) { gearParticleHistory.push(v); }, setHeldOwnerLinkEnabled(v) { npcWeaponHistory.push('link:' + v); }, setOtherWeaponXrayLimit(n) { npcWeaponHistory.push('limit:' + n); },
     snapshot: () => ({ heldOwnerLinkEnabled: true, otherWeaponXrayLimit: 0 /* Shipped default: NPC weapons in the base pass. */, scissoredReplays: 0, fullscreenReplays: heldFullscreen, lastHeldFullscreenReason: 'skinned-mesh', lastShellFullscreenReason: 'none', lastReplayScissorCoverage: 1, lastReplayCulled: 0, lastReplayKept: 42, heldMeshes: 3, skinnedScissorEnabled: skinnedScissor }),
     setSkinnedScissorEnabled(value) { skinnedScissor = value !== false; skinnedScissorHistory.push(skinnedScissor); return skinnedScissor; } },
+  InventoryWheelList: { crossFrameEnabled: () => true, setCrossFrameEnabled(v) { wheelListHistory.push(v); return v; } },
+  HobunjiDualWieldWeaponVisuals: { leanSyncEnabled: () => true, setLeanSyncEnabled(v) { dualSyncHistory.push(v); return v; } },
   ZonePropRenderBatches: { snapshot: () => ({ enabled: true, batches: 12 }), setEnabled(v) { propBatchHistory.push(v); return v; } },
   WildernessTreeInstancer: { enabled: () => treeInstancing, setEnabled(value) { treeInstancing = value !== false; treeInstancingHistory.push(treeInstancing); return treeInstancing; } },
   ZoneVegetationCull: { snapshot: () => ({ hideFadedOut, lastCullables: 600 }),
@@ -109,7 +111,8 @@ const originalRenderFrame = pipeline.renderFrame;
 // A rain group that its own update keeps visible; the benchmark may hide it only while drawing.
 const rainGroup = { visible: true };
 const denseChunk = { visible: true };
-window.GridTileAccessors = { getActiveScene: () => ({ getObjectByName: name => name === 'world_rain_planes' ? rainGroup : name === 'AuthoredCloudForestDenseChunk_0' ? denseChunk : null }) };
+window.GridTileAccessors = { getActiveScene: () => ({ getObjectByName: name => name === 'world_rain_planes' ? rainGroup : name === 'AuthoredCloudForestDenseChunk_0' ? denseChunk : null }),
+  denStateMemoEnabled: () => true, setDenStateMemoEnabled(v) { denMemoHistory.push(v); return v; } };
 // Cloud Forest cull-radius slider: 'input' only (never persisted), plus a forced corridor pass.
 const forestRadiusHistory = [];
 let corridorUpdates = 0;
@@ -123,7 +126,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -140,7 +143,10 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.equal(denMemoHistory.join(' '), 'false true false true', 'denCollisionEveryTile restores the per-task memo after each window');
+  assert.equal(wheelListHistory.join(' '), 'false true false true', 'wheelListEveryFrame restores the cross-frame list after each window');
+  assert.equal(dualSyncHistory.join(' '), 'false true false true', 'dualWieldFullSync restores lean sync after each window');
   assert.equal(propBatchHistory.join(' '), 'false true false true', 'propBatchesOff restores prop batching after each window');
   assert.equal(gearParticleHistory.join(' '), 'false true false true', 'gearParticlesEveryPass restores drawn-once particles after each window');
   assert.equal(npcWeaponHistory.join(' '), 'link:false limit:Infinity link:true limit:0 link:false limit:Infinity link:true limit:0', 'npcWeaponsXray restores every weapon\'s x-ray per window and puts the base-pass default back');

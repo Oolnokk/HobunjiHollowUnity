@@ -38,7 +38,7 @@ const document = {
 // --- Fake owners -------------------------------------------------------------
 const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
-let propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
+let denMemo = true, wheelCross = true, leanSync = true, propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
 const registered = [];
 const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, unknownSwitch: false })]]);
 const rain = { name: 'world_rain_planes', visible: true, parent: null };
@@ -59,8 +59,10 @@ const win = {
     setFrameScopeEnabled: v => { frameScope = log('frameScope', v !== false); },
   },
   WildernessTreeInstancer: { enabled: () => treeOn, setEnabled: (v, opts) => { treeOn = log('tree', v !== false); calls.push('treePersist:' + !!opts?.persist); return treeOn; } },
+  InventoryWheelList: { crossFrameEnabled: () => wheelCross, setCrossFrameEnabled: v => { wheelCross = log('wheelCross', v !== false); return wheelCross; } },
+  HobunjiDualWieldWeaponVisuals: { leanSyncEnabled: () => leanSync, setLeanSyncEnabled: v => { leanSync = log('leanSync', v !== false); return leanSync; } },
   FacetedRocks: { enabled: () => faceted, setEnabled: v => { faceted = log('faceted', v !== false); return faceted; } },
-  GridTileAccessors: { getActiveScene: () => scene },
+  GridTileAccessors: { getActiveScene: () => scene, denStateMemoEnabled: () => denMemo, setDenStateMemoEnabled: v => { denMemo = log('denMemo', v !== false); return denMemo; } },
   addEventListener() {},
 };
 win.window = win;
@@ -83,7 +85,7 @@ assert.ok(section, 'section inserted');
 assert.equal(pane.children.indexOf(section), pane.children.indexOf(performanceSection) + 1, 'after Performance');
 assert.ok(section.hasAttribute('data-dev-only') && section.hasAttribute('data-ctrl-subtab'));
 const input = id => document.getElementById('settingRenderOpt_' + id);
-for (const id of ['propBatches', 'gearParticlesOnce', 'npcWeaponsBasePass', 'replayScissor', 'frameScopedHooks', 'treeInstancing', 'facetedRocks', 'rainSheets', 'skyClouds']) assert.ok(input(id), id + ' has a toggle');
+for (const id of ['propBatches', 'denStateMemo', 'wheelListCrossFrame', 'leanDualWieldSync', 'gearParticlesOnce', 'npcWeaponsBasePass', 'replayScissor', 'frameScopedHooks', 'treeInstancing', 'facetedRocks', 'rainSheets', 'skyClouds']) assert.ok(input(id), id + ' has a toggle');
 for (const id of ['farmTileBatches', 'grassChunks', 'wildernessDistanceCull', 'hideFadedTrees', 'replayCull']) assert.equal(input(id), null, id + ': no owner here, no row');
 assert.equal(input('propBatches').checked, false, 'reflects the applied stored value');
 assert.equal(input('replayScissor').checked, true);
@@ -118,6 +120,14 @@ assert.equal(rain.visible, true, 'and shown again after the frame');
 input('rainSheets').checked = true; input('rainSheets').dispatch('change');
 assert.equal(registered.length, 0, 'switching back on removes the hook');
 
+input('denStateMemo').checked = false; input('denStateMemo').dispatch('change');
+assert.equal(denMemo, false, 'den collision can go back to a per-tile lookup');
+input('wheelListCrossFrame').checked = false; input('wheelListCrossFrame').dispatch('change');
+assert.equal(wheelCross, false, 'the item wheel list can go back to a per-frame rebuild');
+input('leanDualWieldSync').checked = false; input('leanDualWieldSync').dispatch('change');
+assert.equal(leanSync, false, 'lean dual-wield sync can be switched off');
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).leanDualWieldSync, false);
+
 // Live values: a console/benchmark change shows up on refresh.
 gearOnce = true;
 S.refresh();
@@ -125,7 +135,7 @@ assert.equal(input('gearParticlesOnce').checked, true);
 
 // Set to Defaults: every switch at its shipped value, storage cleared.
 document.getElementById('settingRenderOptResetDefaults').dispatch('click');
-assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length], [true, true, true, 0, true, false, true, 0]);
+assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length, leanSync, wheelCross, denMemo], [true, true, true, 0, true, false, true, 0, true, true, true]);
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
 assert.ok(S.list().every(t => t.value === t.default), 'list() reports defaults');
 

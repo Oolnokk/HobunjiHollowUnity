@@ -132,6 +132,21 @@
       read: () => heldSnap().heldOwnerLinkEnabled === true && heldSnap().otherWeaponXrayLimit === 0,
       write: on => { held().setHeldOwnerLinkEnabled(on); held().setOtherWeaponXrayLimit(on ? 0 : Infinity); } },
 
+    { group: 'Characters', id: 'leanDualWieldSync', name: 'Lean dual-wield weapon sync', on: true,
+      desc: 'Weapon copies held for dual wield (and the invisible offhand copy armed NPCs hold at idle) are re-posed once per hand solve and recomputed once, instead of three times per hand. Off: the old full sync.',
+      available: () => typeof window.HobunjiDualWieldWeaponVisuals?.setLeanSyncEnabled === 'function',
+      read: () => window.HobunjiDualWieldWeaponVisuals.leanSyncEnabled?.(), write: on => window.HobunjiDualWieldWeaponVisuals.setLeanSyncEnabled(on) },
+
+    { group: 'Game loop', id: 'wheelListCrossFrame', name: 'Reuse the item wheel list across frames', on: true,
+      desc: 'The item wheel\'s list of usable stacks is rebuilt only when the inventory, held item or item data change (and at least twice a second), instead of every frame. Off: rebuilt every frame.',
+      available: () => typeof window.InventoryWheelList?.setCrossFrameEnabled === 'function',
+      read: () => window.InventoryWheelList.crossFrameEnabled?.(), write: on => window.InventoryWheelList.setCrossFrameEnabled(on) },
+
+    { group: 'Game loop', id: 'denStateMemo', name: 'Reuse den collision within a game-loop tick', on: true,
+      desc: 'Creature pathfinding looks up each animal den\'s collision shape once per game-loop tick (one burst of tile checks) instead of once per tile it checks. Moving or editing a den still applies immediately. Off: looked up for every tile.',
+      available: () => typeof window.GridTileAccessors?.setDenStateMemoEnabled === 'function',
+      read: () => window.GridTileAccessors.denStateMemoEnabled?.(), write: on => window.GridTileAccessors.setDenStateMemoEnabled(on) },
+
     { group: 'Frame', id: 'frameScopedHooks', name: 'Frame-scoped render hooks', on: true,
       desc: 'Per-frame visual fix-ups apply once per frame instead of around every render call.',
       available: () => typeof hooks()?.setFrameScopeEnabled === 'function',

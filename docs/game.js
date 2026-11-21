@@ -17751,7 +17751,7 @@
           spriteIcon: def?.spriteIcon || null,
           equipmentThumbnails: window.EquipmentPanel?.getIconDebug?.() || null, // Pixel Probe exposes thumbnail bounds/failures without a desktop console.
           targetColor: def?.spriteColor ?? null,
-          wheelCache: { reads: inventoryWheelCache.reads, builds: inventoryWheelCache.builds, frame: inventoryWheelCache.frame },
+          wheelCache: window.InventoryWheelList.snapshot(),
           swigs: active ? window.HobunjiDrunkGameplayBridge?.getBottleSwigStatus?.(active.key, def, inventory) || null : null,
           nearbyNpcAlcohol: nearbyNpcWalker?.rec?.id ? {
             id: nearbyNpcWalker.rec.id,
@@ -17806,45 +17806,10 @@
           .sort((a, b) => (ranks.get(a) ?? 9999) - (ranks.get(b) ?? 9999) || ITEM_DEFS[a].label.localeCompare(ITEM_DEFS[b].label));
       }
 
-      const inventoryWheelCache = { frame: -1, keys: [], defs: [], catalog: [], held: null, eligible: null, stacks: [], reads: 0, builds: 0 }; // Shared by held-item consumers; counters appear in the existing item-sprite diagnostics.
-
-      function getInventoryStackItems() {
-        const keys = Object.keys(inventory).filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0); // Checks ownership changes immediately, even between two actions in one frame.
-        const eligible = window.ItemProcessing.isWheelEligible; // A replacement eligibility provider also invalidates this frame's result.
-        inventoryWheelCache.reads++;
-        if (inventoryWheelCache.frame === gameFrameSerial && inventoryWheelCache.eligible === eligible
-            && inventoryWheelCache.held === manualHeldItem
-            && keys.length === inventoryWheelCache.keys.length
-            && keys.every((key, index) => key === inventoryWheelCache.keys[index] && ITEM_DEFS[key] === inventoryWheelCache.defs[index])
-            && inventoryItems.length === inventoryWheelCache.catalog.length
-            && inventoryItems.every((item, index) => item === inventoryWheelCache.catalog[index])) return inventoryWheelCache.stacks;
-        // The item wheel/scroller's own list — every consumer of this
-        // function (the active-item scroll, the desktop selection arc,
-        // refreshActionBar's held-item resolution, the two inventory-panel
-        // "Hold" buttons) is wheel-related, unlike getInventoryStackKeys
-        // (used by the plain inventory grid too), so the isWheelEligible
-        // filter belongs here rather than duplicated at every call site.
-        // Materials/etc it excludes stay fully visible and sellable in the
-        // inventory grid — see isWheelEligible's own comment for what does
-        // and doesn't qualify, and its own "Hold" button (selectInventoryItem)
-        // for how a non-wheel item still gets offered as a gift.
-        const itemsByKey = new Map(); // Reuses the first catalog entry, matching the previous Array.find behavior.
-        inventoryItems.forEach(item => { if (!itemsByKey.has(item.key)) itemsByKey.set(item.key, item); });
-        inventoryWheelCache.stacks = getInventoryStackKeys('all').filter(eligible).map(key => itemsByKey.get(key) || {
-          key,
-          icon: ITEM_DEFS[key].icon,
-          label: ITEM_DEFS[key].label.toUpperCase(),
-          max: 99,
-        });
-        inventoryWheelCache.frame = gameFrameSerial;
-        inventoryWheelCache.keys = keys;
-        inventoryWheelCache.defs = keys.map(key => ITEM_DEFS[key]);
-        inventoryWheelCache.catalog = inventoryItems.slice();
-        inventoryWheelCache.held = manualHeldItem;
-        inventoryWheelCache.eligible = eligible;
-        inventoryWheelCache.builds++;
-        return inventoryWheelCache.stacks;
-      }
+      // The item wheel's list (owned, wheel-eligible stacks) and its cross-frame cache now live in js/inventory-wheel-list.js.
+      function getInventoryStackItems() { return window.InventoryWheelList.getStackItems(); }
+      window.InventoryWheelList.init({ inventory, ITEM_DEFS, inventoryItems, getInventoryStackKeys,
+        getManualHeldItem: () => manualHeldItem, getFrameSerial: () => gameFrameSerial });
 
       function getActiveInventoryItem(stacks = getInventoryStackItems()) {
         // Used by planting, shipping-box quick deposit, HUD, and item scroll.

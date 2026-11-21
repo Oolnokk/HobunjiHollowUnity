@@ -1147,7 +1147,7 @@ assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(11, 20
 assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(10, 21), false,
   'a railing mounted on a walkable porch is not a full-tile blocker; the narrow face collider handles it');
 let gridDebug = context.window.GridTileAccessors.debugSnapshot();
-assert.deepEqual(JSON.parse(JSON.stringify(gridDebug)), { buildingFootprintCacheBuilds: 1, buildingFootprintCacheHits: 2 },
+assert.deepEqual((({ buildingFootprintCacheBuilds, buildingFootprintCacheHits }) => ({ buildingFootprintCacheBuilds, buildingFootprintCacheHits }))(gridDebug), { buildingFootprintCacheBuilds: 1, buildingFootprintCacheHits: 2 },
   'unchanged building collision queries build once and hit thereafter');
 building.gridX = 12;
 assert.equal(context.window.GridTileAccessors.isTownBuildingCollisionTile(12, 20), true,

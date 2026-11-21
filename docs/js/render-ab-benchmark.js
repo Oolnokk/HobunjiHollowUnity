@@ -26,6 +26,17 @@
 //   propBatchesOff  still wilderness props (tents, camp furniture, berry
 //                   bushes, ore-rock stones...) drawn one mesh at a time
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   denCollisionEveryTile
+//                   creature pathfinding looks up every den's collision shape
+//                   for every tile again, instead of once per game-loop tick
+//                   (GridTileAccessors.setDenStateMemoEnabled)
+//   wheelListEveryFrame
+//                   the item wheel's list rebuilt (all eligibility checks)
+//                   every frame again (InventoryWheelList.setCrossFrameEnabled)
+//   dualWieldFullSync
+//                   dual-wield weapon copies (and NPCs' invisible offhand
+//                   copies) fully re-synced three times per hand again
+//                   (HobunjiDualWieldWeaponVisuals.setLeanSyncEnabled(false))
 //   gearParticlesEveryPass
 //                   particles on held gear (enchantment motes, weapon fire)
 //                   are drawn in the base pass and every replay group again
@@ -321,6 +332,18 @@
     const propBatches = window.ZonePropRenderBatches;
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
+    }
+    const tiles = window.GridTileAccessors;
+    if (typeof tiles?.setDenStateMemoEnabled === 'function' && tiles.denStateMemoEnabled?.() === true) {
+      variants.push({ id: 'denCollisionEveryTile', apply: () => tiles.setDenStateMemoEnabled(false), undo: () => tiles.setDenStateMemoEnabled(true) });
+    }
+    const wheelList = window.InventoryWheelList;
+    if (typeof wheelList?.setCrossFrameEnabled === 'function' && wheelList.crossFrameEnabled?.() === true) {
+      variants.push({ id: 'wheelListEveryFrame', apply: () => wheelList.setCrossFrameEnabled(false), undo: () => wheelList.setCrossFrameEnabled(true) });
+    }
+    const dualWield = window.HobunjiDualWieldWeaponVisuals;
+    if (typeof dualWield?.setLeanSyncEnabled === 'function' && dualWield.leanSyncEnabled?.() === true) {
+      variants.push({ id: 'dualWieldFullSync', apply: () => dualWield.setLeanSyncEnabled(false), undo: () => dualWield.setLeanSyncEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
     if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {

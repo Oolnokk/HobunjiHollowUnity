@@ -775,6 +775,7 @@
     }
 
     syncing = true;
+    const dualSolve = {}; // One synchronous multi-hand solve: the dual-wield weapon pose is synced once for both hands.
     try {
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
@@ -803,7 +804,7 @@
         primary.quaternion.slerp(handRotation, weight);
       }
       if (dualWield) {
-        const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket) || primarySocket;
+        const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket, dualSolve) || primarySocket;
         primary = handSocketAfterGripMode(record, dualPrimarySocket); // Dual Wield alone remaps the same canonical grip onto the lagged main-hand weapon copy.
       }
       const modelCalibration = modelCalibrationForRecord(record);
@@ -821,7 +822,7 @@
       } else if (dualWield) {
         const offhandGrip = toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip; // Same authored 1H grip point, minus the main hand's palm-side offset: the offhand holds its copy from the other side.
         const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip, visualBasis);
-        const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) || offhandBaseSocket;
+        const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
         record.secondaryActive = true;
@@ -838,7 +839,7 @@
           // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
           const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
           const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip, visualBasis) : null;
-          const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket) : null;
+          const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) : null;
           if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
             applyFallbackSide(record, 'left'); // The fallback is the other end of the blend: the invisible tool takes over as its weight rises.
             const idleHand = handSocketAfterGripMode(record, offhandSocket);

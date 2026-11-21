@@ -424,6 +424,12 @@
       ...(outlinePerfLine ? [outlinePerfLine] : []),
       npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
       actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.corpseFrustumHidden + actorOcclusion.corpseOccludedHidden}/${actorOcclusion.corpseCandidates} corpse rigs culled · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
+      (() => { // Whether the held/shell x-ray replays copy depth back (cheap) or redraw the whole scene (the fallback).
+        const depth = root.ScissorDepthSnapshot?.snapshot?.();
+        if (!depth) return 'X-ray depth snapshot: unavailable';
+        const held = root.HeldObjectRenderOrder?.snapshot?.() || {};
+        return `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}`;
+      })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
