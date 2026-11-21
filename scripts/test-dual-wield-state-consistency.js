@@ -166,11 +166,13 @@ for (const editor of [true, false]) {
   class Vector { clone() { return new Vector(); } copy() { return this; } set() { return this; } multiplyScalar() { return this; } }
   class Quaternion { identity() { return this; } slerp() { return this; } }
   const plane = { position: new Vector(), quaternion: new Quaternion(), updateWorldMatrix() { operations.push('editor-bake'); } };
-  const holder = { updateMatrixWorld() { operations.push('game-bake'); } };
+  const leanFlags = []; // holderPassSkipsCopies as the holder bake saw it (lean sync: the copy roots are re-posed and updated after it).
+  const holder = { updateMatrixWorld() { operations.push('game-bake'); leanFlags.push(syncScope.holderPassSkipsCopies); } };
   const root = () => ({ updateMatrixWorld() { operations.push('root-world'); } });
   const context = { visual: {}, plane, holder };
   const current = { ...context, mainRoot: root(), offRoot: root() };
-  const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
+  const syncScope = {
+    stats: { syncs: 0, solveReuses: 0 }, leanSync: true, holderPassSkipsCopies: false,
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: false, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => editor, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // Only stance order is under test; layered sprite copies need real meshes.
     global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // The isolated sync must supply the new flail-assembly service even with no weapon art.
@@ -180,9 +182,17 @@ for (const editor of [true, false]) {
     },
     setRootToward() {}, applyMainLag() { operations.push('main-pose'); },
     frameScratch: () => ({ offTargetPosition: new Vector(), offTargetQuaternion: new Quaternion() }), // Per-state scratch reused by the every-frame sync.
-  });
+  };
+  const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, syncScope);
   sync();
   assert.deepEqual(operations, [editor ? 'editor-bake' : 'game-bake', 'idle-pose', 'main-pose', 'root-world', 'root-world']);
+  if (!editor) {
+    assert.deepEqual(leanFlags, [true], 'lean sync: the holder bake skips the copy roots (they are re-posed and updated right after)');
+    assert.equal(syncScope.holderPassSkipsCopies, false, 'and the skip ends with the bake');
+    syncScope.leanSync = false; operations.length = 0; leanFlags.length = 0;
+    sync();
+    assert.deepEqual(leanFlags, [false], 'full sync (Settings off): the holder bake descends into the copies as before');
+  }
 }
 // Authoring the offhand idle stance in the editor: the holder IS the offhand weapon, so the offhand copy is not derived
 // from it any more; the main-hand copy is derived from the holder instead (roles swapped), with no attack lag.
@@ -196,6 +206,7 @@ for (const editor of [true, false]) {
   const current = { ...context, mainRoot: root(), offRoot: root() };
   const poses = { main: { id: 'main' }, offhand: { id: 'offhand' } };
   const sync = vm.runInNewContext(`(${visualSource.slice(syncStart, syncEnd).trim()})`, {
+    stats: { syncs: 0, solveReuses: 0 }, leanSync: true, holderPassSkipsCopies: false,
     states: new Map([['player', current]]), PLAYER_KEY: 'player', keyFor: () => 'player', teardown() {}, buildState() { throw new Error('the player state already exists'); }, editorOffhandAuthoring: true, currentContext: () => context, currentDualState: () => ({ influence: 1, idleBlend: 1 }), ACTIVE_EPSILON: 0.0001,
     inAttackEditor: () => true, clamp01: value => value, hideOriginalMaterial() {}, syncAssemblyLayers() {}, // The authored offhand pose is independent of sprite-copy synchronization.
     global: { HobunjiWeaponSpriteAssemblies: { syncDualWield: () => false } }, // Editor pose fixture has no loaded flail root, but keeps the real dependency boundary.

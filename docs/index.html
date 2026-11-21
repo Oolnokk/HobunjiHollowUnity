@@ -151,9 +151,10 @@
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
   <script src="js/item-processing.js?v=20261115terminalFood3"></script>
+  <script src="js/inventory-wheel-list.js?v=20261121wheelList1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261119h41f2dc4"></script>
+  <script src="debug.js?v=20261121h7713580"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261120h9d87715"></script>
@@ -192,7 +193,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261119he2d7cd6"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261120longoranBootstrapV2"></script>
+  <script src="js/held-action-animations.js?v=20261120h976a64e"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -885,7 +886,7 @@
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261120h5b31d4f"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
-  <script src="js/zone-den-totem-features.js?v=20261119visualauth6"></script>
+  <script src="js/zone-den-totem-features.js?v=20261121h523eb03"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2942,7 +2943,7 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261120h1013343"></script>
+  <script src="game.js?v=20261121h6beb274"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
