@@ -49,6 +49,7 @@ public final class MainActivity extends Activity {
     private AndroidDriveBackend drive; // Google Drive REST adapter; shares the existing game's file-handle operations.
     private long driveTokenAt; // Refresh threshold for the native-only Google access token.
     private boolean drivePickerActive; // Distinguishes folder-selection consent from normal reconnect consent.
+    private String pendingDriveRootId; // Chosen via restricted Google Picker; persist only after separate full access approval.
     private boolean driveAuthorizationBusy; // One native authorization dialog at a time.
     private AndroidUpdateController updates; // Checks signed main releases without touching the game's saves.
     private WebView web; // Persistent WebView storage is the game's browser fallback.
@@ -260,6 +261,7 @@ public final class MainActivity extends Activity {
         pickerReply = null;
         pickerRequestId = -1;
         driveAuthorizationBusy = false;
+        pendingDriveRootId = null;
         if (to != null) reply(to, requestId, payload, error);
     }
 
@@ -267,8 +269,10 @@ public final class MainActivity extends Activity {
 
     private AuthorizationRequest driveRequest(boolean showPicker) {
         AuthorizationRequest.Builder request = AuthorizationRequest.builder()
-                .setRequestedScopes(Arrays.asList(new Scope("https://www.googleapis.com/auth/drive.file")))
-                .setOptOutIncludingGrantedScopes(true);
+                .setRequestedScopes(Arrays.asList(new Scope(showPicker
+                        ? "https://www.googleapis.com/auth/drive.file"
+                        : "https://www.googleapis.com/auth/drive")))
+                .setOptOutIncludingGrantedScopes(true); // Picker cannot mix scopes; full permission follows in a separate consent.
         if (showPicker) {
             request.addResourceParameter(AuthorizationRequest.ResourceParameter.PICKER_OAUTH_TRIGGER, "true");
             request.addResourceParameter(AuthorizationRequest.ResourceParameter.PICKER_ALLOW_FOLDER_SELECTION, "true");
@@ -308,27 +312,44 @@ public final class MainActivity extends Activity {
     }
 
     private void completeDriveAuthorization(AuthorizationResult result) {
+        if (drivePickerActive) {
+            String selected = result.getTokenResponseParams() == null ? ""
+                    : result.getTokenResponseParams().getString("picked_file_ids", "");
+            if (selected.isEmpty() || selected.contains(",")) {
+                finishFolderChoice(null, new IOException("Choose exactly one Google Drive save folder."));
+                return;
+            }
+            pendingDriveRootId = selected; // Persist only after Google's second, explicit authorization.
+            drivePickerActive = false;
+            // drive.file cannot read existing PC-authored children inside a picked
+            // directory. Request full Drive scope separately, then enforce the
+            // picked-folder sandbox ourselves. Do not promise a false migration.
+            new AlertDialog.Builder(this).setTitle("Allow access to your existing PC saves?")
+                    .setMessage("Google's folder-only permission cannot read all existing save files within that folder. "
+                            + "To synchronize the same PC saves, Android requires broader Google Drive authorization. "
+                            + "Hobunji Hollow will only read and write the folder you selected. "
+                            + "You can cancel without changing any saves.")
+                    .setPositiveButton("Continue", (dialog, which) -> startDriveAuthorization(false, true))
+                    .setNegativeButton("Cancel", (dialog, which) -> finishFolderChoice(null,
+                            new android.os.OperationCanceledException("Google Drive connection cancelled.")))
+                    .show();
+            return;
+        }
         try { applyToken(result); }
         catch (Exception error) { finishFolderChoice(null, error); return; }
-        if (!drivePickerActive) {
+        if (pendingDriveRootId != null) {
+            final String root = pendingDriveRootId; // Validation/persistence stays off the UI thread.
+            io.execute(() -> {
+                try {
+                    drive.rememberRoot(root, "Google Drive saves");
+                    finishFolderChoice(new JSONObject().put("tree", drive.rootTree())
+                            .put("name", drive.rootName()), null);
+                } catch (Exception error) { finishFolderChoice(null, error); }
+            });
+        } else {
             try { finishFolderChoice(new JSONObject().put("granted", true), null); }
             catch (Exception error) { finishFolderChoice(null, error); }
-            return;
         }
-        String selected = result.getTokenResponseParams() == null ? ""
-                : result.getTokenResponseParams().getString("picked_file_ids", "");
-        if (selected.isEmpty() || selected.contains(",")) {
-            finishFolderChoice(null, new IOException("Choose exactly one Google Drive save folder."));
-            return;
-        }
-        final String id = selected; // The only source of a new Drive root is Google's own Picker result.
-        io.execute(() -> {
-            try {
-                drive.rememberRoot(id, "Google Drive saves");
-                finishFolderChoice(new JSONObject().put("tree", drive.rootTree())
-                        .put("name", drive.rootName()), null);
-            } catch (Exception error) { finishFolderChoice(null, error); }
-        });
     }
 
     private void ensureDriveToken(boolean interactive, TokenCallback callback) {
