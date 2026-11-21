@@ -156,6 +156,7 @@ async function run() {
   assert.match(backend,/\.hobunji-previous-/);
   assert.match(activity,/PICKER_OAUTH_TRIGGER/);
   assert.match(activity,/setOptOutIncludingGrantedScopes\(true\)/);
+  assert.match(activity,/getGrantedScopes\(\)/, 'Partial Google OAuth grants must not permit remote save writes');
   assert.match(activity,/https:\/\/www\.googleapis\.com\/auth\/drive/);
   assert.ok(!activity.includes('new WebView(this).loadUrl("https://accounts.google.com'),
     'Never embed Google OAuth inside a game WebView');
