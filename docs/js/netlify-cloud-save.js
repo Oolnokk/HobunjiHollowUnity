@@ -3,6 +3,11 @@
 (() => {
   'use strict';
 
+  // Android now uses the native Google Drive picker and its existing canonical
+  // LocalSaveFolder save/load UI. Do not show the obsolete Netlify login or
+  // probe missing Netlify Functions on the app's offline asset origin.
+  if (window.HobunjiAndroidFiles) return;
+
   const AUTH_URL = '/.netlify/functions/hobunji-auth';
   const SAVE_URL = '/.netlify/functions/hobunji-cloud-save';
   const DEVICE_ID_KEY = 'hobunjiCloudDeviceId';
