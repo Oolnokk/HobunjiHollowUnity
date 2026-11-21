@@ -107,7 +107,11 @@ final class AndroidDriveBackend {
         if (!"https".equals(url.getProtocol()) || !"www.googleapis.com".equals(url.getHost()))
             throw new SecurityException("Drive requests must use the official Google API endpoint.");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod(method);
+        if ("PATCH".equals(method)) {
+            // HttpURLConnection cannot issue PATCH reliably on Android; Google Drive accepts the documented override.
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("X-HTTP-Method-Override", "PATCH");
+        } else conn.setRequestMethod(method);
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(90000);
         conn.setRequestProperty("Authorization", "Bearer " + token);
