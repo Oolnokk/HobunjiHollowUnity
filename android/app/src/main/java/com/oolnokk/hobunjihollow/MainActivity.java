@@ -373,8 +373,14 @@ public final class MainActivity extends Activity {
                     if (result.hasResolution()) {
                         callback.done(false, new SecurityException("Google Drive sign-in is required. Use Reconnect in Local Save Folder."));
                     } else {
-                        try { applyToken(result); callback.done(true, null); }
-                        catch (Exception error) { callback.done(false, error); }
+                        try {
+                            if (result.getGrantedScopes() == null ||
+                                    !result.getGrantedScopes().contains("https://www.googleapis.com/auth/drive")) {
+                                throw new SecurityException("Google Drive access was not granted. Reconnect in Local Save Folder.");
+                            }
+                            applyToken(result);
+                            callback.done(true, null);
+                        } catch (Exception error) { callback.done(false, error); }
                     }
                 })
                 .addOnFailureListener(error -> callback.done(false, error));
