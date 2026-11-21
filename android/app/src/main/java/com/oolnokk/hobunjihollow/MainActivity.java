@@ -197,6 +197,11 @@ public final class MainActivity extends Activity {
                 });
                 return;
             }
+            if ("driveStatus".equals(op)) {
+                final JSONObject status = args; // Native dialog exposes connector state without adb or console.
+                runOnUiThread(() -> showDriveStatus(status));
+                return;
+            }
             if ("nelkArtDiagnostics".equals(op)) {
                 showNelkArtDiagnostics(args);
                 return;
@@ -427,12 +432,45 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (exitPending || web == null) return;
         new AlertDialog.Builder(this).setTitle("Hobunji Hollow")
-                .setItems(new String[] { "Keep Playing", "Save and Exit", "Check for Updates", "Check Nelk Art" },
+                .setItems(new String[] { "Keep Playing", "Save and Exit", "Check for Updates", "Check Nelk Art", "Google Drive Saves" },
                         (dialog, which) -> {
                             if (which == 1) askGameToSave();
                             if (which == 2) updates.check(true);
                             if (which == 3) checkNelkArt();
+                            if (which == 4) showDriveSaveMenu();
                         })
+                .show();
+    }
+
+    private void showDriveSaveMenu() {
+        new AlertDialog.Builder(this).setTitle("Google Drive saves")
+                .setMessage("Use the same Local Save Folder controls on Android and PC. Connecting alone never uploads. "
+                        + "After first connection, choose Load from Folder in the game's save settings before saving.")
+                .setPositiveButton("Connect / Change Folder", (dialog, which) -> {
+                    web.evaluateJavascript("(async()=>{let status;try{status=await window.LocalSaveFolder.chooseFolder();}"
+                            + "catch(error){status={state:'error',lastError:String(error)}}"
+                            + "window.HobunjiAndroidHost.postMessage(JSON.stringify({id:-4,op:'driveStatus',args:status}));})();", null);
+                })
+                .setNeutralButton("Show Status", (dialog, which) -> {
+                    web.evaluateJavascript("window.HobunjiAndroidHost.postMessage(JSON.stringify({id:-4,op:'driveStatus',"
+                            + "args:window.LocalSaveFolder?.getStatus?.()||{state:'loading'}}));", null);
+                })
+                .setNegativeButton("Close", (dialog, which) -> {})
+                .show();
+    }
+
+    private void showDriveStatus(JSONObject result) {
+        String state = result.optString("state", "unknown");
+        String folder = result.optString("folderName", "(not chosen)");
+        String action = result.optString("lastAction", "none");
+        String error = result.optString("lastError", "");
+        new AlertDialog.Builder(this).setTitle("Google Drive / Folder Save")
+                .setMessage("Connection: " + state + "\\nFolder: " + folder +
+                        "\\nLast action: " + action +
+                        (error.isEmpty() ? "" : "\\nError: " + error) +
+                        "\\n\\nAfter connecting, use Local Save Folder → Load from Folder before enabling uploads. "
+                        + "An unauthorized Drive session can be restored with Reconnect in game settings.")
+                .setPositiveButton("OK", (dialog, which) -> {})
                 .show();
     }
 
