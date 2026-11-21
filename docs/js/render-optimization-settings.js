@@ -142,6 +142,11 @@
       available: () => typeof window.InventoryWheelList?.setCrossFrameEnabled === 'function',
       read: () => window.InventoryWheelList.crossFrameEnabled?.(), write: on => window.InventoryWheelList.setCrossFrameEnabled(on) },
 
+    { group: 'Game loop', id: 'denStateMemo', name: 'Reuse den collision within a frame', on: true,
+      desc: 'Creature pathfinding looks up each animal den\'s collision shape once per frame instead of once per tile it checks. Moving or editing a den still applies immediately. Off: looked up for every tile.',
+      available: () => typeof window.GridTileAccessors?.setDenStateMemoEnabled === 'function',
+      read: () => window.GridTileAccessors.denStateMemoEnabled?.(), write: on => window.GridTileAccessors.setDenStateMemoEnabled(on) },
+
     { group: 'Frame', id: 'frameScopedHooks', name: 'Frame-scoped render hooks', on: true,
       desc: 'Per-frame visual fix-ups apply once per frame instead of around every render call.',
       available: () => typeof hooks()?.setFrameScopeEnabled === 'function',

@@ -218,6 +218,39 @@
     return false;
   }
 
+  // Den collision states for the current task. Creature pathfinding asks isAnimalDenCollisionTile for
+  // every tile it expands, and each call walked every den through ZoneDenTotemFeatures.denEntranceCollisionState,
+  // which resolves the den's entrance locale (local editor overrides included) before its own cache check:
+  // ~2 ms a frame in the user's wilderness trace. A den's state is now looked up once per task: the memo is
+  // dropped when the current task ends (edits arrive in their own task), whenever the den module recomputes any
+  // state (denCollisionGeneration), and per den when its position, size, template or mouth changed.
+  // setDenStateMemoEnabled(false) (Settings → Render optimizations → "Reuse den collision within a frame") is the A/B.
+  let denStateMemo = null; // den -> { state, x, y, w, h, templateId, mouthX, mouthY } for the current task.
+  let denStateMemoGeneration = -1;
+  let denStateMemoEnabled = true;
+  const denMemoStats = { lookups: 0, computed: 0 };
+  const afterTask = typeof queueMicrotask === 'function' ? queueMicrotask : fn => Promise.resolve().then(fn);
+  function denCollisionState(den) {
+    const api = window.ZoneDenTotemFeatures;
+    if (typeof api?.denEntranceCollisionState !== 'function') return null;
+    if (!denStateMemoEnabled) return api.denEntranceCollisionState(den) || null;
+    const generation = api.denCollisionGeneration?.() ?? 0;
+    if (!denStateMemo || denStateMemoGeneration !== generation) {
+      if (!denStateMemo) afterTask(() => { denStateMemo = null; });
+      denStateMemo = new Map();
+      denStateMemoGeneration = generation;
+    }
+    denMemoStats.lookups++;
+    const memo = denStateMemo.get(den);
+    if (memo && memo.x === den.x && memo.y === den.y && memo.w === den.w && memo.h === den.h
+      && memo.templateId === den.entranceTemplateId && memo.mouthX === den.mouthAnchor?.x && memo.mouthY === den.mouthAnchor?.y) return memo.state;
+    const state = api.denEntranceCollisionState(den) || null;
+    denMemoStats.computed++;
+    denStateMemoGeneration = api.denCollisionGeneration?.() ?? 0; // This lookup's own recompute must not discard the memo.
+    denStateMemo.set(den, { state, x: den.x, y: den.y, w: den.w, h: den.h, templateId: den.entranceTemplateId, mouthX: den.mouthAnchor?.x, mouthY: den.mouthAnchor?.y });
+    return state;
+  }
+
   // Animal dens are a solid rock volume (see buildAnimalDenMeshes) except
   // their south-facing mouth tile, which stays walkable — it's both the
   // doorway gap in the mesh and the cavern-entrance transition tile.
@@ -231,7 +264,7 @@
         if (col >= den.x && col < den.x + w && row >= den.y && row < den.y + h) return true;
         continue;
       }
-      const authoredState = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den) || null; // Cached world-space den colliders and outer bounds; never rebuild locale geometry per A* tile.
+      const authoredState = denCollisionState(den); // Cached world-space den colliders and outer bounds; never rebuild locale geometry per A* tile.
       const bounds = authoredState?.bounds; // Conservative union includes furniture colliders extending beyond the den footprint.
       if (bounds && (col < bounds.x || col >= bounds.x + bounds.w || row < bounds.y || row >= bounds.y + bounds.h)) continue;
       if (!authoredState && (col < den.x || col >= den.x + w || row < den.y || row >= den.y + h)) continue; // No authored rectangles: legacy shell cannot block outside its footprint.
@@ -280,7 +313,10 @@
       return {
         buildingFootprintCacheBuilds,
         buildingFootprintCacheHits,
+        denStateMemo: { enabled: denStateMemoEnabled, ...denMemoStats },
       };
     },
+    denStateMemoEnabled: () => denStateMemoEnabled,
+    setDenStateMemoEnabled(value) { denStateMemoEnabled = value !== false; denStateMemo = null; return denStateMemoEnabled; },
   };
 })();

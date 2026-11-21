@@ -26,6 +26,9 @@
 //   propBatchesOff  still wilderness props (tents, camp furniture, berry
 //                   bushes, ore-rock stones...) drawn one mesh at a time
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   denCollisionEveryTile
+//                   creature pathfinding looks up every den's collision shape
+//                   for every tile again (GridTileAccessors.setDenStateMemoEnabled)
 //   wheelListEveryFrame
 //                   the item wheel's list rebuilt (all eligibility checks)
 //                   every frame again (InventoryWheelList.setCrossFrameEnabled)
@@ -328,6 +331,10 @@
     const propBatches = window.ZonePropRenderBatches;
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
+    }
+    const tiles = window.GridTileAccessors;
+    if (typeof tiles?.setDenStateMemoEnabled === 'function' && tiles.denStateMemoEnabled?.() === true) {
+      variants.push({ id: 'denCollisionEveryTile', apply: () => tiles.setDenStateMemoEnabled(false), undo: () => tiles.setDenStateMemoEnabled(true) });
     }
     const wheelList = window.InventoryWheelList;
     if (typeof wheelList?.setCrossFrameEnabled === 'function' && wheelList.crossFrameEnabled?.() === true) {

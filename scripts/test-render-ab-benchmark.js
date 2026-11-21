@@ -71,7 +71,7 @@ const document = {
 let skinnedScissor = true; const skinnedScissorHistory = [];
 let hideFadedOut = true; const hideFadedOutHistory = [];
 let treeInstancing = true; const treeInstancingHistory = [];
-const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = []; const dualSyncHistory = []; const wheelListHistory = [];
+const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = []; const dualSyncHistory = []; const wheelListHistory = []; const denMemoHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
   __hobunjiGameRenderer: { getContext: () => ({
@@ -111,7 +111,8 @@ const originalRenderFrame = pipeline.renderFrame;
 // A rain group that its own update keeps visible; the benchmark may hide it only while drawing.
 const rainGroup = { visible: true };
 const denseChunk = { visible: true };
-window.GridTileAccessors = { getActiveScene: () => ({ getObjectByName: name => name === 'world_rain_planes' ? rainGroup : name === 'AuthoredCloudForestDenseChunk_0' ? denseChunk : null }) };
+window.GridTileAccessors = { getActiveScene: () => ({ getObjectByName: name => name === 'world_rain_planes' ? rainGroup : name === 'AuthoredCloudForestDenseChunk_0' ? denseChunk : null }),
+  denStateMemoEnabled: () => true, setDenStateMemoEnabled(v) { denMemoHistory.push(v); return v; } };
 // Cloud Forest cull-radius slider: 'input' only (never persisted), plus a forced corridor pass.
 const forestRadiusHistory = [];
 let corridorUpdates = 0;
@@ -125,7 +126,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -142,7 +143,8 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.equal(denMemoHistory.join(' '), 'false true false true', 'denCollisionEveryTile restores the per-task memo after each window');
   assert.equal(wheelListHistory.join(' '), 'false true false true', 'wheelListEveryFrame restores the cross-frame list after each window');
   assert.equal(dualSyncHistory.join(' '), 'false true false true', 'dualWieldFullSync restores lean sync after each window');
   assert.equal(propBatchHistory.join(' '), 'false true false true', 'propBatchesOff restores prop batching after each window');
