@@ -149,9 +149,9 @@ async function run() {
     'android/app/src/main/java/com/oolnokk/hobunjihollow/AndroidDriveBackend.java'),'utf8');
   const activity = fs.readFileSync(path.join(root,
     'android/app/src/main/java/com/oolnokk/hobunjihollow/MainActivity.java'),'utf8');
-  assert.match(backend,/verifyUnchanged\\(write\\)/);
+  assert.match(backend,/verifyUnchanged\(write\)/);
   assert.match(backend,/X-HTTP-Method-Override/, 'Android PATCH operations must use a Google-supported method override');
-  assert.match(backend,/setRequestMethod\\("POST"\\)/, 'Never rely on unsupported HttpURLConnection PATCH');
+  assert.match(backend,/setRequestMethod\("POST"\)/, 'Never rely on unsupported HttpURLConnection PATCH');
   assert.match(backend,/getString\("tree"\)|optString\("tree"\)/);
   assert.match(backend,/\.hobunji-previous-/);
   assert.match(activity,/PICKER_OAUTH_TRIGGER/);
