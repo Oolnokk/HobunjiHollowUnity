@@ -120,6 +120,7 @@
       const opened = await request('openWrite', { tree: this.tree, path: this.path });
       let done = false; // A failed chunk aborts its staging file instead of committing a partial save.
       let failed = false; // Once a write fails, close() must never commit.
+      const tree = this.tree; // Closures below run with the writer object as this, not the file handle.
       return {
         async write(input) {
           if (done || failed) throw new Error('This save file writer is closed.');
@@ -133,23 +134,23 @@
           try {
             for (let start = 0; start < payload.length; start += CHUNK_SIZE) {
               const part = payload.subarray(start, Math.min(start + CHUNK_SIZE, payload.length));
-              await request('writeChunk', { tree: this.tree, id: opened.id, base64: base64FromBytes(part) });
+              await request('writeChunk', { tree, id: opened.id, base64: base64FromBytes(part) });
             }
           } catch (error) {
             failed = true;
-            await request('abortWrite', { tree: this.tree, id: opened.id }).catch(() => {});
+            await request('abortWrite', { tree, id: opened.id }).catch(() => {});
             throw error;
           }
         },
         async close() {
           if (done || failed) throw new Error('Cannot commit a failed or closed save.');
           done = true;
-          return request('commitWrite', { tree: this.tree, id: opened.id });
+          return request('commitWrite', { tree, id: opened.id });
         },
         async abort() {
           if (done) return;
           done = true;
-          await request('abortWrite', { tree: this.tree, id: opened.id });
+          await request('abortWrite', { tree, id: opened.id });
         },
       };
     }
