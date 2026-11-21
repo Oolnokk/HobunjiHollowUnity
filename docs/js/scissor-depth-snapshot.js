@@ -110,8 +110,10 @@
       if (gl.getError() !== gl.NO_ERROR) {
         if (whole) { fail(state, 'blit-error'); return false; }
         stats.partialBlitErrors++;
-        state.wholeBuffer = true; stats.wholeBuffer = true; // This implementation only blits whole depth buffers.
-        return blit(resolved, null, toScratch); // Retried (and checked) as a whole-buffer copy.
+        state.wholeBuffer = true; // This implementation only blits whole depth buffers.
+        const ok = blit(resolved, null, toScratch); // Retried (and checked) as a whole-buffer copy.
+        if (ok) stats.wholeBuffer = true; // Reported only once whole-buffer copies are known to work.
+        return ok;
       }
     }
     return true;

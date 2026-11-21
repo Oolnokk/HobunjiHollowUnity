@@ -70,7 +70,7 @@ build every ~6 frames (~2.4 ms a frame saved); at 60 fps ~97% of builds. The res
 prayer prompt) is unchanged. A/B: Settings → Render optimizations → "Reuse the item wheel list across
 frames", benchmark variant `wheelListEveryFrame`.
 
-**Den collision looked up once per task (fixed).** The trace was in a wilderness zone with animal dens.
+**Den collision looked up once per task, i.e. per game-loop tick (fixed).** The trace was in a wilderness zone with animal dens.
 Creature pathfinding asks `GridTileAccessors.isAnimalDenCollisionTile` for every tile it expands, and
 each call walked every den through `ZoneDenTotemFeatures.denEntranceCollisionState`, which resolves the
 den's entrance locale (local editor overrides included) before its own cache check: 137 ms in the trace,
@@ -78,7 +78,7 @@ den's entrance locale (local editor overrides included) before its own cache che
 the task ends (edits arrive in their own task), whenever the den module recomputes any state (new
 `denCollisionGeneration()` counter), and per den when its position, size, template or mouth changes.
 Headless, user's Cloud Forest save: 323 → 15 lookups a second (98% of 42k lookups served from the memo).
-A/B: Settings → Render optimizations → "Reuse den collision within a frame", benchmark variant
+A/B: Settings → Render optimizations → "Reuse den collision within a game-loop tick", benchmark variant
 `denCollisionEveryTile`.
 
 ## 20 Nov 2026: review of this branch's render changes

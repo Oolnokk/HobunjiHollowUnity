@@ -142,8 +142,8 @@
       available: () => typeof window.InventoryWheelList?.setCrossFrameEnabled === 'function',
       read: () => window.InventoryWheelList.crossFrameEnabled?.(), write: on => window.InventoryWheelList.setCrossFrameEnabled(on) },
 
-    { group: 'Game loop', id: 'denStateMemo', name: 'Reuse den collision within a frame', on: true,
-      desc: 'Creature pathfinding looks up each animal den\'s collision shape once per frame instead of once per tile it checks. Moving or editing a den still applies immediately. Off: looked up for every tile.',
+    { group: 'Game loop', id: 'denStateMemo', name: 'Reuse den collision within a game-loop tick', on: true,
+      desc: 'Creature pathfinding looks up each animal den\'s collision shape once per game-loop tick (one burst of tile checks) instead of once per tile it checks. Moving or editing a den still applies immediately. Off: looked up for every tile.',
       available: () => typeof window.GridTileAccessors?.setDenStateMemoEnabled === 'function',
       read: () => window.GridTileAccessors.denStateMemoEnabled?.(), write: on => window.GridTileAccessors.setDenStateMemoEnabled(on) },
 

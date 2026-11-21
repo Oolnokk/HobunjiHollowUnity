@@ -224,7 +224,8 @@
   // ~2 ms a frame in the user's wilderness trace. A den's state is now looked up once per task: the memo is
   // dropped when the current task ends (edits arrive in their own task), whenever the den module recomputes any
   // state (denCollisionGeneration), and per den when its position, size, template or mouth changed.
-  // setDenStateMemoEnabled(false) (Settings → Render optimizations → "Reuse den collision within a frame") is the A/B.
+  // The whole game loop runs in one task, so in practice a den is looked up once per game-loop tick.
+  // setDenStateMemoEnabled(false) (Settings → Render optimizations → "Reuse den collision within a game-loop tick") is the A/B.
   let denStateMemo = null; // den -> { state, x, y, w, h, templateId, mouthX, mouthY } for the current task.
   let denStateMemoGeneration = -1;
   let denStateMemoEnabled = true;

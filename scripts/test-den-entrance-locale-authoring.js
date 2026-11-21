@@ -98,8 +98,8 @@ assert.match(renderer, /visual\.offsetY/);
 assert.match(renderer, /visual\.offsetZ/);
 
 assert.match(collision, /function isLocaleObjectCollisionTile/);
-assert.match(collision, /const api = window\.ZoneDenTotemFeatures;[\s\S]*api\.denEntranceCollisionState\(den\)/, 'tile collision reads the den module\'s authored collision state');
-assert.match(collision, /const authoredState = denCollisionState\(den\);/, 'through the per-task den state memo');
+// Tile collision reading the den module's authored state (through its per-task memo) is executed by
+// test-den-authored-entrance-collision.js and test-den-collision-memo.js.
 assert.match(generator, /o\.kind === 'cave_entrance'/);
 assert.match(generator, /type:'localeCollider'/);
 assert.match(generator, /localeColliderOwnerId/);

@@ -28,7 +28,8 @@
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
 //   denCollisionEveryTile
 //                   creature pathfinding looks up every den's collision shape
-//                   for every tile again (GridTileAccessors.setDenStateMemoEnabled)
+//                   for every tile again, instead of once per game-loop tick
+//                   (GridTileAccessors.setDenStateMemoEnabled)
 //   wheelListEveryFrame
 //                   the item wheel's list rebuilt (all eligibility checks)
 //                   every frame again (InventoryWheelList.setCrossFrameEnabled)

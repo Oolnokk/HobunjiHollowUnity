@@ -102,6 +102,7 @@ assert.equal(snap.save(brokenRenderer, rect), null, 'a GL error on first use dis
 brokenGl.error = 0;
 assert.equal(snap.save(brokenRenderer, rect), null, 'and they stay disabled for that renderer');
 assert.equal(snap.snapshot().disabledReason, 'blit-error');
+assert.equal(snap.snapshot().wholeBuffer, false, 'a failed whole-buffer retry is never reported as working whole-buffer copies');
 // An implementation that rejects depth blits of a sub-rectangle (ANGLE's Direct3D backends): the first partial
 // blit errors, so the snapshot switches to whole-buffer copies instead of disabling itself.
 const partialGl = fakeGl();

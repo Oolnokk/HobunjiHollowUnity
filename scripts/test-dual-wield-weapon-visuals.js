@@ -134,8 +134,7 @@ assert.equal(authoredSocket.quaternion.y, -0.5, 'offhand conversion must not mut
   assert.equal(syncCalls, 2, 'full sync (Settings off): one sync per hand, as before');
   socketScope.leanSync = true;
 }
-assert.match(driver, /const dualSolve = \{\};[\s\S]*transformSocketForHand\?\.\(record, 'right', primarySocket, dualSolve\)[\s\S]*transformSocketForHand\?\.\(record, 'left', offhandBaseSocket, dualSolve\)/, 'the driver shares one solve object across both hands');
-assert.match(dual, /if \(holderPassSkipsCopies\) return;/, 'copy roots skip the holder bake under lean sync');
+// The holder bake skipping the copy roots is executed in test-dual-wield-state-consistency.js.
 
 const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.
 const runtimeContext = vm.runInNewContext(`(${dual.slice(dual.indexOf('  function currentContext('), dual.indexOf('  function currentDualState(')).trim()})`, {
