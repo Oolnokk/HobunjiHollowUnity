@@ -190,8 +190,10 @@ public final class MainActivity extends Activity {
                     reply(proxy, id, new JSONObject().put("granted", false), null);
                     return;
                 }
-                ensureDriveToken(false, (allowed, error) ->
-                        reply(proxy, id, new JSONObject().put("granted", allowed), null));
+                ensureDriveToken(false, (allowed, error) -> {
+                    try { reply(proxy, id, new JSONObject().put("granted", allowed), null); }
+                    catch (Exception failure) { reply(proxy, id, null, failure); }
+                });
                 return;
             }
             if ("nelkArtDiagnostics".equals(op)) {
