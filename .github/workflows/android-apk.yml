@@ -11,6 +11,7 @@ on:
       - 'docs/js/local-save-folder.js'
       - 'docs/js/creature-genetics-render.js'
       - 'scripts/test-android-saves.js'
+      - 'scripts/test-android-drive-bridge.js'
       - 'scripts/test-animal-genotype-atomic-retry.js'
       - '.github/workflows/android-apk.yml'
   push:
@@ -20,6 +21,7 @@ on:
       - 'docs/**'
       - 'android/**'
       - 'scripts/test-android-saves.js'
+      - 'scripts/test-android-drive-bridge.js'
       - 'scripts/test-animal-genotype-atomic-retry.js'
       - '.github/workflows/android-apk.yml'
 
@@ -49,6 +51,7 @@ jobs:
       - name: Test Android folder sync and Nelk compositor
         run: |
           node scripts/test-android-saves.js
+          node scripts/test-android-drive-bridge.js
           node scripts/test-animal-genotype-atomic-retry.js
       - name: Install Android SDK 36
         run: |
