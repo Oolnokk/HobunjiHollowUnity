@@ -63,11 +63,11 @@
     const opened = await request('openRead', { tree, path });
     try {
       return await consume(async () => {
-        const next = await request('readChunk', { id: opened.id });
+        const next = await request('readChunk', { tree, id: opened.id });
         return { bytes: bytesFromBase64(next.base64 || ''), eof: !!next.eof };
       });
     } finally {
-      await request('closeRead', { id: opened.id }).catch(() => {});
+      await request('closeRead', { tree, id: opened.id }).catch(() => {});
     }
   }
   async function readAllBytes(tree, path) {
@@ -133,23 +133,23 @@
           try {
             for (let start = 0; start < payload.length; start += CHUNK_SIZE) {
               const part = payload.subarray(start, Math.min(start + CHUNK_SIZE, payload.length));
-              await request('writeChunk', { id: opened.id, base64: base64FromBytes(part) });
+              await request('writeChunk', { tree: this.tree, id: opened.id, base64: base64FromBytes(part) });
             }
           } catch (error) {
             failed = true;
-            await request('abortWrite', { id: opened.id }).catch(() => {});
+            await request('abortWrite', { tree: this.tree, id: opened.id }).catch(() => {});
             throw error;
           }
         },
         async close() {
           if (done || failed) throw new Error('Cannot commit a failed or closed save.');
           done = true;
-          return request('commitWrite', { id: opened.id });
+          return request('commitWrite', { tree: this.tree, id: opened.id });
         },
         async abort() {
           if (done) return;
           done = true;
-          await request('abortWrite', { id: opened.id });
+          await request('abortWrite', { tree: this.tree, id: opened.id });
         },
       };
     }
@@ -164,7 +164,10 @@
       this.__hobunjiNativeHandle = { tree, name }; // Stored as a structured-cloneable token by LocalSaveFolder.
     }
     async queryPermission() { return permissionState(await request('permission', { tree: this.tree })); }
-    async requestPermission() { return this.queryPermission(); }
+    async requestPermission() {
+      if (!this.tree.startsWith('drive:')) return this.queryPermission();
+      return permissionState(await request('driveAuthorize', { tree: this.tree })); // Native Google authorization, never a WebView login.
+    }
     async getDirectoryHandle(name, options = {}) {
       const path = [...this.path, validateName(name)];
       await request('directory', { tree: this.tree, path, create: options.create === true });
@@ -268,7 +271,7 @@
   });
   window.HobunjiAndroidFiles = api;
   window.showDirectoryPicker = async () => {
-    const result = await request('choose');
+    const result = await request('choose'); // Native picker now offers Phone Folder or Google Drive.
     if (!result?.tree) throw errorFromNative({ name: 'AbortError', message: 'No folder chosen.' });
     return new AndroidDirectoryHandle(result.tree, [], result.name || 'Hobunji Saves');
   };
