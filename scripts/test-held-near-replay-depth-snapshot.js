@@ -102,6 +102,47 @@ assert.equal(snap.save(brokenRenderer, rect), null, 'a GL error on first use dis
 brokenGl.error = 0;
 assert.equal(snap.save(brokenRenderer, rect), null, 'and they stay disabled for that renderer');
 assert.equal(snap.snapshot().disabledReason, 'blit-error');
+// An implementation that rejects depth blits of a sub-rectangle (ANGLE's Direct3D backends): the first partial
+// blit errors, so the snapshot switches to whole-buffer copies instead of disabling itself.
+const partialGl = fakeGl();
+partialGl.getError = () => { const e = partialGl.error; partialGl.error = 0; return e; };
+const partialBlit = partialGl.blitFramebuffer;
+partialGl.blitFramebuffer = (...args) => {
+  const [sx0, sy0, sx1, sy1] = args;
+  if (!(sx0 === 0 && sy0 === 0 && sx1 === 400 && sy1 === 225)) { partialGl.error = 1282; partialGl.calls.push(['rejected-partial', ...args]); return; }
+  partialBlit(...args);
+};
+const partialRenderer = fakeRenderer(partialGl, { ...mainTarget, width: 400, height: 225 });
+const partialErrorsBefore = snap.snapshot().partialBlitErrors; // Module-wide counter (the always-failing case above tried a partial blit too).
+const partialToken = snap.save(partialRenderer, rect);
+assert(partialToken, 'a rejected partial blit falls back to a whole-buffer copy, not to "unsupported"');
+assert.equal(partialGl.calls.filter(c => c[0] === 'rejected-partial').length, 1, 'the partial blit was tried once');
+assert.deepEqual(partialGl.calls.filter(c => c[0] === 'blit').pop().slice(4, 12), [0, 0, 400, 225, 0, 0, 400, 225], 'then the whole buffer was copied');
+assert.equal(snap.snapshot().wholeBuffer, true);
+assert.equal(snap.snapshot().partialBlitErrors, partialErrorsBefore + 1);
+assert.equal(snap.restore(partialRenderer, partialToken, rect), true, 'restore works in whole-buffer mode');
+assert.deepEqual(partialGl.calls.filter(c => c[0] === 'blit').pop().slice(4, 8), [0, 0, 400, 225], 'and copies the whole buffer back');
+assert.equal(partialGl.calls.filter(c => c[0] === 'rejected-partial').length, 1, 'no further partial attempts for this renderer');
+assert(snap.save(partialRenderer, rect), 'later saves keep working');
+// The first blit after an allocation may be a whole-buffer copy; a later first partial blit is still checked.
+const lateGl = fakeGl();
+lateGl.getError = () => { const e = lateGl.error; lateGl.error = 0; return e; };
+const lateBlit = lateGl.blitFramebuffer;
+lateGl.blitFramebuffer = (...args) => { const [sx0, sy0, sx1, sy1] = args; if (!(sx0 === 0 && sy0 === 0 && sx1 === 400 && sy1 === 225)) { lateGl.error = 1282; return; } lateBlit(...args); };
+const lateRenderer = fakeRenderer(lateGl, { ...mainTarget, width: 400, height: 225 });
+assert(snap.save(lateRenderer, null), 'a whole-buffer first copy succeeds');
+const lateToken = snap.save(lateRenderer, rect);
+assert(lateToken, 'the first partial copy is checked too: rejected, it is redone as a whole-buffer copy');
+assert.deepEqual(lateGl.calls.filter(c => c[0] === 'blit').pop().slice(4, 8), [0, 0, 400, 225]);
+assert.equal(snap.restore(lateRenderer, lateToken, rect), true);
+
+// An error left queued by some unrelated earlier WebGL call must not be mistaken for a failed blit.
+const staleGl = fakeGl();
+const staleQueue = [1282, 1281]; // Two stale errors, queued before the snapshot's first (checked) blit.
+staleGl.getError = () => staleQueue.shift() || 0;
+const staleBefore = snap.snapshot().staleErrorsCleared;
+assert(snap.save(fakeRenderer(staleGl, { ...mainTarget, width: 400, height: 225 }), rect), 'stale errors are cleared before the checked blit: snapshots stay on');
+assert.equal(snap.snapshot().staleErrorsCleared, staleBefore + 2);
 const incompleteGl = fakeGl(); incompleteGl.complete = false;
 assert.equal(snap.save(fakeRenderer(incompleteGl, { ...mainTarget }), rect), null, 'an incomplete scratch framebuffer is never used');
 

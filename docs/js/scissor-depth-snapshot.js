@@ -14,8 +14,18 @@
   // three r128 caches its framebuffer binding outside WebGLState, so every
   // raw bind here is undone by rebinding the target's own framebuffer, which
   // is exactly what three still believes is bound.
-  const states = new WeakMap(); // renderer -> { fbo, rbo, width, height, internal, attachment, broken }
-  const stats = { saves: 0, restores: 0, unsupported: 0, allocations: 0, disabledReason: 'none' };
+  //
+  // Some implementations (ANGLE's Direct3D backends among them) reject depth
+  // blits of a sub-rectangle. The first blit after an allocation is checked;
+  // if a partial blit errors, the state switches to whole-buffer copies and
+  // retries, instead of disabling snapshots for good (which sent every held
+  // and shell x-ray replay back to full-scene depth redraws). Copying the whole
+  // buffer is equivalent: between save and restore the replays only write
+  // depth inside their scissor rectangle. Errors already queued by unrelated
+  // WebGL calls are cleared before that checked blit, so they cannot be
+  // mistaken for a blit failure.
+  const states = new WeakMap(); // renderer -> { fbo, rbo, width, height, internal, attachment, broken, wholeBuffer }
+  const stats = { saves: 0, restores: 0, unsupported: 0, allocations: 0, disabledReason: 'none', wholeBuffer: false, partialBlitErrors: 0, staleErrorsCleared: 0 };
 
   function describe(gl, THREE, target) {
     const depth = target?.depthTexture;
@@ -65,7 +75,7 @@
       const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
       gl.bindFramebuffer(gl.FRAMEBUFFER, source); // Back to what three believes is bound.
       state.width = target.width; state.height = target.height; state.internal = format.internal; state.attachment = format.attachment;
-      state.checked = false;
+      state.checkedWhole = false; state.checkedPartial = false; // wholeBuffer survives reallocation: the implementation's limit does not change with size.
       stats.allocations++;
       if (status !== gl.FRAMEBUFFER_COMPLETE) return fail(state, 'incomplete-framebuffer');
     }
@@ -76,9 +86,18 @@
   // scissor rectangle); null/undefined copies the whole target.
   function blit(resolved, rect, toScratch) {
     const { gl, state, source, width, height } = resolved;
-    const x0 = rect ? Math.max(0, Math.floor(rect.x)) : 0, y0 = rect ? Math.max(0, Math.floor(rect.y)) : 0;
-    const x1 = rect ? Math.min(width, Math.ceil(rect.x + rect.z)) : width, y1 = rect ? Math.min(height, Math.ceil(rect.y + rect.w)) : height;
+    let x0 = 0, y0 = 0, x1 = width, y1 = height;
+    if (rect && !state.wholeBuffer) {
+      x0 = Math.max(0, Math.floor(rect.x)); y0 = Math.max(0, Math.floor(rect.y));
+      x1 = Math.min(width, Math.ceil(rect.x + rect.z)); y1 = Math.min(height, Math.ceil(rect.y + rect.w));
+    }
     if (!(x1 > x0 && y1 > y0)) return true; // Empty rectangle: nothing to copy.
+    const whole = x0 === 0 && y0 === 0 && x1 === width && y1 === height;
+    // The first whole and the first partial blit after an allocation are each checked once (an implementation may
+    // reject only partial depth blits). A checked blit must see only its own error: getError() also returns errors
+    // left queued by any earlier, unrelated WebGL call, and a stale one used to disable snapshots for good.
+    const check = whole ? !state.checkedWhole : !state.checkedPartial;
+    if (check) for (let i = 0; i < 16 && gl.getError() !== gl.NO_ERROR; i++) stats.staleErrorsCleared++;
     const scissor = gl.isEnabled(gl.SCISSOR_TEST); // A blit is clipped by the draw framebuffer's scissor.
     if (scissor) gl.disable(gl.SCISSOR_TEST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, toScratch ? source : state.fbo);
@@ -86,9 +105,14 @@
     gl.blitFramebuffer(x0, y0, x1, y1, x0, y0, x1, y1, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.FRAMEBUFFER, source); // Read and draw both back on the target, as three expects.
     if (scissor) gl.enable(gl.SCISSOR_TEST);
-    if (!state.checked) { // One synchronous error check per allocation, not per frame.
-      state.checked = true;
-      if (gl.getError() !== gl.NO_ERROR) { fail(state, 'blit-error'); return false; }
+    if (check) { // A synchronous error check once per allocation and kind, not per frame.
+      if (whole) state.checkedWhole = true; else state.checkedPartial = true;
+      if (gl.getError() !== gl.NO_ERROR) {
+        if (whole) { fail(state, 'blit-error'); return false; }
+        stats.partialBlitErrors++;
+        state.wholeBuffer = true; stats.wholeBuffer = true; // This implementation only blits whole depth buffers.
+        return blit(resolved, null, toScratch); // Retried (and checked) as a whole-buffer copy.
+      }
     }
     return true;
   }

@@ -1,5 +1,29 @@
 # Performance investigation log
 
+## 21 Nov 2026: x-ray depth snapshot kept alive on more GPUs
+
+In the user's town trace, not one sample landed in any function that only runs while the x-ray
+depth snapshot works (`ScissorDepthSnapshot` save/restore, `hideBeyondViewDepth`,
+`replayFarViewDepth`, the floor punch), and the shell x-ray's final depth restore took its fallback
+branch (clear depth, redraw the whole scene colourless: 188 ms, ~2.8 ms a frame). So on the user's
+machine the snapshot was off, which sends every held and shell x-ray replay back to full-scene depth
+redraws and drops their behind-the-gear culling. The snapshot disabled itself for good on the first
+GL error after its first blit, and that check had two weaknesses: `getError()` also returns errors
+queued by any earlier, unrelated WebGL call, and implementations that reject depth blits of a
+sub-rectangle (believed to include ANGLE's Direct3D backends; the user's GTX 1060 runs on ANGLE
+D3D11) failed the partial blit it always starts with. Now stale errors are cleared before each
+checked blit, the first whole and the first partial blit are checked separately, and a rejected
+partial blit switches that renderer to whole-buffer copies (equivalent: replays only write depth
+inside their scissor) instead of disabling snapshots.
+
+Headless, user's Cloud Forest save, with partial depth blits rejected by a wrapper: snapshots stay on
+in whole-buffer mode, frames are pixel-identical to partial copies, 810 draws a frame against 1,368
+with the snapshot disabled (the previous outcome). The Performance Profiler overlay now has an
+"X-ray depth snapshot" line (near replay on/off, saves, restores, partial or whole-buffer copies,
+redraw fallbacks, disabled reason) so this can be confirmed on a device. It cannot tell whether the
+user had simply switched off Settings → Render optimizations → "Keep depth behind held items", which
+has the same effect.
+
 ## 20 Nov 2026: user's town trace; lean dual-wield weapon sync
 
 A Chrome DevTools trace from the user's desktop build (town, DevTools recording + the in-game

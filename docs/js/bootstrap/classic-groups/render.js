@@ -5,7 +5,7 @@
     "js/npc-view-frustum-cull.js?v=20261110frustumWire1",
     "js/instanced-mesh-view-cull.js?v=20261114farCullReview2",
     "js/grass-billboard-render-chunks.js?v=20261112grasschunk1",
-    "js/scissor-depth-snapshot.js?v=20261112depthsnap1",
+    "js/scissor-depth-snapshot.js?v=20261121h9849258",
     "js/actor-render-occlusion.js?v=20261114farCull1",
     "js/outline-composite-material.js?v=20261114composite1",
     "js/character-visuals.js?v=20261120h3276dba", // Character enumeration + visual capability table; game.js registers the provider.
