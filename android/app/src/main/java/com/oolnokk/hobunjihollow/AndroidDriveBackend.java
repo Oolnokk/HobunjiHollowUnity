@@ -272,6 +272,42 @@ final class AndroidDriveBackend {
         }
     }
 
+    /** Drive recommends resumable uploads for files larger than 5 MB and mobile network interruptions. */
+    private JSONObject uploadResumable(WriteSession session, JSONObject metadata) throws Exception {
+        final long length = session.staging.length(); // Expected source length; never load the entire saved file into memory.
+        final byte[] body = metadata.toString().getBytes(StandardCharsets.UTF_8); // Small metadata only; all save bytes stay streamed.
+        HttpURLConnection init = connection(UPLOAD + "?uploadType=resumable&fields=id,name,version", "POST",
+                "application/json; charset=UTF-8");
+        String uploadUrl;
+        try {
+            init.setDoOutput(true);
+            init.setRequestProperty("X-Upload-Content-Type", session.mime);
+            init.setRequestProperty("X-Upload-Content-Length", Long.toString(length));
+            init.setFixedLengthStreamingMode(body.length);
+            try (OutputStream out = init.getOutputStream()) { out.write(body); }
+            verify(init, 200, 201);
+            uploadUrl = init.getHeaderField("Location");
+        } finally { init.disconnect(); }
+        if (uploadUrl == null || uploadUrl.isEmpty())
+            throw new IOException("Google Drive did not provide a resumable upload location.");
+        // A session URL is never a general-purpose redirect: the bearer token must
+        // only be sent to Google's official upload host (enforced by connection()).
+        HttpURLConnection transfer = connection(uploadUrl, "PUT", session.mime);
+        try {
+            transfer.setDoOutput(true);
+            transfer.setRequestProperty("Content-Range", "bytes 0-" + (length - 1) + "/" + length);
+            transfer.setFixedLengthStreamingMode(length);
+            try (InputStream src = new FileInputStream(session.staging);
+                 OutputStream dst = transfer.getOutputStream()) {
+                byte[] chunk = new byte[64 * 1024]; // Constant-size buffer during potentially enormous farm/world uploads.
+                for (int count; (count = src.read(chunk)) != -1;) dst.write(chunk, 0, count);
+            }
+            verify(transfer, 200, 201);
+            return new JSONObject(new String(readLimited(transfer.getInputStream(), 16384),
+                    StandardCharsets.UTF_8));
+        } finally { transfer.disconnect(); }
+    }
+
     private JSONObject upload(WriteSession session) throws Exception {
         JSONObject metadata = new JSONObject().put("name", session.canonicalName)
                 .put("parents", new JSONArray().put(session.parentId))
@@ -284,6 +320,8 @@ final class AndroidDriveBackend {
         // Create a completely uploaded new revision before modifying its canonical filename.
         String draftName = ".hobunji-pending-" + UUID.randomUUID();
         metadata.put("name", draftName);
+        if (session.staging.length() > 5L * 1024 * 1024)
+            return uploadResumable(session, metadata); // Large files cannot rely on Drive's <=5 MB multipart path.
         prefix = ("--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
                 + metadata + "\r\n--" + boundary + "\r\nContent-Type: " + session.mime + "\r\n\r\n")
                 .getBytes(StandardCharsets.UTF_8);
