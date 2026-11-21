@@ -81,8 +81,12 @@ Android's installation confirmation and matching certificate.
 
 The Android **Local Save Folder** chooser now offers `Google Drive (direct connection)`
 as well as an ordinary on-device folder. Google authorization uses the native
-Google Identity picker, never the embedded game WebView, and requests only
-`drive.file` access to the folder explicitly selected by the user.
+Google Identity picker, never the embedded game WebView. It first asks for
+`drive.file` so you can select a folder; **separate consent for the restricted
+`drive` scope is then required** to read existing PC-authored files inside it.
+The native backend enforces the selected folder as its storage root and never
+exposes Google access tokens to JavaScript. Google may require restricted-scope
+app verification before wide public distribution.
 
 Before testing, enable **Google Drive API** and **Google Picker API** in a Google
 Cloud project and register an **Android OAuth client** for package
@@ -112,11 +116,14 @@ does not guarantee a documented atomic conditional media replacement: competing
 devices can create duplicates or backup versions, which the game reports rather
 than choosing a winner. **Do not run PC and Android simultaneously.**
 
-Google's `drive.file` permission covers files created by the app and those
-explicitly shared using Google Picker. Existing PC-authored children in a picked
-folder may require additional picker permissions to be visible to the Android
-OAuth client; verify them during a real-device migration before writing.
-No wide-access `drive` scope is requested.
+Google's `drive.file` permission only covers files created or individually
+opened by the app, **not every child of a selected folder**. For existing
+PC-authored files, the app therefore asks for the restricted `drive` scope
+in a separate native consent screen; without that consent it will not claim to
+have loaded the folder or start uploading. Full Drive access is required at
+Google's OAuth layer, while native file operations remain confined to the
+specific user-selected directory. Keep the OAuth client private/test-only
+until Google Cloud restricted-scope consent requirements are satisfied.
 
 The old Netlify cloud-save login is disabled **inside Android only**. Web-hosted
 legacy Netlify save accounts are not deleted and the browser edition still has
