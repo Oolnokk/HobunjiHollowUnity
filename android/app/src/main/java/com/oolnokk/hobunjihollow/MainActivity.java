@@ -317,6 +317,12 @@ public final class MainActivity extends Activity {
     }
 
     private void completeDriveAuthorization(AuthorizationResult result) {
+        final String requiredScope = "https://www.googleapis.com/auth/" +
+                (drivePickerActive ? "drive.file" : "drive"); // Separate explicit Google grants; a partial consent is never treated as success.
+        if (result.getGrantedScopes() == null || !result.getGrantedScopes().contains(requiredScope)) {
+            finishFolderChoice(null, new SecurityException("Required Google Drive permission was not granted."));
+            return;
+        }
         if (drivePickerActive) {
             String selected = result.getTokenResponseParams() == null ? ""
                     : result.getTokenResponseParams().getString("picked_file_ids", "");
