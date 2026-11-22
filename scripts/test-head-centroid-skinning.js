@@ -108,13 +108,13 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   near(resolve(root, { x: 90, y: 80 }).y, -.3, 'a pixel at the posterior stays on the pinned node 0');
   near(resolve(splineFixture([0, 0, 0, 0, 0, 0, 0]), { x: 90, y: 46.5 }).y, .035, 'an upright skeleton leaves the pixel where it was');
 }
-// The production 10-bone rig adds a nonrotating placement bone (index 7) before
-// the neck-turn (8) and head scale (9). Both pixel resolvers must reproduce those
-// weights; a shoulder pet cannot suddenly jump when an NPC has a head Y offset.
+// The production 10-bone rig carries head-height displacement across all seven
+// real spine bones, reaching the tip before the tiny nonrotating neck contact.
+// Both pixel resolvers must reproduce these weights for shoulder pet attachment.
 function offsetFixture(offset) {
   const raw = new Matrix4(1, 0);
   const placed = new Matrix4(1, offset);
-  const matrices = Array.from({ length: 10 }, (_, i) => i >= 7 ? placed : raw);
+  const matrices = Array.from({ length: 10 }, (_, i) => i >= 7 ? placed : new Matrix4(1, offset * i / 6)); // Lower torso rides the evenly extended spine; the short neck follows its tip.
   const skeleton = {
     bones: matrices.map(matrixWorld => ({ matrixWorld })),
     boneInverses: matrices.map(() => new Matrix4()),
@@ -127,7 +127,7 @@ function offsetFixture(offset) {
   return { updateMatrixWorld() {}, userData: {
     sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
     neckRig: { available: true, skinnedPlane, headOffsetJoint: {}, headScaleJoint: {}, neckLocal: { y: .2 },
-      spineBase: { y: .1 }, spinePosteriorY: -.3, headBoundsPx: { left: 40, right: 60 } },
+      spineBase: { y: .175 }, spinePosteriorY: -.3, headBoundsPx: { left: 40, right: 60 } }, // Last spine node is 2.5 original 100px sprite rows below the head.
   } };
 }
 for (const placement of [-.095, .12]) {
@@ -135,10 +135,11 @@ for (const placement of [-.095, .12]) {
   const samples = [{ x: 50, y: 25 }, { x: 50, y: 30.5 }, { x: 50, y: 35 }, { x: 50, y: 50 }, { x: 50, y: 80 }];
   for (const pixel of samples) {
     const y = .5 - pixel.y / 100;
-    const translationWeight = y > .2 - .012 ? 1 : context.headOffsetWeightAt(y, .2, 1, .012);
+    const spline = context.window.HobunjiCharacterSpine.nodeWeightsAt(y, .175, 1, -.3, {});
+    const translationWeight = y > .2 - .012 ? 1 : (spline.a * (1 - spline.wb) + spline.b * spline.wb) / 6; // Below the neck ALL movement comes from actual spine weights, not placement bone 7.
     const expected = y + placement * translationWeight;
     for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition])
-      near(resolve(root, pixel).y, expected, 'runtime and x-ray CPU skinning match ten-bone offset-only placement');
+      near(resolve(root, pixel).y, expected, 'runtime and x-ray CPU skinning match real seven-node spine stretch and short-neck placement');
   }
 }
 // The Animation Author uses a different three-bone layout: body 0, offset 1,
