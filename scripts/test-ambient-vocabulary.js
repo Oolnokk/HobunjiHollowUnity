@@ -116,7 +116,7 @@ async function main() {
   for (let index = 0; index < 145; index++) engine.rewrite('Lovely tune!', 'test-speaker-' + index, () => 0);
   assert.ok(engine.getDebug().cachedSpeakers <= 128, 'Speaker cache must be bounded in crowded scenes');
   for (const [id, family] of Object.entries(config.families)) {
-    assert.ok(profiles.profiles[id], 'Unrecognized existing personality family: ' + id);
+    assert.ok(profiles.profiles[id] || id === 'porakaneki', 'Unexpected vocabulary-only personality family: ' + id); // Generated Porakaneki hunters use a distinct vocabulary preset, not a fake reaction profile.
     for (const axis of Object.keys(rules.DEFAULT_SLIDERS)) {
       assert.ok(Number.isFinite(family.sliders[axis]), id + ' is missing ' + axis);
     }
@@ -153,6 +153,48 @@ async function main() {
     assert.ok(Array.isArray(alternatives) && alternatives.every(entry => typeof entry.id === 'string' && entry.id));
     assert.equal(new Set(alternatives.map(entry => entry.id)).size, alternatives.length, 'Duplicate IDs in ' + word);
   }
+  assert.ok(Object.keys(config.lexicon).length >= 75, 'The expanded master dictionary should include broad everyday source vocabulary');
+  assert.ok(Object.values(config.lexicon).flat().length >= 275, 'The expanded dictionary needs enough alternatives for distinct voices');
+  const historical = Object.values(config.lexicon).flat().filter(entry => entry.kind === 'old-slang');
+  assert.ok(historical.length >= 18, 'Old slang should be a substantial, separately selectable style');
+  assert.ok(historical.every(entry => Number.isInteger(entry.firstRecorded) && entry.firstRecorded < 1900 && /^https:\/\//.test(entry.source)),
+    'Every historically labeled slang term requires a traceable, pre-1900 attestation');
+  assert.ok(config.lexicon.nonsense.some(entry => entry.text === 'balderdash' && entry.kind === 'old-slang'));
+  assert.ok(config.lexicon.deceive.some(entry => entry.text === 'bamboozle'));
+  assert.ok(config.lexicon['run away'].some(entry => entry.text === 'skedaddle')); // Historically attested phrase replacement.
+  const countKinds = (id, family) => {
+    const sliders = rules.seedSliders(config.families[family].sliders, id);
+    const chosen = rules.generateSelections(config.lexicon, sliders, id);
+    const counts = { standard: 0, 'old-slang': 0, simple: 0, 'near-miss': 0 };
+    for (const [word, refs] of Object.entries(chosen)) {
+      for (const candidateId of refs) {
+        const entry = config.lexicon[word].find(candidate => candidate.id === candidateId);
+        assert.ok(entry, 'Generated ID must exist in the shared catalog');
+        counts[entry.kind || 'standard']++;
+      }
+    }
+    return counts;
+  };
+  assert.ok(countKinds('porakaneki_chief', 'porakaneki')['old-slang'] >= 5, 'Porakaneki chief should use pre-1900 slang');
+  assert.ok(countKinds('porakaneki_small_map_test_0:resident:0', 'porakaneki')['old-slang'] >= 5, 'Generated hunters need the tribe preset');
+  assert.ok(countKinds('child_test123', 'child').simple >= 10 && countKinds('child_test123', 'child')['near-miss'] >= 8,
+    'Children should use obvious simple and almost-right words');
+  for (const family of ['neighborly', 'playful', 'proper', 'reserved', 'stern']) {
+    const counts = countKinds('village_' + family, family);
+    assert.equal(counts['old-slang'] + counts.simple + counts['near-miss'], 0,
+      'Unconfigured adults must not inherit old slang or childlike malaprops');
+  }
+  assert.ok(!rules.generateSelections({ nonsense: [{ id: 'too-new', text: 'modernism', kind: 'old-slang', firstRecorded: 1901 }] },
+    { oldSlang: 100, breadth: 100, variety: 100 }, 'porakaneki_chief').nonsense,
+    'Post-1899 slang must not be automatically generated');
+  const manualSlang = rules.resolveSelections(config.lexicon, { nonsense: ['balderdash'] });
+  assert.ok(manualSlang.nonsense.includes('balderdash'), 'Manual checkmarks always honor the master list regardless of sliders');
+  engine.rewrite('Friend!', 'porakaneki_chief', () => 0);
+  assert.equal(engine.getDebug().last.familyId, 'porakaneki', 'The named chief uses the tribal vocabulary family');
+  engine.rewrite('Friend!', 'porakaneki_small_map_test_0:resident:0', () => 0);
+  assert.equal(engine.getDebug().last.familyId, 'porakaneki', 'Dynamically generated hunters use the same tribal vocabulary family');
+  engine.rewrite('Friend!', 'child_test123', () => 0);
+  assert.equal(engine.getDebug().last.familyId, 'child', 'Generated children inherit the child family');
   const suggestions = rules.generateSelections(config.lexicon, config.families.playful.sliders, 'pahu');
   assert.ok(Object.keys(suggestions).length >= 15, 'Broad vocabulary must cover numerous source words');
   assert.deepEqual(suggestions, rules.generateSelections(config.lexicon, config.families.playful.sliders, 'pahu'));
@@ -206,11 +248,15 @@ async function main() {
   assert.ok(file('docs/index.html').includes('ambient-vocabulary.js'));
   assert.ok(editor.includes("['verbosity', 'Simplicity', 'Verbosity'"));
   assert.ok(editor.includes("['color', 'Technical', 'Colorful'"));
+  assert.ok(editor.includes("['oldSlang', 'No old slang', 'Pre-1900 slang'"));
+  assert.ok(editor.includes("['simplicity', 'Normal words', 'Over-simple'"));
+  assert.ok(editor.includes("['nearMiss', 'Exact meaning', 'Almost-right'"));
+  assert.ok(editor.includes('data-edit-kind') && editor.includes('data-edit-period'), 'Standalone editor must author style classifications and historical dates');
   assert.ok(editor.includes('data-check-synonym') && editor.includes('rules().generateSelections'));
   assert.ok(!editor.includes('data-vocab-table-alternatives'), 'NPC editor must not store duplicate synonym text lists');
   assert.ok(editor.includes('previewResult'));
   new Function('window', editor); // Parse actual integration script even without a browser DOM.
   await testStandaloneEditorInteraction(rules);
-  console.log('Ambient vocabulary tests passed: shared checkbox references, global synonym updates, article agreement, tokens, floating dialogue isolation, standalone editor.');
+  console.log('Ambient vocabulary tests passed: pre-1900 slang, childlike/malaprop presets, tribe detection, shared checkbox references, article agreement, floating speech isolation, standalone editor.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
