@@ -195,12 +195,13 @@ const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
   CliffRouteNetwork:{
     forArea:a=>a==='map_southern_cloud_forest'?{balconies:[{
       id:'tested-shelf',x:45.5,z:45.5,y:12.5,reward:'buriedTreasure',
-      base:{footprint:[{c:45,r:45},{c:46,r:45}]}, // The nearby cap tile overlaps the embedded rock body.
+      base:{footprint:[{c:45,r:45},{c:46,r:45}]}, // Projected cap overlaps original parent plateau rock.
       footprint:[{c:45,r:45},{c:46,r:45},{c:47,r:45}],
     },{
-      id:'fully-embedded',x:80.5,z:80.5,y:12.5,
-      base:{footprint:[{c:80,r:80}]},footprint:[{c:80,r:80}],
-    }]}:null, // One exposed minicliff and one unusable, rock-filled cap that must be rejected.
+      id:'painted-rock-face',x:80.5,z:80.5,y:12.5,
+      base:{footprint:[{c:79,r:80}],boundaryCells:[{c:80,r:80}]},
+      footprint:[{c:80,r:80}],
+    }]}:null, // The only cap tile lies on a painted rock boundary, not a parent-plateau footprint.
     shelfContains:(s,x,z)=>Math.abs(s.x-x)<2.1&&Math.abs(s.z-z)<.75,
   },
   HronalWitchBombs:{async spawn(o){const group=new Root();o.scene.add(group);
@@ -328,7 +329,7 @@ async function check(){
   const prey=deps.makeCreatureEntity('drenkirra',44*64,44*64,{genotype:{sizeClass:'small'}});
   hostileObjects.add(prey);
   const count=w.PingdortFlocks.ensureZone(area);
-  assert.equal(count,1,'fully embedded minicliff caps must not generate inaccessible nests');
+  assert.equal(count,1,'parent cliff bodies and painted boundary rocks cannot contain nest cups');
   const wildBirds=[...hostileObjects].filter(a=>a.creatureKey==='pingdort');
   assert.equal(wildBirds.length,3,'one nearby nest supports one three-bird hunting flock');
   assert(wildBirds.every(a=>a.genotype?.base?.color==='#aaaaaa'),'individual coats are genotype-driven');
@@ -341,7 +342,7 @@ async function check(){
   assert(wildBirds.every(a=>a.branchSurfaceY>=12.5),'all roosting birds remain above their raised shelf, not buried in terrain');
   const nest=w.PingdortFlocks.debugSnapshot().habitats[0].nests[0];
   assert.equal(nest.y,12.5,'nest visuals and egg records use the physical minicliff elevation');
-  assert.equal(nest.x,47.5,'nest avoids the cliff-body footprint and sits on the exposed cap tile');
+  assert.equal(nest.x,47.5,'nest uses the exposed cap tile rather than solid parent-cliff rock');
   assert(Math.hypot(nest.x-45.5,nest.z-45.5)>.88,
     'the nest occupies a clear cap tile away from the shelf reward');
   assert.equal(nest.remaining,3,'a visible clutch starts with three individually harvestable eggs');

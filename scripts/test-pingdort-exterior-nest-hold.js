@@ -25,7 +25,7 @@ class Geometry {dispose(){}}
 class Material {constructor(opts){Object.assign(this,opts);}dispose(){}}
 class Mesh extends Group {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
 class Texture {constructor(canvas){this.image=canvas;}dispose(){}}
-let opaqueHitAvailable=true; // Toggle between exact egg pixels and an aim ray crossing the surrounding cup.
+let opaqueHitAvailable=true; // Tests the real alpha-target path and a near-miss on a small egg.
 class Raycaster {
   constructor(origin,direction){this.ray={origin,direction};}
   intersectObjects(hitPlanes){return opaqueHitAvailable&&hitPlanes.length?[{object:hitPlanes[0],distance:1,
@@ -51,7 +51,15 @@ const document={getElementById:id=>widgets[id]||null,
   createElement:kind=>{assert.equal(kind,'canvas');return {width:128,height:128,getContext:()=>({
     clearRect(){},fillText(){},getImageData:()=>({data:canvasData}),
   })};}};
-const window={FarmAnimals:{queueItemGenotype(){window.queued++}},
+const window={LivestockItemGenotypePersistence:{acquireNestItem(itemKey, genotype, newCount, options){
+    assert.equal(itemKey,'fertilePingdortEgg');
+    assert.equal(genotype,nest.genotype);
+    assert.equal(options.areaId,nest.areaId);
+    assert.equal(options.remaining,nest.remaining-1);
+    assert.equal(newCount,window.queued+1);
+    window.queued++;
+    return true;
+  }},
   PingdortFlocks:{nestRecords:()=>[nest]},
   InventoryStacks:{MAX_TOTAL:99},
   __farmLog(){},queued:0};
@@ -60,7 +68,7 @@ const sandbox={window,document,THREE,performance:{now:()=>1000},
 vm.runInNewContext(source,sandbox,{filename:'den-nest-system.js'});
 let holdSeconds=0,action='nest_take',pressed=true;
 const toasts=[];
-let aimDirection=new Vector3(0,-.35,2); // Tests reticle near-miss recovery and looking away from the nest.
+let aimDirection=new Vector3(0,-.35,2); // Reticle direction changes independently of the player's ground position.
 const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   getActiveScene:()=>scene,player,playerMesh:{position:{y:12.5}},TILE:64,
   inventory,ITEM_DEFS:{fertilePingdortEgg:{icon:'🥚',label:'Fertile Pingdort Egg'}},
@@ -69,7 +77,7 @@ const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   getNestHoldT:()=>holdSeconds,setNestHoldT:value=>{holdSeconds=value;},
   getActiveAction:()=>action,getActionHeldDown:()=>pressed,
   clampInventoryStack(){},buildInventoryGrid(){},refreshItemScroll(){},
-  refreshActionBar(){},saveMemberWorldData(){},
+  refreshActionBar(){},
   showToast:(message,ok)=>toasts.push({message,ok}),
 };
 window.DenNestSystem.init(deps);
@@ -79,19 +87,16 @@ async function run(){
   await Promise.resolve();await Promise.resolve();
   assert.equal(window.DenNestSystem.currentAimedNest(),nest,'aimed egg claims native interaction');
   opaqueHitAvailable=false;
-  assert.equal(window.DenNestSystem.currentAimedNest(),nest,
-    'an aimed exterior nest cup claims the egg even if its small alpha pixel was missed');
-  assert.equal(window.DenNestSystem.debugSnapshot().lastFocusedAssisted,true,
-    'mobile debug records the assisted aim rather than pretending the egg pixel was hit');
+  assert.equal(window.DenNestSystem.currentAimedNest(),nest,'a missed egg pixel still permits a directly aimed nest-cup hold');
+  assert.equal(window.DenNestSystem.debugSnapshot().lastFocusedAssisted,true,'mobile debug identifies the assisted targeting mode');
   aimDirection=new Vector3(0,0,-1);
-  assert.equal(window.DenNestSystem.currentAimedNest(),null,
-    'looking away from a nest must leave the cliff climb button available');
+  assert.equal(window.DenNestSystem.currentAimedNest(),null,'looking away returns input to ordinary cliff gameplay');
   aimDirection=new Vector3(0,-.35,2);opaqueHitAvailable=true;
   for(let i=0;i<51;i++)window.DenNestSystem.updateNestInteraction(.1);
   assert.equal(inventory.fertilePingdortEgg,1,'five-second hold takes one real egg');
   assert.equal(nest.remaining,2,'clutch count updates after one egg');
   assert.equal(nest.eggCollected,1,'existing save callback invoked');
-  assert.equal(window.queued,1,'the inherited genotype joins the livestock item queue');
+  assert.equal(window.queued,1,'the inherited genotype is committed atomically with the inventory unit');
   assert.equal(window.DenNestSystem.debugSnapshot().renderedContents,2);
   player.physicalFeetY=null;deps.playerMesh.position.y=0;
   assert.equal(window.DenNestSystem.currentAimedNest(),null,

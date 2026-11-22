@@ -182,21 +182,21 @@
     deps.saveMemberWorldData?.();deps.refreshItemScroll?.();deps.refreshActionBar?.();
     return {ok:true,message:'🥚 Took a fertile Pingdort egg.'};
   }
-  const NEST_CAP_INSET=.25, NEST_ROCK_CLEARANCE=.4; // Keep the cup and eggs on a usable cap, away from its parent rock wall.
+  const NEST_CAP_INSET=.25, NEST_ROCK_CLEARANCE=.4; // Minimum centre clearances for a real egg-filled cup on the projecting cap.
   function clearNestTile(shelf){
-    const rockTiles=shelf?.base?.footprint||[]; // The unshifted minicliff body remains solid behind the projecting top.
+    const solidBase=[...(shelf?.base?.footprint||[]),...(shelf?.base?.boundaryCells||[])]; // Parent plateau AND painted boundary rock are solid cliff body.
     const spots=(shelf?.footprint||[]).map(cell=>({x:cell.c+.5,z:cell.r+.5}))
       .filter(p=>window.CliffRouteNetwork?.shelfContains?.(shelf,p.x,p.z,-NEST_CAP_INSET)
-        &&rockTiles.every(cell=>{
+        &&solidBase.every(cell=>{
           const dx=Math.max(cell.c-p.x,0,p.x-(cell.c+1)),dz=Math.max(cell.r-p.z,0,p.z-(cell.r+1));
-          return Math.hypot(dx,dz)>=NEST_ROCK_CLEARANCE; // A cap tile centre can overlap the solid cliff face.
+          return Math.hypot(dx,dz)>=NEST_ROCK_CLEARANCE; // Walkable cap tiles may still intersect the ground-rooted rock body.
         }));
-    if(!spots.length)return null; // Reject an unsafe shelf rather than hiding an egg inside rock.
+    if(!spots.length)return null; // Never generate an inaccessible clutch inside cliff stone.
     const reward=shelf.reward==='herbCluster'&&shelf.herbTile
       ?{x:shelf.herbTile.c+.5,z:shelf.herbTile.r+.5}:shelf;
-    const gap=shelf.reward==='oreRock'?1.05:.88; // Preserve access to the original cap reward.
+    const gap=shelf.reward==='oreRock'?1.05:.88; // Keep the originally authored cap reward collectible.
     const safe=shelf.reward?spots.filter(p=>dist(p,reward)>gap):spots;
-    const normal=shelf.normal||{x:0,z:0}; // Prefer the exposed side instead of the wall-facing edge.
+    const normal=shelf.normal||{x:0,z:0}; // Prefer the exposed front instead of a wall-facing tile.
     const front=p=>(p.x-shelf.x)*(Number(normal.x)||0)+(p.z-shelf.z)*(Number(normal.z)||0);
     return safe.sort((a,b)=>front(b)-front(a)||dist(a,reward)-dist(b,reward))[0]||null;
   }
