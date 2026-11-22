@@ -431,7 +431,7 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'baby.carrierForeground': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
@@ -1107,6 +1107,7 @@
 
   function isLegacyHeldPlane(object) {
     if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false;
+    if (object.userData?.hobunjiFamilyBabyPhysicalCarry && xrayRule('baby.carrierForeground') === 'on') return false; // A held infant is physical PNG art, never a weapon-plane replay.
     if (object.userData?.hobunjiHeldObjectPlane === true) return true;
     return Math.abs(Number(object.renderOrder) - LEGACY_HELD_RENDER_ORDER) < 1e-6;
   }
