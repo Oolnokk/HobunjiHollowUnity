@@ -700,13 +700,18 @@
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
-    const message = String(text || '').trim();
+    const originalMessage = String(text || '').trim(); // Keep the authored line as an immutable fallback if the optional vocabulary layer is unavailable.
+    const message = options.vocabulary === false || !options.speakerId
+      ? originalMessage
+      : (window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage); // Rewrites once BEFORE syllable cadence, textures, timing, tracing and the event payload.
     if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
     if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
       window.DevCompanion.trace('ambient', {
         speakerId: options.speakerId || null,
         text: message,
+        originalText: originalMessage, // Mobile trace can compare displayed and authored variants.
+        vocabularyChanged: message !== originalMessage,
         mode,
         tone: options.tone || null,
         greeting: !!options.greeting,
@@ -1112,6 +1117,7 @@
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
         lastAddress: state.lastAddressDebug ? { ...state.lastAddressDebug } : null, // Current address choice exposed through existing mobile diagnostics.
+        vocabulary: window.AmbientVocabulary?.getDebug?.() || null, // Mobile readout includes loaded status and latest synonym selection.
         spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
     },
