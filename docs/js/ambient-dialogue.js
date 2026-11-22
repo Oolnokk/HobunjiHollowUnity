@@ -700,9 +700,15 @@
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
-    const originalMessage = String(text || '').trim(); // Keep the authored line as an immutable fallback if the optional vocabulary layer is unavailable.
-    let message = originalMessage; // Fallback must survive missing, malformed or failed optional vocabulary configuration.
-    if (options.vocabulary !== false && options.speakerId) {
+    const originalMessage = String(text || '').trim(); // Preserve the authored source; only the ambient bubble is rephrased.
+    const isNewborn = !!options.speakerId && !!window.RomanceFamily?.isBasketBaby?.(options.speakerId); // Authoritative saved age, not an inferred baby-looking sprite.
+    const carriedBaby = isNewborn ? window.FamilyBabyBurdens?.ambientAnchorFor?.(options.speakerId) : null; // Reuse the visible baby burden in either parent's arms/back.
+    const speechRoot = carriedBaby?.group || root; // A carried infant's NPC walker is deliberately hidden at the old basket spot.
+    let message = isNewborn
+      ? (options.babyAmbient === true && originalMessage ? originalMessage
+        : window.RomanceFamily?.babyAmbientSound?.(options.speakerId) || originalMessage)
+      : originalMessage; // Newborn ambient bubbles always use phonetic sounds; normal Talk never calls show().
+    if (!isNewborn && options.vocabulary !== false && options.speakerId) {
       try {
         message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
       } catch (error) {
@@ -710,7 +716,7 @@
         state.deps?.debugLog?.('[ambient-vocabulary] Using authored fallback: ' + (error?.message || error), 'warn'); // Mobile diagnostics, never a crashed dialogue bubble.
       }
     }
-    if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
+    if (!THREE || !speechRoot || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
     if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
       window.DevCompanion.trace('ambient', {
@@ -748,7 +754,7 @@
     const lastSyllableAtMs = speechSchedule.length ? speechSchedule[speechSchedule.length - 1].revealAtMs : 0; // Do not fade before the last syllable appears.
     const minimumReadableMs = Math.max(message.length * 42 + 1800, lastSyllableAtMs / 0.75 + 1000); // Long sentences get a readable hold after their final speech tick.
     const event = {
-      root, group, textPart, headPart, profile: options.profile || null,
+      root: speechRoot, group, textPart, headPart, profile: options.profile || null,
       chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
       faceWalker: options.faceWalker || null,
       faceTarget: options.faceTarget || null,
@@ -772,7 +778,7 @@
       visibleChars: -1,
     };
     state.active.push(event);
-    window.HobunjiEmojiReactions?.reactToDialogue?.(root, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
+    window.HobunjiEmojiReactions?.reactToDialogue?.(speechRoot, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
     drawText(event, '');
     if (!event.revealSchedule.length) {
       drawText(event, message);
