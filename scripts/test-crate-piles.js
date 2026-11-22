@@ -20,7 +20,7 @@ const window={THREE,GridTileAccessors:{getCurrentArea:()=>'wild',getActiveScene:
  applyBlast:(...args)=>damage.push(args),grantBurdenLoot:items=>{loot.push(items);return ['ok'];}},
  LootRolling:{rollLootPool:()=>({needlegrain:2})},AudioSystem:{}};
 const document={createElement:()=>({getContext:()=>({clearRect(){},fillText(){}})})};
-vm.runInNewContext(read('docs/js/crate-piles.js'),{window,document,console,Math});
+vm.runInNewContext(read('docs/js/crate-piles.js'),{window,document,console,Math,performance:{now:()=>200}});
 const authored=JSON.parse(read('docs/config/furniture-authored/crateStack.json'));
 const single=JSON.parse(read('docs/config/furniture-authored/looseCrate.json'));
 const bomb=JSON.parse(read('docs/config/furniture-authored/hronalWitchBomb.json'));
@@ -89,6 +89,20 @@ const pile=window.CratePiles.registerPile({mapId:'wild',id:'camp',group:furnitur
   'an exhausted crate stack is never a lunge target');
  assert.equal(window.CratePiles.nearestInteractable('wild',3.5,5.5),null);
  assert.deepEqual(counts,[3,2,1,0]);
+ // A lunge's wide trigger must hit each separate pile once, not just the first.
+ const nearA=new Group(),nearB=new Group(); // Two live wilderness stacks inside the same directed cone.
+ scene.add(nearA);scene.add(nearB);
+ nearA.position.set(3.5,0,5.5);nearB.position.set(4.5,0,5.5);
+ const pileA=window.CratePiles.registerPile({mapId:'wild',id:'lunge-A',group:nearA,scene,lootable:true,count:2});
+ const pileB=window.CratePiles.registerPile({mapId:'wild',id:'lunge-B',group:nearB,scene,lootable:true,count:2});
+ window.Combat.deps.player.lungeOriginMs=100; // Shared timestamp used by the committed swing's duplicate-hit guard.
+ const blastsBefore=damage.length;
+ assert.equal(window.CratePiles.sweepMelee(collider,{actor:window.Combat.deps.player,lungeContact:true}),true);
+ assert.equal(damage.length-blastsBefore,2,'lunge AOE breaks a crate in each stack');
+ assert.equal(pileA.count,1);assert.equal(pileB.count,1);
+ assert.equal(window.CratePiles.sweepMelee(collider,{actor:window.Combat.deps.player}),false,
+  'the later ordinary swing cannot break a second crate in either stack');
+ assert.equal(pileA.count,1);assert.equal(pileB.count,1);
  const sh=read('docs/js/shattercasks.js'),camp=read('docs/js/bandit-camps.js'),cave=read('docs/js/cave-site-system.js'),editor=read('docs/tools/furniture-avatar-author/index.html');
  assert.ok(sh.includes('CratePiles?.takeCrate'));
  assert.ok(camp.includes('CratePiles?.registerPile'));
