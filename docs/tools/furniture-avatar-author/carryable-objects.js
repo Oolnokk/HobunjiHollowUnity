@@ -42,11 +42,11 @@
         left:grip(hand.left,{x:-.3,y:.46,z:.08}),
         right:grip(hand.right,{x:.3,y:.46,z:.08})
       },
-      elbows:Object.fromEntries(['left','right'].map(side=>{
+      ...(obj.elbows&&typeof obj.elbows==='object'?{elbows:Object.fromEntries(['left','right'].map(side=>{
         const e=obj.elbows?.[side];
         return [side,e&&['x','y','z'].every(axis=>Number.isFinite(Number(e[axis])))
           ?vector(e,{x:0,y:0,z:0}):null]; // Exact Attack Editor shoulder-relative elbow pose contract.
-      }))
+      }))}:{}), // Do not add baby-only elbow fields to exported furniture that never had them.
     };
   }
   state.carryable=normalized(state.carryable);
