@@ -175,6 +175,15 @@ materials in place once the config loads.
   `equippedTrinkets`. Town Icons sell at Funji's; Harlyao trinkets drop from
   ruin dungeon chests (`trinket_<id>` loot entries); the Engraved Whistle is a
   Porakaneki daily-gift return (high Favor gains can roll unique rewards).
+  Trinket percentage effects, whether bonuses or drawbacks, add relative to
+  their unmodified baseline rather than multiplying each other (minimum final
+  multiplier 0.1 for stacked reductions); other stat providers retain their
+  separate stacking. BanditCombat draws enemy trinket loadouts once per spawn
+  from this same catalog using `config/bandits/bandit-gang-config.json`
+  rank/tier odds, up to three on captains. Enemy modifiers are cached per
+  actor; the normal resource system and shared hit scaling apply them in combat,
+  and the Testing Arena log exposes `trinkets=` for mobile inspection. This
+  changes enemy combat equipment, not their guaranteed corpse loot.
 - `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
   Longsword/Broadsword with random, partial enchantments into the world
   inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,
