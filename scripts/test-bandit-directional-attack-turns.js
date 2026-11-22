@@ -198,8 +198,12 @@ riposte(left,{attackTag:'blunt',weaponShapeStats:{speed:1}},target);
 assert.equal(stages.length,countBeforeCounter+1,'Counter Shield acquires the one free melee turn');
 assert.strictEqual(coordinator.owner(target),left);
 const counterStage=stages.at(-1);
+assert.equal(coordinator.acquire(left,target),false,'countering actor cannot start its own second attack while the untracked counter is winding up');
+assert.equal(coordinator.acquire(front,target),false,'other fighters also remain locked during the counter');
 counterStage.onStrike(counterStage);
 assert.strictEqual(coordinator.owner(target),null,'Counter Shield turn releases after resolving its own reactive hit');
+assert(coordinator.acquire(left,target),'after the reactive hit resolves, the same actor is allowed another new turn');
+coordinator.release(left,target);
 
 
 // Older mine/special humanoids must still have their original two-angle capacity.
