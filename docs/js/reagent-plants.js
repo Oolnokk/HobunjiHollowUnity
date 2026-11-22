@@ -198,26 +198,34 @@
       },
       onAction(action) {
         if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
-        const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-herb chance.
+        const persisted = deps._zoneReagentPersist.get(mapId); // Authoritative same-day harvest state; stale touch prompts cannot claim an old plant.
+        const placement = persisted?.placements?.find(p => p.col === col && p.row === row && p.key === reagentKey); // A new daily plant at the same tile is not the old UI target.
+        const groups = deps._zoneReagentMeshGroups.get(mapId); // The exact visual instance must still belong to today's active scatter.
+        if (deps.getCurrentArea?.() !== mapId || persisted?.day !== deps.calendar.day
+          || !placement || placement.harvested || !groups?.includes(mesh)) {
+          return { ok: false, message: 'This herb is no longer ready to pick.' };
+        }
+        const before = Math.max(0, Number(deps.inventory[reagentKey]) || 0); // Current item stack used to grant only the available remainder.
+        const max = window.InventoryStacks?.MAX_TOTAL ?? 999; // Existing common inventory capacity, never a parallel herb-specific cap.
+        if (before >= max) return { ok: false, message: `Cannot carry more ${def.label}.` };
+        const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Existing extra-herb chance.
         const doubleRank = window.PerkSystem?.rank('foraging', 'doubleForageables') || 0; // Double Forageables perk.
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
-        deps.inventory[reagentKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[reagentKey] || 0) + amount);
+        const gained = Math.min(amount, max - before); // Full stacks reject a pick; partially full stacks only grant actual capacity.
+        deps.inventory[reagentKey] = before + gained;
+        placement.harvested = true; // Mark first so another cached action cannot duplicate an item or Foraging XP.
         deps.awardForagingXp?.();
-        deps._zoneScenes.get(mapId)?.scene.remove(mesh);
+        deps._zoneScenes.get(mapId)?.scene?.remove(mesh);
         const objs = deps._zoneReagentObjects.get(mapId);
         objs?.delete(col + ',' + row);
-        const groups = deps._zoneReagentMeshGroups.get(mapId);
-        if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-        // Keep the tile in persisted history, but mark it harvested. This prevents
-        // same-day reload respawns and lets tomorrow's scatter explicitly avoid
-        // yesterday's exact herb positions.
-        const persisted = deps._zoneReagentPersist.get(mapId);
-        const placement = persisted?.placements?.find(p => p.col === col && p.row === row);
-        if (placement) placement.harvested = true;
+        const i = groups.indexOf(mesh);
+        if (i >= 0) groups.splice(i, 1);
+        // Keep the tile in persisted history so reloads and tomorrow's scatter
+        // cannot re-use this picked plant within its current spawn cycle.
         deps.refreshItemScroll();
         window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
           window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,mapId)); // Reagent pickups use the plant's real world position.
-        return { ok: true, message: `Picked ${amount} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
+        return { ok: true, message: `Picked ${gained} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
       },
     };
   }
