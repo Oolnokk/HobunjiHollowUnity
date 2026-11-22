@@ -101,8 +101,10 @@ const refresh = extract(authorSource, 'refreshLongoranSpine');
 assert.ok(refresh.indexOf('applyToParent?.(') < refresh.indexOf('applyToRig?.('),
   'Longoran hunch generation follows the real post-scaled neck computation');
 assert.match(authorSource, /id="maaFullScaleShowSpine"/, 'the mobile author exposes its own Show spine toggle');
-assert.match(authorSource, /makeBoneGuides\?\.\(THREE, model\.userData\.neckRig\)/,
-  'Full Character Scale reuses the exact shared rig guide');
+assert.match(authorSource, /makeBoneGuides\?\.\(THREE, selected\.model\.userData\.neckRig\)/,
+  'Full Character Scale reuses the exact shared rig guide only for the selected character');
+assert.match(authorSource, /spineGuide: null, profile:/, 'lineup creation never eagerly allocates fourteen-mesh guides for every avatar');
+assert.match(authorSource, /entry\.spineGuide\.dispose\(\);/, 'previously selected guide is disposed when the user picks another NPC');
 assert.match(authorSource, /entry\.spineGuide\?\.dispose\?\.\(\)/,
   'leaving the editor disposes its diagnostic mesh');
 console.log('Spine preview: seven real joints, scaled-neck endpoint, live hunch, toggle, disposal and update order PASS');
