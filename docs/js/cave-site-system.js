@@ -58,7 +58,7 @@
   const MIN_SECONDARY_POCKET_TILES = 18; // Only meaningful unused cave-floor space is eligible after nests, exits, walls and primary content reserve theirs.
 
   const PROFILE_SCHEMA = 4; // Den-balance migration keeps cave IDs and contents while updating legacy inhabitant allocation.
-  const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
+  const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // Legacy fallback for isolated previews before AlchemySystem has loaded.
   const MUSHROOM_INTERACT_RADIUS_TILES = 1.55; // Used only for aimed, explicit cave-cluster pickup; walking across a cluster never harvests it.
   const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
   const SKELETON_SPECIES_ID = 'mao-ao-skeleton'; // Catacomb bodies (js/mao-ao-skeleton-species-runtime.js).
@@ -773,11 +773,25 @@
     mapData.caveBodies = clone(plan.bodies);
   }
 
+  function caveMushroomKeys(zoneId, signature, count) {
+    const defs = window.AlchemySystem?.REAGENT_DEFS; // One shared alchemy catalog defines every cave fungus, pigment, habitat and reaction.
+    const keys = (window.AlchemySystem?.reagentsForZone?.(zoneId) || [])
+      .filter(key => defs?.[key]?.form === 'mushroom'); // Never roll grass-like wild herbs as cave mushrooms.
+    if (!keys.length) return Array(count).fill(MUSHROOM_REAGENT_KEY); // Headless tests and older preview tools retain the established Duskcap.
+    const rng = makeRng(`${signature}:cave-mushroom-species`); // Dedicated stream preserves original cave floor placement/treasure.
+    for (let i = keys.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1)); // Deterministic Fisher-Yates guarantees every local fungus appears before repeats.
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+    return Array.from({length: count}, (_, i) => keys[i % keys.length]); // Each large mushroom cave has several actual distinct native species.
+  }
+
   function addMushroomLayer(mapData, rng, candidates, blockedKeys, plan) {
     const count = clamp(Math.round(candidates.length / 9), 6, 12); // Cluster count scaled to the cave, bounded for mobile scene cost.
     const hidden = pickSpacedTiles(rng, extensionTiles(candidates, plan), 1, blockedKeys, 1.6); // Secret grotto is worth finding.
     const tiles = [...hidden, ...pickSpacedTiles(rng, candidates, count - hidden.length, blockedKeys, 1.6)];
-    plan.mushrooms = tiles.map((tile, index) => ({ id: `cave_mushroom_${index + 1}`, col: tile.col, row: tile.row, reagentKey: MUSHROOM_REAGENT_KEY, size: 0.8 + rng() * 0.6 }));
+    const mushroomKeys = caveMushroomKeys(plan.profile.zoneId, plan.profile.signature, tiles.length); // All patches use their parent wilderness biome's native species.
+    plan.mushrooms = tiles.map((tile, index) => ({ id: `cave_mushroom_${index + 1}`, col: tile.col, row: tile.row, reagentKey: mushroomKeys[index], size: 0.8 + rng() * 0.6 }));
     mapData.caveMushrooms = clone(plan.mushrooms);
   }
 
@@ -800,9 +814,10 @@
     if (!tiles.length) return;
     const kind = [TYPES.ORE_MINE, TYPES.CATACOMB, TYPES.RUIN_ENTRANCE].includes(profile.contents) ? 'mushrooms' : 'ore';
     if (kind === 'mushrooms') {
+      const mushroomKeys = caveMushroomKeys(profile.zoneId, profile.signature + ':secondary', tiles.length); // Additional rooms use the same native fungus catalog.
       plan.mushrooms.push(...tiles.map((tile, index) => ({
         id: `cave_secondary_mushroom_${index + 1}`, col: tile.col, row: tile.row,
-        reagentKey: MUSHROOM_REAGENT_KEY, size: 0.8 + rng() * 0.6,
+        reagentKey: mushroomKeys[index], size: 0.8 + rng() * 0.6,
       })));
       mapData.caveMushrooms = clone(plan.mushrooms); // Existing regrowth and harvest code owns both primary and secondary clusters.
     } else {
@@ -857,8 +872,8 @@
   // scene exists. The cave's props are authored furniture JSON (the same
   // pieces DevRandomRuin/RuinSites build), loaded on demand and placed on
   // their tile centres.
-  // Mushroom clusters reuse the wild reagent-plant mesh (ReagentPlants), three
-  // to a tile; clusters picked within the regrow window are skipped.
+  // Mushroom clusters reuse ReagentPlants' dedicated mushroom.png materials,
+  // three crossed sprites per tile; harvested clusters follow the original regrowth window.
   function buildMushroomClusters(mapId, mapData, scene) {
     const id = String(mapId); // Used to track this cave's current visual groups, scene and day consistently.
     for (const oldGroup of mushroomMeshesByMapId.get(id)?.values() || []) oldGroup.parent?.remove(oldGroup);
@@ -1603,7 +1618,7 @@
     return picked == null || currentDay() - Number(picked) >= MUSHROOM_REGROW_DAYS;
   }
 
-  // Cave Duskcaps follow the same getButtons/onAction contract as wild
+  // Native cave mushrooms follow the same getButtons/onAction contract as wild
   // ReagentPlants, but live on cavern tiles and are picked only when aimed at.
   function objectAt(mapId, col, row) {
     const id = String(mapId); // Used to select only this cave's authored clusters.
@@ -1655,7 +1670,7 @@
     const meshes = mushroomMeshesByMapId.get(id);
     if (meshes && !meshes.has(mushroom.id)) return null;
     const def = window.AlchemySystem?.REAGENT_DEFS?.[mushroom.reagentKey];
-    const label = def?.label || 'Duskcap Mushroom';
+    const label = def?.label || 'Cave Mushroom';
     return {
       id: mushroom.id, type: 'reagent_plant', col, row,
       mesh: meshes?.get(mushroom.id) || null, reagentKey: mushroom.reagentKey,
@@ -1670,7 +1685,7 @@
         if (String(wildlifeDeps?.getCurrentArea?.() || '') !== id
           || caveDistanceTiles(mushroom) > MUSHROOM_INTERACT_RADIUS_TILES
           || !mushroomAvailable(stateFor(profile), mushroom)
-          || (meshes && !meshes.has(mushroom.id))) return { ok: false, message: 'The Duskcap is not ready to pick.' };
+          || (meshes && !meshes.has(mushroom.id))) return { ok: false, message: 'The mushroom is not ready to pick.' };
         const bonus = Math.random() < (wildlifeDeps?.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
         const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0;
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
@@ -1942,7 +1957,7 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Shared wilderness cave sites now favor animal dens (70% roll, 65% zone floor) and may include a small second ore/mushroom pocket without new cave entrances or actors.',
+      latestChange: 'Wilderness caves favor dens and grow multiple native mushroom reagents; sparse second resource pockets reuse existing cave floor and harvest systems.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
       caveTripwires: window.CaveTripwireTraps?.debugSnapshot?.(currentArea) || null, // Mobile-friendly armed/disarmed/rope state.
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
@@ -2010,6 +2025,7 @@
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
+      caveMushroomKeys, // Testable zone-native fungus selection without extra visual or interior generation.
       addSecondaryPocket, // Test spare-room reuse without building a whole cave scene.
       addPuzzleCaveLayer,
       grantPuzzleCaveReward, // Testable exactly-once reward escrow, also called by completed cave challenges.
