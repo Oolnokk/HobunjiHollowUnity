@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>2D Beard / Hood Cutout Experiment — Hobunji Hollow</title>
+<style>
+:root{color-scheme:dark;--ink:#ecf3fc;--muted:#9aaec5;--panel:#101e2b;--line:#31465a;--aqua:#68e5cb;--gold:#ffcb80}
+*{box-sizing:border-box}
+body{margin:0;background:#08121d;color:var(--ink);font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;padding:14px max(12px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+header{max-width:1140px;margin:auto auto 14px}h1{font-size:clamp(1.25rem,4vw,1.8rem);line-height:1.2;margin:0}h2{font-size:1rem;margin:0 0 10px}p{color:var(--muted);margin:6px 0 12px}
+main{max-width:1140px;margin:auto;display:grid;grid-template-columns:minmax(260px,325px) minmax(0,1fr);gap:14px;align-items:start}
+section,.panel{border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;color:var(--muted);font-size:12px;margin:10px 0 5px}
+input,select,button,textarea{font:inherit;color:var(--ink)}
+select,input[type="number"],input[type="file"],textarea{background:#0a1622;border:1px solid var(--line);border-radius:8px;padding:9px;width:100%}
+button{background:#203647;border:1px solid #55748c;padding:8px 12px;border-radius:9px;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:var(--aqua)}button.active{background:#17615c;border-color:var(--aqua)}
+button:disabled{opacity:.5}button.primary{background:#1c665d}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.row button{flex:1}
+.paint{width:100%;max-width:560px;aspect-ratio:1/1;background:repeating-conic-gradient(#142638 0 25%,#1b3041 0 50%) 50% / 16px 16px;border:1px solid #4d6171;border-radius:8px;image-rendering:pixelated;touch-action:none;display:block;margin:auto}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.pair canvas{width:100%;aspect-ratio:1/1;border:1px solid var(--line);border-radius:8px;image-rendering:pixelated;background:#1a3041}
+caption,small{color:var(--muted)}.caption{font-size:12px;color:var(--muted);margin:4px 0 10px}
+output{white-space:pre-wrap;display:block;padding:8px;border-radius:8px;background:#0b1a26;color:#b2f0e6;font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere}
+input[type="range"]{width:100%;accent-color:var(--aqua)}.check{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ink)}.check input{accent-color:var(--aqua)}
+textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:3px solid var(--gold);padding-left:8px;font-size:12px}
+@media(max-width:750px){main{grid-template-columns:minmax(0,1fr)}.pair{gap:7px}body{padding-top:10px}}
+</style>
+<script src="../../js/beard-hood-cutout.js?v=20261121exp1"></script>
+</head>
+<body>
+<header>
+  <h1>2D Beard → Hood Cutout</h1>
+  <p>Experiment from main. Paint <b>visible beard pixels</b> to punch matching transparent holes in the <b>front hood</b>. The beard stays on its existing 2D portrait layer. Nothing is rigged or rendered in 3D.</p>
+</header>
+<main>
+<div>
+  <section>
+    <h2>Repository artwork</h2>
+    <label for="beard">Beard</label><select id="beard"></select>
+    <label for="variant">Wearer / variant</label><select id="variant"></select>
+    <label for="hood">Test hood</label><select id="hood"></select>
+    <button id="reload" type="button">Reload repository artwork</button>
+    <p class="note">Hoods tagged “hides facial hair” still hide the beard entirely, as on main. Use a regular hood to test the cutout.</p>
+  </section>
+  <section>
+    <h2>Brush</h2>
+    <div class="row">
+      <button id="paintMode" class="active" type="button">Paint cutout</button>
+      <button id="eraseMode" type="button">Erase</button>
+    </div>
+    <label for="brush">Brush radius <span id="brushLabel">4 px</span></label>
+    <input id="brush" type="range" min=".5" max="24" step=".5" value="4">
+    <div class="row" style="margin-top:10px">
+      <button id="undo" type="button">Undo</button>
+      <button id="clear" type="button">Clear mask</button>
+    </div>
+    <label class="check"><input id="showHood" type="checkbox" checked> Ghost the hood over the painting surface</label>
+    <label class="check"><input id="showHead" type="checkbox" checked> Show approximate head reference</label>
+  </section>
+  <section>
+    <h2>Optional local art</h2>
+    <label for="beardPng">Override beard PNG (already aligned to 200 × 200 portrait)</label><input id="beardPng" type="file" accept="image/png,image/webp">
+    <label for="hoodPng">Override hood PNG (same coordinate space)</label><input id="hoodPng" type="file" accept="image/png,image/webp">
+    <p>Local PNG overrides affect only this editor's preview, not the cosmetic's authored game sprite paths.</p>
+    <button id="clearOverrides" type="button">Restore repository sprites</button>
+  </section>
+  <section>
+    <h2>Export</h2>
+    <div class="row"><button id="download" class="primary" type="button">Download cosmetic JSON</button><button id="copy" type="button">Copy mask JSON</button></div>
+    <label for="maskJson">Compact saved 200px cutout mask</label><textarea id="maskJson" readonly></textarea>
+    <p>The exported JSON keeps every original field and adds only <code>hoodCutoutMask</code> (or its species variant). To test in-game, replace that beard cosmetic JSON with the exported version.</p>
+  </section>
+</div>
+<div>
+  <section>
+    <h2>Paint directly on the beard</h2>
+    <canvas id="paintCanvas" class="paint" width="200" height="200" aria-label="Beard mask paint surface; drag to paint or erase"></canvas>
+    <div class="caption">Teal pixels = hood removed here. Painting cannot mark transparent beard pixels. Touch/drag works on mobile.</div>
+    <h2>Comparison — unaltered beard layer order</h2>
+    <div class="pair">
+      <div><canvas id="before" width="200" height="200" aria-label="Original hood preview"></canvas><div class="caption">Original hood</div></div>
+      <div><canvas id="after" width="200" height="200" aria-label="Hood with painted cutout preview"></canvas><div class="caption">With painted cutout</div></div>
+    </div>
+    <output id="status" aria-live="polite">Loading cosmetic catalog…</output>
+  </section>
+</div>
+</main>
+<script>
+(() => {
+  'use strict';
+  const Cut = window.PortraitBeardHoodCutout; // The exact 2D mask compositor also used by the main game's portrait renderer.
+  const $ = id => document.getElementById(id);
+  const SIZE = Cut.SIZE; // Fixed portrait size shared by brush, saved RLE and in-game hood canvas.
+  const XFORM = {ax:-.0983,ay:-.0809,sx:2.49,sy:2.49}; // Current main portrait preset B; cosmetic layers explicitly choose B.
+  const base = '../../'; // File paths resolve relative to this editor at docs/tools/beard-hood-cutout/.
+  const empty = () => ({size:SIZE,runs:[]});
+  const blank = () => {const c=document.createElement('canvas');c.width=c.height=SIZE;return c;};
+  const beardCanvas=blank(),hoodCanvas=blank(),headCanvas=blank(),maskedHood=blank(); // Offscreen prepared art, reused between every brush update.
+  const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
+  let mask=empty(),beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
+  let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
+  const drafts=new Map(); // Separate unsaved brush work per selected beard artwork/variant.
+  const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
+  const clamp=(x,lo,hi)=>Math.min(hi,Math.max(lo,x));
+  function status(message){lastError=message||'';render();}
+  function scopeKey(){return beardDoc?.speciesVariants?.[variant]?.parts?.head||beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask
+    ? variant : 'shared';}
+  function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
+  function remember(){if(beardEntry)drafts.set(draftKey(),JSON.parse(JSON.stringify(mask)));}
+  function originalMask(){
+    const scoped=scopeKey()==='shared'?beardDoc?.hoodCutoutMask:beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask;
+    return Cut.normalizeMask(scoped)||empty();
+  }
+  const assetUrl=path=>new URL(base+String(path||'').replace(/^\.\//,''),location.href).href;
+  const cosmeticUrl=entry=>new URL(base+'config/cosmetics/'+entry.path.replace(/^\.\//,''),location.href).href;
+  async function loadJson(entry){const response=await fetch(cosmeticUrl(entry));if(!response.ok)throw Error('Cosmetic '+response.status+' '+entry.path);return response.json();}
+  async function loadImage(url){
+    return new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=()=>reject(Error('Could not open image: '+url));
+      image.src=url;
+    });
+  }
+  function cosmeticLayers(doc){
+    const parts=doc?.speciesVariants?.[variant]?.parts||doc?.parts||{};
+    const head=parts.head||{};
+    if(head.layers) return Object.values(head.layers).filter(layer=>layer?.image?.url);
+    if(head.image?.url)return [head];
+    return [];
+  }
+  function drawAsset(ctx,image,xform=XFORM){
+    const w=image.width/image.height*80*Math.abs(xform.sx),h=80*xform.sy;
+    const cx=SIZE/2+xform.ay*80,cy=SIZE/2-xform.ax*80;
+    ctx.drawImage(image,cx-w/2,cy-h/2,w,h); // Same 80px B-preset alignment as portrait-utils.js.
+  }
+  async function drawCosmetic(doc,target,localOverride){
+    const ctx=target.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);ctx.imageSmoothingEnabled=true;
+    if(localOverride){ctx.drawImage(localOverride,0,0,SIZE,SIZE);return;}
+    const layers=cosmeticLayers(doc);
+    const loaded=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.image.url))));
+    for(const image of loaded)drawAsset(ctx,image);
+  }
+  async function loadHead(current){
+    const ctx=headCanvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
+    const [species,gender]=variant.match(/^(.*)_(male|female)$/)?.slice(1)||['',''];
+    if(!species||!gender)return;
+    const key=species+'_'+gender;
+    let image=headCache.get(key);
+    if(!image){
+      const response=await fetch(new URL(base+'config/species/'+species+'.json',location.href));
+      if(!response.ok)return;
+      const data=await response.json(),sprite=data?.[gender]?.headSprite;
+      if(!sprite)return;
+      image=await loadImage(assetUrl('assets/'+sprite.replace(/^\.?\/?assets\//,'')));
+      headCache.set(key,image);
+    }
+    if(current!==generation)return;
+    drawAsset(ctx,image);
+  }
+  function maskForArtwork(candidate){
+    const pixels=Cut.decodeMask(candidate);
+    for(let i=0;i<pixels.length;i++)if(beardPixels[i*4+3]<8)pixels[i]=0;
+    return Cut.encodeMask(pixels);
+  }
+  function variantsForDocs(){
+    const keys=new Set(['mao-ao_male']);
+    for(const doc of [beardDoc,hoodDoc])for(const key of Object.keys(doc?.speciesVariants||{}))if(/_(male|female)$/.test(key))keys.add(key);
+    return [...keys].sort((a,b)=>a.localeCompare(b));
+  }
+  function setVariantOptions(){
+    const keys=variantsForDocs();
+    $('variant').replaceChildren(...keys.map(key=>new Option(key.replace(/_/g,' ').replace(/-/g,' '),key)));
+    if(keys.includes(variant))$('variant').value=variant;else variant=$('variant').value;
+  }
+  async function prepare(resetMask=false){
+    const ticket=++generation;
+    try{
+      await Promise.all([drawCosmetic(beardDoc,beardCanvas,overrideBeard),drawCosmetic(hoodDoc,hoodCanvas,overrideHood)]);
+      if(ticket!==generation)return;
+      beardPixels=beardCanvas.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
+      if(resetMask)mask=maskForArtwork(drafts.get(draftKey())||originalMask());
+      else mask=maskForArtwork(mask);
+      await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
+      if(ticket!==generation)return;
+      history=[];render();
+    }catch(error){if(ticket===generation)status('Artwork failed: '+error.message);}
+  }
+  function paintMaskOverlay(){
+    const ctx=maskOverlay.getContext('2d');
+    const image=ctx.createImageData(SIZE,SIZE),bits=Cut.decodeMask(mask);
+    for(let i=0;i<bits.length;i++)if(bits[i]){
+      image.data[i*4]=56;image.data[i*4+1]=245;image.data[i*4+2]=210;image.data[i*4+3]=186;
+    }
+    ctx.putImageData(image,0,0);
+  }
+  function render(){
+    paintMaskOverlay();
+    maskedHood.getContext('2d').clearRect(0,0,SIZE,SIZE);
+    maskedHood.getContext('2d').drawImage(hoodCanvas,0,0);
+    Cut.applyToHood(maskedHood,mask); // The exact runtime destination-out operation; never draw beard a second time.
+
+    for(const id of ['before','after']){
+      const canvas=$(id),ctx=canvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
+      if($('showHead').checked)ctx.drawImage(headCanvas,0,0);
+      const species=variant.replace(/_(male|female)$/,'');
+      if(species==='mashtzarr')ctx.drawImage(beardCanvas,0,0); // Main places this species' beard under its head.
+      ctx.drawImage(beardCanvas,0,0); // Beard stays before front hood, as on main.
+      ctx.drawImage(id==='before'?hoodCanvas:maskedHood,0,0);
+    }
+
+    const painter=$('paintCanvas').getContext('2d');painter.clearRect(0,0,SIZE,SIZE);
+    if($('showHead').checked){painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
+    painter.drawImage(beardCanvas,0,0);
+    if($('showHood').checked){painter.globalAlpha=.27;painter.drawImage(hoodCanvas,0,0);painter.globalAlpha=1;}
+    painter.drawImage(maskOverlay,0,0);
+
+    const pixels=Cut.decodeMask(mask),hoodAlpha=hoodCanvas.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
+    let occupied=0;for(let i=0;i<pixels.length;i++)if(pixels[i]&&hoodAlpha[i*4+3]>=8)occupied++;
+    $('maskJson').value=JSON.stringify(mask);
+    $('status').textContent=(lastError?lastError+'\n':'')
+      +'Beard-painted pixels: '+Cut.countMask(mask)
+      +'\nActual opaque hood pixels cut: '+occupied
+      +'\nMask scope: '+scopeKey()
+      +'\nBeard order: unchanged (before hood)'
+      +'\nGeometry: none · X-ray: none';
+    $('undo').disabled=!history.length;
+  }
+  function pushUndo(){history.push(JSON.stringify(mask));if(history.length>20)history.shift();}
+  function point(event){
+    const r=$('paintCanvas').getBoundingClientRect();
+    return {x:clamp((event.clientX-r.left)/r.width*SIZE,0,SIZE-.001),
+      y:clamp((event.clientY-r.top)/r.height*SIZE,0,SIZE-.001)};
+  }
+  const surface=$('paintCanvas');
+  surface.addEventListener('pointerdown',event=>{
+    if(drag||event.button!==0)return;
+    event.preventDefault();pushUndo();
+    drag={id:event.pointerId,last:point(event)};
+    surface.setPointerCapture(event.pointerId);
+    mask=Cut.paintMask(mask,beardPixels,drag.last.x,drag.last.y,Number($('brush').value),mode==='erase');render();
+  });
+  surface.addEventListener('pointermove',event=>{
+    if(drag?.id!==event.pointerId)return;
+    event.preventDefault();const next=point(event);
+    mask=Cut.paintMask(mask,beardPixels,next.x,next.y,Number($('brush').value),mode==='erase',drag.last);
+    drag.last=next;render();
+  });
+  for(const eventName of ['pointerup','pointercancel','lostpointercapture']){
+    surface.addEventListener(eventName,event=>{if(drag?.id!==event.pointerId)return;drag=null;remember();render();});
+  }
+  function chooseMode(next){mode=next;$('paintMode').classList.toggle('active',mode==='paint');$('eraseMode').classList.toggle('active',mode==='erase');}
+  $('paintMode').onclick=()=>chooseMode('paint');$('eraseMode').onclick=()=>chooseMode('erase');
+  $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
+  $('undo').onclick=()=>{if(!history.length)return;mask=JSON.parse(history.pop());remember();render();};
+  $('clear').onclick=()=>{pushUndo();mask=empty();remember();render();};
+  $('showHead').onchange=render;$('showHood').onchange=render;
+  async function refreshDoc(which){
+    const selection=$(which).value,entry=catalog.find(item=>item.id===selection);
+    if(!entry)return;
+    if(which==='beard')remember();
+    if(which==='beard'){beardEntry=entry;beardDoc=await loadJson(entry);overrideBeard=null;$('beardPng').value='';}
+    else {hoodEntry=entry;hoodDoc=await loadJson(entry);overrideHood=null;$('hoodPng').value='';}
+    setVariantOptions();await prepare(which==='beard');
+  }
+  $('beard').onchange=()=>refreshDoc('beard').catch(e=>status(e.message));
+  $('hood').onchange=()=>refreshDoc('hood').catch(e=>status(e.message));
+  $('variant').onchange=()=>{remember();variant=$('variant').value;prepare(true);};
+  async function fileImage(input,which){
+    const file=input.files?.[0];if(!file)return;
+    const url=URL.createObjectURL(file);
+    try{const img=await loadImage(url);if(which==='beard')overrideBeard=img;else overrideHood=img;await prepare(which==='beard');}
+    catch(error){status(error.message);}finally{URL.revokeObjectURL(url);}
+  }
+  $('beardPng').onchange=()=>fileImage($('beardPng'),'beard');
+  $('hoodPng').onchange=()=>fileImage($('hoodPng'),'hood');
+  $('clearOverrides').onclick=()=>{overrideBeard=null;overrideHood=null;$('beardPng').value='';$('hoodPng').value='';prepare(true);};
+  $('reload').onclick=()=>loadCatalog().catch(e=>status('Catalog failed: '+e.message));
+  function exportedJson(){
+    if(!beardDoc)throw Error('No beard cosmetic loaded');
+    const json=JSON.parse(JSON.stringify(beardDoc)),chosen=Cut.normalizeMask(mask)||empty();
+    if(scopeKey()==='shared')json.hoodCutoutMask=chosen;
+    else {
+      json.speciesVariants=json.speciesVariants||{};
+      json.speciesVariants[variant]={...(json.speciesVariants[variant]||{}),hoodCutoutMask:chosen};
+    }
+    return json;
+  }
+  $('download').onclick=()=>{
+    try{
+      const body=JSON.stringify(exportedJson(),null,2)+'\n',blob=new Blob([body],{type:'application/json'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=(beardEntry?.path.split('/').pop()||'beard.json').replace(/^\(HA\)/,'');
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
+      status('Exported complete cosmetic JSON with the painted 2D hood mask.');
+    }catch(error){status(error.message);}
+  };
+  $('copy').onclick=async()=>{
+    try{await navigator.clipboard.writeText(JSON.stringify(mask,null,2));status('Copied the RLE mask.');}
+    catch(_){$('maskJson').focus();$('maskJson').select();status('Clipboard unavailable; select and copy the mask text.');}
+  };
+  async function loadCatalog(){
+    const ticket=++generation;
+    lastError='';const response=await fetch(new URL(base+'config/cosmetics/index.json',location.href));
+    if(!response.ok)throw Error('Index HTTP '+response.status);
+    catalog=(await response.json()).entries||[];
+    const beards=catalog.filter(item=>/beard|facialhair|moustach|mustach|whisker/i.test(item.id+' '+item.path));
+    const hoods=catalog.filter(item=>/hood|facewrap/i.test(item.id+' '+item.path));
+    $('beard').replaceChildren(...beards.map(item=>new Option(item.id.split('::').pop().replace(/_/g,' '),item.id)));
+    $('hood').replaceChildren(...hoods.map(item=>new Option(item.id.replace(/_/g,' '),item.id)));
+    if(beards.some(item=>item.path.includes('mao-ao/wildbeard'))) $('beard').value=beards.find(item=>item.path.includes('mao-ao/wildbeard')).id;
+    if(hoods.some(item=>item.id==='fine_hood'))$('hood').value='fine_hood';
+    if(ticket!==generation)return;
+    [beardEntry,hoodEntry]=[beards.find(x=>x.id===$('beard').value),hoods.find(x=>x.id===$('hood').value)];
+    if(!beardEntry||!hoodEntry)throw Error('No indexed beard/hood art was found.');
+    [beardDoc,hoodDoc]=await Promise.all([loadJson(beardEntry),loadJson(hoodEntry)]);
+    if(ticket!==generation)return;
+    setVariantOptions();await prepare(true);
+  }
+  window.BeardHoodCutoutDebug=()=>({
+    beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
+    history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
+    error:lastError,physicalDepth:false,drawOrder:'main-2d-unchanged',
+  }); // Copyable from the status and accessible without devtools on mobile via the mask JSON field.
+  render();
+  loadCatalog().catch(error=>status('Catalog error: '+error.message));
+})();
+</script>
+</body>
+</html>
