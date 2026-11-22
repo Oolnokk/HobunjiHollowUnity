@@ -1876,7 +1876,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, destination = ctx) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -1887,20 +1887,20 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       const cx = PORTRAIT_CW / 2 + ay * PORTRAIT_L;
       const cy = PORTRAIT_CH / 2 - ax * PORTRAIT_L;
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
-      ctx.save();
-      ctx.globalAlpha = opacity;
+      destination.save();
+      destination.globalAlpha = opacity;
       let drawImg = imageForTint(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
-      ctx.filter = 'none';
-      _drawPortraitLayerWarped(ctx, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
-      ctx.restore();
+      destination.filter = 'none';
+      _drawPortraitLayerWarped(destination, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
+      destination.restore();
     } else if (opacity < 1) {
-      ctx.save();
-      ctx.globalAlpha = opacity;
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
-      ctx.restore();
+      destination.save();
+      destination.globalAlpha = opacity;
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
+      destination.restore();
     } else {
-      drawPortraitLayer(ctx, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
     }
   };
 
@@ -1953,10 +1953,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
-  const drawEmoteLayers = (layerList) => {
+  const drawEmoteLayers = (layerList, destination = ctx) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey);
-    });
+      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, destination);
+    }, destination);
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
@@ -2057,13 +2057,48 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     drawBreathingLayers(overwearLayers);
   }
   drawBreathingLayers(hoodBackLayers); // Rear hood cloth must sit behind the skull/head; front opening is drawn later with ordinary hood layers.
+  const cutoutApi = window.PortraitBeardHoodCutout;
+  const beardAuthoring = resolveBeardHoodAuthoring(facialHair, resolvedFighter);
+  const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride || beardAuthoring.mask;
+  const tuftRoots = renderOptions?.beardHoodTuftRootsOverride || beardAuthoring.roots;
+  let negotiatedBeard = null, negotiatedHood = null, negotiation = null; // Prepared once before the beard's original draw stage; the hood is composited later.
+  if (cutoutApi && facialHairLayers.length && hoodLayers.length
+      && !hiddenCosmeticGroups.has(facialHair) && paintedBeardMask?.runs?.length) {
+    const beardScratch = canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'); // Reused per portrait instance, not per redraw.
+    const hoodScratch = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Existing front-hood scratch surface.
+    for (const scratch of [beardScratch, hoodScratch]) {
+      if (scratch.width !== PORTRAIT_CW) scratch.width = PORTRAIT_CW;
+      if (scratch.height !== PORTRAIT_CH) scratch.height = PORTRAIT_CH;
+      scratch.getContext('2d').clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
+    }
+    canvas.hobunjiBeardHoodBeardCanvas = beardScratch;
+    canvas.hobunjiBeardHoodTempCanvas = hoodScratch;
+    drawEmoteLayers(facialHairLayers, beardScratch.getContext('2d'));
+    drawBreathingLayers(hoodLayers, hoodScratch.getContext('2d'));
+    const stretch = cutoutApi.stretchHoodToRoots(hoodScratch, tuftRoots, {
+      maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
+      aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
+    });
+    const allowance = resolveHoodBeardAllowanceMask(hood, resolvedFighter);
+    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, allowance);
+    if (!result.error) {
+      negotiatedBeard = beardScratch;
+      negotiatedHood = hoodScratch;
+      negotiation = { ...result,requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
+        limitedRoots:stretch.limited,skippedRoots:stretch.missingRing,
+        deformationError:stretch.error||null }; // Counts exposed to mobile/gameplay diagnostics.
+    }
+  }
+  const drawNegotiatedBeard = () => negotiatedBeard
+    ? ctx.drawImage(negotiatedBeard,0,0,PORTRAIT_CW,PORTRAIT_CH)
+    : drawEmoteLayers(facialHairLayers);
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
-  if (_beardBelowHead) drawEmoteLayers(facialHairLayers);
+  if (_beardBelowHead) drawNegotiatedBeard();
   if (headUrl && !skipHeadSprite) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);
-  if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);
+  if (!_beardBelowHead) drawNegotiatedBeard();
   drawEmoteLayers(frontHairLayers);
   drawEmoteLayers(eyesLayers);
   // Species anatomy is universally below hoods. Mashtzarr tusks are the sole
@@ -2121,33 +2156,32 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  const cutoutApi = window.PortraitBeardHoodCutout;
-  const beardAuthoring = resolveBeardHoodAuthoring(facialHair, resolvedFighter);
-  const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride || beardAuthoring.mask;
-  const tuftRoots = renderOptions?.beardHoodTuftRootsOverride || beardAuthoring.roots;
-  // The beard was already painted at main's original draw position above.
-  // Stretch only the later front hood toward marked tuft roots, then subtract
-  // the painted alpha matte; the beard itself never changes draw order.
-  if (cutoutApi && hoodLayers.length && facialHairLayers.length
+  // The negotiated beard was drawn in its original location earlier.
+  // Only the front hood is composited here; never redraw the beard above eyes,
+  // head, cosmetics, or the face mask.
+  if (negotiatedHood) {
+    ctx.drawImage(negotiatedHood,0,0,PORTRAIT_CW,PORTRAIT_CH);
+    canvas.hobunjiBeardHoodCutout = negotiation;
+  } else if (cutoutApi && hoodLayers.length && facialHairLayers.length
       && !hiddenCosmeticGroups.has(facialHair)
       && (paintedBeardMask?.runs?.length || tuftRoots?.length)) {
-    const cloth = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Reuse scratch on periodically redrawn dialogue portraits.
+    // Existing legacy path: no explicit beard/hood arbitration was needed.
+    const cloth = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas');
     if (cloth.width !== PORTRAIT_CW) cloth.width = PORTRAIT_CW;
     if (cloth.height !== PORTRAIT_CH) cloth.height = PORTRAIT_CH;
     canvas.hobunjiBeardHoodTempCanvas = cloth;
     const clothContext = cloth.getContext('2d');
-    clothContext.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
+    clothContext.clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
     drawBreathingLayers(hoodLayers, clothContext);
     const stretch = cutoutApi.stretchHoodToRoots(cloth, tuftRoots, {
       maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
       aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
     });
     const result = cutoutApi.applyToHood(cloth, paintedBeardMask);
-    ctx.drawImage(cloth, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
-    canvas.hobunjiBeardHoodCutout = {applied: result.applied, maskPixels: result.cutPixels,
-      requestedRoots:stretch.requested, stretchedRoots:stretch.stretched, limitedRoots:stretch.limited,
-      skippedRoots:stretch.missingRing,
-      deformationError:stretch.error||null};
+    ctx.drawImage(cloth,0,0,PORTRAIT_CW,PORTRAIT_CH);
+    canvas.hobunjiBeardHoodCutout = {applied:result.applied,maskPixels:result.cutPixels,
+      requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
+      limitedRoots:stretch.limited,skippedRoots:stretch.missingRing,deformationError:stretch.error||null};
   } else {
     drawBreathingLayers(hoodLayers);
   }
@@ -2420,6 +2454,18 @@ function resolveBeardHoodAuthoring(option, fighter) {
     belowInfluence:cutout?.normalizeVerticalInfluence(option.hoodTuftBelowInfluence)};
 }
 
+function resolveHoodBeardAllowanceMask(option, fighter) {
+  if (!option) return null;
+  const variants = option.variantBeardCutoutAllowedMasks;
+  if (fighter && variants) {
+    // Explicit variant permissions take precedence even when the hood itself
+    // uses shared artwork. Empty variant masks intentionally protect all cloth.
+    for (const key of portraitVariantKeysForFighter(fighter, option))
+      if (Object.prototype.hasOwnProperty.call(variants,key)) return variants[key];
+  }
+  return option.beardCutoutAllowedMask ?? null; // Legacy hoods without a mask accept every beard request.
+}
+
 function portraitOptionFromJson(entry, json) {
   const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '').replace(/_/g, ' ');
   const tintSlot = (json.appearance && json.appearance.bodyColors && json.appearance.bodyColors[0]) || null;
@@ -2483,10 +2529,14 @@ function portraitOptionFromJson(entry, json) {
   const variantHoodTuftSubdivision = {}; // Individual variant beard art can set its own influence locality.
   const variantHoodTuftMaxStretch = {}; // Species-specific settings, when explicitly authored.
   const variantHoodTuftRoots = {}; // Species-specific tuft positions match the same resolved beard artwork.
+  const beardCutoutAllowedMask = maskApi?.normalizeMask?.(json.beardCutoutAllowedMask) || null; // A hood-owned removal permission mask; null is legacy fully-removable.
+  const variantBeardCutoutAllowedMasks = {}; // Explicit empty masks mean this hood variant forbids all beard penetration.
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
   for (const [key, value] of Object.entries(json.speciesVariants || {})) {
     const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
     if (mask) variantHoodCutoutMasks[key] = mask; // An explicitly empty variant mask clears the shared cutout.
+    const allowed = maskApi?.normalizeMask?.(value?.beardCutoutAllowedMask);
+    if (allowed) variantBeardCutoutAllowedMasks[key] = allowed;
     if (Array.isArray(value?.hoodTuftRoots))
       variantHoodTuftRoots[key] = maskApi?.normalizeRoots?.(value.hoodTuftRoots) || []; // [] explicitly disables inherited shared corners.
     if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
@@ -2500,7 +2550,8 @@ function portraitOptionFromJson(entry, json) {
   }
   return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots, hoodTuftMaxStretch, variantHoodTuftMaxStretch, hoodTuftSubdivision, variantHoodTuftSubdivision,
     hoodTuftAboveInfluence, hoodTuftBelowInfluence,
-    variantHoodTuftAboveInfluence, variantHoodTuftBelowInfluence };
+    variantHoodTuftAboveInfluence, variantHoodTuftBelowInfluence,
+    beardCutoutAllowedMask, variantBeardCutoutAllowedMasks };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
