@@ -601,11 +601,16 @@
   function _pickPoolEntry(poolId, rec) {
     const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
     if (!pool || !pool.entries?.length) return null;
+    const playable = pool.entries.filter(item => {
+      const line = String(item?.text || '').trim(); // Writer-facing <placeholder> hints are not player dialogue until actually authored.
+      return line && !/^<[^<>]+>$/.test(line);
+    }); // Shares the same playable-line rule used when determining if personal speech remains before personality supplements.
+    if (!playable.length) return null;
     const world = _dlgWorldState(rec);
     const st    = getNpcDlgState(rec?.id);
-    const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
+    const entry = _pickBestEntry(playable, world, st.heardPoolEntries || []);
     if (_traceActive()) {
-      _dlgTracePools.push({ poolId, poolName: pool.name || pool.id, npcId: rec?.id || null, pickedId: entry?.id || null, pickedText: entry?.text || '', ..._explainSelection(pool.entries, world, st.heardPoolEntries || [], entry) });
+      _dlgTracePools.push({ poolId, poolName: pool.name || pool.id, npcId: rec?.id || null, pickedId: entry?.id || null, pickedText: entry?.text || '', ..._explainSelection(playable, world, st.heardPoolEntries || [], entry) });
       if (_dlgTracePools.length > 20) _dlgTracePools.splice(0, _dlgTracePools.length - 20);
     }
     if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
