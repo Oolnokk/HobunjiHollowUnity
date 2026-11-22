@@ -20730,13 +20730,18 @@
           : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
+      function interruptBandagingForAction(action, reason = 'action') {
+        if (!action || action === 'none' || action === 'potion_select' || action === 'ammo_select') return false;
+        return window.BandageSystem?.cancel?.(reason, { action }) === true; // Releases only the bandaging lock before the original action-owner check.
+      }
       function useActiveAction() {
         // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
         if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
           || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
           || activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet')) return;
+        const attackAction = (activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot'); // Preserves attack-specific cancellation diagnostics.
+        interruptBandagingForAction(activeAction, attackAction ? 'attack' : 'action');
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
-        if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (window.PlayerDowned?.allowsAction?.(heldMode, activeTool) === false) return; // Only the ranged weapon works while downed (js/player-downed.js).
         if (sitInteraction) {
@@ -28629,6 +28634,7 @@
       // HobunjiDrunkGameplayBridge (food/drink) and makeProcessingFurniture
       // (processor insertion) respectively.
       function beginHeldItemActionDescriptor(action) {
+        if (action === 'consume_held_item' || action.startsWith('obj_process_')) interruptBandagingForAction(action); // Free both hands before a food/drink/processor hold starts.
         if (action === 'consume_held_item') return !!window.HobunjiDrunkGameplayBridge?.beginHeldItemAction?.();
         if (action.startsWith('obj_process_')) return beginHeldProcessorInsertion(action);
         return false;
@@ -28658,6 +28664,7 @@
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
+        if (btn.action === 'torch_throw' || btn.action === 'campfire_menu') interruptBandagingForAction(btn.action); // These input owners return before useActiveAction.
         if (btn.action === 'torch_throw') {
           if (window.AdventuringTools?.beginThrow?.(inputActionId)) torchThrowActionPresses.add(inputActionId);
           return; // Action 2 press starts a held windup, never an immediate projectile.
@@ -28776,7 +28783,11 @@
           return;
         }
         if (window.FarmworkUI?.isPlanning?.()) {
-          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source); return; }
+          if (['action1', 'action2', 'action3'].includes(actionId)) {
+            if (phase === 'press') interruptBandagingForAction('farmwork-' + actionId, 'world-interaction');
+            dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source);
+            return;
+          }
           if (actionId === 'dodge' || actionId === 'toolSelect') {
             if (phase === 'press') window.FarmworkUI.setPlanning(false);
             return;
@@ -28785,6 +28796,10 @@
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
           return;
+        }
+        if (phase === 'press' && ['action1', 'action2', 'interact'].includes(actionId)
+          && (window.DevMapFurniture?.isActive?.() || window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.())) {
+          interruptBandagingForAction('furniture-editor-' + actionId, 'world-interaction'); // Placement claims can execute before the usual action dispatcher.
         }
         if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar();
@@ -28819,7 +28834,9 @@
           // The controller gameplay loop independently resolves physical buttons:
           // it does NOT consult ControllerInput.frame.pressed deletion. Claim
           // pickup here so the same release cannot recall/re-equip a tool.
-          if (window.Shattercasks?.toolArchAction?.() === 'pickup' && window.Shattercasks?.toolArchTap?.()) {
+          const shattercaskPickup = window.Shattercasks?.toolArchAction?.() === 'pickup'; // This pickup shortcut bypasses the normal action dispatcher.
+          if (shattercaskPickup) interruptBandagingForAction('shattercask_collect', 'world-interaction');
+          if (shattercaskPickup && window.Shattercasks?.toolArchTap?.()) {
             toolSelectPress.down = true;
             toolSelectPress.held = false;
             toolSelectPress.contextPickup = true;
@@ -28895,6 +28912,7 @@
           return;
         }
         if (phase === 'press' && furniturePlacementModeArmed() && (actionId === 'action1' || actionId === 'interact' || actionId === 'action2')) {
+          interruptBandagingForAction('furniture-place-' + actionId, 'world-interaction'); // Placing/canceling held furniture happens on this initial press.
           furniturePlacementActionPresses.add(actionId);
           if (actionId === 'action2') {
             cancelFurniturePlacementMode(true); // Action 2 mirrors the visible mobile Cancel button.
@@ -28934,12 +28952,16 @@
           return;
         }
         if (window.Fishing?.state?.active) {
-          if (actionId === 'interact' || actionId === 'action1') window.Fishing?.primaryAction();
+          if (actionId === 'interact' || actionId === 'action1') {
+            interruptBandagingForAction('fish_primary', 'world-interaction');
+            window.Fishing?.primaryAction();
+          }
           return;
         }
         if (menuOpen || farmEditMode) return;
         if(dispatchWorldInputClaim(actionId,'press',source))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (heldMode === 'item' && actionId === 'action1' && window.AlchemyFlasks?.heldActions?.().length) {
+          interruptBandagingForAction('alchemy_flask_primary');
           if (window.AlchemyFlasks.beginAim()) flaskActionPresses.add(actionId);
           return;
         }

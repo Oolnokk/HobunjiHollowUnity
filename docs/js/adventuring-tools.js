@@ -168,6 +168,7 @@
   }
   function beginThrow(source = 'input', pointerId = null) {
     if (isThrowSequenceActive() || !canThrow() || window.GameplayInputRouter?.isAttackBlocked?.()) return false;
+    window.BandageSystem?.cancel?.('action', { action:'torch_throw' }); // Direct torch input frees both hands before unrelated lock checks.
     if (window.CharacterActionLocks?.isLocked?.('player', 'actions') || window.CharacterActionLocks?.isLocked?.('player', 'tools')) return false;
     const animation = window.HeldActionAnimations?.weaponThrowSpin; // The same authored throw gestures as ordinary thrown weapons.
     const poses = animation?.poses || window.HobunjiRangedWeaponArchetypes?.animations?.thrown?.();

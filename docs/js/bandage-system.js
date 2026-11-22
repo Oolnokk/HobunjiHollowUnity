@@ -490,7 +490,7 @@
         active: state.active,
         paused: state.active && state.paused,
         clock: 'gameplay-delta',
-        latestChange: 'Starting a melee or ranged attack cancels bandaging immediately, then the attack proceeds normally.',
+        latestChange: 'Using a world interaction, held item, tool, or attack cancels bandaging before the action proceeds.',
         cost: 'time-and-interruption-only',
         durationMs: DURATION_MS,
         midpointMs: DURATION_MS / 2,
