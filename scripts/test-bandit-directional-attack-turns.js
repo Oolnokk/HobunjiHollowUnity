@@ -257,6 +257,7 @@ const simDeps={...deps,rnd:()=>.1,JUMP_BACK_SPEED:110,
   moveCreatureToward(c,x,y,speed,dt){const dx=x-c.x,dy=y-c.y,d=Math.hypot(dx,dy),step=Math.min(speed*dt,d);
     if(d>0){c.x+=dx/d*step;c.y+=dy/d*step;}return step>0;}}; // Flat unobstructed arena uses the real move callback signature.
 let simulation=null; // Collaborators below reference the exported coordinator only after the real module has been evaluated.
+let simulationSafeReachPx=170; // Test-controlled safe strike reach; the AI must reach its assigned position even when actual weapon reach is short.
 const aiGlobals={
   window:simulatedCombat,deps:simDeps,WeakMap,Math,Number,Object,performance:{now:()=>1000},
   resetBanditSwingToNatural(c){c.restored=true;},
@@ -264,7 +265,7 @@ const aiGlobals={
   updateBanditFlaskAI:()=>null,updateBanditLunge:()=>false,enforceBanditPlayerCollision(){},
   npcDuelStagingUpdate:()=>null,updateBanditGuardWindow(){},
   banditPersonalSpaceAdjust:(c,point,out)=>{out.x=point.x;out.y=point.y;return out;},
-  banditEngagementReachPx:()=>170,claimBanditQueueRing:()=>({angle:0,ringIndex:0}),
+  banditEngagementReachPx:()=>simulationSafeReachPx,claimBanditQueueRing:()=>({angle:0,ringIndex:0}),
   banditRingPoint:(t,a,r,out)=>{out.x=t.x+Math.cos(a)*r;out.y=t.y+Math.sin(a)*r;return out;},
   banditBehindTarget:()=>false,banditBackstabFlankPoint:()=>({x:0,y:0}),
   banditQuickAttackConditions:()=>({behind:false,exhausted:false,lowHealth:false}),
@@ -332,5 +333,24 @@ assert.equal(decisions.length,decisionsBeforeCounter,'full AI must NOT start a r
 simulation.release(counterSimActor,counterSimTarget);
 simulation.tick(counterSimActor,.1,counterSimTarget,Math.hypot(counterSimActor.x-counterSimTarget.x,counterSimActor.y-counterSimTarget.y));
 assert.equal(decisions.length,decisionsBeforeCounter+1,'same fighter may commit a new real attack after its counter hit resolves');
+
+// The production waiting-ring decision used to insist on sitting 1.25x farther than the
+// weapon's BASE reach, even when the combined real attack-safe reach was shorter.
+// That impossible standoff let opposing Omgurku and Porakaneki circle forever without a hit.
+simulationSafeReachPx=32; // Much shorter than the 55px base weapon reach; old Math.max floor would force a 68.75px orbit.
+const closeCombatTarget={x:1900,y:0,angle:0,health:100,stamina:100,maxHealth:100,maxStamina:100};
+const closeCombatActor=actor('short-reach-rival',2000,0);
+closeCombatActor.def.banditAbilityLoadout={tap1:'swingCombo',tap2:'exhaustCutter',hold1:null};
+closeCombatActor.def.chaseSpeed=290; closeCombatActor.def.moveSpeed=118;
+closeCombatActor.def.attackRangePx=55; closeCombatActor.def.attackStaminaCost=10;
+closeCombatActor.def.banditStandoffTierStepTiles=.2;
+closeCombatActor.stamina=100;closeCombatActor.attackCooldownT=0;closeCombatActor.facing=0;
+const decisionsBeforeClosing=decisions.length;
+for(let i=0;i<40&&decisions.length===decisionsBeforeClosing;i++)
+  simulation.tick(closeCombatActor,.1,closeCombatTarget,Math.hypot(closeCombatActor.x-closeCombatTarget.x,closeCombatActor.y-closeCombatTarget.y));
+assert(decisions.length>decisionsBeforeClosing,'a fighter in a four-way direction must actually approach within its smaller safe strike reach');
+assert.equal(decisions.at(-1).kind,'combo','short-range close-in movement ultimately dispatches the real combo ability');
+assert(Math.hypot(closeCombatActor.x-closeCombatTarget.x,closeCombatActor.y-closeCombatTarget.y)<=simulationSafeReachPx,
+  'the real attack gate was entered at the authored safe reach rather than the larger idle standoff radius');
 
 console.log('bandit directional melee: 4 sectors, one resolved attack, parallel charge, cancellations and Fey echo passed');
