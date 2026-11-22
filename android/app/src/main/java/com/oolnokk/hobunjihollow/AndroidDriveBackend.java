@@ -365,17 +365,12 @@ final class AndroidDriveBackend {
      * failed publication. Cleanup runs only after the new canonical is verified.
      */
     private void trimOldRecoveries(String parentId, String name) throws Exception {
-        String prefix = ".hobunji-previous-" + name + "-";
-        JSONArray entries = children(parentId, null); // Includes app-owned hidden recovery files.
-        List<JSONObject> backups = new ArrayList<>(); // Restrict deletion to our exact name prefix + UUID suffix.
+        JSONArray entries = children(parentId, null); // Include game-owned hidden recovery files.
+        List<JSONObject> backups = new ArrayList<>(); // Other files are never candidates for deletion.
         for (int i = 0; i < entries.length(); i++) {
             JSONObject file = entries.getJSONObject(i);
-            String candidate = file.optString("name");
-            String suffix = candidate.startsWith(prefix) ? candidate.substring(prefix.length()) : "";
-            try {
-                if (suffix.length() == 36 && UUID.fromString(suffix).toString().equals(suffix) &&
-                        !DIRECTORY.equals(file.optString("mimeType"))) backups.add(file);
-            } catch (IllegalArgumentException ignored) { /* Never delete an unknown filename. */ }
+            if (AndroidDrivePublication.isOwnedBackup(file.optString("name"), name) &&
+                    !DIRECTORY.equals(file.optString("mimeType"))) backups.add(file);
         }
         backups.sort(Comparator.comparing((JSONObject file) -> file.optString("modifiedTime", "")).reversed());
         for (int i = MAX_PREVIOUS_VERSIONS; i < backups.size(); i++) {
