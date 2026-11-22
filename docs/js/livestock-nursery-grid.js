@@ -519,6 +519,7 @@
       if (grow.firstChild?.nodeType === 3 && grow.firstChild.nodeValue !== 'Nursery Grow') grow.firstChild.nodeValue = 'Nursery Grow';
       grow.disabled = !canManage || !!queued || capacityFull || tonicCount < 1;
       grow.title = !canManage ? 'Livestock permission required.'
+        : queued ? 'Cancel the pending sale before growing this baby.'
         : capacityFull ? 'Build or upgrade a real barn first.'
         : tonicCount < 1 ? 'You need a Growth Tonic.'
         : `Use 1 Growth Tonic (${tonicCount} owned) and move this baby into an open barn.`;
