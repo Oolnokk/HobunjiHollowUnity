@@ -7,26 +7,75 @@ const fs = require('node:fs'); // Reads the game modules, not duplicated impleme
 const vm = require('node:vm');
 
 class Vector3 {
-  constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
-  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+  constructor(x=0,y=0,z=0) { this.set(x,y,z); }
+  set(x,y,z) { Object.assign(this,{x,y,z}); return this; }
+  copy(v) { return this.set(v.x,v.y,v.z); }
+  clone() { return new Vector3(this.x,this.y,this.z); }
+  applyMatrix4(matrix) {
+    const e=matrix.elements,x=this.x,y=this.y,z=this.z;
+    return this.set(e[0]*x+e[4]*y+e[8]*z+e[12],e[1]*x+e[5]*y+e[9]*z+e[13],e[2]*x+e[6]*y+e[10]*z+e[14]);
+  }
+}
+class Matrix4 {
+  constructor() { this.elements=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]; }
+  copy(other) { this.elements=other.elements.slice(); return this; }
+  setPose(p,r,s) {
+    const cy=Math.cos(r.y),sy=Math.sin(r.y),cz=Math.cos(r.z),sz=Math.sin(r.z); // Rx is zero for this torch/posterior fixture.
+    this.elements=[cy*cz*s.x,sz*s.x,-sy*cz*s.x,0,
+      -cy*sz*s.y,cz*s.y,sy*sz*s.y,0,
+      sy*s.z,0,cy*s.z,0,p.x,p.y,p.z,1];
+    return this;
+  }
+  multiply(other) {
+    const a=this.elements,b=other.elements,c=Array(16).fill(0); // Column-major general affine multiplication, including inherited shear.
+    for(let col=0;col<4;col++)for(let row=0;row<4;row++)
+      for(let k=0;k<4;k++)c[col*4+row]+=a[k*4+row]*b[col*4+k];
+    this.elements=c;return this;
+  }
+  invert() {
+    const e=this.elements;
+    const a=e[0],b=e[4],c=e[8],d=e[1],f=e[5],g=e[9],h=e[2],i=e[6],j=e[10];
+    const A=f*j-g*i,B=c*i-b*j,C=b*g-c*f;
+    const D=g*h-d*j,E=a*j-c*h,F=c*d-a*g;
+    const G=d*i-f*h,H=b*h-a*i,I=a*f-b*d;
+    const det=a*A+b*D+c*G;
+    assert(Math.abs(det)>1e-8,'fixture mounting matrix is invertible');
+    const t=[e[12],e[13],e[14]];
+    this.elements=[A/det,D/det,G/det,0,B/det,E/det,H/det,0,C/det,F/det,I/det,0,
+      -(A*t[0]+B*t[1]+C*t[2])/det,-(D*t[0]+E*t[1]+F*t[2])/det,-(G*t[0]+H*t[1]+I*t[2])/det,1];
+    return this;
+  }
+}
+function equalMatrix(actual, expected, message) {
+  for(let i=0;i<16;i++)assert(Math.abs(actual.elements[i]-expected.elements[i])<1e-8,message+' matrix index '+i);
 }
 class Group {
   constructor() {
-    this.children = []; this.parent = null; this.visible = true; this.userData = {};
-    this.position = new Vector3(); this.scale = new Vector3(1, 1, 1);
-    this.rotation = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
+    this.children=[];this.parent=null;this.visible=true;this.userData={};
+    this.position=new Vector3();this.scale=new Vector3(1,1,1);
+    this.rotation={x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};
+    this.matrix=new Matrix4();this.matrixWorld=new Matrix4();
+    this.matrixAutoUpdate=true;this.matrixWorldNeedsUpdate=false;
   }
-  add(node) { node.parent?.remove(node); this.children.push(node); node.parent = this; }
-  attach(node) { this.add(node); return this; } // Fixture parents have identity transforms; real Three.js preserves world pose on attach.
-  remove(node) { this.children = this.children.filter(child => child !== node); node.parent = null; }
-  worldToLocal(position) { return position; }
-  updateWorldMatrix() {}
+  add(node) {node.parent?.remove(node);this.children.push(node);node.parent=this;}
+  attach(node) {this.add(node);return this;} // Legacy fallback; production is required to use the exact affine matrix instead.
+  remove(node) {this.children=this.children.filter(child=>child!==node);node.parent=null;}
+  updateMatrix() {if(this.matrixAutoUpdate)this.matrix.setPose(this.position,this.rotation,this.scale);}
+  updateWorldMatrix(updateParents=false,updateChildren=false) {
+    if(updateParents)this.parent?.updateWorldMatrix(true,false);
+    this.updateMatrix();
+    if(this.parent)this.matrixWorld.copy(this.parent.matrixWorld).multiply(this.matrix);
+    else this.matrixWorld.copy(this.matrix);
+    if(updateChildren)for(const child of this.children)child.updateWorldMatrix?.(false,true);
+  }
+  updateMatrixWorld() {this.updateWorldMatrix(true,true);}
+  worldToLocal(v) {this.updateWorldMatrix(true,false);return v.applyMatrix4(new Matrix4().copy(this.matrixWorld).invert());}
 }
 class Material { constructor(options = {}) { Object.assign(this, options); } }
 class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
 class Sprite extends Group { constructor(material) { super(); this.material = material; } }
 const THREE = {
-  Group, Vector3, Mesh, Sprite,
+  Group, Vector3, Matrix4, Mesh, Sprite,
   MeshBasicMaterial: Material, SpriteMaterial: Material,
   PlaneGeometry: class { constructor(width, height) { this.width = width; this.height = height; } },
   CanvasTexture: class { constructor(canvas) { this.image = canvas; } },
@@ -54,6 +103,9 @@ let heldMode = 'tool'; // Simulates tool draw/put-away while keeping the selecte
 let player = new Group(); // Player roots may be replaced when an avatar respawns or loads.
 player.userData = { speciesId:'mao-ao', gender:'male', portraitModelHeight:1 };
 let avatar = new Group(); player.add(avatar); // Current PNG portrait used to sample live belt anchors.
+player.scale.set(1.2,.75,1.4); // Nonuniform player-scale regression for the body-to-portrait reparent.
+avatar.scale.set(.85,1.3,.9); // Additional anisotropic portrait rig scale makes Object3D.attach() potentially inaccurate.
+avatar.rotation.y=.4; // A portrait facing different from its body must retain the posterior world pose while stowing.
 const realTorchHeight = .5 * 1204 / 450; // The actual 450×1204 torch PNG's dimensions at game.js's 0.5-unit tool plane width.
 const handMap = { image: { width:450, height:1204 } }; // Real torch PNG dimensions, reusing the colored held texture.
 const sourcePlane = { geometry:{ parameters:{ width:.5, height:realTorchHeight } }, material:{ map:handMap } }; // The actual equipment-plane dimensions supplied by game.js.
@@ -152,7 +204,13 @@ assert.equal(torch.debug.belt.visible, false, 'mobile status reports hidden belt
 torch.stow();
 heldMode = 'none';
 now = 1000;
+player.updateWorldMatrix(true,false);
+const expectedPosteriorWorld = new Matrix4().copy(player.matrixWorld).multiply(
+  new Matrix4().setPose(new Vector3(0,.5,-.04),{x:0,y:0,z:-Math.PI/4},new Vector3(1,1,1))); // Correct world pose before moving under an anisotropically scaled portrait.
 sync({timestamp:now});
+belt.updateWorldMatrix(true,true);
+equalMatrix(belt.matrixWorld,expectedPosteriorWorld,'matrix-preserved reparent must not shift or distort the torch');
+assert.equal(belt.matrixAutoUpdate,false,'production reparent retains the complete affine/shear rather than decomposing it');
 assert.equal(belt.visible, true, 'the stowed torch appears on the actual player');
 assert.equal(belt.parent, avatar, 'rear-stowed torch follows live portrait yaw rather than body yaw');
 assert.equal(torch.debug.belt.attachedToPortrait, true, 'mobile debug reports portrait-follow attachment');
@@ -187,6 +245,11 @@ assert.equal(belt.position.y, .5, 'posterior tracks the composer');
 assert.equal(belt.position.z, -.04, 'stowed torch sits behind the portrait plane');
 assert(Math.abs(belt.rotation.z + Math.PI / 4) < 1e-8, 'torch is angled 45 degrees about its midpoint');
 assert.equal(torch.debug.belt.stowAngleDeg, -45, 'mobile debug retains body-space authored tilt');
+const previousWorld = belt.matrixWorld.elements.slice(); // Portrait independent yaw changes the carried torch without altering the body anchor.
+avatar.rotation.y += .25;
+belt.updateWorldMatrix(true,true);
+assert(belt.matrixWorld.elements.some((value,i)=>Math.abs(value-previousWorld[i])>1e-6),
+  'stowed torch inherits independent portrait facing without fresh posterY or emission updates');
 assert.equal(torch.debug.belt.posteriorPosition.y, .5, 'mobile debug reports the anatomical basis before reparenting');
 const displayCount = player.children.length; // Repeated frames must not allocate or duplicate meshes.
 for (let frame = 1; frame < 150; frame++) sync({timestamp:1000 + frame * 17});
