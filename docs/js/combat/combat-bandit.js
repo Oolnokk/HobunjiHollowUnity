@@ -1765,6 +1765,7 @@
   function fireBanditCounterRiposte(c, def, targetPlayer) {
     const cs = window.Combat?.counterShieldData;
     if (!cs) return;
+    if (banditDirectional(c) && (c._banditAction || c._banditPreparedCharge || !claimBanditAttackTurn(c, targetPlayer))) return; // Reactive counters cannot bypass the one-committed-strike rule or interrupt this actor's held pose.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
     const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
@@ -1777,7 +1778,7 @@
     // the riposte's own 0.2s swing is brief enough that skipping its
     // dedicated weapon-pose animation (rather than adding a second
     // parallel progress channel just for this) is an acceptable gap.
-    window.Combat.beginStagedAction({
+    const riposteOptions = {
       windupS: 0.05 / (def.weaponShapeStats?.speed || 1), strikeS: 0.15 / (def.weaponShapeStats?.speed || 1), recoverS: 0, // NPC counterstrike duration follows its weapon shape instead of a fixed 0.2s.
       data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: 'counterShield' }, // Counter ripostes are active NPC voice events too.
       onStrike: () => {
@@ -1791,7 +1792,15 @@
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
-    });
+    };
+    const strike = riposteOptions.onStrike; // Keep the actual counter-hit and sound processing as the turn-release boundary.
+    riposteOptions.onStrike = (...args) => {
+      try { strike(...args); }
+      finally { releaseBanditAttackTurn(c, targetPlayer); }
+    };
+    riposteOptions.onComplete = () => releaseBanditAttackTurn(c, targetPlayer);
+    riposteOptions.onCancel = () => releaseBanditAttackTurn(c, targetPlayer);
+    window.Combat.beginStagedAction(riposteOptions);
   }
 
   // "Choose an attack, then judge how close to get" -- gates the
