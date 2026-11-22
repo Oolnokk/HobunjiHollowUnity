@@ -1533,6 +1533,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   ctx.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
   canvas.hobunjiPortraitGlow = null; // Rebuild/removal must clear stale mask lighting.
   canvas.hobunjiPortraitGlows = null;
+  canvas.hobunjiBeardHoodCutout = null; // Mobile/debug snapshot, reset so changing to an unmasked beard cannot report stale holes.
 
   const _tintSpeciesId = resolvedFighter?.speciesId || fighter?.speciesId || '';
   const tintFor = (slot) => {
@@ -1913,7 +1914,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     return [c.r, c.g, c.b];
   };
 
-  const withPixelDyeLayer = (entry, draw) => {
+  const withPixelDyeLayer = (entry, draw, destination = ctx) => {
     const { layer, group } = entry;
     let img = imgMap.get(layer.url);
     if (!img) return;
@@ -1930,11 +1931,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         const glow = layer.pixelDye.glow;
         if (glow && img.pixelDyeCentroids?.length) {
           const color = '#' + rgb.map(c => Math.round(c).toString(16).padStart(2, '0')).join('');
-          ctx.save();
-          ctx.shadowColor = color;
-          ctx.shadowBlur = Number(glow.blur) || 3;
+          destination.save();
+          destination.shadowColor = color;
+          destination.shadowBlur = Number(glow.blur) || 3;
           draw(img, tint, sourceKey);
-          ctx.restore();
+          destination.restore();
           const xf = resolveXform(layer);
           const h = PORTRAIT_L * xf.sy;
           const w = img.width / img.height * PORTRAIT_L * Math.abs(xf.sx);
@@ -1959,14 +1960,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList) => {
+  const drawBreathingLayers = (layerList, destination = ctx) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(ctx, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
+        drawPortraitLayerWarped(destination, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
       } else {
-        drawPortraitLayer(ctx, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
+        drawPortraitLayer(destination, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
       }
-    });
+    }, destination);
   };
 
   // Neck-rig construction needs the base head's real opaque-pixel centroid,
@@ -2120,7 +2121,26 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   drawEmoteLayers(upperFaceLayers);
   drawEmoteLayers(hatUnderLayers);
   drawEmoteLayers(elevatedEyeAccessoryLayers);
-  drawBreathingLayers(hoodLayers);
+  const cutoutApi = window.PortraitBeardHoodCutout;
+  const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride
+    || resolveBeardHoodCutoutMask(facialHair, resolvedFighter);
+  // The beard was already painted at main's original draw position above.
+  // Only this later, front-facing hood canvas gets destination-out cutouts.
+  if (cutoutApi && hoodLayers.length && facialHairLayers.length
+      && !hiddenCosmeticGroups.has(facialHair) && paintedBeardMask?.runs?.length) {
+    const cloth = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Reuse scratch on periodically redrawn dialogue portraits.
+    if (cloth.width !== PORTRAIT_CW) cloth.width = PORTRAIT_CW;
+    if (cloth.height !== PORTRAIT_CH) cloth.height = PORTRAIT_CH;
+    canvas.hobunjiBeardHoodTempCanvas = cloth;
+    const clothContext = cloth.getContext('2d');
+    clothContext.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
+    drawBreathingLayers(hoodLayers, clothContext);
+    const result = cutoutApi.applyToHood(cloth, paintedBeardMask);
+    ctx.drawImage(cloth, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
+    canvas.hobunjiBeardHoodCutout = {applied: result.applied, maskPixels: result.cutPixels};
+  } else {
+    drawBreathingLayers(hoodLayers);
+  }
   drawEmoteLayers(maskLayers); // Face masks sit over the hood opening in the front portrait (hood first, mask on top).
   if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
@@ -2361,6 +2381,19 @@ function resolveOptionLayers(option, fighter) {
   return option.layers || [];
 }
 
+function resolveBeardHoodCutoutMask(option, fighter) {
+  if (!option) return null;
+  const variants = option.variantHoodCutoutMasks || null;
+  if (fighter && variants) {
+    for (const key of portraitVariantKeysForFighter(fighter, option)) {
+      // The selected artwork's matching variant owns its mask. A donor's
+      // mask must never be applied to unrelated fallback facial-hair pixels.
+      if (option.variantLayers?.[key]?.length) return variants[key] || option.hoodCutoutMask || null;
+    }
+  }
+  return option.hoodCutoutMask || null;
+}
+
 function portraitOptionFromJson(entry, json) {
   const label    = (json.meta && json.meta.name) || entry.id.split('::').pop().replace(MAO_AO_SHORT_ID_PREFIX_RE, '').replace(/_/g, ' ');
   const tintSlot = (json.appearance && json.appearance.bodyColors && json.appearance.bodyColors[0]) || null;
@@ -2411,7 +2444,14 @@ function portraitOptionFromJson(entry, json) {
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly };
+  const maskApi = window.PortraitBeardHoodCutout;
+  const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null; // Authored in front-portrait coordinates, independent of beard art tint.
+  const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
+  for (const [key, value] of Object.entries(json.speciesVariants || {})) {
+    const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
+    if (mask?.runs.length) variantHoodCutoutMasks[key] = mask;
+  }
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
