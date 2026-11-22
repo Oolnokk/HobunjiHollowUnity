@@ -118,7 +118,6 @@
   const heldRegistry = new SceneRegistry();
   const groundRegistry = new SceneRegistry();
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
-  const waterRegistry = new SceneRegistry(); // All tagged water surfaces; also exposed in diagnostics.
   const tintCoverRegistry = new SceneRegistry(); // Translucent water/slush to blend over submerged feet, hands and held gear (never opaque snow).
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Procedural foot meshes, drawn in the selective x-ray overlay with real water/snow/grass depth.
@@ -187,8 +186,6 @@
   let lastXrayOrdinaryMeshes = 0; // Parts that can use ordinary depth in the latest pass.
   let lastElevationReplayGroups = 0; // Mobile diagnostics: number of standing-height depth replays in the latest base/shell pass.
   let lastUnknownElevationMeshes = 0; // Mobile diagnostics: unresolved actor meshes intentionally left fully occluded.
-  let lastElevationShaderMaterials = 0; // Materials with the standard elevation-aware shader hook active.
-  let lastElevationShaderFallbacks = 0; // Custom/unsupported ground shaders retained as ordinary depth occluders.
   let internalReplay = false;
   let lastDebugSignature = '';
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
@@ -1281,7 +1278,6 @@
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
     }
     if (isWaterSurface(object)) {
-      waterRegistry.add(object);
       if (!waterMeshes.has(object)) {
         waterMeshes.add(object);
         waterMeshCount++;
@@ -3210,47 +3206,94 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return data.hobunjiXrayRoadSurface;
   }
 
-  function collectGroundElevationMaterials(groundMeshes) {
-    const seen = new Set();
-    const liveNormals = new Map(); // Recomputes normal availability from this scene's drawable ground, not old geometry or another cached zone.
-    let materialCount = 0;
-    let fallbackCount = 0;
-    for (const mesh of groundMeshes) {
-      const position = mesh?.geometry?.attributes?.position;
-      // TerrainRenderChunks leaves each split source mesh in place as an
-      // empty-geometry parent of its chunks. It draws nothing, but it shares
-      // the chunks' material, and treating it as "geometry without normals"
-      // used to switch the x-ray off for the whole path/floor material.
-      if (!position || !position.count) continue;
-      const roadSurface = isRoadXrayMesh(mesh);
-      forEachMaterial(mesh?.material, material => {
-        const state = installGroundElevationShader(material);
-        if (!state) return;
-        const geometryHasNormals = !!mesh.geometry.attributes.normal && !mesh.isBatchedMesh;
-        liveNormals.set(material, (liveNormals.get(material) ?? true) && geometryHasNormals); // Mixed normal/normal-less meshes still fail closed together.
-        if (roadSurface || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
-        if (seen.has(material)) return;
-        seen.add(material);
-        if (state.supported) materialCount++;
-        else if (state.compileAttempted) fallbackCount++;
+  const groundElevationCache = new WeakMap(); // Each scene retains its latest visible ground material inputs.
+  let groundMaterialCacheHits = 0, groundMaterialCacheBuilds = 0; // Performance Profiler counts across both replay paths.
+  let lastGroundElevationMaterials = null; // Read current compile outcomes when diagnostics are requested.
+
+  function collectGroundElevationMaterials(groundMeshes, scene) {
+    let cached = scene && groundElevationCache.get(scene); // Reuse when both replays see the same ground inputs.
+    if (!groundElevationInputsMatch(cached, groundMeshes)) {
+      // Empty chunk-source parents share the chunks' materials but draw nothing.
+      // An actually drawable mesh without normals still disables the filter for
+      // its whole material, including any otherwise compatible meshes sharing it.
+      const inputs = groundMeshes.map(mesh => {
+        const material = mesh.material;
+        return {
+          mesh, material, slots: Array.isArray(material) ? material.slice() : null,
+          mode: groundElevationGeometryMode(mesh), road: isRoadXrayMesh(mesh),
+        };
       });
+      const materialUses = new Map(); // Aggregate normal availability and road rules once per material.
+      for (const { material, mode, road } of inputs) {
+        if (!mode) continue;
+        forEachMaterial(material, entry => {
+          if (!entry) return;
+          const use = materialUses.get(entry);
+          if (use) {
+            use.hasNormals &&= mode === 2;
+            use.road ||= road;
+          } else materialUses.set(entry, { hasNormals: mode === 2, road, state: null });
+        });
+      }
+      cached = { inputs, materialUses, materials: new Set(materialUses.keys()) };
+      if (scene) groundElevationCache.set(scene, cached);
+      groundMaterialCacheBuilds++;
+    } else groundMaterialCacheHits++;
+
+    for (const [material, use] of cached.materialUses) {
+      let state = use.state;
+      // Materials may be shared across scenes or get a new compile callback.
+      // Reconcile the live owner and normal policy before enabling the filter.
+      const compile = material.onBeforeCompile;
+      if (!state || material.userData?.hobunjiXrayElevationShader !== state ||
+          compile?.__hobunjiXrayElevationState !== state || compile.__hobunjiXrayMaterialOwner !== material) {
+        state = use.state = installGroundElevationShader(material);
+      }
+      if (use.road || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
+      if (state.geometryHasNormals !== use.hasNormals) {
+        state.geometryHasNormals = use.hasNormals;
+        material.needsUpdate = true;
+      }
     }
-    for (const [material, hasNormals] of liveNormals) {
-      const state = material.userData.hobunjiXrayElevationShader;
-      if (state.geometryHasNormals === hasNormals) continue;
-      state.geometryHasNormals = hasNormals;
-      material.needsUpdate = true; // Geometry replacement or zone changes can restore normals: recompile the safe shader variant.
+    lastGroundElevationMaterials = cached.materials;
+    return cached.materials;
+  }
+
+  function groundElevationGeometryMode(mesh) {
+    const attributes = mesh.geometry?.attributes; // Track only geometry changes that can affect shader eligibility.
+    if (!attributes?.position?.count) return 0;
+    return attributes.normal && !mesh.isBatchedMesh ? 2 : 1;
+  }
+
+  function groundElevationInputsMatch(cached, groundMeshes) {
+    if (!cached || cached.inputs.length !== groundMeshes.length) return false;
+    for (let i = 0; i < groundMeshes.length; i++) {
+      const mesh = groundMeshes[i], input = cached.inputs[i]; // A new, hidden, or unloaded mesh changes the live list.
+      if (input.mesh !== mesh || input.material !== mesh.material || input.mode !== groundElevationGeometryMode(mesh) ||
+          input.road !== isRoadXrayMesh(mesh)) return false;
+      const slots = input.slots; // Catch in-place edits to multi-material meshes.
+      if (!slots) continue;
+      if (slots.length !== mesh.material.length) return false;
+      for (let slot = 0; slot < slots.length; slot++) if (slots[slot] !== mesh.material[slot]) return false;
     }
-    lastElevationShaderMaterials = materialCount;
-    lastElevationShaderFallbacks = fallbackCount;
-    return seen;
+    return true;
+  }
+
+  function groundElevationMaterialStats() {
+    let supported = 0, fallback = 0; // Compiles can complete after the ground material cache was used.
+    for (const material of lastGroundElevationMaterials || []) {
+      const state = material.userData?.hobunjiXrayElevationShader;
+      if (state?.supported) supported++;
+      else if (state?.compileAttempted) fallback++;
+    }
+    return { supported, fallback };
   }
 
   function setGroundElevationFilter(materials, group, mode = 1) {
     for (const material of materials) {
       const { uniforms } = material.userData.hobunjiXrayElevationShader;
       uniforms.enabled.value = group ? mode : 0;
-      if (!group) continue;
+      if (!group || uniforms.centers.value === group.centers) continue;
       uniforms.elevation.value = group.elevation;
       uniforms.centerCount.value = group.regions.length;
       uniforms.centers.value = group.centers;
@@ -3600,7 +3643,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
     let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
-    const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
+    const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes, scene) : null; // Reuse the same material list for every tile batch.
     if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
     // Screen-space overlap alone is insufficient: a long merged river can
     // project over the player's silhouette even when every wet tile is far away.
@@ -3640,6 +3683,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const nearReplay = groups.some(group => group.regions.length) ? nearReplaySupport(canLockColorMask) : null; // Only depth-clearing x-ray groups benefit.
     const allowFarOnly = !!nearReplay; // Far-plane-only objects may leave only when replay depth comes back by copy (ScissorDepthSnapshot).
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let groundFilterActive = false; // Cleanup for a replay interrupted before its per-group restore.
     let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
     let nearSnapshotFailed = false;
     let baseDepthTouched = false; // A depth-modifying group already ran since the snapshot.
@@ -3706,7 +3750,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
-        if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
+        if (group.regions.length) {
+          groundFilterActive = true;
+          setGroundElevationFilter(groundMaterials, group);
+        }
         const supplementDepth = !group.regions.length && canLockColorMask && !rebuildAirborne; // Airborne gear must not reuse base sky/backdrop depth.
         let punched = false; // Floor punch kept the existing depth (see punchHeldGroupFloor).
         if (supplementDepth) ordinaryDepthClearsAvoided++;
@@ -3771,7 +3818,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             colorBuffer.setMask(true);
           }
           restoreMaterialStates(depthMaterialStates);
-          if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
+          if (groundFilterActive) {
+            setGroundElevationFilter(groundMaterials, null);
+            groundFilterActive = false;
+          }
         }
 
         // This depth must be reintroduced after every clearDepth()/rebuild,
@@ -3923,7 +3973,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       stencilBuffer?.setMask?.(0xff); // The read-only water tint sets the write mask to zero.
       renderer.clearStencil?.();
     } finally {
-      if (groundMaterials) setGroundElevationFilter(groundMaterials, null);
+      if (groundFilterActive) setGroundElevationFilter(groundMaterials, null);
       if (suppressedOverlay) restoreDraws(suppressedOverlay);
       if (coversHidden) restoreVisibility(coversHidden);
       if (replayCulled) restoreVisibility(replayCulled);
@@ -4032,7 +4082,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const shellColorBuffer = glState?.buffers?.color; // Only shell depth renders use its fast colorless GPU mask.
     const canMaskShellColor = !!(shellColorBuffer?.setMask && shellColorBuffer?.setLocked); // Unavailable on fake/legacy renderers; keep material transaction.
     const groundMeshes = [...ground, ...topFaceGround];
-    const groundMaterials = groups.some(group => group.regions.length) ? collectGroundElevationMaterials(groundMeshes) : null; // Scan the ground materials once per replay.
+    const groundMaterials = groups.some(group => group.regions.length) ? collectGroundElevationMaterials(groundMeshes, scene) : null; // Reuse the held pass aggregate when the visible ground matches.
     const groupCullCandidates = groups.length > 1 ? [] : null; // Reused by each shell depth draw.
     let scissorActive = false;
     let depthWasCleared = false;
@@ -4044,6 +4094,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : []; // Visual backgrounds are never true hand/foot shell occluders.
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let groundFilterActive = false; // Cleanup for a shell group interrupted before its usual restore.
     let nearToken = null; // Saved depth of the replay rectangle as the shell pass found it.
     
     internalReplay = true;
@@ -4098,7 +4149,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // a different floor than its source object.
       for (const group of groups) {
         const groupScissored = scissorActive && applyElevationScissor(renderer, camera, group.meshes, glState, shellPadding);
-        if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
+        if (group.regions.length) {
+          groundFilterActive = true;
+          setGroundElevationFilter(groundMaterials, group);
+        }
         // No floor punch here: by the shell pass the saved depth also holds the
         // PNG-silhouette occluder pass, which the clear-and-redraw below removes
         // around the holder. Keeping it hid hand/foot outlines (seen in testing).
@@ -4124,7 +4178,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
           if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
-          if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
+          if (groundFilterActive) {
+            setGroundElevationFilter(groundMaterials, null);
+            groundFilterActive = false;
+          }
         }
 
         const groupSet = new Set(group.meshes);
@@ -4140,7 +4197,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         }
       }
     } finally {
-      if (groundMaterials) setGroundElevationFilter(groundMaterials, null); // An interrupted replay must never leave the filter active for the next pass.
+      if (groundFilterActive) setGroundElevationFilter(groundMaterials, null); // An interrupted replay must never leave the filter active for the next pass.
       // Rebuild complete, unfiltered scene depth before later outline and
       // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
@@ -4202,10 +4259,11 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (!xrayMeshes.length) {
         lastShellElevationGroups = 0;
         lastShellFullscreenReason = 'no-visible-participants';
+        return originalRender.call(this, scene, camera);
       }
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
-      if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
+      if (!ground.length && !topFaceGround.length) {
         return originalRender.call(this, scene, camera);
       }
       const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
@@ -4268,7 +4326,6 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const ground = collectVisible(groundRegistry, scene);
     const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
-    const water = collectVisible(waterRegistry, scene); // Existing water diagnostics and all tagged water surfaces.
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene, replayOthers); // Procedural foot meshes share selective ground x-ray.
     const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
@@ -4283,11 +4340,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (!held.length && !feet.length && !canTintPortraits) return renderBase();
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
-    const needsOwnerMask = held.some(isPortraitMaskedGear)
-      && collectVisible(frontPortraitRegistry, scene).length > 0; // Do not early-return when the private stencil is absent.
-    if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
-      lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
-      return renderBase();
+    if (!ground.length && !topFaceGround.length && !tintCovers.length) {
+      const needsOwnerMask = held.some(isPortraitMaskedGear)
+        && collectVisible(frontPortraitRegistry, scene).length > 0; // The mask can use physical depth when the private stencil is absent.
+      if (!needsOwnerMask) {
+        lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+        return renderBase();
+      }
     }
 
     baseWorldRenderCount++;
@@ -4348,6 +4407,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
   function snapshot() {
     if (classificationScheduled) flushClassification(); // Diagnostics/tests read counts right after add().
+    const elevationMaterials = groundElevationMaterialStats(); // Current shader support, including recent compiles.
     return {
       installed: true,
       enabled,
@@ -4429,8 +4489,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       forcedGroundDepthMaterials: lastForcedGroundDepthMaterials, // Ground depth repaired for gear without changing the world pass.
       xrayOrdinaryMeshes: lastXrayOrdinaryMeshes,
       unknownElevationMeshes: lastUnknownElevationMeshes,
-      elevationShaderMaterials: lastElevationShaderMaterials,
-      elevationShaderFallbacks: lastElevationShaderFallbacks,
+      elevationShaderMaterials: elevationMaterials.supported,
+      elevationShaderFallbacks: elevationMaterials.fallback,
+      groundMaterialCacheHits, groundMaterialCacheBuilds,
       surfaceOcclusionComposer: surfaceComposer?.snapshot?.() || null,
     };
   }
@@ -4455,7 +4516,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
-    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
     let removed = 0;
     for (const registry of registries) {
       const bucket = registry.byScene.get(scene);
@@ -4466,6 +4527,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       pendingClassification.delete(object); // A queued add must not restore references after scene disposal.
       for (const registry of registries) if (registry.delete(object)) removed++;
     });
+    if (groundElevationCache.get(scene)?.materials === lastGroundElevationMaterials) lastGroundElevationMaterials = null;
+    groundElevationCache.delete(scene);
     lastSceneScan.delete(scene);
     return removed;
   }

@@ -429,7 +429,7 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /!ground\.length && !topFaceGround\.length && !tintCovers\.length && !needsOwnerMask/,
+assert.match(heldRender, /if \(!ground\.length && !topFaceGround\.length && !tintCovers\.length\) \{[\s\S]{0,300}if \(!needsOwnerMask\)/,
   'held/foot x-ray, water tint and an owner-front portrait mask each trigger the required selective overlay');
 assert.match(heldRender, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'the no-ground case still masks weapons behind their holder front portrait');
@@ -776,10 +776,10 @@ missingLitMaterial.onBeforeCompile(missingLitShader, {});
 assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
 
 
-const filterStart = heldRender.indexOf('  function collectGroundElevationMaterials(');
+const filterStart = heldRender.indexOf('  const groundElevationCache =');
 const filterEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', filterStart);
 const { collect, setFilter } = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
-  'let lastElevationShaderMaterials, lastElevationShaderFallbacks;' + heldRender.slice(filterStart, filterEnd)
+  heldRender.slice(filterStart, filterEnd)
   + elevationNewline + 'return { collect: collectGroundElevationMaterials, setFilter: setGroundElevationFilter };')(
     (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
     installElevationShader,
@@ -812,6 +812,27 @@ assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHa
   'the live ground with normals regains x-ray after transient/replaced normal-less geometry is removed');
 assert.equal(sharedGroundMaterial.needsUpdate, true,
   'the recovered ground material recompiles its shader, rather than retaining a stale solid-only variant');
+const cachedGroundScene = {}; // Each visible scene gets its own aggregate, even with shared materials.
+const otherGroundScene = {};
+const slots = [sharedGroundMaterial];
+const cachedGround = [{ material: slots, geometry: drawable({ normal: {} }) }];
+const firstMaterials = collect(cachedGround, cachedGroundScene);
+assert.equal(collect([...cachedGround], cachedGroundScene), firstMaterials, 'shell and color replays reuse the same material set');
+collect([{ material: sharedGroundMaterial, geometry: drawable() }], otherGroundScene);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false);
+assert.equal(collect(cachedGround, cachedGroundScene), firstMaterials);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'cached scene restores the correct shared shader policy');
+const replacementGroundMaterial = { userData: {} };
+slots[0] = replacementGroundMaterial;
+assert.deepEqual([...collect(cachedGround, cachedGroundScene)], [replacementGroundMaterial], 'in-place material slot replacement invalidates the cache');
+cachedGround[0].geometry = drawable();
+collect(cachedGround, cachedGroundScene);
+assert.equal(replacementGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false, 'geometry replacement invalidates the normal policy');
+const replacementCompile = () => {};
+replacementGroundMaterial.onBeforeCompile = replacementCompile;
+collect(cachedGround, cachedGroundScene);
+assert.equal(replacementGroundMaterial.onBeforeCompile.__hobunjiXrayBaseCompile, replacementCompile, 'a changed compile callback is rewrapped on a cache hit');
+assert.equal(collect([], cachedGroundScene).size, 0, 'unloaded or hidden ground leaves the cache');
 const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
   { material: chunkedGroundMaterial, geometry: { attributes: {} } },
