@@ -298,6 +298,10 @@
     };
   }
 
+  const sizeScalePercentages = sizes => Object.fromEntries(['large','medium','small'].map(size => [
+    size, { x: sizes[size].x * 100, y: sizes[size].y * 100 },
+  ])); // Shared export/UI mirror derived from each species' canonical local PNG-plane scales.
+
   // Pingdort's latest authored floor lifts keep the native flying-foot baseline for Large/Medium,
   // while Medium uses 0.218 and Small uses 0.07; its shoulder grip is authored separately.
   const pingdortFootLift = 0.14842300556586271; // Used to retain the exact Large/Medium ground offsets in the exported rig.
@@ -308,7 +312,7 @@
     shoulderGripRule: { source: 'native-flying-sprite-foot', coordinateSpace: 'unscaled-idle-png-plane-local', defaultRuleVersion: 5, authoredDefaultVersion: 7, authoredFixed: true, recalculateOnPreview: false },
     sizeScales: { large: { x: 3.5, y: 3.5 }, medium: { x: 1.75, y: 1.75 }, small: { x: 1, y: 1 } },
     groundOffsets: { large: pingdortFootLift, medium: 0.218, small: 0.07 },
-    sizeScalePercentages: {},
+    sizeScalePercentages: sizeScalePercentages({ large: { x: 3.5, y: 3.5 }, medium: { x: 1.75, y: 1.75 }, small: { x: 1, y: 1 } }),
     saddleRule: {},
     sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds', authoredDefaultVersion: 6, authoredFixed: true },
     shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
@@ -329,7 +333,7 @@
     sizeScales: { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } },
     sizeScaleRule: { version: 1, axes: 'png-plane-local-x-y', zScale: 1, applicationOrder: 'before-outer-prism-and-world-bounds' },
     shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
-    sizeScalePercentages: {},
+    sizeScalePercentages: sizeScalePercentages({ large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } }),
   };
   masterCreatures['skeeri-medium'] = { ...skeeriMediumRig, chatheadFrame: { ...creatureChatheadFrames['skeeri-medium'] } };
   const skeeriUnscaledSizeClasses = { // Native-width ruin varieties must not also apply Medium Skeeri's unrelated size multipliers.
@@ -348,7 +352,7 @@
       sizeScales: clone(kind === 'skeeri' ? skeeriDomesticSizeClasses : skeeriUnscaledSizeClasses),
       sizeScaleRule: { ...skeeriMediumRig.sizeScaleRule },
       shoulderGripRotationDefaultVersion: 2, creatureShoulderGripDefaultVersion: 4,
-      sizeScalePercentages: {},
+      sizeScalePercentages: sizeScalePercentages(kind === 'skeeri' ? skeeriDomesticSizeClasses : skeeriUnscaledSizeClasses),
     };
   }
 
@@ -580,11 +584,6 @@
       else delete merged.sizeScalePercentages[sizeClass]; // The new Pingdort master intentionally has no duplicate percent rows for reauthored classes.
       repaired = true;
     }
-    if (kind === 'pingdort' && repaired
-        && sameNumber(merged.sizeScalePercentages?.small?.x, 100)
-        && sameNumber(merged.sizeScalePercentages?.small?.y, 100)) {
-      delete merged.sizeScalePercentages.small; // Clear the old redundant 100% Small mirror only when migrating a stock Pingdort size row.
-    }
     return repaired;
   }
   function reconcileProfiles(input = {}) {
@@ -615,6 +614,9 @@
       const canonical = masterCreature(kind);
       const candidate = output.creatures[kind] || {};
       const merged = { ...clone(canonical), ...candidate, anchors: { ...clone(canonical.anchors), ...(candidate.anchors || {}) } };
+      if (Object.keys(canonical.sizeScalePercentages || {}).length && !Object.keys(candidate.sizeScalePercentages || {}).length) {
+        merged.sizeScalePercentages = clone(canonical.sizeScalePercentages); // Migrate old no-percentage Pingdort/Skeeri exports without rewriting authored percentage controls.
+      }
       const oldGrip = merged.anchors.shoulderGrip;
       const drenkirraOldPosition = kind === 'drenkirra' && normalizeStalePositions(staleCreatureShoulderGrips.drenkirra)
         .some(position => samePosition(oldGrip?.position, position)); // Detects a known obsolete socket XYZ independently from any hand-authored rotation.
