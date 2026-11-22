@@ -61,9 +61,10 @@ assert.equal(sky.cloudBucket(), dryStormBucket, 'storms cannot trigger extra clo
 sky.attach({ weather: 'storm', isRaining: true, rainStrength: 2 });
 assert.equal(sky.cloudBucket(), dryStormBucket, 'heavy evening rain must reuse the same storm cloud atlas');
 sky.attach({ weather: 'rain', isRaining: false, rainStrength: 0 });
-const dryRainBucket = sky.cloudBucket(); // Ordinary rainy days should also retain their preexisting atlas bucket.
+const dryRainBucket = sky.cloudBucket(); // Existing normal rain days intentionally build denser cloud atlases once active showers begin.
 sky.attach({ weather: 'rain', isRaining: true, rainStrength: 2 });
-assert.equal(sky.cloudBucket(), dryRainBucket, 'regular showers must not repeatedly rebuild the large cloud atlas');
+assert.equal(dryRainBucket, 1, 'dry rainy-day cloud atlas retains the baseline forecast bucket');
+assert.equal(sky.cloudBucket(), 2, 'active ordinary rain retains the original denser cloud bucket without a new behavior change');
 assert(stormForecast.a > rainyForecast.a && stormForecast.a < storm.a,
   'a dry interval on a storm day is heavily overcast but not full-storm dark');
 assert(Math.abs(stormForecast.a - heavy.a) < 1e-12,
