@@ -170,6 +170,38 @@
     player.climbHopBounce = 0; // Physical lift is already in climbSurfaceY; never add it twice.
   }
 
+  // Hits may change airborne horizontal momentum, but the same gravity owner
+  // retains feetY and descending speed. No second knockback movement timer runs.
+  function receiveKnockback(dirX, dirZ, speedPxS) {
+    const state = deps?.player?._freeJump;
+    if (state?.phase !== 'air') return false;
+    const magnitude = Math.hypot(Number(dirX) || 0, Number(dirZ) || 0);
+    const tilesPerSecond = Math.max(0, number(speedPxS, 0)) / deps.TILE;
+    if (magnitude > 1e-6 && tilesPerSecond > 0) {
+      state.knockbackVX = number(state.knockbackVX, 0) + dirX / magnitude * tilesPerSecond;
+      state.knockbackVZ = number(state.knockbackVZ, 0) + dirZ / magnitude * tilesPerSecond;
+    }
+    return true;
+  }
+
+  function knockProne() {
+    const player = deps?.player, state = player?._freeJump;
+    if (!state || state.phase !== 'air') return false;
+    if (!state.proneFall) {
+      state.proneFall = true; // Used only at landing to route the drop through the existing cliff collision profile.
+      state.proneFallStartY = Math.max(state.feetY, number(state.launchGround, state.feetY));
+      state.deliberate = false;
+      state.noGrab = true; // An unconscious/prone actor cannot re-grab a ladder, rope or cliff halfway down.
+      state.assist = null;
+      if (!state.external && state.vy > 0) state.vy = 0; // Ascending actors start falling; descending actors keep their existing velocity.
+      debug.lastEvent = 'knocked prone in air';
+    }
+    player.proneThrowT = 0; // Reuse horizontal airborne momentum instead of moving twice with the grounded throw timer.
+    player.proneThrowVX = 0; player.proneThrowVY = 0;
+    window.KnockbackCollisionImpact?.cancel?.(player);
+    return true;
+  }
+
   function reset(player, reason = 'reset') {
     if (!player?._freeJump) return;
     player._freeJump = null;
@@ -353,10 +385,13 @@
 
   function stepMovement(state, seconds, speed, previousY = state.feetY) {
     const player = deps.player;
-    const direction = movementVector();
+    const direction = player.prone ? { x: 0, z: 0, strength: 0 } : movementVector(); // Prone bodies retain ballistic travel, not midair steering.
     player.inputX = direction.x; player.inputY = direction.z; player.inputStrength = direction.strength; // Keep aiming/movement systems informed during free jumps and raised-support walking.
     if (tryAirGrab(state, direction.strength ? direction : state.lastDirection || { x: Math.cos(player.angle || 0), z: Math.sin(player.angle || 0) }, previousY)) return;
-    const carryX = number(state.vx, 0) * seconds, carryZ = number(state.vz, 0) * seconds; // Ballistic rope velocity is retained while steering remains available.
+    const carryX = (number(state.vx, 0) + number(state.knockbackVX, 0)) * seconds;
+    const carryZ = (number(state.vz, 0) + number(state.knockbackVZ, 0)) * seconds; // Existing rope momentum and hit impulses share the collision sweep.
+    state.knockbackVX = number(state.knockbackVX, 0) * Math.exp(-9 * seconds);
+    state.knockbackVZ = number(state.knockbackVZ, 0) * Math.exp(-9 * seconds); // Knockback decays; rope momentum remains untouched.
     if (!direction.strength && !Math.hypot(carryX, carryZ)) { state.assist = null; return; }
     if (!direction.strength) state.assist = null;
     if (direction.strength) state.lastDirection = direction; // Falling beside the approached face can still catch it after movement input is released.
@@ -394,7 +429,7 @@
         continue;
       }
       if (state.phase === 'air' && state.obstaclePending) {
-        const target = findLandingAssist(state, direction); // A collider's clearance opens a bounded, swept landing assist.
+        const target = player.prone ? null : findLandingAssist(state, direction); // Prone cannot use assisted ledge hops. // A collider's clearance opens a bounded, swept landing assist.
         state.obstaclePending = false;
         state.blocked = null;
         if (target) { state.assist = { ...target, remaining: CONFIG.assistSeconds }; debug.assists++; }
@@ -429,10 +464,15 @@
     state.vy = 0;
     debug.landings++;
     debug.lastEvent = 'landed on ' + support.kind;
-    window.FallSystem?.land?.(player, {
-      dropWorld: Math.max(0, state.launchGround - support.y),
-      deliberate: state.deliberate !== false, source: state.source || 'free jump',
+    const dropWorld = Math.max(0, (state.proneFall ? state.proneFallStartY : state.launchGround) - support.y);
+    const cliffImpact = state.proneFall ? window.HobunjiCliffFallImpact?.resolve?.(player, {
+      dropWorld, dropTiers: window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5,
+      dirX: 0, dirY: 0,
+    }) : null; // Same Health/Footing/affliction profile as a knockback off a real cliff.
+    if (!cliffImpact) window.FallSystem?.land?.(player, {
+      dropWorld, deliberate: state.deliberate !== false, source: state.source || 'free jump',
     });
+    state.proneFall = false; // A supported roof landing must not charge the impact again on its next tick.
     if (support.kind === 'ground') {
       window.DevRandomRuin?.acceptFreeJumpLanding?.(support.y); // Prevent multi-story ruins from charging the same drop a second time.
       reset(player, 'landed on ground');
@@ -463,10 +503,11 @@
     const player = deps?.player, state = player?._freeJump;
     if (!state) return false;
     if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
-    if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
+    if (state.area !== deps.getCurrentArea() || player.health <= 0 ||
+      (player.prone && state.phase !== 'air' && state.phase !== 'supported') ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
       (player.dodging && state.phase !== 'air' && state.phase !== 'supported' && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
-      player.lunging || player.knockbackT > 0) { // Midair dodge must retain airborne feet, not snap to a lower shaft deck.
+      (player.lunging && !player.prone) || (player.knockbackT > 0 && state.phase !== 'air')) { // Airborne hits and prone must not cancel gravitational elevation.
       reset(player, 'jump interrupted/area changed');
       return false; // Let the native action/movement handler proceed in this frame.
     }
@@ -484,6 +525,10 @@
     }
     const nativeDodge=!!player.dodging && (state.phase==='air'||state.phase==='supported'); // Gravity/support remain here, but game.js must advance the real dodge timer and swept dash after this tick.
     let remaining = clamp(number(dt, 0), 0, CONFIG.maxFrameSeconds);
+    if (state.phase === 'supported' && player.prone) {
+      setElevation(player, state);
+      return true; // The settled ragdoll stays where it landed; no grounded steering until recovery.
+    }
     if (state.phase === 'supported') {
       const support = highestSupport(player.x / deps.TILE, player.y / deps.TILE,
         state.feetY + CONFIG.maxStepUp);
@@ -539,7 +584,12 @@
           reset(player, 'unsupported fall handed back to ruin');
         } else {
           player.x = state.safeX * deps.TILE; player.y = state.safeZ * deps.TILE;
-          window.FallSystem?.land?.(player, { dropWorld: 7, source: 'unsupported jump fall' });
+          const dropWorld = 7;
+          const cliffImpact = state.proneFall ? window.HobunjiCliffFallImpact?.resolve?.(player, {
+            dropWorld, dropTiers: window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5,
+            dirX: 0, dirY: 0,
+          }) : null;
+          if (!cliffImpact) window.FallSystem?.land?.(player, { dropWorld, source: 'unsupported jump fall' });
           reset(player, 'unsupported fall returned to safe ground');
         }
         return true;
@@ -572,7 +622,7 @@
 
   window.PlayerJump = Object.freeze({
     init(injected) { deps = injected; },
-    start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl,
+    start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl, receiveKnockback, knockProne,
     enterRoofSupport, // Only the explicit interior exit action may put a grounded actor on a high rooftop.
     canOccupyAir: (x, z, feetY) => blockingReason(x, z, feetY) === null,
     hasJumpableSupportAhead, // Ground steering yields to objects the existing jump solver can actually land on.
@@ -588,7 +638,9 @@
       const s = deps?.player?._freeJump;
       return { ...debug, latestChange: 'Free-jump and rope elevation now land on the same physical town/porch/bridge supports as ordinary walking', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
-        vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null,
+        vy: s?.vy ?? 0, proneFall: !!s?.proneFall, proneFallStartY: s?.proneFallStartY ?? null,
+        knockbackVX: s?.knockbackVX ?? 0, knockbackVZ: s?.knockbackVZ ?? 0,
+        elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null,
         baseAirMotion:Motion?.BASE||null,airMultipliers:Motion?{...Motion.multipliers}:null };
     },
     config: CONFIG,
