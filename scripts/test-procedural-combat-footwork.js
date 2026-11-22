@@ -103,6 +103,41 @@ assert(Math.abs(tallerGait.left.contactY - .04 * .75) < 1e-9, 'tall narrow feet 
 assert(Math.abs(widerGait.left.contactY - .04 * 1.5) < 1e-9, 'wide feet retain floor contact after mean-scaling');
 const measureWorldStride = gait => gait.gait.worldStrideLength / gait.gait.worldLegLength; // World reach bound cannot be tested by comparing two local distances.
 assert(measureWorldStride(tallerGait) <= 1.8 + 1e-9 && measureWorldStride(widerGait) <= 1.8 + 1e-9, 'no stride overextends the scaled world leg');
+// Full Character Scale adjusts ACTUAL hip-to-ankle reach, not the foot mesh or the portrait's parent scale.
+const independent = rig();
+const originalHip = independent.legs.standingPosteriorY; // Authored posterior/hip anchor in the same local frame as the feet.
+const startContact = independent.legs.getStandingPoseDebug().left.contactY;
+const restLength = originalHip - startContact;
+const extendedHip = independent.legs.setLegLengthMultiplier(1.75);
+assert(Math.abs(extendedHip - (startContact + restLength * 1.75)) < 1e-9,
+  'Leg length extends the actual hip while keeping the existing shoe contacts at floor level');
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact) < 1e-9,
+  'Leg length alone must not make the 3D foot larger or move the planted sole');
+assert(Math.abs(independent.legs.getRestStance().left.hip.y - extendedHip) < 1e-9,
+  'Pants and the real limb solver see the updated hip, not a cosmetic leg-height illusion');
+assert.equal(independent.legs.setLegLengthMultiplier(1.75), extendedHip, 'repeated leg slider values never accumulate stretch');
+const sizedFoot = independent.legs.setFootScaleMultiplier(1.4);
+assert.equal(sizedFoot, 1.4, 'independent Foot scale accepts the species multiplier');
+const afterFootSize = independent.legs.getStandingPoseDebug();
+assert(Math.abs(afterFootSize.left.contactY - startContact * 1.4) < 1e-9,
+  'scaling a fallback foot recomputes sole contact without resizing the hip-to-ankle percentage');
+assert(Math.abs(afterFootSize.left.targetY - afterFootSize.left.contactY) < 1e-9,
+  'resizing planted feet does not drive the toes through the floor');
+assert(Math.abs(independent.legs.standingPosteriorY - (afterFootSize.left.contactY
+    + (originalHip - afterFootSize.left.contactY) * 1.75)) < 1e-9,
+  'leg proportion survives an independently adjusted shoe size');
+independent.legs.setFootScaleMultiplier(1.4);
+assert.equal(independent.legs.getStandingPoseDebug().left.contactY, afterFootSize.left.contactY,
+  'reapplying foot size is idempotent, including for late asynchronous GLB replacements');
+independent.legs.setLegLengthMultiplier(1);
+assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
+  'leg length resets to its authored posterior when foot size is restored to the original multiplier');
+independent.legs.setFootScaleMultiplier(1);
+independent.legs.setLegLengthMultiplier(1);
+assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
+  'restoring both independent controls returns the entire leg chain to the original bind pose');
+independent.legs.dispose(); // Registry cleanup prevents hidden preview legs from receiving future global scale edits.
+
 const aspectChanged = rig(); // Starts with square body scale, then changes width/height in-place while standing still.
 tick(aspectChanged.legs, 0, {}, 1);
 aspectChanged.parent.userData.testBodyScale = { x: 1.5, y: .75 };
