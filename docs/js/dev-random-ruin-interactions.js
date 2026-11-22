@@ -365,9 +365,9 @@
     return rows;
   }
 
-  // Rows that are not aim targets: a swinging rope is caught by proximity,
-  // riding controls follow the player, and the exit is a spot, not an object.
-  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit','ruinshafttravel','ruincheckpointtravel']); // Waystone actions work by proximity without fighting the combat aim reticle.
+  // Rows that are not aim targets: rope riding controls follow the player after
+  // an airborne catch, and the exit is a spot rather than an object.
+  const AMBIENT_KINDS = new Set(['roperelease', 'ropebrake', 'exit','ruinshafttravel','ruincheckpointtravel']); // Waystone actions work by proximity without fighting the combat aim reticle.
   const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Both ordinary and upper-story hallway doors must offer an action from either side, even without reticle focus.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
