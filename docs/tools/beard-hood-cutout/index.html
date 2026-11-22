@@ -152,7 +152,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function scopeKey(){
     const entry=beardDoc?.speciesVariants?.[variant]; // A variant can define root points without replacing its artwork.
     return entry && (entry.parts?.head || Object.hasOwn(entry,'hoodCutoutMask')
-      || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch'))
+      || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch')
+      || Object.hasOwn(entry,'hoodTuftSubdivision') || Object.hasOwn(entry,'hoodTuftAboveInfluence')
+      || Object.hasOwn(entry,'hoodTuftBelowInfluence'))
       ? variant : 'shared';
   }
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
