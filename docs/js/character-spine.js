@@ -164,6 +164,25 @@
     return { x: Number(neckX) || 0, y: pivotY - Math.min(gap, posteriorGap) };
   }
 
+  // The original authored shoulder line remains authoritative for hands,
+  // weapon-orbit projections and cloth attachment, but it is no longer the
+  // endpoint of the portrait's spine skin. This separation prevents the new
+  // skull-high spline tip from pulling the attack orbit up to the chin.
+  function shoulderLocal({ speciesId, gender, modelHeight, placementRatio = 0.5, neckX = 0, neckY, posteriorY }) {
+    const height = Number(modelHeight); // Same floor-to-portrait conversion used by hand shoulder sockets and the posterior.
+    const fallback = { x: Number(neckX) || 0, y: neckY - .08 * height }; // Keeps skeletons without authored shoulders on their previous shoulder line.
+    if (!(height > 0) || !Number.isFinite(neckY)) return fallback;
+    const key = id => String(id || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    const g = String(gender || '').toLowerCase() === 'female' ? 'female' : 'male';
+    const anchors = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${key(speciesId)}::${g}`]?.anchors; // Shared authored shoulder anchor pairs, never painted head proxies.
+    const left = anchors?.leftHandShoulder?.position, right = anchors?.rightHandShoulder?.position;
+    if (![left?.x, left?.y, right?.x, right?.y].every(value => Number.isFinite(Number(value)))) return fallback;
+    const y = (Number(left.y) + Number(right.y)) / 2 - height / 2 - (Number(placementRatio) - .5) * height; // Convert floor-relative shoulder Y into the skinned plane.
+    const floor = Number.isFinite(posteriorY) ? posteriorY : neckY - WAIST_BELOW_NECK * height;
+    const plausible = y < neckY - .01 * height && y > floor + .15 * height; // Reject physically impossible profile anchors.
+    return plausible ? { x: (Number(left.x) + Number(right.x)) / 2, y } : fallback;
+  }
+
   // Where the spline starts (the posterior); falls back to a fixed stretch below the neck when the posterior is unknown or implausible.
   const waistFor = (neckY, modelHeight, posteriorY) =>
     Number.isFinite(posteriorY) && posteriorY < neckY - 0.1 * modelHeight ? posteriorY : neckY - WAIST_BELOW_NECK * modelHeight;
@@ -254,7 +273,8 @@
       }
     }
     Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, neckReachY: safeReach, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
-    profile.orbitOffset = deformAt(profile, baseY, {}); // The orbit centre is the shoulder line, where the spline ends.
+    const shoulderY = Number.isFinite(rig.shoulderLocalY) ? rig.shoulderLocalY : baseY; // The upper spine is now near the skull, but the held-item orbit must remain at the actual shoulder line.
+    profile.orbitOffset = deformAt(profile, shoulderY, {}); // Keep weapon/hands anchored to authored shoulders while the spine skins higher up.
     return true;
   }
 
@@ -415,6 +435,7 @@
     deformAt,
     posteriorLocalY,
     neckBaseLocal,
+    shoulderLocal,
     makeBoneGuides,
     stanceWiden: STANCE_WIDEN,
     strideWiden: STRIDE_WIDEN,
