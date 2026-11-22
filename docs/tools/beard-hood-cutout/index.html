@@ -58,6 +58,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <label for="coneSpread">Cone outward widening <span id="coneSpreadLabel">0 px per pixel down</span></label>
     <input id="coneSpread" type="range" min="0" max="2" step=".025" value="0">
     <p>At zero, every column directly below the detected bottom hood opening is removable. Increasing this widens the removable area like a cone; everything outside it rejects ordinary beard cutouts.</p>
+    <label><input id="topConeEnabled" type="checkbox"> Enable upper-rim cover (beats whiskers)</label>
+    <label for="topConeSpread">Top cover cone widening <span id="topConeSpreadLabel">0 px per pixel down</span></label>
+    <input id="topConeSpread" type="range" min="0" max="2" step=".025" value="0">
+    <p>Orange marks the top inner hood rim. Its cone extends downward to the lower opening, protecting drooping upper cloth even from purple whiskers. Zero widening still covers the narrow vertical columns; turn it off to preserve older hood behavior.</p>
     <div class="row">
       <button id="hoodAllowMode" type="button">Allow hood removal</button>
       <button id="hoodProtectMode" type="button">Protect hood from beard</button>
@@ -66,7 +70,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       <button id="protectWholeHood" type="button">Protect all hood</button>
       <button id="allowWholeHood" type="button">Allow all (legacy)</button>
     </div>
-    <p>Manual allow/protect painting switches to a custom permission mask based on the current cone. Automatic uses the lower inner rim without painting. Green = removable, red = protected. Whiskers (purple) override both.</p>
+    <p>Manual allow/protect painting switches to a custom permission mask based on the lower cone. Green = removable, red = protected; purple whiskers override normal protection. **The orange upper cover is stronger than all three** and applies even with manual hood masks.</p>
     <label for="brush">Brush radius <span id="brushLabel">4 px</span></label>
     <input id="brush" type="range" min=".5" max="24" step=".5" value="4">
     <label for="alphaFloor">Minimum paintable beard opacity <span id="alphaFloorLabel">95% (242/255)</span></label>
@@ -110,14 +114,14 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <h2>Export</h2>
     <div class="row"><button id="download" class="primary" type="button">Download beard JSON</button><button id="downloadHood" class="primary" type="button">Download hood JSON</button><button id="copy" type="button">Copy both mask settings</button></div>
     <label for="maskJson">Current beard request and hood permission masks</label><textarea id="maskJson" readonly></textarea>
-    <p>Beard export preserves existing fields and adds independent <code>hoodWhiskerMask</code> and <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code>, <code>hoodTuftSubdivision</code>, and separate upper/lower influence values in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata. Hood export saves <code>beardCutoutPermissionMode</code> (auto, painted, or all), <code>beardCutoutConeSpread</code>, and optional manual <code>beardCutoutAllowedMask</code>. Missing policy defaults to the generated cone; painted permissions remain editable. Both exports preserve other cosmetic fields.</p>
+    <p>Beard export preserves existing fields and adds independent <code>hoodWhiskerMask</code> and <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code>, <code>hoodTuftSubdivision</code>, and separate upper/lower influence values in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata. Hood export saves <code>beardCutoutPermissionMode</code> (auto, painted, or all), <code>beardCutoutConeSpread</code>, optional <code>beardCutoutTopConeSpread</code> (upper protection overriding whiskers), and optional manual <code>beardCutoutAllowedMask</code>. Missing policy defaults to the generated cone; painted permissions remain editable. Both exports preserve other cosmetic fields.</p>
   </section>
 </div>
 <div>
   <section>
     <h2>Paint on the beard or hood</h2>
     <canvas id="paintCanvas" class="paint" width="200" height="200" aria-label="Beard request or hood permission paint surface; drag with touch or mouse"></canvas>
-    <div class="caption">Teal = ordinary beard request; purple = priority whiskers (hood loses); green = allowed cone/cloth; red = protected cloth. Yellow pixels mark detected bottom inner-ring points. Pink pins move the rim.</div>
+    <div class="caption">Teal = ordinary beard request; purple = whiskers (win against normal refusal); orange = upper-rim cover (beats whiskers); green = allowed bottom cone; red = protected cloth. Yellow dots = bottom rim, orange dots = top rim, pink pins = tuft deformation.</div>
     <h2>Comparison — unaltered beard layer order</h2>
     <div class="pair">
       <div><canvas id="before" width="200" height="200" aria-label="Original hood preview"></canvas><div class="caption">Original hood</div></div>
@@ -139,13 +143,13 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const empty = () => ({size:SIZE,runs:[]});
   const blank = () => {const c=document.createElement('canvas');c.width=c.height=SIZE;return c;};
   const beardCanvas=blank(),hoodCanvas=blank(),headCanvas=blank(),maskedHood=blank(); // Offscreen prepared art, reused between every brush update.
-  const survivingBeard=blank(),permissionOverlay=blank(); // Result and permission diagnostics are separate from authored cosmetic sprites.
+  const survivingBeard=blank(),permissionOverlay=blank(),topCoverOverlay=blank(); // Scratch surfaces preview bilateral negotiation and strict upper-rim coverage.
   const stretchedHood=blank(); // Only recalculate the hood deformation when the roots, hood art, or stretch limit changes.
   let stretchedHoodPixels=new Uint8ClampedArray(SIZE*SIZE*4),stretchSnapshot=null,stretchKey='',hoodRevision=0;
   const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
   let mask=empty(),whiskerMask=empty(),roots=[],hoodAllowanceMask=null,beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
-  let hoodPermissionMode='auto',coneSpread=0; // Hood-owned auto/painted/all rule and widening, separate from beard-authored requests.
-  let automaticPermission=null,automaticKey=''; // Cache the detected lower ring and cone until hood art or a relevant setting changes.
+  let hoodPermissionMode='auto',coneSpread=0,topConeSpread=null; // Optional upper-cover spread is null when disabled for legacy hoods.
+  let automaticPermission=null,topCoverPermission=null,automaticKey=''; // Cache both rim masks until hood art or sliders change.
   let negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0}; // Exposed in mobile diagnostics and preview.
   const DEFAULT_PAINT_ALPHA=242; // Approximately 95% of 8-bit alpha, shared by both brush defaults.
   const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,DEFAULT_PAINT_ALPHA); // Beard paint/whisker/pin threshold only.
@@ -160,18 +164,20 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
   const draftStorageKey='hobunji-beard-hood-cutout-drafts-v3'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
   const drafts=new Map(); // Separate unsaved authoring per selected beard artwork/variant.
-  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v3'; // Hood masks plus opacity floor have their own persistent authoring scope.
+  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v4'; // Persist upper and lower cone controls independently with the hood.
   const hoodDrafts=new Map(); // Hood permissions are independent of whichever beard is currently selected.
   try {
     const stored=JSON.parse(localStorage.getItem(hoodDraftStorageKey)
+      ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v3')
       ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v2')
       ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v1')||'[]');
     if(Array.isArray(stored))for(const [key,value] of stored.slice(-100))if(typeof key==='string'){
       if(value&&typeof value==='object'&&Object.hasOwn(value,'mode'))
         hoodDrafts.set(key,{mode:value.mode,mask:Cut.normalizeMask(value.mask),
           spread:Cut.normalizeConeSpread(value.spread),
+          topSpread:value.topSpread==null?null:Cut.normalizeConeSpread(value.topSpread),
           alphaFloor:value.alphaFloor==null?null:Cut.alphaFloor(value.alphaFloor,DEFAULT_PAINT_ALPHA)});
-      else hoodDrafts.set(key,{mode:value==null?'all':'painted',mask:Cut.normalizeMask(value),spread:0,alphaFloor:null});
+      else hoodDrafts.set(key,{mode:value==null?'all':'painted',mask:Cut.normalizeMask(value),spread:0,topSpread:null,alphaFloor:null});
     }
   }catch(_){/* Private browsing may restrict local storage; JSON export remains usable. */}
   try {
@@ -207,6 +213,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const entry=hoodDoc?.speciesVariants?.[variant]; // Honor metadata-only variants even if the hood artwork is shared.
     return entry&&(entry.parts?.head||Object.hasOwn(entry,'beardCutoutAllowedMask')
       ||Object.hasOwn(entry,'beardCutoutPermissionMode')||Object.hasOwn(entry,'beardCutoutConeSpread')
+      ||Object.hasOwn(entry,'beardCutoutTopConeSpread')
       ||Object.hasOwn(entry,'beardCutoutPaintAlphaFloor'))?variant:'shared';
   }
   function hoodDraftKey(){return (hoodEntry?.path||'hood')+'|'+hoodScopeKey();}
@@ -215,9 +222,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const mask=Cut.normalizeMask(source?.beardCutoutAllowedMask??hoodDoc?.beardCutoutAllowedMask);
     const mode=source?.beardCutoutPermissionMode??hoodDoc?.beardCutoutPermissionMode;
     const spread=source?.beardCutoutConeSpread??hoodDoc?.beardCutoutConeSpread;
+    const topSpread=Object.hasOwn(source||{},'beardCutoutTopConeSpread')
+      ? source.beardCutoutTopConeSpread : hoodDoc?.beardCutoutTopConeSpread; // Explicit null variant can disable an inherited top cone.
     const alpha=source?.beardCutoutPaintAlphaFloor??hoodDoc?.beardCutoutPaintAlphaFloor;
     return {mask,mode:['auto','painted','all'].includes(mode)?mode:(mask?'painted':'auto'),
-      spread:Cut.normalizeConeSpread(spread),alphaFloor:Cut.alphaFloor(alpha??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA)}; // Unconfigured hood becomes auto; legacy painted masks remain painted.
+      spread:Cut.normalizeConeSpread(spread),topSpread:topSpread==null?null:Cut.normalizeConeSpread(topSpread),
+      alphaFloor:Cut.alphaFloor(alpha??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA)}; // Unconfigured hood becomes auto; legacy painted masks remain painted.
   }
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
@@ -229,7 +239,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
     if(hoodEntry){
       hoodDrafts.set(hoodDraftKey(),{mode:hoodPermissionMode,spread:coneSpread,
-        alphaFloor:selectedHoodAlphaFloor(), // Persist separately from beard threshold on mobile.
+        topSpread:topConeSpread,alphaFloor:selectedHoodAlphaFloor(), // Persist separately from beard threshold on mobile.
         mask:hoodAllowanceMask==null?null:JSON.parse(JSON.stringify(hoodAllowanceMask))});
       try{localStorage.setItem(hoodDraftStorageKey,JSON.stringify([...hoodDrafts].slice(-100)));}
       catch(_){/* Hood permissions are still exportable when storage is unavailable. */}
@@ -272,6 +282,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('hoodAlphaFloorLabel').textContent=Math.round(selectedHoodAlphaFloor()/255*100)+'% ('+selectedHoodAlphaFloor()+'/255)';
     $('stretchLabel').textContent=selectedStretch()+' px';
     $('coneSpreadLabel').textContent=Cut.normalizeConeSpread($('coneSpread').value).toFixed(3)+' px per pixel down';
+    $('topConeSpreadLabel').textContent=Cut.normalizeConeSpread($('topConeSpread').value).toFixed(3)+' px per pixel down';
     $('subdivisionLabel').textContent=selectedSubdivision()+' / 16 · '
       +(selectedSubdivision()<=2?'Broad':selectedSubdivision()<=5?'Medium':selectedSubdivision()<=10?'Local':'Very local');
     $('aboveInfluenceLabel').textContent=selectedAboveInfluence()+'%';
@@ -406,7 +417,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         hoodAllowanceMask=policy.mask;
         hoodPermissionMode=policy.mode;
         coneSpread=Cut.normalizeConeSpread(policy.spread);
+        topConeSpread=policy.topSpread==null?null:Cut.normalizeConeSpread(policy.topSpread);
         $('coneSpread').value=coneSpread;
+        $('topConeSpread').value=topConeSpread??0;
+        $('topConeEnabled').checked=topConeSpread!==null;
         $('hoodAlphaFloor').value=policy.alphaFloor??DEFAULT_PAINT_ALPHA;
         updateLabels();
         automaticKey='';
