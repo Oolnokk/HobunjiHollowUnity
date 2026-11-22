@@ -461,7 +461,7 @@
     const entry = layout.toTownExit
       ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
       : (Number.isFinite(zoneDef?.entryCol) ? { x: zoneDef.entryCol, y: zoneDef.entryRow } : null);
-    return { cols, rows, tiles, objects, entry };
+    return { cols, rows, tiles, objects, entry, sourceLayout: layout }; // Both tribes and generated scenery share one source-layout footprint registry.
   }
 
   const MIN_HUNTER_SEPARATION_TILES = 0.75;
