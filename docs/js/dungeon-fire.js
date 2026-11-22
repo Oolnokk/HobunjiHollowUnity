@@ -318,6 +318,10 @@
     return TARGETS.delete(String(id));
   }
 
+  function hasTarget(id) {
+    return TARGETS.has(String(id)); // A cached puzzle cave can restore target registration after a ruin transition clears the registry.
+  }
+
   function armNextProjectile() {
     if (!window.RangedWeapons?.equippedRangedKey?.()) return false;
     if(!pendingIgnition)window.RuinInteractionAudio?.igniteAmmo?.(); // The small ignition plays only on the successful unarmed→armed transition.
