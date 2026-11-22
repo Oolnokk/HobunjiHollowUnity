@@ -190,8 +190,8 @@
       if (saveKey && pendingFolderSaves.get(saveKey) === state) pendingFolderSaves.delete(saveKey);
     }; // Both successful and rejected writes must release the reentry guard.
     Promise.resolve().then(() => {
-      const scope = profileScope();
-      if (folder.canSaveLockProgress?.(scope?.characterId) && typeof folder.saveLockProgress === 'function') {
+      if (!scope) throw new Error('Cannot save a lock without its original character scope.');
+      if (folder.canSaveLockProgress?.(scope.characterId) && typeof folder.saveLockProgress === 'function') {
         return folder.saveLockProgress({ characterId:scope.characterId, worldId:scope.worldId, lockId:state.id, record:progressRecord(state) }); // Only the failed lock's canonical character data needs an immediate durable write.
       }
       const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Without a verified incremental baseline, retain the full guarded save path.
@@ -209,11 +209,15 @@
         && Number(saved.lastSyncedAt) > previousSync
         && (!saved.lastError || saved.lastAction === 'autosaved-primary-recovery-error');
       state.savePending = false;
-      if (committed) {
+      const currentScope = profileScope(); // Prevent a detached save acknowledgement from changing another active character's metadata.
+      const switchedProfile = !scope || currentScope?.characterId !== scope.characterId || currentScope?.worldId !== scope.worldId;
+      if (committed && !switchedProfile) {
         state.folderUnsynced = false;
         if (!saveProgress(state, 'folder failure-save acknowledged')) state.saveFailed = true;
-      } else state.saveFailed = true;
-      lastSaveStatus = committed ? 'Lock progress flushed to primary folder' : 'Primary folder failed to save lock progress';
+      } else state.saveFailed = true; // Preserve the original lock's unsynced marker for retry after a character/world switch.
+      lastSaveStatus = committed && switchedProfile
+        ? 'Lock saved to folder; return to its character and retry acknowledgement'
+        : committed ? 'Lock progress flushed to primary folder' : 'Primary folder failed to save lock progress';
       finishSave();
       if (session !== state) return; // An abandoned lock never reopens itself or awards treasure when a delayed folder write resolves.
       state.phase = committed && !state.saveFailed ? 'playing' : 'save-error';
