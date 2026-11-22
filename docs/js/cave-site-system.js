@@ -2007,6 +2007,7 @@
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
+      addSecondaryPocket, // Test spare-room reuse without building a whole cave scene.
       addPuzzleCaveLayer,
       grantPuzzleCaveReward, // Testable exactly-once reward escrow, also called by completed cave challenges.
       puzzleChallengesByMapId,
