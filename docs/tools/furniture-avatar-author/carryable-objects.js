@@ -548,12 +548,13 @@
       front.width=back.width=200;front.height=back.height=200;
       await preview.renderProfileToCanvas(front,profile,{seatId:seed,breathingComposer:null});
       if(ticket!==babyRenderTicket||!editingBaby)return false;
-      try{await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',seatId:seed,breathingComposer:null});}
+      let backCanvas=null; // Only a successfully rendered back may replace the front's safe mirrored fallback.
+      try{await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',seatId:seed,breathingComposer:null});backCanvas=back;}
       catch(error){ // Keep the fully colored front portrait if behind art is unavailable.
         log('Baby back portrait unavailable: '+(error?.message||error),'warn');
       }
       if(ticket!==babyRenderTicket||!editingBaby)return false;
-      const phase=window.HOBUNJI_ROMANCE_CONFIG?.family?.phaseScales?.basket||{body:.32,head:.58};
+      const phase=window.HobunjiRomanceConfig?.family?.phaseScales?.basket||{body:.32,head:.58}; // Family config owns newborn proportions; fallback covers offline editor previews.
       const body=Number(phase.body)>0?Number(phase.body):.32;
       const head=Number(phase.head)>0?Number(phase.head):.58;
       const npcRecord={role:'child',tags:['child','family'],isChild:true,
@@ -561,7 +562,7 @@
       let model;
       if(window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel){
         model=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{
-          backCanvas:back,profile,speciesId:identity.speciesId,gender:identity.gender,
+          backCanvas,profile,speciesId:identity.speciesId,gender:identity.gender,
           appearance:{speciesId:identity.speciesId,gender:identity.gender},
           npcRecord,name:'furniture_random_baby_reference',modelWidth:.9,modelHeight:.9,neckRig:true,
         });
