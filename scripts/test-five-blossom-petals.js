@@ -91,6 +91,7 @@ assert.equal(petals.debugSnapshot().livePetals,0);
 // the real live-scene integration behaves like ordinary unharvestable trunks.
 require('../docs/js/world-render-pipeline.js');
 require('../docs/js/area-footprint-blockers.js');
+require('../docs/js/zone-tree-fade.js'); // Native vegetation culler owns all temporary material clones and fade animation subscriptions.
 require('../docs/js/festival-blossom-hunt.js');
 const hunt=window.FestivalBlossomHunt; // Actual festival renderer and its scene/Shift lifecycle.
 let activeZone='map_southern_cloud_forest'; // Switching areas must unregister the previous provider without touching shared foliage.
@@ -129,9 +130,18 @@ const firstProviderCount=window.AreaFootprintBlockers.providerIds().length;
 hunt.update();
 assert.equal(window.AreaFootprintBlockers.providerIds().length,firstProviderCount,'steady-state festival ticks do not register duplicate blockers');
 assert.equal(hunt.debugSnapshot().treeTrunkCollision.count,2,'mobile diagnostics report both actual blossom tree obstacles');
+const baseBarkMaterial=visibleStem.material; // The native bark material is cached by FoliageGenerator across all future tree instances.
+let disposedFadeMaterials=0; // Ensures the zone tree fade lifecycle releases its own temporary materials on Shift/zone unload.
+window.ZoneTreeFade.setTarget(firstTree,.3,true);
+assert.equal(window.ZoneTreeFade.hasFade(firstTree),true,'the real vegetation renderer can fade the blossom's native bark');
+assert.notEqual(visibleStem.material,baseBarkMaterial,'native fading uses an owned temporary bark material');
+visibleStem.material.addEventListener('dispose',()=>disposedFadeMaterials++);
 activeZone='map_northern_cliffs';
 layouts.set(activeZone,{localeInstances:[{localeId:'locale_five_blossoms_cyan',objects:[{x:4,y:6,key:'blossom-tree'}]}]});
 hunt.update();
+assert.equal(window.ZoneTreeFade.hasFade(firstTree),false,'removing a tree retires native fade animation state');
+assert.equal(visibleStem.material,baseBarkMaterial,'zone teardown restores the shared bark material');
+assert.equal(disposedFadeMaterials,1,'zone teardown disposes the temporary fade material exactly once');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,4.5,6.5,0),true,'changing zone installs the new tree trunk');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),false,'old zone trunks cannot persist at a reused location');
 assert.equal(cullables.length,1,'old zone tree cull entries are discarded when foliage is replaced');
