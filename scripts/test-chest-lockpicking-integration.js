@@ -63,9 +63,12 @@ function makeElement() {
     lock.acquired++;
     return { release() { lock.released++; } };
   } };
+  const keyEvents = new Map(); // Keyboard capture handlers let the regression simulate Escape without browser devtools.
   const window = {
     ControllerInput: controller, CharacterActionLocks: lock,
-    addEventListener() {}, removeEventListener() {}, __farmLog() {},
+    addEventListener(type, callback) { keyEvents.set(type, callback); },
+    removeEventListener(type, callback) { if (keyEvents.get(type) === callback) keyEvents.delete(type); },
+    __farmLog() {},
   };
   const math = Object.create(Math);
   math.random = () => 0.5; // Every newly generated ring starts exactly at its target for deterministic completion.
@@ -266,31 +269,48 @@ function makeElement() {
   for (let i=0;i<20;i++) nextFrameTick();
   press('Button4'); // First failure on the second set triggers primary-folder sync.
   assert.equal(api.snapshot().phase, 'saving', 'lock timing freezes during folder persistence');
-  assert.equal(api.close('cancelled'), false, 'cancel cannot race the first-failure folder write');
-  const missesBeforeSync = api.snapshot().misses;
-  press('Button4');
-  assert.equal(api.snapshot().misses, missesBeforeSync, 'controller presses cannot slip during async autosave');
+  const beforeEscapeMisses = api.snapshot().misses;
+  const escape = { type:'keydown', code:'Escape', repeat:false, prevented:false, stopped:false,
+    preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
+  keyEvents.get('keydown')(escape); // Player escapes while the folder save is unresolved.
+  assert.equal(escape.prevented && escape.stopped, true);
+  assert.equal(api.isActive(), false, 'Escape dismisses a saving modal immediately');
+  assert.equal(api.snapshot().backgroundSaves, 1, 'the detached save continues after closing');
+  assert.equal(lock.acquired, lock.released, 'movement and combat return without waiting for disk');
+  assert.equal(api.open({id:'folder-pending',tier:1,onSuccess(){}}), false,
+    'reentry to this lock is blocked until its pending write is acknowledged');
+  flushMicrotasks();
+  assert.equal(controller.owner, 'gameplay', 'controller ownership returns before disk resolves');
   await Promise.resolve();
   assert.equal(folderFlushes, 1);
   folderResolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:101,lastError:null});
   await flushSavePromises();
-  assert.equal(api.snapshot().phase, 'playing', 'lock resumes when its failure reached disk');
-  assert.equal(recordFor('folder-pending').folderUnsynced, false, 'successful folder commit clears the browser pending marker');
+  assert.equal(api.snapshot().backgroundSaves, 0);
+  assert.equal(api.isActive(), false, 'late acknowledgement never reopens the dismissed modal');
+  assert.equal(recordFor('folder-pending').misses, beforeEscapeMisses);
+  assert.equal(recordFor('folder-pending').folderUnsynced, false, 'the detached write clears the browser pending marker');
+  assert.equal(api.open({id:'folder-pending',tier:1,onSuccess(){}}), true);
+  assert.equal(api.snapshot().stage, 1, 'secured progress survives a mid-save cancel');
   press('Button1'); flushMicrotasks();
 
   assert.equal(api.open({ id:'folder-rejected', tier:1, onSuccess() {} }), true);
   press('Button4'); press('Button5');
   for (let i=0;i<20;i++) nextFrameTick();
   press('Button4');
+  press('Button1'); // Controller B escapes during the write itself, even when it will ultimately fail.
+  assert.equal(api.isActive(), false);
+  assert.equal(lock.acquired, lock.released);
+  flushMicrotasks();
+  assert.equal(controller.owner, 'gameplay');
   await Promise.resolve();
   folderResolve({state:'ready',lastAction:'autosync-blocked-data-loss',lastSyncedAt:101,lastError:'Permission denied'});
   await flushSavePromises();
-  assert.equal(api.snapshot().phase, 'save-error', 'rejected disk writes cannot silently allow further catches');
-  assert.equal(recordFor('folder-rejected').folderUnsynced, true, 'a denied folder write stays flagged in the saved character');
-  assert.equal(byId.get('#chestLockRetry').style.display,'block','mobile UI exposes a retry button');
-  press('Button1'); flushMicrotasks();
+  assert.equal(api.isActive(), false, 'rejected background writes never reopen the modal');
+  assert.equal(api.snapshot().backgroundSaves, 0);
+  assert.equal(recordFor('folder-rejected').folderUnsynced, true, 'a rejected write retains the penalty');
   assert.equal(api.open({ id:'folder-rejected', tier:1, onSuccess() {} }), true);
   assert.equal(api.snapshot().phase, 'save-error', 'reopening cannot bypass the unsaved-folder penalty');
+  assert.equal(byId.get('#chestLockRetry').style.display,'block','mobile UI exposes a retry button');
   window.LocalSaveFolder.syncNow = options => {
     assert.equal(options.snapshot.meta.characters[0].chestLockProgress.world_a['folder-rejected'].folderUnsynced, true,
       'retry snapshot carries the denied failure until a real folder commit');
@@ -327,10 +347,19 @@ function makeElement() {
   assert.equal(api.open({ id:'folder-fast', tier:1, onSuccess() {} }), true);
   press('Button4'); press('Button5');
   assert.equal(api.snapshot().phase, 'saving', 'even a successful set uses the small folder progress writer');
+  byId.get('.cl-x').listeners.get('click')(); // Touch close works during a secured-set save.
+  assert.equal(api.isActive(), false);
+  assert.equal(api.snapshot().backgroundSaves, 1);
+  assert.equal(api.open({id:'folder-fast',tier:1,onSuccess(){}}), false,
+    'reentry before a secured set reaches the folder cannot dupe stage or reward');
+  flushMicrotasks();
+  assert.equal(controller.owner, 'gameplay');
   await flushSavePromises();
-  assert.equal(api.snapshot().phase, 'transition', 'a secured set advances only after the disk acknowledgement');
   assert.equal(fastLockWrites, 1);
-  for (let i=0;i<20;i++) nextFrameTick();
+  assert.equal(api.snapshot().backgroundSaves, 0);
+  assert.equal(api.open({id:'folder-fast',tier:1,onSuccess(){}}), true);
+  assert.equal(api.snapshot().stage, 1, 'a cancelled modal retains its saved secured stage');
+  assert.equal(api.snapshot().phase, 'playing');
   press('Button4');
   assert.equal(api.snapshot().phase, 'saving');
   await flushSavePromises();
