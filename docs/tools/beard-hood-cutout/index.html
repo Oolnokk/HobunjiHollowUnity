@@ -421,6 +421,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         $('coneSpread').value=coneSpread;
         $('topConeSpread').value=topConeSpread??0;
         $('topConeEnabled').checked=topConeSpread!==null;
+        $('topConeSpread').disabled=topConeSpread===null;
         $('hoodAlphaFloor').value=policy.alphaFloor??DEFAULT_PAINT_ALPHA;
         updateLabels();
         automaticKey='';
@@ -480,19 +481,40 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
 
   function ensureAutomaticPermission(){
-    const key=stretchKey+'|'+coneSpread+'|'+selectedHoodAlphaFloor(); // Threshold affects which hood pixels define the inner ring.
+    const key=stretchKey+'|'+coneSpread+'|'+topConeSpread+'|'+selectedHoodAlphaFloor(); // Both detected rims share one art/slider cache.
     if(automaticKey===key)return;
-    automaticPermission=artReady?Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread,{
-      alphaLimit:selectedHoodAlphaFloor()
-    })
+    const hoodOptions={alphaLimit:selectedHoodAlphaFloor()};
+    automaticPermission=artReady?Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread,hoodOptions)
       : {mask:empty(),bottomPoints:[],allowedPixels:0};
-    automaticKey=key; // Brush strokes don't re-run the raycast and cone fill.
+    topCoverPermission=artReady&&topConeSpread!==null
+      ? Cut.autoHoodTopCoverMask(stretchedHoodPixels,topConeSpread,{
+          ...hoodOptions,bottomPoints:automaticPermission.bottomPoints
+        }) : null; // A disabled upper cone leaves older whisker behavior intact.
+    automaticKey=key; // Brush strokes don't re-run either inner-rim detector.
   }
   function drawAutomaticRim(ctx){
-    if(!artReady||hoodPermissionMode!=='auto')return;
-    ctx.save();ctx.fillStyle='#ffdc76';
-    for(const pixel of automaticPermission?.bottomPoints||[])ctx.fillRect(pixel.x,pixel.y,1,1);
+    if(!artReady)return;
+    ctx.save();
+    if(hoodPermissionMode==='auto'){
+      ctx.fillStyle='#ffdc76';
+      for(const pixel of automaticPermission?.bottomPoints||[])ctx.fillRect(pixel.x,pixel.y,1,1);
+    }
+    if(topCoverPermission){
+      ctx.fillStyle='#ff824c';
+      for(const pixel of topCoverPermission.topPoints)ctx.fillRect(pixel.x,pixel.y,1,1);
+    }
     ctx.restore();
+  }
+  function paintTopCoverOverlay(){
+    const ctx=topCoverOverlay.getContext('2d'),image=ctx.createImageData(SIZE,SIZE);
+    if(topCoverPermission){
+      const covered=Cut.decodeMask(topCoverPermission.mask);
+      for(let i=0;i<covered.length;i++)if(covered[i]&&stretchedHoodPixels[i*4+3]>=selectedHoodAlphaFloor()){
+        const o=i*4;
+        image.data[o]=255;image.data[o+1]=111;image.data[o+2]=42;image.data[o+3]=152;
+      }
+    }
+    ctx.putImageData(image,0,0);
   }
   function paintMaskOverlay(stats){
     const ctx=maskOverlay.getContext('2d'),image=ctx.createImageData(SIZE,SIZE);
@@ -534,10 +556,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(artReady&&!hidesBeard){
       negotiationStats=Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hoodAllowanceMask,{
         hoodMoves:stretchSnapshot?.moves,permissionMode:hoodPermissionMode,
-        coneSpread,autoPermission:automaticPermission,whiskerMask,includeMasks:true
+        coneSpread,autoPermission:automaticPermission,
+        topConeSpread,topCover:topCoverPermission,whiskerMask,includeMasks:true
       });
     }
     paintMaskOverlay(negotiationStats);
+    paintTopCoverOverlay();
     const permissionMask=hoodPermissionMode==='auto'?automaticPermission?.mask:
       hoodPermissionMode==='all'?null:hoodAllowanceMask;
     paintHoodPermissionOverlay(permissionMask,hoodPermissionMode==='auto'?stretchedHoodPixels:hoodPixels);
@@ -566,7 +590,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         painter.save();painter.globalAlpha=.35;painter.drawImage(beardCanvas,0,0);painter.restore();
       }
       painter.drawImage(permissionOverlay,0,0);
-      if(autoSurface)drawAutomaticRim(painter);
+      painter.drawImage(topCoverOverlay,0,0);
+      drawAutomaticRim(painter);
     }else{
       if($('showHead').checked){
         painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;
@@ -574,6 +599,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       painter.drawImage(beardCanvas,0,0);
       if($('showHood').checked){
         painter.globalAlpha=.27;painter.drawImage(stretchedHood,0,0);painter.globalAlpha=1;
+        painter.save();painter.globalAlpha=.6;painter.drawImage(topCoverOverlay,0,0);painter.restore();
       }
       painter.drawImage(maskOverlay,0,0);
       drawRootGuides(painter);
@@ -591,7 +617,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }
     $('maskJson').value=JSON.stringify({
       beardRequestMask:mask,whiskerOverrideMask:whiskerMask,
-      hoodPermissionMode,hoodConeSpread:coneSpread,hoodPaintAlphaFloor:selectedHoodAlphaFloor(),
+      hoodPermissionMode,hoodConeSpread:coneSpread,hoodTopConeSpread:topConeSpread,
+      hoodPaintAlphaFloor:selectedHoodAlphaFloor(),
       hoodPermissionMask:hoodAllowanceMask,
       hoodPermissionScope:hoodScopeKey(),hoodTuftRoots:roots,
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
@@ -603,11 +630,16 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       +'\nApproved overlaps (hood removed): '+negotiationStats.approvedPixels
       +'\nRefused overlaps (beard erased): '+negotiationStats.refusedPixels
       +'\nWhiskers winning protected overlap: '+(negotiationStats.whiskerWins||0)
+      +'\nUpper cover wins: '+(negotiationStats.topCoverWins||0)
+      +' (against whiskers: '+(negotiationStats.topCoverWhiskers||0)+')'
       +'\nBeard pixels erased: '+negotiationStats.erasedPixels
       +'\nNew black-outline pixels: '+negotiationStats.outlinedPixels
       +'\nHood removable area: '+permittedArea+' / '+hoodArea
       +'\nHood policy: '+hoodPermissionMode+' · cone spread: '+coneSpread
       +'\nDetected lower rim pixels: '+(automaticPermission?.bottomPoints?.length||0)
+      +' · upper rim: '+(topCoverPermission?.topPoints?.length||0)
+      +' · upper cover pixels: '+(topCoverPermission?.coverPixels||0)
+      +' · top cone: '+(topConeSpread===null?'off':topConeSpread)
       +'\nBeard opacity cutoff: '+Math.round(selectedAlphaFloor()/255*100)+'% · hood opacity cutoff: '+Math.round(selectedHoodAlphaFloor()/255*100)+'%'
       +'\nPaintable beard pixels: '+paintable+' · hood pixels: '+hoodPaintable
       +'\nDeformation subdivision: '+selectedSubdivision()
@@ -621,7 +653,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function pushUndo(){
     history.push(JSON.stringify({mask,whiskerMask,roots:Cut.normalizeRoots(roots),
-      hoodAllowanceMask,hoodPermissionMode,coneSpread})); // Unified undo for beard requests, tuft roots and hood permissions.
+      hoodAllowanceMask,hoodPermissionMode,coneSpread,topConeSpread})); // Unified undo for beard requests, tuft roots and hood permissions.
     if(history.length>25)history.shift();
   }
   function point(event){
@@ -752,6 +784,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     automaticKey='';hoodPermissionMode='auto';hoodAllowanceMask=null;
     updateLabels();remember();chooseMode('hoodAuto');
   };
+  $('topConeEnabled').onchange=()=>{
+    if(!artReady)return;
+    pushUndo();topConeSpread=$('topConeEnabled').checked
+      ? Cut.normalizeConeSpread($('topConeSpread').value):null;
+    $('topConeSpread').disabled=topConeSpread===null;
+    automaticKey='';updateLabels();remember();render();
+  };
+  $('topConeSpread').oninput=()=>{
+    if(!artReady||topConeSpread===null)return;
+    topConeSpread=Cut.normalizeConeSpread($('topConeSpread').value);
+    automaticKey='';updateLabels();remember();render();
+  };
   $('subdivision').oninput=()=>{updateLabels();remember();render();};
   $('aboveInfluence').oninput=()=>{updateLabels();remember();render();};
   $('belowInfluence').oninput=()=>{updateLabels();remember();render();};
@@ -764,7 +808,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     hoodAllowanceMask=previous.hoodAllowanceMask==null?null:Cut.normalizeMask(previous.hoodAllowanceMask);
     hoodPermissionMode=previous.hoodPermissionMode||'auto';
     coneSpread=Cut.normalizeConeSpread(previous.coneSpread);
-    $('coneSpread').value=coneSpread;automaticKey='';updateLabels();
+    topConeSpread=previous.topConeSpread==null?null:Cut.normalizeConeSpread(previous.topConeSpread);
+    $('coneSpread').value=coneSpread;
+    $('topConeSpread').value=topConeSpread??0;
+    $('topConeEnabled').checked=topConeSpread!==null;
+    $('topConeSpread').disabled=topConeSpread===null;
+    automaticKey='';updateLabels();
     remember();render();
   };
   $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();remember();render();};
