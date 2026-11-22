@@ -566,8 +566,10 @@
     const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Even a literal one-line character fallback speaks before generic family copy on first encounter.
     const isHeardGeneral = picked && heard.includes(picked.id) && !picked.generatedFromShopAccess
       && !(picked.priority > 0) && _dlgEntrySpecificity(picked) === 0; // Repeated unconditioned chatter can alternate with scoped dialogue, while story/conditioned trees keep their priority.
-    if (scopedSpeech.length && (!picked || (!stillHasNamedLines && !firstAuthoredFallback && (isFallback || isHeardGeneral)))) {
-      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first selection/history remain per speaker, but never replace unplayed authored character lines.
+    const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Once both personal and shared lines have circulated, the NPC may return to their own distinctive copy.
+    const keepAuthoredThisTime = !!picked && sharedExhausted && Math.random() < 0.5; // A repeat conversation alternates probabilistically between individual speech and scoped family/character material.
+    if (scopedSpeech.length && !keepAuthoredThisTime && (!picked || (!stillHasNamedLines && !firstAuthoredFallback && (isFallback || isHeardGeneral)))) {
+      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first selection/history remain per speaker; shared lines supplement rather than permanently replace authored greetings.
     }
     // Keep eligible shops accessible even after their tree was heard and general chat was not:
     // family or named shared speech must not hide a merchant's Shop option.
