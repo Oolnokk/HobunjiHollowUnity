@@ -879,23 +879,22 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           weaponSwitch?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:811,pointerType:'touch',clientX:8,clientY:8}));
           await sleep(2);
           const beforeAttachEquipment=window.DevRandomRuinSimplePuzzles.snapshot().ropeEquipment;
-          const grabDx=rope.grabPoint.x-rope.anchor.x,grabDz=rope.grabPoint.z-rope.anchor.z,grabLen=Math.max(.001,Math.hypot(grabDx,grabDz));
-          place({x:rope.grabPoint.x+grabDx/grabLen*.95,z:rope.grabPoint.z+grabDz/grabLen*.95,y:rope.grabPoint.y}); // Inside the 1.25u prompt range but outside the 0.8u auto-grab radius: proves the normal popup/arch appears before contact.
+          place({x:rope.bob.x+1,z:rope.bob.z,y:rope.bob.y}); // Nearby on foot: no rope prompt or Action 1 claim.
           await sleep(3);
           window.DevRandomRuinInteractions.refresh();
           await sleep(2);
           const grabInteraction=window.DevRandomRuinInteractions.snapshot();
           const grabPopup=window.WorldPopupText.debugSnapshot();
-          const grabIndex=grabInteraction.rows.findIndex(row=>row.kind==='ropegrab');
-          const grabRow=grabIndex>=0?grabInteraction.rows[grabIndex]:null;
+          const grabRow=grabInteraction.rows.find(row=>row.kind==='ropegrab')||null;
           const grabClaim=window.WorldActionInputClaims?.claimFor?.('action1')?.label||null;
           const grabArchText=document.getElementById('btnAction1')?.textContent||'';
-          place(rope.grabPoint); // Contact alone must NOT grab (players were caught unintentionally); the prompt does.
+          place(rope.bob); // Ground contact must not grab, including the previously broken shaft end.
           await sleep(4);
           const contactAttached=window.DevRandomRuinSimplePuzzles.snapshot().ropes[0]?.attached===true;
-          window.DevRandomRuinInteractions.refresh();
-          const pressIndex=window.DevRandomRuinInteractions.snapshot().rows.findIndex(row=>row.kind==='ropegrab');
-          if(pressIndex>=0)window.DevRandomRuinInteractions.invoke(pressIndex);
+          const approach={x:rope.bob.x,y:rope.bob.y,z:rope.bob.z,
+            vx:Math.cos(rope.yaw)*2,vy:1,vz:Math.sin(rope.yaw)*2};
+          const airborne=window.PlayerJump?.beginFlight?.(approach,{source:'ruin rope airborne smoke'});
+          const airborneAttached=!!airborne&&window.DevRandomRuinSimplePuzzles.catchAirborneRope(airborne);
           await sleep(4);
           const beforePump=window.DevRandomRuinSimplePuzzles.snapshot();
           const pumpSamples=[]; // Verify the pendulum across frames, not at a coincident endpoint.
@@ -919,6 +918,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
           ropeAttach={
             sourceId:rope.id,
             grabRow,
+            airborneAttached,
             grabPopupVisible:grabPopup.interactionRows?.some(row=>row.label==='Grab Rope')===true,
             grabClaim,
             grabArchText,
@@ -985,13 +985,13 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       if(simpleRuntime.ropeAttach){
       const chainRope = simpleRuntime.initial.ropeChains?.some(chain =>
         simpleRuntime.ropeAttach.sourceId.startsWith('rope-layer_' + chain.hallId + '-')); // Whole-layer ropes do not have the older raised destination slab.
-      assert.equal(simpleRuntime.ropeAttach?.grabRow?.label,'Grab Rope','approaching the traversal rope must expose the ordinary floating input prompt before attachment: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,true,'idle rope grab must render through WorldPopupText: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.grabRow?.inputAction,'action1','nearby rope grab intentionally claims Action 1 so one physical input cannot attack and grab at the same time: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.grabClaim,'Grab Rope','world-input ownership must prefer nearby Grab Rope over the equipped weapon attack: '+JSON.stringify(simpleRuntime));
-      assert.match(simpleRuntime.ropeAttach?.grabArchText||'',/Grab Rope/,'the ordinary Action 1 arch button must visibly switch from the weapon attack to Grab Rope while nearby: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.contactAttached,false,'walking into a rope must not grab it; grabbing is a prompted action: '+JSON.stringify(simpleRuntime));
-      assert.equal(simpleRuntime.ropeAttach?.attached,true,'the Grab Rope prompt must attach the traversal rope: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.grabRow,null,'a rope must never offer a grounded Grab Rope interaction: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.grabPopupVisible,false,'no floating Grab Rope prompt on foot: '+JSON.stringify(simpleRuntime));
+      assert.notEqual(simpleRuntime.ropeAttach?.grabClaim,'Grab Rope','rope proximity must not steal weapon Action 1: '+JSON.stringify(simpleRuntime));
+      assert.doesNotMatch(simpleRuntime.ropeAttach?.grabArchText||'',/Grab Rope/,'Action 1 must not advertise deleted grab interactions: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.contactAttached,false,'grounded contact cannot grab a rope: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.airborneAttached,true,'the PlayerJump airborne catch attaches the rope: '+JSON.stringify(simpleRuntime));
+      assert.equal(simpleRuntime.ropeAttach?.attached,true,'airborne entry must own the rider: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.thickMesh,true,'rope must render as a real thick mesh rather than a one-pixel line: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.lavaVisible,true,'rope fall/burn volume must have a matching visible lava surface: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.pumpChangedOmega,true,'published movement input must pump the live rope pendulum: '+JSON.stringify(simpleRuntime));
