@@ -410,7 +410,7 @@ function registerStoneCollision(zone,sites){
   const left=Math.floor(minX/BUCKET_TILES),right=Math.floor(maxX/BUCKET_TILES);
   const top=Math.floor(minZ/BUCKET_TILES),bottom=Math.floor(maxZ/BUCKET_TILES);
   const cellCount=(right-left+1)*(bottom-top+1);
-  if(!Number.isSafeInteger(cellCount)||cellCount>64)return allBoxes.some(box=>touches(box,minX,maxX,minZ,maxZ,worldY)); // Large movers scan finite bounds directly.
+  if(![left,right,top,bottom,cellCount].every(Number.isSafeInteger)||cellCount<=0||cellCount>64)return allBoxes.some(box=>touches(box,minX,maxX,minZ,maxZ,worldY)); // Pathological positions and large movers scan finite bounds directly.
   for(let bx=left;bx<=right;bx++){
    const rows=columns.get(bx);if(!rows)continue;
    for(let bz=top;bz<=bottom;bz++){
