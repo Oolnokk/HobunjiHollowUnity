@@ -49,6 +49,8 @@ for (const [kind, [scales, lifts]] of Object.entries(expected)) {
     assert.ok(Math.abs(actual.sizeScales[size].x - width) < tolerance, kind + ' ' + size + ' X');
     assert.ok(Math.abs(actual.sizeScales[size].y - height) < tolerance, kind + ' ' + size + ' Y');
     assert.ok(Math.abs(actual.groundOffsets[size] - lifts[i]) < tolerance, kind + ' ' + size + ' lift');
+    assert.ok(Math.abs(actual.sizeScalePercentages[size].x - width * 100) < tolerance, kind + ' ' + size + ' X slider percent');
+    assert.ok(Math.abs(actual.sizeScalePercentages[size].y - height * 100) < tolerance, kind + ' ' + size + ' Y slider percent');
   }
 }
 assert.equal(profileData.creatures['tzatzul'].anchors.saddle.position.y, .24489795684814464);
