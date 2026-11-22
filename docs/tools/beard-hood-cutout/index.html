@@ -102,6 +102,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const beardCanvas=blank(),hoodCanvas=blank(),headCanvas=blank(),maskedHood=blank(); // Offscreen prepared art, reused between every brush update.
   const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
   let mask=empty(),beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let hoodPixels=new Uint8ClampedArray(SIZE*SIZE*4); // Read once after verified CORS-safe loading; rendering never reads an untrusted canvas.
+  let artReady=false; // The brush cannot record empty strokes while the selected artwork is unavailable.
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
   const draftStorageKey='hobunji-beard-hood-cutout-drafts-v1'; // Persist mobile brush sessions without ever overwriting repository files.
@@ -133,8 +135,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   async function loadImage(url){
     return new Promise((resolve,reject)=>{
       const image=new Image();
+      // GitHack may serve sprites through a different image host/redirect. An
+      // ordinary <img> displays them, but TAINTS canvas pixel reads. Request
+      // CORS permission BEFORE assigning src, including for repository PNGs.
+      image.crossOrigin='anonymous';
       image.onload=()=>resolve(image);
-      image.onerror=()=>reject(Error('Could not open image: '+url));
+      image.onerror=()=>reject(Error('CORS-safe image load failed: '+url+'. The image server must permit canvas access; try the PNG override if it does not.'));
       image.src=url;
     });
   }
@@ -150,12 +156,15 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const cx=SIZE/2+xform.ay*80,cy=SIZE/2-xform.ax*80;
     ctx.drawImage(image,cx-w/2,cy-h/2,w,h); // Same 80px B-preset alignment as portrait-utils.js.
   }
-  async function drawCosmetic(doc,target,localOverride){
-    const ctx=target.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);ctx.imageSmoothingEnabled=true;
-    if(localOverride){ctx.drawImage(localOverride,0,0,SIZE,SIZE);return;}
+  async function drawCosmetic(doc,localOverride){
+    const target=blank(); // Each async attempt owns its own canvas; a stale request cannot taint the active editor.
+    const ctx=target.getContext('2d');ctx.imageSmoothingEnabled=true;
+    if(localOverride){ctx.drawImage(localOverride,0,0,SIZE,SIZE);return target;}
     const layers=cosmeticLayers(doc);
+    if(!layers.length)throw Error('No artwork for '+variant+' in the selected cosmetic');
     const loaded=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.image.url))));
     for(const image of loaded)drawAsset(ctx,image);
+    return target;
   }
   async function loadHead(current){
     const ctx=headCanvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
@@ -191,16 +200,35 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   async function prepare(resetMask=false){
     const ticket=++generation;
+    artReady=false;
+    lastError='';
     try{
-      await Promise.all([drawCosmetic(beardDoc,beardCanvas,overrideBeard),drawCosmetic(hoodDoc,hoodCanvas,overrideHood)]);
+      const [beardArt,hoodArt]=await Promise.all([
+        drawCosmetic(beardDoc,overrideBeard),drawCosmetic(hoodDoc,overrideHood)
+      ]);
       if(ticket!==generation)return;
-      beardPixels=beardCanvas.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
+      // Validate origin cleanliness BEFORE touching the active canvases. If a
+      // CDN refuses CORS, neither the brush nor the hood-preview becomes tainted.
+      const safeBeard=beardArt.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
+      const safeHood=hoodArt.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
+      beardCanvas.width=hoodCanvas.width=SIZE; // Reset origin-clean state after any previous failed image load.
+      beardCanvas.getContext('2d').drawImage(beardArt,0,0);
+      hoodCanvas.getContext('2d').drawImage(hoodArt,0,0);
+      beardPixels=safeBeard;hoodPixels=safeHood;
+      artReady=true;
       if(resetMask)mask=maskForArtwork(drafts.get(draftKey())||originalMask());
       else mask=maskForArtwork(mask);
       await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
       if(ticket!==generation)return;
       history=[];render();
-    }catch(error){if(ticket===generation)status('Artwork failed: '+error.message);}
+    }catch(error){
+      if(ticket!==generation)return;
+      artReady=false;
+      beardCanvas.width=hoodCanvas.width=SIZE; // width assignment clears an origin-tainted canvas as well as its pixels.
+      beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+      hoodPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+      status('Artwork unavailable: '+error.message);
+    }
   }
   function paintMaskOverlay(){
     const ctx=maskOverlay.getContext('2d');
@@ -232,14 +260,15 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if($('showHood').checked){painter.globalAlpha=.27;painter.drawImage(hoodCanvas,0,0);painter.globalAlpha=1;}
     painter.drawImage(maskOverlay,0,0);
 
-    const pixels=Cut.decodeMask(mask),hoodAlpha=hoodCanvas.getContext('2d').getImageData(0,0,SIZE,SIZE).data;
-    let occupied=0;for(let i=0;i<pixels.length;i++)if(pixels[i]&&hoodAlpha[i*4+3]>=8)occupied++;
+    const pixels=Cut.decodeMask(mask);
+    let occupied=0;for(let i=0;i<pixels.length;i++)if(pixels[i]&&hoodPixels[i*4+3]>=8)occupied++;
     $('maskJson').value=JSON.stringify(mask);
     $('status').textContent=(lastError?lastError+'\n':'')
       +'Beard-painted pixels: '+Cut.countMask(mask)
       +'\nActual opaque hood pixels cut: '+(hidesBeard?0:occupied)
       +'\nMask scope: '+scopeKey()
       +'\nBeard order: unchanged (before hood)'+(hidesBeard?'\nFacewrap hides beard: no cutout is rendered':'')
+      +'\nArtwork ready: '+artReady
       +'\nGeometry: none · X-ray: none';
     $('undo').disabled=!history.length;
   }
@@ -252,7 +281,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const surface=$('paintCanvas');
   surface.addEventListener('pointerdown',event=>{
     if(drag||event.button!==0)return;
-    event.preventDefault();pushUndo();
+    event.preventDefault();
+    if(!artReady){status('Brush disabled: beard artwork is not readable. Reload the updated editor or use a local PNG override.');return;}
+    pushUndo();
     drag={id:event.pointerId,last:point(event)};
     surface.setPointerCapture(event.pointerId);
     mask=Cut.paintMask(mask,beardPixels,drag.last.x,drag.last.y,Number($('brush').value),mode==='erase');render();
@@ -318,6 +349,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   $('download').onclick=()=>{
     try{
+      if(!artReady)throw Error('Cannot export a cutout until the beard image is readable');
       const body=JSON.stringify(exportedJson(),null,2)+'\n',blob=new Blob([body],{type:'application/json'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');
       a.href=url;a.download=(beardEntry?.path.split('/').pop()||'beard.json').replace(/^\(HA\)/,'');
@@ -374,7 +406,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   window.BeardHoodCutoutDebug=()=>({
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
-    error:lastError,physicalDepth:false,drawOrder:'main-2d-unchanged',
+    artworkReady:artReady,imageCrossOrigin:'anonymous',error:lastError,physicalDepth:false,drawOrder:'main-2d-unchanged',
   }); // Copyable from the status and accessible without devtools on mobile via the mask JSON field.
   render();
   loadCatalog().catch(error=>status('Catalog error: '+error.message));
