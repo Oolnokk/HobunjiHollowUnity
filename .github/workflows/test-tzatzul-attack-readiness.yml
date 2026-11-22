@@ -1,0 +1,33 @@
+name: Tzatzul readying-attack regression
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/attack-readiness.js'
+      - 'docs/js/tzatzul-flight-runtime.js'
+      - 'docs/js/puzzle-cave-entrances.js'
+      - 'docs/js/bootstrap/classic-groups/cave-sites.js'
+      - 'docs/index.html'
+      - 'scripts/test-tzatzul-flight-runtime.js'
+      - '.github/workflows/test-tzatzul-attack-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readying:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse production modules and regression harness
+        run: |
+          node --check docs/js/attack-readiness.js
+          node --check docs/js/tzatzul-flight-runtime.js
+          node --check docs/js/puzzle-cave-entrances.js
+          node --check scripts/test-tzatzul-flight-runtime.js
+      - name: Exercise real Tzatzul flight AI and activity deferral
+        run: node scripts/test-tzatzul-flight-runtime.js
