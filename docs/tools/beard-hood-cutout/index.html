@@ -372,10 +372,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodCanvas.getContext('2d').drawImage(hoodArt,0,0);
       beardPixels=safeBeard;hoodPixels=safeHood;
       artReady=true;
-      hoodRevision++;stretchKey=''; // Invalidate deformed hood only when loaded artwork has actually changed.
+      hoodRevision++;stretchKey='';automaticKey=''; // Invalidate stretching and automatic permission when art changes.
       if(resetMask){
         const draft=drafts.get(draftKey()); // Previous masks from v1 drafts were upgraded to {mask, roots}.
         mask=maskForArtwork(draft?.mask||originalMask());
+        whiskerMask=maskForArtwork(draft?.whiskers||originalWhiskers());
         roots=Cut.normalizeRoots(draft?.roots||originalRoots());
         $('maxStretch').value=draft?.maxStretch??originalMaxStretch();
         $('alphaFloor').value=draft?.alphaFloor??originalAlphaFloor();
@@ -383,10 +384,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         $('aboveInfluence').value=draft?.aboveInfluence??originalAboveInfluence();
         $('belowInfluence').value=draft?.belowInfluence??originalBelowInfluence();
         updateLabels();
-      }else mask=maskForArtwork(mask);
+      }else{
+        mask=maskForArtwork(mask);
+        whiskerMask=maskForArtwork(whiskerMask);
+      }
       if(resetHood||resetMask){
-        hoodAllowanceMask=hoodDrafts.has(hoodDraftKey())
-          ? hoodDrafts.get(hoodDraftKey()) : originalHoodPermission(); // null is a valid saved fully-removable policy.
+        const policy=hoodDrafts.get(hoodDraftKey())||originalHoodPolicy();
+        hoodAllowanceMask=policy.mask;
+        hoodPermissionMode=policy.mode;
+        coneSpread=Cut.normalizeConeSpread(policy.spread);
+        $('coneSpread').value=coneSpread;
+        updateLabels();
+        automaticKey='';
       }
       await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
       if(ticket!==generation)return;
@@ -397,7 +406,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       beardCanvas.width=hoodCanvas.width=SIZE; // width assignment clears an origin-tainted canvas as well as its pixels.
       beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
       hoodPixels=new Uint8ClampedArray(SIZE*SIZE*4);
-      hoodRevision++;stretchKey='';
+      hoodRevision++;stretchKey='';automaticKey='';
       status('Artwork unavailable: '+error.message);
     }
   }
@@ -442,96 +451,132 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     ctx.restore();
   }
 
-  function paintMaskOverlay(negotiated){
-    const ctx=maskOverlay.getContext('2d');
-    const image=ctx.createImageData(SIZE,SIZE),bits=Cut.decodeMask(mask);
-    const refused=Cut.decodeMask(negotiated?.refusedMask);
-    for(let i=0;i<bits.length;i++)if(bits[i]){
-      image.data[i*4]=refused[i]?252:56;
-      image.data[i*4+1]=refused[i]?65:245;
-      image.data[i*4+2]=refused[i]?145:210;
-      image.data[i*4+3]=190;
+  function ensureAutomaticPermission(){
+    const key=stretchKey+'|'+coneSpread;
+    if(automaticKey===key)return;
+    automaticPermission=artReady?Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)
+      : {mask:empty(),bottomPoints:[],allowedPixels:0};
+    automaticKey=key; // Brush strokes don't re-run the raycast and cone fill.
+  }
+  function drawAutomaticRim(ctx){
+    if(!artReady||hoodPermissionMode!=='auto')return;
+    ctx.save();ctx.fillStyle='#ffdc76';
+    for(const pixel of automaticPermission?.bottomPoints||[])ctx.fillRect(pixel.x,pixel.y,1,1);
+    ctx.restore();
+  }
+  function paintMaskOverlay(stats){
+    const ctx=maskOverlay.getContext('2d'),image=ctx.createImageData(SIZE,SIZE);
+    const requests=Cut.decodeMask(mask),whiskers=Cut.decodeMask(whiskerMask);
+    const refused=Cut.decodeMask(stats?.refusedMask);
+    for(let i=0;i<requests.length;i++){
+      if(!requests[i]&&!whiskers[i])continue;
+      const o=i*4;
+      image.data[o]=whiskers[i]?184:refused[i]?248:56;
+      image.data[o+1]=whiskers[i]?80:refused[i]?64:245;
+      image.data[o+2]=whiskers[i]?248:refused[i]?144:210;
+      image.data[o+3]=190;
     }
     ctx.putImageData(image,0,0);
   }
-  function paintHoodPermissionOverlay(){
-    const ctx=permissionOverlay.getContext('2d');
-    const image=ctx.createImageData(SIZE,SIZE);
-    if(hoodAllowanceMask!==null){
-      const allowed=Cut.decodeMask(hoodAllowanceMask);
-      for(let i=0;i<allowed.length;i++)if(hoodPixels[i*4+3]>=8){
-        image.data[i*4]=allowed[i]?45:239;
-        image.data[i*4+1]=allowed[i]?227:74;
-        image.data[i*4+2]=allowed[i]?151:110;
-        image.data[i*4+3]=96; // Low-opacity colored tint leaves the hood artwork readable.
+  function paintHoodPermissionOverlay(permissionMask,sourcePixels){
+    const ctx=permissionOverlay.getContext('2d'),image=ctx.createImageData(SIZE,SIZE);
+    if(permissionMask!==null){
+      const allowed=Cut.decodeMask(permissionMask);
+      for(let i=0;i<allowed.length;i++)if(sourcePixels[i*4+3]>=8){
+        const o=i*4;
+        image.data[o]=allowed[i]?45:239;
+        image.data[o+1]=allowed[i]?227:74;
+        image.data[o+2]=allowed[i]?151:110;
+        image.data[o+3]=96;
       }
     }
     ctx.putImageData(image,0,0);
   }
   function render(){
     ensureStretchedHood();
+    ensureAutomaticPermission();
     const hidesBeard=hoodDoc?.tags?.includes('hides-facial-hair')===true;
     const hoodCtx=maskedHood.getContext('2d'),beardCtx=survivingBeard.getContext('2d');
     hoodCtx.clearRect(0,0,SIZE,SIZE);hoodCtx.drawImage(stretchedHood,0,0);
     beardCtx.clearRect(0,0,SIZE,SIZE);beardCtx.drawImage(beardCanvas,0,0);
-    negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0};
+    negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,
+      erasedPixels:0,outlinedPixels:0,whiskerWins:0};
     if(artReady&&!hidesBeard){
       negotiationStats=Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hoodAllowanceMask,{
-        hoodMoves:stretchSnapshot?.moves,includeMasks:true
+        hoodMoves:stretchSnapshot?.moves,permissionMode:hoodPermissionMode,
+        coneSpread,autoPermission:automaticPermission,whiskerMask,includeMasks:true
       });
     }
     paintMaskOverlay(negotiationStats);
-    paintHoodPermissionOverlay();
+    const permissionMask=hoodPermissionMode==='auto'?automaticPermission?.mask:
+      hoodPermissionMode==='all'?null:hoodAllowanceMask;
+    paintHoodPermissionOverlay(permissionMask,hoodPermissionMode==='auto'?stretchedHoodPixels:hoodPixels);
 
     for(const id of ['before','after']){
-      const canvas=$(id),ctx=canvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
+      const canvas=$(id),ctx=canvas.getContext('2d');
+      ctx.clearRect(0,0,SIZE,SIZE);
       const species=variant.replace(/_(male|female)$/,'');
-      const renderedBeard=id==='before'?beardCanvas:survivingBeard;
-      if(species==='mashtzarr'&&!hidesBeard)ctx.drawImage(renderedBeard,0,0); // Original Mashtzarr under-head beard order.
+      const beard=id==='before'?beardCanvas:survivingBeard;
+      if(species==='mashtzarr'&&!hidesBeard)ctx.drawImage(beard,0,0);
       if($('showHead').checked)ctx.drawImage(headCanvas,0,0);
-      if(species!=='mashtzarr'&&!hidesBeard)ctx.drawImage(renderedBeard,0,0);
+      if(species!=='mashtzarr'&&!hidesBeard)ctx.drawImage(beard,0,0);
       ctx.drawImage(id==='before'?hoodCanvas:maskedHood,0,0);
-      if(id==='after')drawRootGuides(ctx);
+      if(id==='after'){drawRootGuides(ctx);drawAutomaticRim(ctx);}
     }
-
     const painter=$('paintCanvas').getContext('2d');
     painter.clearRect(0,0,SIZE,SIZE);
-    const hoodPaint=mode==='hoodAllow'||mode==='hoodProtect';
+    const hoodPaint=mode==='hoodAllow'||mode==='hoodProtect'||mode==='hoodAuto';
     if(hoodPaint){
-      if($('showHead').checked){painter.globalAlpha=.24;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
-      painter.drawImage(hoodCanvas,0,0); // Permissions authored on original hood coordinates, then warped with the hood in-game.
+      const autoSurface=mode==='hoodAuto';
+      if($('showHead').checked){
+        painter.globalAlpha=.24;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;
+      }
+      painter.drawImage(autoSurface?stretchedHood:hoodCanvas,0,0);
       if($('showBeardGhost').checked){
         painter.save();painter.globalAlpha=.35;painter.drawImage(beardCanvas,0,0);painter.restore();
       }
       painter.drawImage(permissionOverlay,0,0);
+      if(autoSurface)drawAutomaticRim(painter);
     }else{
-      if($('showHead').checked){painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
+      if($('showHead').checked){
+        painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;
+      }
       painter.drawImage(beardCanvas,0,0);
-      if($('showHood').checked){painter.globalAlpha=.27;painter.drawImage(stretchedHood,0,0);painter.globalAlpha=1;}
+      if($('showHood').checked){
+        painter.globalAlpha=.27;painter.drawImage(stretchedHood,0,0);painter.globalAlpha=1;
+      }
       painter.drawImage(maskOverlay,0,0);
       drawRootGuides(painter);
     }
-
     let paintable=0,hoodArea=0,permittedArea=0;
-    const allowed=hoodAllowanceMask==null?null:Cut.decodeMask(hoodAllowanceMask);
+    const allowed=permissionMask==null?null:Cut.decodeMask(permissionMask);
+    const policyPixels=hoodPermissionMode==='auto'?stretchedHoodPixels:hoodPixels;
     for(let i=0;i<SIZE*SIZE;i++){
       if(beardPixels[i*4+3]>=selectedAlphaFloor())paintable++;
-      if(hoodPixels[i*4+3]>=8){hoodArea++;if(!allowed||allowed[i])permittedArea++;}
+      if(policyPixels[i*4+3]>=8){
+        hoodArea++;
+        if(!allowed||allowed[i])permittedArea++;
+      }
     }
-    $('maskJson').value=JSON.stringify({beardRequestMask:mask,hoodPermissionMask:hoodAllowanceMask,
+    $('maskJson').value=JSON.stringify({
+      beardRequestMask:mask,whiskerOverrideMask:whiskerMask,
+      hoodPermissionMode,hoodConeSpread:coneSpread,hoodPermissionMask:hoodAllowanceMask,
       hoodPermissionScope:hoodScopeKey(),hoodTuftRoots:roots,
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
-      hoodPaintAlphaFloor:selectedAlphaFloor()});
+      hoodPaintAlphaFloor:selectedAlphaFloor()
+    });
     $('status').textContent=(lastError?lastError+'\n':'')
-      +'Beard requests: '+Cut.countMask(mask)
+      +'Beard requests: '+Cut.countMask(mask)+' · priority whiskers: '+Cut.countMask(whiskerMask)
       +'\nApproved overlaps (hood removed): '+negotiationStats.approvedPixels
       +'\nRefused overlaps (beard erased): '+negotiationStats.refusedPixels
-      +'\nBeard pixels actually erased: '+negotiationStats.erasedPixels
+      +'\nWhiskers winning protected overlap: '+(negotiationStats.whiskerWins||0)
+      +'\nBeard pixels erased: '+negotiationStats.erasedPixels
       +'\nNew black-outline pixels: '+negotiationStats.outlinedPixels
       +'\nHood removable area: '+permittedArea+' / '+hoodArea
-      +'\nHood policy: '+(hoodAllowanceMask===null?'all removable (legacy)':'painted permission mask')
-      +'\nPaintable beard pixels at opacity floor: '+paintable
+      +'\nHood policy: '+hoodPermissionMode+' · cone spread: '+coneSpread
+      +'\nDetected lower rim pixels: '+(automaticPermission?.bottomPoints?.length||0)
+      +'\nPaintable beard pixels: '+paintable
       +'\nDeformation subdivision: '+selectedSubdivision()
       +' · above: '+selectedAboveInfluence()+'% · below: '+selectedBelowInfluence()+'%'
       +'\nTuft roots: '+roots.length+' · stretched: '+(stretchSnapshot?.stretched||0)
