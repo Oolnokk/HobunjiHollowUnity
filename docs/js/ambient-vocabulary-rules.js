@@ -16,6 +16,8 @@
     for (const [original, entries] of Object.entries(lexicon || {})) {
       const key = String(original || '').toLocaleLowerCase().trim(); // Exact whole-word/phrase key; no transformations of unidentified vocabulary.
       if (!key || key.length > 80 || /[{}]/.test(key) || !Array.isArray(entries)) continue;
+      const coverage = 0.12 + (selected.breadth / 100) * 0.88; // Breadth controls how many different source expressions the speaker knows, not just variants per expression.
+      if ((hash(speakerId + ':known:' + key) >>> 0) / 4294967296 >= coverage) continue; // Stable per-character word knowledge, resolved only while generating.
       const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({
         text: item.text.trim(),
         distance: Math.abs(clamp(item.verbosity ?? 50) - selected.verbosity) * 0.9
@@ -24,12 +26,14 @@
       })).filter(item => item.text.toLocaleLowerCase() !== key)
         .sort((a, b) => a.distance - b.distance || a.text.localeCompare(b.text));
       if (!ranked.length) continue;
-      const capacity = Math.max(1, Math.ceil(ranked.length * (0.12 + selected.breadth / 115))); // Vocabulary breadth limits the number of synonyms available for a word.
-      const shortlist = ranked.slice(0, capacity).filter(item => item.distance <= ranked[0].distance + 42); // Avoid contradictory registers even when breadth is high.
-      if (!shortlist.length) continue;
+      const shortlist = ranked.filter(item => item.distance <= ranked[0].distance + 42); // Always exclude replacements that contradict the chosen tone/register.
+      const capacity = Math.max(1, Math.ceil(shortlist.length * (0.2 + selected.breadth / 125))); // Breadth also controls how many alternatives are familiar.
+      const eligible = shortlist.slice(0, capacity);
+      const variantCount = Math.max(1, Math.ceil(eligible.length * Math.max(0.01, selected.variety / 100))); // Smooth variation: 20% and 100% no longer yield identical tables.
+      const variants = eligible.slice(0, variantCount).map(item => item.text);
       table[key] = selected.variety < 15
-        ? [shortlist[hash(speakerId + ':' + key) % shortlist.length].text]
-        : shortlist.map(item => item.text);
+        ? [variants[hash(speakerId + ':' + key) % variants.length]]
+        : variants;
     }
     return table;
   }
@@ -64,16 +68,24 @@
     const text = original.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})/g).map(segment => {
       if (/^(?:\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})$/.test(segment)) return segment; // Only complete dialogue placeholders are protected; normal text starting with a brace remains eligible.
       pattern.lastIndex = 0;
-      return segment.replace(pattern, (whole, prefix, raw) => {
-        const candidates = table[raw.toLocaleLowerCase()];
+      return segment.replace(pattern, (whole, prefix, raw, offset) => {
+        const candidates = Object.hasOwn(table, raw.toLocaleLowerCase()) ? table[raw.toLocaleLowerCase()] : null; // No inherited prototype names are legal dictionary matches.
         if (!Array.isArray(candidates) || !candidates.length) return whole;
-        const valid = candidates.filter(value => typeof value === 'string' && value.trim() && value.toLocaleLowerCase() !== raw.toLocaleLowerCase()); // Invalid manual entries are ignored.
+        const preceding = segment.slice(0, offset) + prefix; // The regex includes its leading word boundary; include that boundary when inspecting grammar.
+        const article = /(?:^|[^\\p{L}\\p{N}_])(a|an)\\s+$/iu.exec(preceding)?.[1]?.toLocaleLowerCase() || null;
+        const valid = candidates.filter(value => {
+          if (typeof value !== 'string' || !value.trim() || value.toLocaleLowerCase() === raw.toLocaleLowerCase()) return false;
+          if (!article) return true;
+          return /^[aeiou]/i.test(value.trim()) === (article === 'an'); // Prefer no substitution to an obvious a/an grammatical error.
+        });
         if (!valid.length) return whole;
         hits++;
-        if (random() >= settings.frequency / 100) return whole;
+        const probability = Number(random());
+        if (!Number.isFinite(probability) || probability >= settings.frequency / 100) return whole;
+        const roll = Number(random()); // Invalid external test/previews can never produce an out-of-range candidate.
         const pick = settings.variety < 15
           ? hash(speakerId + ':' + raw.toLocaleLowerCase()) % valid.length
-          : Math.min(valid.length - 1, Math.floor(Math.max(0, random()) * valid.length));
+          : Math.min(valid.length - 1, Math.floor(Math.max(0, Number.isFinite(roll) ? roll : 0) * valid.length));
         swaps++;
         return prefix + caseLike(raw, valid[pick]);
       });
