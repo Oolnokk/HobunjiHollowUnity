@@ -19,7 +19,11 @@
   // globally-loaded WildernessMapGenerator script are left as direct
   // references — same treatment as THREE.
   let deps = null;
-  const HABITAT_VERSION = 2; // Used to invalidate pre-habitat saved placements once, then keep same-day positions stable.
+  const HABITAT_VERSION = 3; // One-time rescatters include newly added native mushroom species while preserving daily harvest history.
+  const MUSHROOM_SPRITE_PATH = 'assets/objectsprites/mushroom.png'; // Expected user-authored sprite: mint cap, off-white stalk, painted black outlines.
+  const mushroomMaterials = new Map(); // Cap pigment -> one shared asynchronous artwork/material record across world plants and cave clusters.
+  let mushroomArtUnavailable = false; // Missing future PNG attempts only one load wave per page; grass placeholders remain safe.
+  let mushroomPlaneGeometry = null; // Shared grounded, upright plane geometry used when mushroom.png becomes available.
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']); // Used by water-edge habitat checks.
   const TREE_FLORA_TYPES = new Set(['tree', 'copse']); // Used by tree-root habitats without treating every shrub as a tree.
   const SHRUB_FLORA_TYPES = new Set(['bush', 'fruitBush', 'mushroomPatch', 'foragePlant', 'shrub', 'vegetation']); // Used by low-cover habitat checks.
@@ -66,10 +70,52 @@
     return out;
   }
 
-  // A single reagent plant: a small two-blade cross (mirrors the
-  // "cross of quads" billboard-grass look) at 150% of a normal grass
-  // blade's size, standing alone as an individually pickable sprite
-  // instead of being folded into a shared InstancedMesh tuft.
+  // Mushroom world art uses SpriteRecolor's same mint-cap selection as the
+  // inventory: share one CanvasTexture/material per dye, never per instance.
+  // Until the authored PNG arrives, the existing grass-reagent placeholder
+  // still spawns normally; a missing file does not block gameplay.
+  function applyMushroomSprite(meshes, color) {
+    if (mushroomArtUnavailable || typeof window.SpriteRecolor?.getRecoloredCanvas !== 'function') return;
+    let record = mushroomMaterials.get(color); // Shared asynchronous material and pending meshes for one species color.
+    if (!record) {
+      record = { state: 'loading', material: null, meshes: new Set() }; // One load/color, with no permanent references after completion.
+      mushroomMaterials.set(color, record);
+      Promise.resolve().then(() => window.SpriteRecolor.getRecoloredCanvas(MUSHROOM_SPRITE_PATH, color, 'mushroom'))
+        .then(canvas => {
+          if (!canvas?.width || !canvas?.height) throw new Error('Mushroom artwork has no pixels');
+          const texture = new THREE.CanvasTexture(canvas); // Real authored PNG, recolored only once per species.
+          texture.minFilter = texture.magFilter = THREE.NearestFilter;
+          texture.needsUpdate = true;
+          record.material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.5,
+            depthWrite: true, side: THREE.DoubleSide, fog: true });
+          record.material.userData.hobunjiWorldBakeSafe = true; // Static mushroom cards are eligible for the existing world batcher.
+          mushroomPlaneGeometry ||= new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0); // Ground, not the sprite center, is y=0.
+          record.width = 0.48 * canvas.width / canvas.height; // Preserve the authored cap/stem aspect ratio without stretching the pixels.
+          record.state = 'ready';
+          for (const mesh of record.meshes) {
+            mesh.geometry = mushroomPlaneGeometry;
+            mesh.material = record.material;
+            mesh.scale.set(record.width, 0.48, 1);
+          }
+          record.meshes.clear(); // Do not retain harvested/offscreen groups after the material is ready.
+        }).catch(error => {
+          mushroomArtUnavailable = true;
+          record.state = 'missing';
+          record.meshes.clear();
+          window.__farmLog?.('[reagent-plants] mushroom.png not available; retaining grass silhouettes until sprite is supplied: ' + error.message, 'world');
+        });
+    }
+    if (record.state === 'ready') {
+      for (const mesh of meshes) {
+        mesh.geometry = mushroomPlaneGeometry;
+        mesh.material = record.material;
+        mesh.scale.set(record.width, 0.48, 1);
+      }
+    } else if (record.state === 'loading') for (const mesh of meshes) record.meshes.add(mesh);
+  }
+
+  // A single reagent plant: two crossed cards, still using the legacy grass
+  // material until a mushroom's own authored sprite resolves successfully.
   function buildReagentPlantMesh(reagentKey) {
     const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
     if (!def) return null;
@@ -79,14 +125,17 @@
     // HOBUNJI_GRASS_DISTANCE_LOD, so its blades can be baked into world space by js/zone-prop-render-batches.js.
     mat.userData.hobunjiWorldBakeSafe = true;
     const group = new THREE.Group();
-    const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
+    const sizeMul = 1.5; // Established wild herb size; mushroom-specific world sprite uses its own authored aspect.
     const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+    const cards = []; // Both crossed surfaces share one color material after the PNG loads.
     for (const rot of [0, Math.PI / 2]) {
       const blade = new THREE.Mesh(deps._grassBladeGeo, mat);
       blade.rotation.y = rot;
       blade.scale.set(w, h, 1);
       group.add(blade);
+      cards.push(blade);
     }
+    if (def.form === 'mushroom') applyMushroomSprite(cards, def.color); // Separate bitmap silhouettes, no generated outlines.
     group.userData.isBillboard = true;
     group.userData.reagentKey = reagentKey;
     return group;
@@ -275,6 +324,10 @@
     const placements = persisted?.placements || [];
     return {
       mapId, day: persisted?.day ?? null, version: persisted?.version ?? null,
+      mushroomArt: { path: MUSHROOM_SPRITE_PATH, status: mushroomArtUnavailable ? 'awaiting-mushroom-png'
+        : [...mushroomMaterials.values()].some(entry => entry.state === 'ready') ? 'ready'
+          : mushroomMaterials.size ? 'loading' : 'not-requested',
+        cachedColors: [...mushroomMaterials.values()].filter(entry => entry.state === 'ready').length }, // Mobile-readable asset fallback state.
       total: placements.length, active: placements.filter(p => !p.harvested).length, harvested: placements.filter(p => p.harvested).length,
       bySpecies: Object.fromEntries(window.AlchemySystem.reagentsForZone(mapId).map(key => [key, placements.filter(p => p.key === key).length])),
       habitats: Object.fromEntries(window.AlchemySystem.reagentsForZone(mapId).map(key => [key, { habitat: window.AlchemySystem.REAGENT_DEFS[key]?.habitat, label: HABITAT_LABELS[window.AlchemySystem.REAGENT_DEFS[key]?.habitat] || 'unknown' }])),
