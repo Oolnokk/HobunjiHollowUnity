@@ -339,9 +339,13 @@
       window.EnemyDodge?.cancel?.(prey); // A queued NPC duel dodge must not resume beneath the talons.
       window.BanditCombat?.cancelLunge?.(prey);
       if (prey._banditAction) {
-        prey._banditAction.cancelled = true; // Combat.update may still hold the staged action's original reference.
-        window.BanditCombat?.finishAction?.(prey);
-        prey._banditAction = null; // Standalone wildlife/dev builds may not have BanditCombat loaded.
+        const action = prey._banditAction; // The shared Combat staged-action registry must release this captured actor's attack.
+        if (typeof action.cancel === 'function') action.cancel(); // Clears the global action set and runs its authored onCancel cleanup.
+        else { // Standalone previews may supply only a minimal staged-action record.
+          action.cancelled = true;
+          window.BanditCombat?.finishAction?.(prey);
+        }
+        if (prey._banditAction === action) prey._banditAction = null; // Fallback for absent onCancel handlers.
       }
       window.RangedWeapons?.cancelBanditAction?.(prey);
     }

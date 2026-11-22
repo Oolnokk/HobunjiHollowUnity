@@ -162,9 +162,22 @@ w.KnockbackCollisionImpact={cancel(){cancellations.impact++;}};
 const liftedBandit={creatureKey:'bandit',isBandit:true,health:40,areaId:zone,
   x:farBird.x+64,y:farBird.y,state:'chase',knockbackT:.6,knockbackVX:120,knockbackVY:-30,
   vx:80,vy:-40,dodging:true,_enemyDodgePending:{remainingS:.2},_banditLunging:true,
-  _banditAction:{cancelled:false},_rangedAction:{kind:'fire'}}; // Existing hostile, not a copied carry proxy.
+  _rangedAction:{kind:'fire'}}; // Existing hostile, not a copied carry proxy.
+const activeStaged = new Set(); // Models Combat-core's persistent action registry, not merely a boolean on the actor.
+const stagedBanditAction = {
+  cancelled:false,
+  cancel() {
+    if (this.cancelled) return;
+    this.cancelled=true;
+    activeStaged.delete(this); // The engine removes the cancelled strike before its next frame update.
+    w.BanditCombat.finishAction(liftedBandit); // onCancel completes authored bandit pose cleanup.
+  },
+}; // A real staged strike has a cancel method and lives independently from the actor.
+activeStaged.add(stagedBanditAction);
+liftedBandit._banditAction=stagedBanditAction;
 const liftStartX=liftedBandit.x; // Simulates the former duel's ground position trying to reassert itself midflight.
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,liftedBandit));
+assert.equal(activeStaged.size,0,'capture must remove a pending strike from Combat-core, not only mark it cancelled');
 assert.deepEqual(cancellations,{dodge:1,lunge:1,swing:1,ranged:1,impact:1},
   'capture cancels pending dodge, lunge, swing, ranged shot and collision impulse');
 assert.equal(liftedBandit.knockbackT,0,'damage from the initiating swoop cannot continue to move the captive');
