@@ -549,7 +549,7 @@
   const spineLayoutFor = (baseX, baseY, modelHeight, posteriorY, pivotX = baseX, pivotY = baseY) => window.HobunjiCharacterSpine?.layoutFor?.(baseX, baseY, modelHeight, posteriorY, pivotX, pivotY)
     || { nodes: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), offsets: Array.from({ length: SPLINE_NODE_COUNT }, () => ({ x: 0, y: 0, z: 0 })), neck: { x: pivotX, y: pivotY, z: 0 } };
   // The neck base where the spline ends (the shoulder line, not the head-turn pivot at the head's centre / chin line); the pivot itself when unknown.
-  const spineNeckBase = (speciesId, gender, modelHeight, placementRatio, neck, posteriorY) => window.HobunjiCharacterSpine?.neckBaseLocal?.({ speciesId, gender, modelHeight, placementRatio, neckX: neck.x, neckY: neck.y, posteriorY }) || { x: neck.x, y: neck.y };
+  const spineNeckBase = (speciesId, gender, modelHeight, placementRatio, neck, posteriorY, pixelHeight = 200) => window.HobunjiCharacterSpine?.neckBaseLocal?.({ speciesId, gender, modelHeight, placementRatio, neckX: neck.x, neckY: neck.y, posteriorY, pixelHeight }) || { x: neck.x, y: neck.y };
   const spineWeightScratch = { a: 0, b: 0, wb: 0 };
   const spineNodeWeightsAt = (y, neckY, modelHeight, posteriorY, out = spineWeightScratch) => window.HobunjiCharacterSpine?.nodeWeightsAt?.(y, neckY, modelHeight, posteriorY, out)
     || Object.assign(out, { a: 0, b: 0, wb: 0 }); // Skin weights of the two neighbouring spline nodes at plane-local height y.
@@ -834,11 +834,9 @@
         skinIndices.push(OFFSET_BONE, NECK_BONE, HEAD_BONE, 0);
         skinWeights.push(1 - turnWeight, turnWeight - scaleWeight, scaleWeight, 0); // All three upper bones inherit the head placement shift.
       } else {
-        const offsetWeight = headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight); // Unrotated head-height compensation tapers gently into the upper body.
-        const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY);
-        const bodyWeight = 1 - offsetWeight;
-        skinIndices.push(spline.a, OFFSET_BONE, spline.b, 0);
-        skinWeights.push(bodyWeight * (1 - spline.wb), offsetWeight, bodyWeight * spline.wb, 0);
+        const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY); // Entire torso-to-neck area belongs to the actual seven-node spline.
+        skinIndices.push(spline.a, spline.b, 0, 0);
+        skinWeights.push(1 - spline.wb, spline.wb, 0, 0); // No broad head-offset skinning: the huge pseudo-neck was created by this 24%-height fade.
       }
     };
 
@@ -911,7 +909,7 @@
     };
     const gatedHeadBounds = headGateBounds(detectedHead.boundsPx, config.headGate, config.speciesId, null, false, config.cosmeticIds); // Species-aware head gate (player and NPC avatars).
     const posteriorY = spinePosteriorLocalY(config.speciesId, config.gender, modelHeight, config.placementRatio, config.handAttachY);
-    const spineBase = spineNeckBase(config.speciesId, config.gender, modelHeight, config.placementRatio, neckLocal, posteriorY);
+    const spineBase = spineNeckBase(config.speciesId, config.gender, modelHeight, config.placementRatio, neckLocal, posteriorY, pxH); // The last spine node is 2.5 original portrait pixels below the real head bottom.
     const geometry = buildSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, {
       pixelWidth: pxW,
       pixelHeight: pxH,
@@ -1043,7 +1041,7 @@
     const headBounds = headGateBounds(detectedHead?.boundsPx, fallbackDimensions.headGate, fallbackDimensions.speciesId, fallbackDimensions.headMaskCanvas, mirrorX, fallbackDimensions.cosmeticIds);
     const pixelWidth = sourceCanvas?.width || 1;
     const posteriorY = spinePosteriorLocalY(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, fallbackDimensions.handAttachY);
-    const spineBase = spineNeckBase(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, { x: pivotLocalX, y: pivotLocalY }, posteriorY);
+    const spineBase = spineNeckBase(fallbackDimensions.speciesId, fallbackDimensions.gender, planeHeight, fallbackDimensions.placementRatio, { x: pivotLocalX, y: pivotLocalY }, posteriorY, sourceCanvas?.height || 200); // Hostile portrait shares the same short spine-to-head gap.
     const hostileMode = fallbackDimensions.meshBudget === 'full' ? 'full' : 'npc'; // Enemies default to the NPC budget.
     const hostileMasked = !!headBounds?.headMask; // Preserve the finer masked-head grid at every density.
     const neckLocal = { x: pivotLocalX, y: pivotLocalY, z: 0 };
@@ -1427,7 +1425,7 @@
     spline.a = 0; spline.b = 0; spline.wb = 0;
     if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
     const offsetWeight = hasPlacement ? (headWeight > 0
-      ? 1 - headWeight : headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0; // Moving the editor's neck bone must affect source-pixel mouth probes, not only GPU vertices.
+      ? 1 - headWeight : authorOffset ? headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) : 0) : 0; // The shared 10-bone GPU gives the entire torso-to-neck region to the spine; preserve the legacy author's separate 3-bone broad placement.
     headWeight = hasPlacement ? headWeight : Math.max(headWeight, headScaleWeight); // Legacy meshes retain their original two/three-bone projection.
     const bodyWeight = 1 - headWeight - offsetWeight;
     for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
