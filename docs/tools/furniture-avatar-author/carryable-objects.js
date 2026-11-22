@@ -59,6 +59,12 @@
   pane.innerHTML=[
     '<section class="fed-section">',
     '<h2>Carryable world objects</h2>',
+    '<div class="section"><h2>Family baby grips</h2>',
+    '<p class="muted">Author the actual baby carry profile using these same hand and anchor gizmos. The preview shows a 0.30-unit infant silhouette; all positions scale with the babys actual portrait. Furniture is preserved separately.</p>',
+    '<div class="g2"><button type="button" id="carryBabyEdit">Edit baby grips</button><button type="button" id="carryBabyReturn">Return to furniture grips</button></div>',
+    '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
+    '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
+    '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
     '<p class="muted">The orange square marks the furniture-local grip frame aligned with the avatar’s posterior plus the offset below. Purple marks the real posterior on the avatar; cyan marks the attachment point. Rotate the actual hand sockets with the gizmo or degree fields. Only the avatar and guides are editor-only.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
     '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Held anchor</button><button type="button" id="carrySelectBack">▣ Back-carry anchor</button></div>',
@@ -110,6 +116,17 @@
   if(bootStatus)pane.prepend(bootStatus); // Module errors after constructing controls must still be visible in the Carryable tab.
   if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
   const el=id=>document.getElementById(id);
+  const BABY_REFERENCE_WIDTH=.3, BABY_REFERENCE_HEIGHT=.3; // Authoring preview size for dimension-scaled infant grips.
+  let editingBaby=false, savedFurnitureCarry=null, babyDraft=null; // Preserve ordinary furniture grips while baby guides are active.
+  const babyReference=new THREE.Group(); // Non-exported, silhouette-only representation of the infant portrait plane.
+  babyReference.name='baby_reference_only';
+  const babyReferencePlane=new THREE.Mesh(new THREE.PlaneGeometry(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT),
+    new THREE.MeshBasicMaterial({color:0x9fc9dc,transparent:true,opacity:.45,depthWrite:false,side:THREE.DoubleSide}));
+  babyReferencePlane.position.y=BABY_REFERENCE_HEIGHT/2;
+  babyReferencePlane.userData.noOutline=true;
+  babyReference.add(babyReferencePlane);
+  babyReference.visible=false;
+  helperRoot.add(babyReference);
   const guideRoot=new THREE.Group();
   guideRoot.name='CarryableAuthoringGuides';
   guideRoot.visible=false;
@@ -176,7 +193,7 @@
     status((isBack?'Back-mounted posterior pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
   }
   function frameHoldingPreview(){
-    const bounds=new THREE.Box3().setFromObject(root);
+    const bounds=new THREE.Box3().setFromObject(editingBaby?babyReference:root);
     if(heldPreview.visible&&previewActor)bounds.expandByObject(previewActor);
     if(bounds.isEmpty())return;
     const center=bounds.getCenter(new THREE.Vector3()),extents=bounds.getSize(new THREE.Vector3());
@@ -326,6 +343,10 @@
       if(document.activeElement!==offsetInput)offsetInput.value=Number((id==='back'?c.backCarry:c.billboardAnchor).posteriorOffset?.[axis.toLowerCase()]||0).toFixed(3);
     }
     if(document.activeElement!==el('carrySize'))el('carrySize').value=(id==='back'?c.backCarry:c.billboardAnchor).size;
+    el('carryBabyEdit').disabled=editingBaby;
+    el('carryBabyReturn').disabled=!editingBaby;
+    el('carryBabyApply').disabled=!editingBaby;
+    if(editingBaby)el('carryBabyStatus').textContent='Editing live family baby hand targets and anchors. Apply to this browser or export JSON to ship the profile.';
     el('carrySummary').textContent=c.enabled
       ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
       :'Carrying disabled: configure the anchors here and enable when ready.';
@@ -436,7 +457,7 @@
     }
     refreshGuides();
     syncHoldingPreview();
-    queueUndoHistory('carryable guide edit');
+    if(!editingBaby)queueUndoHistory('carryable guide edit'); // Baby guide edits never overwrite furniture undo history.
     renderControls();
   }
   function fromGizmo() {
@@ -469,25 +490,85 @@
   el('carrySelectHitbox').onclick=()=>select('hitbox');
   el('carryHitboxEnabled').onchange=e=>{
     state.carryable.hitbox.enabled=!!e.target.checked;
-    refreshGuides();renderControls();queueUndoHistory('carryable hitbox toggle');
+    refreshGuides();renderControls();if(!editingBaby)queueUndoHistory('carryable hitbox toggle');
   };
   el('carryEnabled').onchange=event=>{
     state.carryable.enabled=!!event.target.checked;
-    queueUndoHistory('carryable toggle');
+    if(!editingBaby)queueUndoHistory('carryable toggle');
     renderControls();
   };
   for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryPortraitX','carryPortraitY','carryPortraitZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
     el(id).addEventListener('change',fromInputs);
   transform.addEventListener?.('objectChange',fromGizmo);
 
+  function editBaby(){
+    const pose=window.FamilyBabyCarryPose;
+    if(!pose?.forSize){
+      el('carryBabyStatus').textContent='Baby grip profile unavailable. Check the on-screen error log.';
+      log('Baby grip profile failed to load.','error');
+      return false;
+    }
+    if(editingBaby)return true;
+    savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
+    state.carryable=babyDraft||pose.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);
+    editingBaby=true;root.visible=false;babyReference.visible=activeEditorMode==='carry';
+    createGuides();select('left');setHoldingVisibility();frameHoldingPreview();
+    return true;
+  }
+  function returnToFurniture(){
+    if(!editingBaby)return;
+    babyDraft=cloneJson(state.carryable); // Keep incomplete mobile edits if the user revisits the baby tab.
+    state.carryable=savedFurnitureCarry;savedFurnitureCarry=null;editingBaby=false;
+    root.visible=true;babyReference.visible=false;
+    createGuides();renderControls();setHoldingVisibility();
+    el('carryBabyStatus').textContent='Furniture grips restored; baby settings are separate.';
+  }
+  function applyBaby(){
+    if(!editingBaby)return;
+    const api=window.FamilyBabyCarryPose;
+    if(!api?.toProfile)return;
+    const profile=api.toProfile(state.carryable,BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);
+    api.save(profile); // Device-local authoring override; world save data stays unchanged.
+    el('carryBabyStatus').textContent='Baby grips applied on this device. Reload gameplay to load this pose; export JSON to ship it.';
+  }
+  function exportBaby(){
+    const api=window.FamilyBabyCarryPose;
+    if(!api?.snapshot)return;
+    const profile=editingBaby
+      ?api.toProfile(state.carryable,BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)
+      :api.snapshot();
+    download('family-baby-carry-pose.json',new Blob([JSON.stringify(profile,null,2)+'\\n'],{type:'application/json'}));
+    el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
+  }
+  el('carryBabyEdit').onclick=editBaby;
+  el('carryBabyReturn').onclick=returnToFurniture;
+  el('carryBabyApply').onclick=applyBaby;
+  el('carryBabyExport').onclick=exportBaby;
+  el('carryBabyImport').onchange=async event=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    try{
+      if(file.size>100000)throw Error('Baby profile JSON is unexpectedly large.');
+      const api=window.FamilyBabyCarryPose;
+      if(!api?.save)throw Error('Shared baby pose module unavailable');
+      api.save(JSON.parse(await file.text())); // Import is an explicit action; validate and persist on this device.
+      babyDraft=null;
+      if(editingBaby){state.carryable=api.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);createGuides();renderControls();syncHoldingPreview();}
+      el('carryBabyStatus').textContent='Imported and applied baby profile. Reload gameplay to see the new grips.';
+    }catch(error){
+      el('carryBabyStatus').textContent='Baby profile import failed: '+(error?.message||error);
+      log('Baby profile import failed: '+(error?.message||error),'error');
+    }finally{event.target.value='';}
+  };
   const originalExport=exportData;
   exportData=function(...args) {
     const data=originalExport(...args);
-    data.carryable=cloneJson(state.carryable);
+    data.carryable=cloneJson(editingBaby?savedFurnitureCarry:state.carryable); // No infant settings leak into exported furniture.
     return data;
   };
   const originalLoad=loadData;
   loadData=function(data){
+    if(editingBaby)returnToFurniture();
     state.carryable=normalized(data?.carryable);
     const result=originalLoad(data);
     createGuides();
@@ -498,6 +579,7 @@
   const originalRebuild=rebuildAll;
   rebuildAll=function(...args){
     const result=originalRebuild(...args);
+    if(editingBaby)root.visible=false;
     createGuides();
     renderControls();
     setHoldingVisibility();
@@ -505,12 +587,14 @@
   };
   const originalMode=setEditorMode;
   setEditorMode=function(mode){
+    if(mode!=='carry'&&editingBaby)returnToFurniture();
     const result=originalMode(mode);
     pane.classList.toggle('hidden',mode!=='carry');
     guideRoot.visible=mode==='carry';
+    babyReference.visible=mode==='carry'&&editingBaby;
     document.querySelectorAll('[data-left-tab]').forEach(tab=>
       tab.classList.toggle('active',tab.dataset.leftTab===mode));
-    if(mode==='carry')select('anchor');
+    if(mode==='carry')select(editingBaby?'left':'anchor');
     setHoldingVisibility();
     if(mode==='carry')frameHoldingPreview();
     return result;
@@ -520,7 +604,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
