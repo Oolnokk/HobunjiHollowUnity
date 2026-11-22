@@ -1065,6 +1065,14 @@
     try {
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
       lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
+      const lineage = window.LivestockItemGenotypePersistence?.getDebug?.(); // Read-only saved-offspring audit; never restores animals automatically.
+      if (lineage) lines.push('Carried animal lineage custody: ' + JSON.stringify({
+        installed: lineage.installed, queuedNow: lineage.queuedNow, lastItemKey: lineage.lastItemKey,
+        lastAction: lineage.lastAction, unbackedLineages: lineage.unbackedLineages,
+        queueCounts: Object.fromEntries(Object.entries(lineage.queues || {}).map(([key, genes]) => [key, genes.length])),
+        recentErrors: (lineage.errors || []).slice(-3),
+      })); // Counts and shortfalls are copyable on mobile without dumping every genotype.
+
       lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
       const denCollision = window.ZoneDenTotemFeatures?.denCollisionDebugSnapshot?.(); // Read cache hits/rebuilds only during a Pixel Probe; no gameplay-frame string work.
       if (denCollision) lines.push(`Den collision cache: hits=${denCollision.hits} builds=${denCollision.builds} invalidations=${denCollision.invalidations}`);
