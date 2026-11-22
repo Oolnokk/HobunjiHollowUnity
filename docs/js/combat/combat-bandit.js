@@ -1176,9 +1176,28 @@
 
   function beginBanditMeleeStage(c, options, target) {
     window.FeyIllusions?.setActionDuration?.(c, (Number(options.windupS) || 0) + (Number(options.strikeS) || 0) + (Number(options.recoverS) || 0)); // A Demented NPC's perception rotates over its actual two-strike lifetime, not the default 220ms fallback.
+    const originalStrike = options.onStrike, originalComplete = options.onComplete, originalCancel = options.onCancel; // The real hit-resolution callbacks stay the single source of truth for when the target can be attacked again.
+    const guardedOptions = {
+      ...options,
+      onStrike: (...args) => {
+        try { originalStrike?.(...args); }
+        finally {
+          const echo = c._feyHypedNpcSequence; // A Fey-paid strike has a second *physical* hit; keep the turn through its extra windup and release only after that resolves.
+          if (!echo || echo.echo) releaseBanditAttackTurn(c, target);
+        }
+      },
+      onComplete: (...args) => {
+        try { originalComplete?.(...args); }
+        finally { releaseBanditAttackTurn(c, target); } // Fallback for a stage that completes without a hit callback.
+      },
+      onCancel: (...args) => {
+        try { originalCancel?.(...args); }
+        finally { releaseBanditAttackTurn(c, target); } // Interrupted windups cannot strand the one-attacker token.
+      },
+    }; // Shared Combat.beginStagedAction and FeyHypedAttacks both use this same lifecycle.
     const hype = window.FeyHypedAttacks; // Shared enhanced-Stamina executor owns the two NPC stages, not a duplicate AI or render pose.
     const payment = hype?.claimNpcMelee?.(c); // Only actually spent, eligible Hyped Stamina is committed to this particular NPC melee attack.
-    if (!payment) return window.Combat.beginStagedAction(options);
+    if (!payment) return window.Combat.beginStagedAction(guardedOptions);
     c._banditSwingHoldS = Math.max(0, Number(c._banditSwingHoldS) || 0) / payment.tempo; // Existing SharedAttackPose holder follows its own doubled-speed attack clock.
     c._banditSwingReturnS = Math.max(0, Number(c._banditSwingReturnS) || 0) / payment.tempo;
     const firstLunge = c._banditLunging && (Number(c._banditLungeDistancePx) || 0) > 0
@@ -1189,7 +1208,7 @@
     }
     const firstLungeDuration = Number(c._banditLungeDur) || 0; // Used only if the second authored strike also has a legal original lunge.
     return hype.beginNpcMelee(c, {
-      ...options,
+      ...guardedOptions,
       feyHypedNpcTarget: target, // Protects the second strike from a vanished or map-transitioned enemy.
       onFeyHypedNpcEchoStart: ratio => {
         if (!firstLunge || !(ratio > 0) || !target || !(Number(target.health) > 0)) return;
