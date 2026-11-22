@@ -34,6 +34,7 @@
   let longoranWalkTimer = 0; // Runs an isolated, user-requested walk preview; never a gameplay frame loop.
   let focusedEntryKey = null; // Only the explicit Focus selected action changes camera focus; selection and slider edits never reframe it.
   let manualViewInteraction = false; // During progressive loading, prevents a final automatic lineup frame after any actual user input or camera gesture.
+  let showSpineGuides = true; // Full Character Scale displays the real seven-node spline and cyan head attachment until the user hides it.
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -262,10 +263,16 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
         ${scaleRow('OffsetY', 'Head Y offset', -50, 50, 0.5, 0, 'Head Y offset, percent of model height')}
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
+        <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
+        <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale/offset are compensated at the neck rig, so stretching width/height never distorts head proportions. Age is per-NPC and composes with Head Y offset for a hunched-over look.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
+      panel.querySelector('#maaFullScaleShowSpine').addEventListener('change', event => {
+        showSpineGuides = event.target.checked; // Preview-only setting; not exported with species scales or Rig Coordinates data.
+        syncSpineGuides(); // Immediately hide/show the existing meshes; never rebuild the portrait to toggle debug bones.
+      });
       panel.querySelector('#maaFullScaleChoose').addEventListener('change', event => {
         manualViewInteraction = true; // An intentional selection must not be followed by a surprise automatic lineup frame.
         const entry = entries.find(item => item.key === event.target.value);
@@ -372,6 +379,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * 10) / 10);
   }
 
+  function syncSpineGuides() {
+    for (const entry of entries) entry.spineGuide?.sync(showSpineGuides && entry === selected); // Only selected avatar gets overlay, even while the lineup streams in.
+  }
+
   function syncLongoranKyphosisAvailability() {
     const hunch = Number(document.getElementById('maaLongoranRangeHunch')?.value) || 0; // The same dependency used in Enemy Loadout Editor: no hunch means there can be no forward hook.
     for (const id of ['maaLongoranRangeKyphosis', 'maaLongoranNumKyphosis']) {
@@ -413,6 +424,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         syncLongoranKyphosisAvailability(); // Kyphosis is unavailable until some hunch exists, as in the enemy editor.
       }
     }
+    syncSpineGuides(); // Selected species' actual spine becomes visible without moving the camera or modifying its rig.
     status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}. Use Focus selected to center this character without altering the lineup until requested.`);
     // Selection changes the edited character, never camera position, angle, projection, or zoom.
   }
@@ -430,6 +442,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // Exposed in mobile diagnostics if a portrait could not build its skinned spline.
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.('longoran', entry.gender, entry.profile);
     if (scale) window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, 'longoran', entry.gender, scale, spine?.hunch || 0);
+    entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the real hunch immediately.
   }
 
   function rebuildLongoranFeet(entry) {
@@ -529,6 +542,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     selected.profile.anatomy.headScale = scale.head;
     selected.profile.anatomy.headOffsetY = scale.offsetY;
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
+    syncSpineGuides(); // Head-scale and offset changes must redraw the physical neck connection in the same touch event.
     clearTimeout(persistTimer);
     persistTimer = setTimeout(persistProfiles, 180);
   }
@@ -543,6 +557,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, percent / 100);
+    syncSpineGuides(); // Aged stoop may move the head independently of permanent species posture.
   }
 
   function persistProfiles() {
@@ -574,6 +589,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, scale, 0);
       if (entry.species === 'longoran') { refreshLongoranSpine(entry); rebuildLongoranFeet(entry); }
     }
+    syncSpineGuides(); // Reset visibly restores all selected vertebra positions and the real head pivot.
     window.ProceduralHandFrameDriver?.syncNow?.();
     if (selected) select(selected);
     persistProfiles();
@@ -742,7 +758,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
-    const entry = { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
+    const spineGuide = window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, model.userData.neckRig) || null; // Reuses the runtime spine's own seven live bones, not an authored approximation.
+    const entry = { ...rep, group, model, feet, spineGuide, profile: rigProfile, avatarProfile: avatar.profile };
     if (rep.species === 'longoran') refreshLongoranSpine(entry); // Gameplay-static back curvature is visible on the initial lineup, not only after touching a slider.
     return entry;
   }
@@ -962,6 +979,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const focusButton = document.getElementById('maaFullScaleFocus');
     if (focusButton) focusButton.disabled = true;
     for (const entry of entries) {
+      try { entry.spineGuide?.dispose?.(); } catch (_) {} // Remove line/joint meshes and release their shared geometry before disposing the skinned model.
       try { entry.feet?.dispose?.(); } catch (_) {}
       try { window.PNGPlaneAvatar?.disposeAvatarModel?.(entry.model); } catch (_) {}
       try { entry.group?.parent?.remove?.(entry.group); } catch (_) {}
@@ -1051,7 +1069,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
-        spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null, // Detects missing skinned rigs without devtools.
+        spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
+        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible, nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0 }, // Mobile-readable proof of the seven live bone positions and current overlay state. // Detects missing skinned rigs without devtools.
         gait: selected?.species === 'longoran' ? selected.feet?.getStandingPoseDebug?.()?.gait || null : null, // Exposes actual Maskbound gait state in the preview.
         portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
         portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
