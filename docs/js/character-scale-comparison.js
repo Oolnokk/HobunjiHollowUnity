@@ -285,14 +285,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       panel.addEventListener('input', () => { if (active) manualViewInteraction = true; }, true); // Includes head, body and Longoran adjustments, even when another capture listener consumes the event.
       panel.addEventListener('pointerdown', () => { if (active) manualViewInteraction = true; }, true); // Covers Reset all, buttons and mobile taps during background preview loading.
       panel.addEventListener('keydown', () => { if (active) manualViewInteraction = true; }, true); // Covers keyboard-only editing and focus requests without pointer events.
-      for (const axis of ['X', 'PortraitHeight', 'LegLength', 'Hand', 'Foot', 'Head', 'OffsetY']) {
-        const range = panel.querySelector(`#maaFullScaleRange${axis}`);
-        const number = panel.querySelector(`#maaFullScaleNum${axis}`);
-        range.addEventListener('input', () => { number.value = range.value; applyBodyHeadSliders(); });
-        range.addEventListener('change', persistProfiles);
-        number.addEventListener('input', () => { range.value = number.value; applyBodyHeadSliders(); });
-        number.addEventListener('change', persistProfiles);
-      }
+      // The capture-phase BodyInputGuard owns these seven paired sliders.
+      // Do not add a second input listener: it would rewrite Head's raw-PNG scale
+      // or reset independently authored dimensions when another slider moves.
       const ageRange = panel.querySelector('#maaFullScaleRangeAge');
       const ageNumber = panel.querySelector('#maaFullScaleNumAge');
       ageRange.addEventListener('input', () => { ageNumber.value = ageRange.value; applyAgeSlider(); });
@@ -557,14 +552,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
   }
 
   function syncLegPortraitAlignment(entry) {
-    if (!entry?.model || !entry.feet) return;
-    if (window.ProceduralLegAnimation?.alignPortraitWithLegs?.(entry.group, entry.feet)) return; // Game and editor share one idempotent torso-to-hip adjustment.
-    const baseY = Number(entry.basePortraitY); // Original portrait centering, captured before any leg-length edit.
-    const basePosterior = Number(entry.feet.restPosteriorY); // The foot solver's original hip anchor in the same parent-local coordinates.
-    const currentPosterior = Number(entry.feet.standingPosteriorY); // True resized hip anchor; foot mesh size does not change leg length.
-    if (![baseY, basePosterior, currentPosterior].every(Number.isFinite)) return;
-    entry.model.position.y = baseY + currentPosterior - basePosterior; // Place the drawn torso at the newly lengthened hips while its own height scale stays independent.
-    entry.model.updateMatrix?.();
+    if (entry?.group && entry.feet) window.ProceduralLegAnimation?.alignPortraitWithLegs?.(entry.group, entry.feet); // One shared game/editor hip anchor, with no duplicate fallback geometry.
   }
 
   function scheduleHandResize(entry) {
@@ -585,51 +573,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
     }
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
-    selected.feet?.update?.(0, 0, false, null); // Full Character Scale is static between edits: actively refresh foot contacts when portrait Y changes.
+    if (['x', 'y', 'legLength', 'footScale'].includes(changedField))
+      selected.feet?.update?.(0, 0, false, null); // Recheck planted soles only when geometry changes; Head and Hand edits need no gait work.
     syncLegPortraitAlignment(selected); // Hip and painted torso stay attached under separate Leg length and Portrait height edits.
     if (changedField === 'handScale') scheduleHandResize(selected); // Debounced cached GLB replacement keeps mobile slider movement responsive.
     syncSpineGuides(); // The guide follows the true resized body, not the former combined Height factor.
     window.ProceduralHandFrameDriver?.syncNow?.();
     return true;
-  }
-
-  // Width/portrait height/leg length/head/part sizes are authored per species+gender, on the shared
-  // profile — moving any one of these four sliders reapplies all four together
-  // (each read fresh from its own range input) plus whatever age is already set.
-  function applyBodyHeadSliders() {
-    if (!active || !selected) return;
-    const scale = { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 }; // The old Y factor now scales just the portrait, not the independent leg-length solver.
-    for (const [axis, field] of [['X', 'x'], ['PortraitHeight', 'y'], ['LegLength', 'legLength'], ['Head', 'head']]) {
-      const percent = clampPercent(document.getElementById(`maaFullScaleRange${axis}`).value);
-      scale[field] = percent / 100;
-      setSliderValue(axis, percent);
-    }
-    const hand = clampPercent(document.getElementById('maaFullScaleRangeHand').value) / 100; // Independent anatomical hand-size override.
-    const foot = clampPercent(document.getElementById('maaFullScaleRangeFoot').value) / 100; // Independent anatomical foot-size override.
-    setSliderValue('Hand', hand * 100);
-    setSliderValue('Foot', foot * 100);
-    const offsetPercent = clampOffsetPercent(document.getElementById('maaFullScaleRangeOffsetY').value);
-    scale.offsetY = offsetPercent / 100;
-    setSliderValue('OffsetY', offsetPercent);
-    selected.profile.anatomy ||= {};
-    selected.profile.anatomy.rigScaleX = scale.x;
-    selected.profile.anatomy.rigScaleY = scale.y; // Legacy Height value becomes authored Portrait height without erasing older imports.
-    selected.profile.anatomy.legLengthScale = scale.legLength;
-    selected.profile.anatomy.headScale = scale.head;
-    selected.profile.anatomy.headOffsetY = scale.offsetY;
-    const previousHand = Number(selected.profile.anatomy.handScale);
-    const previousFoot = Number(selected.profile.anatomy.footScale);
-    selected.profile.anatomy.handScale = hand;
-    selected.profile.anatomy.footScale = foot;
-    if (previousFoot !== foot) applyAnatomyConfig(selected.profile); // Freeze the saved hand multiplier when resizing feet so the previous inherited hand/foot coupling cannot return.
-    selected.feet?.setFootScaleMultiplier?.(foot); // Real GLB/fallback foot sizes update live, with sole contact preserved.
-    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
-    selected.feet?.update?.(0, 0, false, null); // Keep the fallback unguarded preview's planted sole contacts in sync with the changed aspect.
-    syncLegPortraitAlignment(selected); // Reanchor the portrait to the actual resized hips without stretching the hands/feet or moving the floor.
-    if (previousHand !== hand) scheduleHandResize(selected); // Avoid hundreds of expensive hand GLB reconstructions during a mobile slider drag.
-    syncSpineGuides();
-    clearTimeout(persistTimer);
-    persistTimer = setTimeout(persistProfiles, 180);
   }
 
   // Age is per-NPC instance data, not species+gender-authored — it's stored and
@@ -642,8 +592,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, percent / 100);
-    syncLegPortraitAlignment(selected); // Age changes do not erase an independently authored hip-to-foot reach.
-    syncSpineGuides(); // Aged stoop may move the head independently of permanent species posture.
+    syncSpineGuides(); // Age only shifts head/spine; do not re-solve or relocate unchanged procedural legs. // Aged stoop may move the head independently of permanent species posture.
   }
 
   function persistProfiles() {
@@ -1112,6 +1061,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     try {
       const scaleHost = host();
       if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
+      if (!window.HobunjiFullScaleBodyInputGuard?.applyScaleField)
+        throw new Error('Scale controls are unavailable: the shared input guard failed to load.'); // Mobile-visible failure instead of a second, incompatible slider path.
       if (originMode !== 'multi') await scaleHost.setMode('multi');
       savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
       if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
