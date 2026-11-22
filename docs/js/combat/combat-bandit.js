@@ -3007,6 +3007,9 @@
   }
 
   function updateBanditToolMesh(c) {
+    if (c?._banditPreparedCharge && (c.prone || c.health <= 0 || c.state !== 'chase' || c.tzatzulCapturedBy)) {
+      releaseBanditCharge(c, c._banditPreparedCharge.target); // A prone/dead/carried fighter may skip its melee AI; its visible weapon renderer must not preserve a stale held pose.
+    }
     window.GhoulSpecialVariants?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Enchanted-weapon particles for the mine's Shadowknights.
     if (c?._banditCaptainArmament) window.BanditCaptainArmaments?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Only enchanted captains emit the ordinary fixed-weapon planar particles.
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
