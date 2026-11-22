@@ -141,6 +141,7 @@ assert.equal(say(byId.sloomi), 'SHOP ACCESS', 'shared chatter cannot displace ge
 const anotherSloomiLine = say(byId.sloomi);
 assert.ok(anotherSloomiLine === 'SHOP ACCESS' || config.personalityFamilies.reserved.some(entry => entry.text === anotherSloomiLine), 'repeated dialogue cannot leak unrelated personality speech');
 
+dialogueWindow.DialogueContent.loadNpcRelationships({ npcRelationships: {}, npcFavorRescaleApplied: true }); // Fresh world context isolates the complete starter-roster first-meeting audit from the synthetic fixtures above.
 const starter = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Full shipped character roster verifies existing authored greetings are never silently displaced.
 const starterScoped = compose(starter, config, personalities);
 assert.equal(starterScoped.npcs.length, starter.npcs.length, 'the shared layer preserves all starter NPC records');
