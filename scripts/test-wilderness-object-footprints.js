@@ -102,6 +102,11 @@ assert.deepEqual(policy.localePlacementBoxes(localeWithGround),
   'both the painted floor and protruding authored objects are claimed');
 assert.deepEqual(policy.localePlacementBoxes({x:0,y:0,w:2,h:2}),[{x:0,y:0,w:2,h:2}],
   'old exported locale bounds remain available without an explicit footprint record');
+assert.deepEqual(policy.localePlacementBoxes({objects:[{x:17,y:6}]}),
+  [{x:17,y:6,w:1,h:1}],
+  'legacy furnishings without dimensions still reserve their one-tile placement');
+assert.equal(policy.localeBlocksSite({objects:[{x:17,y:6}]},17,6),true,
+  'landmark scenery also respects dimensions omitted from old furnishing data');
 
 const campMap = {cols:20,rows:20,tiles:[],localeInstances:[localeWithGround]}; // Real layout shape accepted by both temporary camp view builders.
 for(let row=0;row<campMap.rows;row++) for(let col=0;col<campMap.cols;col++)
@@ -195,6 +200,10 @@ assert.equal(collider.area,'map_northern_cliffs');
 assert.equal(collider.blocksBox(3.5,3.5,.1,null),true,'the previously non-colliding boulder must block the player');
 assert.equal(collider.blocksBox(3.5,3.5,.1,10),false,'a projectile passing above the boulder remains clear');
 assert.equal(collider.blocksBox(6.5,6.5,.1,null),false,'unrelated floor remains walkable');
+assert.equal(collider.blocksBox(3.95,3.5,.1,null),true,'stone overhangs are included at an off-center player footprint');
+assert.equal(collider.blocksBox(3.99,3.5,.1,null),false,'non-overlapping space immediately outside the stone remains open');
+assert.equal(collider.blocksBox(10,3.5,6.2,null),true,'wide movers query neighboring spatial bins, not only their center bin');
+assert.equal(collider.blocksBox(NaN,3.5,.1,null),false,'invalid collision probes never trigger an unbounded spatial-index scan');
 assert.equal(scenery.debugSnapshot().stoneCollision.siteCount,1,'mobile diagnostics expose the physical stone count');
 scenery.clear();
 assert.equal(rendererProps.size,0,'changing zone or shift unregisters stale physical stones');
