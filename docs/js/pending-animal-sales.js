@@ -10,6 +10,9 @@
   let lastAction = 'No animal sales queued this session.'; // Shown in the mobile-accessible debug snapshot.
 
   const today = () => Math.max(1, Math.floor(Number(deps?.calendar?.day) || 1));
+  const worldId = () => deps?._tothalWorldId?.() || null; // Matches FarmPanel's world-scoped livestock and owner-wallet persistence.
+  const characterId = () => window.FarmAnimals?.currentCharacterId?.()
+    || (window.__hobunjiPlayerProfile || deps?.getPlayerData?.())?.characterId || null; // Seller identity follows the member who queued the sale.
 
   function pendingFor(entry) {
     const sale = entry?.pendingAnimalSale;
@@ -33,9 +36,20 @@
     if (pendingFor(entry)) return { ok: false, message: 'That animal is already awaiting collection.' };
     const price = Number(amount);
     if (!Number.isSafeInteger(price) || price < 1) return { ok: false, message: 'Invalid animal sale price.' };
+    const sellerCharacterId = characterId(); // Ensures a later farmhand's collection never steals this seller's payment.
+    if (!sellerCharacterId || !worldId() || !window.WorldMetaStore?.completeAnimalSales) {
+      return { ok: false, message: 'World or character save is not ready for livestock sales.' };
+    }
 
-    entry.pendingAnimalSale = { price, queuedDay: today(), eligibleDay: today() + 1 }; // Both roster and Nursery read this single persistent marker.
-    if (deps._saveWorldLivestock(records) === false) return { ok: false, message: 'Could not save the pending animal sale.' };
+    const original = entry.pendingAnimalSale; // Restored if the world write rejects this queue change.
+    entry.pendingAnimalSale = { price, queuedDay: today(), eligibleDay: today() + 1, sellerCharacterId }; // Both roster and Nursery read this single persistent marker.
+    try {
+      if (deps._saveWorldLivestock(records) === false) throw new Error('Livestock save rejected.');
+    } catch (_) {
+      if (original === undefined) delete entry.pendingAnimalSale;
+      else entry.pendingAnimalSale = original;
+      return { ok: false, message: 'Could not save the pending animal sale.' };
+    }
     lastAction = 'Queued ' + (entry.name || entry.kind) + ' (' + entry.id + ') for ' + price + 'g.';
     return { ok: true, amount: price, entry, message: (entry.name || 'Animal') + ' queued for ' + price + 'g. Cancel from the Farm/Nursery before collection.' };
   }
@@ -48,7 +62,9 @@
     if (!pendingFor(entry)) return { ok: false, message: 'That animal is not awaiting sale.' };
     const original = entry.pendingAnimalSale; // Roll back the in-memory change if persistence rejects the cancellation.
     delete entry.pendingAnimalSale;
-    if (deps._saveWorldLivestock(records) === false) {
+    try {
+      if (deps._saveWorldLivestock(records) === false) throw new Error('Livestock save rejected.');
+    } catch (_) {
       entry.pendingAnimalSale = original;
       return { ok: false, message: 'Could not cancel the pending animal sale.' };
     }
@@ -65,37 +81,54 @@
       return sale && sale.eligibleDay <= today();
     }); // Sales made after midnight cannot settle alongside the previous shipment.
     if (!eligible.length) return { sold: 0, earned: 0 };
+
+    const activeCharacterId = characterId(); // Used by WorldMetaStore to reconcile the active in-memory wallet with its saved member.
+    const activeWorldId = worldId(); // Never collect animals belonging to a different world after character switches.
+    const walletGold = Number(deps.inventory.gold || 0); // Current unsaved wallet, flushed before the atomic sale transaction.
+    if (!activeCharacterId || !activeWorldId || !Number.isSafeInteger(walletGold) || walletGold < 0) {
+      lastAction = 'Animal sale collection deferred: member or wallet is unavailable.';
+      return { sold: 0, earned: 0 };
+    }
+
     settling = true;
     try {
-      let sold = 0;
-      let earned = 0;
-      const names = [];
-      for (const entry of eligible) {
-        // Reuse the established cleanup: persisted roster, breeding references,
-        // farm collision/world object and animal mesh must all leave together.
-        const removed = window.FarmPanel?.removeLivestockAndCleanup?.(entry.id);
-        if (!removed) continue;
-        const sale = pendingFor(removed);
-        if (!sale) continue;
-        earned += sale.price;
-        sold++;
-        names.push(removed.name || removed.kind);
+      // Flush other gameplay inventory changes BEFORE the transactional write.
+      // Removing animals first, then persisting payment, previously introduced a
+      // crash window in which the original animal was gone and no gold was paid.
+      if (deps.saveMemberWorldData() === false) {
+        lastAction = 'Animal sale collection deferred: member save failed.';
+        return { sold: 0, earned: 0 };
       }
-      if (!sold) return { sold: 0, earned: 0 };
-      deps.inventory.gold = (Number(deps.inventory.gold) || 0) + earned;
+      const commit = window.WorldMetaStore?.completeAnimalSales?.(
+        activeWorldId, activeCharacterId, walletGold, today(), eligible.map(entry => entry.id)
+      ); // The persisted roster, pair references and seller wallets commit in one localStorage write.
+      if (!commit?.ok) {
+        lastAction = 'Animal sale collection deferred: ' + (commit?.error || 'world settlement unavailable');
+        return { sold: 0, earned: 0 };
+      }
+      if (!commit.sold.length) return { sold: 0, earned: 0 };
+
+      deps.inventory.gold = commit.currentGold; // Synchronizes only the active member; offline sellers were credited directly in the world save.
+      window.FarmPanel?.onAnimalSalesCollected?.(commit.sold.map(animal => animal.id)); // Release the sold world meshes without rewriting the already-committed roster.
+      window.FarmAnimals?.invalidateBreedingFollowCache?.(); // Breeding parents now reflect the atomically filtered world pair list.
+
+      const names = commit.sold.map(entry => entry.name || entry.kind);
       const log = deps.getDeliveryLog?.();
       if (Array.isArray(log)) {
-        log.unshift({ type: 'sale', text: 'Day ' + today() + ' animal collection — ' + names.join(', ') + ' = ' + earned + 'g (' + reason + ')' });
+        log.unshift({ type: 'sale', text: 'Day ' + today() + ' animal collection — ' + names.join(', ') + ' = ' + commit.earned + 'g (' + reason + ')' });
         log.length = Math.min(log.length, 60);
       }
-      deps.saveMemberWorldData();
       const amount = deps.spGold?.querySelector?.('#spGoldAmount');
       if (amount) amount.textContent = deps.inventory.gold; // Refresh gold without removing the icon/suffix.
       window.LivestockNursery?.rerollSwarm?.();
       window.FarmPanel?.render?.();
-      deps.showToast?.('🐾 Animal sale collected: +' + earned + 'g', true);
-      lastAction = 'Collected ' + sold + ' animals for ' + earned + 'g (' + reason + ').';
-      return { sold, earned };
+      deps.showToast?.('🐾 Animal sale collected: ' + names.length + ' animal(s), ' + commit.earned + 'g credited', true);
+      lastAction = 'Collected ' + names.length + ' animals for ' + commit.earned + 'g (' + reason + ').';
+      return { sold: names.length, earned: commit.earned };
+    } catch (error) {
+      lastAction = 'Animal sale committed or deferred with a UI error: ' + String(error?.message || error);
+      window.__farmLog?.(lastAction, 'livestock'); // In-game diagnostics survive absent browser DevTools.
+      return { sold: 0, earned: 0 };
     } finally {
       settling = false;
     }
@@ -108,6 +141,7 @@
       pending: (list() || []).filter(entry => pendingFor(entry)).map(entry => ({
         id: entry.id, name: entry.name, kind: entry.kind, stage: entry.lifeStage,
         price: entry.pendingAnimalSale.price, eligibleDay: entry.pendingAnimalSale.eligibleDay,
+        sellerCharacterId: entry.pendingAnimalSale.sellerCharacterId || null,
       })),
     };
   }
