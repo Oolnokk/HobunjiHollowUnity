@@ -31,15 +31,18 @@ const windowStub={
 }; // The actual Combat begin-staged API returns a callback-bearing handle; physics/rendering is not needed.
 const deps={TILE:55,rnd:()=>.5,clamp:(x,lo,hi)=>Math.max(lo,Math.min(hi,x)),
   angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))}; // Existing game world-to-tile and wrapped-bearing conventions.
-const context={window:windowStub,deps,WeakMap,Math,Number,Object,performance:{now:()=>1000},
+let simulatedNow=1000; // Shared 12ms pruning cadence for directional and queued records, under a deterministic clock.
+const context={window:windowStub,deps,WeakMap,Math,Number,Object,performance:{now:()=>simulatedNow},
   resetBanditSwingToNatural(c){c.restored=true;}};
 const coordinator=vm.runInNewContext(
   '(()=>{' +
   section(source,'  const BANDIT_MAX_ATTACK_SLOTS =','  // Queued (non-slot-holding)') +
+  section(source,'  const BANDIT_QUEUE_RING_CAPACITY =','  // A point on a ring of the given radius') +
   section(source,'  function beginBanditMeleeStage(', '  function resolvedBanditCombatTarget(') +
   'return {slots:_banditAttackSlots,claim:claimBanditAttackSlot,angle:banditFacingSlotAngle,' +
   'owner:banditAttackTurnOwner,acquire:claimBanditAttackTurn,release:releaseBanditAttackTurn,' +
   'chargeOwner:banditChargeOwner,prepare:beginBanditPreparedCharge,uncharge:releaseBanditCharge,' +
+  'queue:claimBanditQueueRing,queued:_banditQueueRings,' +
   'stage:beginBanditMeleeStage,max:BANDIT_MAX_ATTACK_SLOTS};})()',context
 ); // Executes production functions unmodified, including the real Fey stage integration wrapper.
 assert.equal(coordinator.max,4,'four approaches permitted');
@@ -74,6 +77,21 @@ assert.equal(promoted.sector,3,'a true Backstab specialist displaces a non-speci
 assert.equal(coordinator.slots.length,4,'rear upgrade maintains exactly four occupied directions');
 assert.equal(coordinator.slots.some(s=>s.bandit===rear),false,'displaced rear actor returns to ordinary queue');
 assert.strictEqual(coordinator.claim(rear,0,target),null,'rear replacement cannot create a fifth slot');
+// Waiting fighters retain the multi-ring capacity, but repeated frames no longer rescan the entire queue.
+const waitingTarget={x:900,y:500,angle:0,health:100,areaId:'zone'};
+const waiting=[actor('wait-1',900,600),actor('wait-2',930,600),actor('wait-3',870,600),actor('wait-4',930,650)];
+const waits=waiting.map(c=>coordinator.queue(c,0,waitingTarget));
+assert.deepEqual(Array.from(waits,q=>q.ringIndex),[0,0,0,1],'three waiting combatants per ring, then the next concentric ring');
+assert.strictEqual(coordinator.queue(waiting[0],1.3,waitingTarget),waits[0],'repeat frames reuse one stable queue assignment');
+assert.equal(waits[0].angle,0,'queued facing does not jitter with a new bearing');
+const otherWaitingTarget={x:1300,y:500,angle:0,health:100,areaId:'zone'};
+assert(coordinator.queue(waiting[0],0,otherWaitingTarget),'a queued fighter can change its target');
+assert.equal(coordinator.queued.filter(q=>q.bandit===waiting[0]).length,1,'switching targets releases the previous queue record');
+waiting[1].health=0;
+simulatedNow+=16;
+coordinator.queue(waiting[2],0,waitingTarget);
+assert.equal(coordinator.queued.some(q=>q.bandit===waiting[1]),false,'batched cleanup removes dead queued actors and target references');
+
 const alternate={x:700,y:0,angle:0,health:100,areaId:'zone'};
 assert(coordinator.claim(rear,0,alternate),'other targets maintain independent approach reservations');
 
@@ -225,6 +243,7 @@ const aiGlobals={
 simulation=vm.runInNewContext(
   '(()=>{' +
   section(source,'  const BANDIT_MAX_ATTACK_SLOTS =','  // Queued (non-slot-holding)') +
+  section(source,'  const BANDIT_QUEUE_RING_CAPACITY =','  // A point on a ring of the given radius') +
   section(source,'  function beginBanditMeleeStage(', '  function resolvedBanditCombatTarget(') +
   section(source,'  function updateBanditCombatAI(', '  // ── Bandit weapon visuals') +
   'return {tick:updateBanditCombatAI,slot:claimBanditAttackSlot,owner:banditAttackTurnOwner,' +
