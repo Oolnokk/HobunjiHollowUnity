@@ -495,10 +495,11 @@
   async function _loadSharedDialogueSources() {
     if (!sharedDialogueSourcesPromise) {
       sharedDialogueSourcesPromise = Promise.all([SHARED_DIALOGUE_PATH, PERSONALITY_PROFILES_PATH].map(async path => {
-        const response = await fetch(_docsResourceUrl(path)); // Both nested editors and the running game resolve configs relative to docs/.
+        const response = await fetch(_docsResourceUrl(path), { cache: 'no-store' }); // Shared copy is edited independently of NPC JSON, so never reuse a stale cached profile or line catalog.
         if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
         return response.json();
       })).catch(error => {
+        sharedDialogueSourcesPromise = null; // A transient offline load must not permanently disable shared speech on later NPC/database loads.
         console.warn('[LocalDBOverrides] Could not load shared dialogue or personality assignments:', error);
         return null; // Missing optional shared copy must not block the existing NPC database or its unique dialogue.
       });
