@@ -821,11 +821,15 @@
     if (!parent || !handle) return false;
     const desired = Number(handle.standingPosteriorY) - Number(handle.restPosteriorY); // Parent-local additional leg reach, with feet remaining at floor Y=0.
     if (!Number.isFinite(desired)) return false;
-    let portrait = null;
-    parent.traverse?.(node => {
-      if (portrait || node === parent) return;
-      if (node.userData?.neckRig?.available && node.position) portrait = node; // Never reposition the ground-root that also owns the feet.
-    });
+    let portrait = handle.portraitNode; // The portrait is a stable mesh per rig; caching avoids walking its entire hierarchy on every size edit.
+    if (!portrait?.parent) {
+      portrait = null;
+      parent.traverse?.(node => {
+        if (portrait || node === parent) return;
+        if (node.userData?.neckRig?.available && node.position) portrait = node; // Never reposition the floor root that owns both feet.
+      });
+      handle.portraitNode = portrait;
+    }
     if (!portrait) return false;
     portrait.userData ||= {};
     const previous = Number(portrait.userData.hobunjiLegLengthPortraitOffsetY) || 0; // Remembers our offset so unrelated action animations are not wiped on later slider updates.
@@ -1083,24 +1087,28 @@
       return (leftLength + rightLength) * 0.5;
     }
 
-    function setLegLengthMultiplier(multiplier) {
+    function setLegLengthMultiplier(multiplier, contactChanged = false) {
       if (state.disposed) return posteriorY;
-      const raw = Number(multiplier); // Ratio of authored leg length to authored portrait height, in the existing character-parent frame.
-      legLengthMultiplier = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1; // Independent 10–400% sliders can differ by up to 40×; honor their actual ratio.
-      const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves hips, not shoe geometry.
+      const raw = Number(multiplier); // Ratio of authored leg length to portrait Y, both in canonical world-size units.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
+      if (!contactChanged && Math.abs(next - legLengthMultiplier) <= 1e-9) return posteriorY; // Width/head/age changes must not re-solve both bones or rebuild pants.
+      legLengthMultiplier = next;
+      const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves the hip, not the shoe geometry.
       posteriorY = contact + (restPosteriorY - contact) * legLengthMultiplier;
       for (const side of ['left', 'right']) {
         legChains[side].hip.position.y = posteriorY;
-        if (state[side]) applyLegChain(side); // Re-solve existing thigh/calf joints without loading meshes or changing gait authored bend.
+        if (state[side]) applyLegChain(side); // Contact changes still re-solve the real joints once.
       }
-      state.anatomyRevision++; // Pants bindings recompute their cuffs when the leg anchor moves.
+      state.anatomyRevision++; // Pants cuff bindings refresh only when hip proportion or sole contact actually changes.
       return posteriorY;
     }
 
-    function setFootScaleMultiplier(multiplier) {
+    function setFootScaleMultiplier(multiplier, meshChanged = false) {
       if (state.disposed) return footSizeScale;
       const raw = Number(multiplier); // Independent hand/foot authored setting; zero and non-finite values are rejected.
-      footSizeScale = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(4, raw)) : initialFootScale;
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(4, raw)) : initialFootScale;
+      if (!meshChanged && Math.abs(next - footSizeScale) <= 1e-9) return footSizeScale; // Repeated identical slider inputs need no foot transforms or leg IK.
+      footSizeScale = next;
       const relative = footSizeScale / initialFootScale; // Relative to the foot geometry's original shipped multiplier.
       for (const side of ['left', 'right']) {
         const foot = state[side];
@@ -1116,7 +1124,7 @@
         state[`${side}Target`].y += resizedContact - state[key]; // Do not reset the current stride/pose when sizing an idle or walking foot.
         state[key] = resizedContact;
       }
-      setLegLengthMultiplier(legLengthMultiplier); // New sole height changes the hip-to-ankle reference, but never sinks the feet.
+      setLegLengthMultiplier(legLengthMultiplier, true); // Sole contact changed even if the leg-size slider did not; refresh IK once.
       return footSizeScale;
     }
 
@@ -1367,7 +1375,7 @@
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY * state.extremityYRatio;
         state.rightContactY = rightMesh.userData.contactRadiusY * state.extremityYRatio;
-        setFootScaleMultiplier(footSizeScale); // Apply any slider changes made while GLBs were loading; capture the new mesh's own rest scale.
+        setFootScaleMultiplier(footSizeScale, true); // Async GLB swap needs a fresh baseline even when the slider percentage itself is unchanged.
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
@@ -1673,7 +1681,7 @@
         state.leftContactY = nextLeftContactY;
         state.rightContactY = nextRightContactY;
         if (Math.abs(legLengthMultiplier - 1) > 1e-9)
-          setLegLengthMultiplier(legLengthMultiplier); // A changed portrait aspect can also resize sole contact; retain independent hip-to-ankle reach from the NEW planted foot height.
+          setLegLengthMultiplier(legLengthMultiplier, true); // The contact changed with the portrait aspect even though the authored leg percentage did not.
       }
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
