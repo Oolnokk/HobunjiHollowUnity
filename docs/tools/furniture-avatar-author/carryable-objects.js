@@ -714,6 +714,7 @@
     if(id==='anchor'||id==='back')babyPoseView=id; // The next Rotate Baby operation edits whichever carry mode was selected.
     state.selectedType='carry';
     state.selectedId=id;
+    if(editingBaby)setBabyBones(!!el('carryBabyBones')?.checked); // Re-enable real paper arms after switching back from back-stow.
     babyPivotAxes.visible=id==='baby'; // Don't overlay an unrelated axis cross on hand/anchor editing.
     if(elbowSide(id))setBabyBones(true); // Elbow selection exposes the authoritative Attack Editor bone chain.
     transform.detach();
