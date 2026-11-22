@@ -39,8 +39,8 @@
     if (expressionCache.has(table)) return expressionCache.get(table);
     const terms = Object.keys(table).filter(key => key && key.length <= 80 && !/[{}]/.test(key))
       .sort((a, b) => b.length - a.length); // Longer authored phrases have priority over their component words.
-    const escaped = terms.map(term => term.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, generateTable });'));
-    const pattern = escaped.length ? new RegExp('(^|[^\\\\p{L}\\\\p{N}_])(' + escaped.join('|') + ')(?=$|[^\\\\p{L}\\\\p{N}_])', 'giu') : null;
+    const escaped = terms.map(term => term.replace(/([^\p{L}\p{N}\s])/gu, '\\$1')); // Escape every punctuation mark while preserving Unicode words and spaces.
+    const pattern = escaped.length ? new RegExp('(^|[^\\p{L}\\p{N}_])(' + escaped.join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu') : null;
     expressionCache.set(table, pattern);
     return pattern;
   }
@@ -55,7 +55,7 @@
     if (!pattern) return { text: original, hits: 0, swaps: 0 };
     const settings = normalizeSliders(sliders);
     let hits = 0, swaps = 0; // Diagnostics distinguish a missed coin flip from a missing entry.
-    const text = original.split(/(\\{\\{[^{}]*\\}\\}|\\{[A-Za-z][A-Za-z0-9_]*\\})/g).map(segment => {
+    const text = original.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})/g).map(segment => {
       if (segment.startsWith('{')) return segment; // Tokens such as {targetName} and {{playerName}} remain unchanged.
       pattern.lastIndex = 0;
       return segment.replace(pattern, (whole, prefix, raw) => {
