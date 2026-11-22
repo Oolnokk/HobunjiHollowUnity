@@ -108,7 +108,7 @@ assert.equal(torch.root.parent,marker,'head and halo inherit the real swinging r
 // The shaft swing's own visual update draws the whole span to the grab, then moves the decoration to the end of the brush.
 {
   const start=simple.indexOf('  function updateRopeVisual('); // Load the production rope visual updater in the fixture.
-  const end=simple.indexOf('  function canGrabShaftRope(',start);
+  const end=simple.indexOf('  // Rope entry has a single owner:',start);
   let renderedEnd=null; // Captures the endpoint submitted to the shared rope sprite.
   const window={DungeonRopeArt:{updateRopePlane(_mesh,_anchor,bob){renderedEnd=bob;}}};
   const place=new Function('ropeBobAt','ropeDirection','ropeMidpoint','window','deps',
