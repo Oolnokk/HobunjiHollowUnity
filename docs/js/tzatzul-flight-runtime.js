@@ -241,7 +241,6 @@
     if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
-    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Repair rotation AFTER the fall can mutate native actor pose.
     if (prey.health > 0) prey.state = record.state; // Death already owns the dying/corpse state; releasing cannot revive its AI.
     if (record.player) {
       prey.vx = 0; prey.vy = 0; // Native cave entry needs a grounded, stationary exterior exit record.
@@ -323,7 +322,6 @@
       || (isPlayer && (playerNeedsTime(bird, prey) || bird._tzFlight.readyingReleaseArmed))) return false; // Never grab from a previously committed dive while an activity is protected.
     const pickupX = n(prey.x), pickupY = n(prey.y); // Capture the original ground position BEFORE native perch attachment moves the prey.
     if (!window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
-    window.TzatzulLiveVisuals?.rememberCaptive?.(prey); // Snapshot the real player/NPC/animal rotation before the first talon alignment.
     captured.set(prey, { bird, player: isPlayer, nestMapId: bird.tzatzulNestMapId,
       pickupX, pickupY, state: prey.state,
       areaId: isPlayer ? bird.areaId : prey.areaId }); // Preserve original actor identity, clothing and safe exterior return position.
@@ -745,6 +743,9 @@
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
+    hasCaptives: () => captured.size > 0, // Gate the wildlife draw hook without scanning the roster.
+    carrierOf: prey => captured.get(prey)?.bird || null, // Direct lookup for player draw placement.
+    forEachCaptive: visit => { for (const [prey, record] of captured) visit(prey, record.bird); },
     owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
     resistsCarryKnockback: bird => !!bird?._tzFlight?.captive && bird.health > n(bird.maxHealth, 1) * .3 && !bird.prone, // Small hits do not drop a carried victim until the bird flees.
     sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.

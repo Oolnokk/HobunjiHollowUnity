@@ -349,30 +349,34 @@
     );
   }
 
-  function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo) {
+  const worldDeltaPosition = new THREE.Vector3(); // Placement scratch reused for each body root.
+  const worldDeltaQuaternion = new THREE.Quaternion(); // Local result after the world delta and parent conversion.
+  const worldDeltaParent = new THREE.Quaternion(); // Parent orientation for that conversion.
+  const carryPosition = new THREE.Vector3(); // Native player pivot used to place its scene-sibling followers.
+  const carryTranslation = new THREE.Vector3(); // Native-to-talon world displacement.
+  const carryBaseQuaternion = new THREE.Quaternion(); // Native hub orientation used to derive the followers' rotation.
+  const carryRotation = new THREE.Quaternion(); // Native-to-talon world rotation.
+
+  function applyWorldDelta(root, pivotWorld, worldRotation, worldTranslation, undo, renderOwner) {
     if (!root?.isObject3D || root.visible === false) return;
     root.updateWorldMatrix?.(true, false);
 
-    const oldPosition = root.position.clone();
-    const oldRotation = root.rotation.clone(); // Restored after render so Three cannot rewrite a >90° yaw into equivalent 180-degree X/Z Euler angles.
-    const worldPosition = root.getWorldPosition(new THREE.Vector3());
-    const worldQuaternion = hierarchyWorldQuaternion(root);
-
-    const nextWorldPosition = pivotWorld.clone()
-      .add(worldPosition.sub(pivotWorld).applyQuaternion(worldRotation))
-      .add(worldTranslation);
-    const nextWorldQuaternion = worldRotation.clone().multiply(worldQuaternion);
-
+    root.getWorldPosition(worldDeltaPosition).sub(pivotWorld).applyQuaternion(worldRotation)
+      .add(pivotWorld).add(worldTranslation);
+    hierarchyWorldQuaternion(root, worldDeltaQuaternion).premultiply(worldRotation);
     if (root.parent?.isObject3D) {
-      root.parent.updateWorldMatrix?.(true, false);
-      const parentWorldQuaternion = hierarchyWorldQuaternion(root.parent);
-      root.position.copy(root.parent.worldToLocal(nextWorldPosition.clone()));
-      root.quaternion.copy(parentWorldQuaternion.invert().multiply(nextWorldQuaternion));
-    } else {
-      root.position.copy(nextWorldPosition);
-      root.quaternion.copy(nextWorldQuaternion);
+      root.parent.worldToLocal(worldDeltaPosition);
+      worldDeltaQuaternion.premultiply(hierarchyWorldQuaternion(root.parent, worldDeltaParent).invert());
     }
 
+    if (renderOwner) {
+      window.ActorRigCompositor.applyRenderPose(root, renderOwner, worldDeltaPosition, worldDeltaQuaternion, undo);
+      return;
+    }
+    const oldPosition = root.position.clone(); // Restored after this draw alongside ordinary body effects.
+    const oldRotation = root.rotation.clone(); // Preserve the Euler representation expected by animation code.
+    root.position.copy(worldDeltaPosition);
+    root.quaternion.copy(worldDeltaQuaternion);
     undo.push(() => {
       root.position.copy(oldPosition);
       root.rotation.copy(oldRotation);
@@ -614,10 +618,27 @@
     return true;
   }
 
-  // Returns the state restorePlayerBodyAfterRender() needs. A failure part-way
-  // rolls back whatever was already applied and rethrows, so a caller never
-  // draws (or leaves behind) a half-composed body.
-  function composePlayerBodyForRender(camera) {
+  function composeCarryPlacement(scene, undo) {
+    const visuals = window.TzatzulLiveVisuals; // Owns authored talon placement; this composer owns the player and its followers.
+    const activeOwner = window.ActorRigCompositor?.renderPoseOwner?.(playerMesh); // Nested draws share an already composed placement.
+    if (activeOwner) return activeOwner;
+    const placement = visuals?.getPlayerCarryPlacement(playerMesh, scene);
+    if (!placement) return null;
+    const followers = currentOwnedRootEntries(); // Resolve providers before changing the player's world frame.
+    playerMesh.getWorldPosition(carryPosition);
+    hierarchyWorldQuaternion(playerMesh, carryBaseQuaternion);
+    if (!visuals.applyPlayerCarryPlacement(playerMesh, placement, undo)) return null;
+    const owner = window.ActorRigCompositor.renderPoseOwner(playerMesh); // Share the same transaction with scene-sibling attachments.
+    hierarchyWorldQuaternion(playerMesh, carryRotation).multiply(carryBaseQuaternion.invert());
+    playerMesh.getWorldPosition(carryTranslation).sub(carryPosition);
+    for (const { root } of followers) {
+      if (root !== playerMesh) applyWorldDelta(root, carryPosition, carryRotation, carryTranslation, undo, owner);
+    }
+    return owner;
+  }
+
+  // A failure part-way rolls back the composed body before propagating the error.
+  function composePlayerBodyForRender(camera, scene) {
     const undo = [];
     const pantsDuringRender = playerLegHandle?.pants || null; // Reskins the player's actual garment after render-only joint transforms and again after rollback.
     const renderDebug = {
@@ -637,12 +658,14 @@
     const state = { undo, pantsDuringRender, renderDebug }; // Everything restorePlayerBodyAfterRender needs.
     let absoluteLegsBase = null; // Set when a channel flagged absoluteLegs owns the leg group's world pose this frame.
     try {
-    if (playerMesh?.isObject3D) {
+    const carryOwner = playerMesh ? composeCarryPlacement(scene, undo) : null; // The talon placement replaces normal whole-body presentation for this draw.
+    if (carryOwner) renderDebug.appliedOrder.push(carryOwner);
+    if (playerMesh?.isObject3D && !carryOwner) {
       renderFacingForward.set(0, 0, 1).applyQuaternion(hierarchyWorldQuaternion(playerMesh));
       renderDebug.baseFacingYaw = Math.atan2(renderFacingForward.x, renderFacingForward.z); // Never allow the temporary weapon yaw to choose a different deadzone edge.
     }
     const poseLocked=window.CharacterActionLocks?.isLocked?.('player','pose'); // Explicit paired poses already solve limbs against their final roots; ordinary additive sway must not move them afterward.
-    if (playerMesh && !poseLocked) {
+    if (playerMesh && !poseLocked && !carryOwner) {
       const bodyDelta = resolveDelta('player');
       const externalDelta = resolveDelta('external');
       renderDebug.appliedOrder = [...new Set([...bodyDelta.applied, ...externalDelta.applied])];
@@ -675,7 +698,7 @@
       }
     }
 
-    if (playerMesh) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
+    if (playerMesh && !carryOwner) { applyRenderedFacingDeadzone(camera, undo, renderDebug); if(!poseLocked)applyWorldChannels(undo, renderDebug); if (absoluteLegsBase) restoreAbsoluteLegs(absoluteLegsBase, undo, renderDebug); applyPlayerHeadAim(undo, renderDebug); applyPlayerNeckYawLimit(renderDebug, camera); for (const hook of postHeadAimHooks) { try { hook(undo, renderDebug, camera); } catch (_) { /* An attachment hook must never break rendering. */ } } } // Clamp after channels land, using the same live camera as this render; head attachments then follow the drawn head.
     lastRenderDebug = renderDebug;
     if (pantsDuringRender?.update) {
       try { pantsDuringRender.update(true); renderDebug.pantsPoseResynced = true; }
@@ -733,7 +756,7 @@
   function makeLegacyComposerRender(originalRender) {
     return function composedPlayerBodyRender(scene, camera) {
       if (!playerBodyRenderApplies(scene)) return originalRender.call(this, scene, camera);
-      const state = composePlayerBodyForRender(camera);
+      const state = composePlayerBodyForRender(camera, scene);
       try {
         const result = originalRender.call(this, scene, camera);
         capturePlayerBodyAfterRender();
@@ -756,7 +779,7 @@
       order: window.RenderHooks.ORDER.PLAYER_BODY_COMPOSER,
       scope: 'frame',
       appliesTo: ctx => playerBodyRenderApplies(ctx.scene) && (!ctx.frame || ctx.scene === ctx.frame.scene),
-      before: ctx => composePlayerBodyForRender(ctx.camera),
+      before: ctx => composePlayerBodyForRender(ctx.camera, ctx.scene),
       afterRender: () => capturePlayerBodyAfterRender(),
       after: (_ctx, state) => restorePlayerBodyAfterRender(state),
     });
