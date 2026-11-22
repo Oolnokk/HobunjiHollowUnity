@@ -2060,6 +2060,7 @@
       const slot = { bandit: c, target, angle, sector: null };
       _banditAttackSlots.push(slot);
       _banditSlotForActor.set(c, slot);
+      releaseBanditQueueRing(c); // A promoted attacker must not also consume an outer waiting-ring place.
       return slot;
     }
     const used = [false, false, false, false]; // Four cheap flags, no pathfind/scene query; decide only on first slot acquisition.
@@ -2094,6 +2095,7 @@
     const slot = { bandit: c, target, sector: chosen, angle: banditSectorAngle(target, chosen) };
     _banditAttackSlots.push(slot);
     _banditSlotForActor.set(c, slot);
+    releaseBanditQueueRing(c); // Clear the former waiting-ring reservation immediately on promotion into one of four directions.
     return slot;
   }
 
@@ -2115,6 +2117,15 @@
   const _banditQueueRings = []; // [{ bandit, ringIndex, angle }] Preserved for existing arena and queue diagnostics.
   const _banditQueueForActor = new WeakMap(); // O(1) waiting-ring retention avoids the old every-frame full-array lookup.
   let _banditQueuePrunedAt = -Infinity; // Shared once-per-frame dead/unloaded cleanup, not once per queued combatant.
+
+  function releaseBanditQueueRing(c) {
+    const ring = _banditQueueForActor.get(c); // Shared with melee promotion and combat-mode cleanup; a queued fighter owns at most one ring.
+    if (!ring) return false;
+    const index = _banditQueueRings.indexOf(ring);
+    if (index >= 0) _banditQueueRings.splice(index, 1);
+    _banditQueueForActor.delete(c);
+    return true;
+  }
 
   function claimBanditQueueRing(c, towardAngle, target) {
     const now = performance.now();
@@ -2162,12 +2173,7 @@
       if (index >= 0) _banditAttackSlots.splice(index, 1);
       _banditSlotForActor.delete(c);
     }
-    const ring = _banditQueueForActor.get(c); // Do not leave a stale waiting ring pinning the next squad to an unnecessary outer ring.
-    if (ring) {
-      const index = _banditQueueRings.indexOf(ring);
-      if (index >= 0) _banditQueueRings.splice(index, 1);
-      _banditQueueForActor.delete(c);
-    }
+    releaseBanditQueueRing(c); // Combat-mode switches share the same one-owner queue release as slot promotion.
   }
 
   // A point on a ring of the given radius around the target, at the
