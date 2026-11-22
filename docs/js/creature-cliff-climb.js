@@ -339,7 +339,7 @@
   // This is an optional short descent only: distant/blocked landings still use
   // the established CliffRouteNetwork paths, never a blind vertical snap.
   function planLedgeDrop(c, goalX, goalY, network, options = {}) {
-    const area = deps.getCurrentArea(), tileSize = deps.TILE; // Both coordinate systems share the same route network.
+    const tileSize = deps.TILE; // Both coordinate systems share the same route network.
     return window.CliffRouteNetwork?.findIntentionalDrop?.(network, grid(),
       c.x / tileSize, c.y / tileSize, goalX / tileSize, goalY / tileSize, {
         ...options,
