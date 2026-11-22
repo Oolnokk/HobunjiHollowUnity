@@ -64,7 +64,7 @@ replays (`WorldRenderPipeline.captureFrame()` shows the exact list).
 | Names of every `THREE.Layers` bit | `js/render-layers.js` | `HobunjiRenderLayers` |
 | Outline tuning (thickness, ally/hostile colours, seam thresholds) | `docs/config/outline-rendering.json` | applied by the pipeline |
 | Composite shader | `js/outline-composite-material.js` | `OutlineCompositeMaterial` |
-| Held items / hands / feet over ground, x-ray, water tint | `js/held-object-render-order.js`, rules in `js/xray-hierarchy.js` | `HeldObjectRenderOrder`, `XrayHierarchy` |
+| Held items / hands / feet / pants over ground, x-ray, water tint | `js/held-object-render-order.js`, rules in `js/xray-hierarchy.js` | `HeldObjectRenderOrder`, `XrayHierarchy` |
 | Matrix reuse between passes, world-text overlay | `js/outline-render-performance.js` | `OutlineRenderPerformance` |
 | PNG sprite material/texture path | `js/portrait-utils.js` | `HobunjiSpritePngSurface` (see AGENTS.md) |
 | Which characters exist (player, NPCs, enemies, creatures, companions, mounts, shoulder pets, corpses, farm animals) and which visual systems cover which kind | `js/character-visuals.js` | `CharacterVisuals` |

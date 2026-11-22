@@ -77,6 +77,12 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       await pants.readyPromise;
       if (!pants.mesh || !pants.material || !pants.ready) throw Error('Pants material did not render');
       pants.update();
+      pants.geometry.computeBoundingBox();
+      pants.geometry.computeBoundingSphere();
+      pants.alignToRest();
+      const restBoundsInvalidated = pants.geometry.boundingBox === null
+        && pants.geometry.boundingSphere === null; // The next frame recomputes the new rest geometry lazily.
+      pants.geometry.computeBoundingBox();
       const mat = pants.material;
       const box = new T.Box3().setFromBufferAttribute(pants.geometry.getAttribute('position'));
       const cx = (box.min.x + box.max.x) * 0.5;
@@ -130,6 +136,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       scene.remove(otherActor);
       const result = {
         revision: T.REVISION, unoccluded, front, back, other, restZ: pants.basePositions[2],
+        restBoundsInvalidated,
         material: { depthTest: mat.depthTest, depthWrite: mat.depthWrite,
           offset: mat.polygonOffset, factor: mat.polygonOffsetFactor, units: mat.polygonOffsetUnits },
         bodyBounds: [box.min.toArray(), box.max.toArray()],
@@ -139,6 +146,8 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       return result;
     });
     assert.equal(result.revision, '128', 'tested the shipping Three.js revision');
+    assert.equal(result.restBoundsInvalidated, true,
+      'rare pants-rest realignment invalidates scissor bounds for recomputation without per-frame work');
     assert(result.unoccluded.cyan > 50, 'the neutral pant mesh actually renders visible cyan pixels: ' + JSON.stringify(result));
     assert(result.front.red > 50 && result.front.cyan === 0,
       'front portrait blocks every coplanar pants pixel: ' + JSON.stringify(result));

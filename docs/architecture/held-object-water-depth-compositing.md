@@ -98,6 +98,21 @@ tradeoff; a pants wearer whose sprite intersects another actor's plane may
 still need a dedicated per-actor depth composite. Opaque world geometry
 continues to depth-test normally; weapon stencils share the actor order.
 
+## Worn pants use the feet's ground-x-ray policy
+
+Each live pants garment now registers with the existing selective feet replay through
+`HeldObjectRenderOrder.markWaterOccludedMesh()`. This reuses the same local
+same-elevation grass/road/walkable-floor exemption, actor/camera-distance
+eligibility, and solid-cover and water/slush depth and tint behavior. Unworn,
+unloaded or off-distance NPC garments remain on the normal world depth path.
+
+The X-ray hierarchy configuration is **unchanged**: no global color priority
+is raised. Pants still use their existing owner-portrait depth/alpha rules.
+A conservative replay scissor margin covers GPU-deformed pants whose CPU
+rest mesh bounds do not change while their legs animate. Pants are authored
+PNG-art garments, so they do not acquire procedurally generated shell outlines.
+The Dev Companion snapshot reports pants registrations separately.
+
 ## Shoulder pets are part of the owner's portrait occlusion
 
 The observation pose selects the side of the owner where the animal draws.

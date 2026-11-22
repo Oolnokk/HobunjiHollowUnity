@@ -16,6 +16,8 @@ const isAuthoredInkPlane=new Function(section('  function isAuthoredInkPlane(', 
   + '\nreturn isAuthoredInkPlane;')(); // Production classification for PNG bodies, weapon art and grass/leaf cards.
 assert(isAuthoredInkPlane({geometry:{type:'PlaneGeometry'},userData:{}}),
   'PNG weapon planes cannot enter the generated shell pass');
+assert(isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{hobunjiPantsGarment:true}}),
+  'authored skinned pants grid never enters a generated outline shell');
 assert(isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{noOutline:true}}),
   'merged leaf cards marked noOutline remain excluded');
 assert(isAuthoredInkPlane({geometry:{type:'BufferGeometry'},userData:{isBillboard:true}}),
@@ -51,6 +53,23 @@ trusted.onBeforeRender=hooked;
 trusted.material.isShaderMaterial=true;
 assert(!canBound(trusted),'GPU shader deformation still keeps independent conservative occlusion');
 assert(!canBound({...trusted,isSkinnedMesh:true}), 'skinned meshes are not treated as rigid');
+// Pants are GPU-deformed and intentionally not Three.js-frustum-culled, but their known
+// padded authored bounds can still restore safe x-ray scissor/group batching.
+const paddedPants=mkMesh();
+paddedPants.frustumCulled=false;
+paddedPants.userData={hobunjiPantsGarment:true,hobunjiPantsGpuBoundsSafe:true,hobunjiXrayDeformPadding:.8};
+assert(!actualReplayCullable(paddedPants),'ordinary rigid mesh culling must remain disabled for animated garments');
+assert(canBound(paddedPants),'conservatively padded GPU pants can use actor-tile scissor grouping');
+assert(!canBound({...paddedPants,userData:{...paddedPants.userData,hobunjiPantsGpuBoundsSafe:false}}),
+  'CPU-deformed pants cannot use the rest-pose-only x-ray batching exception');
+assert(!canBound({...paddedPants,userData:{hobunjiPantsGarment:true,hobunjiXrayDeformPadding:0}}),
+  'pants without valid deformation padding cannot use bounds');
+assert(!canBound({...paddedPants,onBeforeRender:otherHook}),
+  'untrusted pants pose hooks still prevent bounded replay');
+assert(!canBound({...paddedPants,isSkinnedMesh:true}),
+  'a genuinely skinned pants mesh is not safely bounded by the authored rest padding');
+assert(!canBound({...paddedPants,material:{isShaderMaterial:true}}),
+  'unbounded shader-material deformation remains conservative');
 
 // Confirm circle-centered batching still consolidates screen-
 // separated trusted rigs, rather than merely accepting a marker in isolation.
@@ -81,6 +100,10 @@ const isolated=Array.from({length:24},(_,i)=>{
 const batch=groupActors({},null,{},isolated);
 assert.equal(batch.groups.length,3,'24 spaced trusted rigs share three eight-tile depth builds instead of 24');
 assert(batch.groups.every(x=>x.regions.length===8),'shader circle-center uniform budget remains capped at eight');
+const spacedPants=isolated.map(mesh=>({...mesh,frustumCulled:false,onBeforeRender:noop,
+  __hobunjiXrayBoundParity:null,userData:{hobunjiPantsGarment:true,hobunjiPantsGpuBoundsSafe:true,hobunjiXrayDeformPadding:.8}})); // Real GPU-garment posture with fixed safety margin.
+assert.equal(groupActors({},null,{},spacedPants).groups.length,3,
+  'separated pants tile regions batch into three conservative replays, not twenty-four independent ones');
 const untrusted=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrusted).groups.length,24,'unknown onBeforeRender hooks keep 24 conservative independent depth draws');
 assert.match(leg,/mesh\.onBeforeRender = function footDepthPushBefore\(/,

@@ -16,6 +16,7 @@ const inked = [
   { geometry: { type: 'BufferGeometry' }, userData: { isPngPlane: true } }, // Replacement portrait meshes.
   { geometry: { type: 'BufferGeometry' }, userData: { hobunjiWeaponAssemblyPart: true } }, // Flail heads/ropes.
   { geometry: { type: 'BufferGeometry' }, userData: { noOutline: true } }, // Merged tree leaf cards.
+  { geometry: { type: 'BufferGeometry' }, userData: { hobunjiPantsGarment: true } }, // GPU-deformable authored PNG pants grid must not get duplicate outlines.
   { geometry: { type: 'BufferGeometry' }, userData: { isBillboard: true } }, // Town and farm grass.
   { geometry: { type: 'BufferGeometry' }, userData: { isRichFoliageBillboard: true } }, // Wilderness grass.
 ]; // Flat authored artwork that must never receive new black shell pixels.
