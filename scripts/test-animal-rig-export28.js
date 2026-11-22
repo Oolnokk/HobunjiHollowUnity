@@ -21,7 +21,7 @@ const profileData = scope.HOBUNJI_ATTACHMENT_RIG_PROFILES; // One source for bot
 const expected = {
   drenkirra: [[2, 2, .9], [.45, .4, .17]],
   grehlr: [[1, .5, .3], [.625, .325, .13]],
-  'gar-wolf': [[1.5, 1, .28], [.525, .35, .11]],
+  'gar-wolf': [[1.5, 1, [.28, .34]], [.525, .35, .11]],
   'dabinggi-hound': [[2, 1, .35], [.7, .35, .09]],
   uumkaoii: [[1.5, 1, .24], [.75, .25, .05]],
   puktuk: [[.75, .45, .28], [.3, .175, .12]],
@@ -45,8 +45,9 @@ for (const [kind, [scales, lifts]] of Object.entries(expected)) {
   for (let i = 0; i < classes.length; i++) {
     const size = classes[i]; // Selects one authored class for the exact profile comparison.
     const tolerance = 1e-12; // Accommodates the same decimal ratios derived for Skeeri native widths.
-    assert.ok(Math.abs(actual.sizeScales[size].x - scales[i]) < tolerance, kind + ' ' + size + ' X');
-    assert.ok(Math.abs(actual.sizeScales[size].y - scales[i]) < tolerance || (kind === 'gar-wolf' && size === 'small' && actual.sizeScales.small.y === .34), kind + ' ' + size + ' Y');
+    const [width, height] = Array.isArray(scales[i]) ? scales[i] : [scales[i], scales[i]]; // Gar-wolf Small has intentionally nonuniform X/Y scaling.
+    assert.ok(Math.abs(actual.sizeScales[size].x - width) < tolerance, kind + ' ' + size + ' X');
+    assert.ok(Math.abs(actual.sizeScales[size].y - height) < tolerance, kind + ' ' + size + ' Y');
     assert.ok(Math.abs(actual.groundOffsets[size] - lifts[i]) < tolerance, kind + ' ' + size + ' lift');
   }
 }
