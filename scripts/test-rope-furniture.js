@@ -60,15 +60,32 @@ globalThis.DevRandomRuinSimplePuzzles = {
   removeFurnitureRope: rope => { log.push(['removeRuin', rope.id]); return true; },
 };
 const obj = piece(0, { x: 1, y: 0, z: 1 }), withRope = { rope: { length: 2.4 } };
+obj.parent={}; // A still-placed furniture mount remains eligible for deferred ruin registration.
 let rope = RF.register(RF.RUIN_MAP, 'm1', obj, withRope);
 assert.deepEqual(log.shift(), ['addRuin', 'm1', true], 'inside the ruin the ruin runtime builds the rope, with the piece as its mount');
 assert.deepEqual(log.shift(), ['adopt', 'rope-furniture_m1', undefined, RF.RUIN_MAP], 'the ruin runtime adopts that SAME rope once so burdens can hang from it');
 assert.equal(log.length, 0, 'RopeFurniture must not adopt the same rope a second time');
 rope = RF.register('town', 't1', obj, withRope);
 assert.deepEqual(log.shift(), ['owned', 'furniture_t1', 'town', 'mount', 2.4], 'elsewhere it is an owned rope');
-globalThis.DevRandomRuinSimplePuzzles.addFurnitureRope = () => null; // runtime not ready
-rope = RF.register(RF.RUIN_MAP, 'm2', obj, withRope); assert(rope && log.shift()[0] === 'owned', 'if the ruin runtime is not ready it falls back to an owned rope instead of losing the rope');
-log.length = 0;
+globalThis.DevRandomRuinSimplePuzzles.addFurnitureRope = () => null; // The native ruin runtime is not ready yet.
+globalThis.DevRandomRuinSimplePuzzles.hasActiveRuinState = () => false;
+rope = RF.register(RF.RUIN_MAP, 'm2', obj, withRope);
+assert.equal(rope,null,'early loading defers the rope instead of creating an incompatible outdoor rider');
+assert.equal(RF.debugSnapshot().ropes.at(-1).kind,'pending');
+assert.equal(RF.flushPending(),0,'no premature registration is possible');
+assert.equal(log.length,0,'there is no secondary hanging rope while the ruin runtime initializes');
+globalThis.DevRandomRuinSimplePuzzles.hasActiveRuinState = () => true;
+globalThis.DevRandomRuinSimplePuzzles.addFurnitureRope = (spec, mount) => {
+  log.push(['lateRuin',spec.id,!!mount]);
+  const instance=fakeRope('rope-furniture_'+spec.id);
+  globalThis.HangingRopes.adoptRope(instance,{mapId:RF.RUIN_MAP}); // The native ruin runtime owns the sole adoption.
+  return instance;
+};
+assert.equal(RF.flushPending(),1,'the queued mount registers exactly once when the native runtime is ready');
+assert.deepEqual(log.shift(),['lateRuin','m2',true]);
+assert.deepEqual(log.shift(),['adopt','rope-furniture_m2',undefined,RF.RUIN_MAP]);
+assert.equal(RF.flushPending(),0,'subsequent frames do not clone the rope');
+assert.equal(log.length,0);
 assert.equal(RF.register('town', 'none', obj, {}), null, 'no rope block, no rope'); assert.equal(log.length, 0);
 
 // ---- lifecycle
@@ -78,7 +95,7 @@ assert.equal(RF.unregister('town', 'u1'), true); assert.deepEqual(log.shift(), [
 assert.equal(RF.unregister('town', 'u1'), false, 'and only once');
 globalThis.DevRandomRuinSimplePuzzles.addFurnitureRope = (spec, mount) => fakeRope('rope-furniture_' + spec.id);
 RF.register(RF.RUIN_MAP, 'u2', obj, withRope); log.length = 0; RF.unregister(RF.RUIN_MAP, 'u2');
-assert.deepEqual(log.map(l => l[0]), ['removeHR', 'removeRuin'], 'a ruin rope is released from burdens first, then removed from the runtime');
+assert.deepEqual(log.map(l => l[0]), ['removeRuin'], 'the ruin owner cleans its rope and burden hook once, without a second controller');
 RF.register('town', 'a', obj, withRope); RF.register('town', 'b', obj, withRope); RF.register('elsewhere', 'c', obj, withRope);
 assert.equal(RF.clearArea('town'), 2); assert.equal(RF.debugSnapshot().ropes.length, 1); RF.clearArea('elsewhere');
 RF.register('town', 'dup', obj, withRope); log.length = 0; RF.register('town', 'dup', obj, withRope);
