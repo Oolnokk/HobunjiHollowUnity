@@ -92,6 +92,8 @@ function witnessDyes(seed) {
 }
 const cache=new WeakMap(); // Folded zone layout + world-cycle identity -> stable physical landmark positions.
 let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null,renderedLayout=null,renderedIdentity=''; // Used by update() to invalidate the physical marker when either the layout or the Tothal generation changes.
+let unregisterStoneCollision=null; // Removes the current zone's stationary masonry colliders on shift or scene teardown.
+const SOLID_STONE_KINDS = new Set(['markedBoulder','witnessStone','stoneCairn','brokenPillar']); // Visible stone is physical; intentionally decorative deadwood remains non-blocking.
 function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 function rng(seed){let v=seed>>>0;return()=>{v=(Math.imul(v^(v>>>15),2246822507)+0x9e3779b9)>>>0;return(v>>>8)/16777216;};}
 function tileLookup(layout){
@@ -113,7 +115,8 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   .filter((entry,index,list)=>list.findIndex(other=>other.col===entry.col&&other.row===entry.row)===index); // Each stamped blossom reserves a short, uniquely patterned opening landmark.
  const occupied=[]; // Preserve entrances, authored locales, totems and the wilderness spawn clearing.
  for(const start of blossomStarts)occupied.push({c:start.col,r:start.row,d:5}); // Ordinary random cairns never overlap the replacement debris.
- for(const item of layout.localeInstances||[])occupied.push({c:Number(item.x??item.col),r:Number(item.y??item.row),d:6});
+ // Keep authored floors free of scenery, even when their actual footprint is far from their entrance anchor.
+ // The shared helper also inspects furniture whose footprint extends beyond painted locale tiles.
  for(const item of [...(layout.dens||[]),...(layout.animalDens||[])])occupied.push({c:Number(item.mouthAnchor?.x??item.x),r:Number(item.mouthAnchor?.y??item.y),d:5});
  for(const item of layout.rootTotems||[])occupied.push({c:Number(item.x),r:Number(item.y),d:4});
  if(layout.entry)occupied.push({c:Number(layout.entry.col??layout.entry.x),r:Number(layout.entry.row??layout.entry.y),d:8});
@@ -122,6 +125,7 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   const col=3+Math.floor(next()*(cols-6)),row=3+Math.floor(next()*(rows-6)),tile=at(col,row);
   if(!tile||tile.type!=='grass'||tile.water||tile.path||tile.incline||tile.ramp||tile.mapBoundary||tile.skipFloor||tile.generatedObjectType)continue;
   if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>{const n=at(col+dx,row+dz);return!n||!['grass','weeds'].includes(n.type)||n.water||n.path||n.mapBoundary||(n.elevTier||0)!==(tile.elevTier||0);}))continue;
+  if((layout.localeInstances||[]).some(locale=>root.WildernessObjectFootprints?.localeBlocksSite?.(locale,col,row,1.5) ?? Math.hypot(col-Number(locale.x??locale.col),row-Number(locale.y??locale.row))<6))continue;
   if(occupied.some(p=>Number.isFinite(p.c)&&Number.isFinite(p.r)&&Math.hypot(col-p.c,row-p.r)<p.d))continue;
   if(sites.some(p=>Math.hypot(col-p.point.col,row-p.point.row)<9))continue;
   const roll=next(),kind=roll<.38?'stoneCairn':roll<.78?'brokenPillar':'deadTree';
@@ -331,8 +335,26 @@ async function debris(host,sites,ticket,zoneId){
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
 }
+function registerStoneCollision(zone,sites){
+ unregisterStoneCollision?.();unregisterStoneCollision=null; // Each shift must tear down the old formation before registering its replacements.
+ const stoneSites=sites.filter(site=>SOLID_STONE_KINDS.has(site.kind)).map(site=>({
+  x:site.point.col+.5,z:site.point.row+.5,y:elevation(site),
+  half:.36*Math.max(.6,Number(site.size)||1),height:1.25*Math.max(.6,Number(site.size)||1)
+ })); // Cached extents avoid any geometry or scene lookup during frequent movement/pathing checks.
+ const blockers=root.AreaFootprintBlockers; // Shared player/NPC/projectile collision service; render meshes stay raycast-inert for interactables.
+ if(!stoneSites.length||!blockers?.register)return stoneSites.length;
+ unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,blocksBox(x,z,half,worldY){
+  for(const stone of stoneSites){
+   if(worldY!=null && worldY>stone.y+stone.height)continue; // Shots passing above a finite stone remain clear.
+   if(Math.abs(x-stone.x)<=half+stone.half && Math.abs(z-stone.z)<=half+stone.half)return true;
+  }
+  return false;
+ }});
+ return stoneSites.length;
+}
 function clear(){
  serial++;
+ unregisterStoneCollision?.();unregisterStoneCollision=null; // No stale physical obstacle may survive a new shift/zone.
  const witness=[]; // Every scene-local painted rock and pillar owns disposable engraving atlas children.
  group?.traverse?.(node=>{
   if(node.userData?.ownsWildernessWitnessBuffers)witness.push(node); // Never dispose shared quarry/pillar base geometry.
@@ -363,6 +385,7 @@ function update(){
  report={zone,count:sites.length,stoneCairns:sites.filter(s=>s.kind==='stoneCairn').length,brokenPillars:sites.filter(s=>s.kind==='brokenPillar').length,deadTrees:sites.filter(s=>s.kind==='deadTree').length,
  witness:sites.find(s=>s.kind==='witnessStone')?.name||null,
  marked:sites.filter(s=>s.marked).map(s=>({kind:s.kind,dyeId:s.dyeId,at:s.point}))}; // Diagnostics verify distinct dyes per generated zone.
+ report.solidStoneColliders=registerStoneCollision(zone,sites); // Same curated placement list owns both visible rocks and their physical colliders.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
 }
 function objectAt(zoneId,targetScene,point){
@@ -391,6 +414,7 @@ function objectAt(zoneId,targetScene,point){
   }
  } // Never touch these part maps during ordinary rendering; mobile debugging should reveal invisible pattern atlases.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
+  stoneCollision:{registered:!!unregisterStoneCollision,siteCount:report?.solidStoneColliders||0}, // Dev Companion can diagnose missing colliders on mobile.
   cairnRendering:{chunks:cairnGroup?.children?.length||0,cliffMappedFaces:cliffCairnArt?.patchCount||0,
    frustumTracked:cairnGroup?.children?.filter?.(mesh=>mesh.userData?.hobunjiInstanceBounds===true)?.length||0},
   patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),pillarPatterns,
