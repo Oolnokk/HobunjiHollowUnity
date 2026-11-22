@@ -293,6 +293,26 @@ function makeElement() {
   assert.equal(api.snapshot().stage, 1, 'secured progress survives a mid-save cancel');
   press('Button1'); flushMicrotasks();
 
+  // The player may switch character or world while a dismissed lock's save is still in flight.
+  assert.equal(api.open({id:'origin-scoped',tier:1,onSuccess(){}}), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<20;i++) nextFrameTick();
+  press('Button4'); // First failed catch starts another pinned primary-folder write.
+  assert.equal(api.snapshot().phase, 'saving');
+  press('Button1'); flushMicrotasks();
+  window.__hobunjiPlayerProfile = {characterId:'char_b',worldId:'world_a'};
+  await Promise.resolve();
+  folderResolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:102,lastError:null});
+  await flushSavePromises();
+  assert.equal(storedMeta.characters[1].chestLockProgress?.world_a?.['origin-scoped'], undefined,
+    'late acknowledgement never writes the saved lock onto another character');
+  assert.equal(recordFor('origin-scoped').folderUnsynced, true,
+    'the origin lock retains its conservative retry marker until its character is active');
+  window.__hobunjiPlayerProfile = {characterId:'char_a',worldId:'world_a'};
+  assert.equal(api.open({id:'origin-scoped',tier:1,onSuccess(){}}), true);
+  assert.equal(api.snapshot().phase, 'save-error', 'returning to the origin character requires save acknowledgement');
+  press('Button1'); flushMicrotasks();
+
   assert.equal(api.open({ id:'folder-rejected', tier:1, onSuccess() {} }), true);
   press('Button4'); press('Button5');
   for (let i=0;i<20;i++) nextFrameTick();
