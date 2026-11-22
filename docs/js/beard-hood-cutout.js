@@ -6,6 +6,10 @@
   const SIZE = 200; // The authored portrait and mask canvas share exactly 200 logical pixels.
   const PIXELS = SIZE * SIZE;
   const matteCache = new WeakMap(); // Reuses a stable cosmetic mask's stencil across dialogue/world portrait redraws.
+  const rimTraceScratch = { // Reuse small integer arrays to avoid per-portrait GC pressure when many NPCs wear hoods.
+    parent:new Uint16Array(PIXELS),seen:new Uint8Array(PIXELS),
+    eligible:new Uint8Array(PIXELS),queue:new Uint16Array(PIXELS),
+  };
 
   function normalizeMask(input) {
     if (!input || input.size !== SIZE || !Array.isArray(input.runs)) return null;
@@ -326,10 +330,8 @@
     traced.fill(-1);
     const result={bottom:traced,clockwiseSteps:0,counterClockwiseSteps:0};
     if(!left||!right||!deepest)return result;
-    const parent=new Int32Array(PIXELS); // Reused by both directed BFS walks.
-    const seen=new Uint8Array(PIXELS); // 1 marks a visited edge pixel, never an opaque interior fill.
-    const eligible=new Uint8Array(PIXELS); // 0 unknown, 1 edge, 2 not an edge.
-    const queue=new Int32Array(PIXELS); // Bounded 200×200 work buffer; no recursive call stack.
+    const {parent,seen,eligible,queue}=rimTraceScratch; // One reusable 240KB buffer for both clockwise and counterclockwise walks.
+    eligible.fill(0); // Opaque edge eligibility is specific to the current hood pixels and opacity threshold.
     const minY=Math.max(0,Math.floor(seed.y)-Math.max(8,Math.min(20,Math.round(maxRadius/4))));
     const radius2=(maxRadius+8)**2,goal=deepest.y*SIZE+deepest.x;
     const edge=(x,y)=>{
@@ -355,7 +357,7 @@
       seen.fill(0);
       let front=0,back=0,visited=0,found=false;
       const begin=start.y*SIZE+start.x;
-      queue[back++]=begin;seen[begin]=1;parent[begin]=-1;
+      queue[back++]=begin;seen[begin]=1;parent[begin]=65535; // Uint16 sentinel, outside the 0..39999 portrait range.
       while(front<back&&visited<4096){
         const current=queue[front++];visited++;
         if(current===goal){found=true;break;}
@@ -371,7 +373,7 @@
       }
       if(!found)continue; // Leave unchanged radial fallback when art has a disconnected edge.
       let current=goal,steps=0;
-      while(current>=0&&steps<4096){
+      while(current!==65535&&steps<4096){
         const x=current%SIZE,y=(current/SIZE)|0;
         traced[x]=Math.max(traced[x],y);
         current=parent[current];steps++;
