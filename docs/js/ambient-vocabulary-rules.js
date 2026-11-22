@@ -70,7 +70,8 @@
       const entries = lexicon?.[word];
       if (!Array.isArray(entries) || !Array.isArray(ids) || !ids.length) continue;
       const enabled = new Set(ids.filter(id => typeof id === 'string').map(id => id.toLocaleLowerCase()));
-      const words = [...new Set(entries.filter(entry => entry && enabled.has(synonymId(entry)) && typeof entry.text === 'string' && entry.text.trim())
+      const words = [...new Set(entries.filter(entry => entry && enabled.has(synonymId(entry)) && typeof entry.text === 'string' && entry.text.trim()
+        && (entry.kind !== 'old-slang' || (Number.isInteger(entry.firstRecorded) && entry.firstRecorded < 1900))) // Even manual checkmarks cannot turn post-1900 or undated slang into historical vocabulary.
         .map(entry => entry.text.trim()).filter(text => text.toLocaleLowerCase() !== word))];
       if (words.length) table[word] = words;
     }
