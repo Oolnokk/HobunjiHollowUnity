@@ -54,16 +54,18 @@ assert.equal(tier0GruntHealth, 17, 'tier-0 grunt HP is balanced for the 0.75x on
 assert.equal(tier0LieutenantHealth, 29, 'tier-0 lieutenant HP keeps the three-mark Breaker kill threshold');
 assert.equal(fullBreakerDamage, 11, 'new grade-I Copper full Charged Breaker has an 11-damage heavy baseline');
 assert.deepEqual(sharpType, { health: 1.1, footing: 0.8 }, 'Sharp should keep the intended 10% Health edge and lower Footing pressure');
-assert.deepEqual(bluntType, { health: 1, footing: 1.2 }, 'Blunt should keep baseline Health damage and higher Footing pressure');
+assert.deepEqual(bluntType, { health: 0.5, footing: 1.2 }, 'Blunt halves direct Health damage without weakening Footing pressure');
 assert(Math.abs(sharpFootingPerRawDamage - 2.56) < 1e-9, 'Sharp should remove 2.56 Footing per raw damage after shared scaling');
 assert(Math.abs(bluntFootingPerRawDamage - 3.84) < 1e-9, 'Blunt should remove 3.84 Footing per raw damage after shared scaling');
 assert(Math.abs(bluntFootingPerRawDamage / sharpFootingPerRawDamage - 1.5) < 1e-9, 'Blunt should apply exactly 50% more Footing pressure than Sharp');
-for (const [label, type] of Object.entries({ Sharp: sharpType, Blunt: bluntType })) {
-  assert(fullBreakerDamage * type.health < tier0GruntHealth, `${label} unmarked Charged Breaker must not erase the value of earning the third combo hit`);
-  assert(fullBreakerDamage * deathMarks[0] * type.health >= tier0GruntHealth, `${label} one Death Mark + full Native Copper Charged Breaker must one-shot a tier-0 grunt`);
-  assert(fullBreakerDamage * deathMarks[1] * type.health < tier0LieutenantHealth, `${label} two Death Marks should not reach the tier-0 lieutenant one-shot reserved for three marks`);
-  assert(fullBreakerDamage * deathMarks[2] * type.health >= tier0LieutenantHealth, `${label} three Death Marks + full Native Copper Charged Breaker must one-shot a tier-0 lieutenant`);
-}
+assert(fullBreakerDamage * sharpType.health < tier0GruntHealth, 'Sharp unmarked Charged Breaker must not erase the value of earning the third combo hit');
+assert(fullBreakerDamage * deathMarks[0] * sharpType.health >= tier0GruntHealth, 'Sharp one-mark Charged Breaker must one-shot a tier-0 grunt');
+assert(fullBreakerDamage * deathMarks[1] * sharpType.health < tier0LieutenantHealth, 'Sharp two-mark Charged Breaker must not one-shot a tier-0 lieutenant');
+assert(fullBreakerDamage * deathMarks[2] * sharpType.health >= tier0LieutenantHealth, 'Sharp three-mark Charged Breaker must one-shot a tier-0 lieutenant');
+const maxMarkedBluntHealth = fullBreakerDamage * deathMarks[2] * bluntType.health; // Ensures even a fully marked blunt breaker leaves ordinary foes alive for Footing/terrain tactics.
+assert(maxMarkedBluntHealth < tier0GruntHealth, 'Blunt three-mark Charged Breaker should not erase tier-0 grunts before knockback/Footing can matter');
+assert.equal(bluntType.footing, 1.2, 'Blunt Footing must remain at its pre-nerf strength');
+assert.match(gameSource, /environmentalImpact \? \{ health: amount, footing: 0 \} : hitResourceDamage\(amount, dmgOpts\)/, 'Environmental collisions and falls must bypass the direct-blunt Health reduction');
 
 const swingComboCost = attackValues.combo.swingCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full three-hit sweep combo cost before perks/buffs.
 const pokeComboCost = attackValues.combo.pokeCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full thrust combo is the new heavy-charge balance anchor.
