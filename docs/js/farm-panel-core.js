@@ -23,6 +23,7 @@
   function init(injectedDeps) {
     deps = injectedDeps;
     registerStarterWindowItemDefs();
+    window.PendingAnimalSales?.init?.(injectedDeps); // Shares this roster, wallet and save authority with the shipping cutoff.
   }
 
   const STARTER_WINDOW_STORAGE_SENTINEL = '__starterWindowsGrantedV1'; // Persisted inside world storage so each world receives the free farmhouse window set exactly once.
@@ -1326,10 +1327,32 @@
     list.innerHTML = '';
     if (!livestock.length) list.appendChild(Object.assign(document.createElement('div'), { className: 'farm-note', textContent: 'No livestock on the farm yet.' }));
     livestock.forEach(entry => {
+      const queued = window.PendingAnimalSales?.pendingFor?.(entry); // Used by the roster's reversible shipping action.
       const row = _buildStablePickRow(
         entry, { source: 'world', id: entry.id }, pairs, canManage,
-        name => renameLivestock(entry.id, name), () => sellLivestock(entry.id)
+        queued ? null : name => renameLivestock(entry.id, name),
+        queued ? null : () => sellLivestock(entry.id)
       );
+      if (queued) {
+        const status = document.createElement('span');
+        status.className = 'farm-note';
+        status.textContent = '📦 Awaiting animal collection · ' + queued.price + 'g (after midnight)';
+        row.appendChild(status);
+        if (canManage) {
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'settings-small-btn';
+          cancelBtn.textContent = 'Cancel Sale';
+          cancelBtn.addEventListener('click', () => {
+            const result = window.PendingAnimalSales.cancel(entry.id);
+            deps.showToast(result.message, result.ok);
+            if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); }
+          });
+          row.appendChild(cancelBtn);
+        }
+        list.appendChild(row);
+        return; // While queued, barn, breeding, stable and farmhand transfers cannot change this animal.
+      }
 
       // Ownership-transfer / marketplace row — owner gets move/stable-able/
       // offer-for-sale controls; a visiting farmhand gets Buy (if priced)
@@ -1550,15 +1573,19 @@
 
   function sellLivestock(id) {
     if (!deps.hasFarmPermission('livestock')) return;
-    const entry = _removeWorldLivestockAndCleanup(id);
+    const entry = deps._loadWorldLivestock().find(animal => animal.id === id);
     if (!entry) return;
+    if (entry.lifeStage === 'baby') {
+      const result = window.LivestockNurseryGrid?.sellBaby?.(id) || { ok: false, message: 'The Nursery sale system is not ready.' };
+      deps.showToast(result.message, result.ok);
+      if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); }
+      return;
+    }
     const value = window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind);
-    const amount = window.TownMine?.applySaleBonus?.(value.amount) ?? value.amount; // Town Value sale bonus.
-    deps.inventory.gold = (deps.inventory.gold || 0) + amount;
-    deps.saveMemberWorldData();
-    deps.showToast(`Sold ${entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind)} for ${amount}g`, true);
-    refreshGoldHud();
-    renderFarmLivestock(); renderFarmGridGlance();
+    const amount = window.TownMine?.applySaleBonus?.(value.amount) ?? value.amount; // Freeze the quoted sale price when queued.
+    const result = window.PendingAnimalSales?.queue?.(id, amount) || { ok: false, message: 'Animal shipping is not ready.' };
+    deps.showToast(result.message, result.ok);
+    if (result.ok) { renderFarmLivestock(); renderFarmGridGlance(); }
   }
 
   function setBreedingPair(refA, refB) {
@@ -1580,10 +1607,10 @@
   // animal directly, a visiting farmhand buys one the owner priced for
   // sale, or a visiting farmhand takes one the owner flagged stable-able
   // (free). All three converge on the same removal + stabling shape.
-  function _removeWorldLivestockAndCleanup(id) {
+  function _removeWorldLivestockAndCleanup(id, { collectPendingSale = false } = {}) {
     const livestock = deps._loadWorldLivestock();
     const idx = livestock.findIndex(l => l.id === id);
-    if (idx < 0) return null;
+    if (idx < 0 || (livestock[idx].pendingAnimalSale && !collectPendingSale)) return null;
     const [entry] = livestock.splice(idx, 1);
     deps._saveWorldLivestock(livestock);
     const ref = { source: 'world', id };
@@ -1937,6 +1964,7 @@
     showMap: showFarmMap,
     renderStablePanel,
     renderFarmProcessors,
+    removeLivestockAndCleanup: id => _removeWorldLivestockAndCleanup(id, { collectPendingSale: true }), // Shipping collection reuses the same cleanup as a farm-to-Stable transfer.
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,
     closeLayoutEditor: closeHouseLayoutModal,
