@@ -4,6 +4,7 @@
   'use strict';
   if (window.FamilyBabyBurdens) return;
   const entries = new Map(); // child ID -> shared burden + live NPC and persistence callback.
+  const proxySources = new WeakMap(); // Proxy group -> source model/geometry, kept OUT of serializable Object3D.userData.
   const areas = new Set(['interior', 'farm', 'town']); // Baby carry is confined to the settlement.
   const debug = { latestChange: 'Carried babies bake their live head-scaled portrait; silhouette-only backs use colored art', lastError: null }; // Mobile-facing failures.
 
@@ -92,11 +93,10 @@
     const headScale = headScaleOf(data);
     Object.assign(group.userData, {
       familyBabyWidth: posedWidth, familyBabyHeight: posedHeight,
-      familyBabySourceModel: model, familyBabySourceGeometry: skinned?.geometry || null,
-      familyBabyHeadScaleX: headScale.x, familyBabyHeadScaleY: headScale.y, familyBabyHeadScaleZ: headScale.z,
       familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
       familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
-    }); // Keep re-bake invalidation cheap when the avatar/rig is rebuilt.
+    });
+    proxySources.set(group, { model, geometry: skinned?.geometry || null, headScale }); // Reference-only invalidation never pollutes save/debug serialization.
     return group;
   }
   function disposeVisual(group) {
@@ -115,10 +115,10 @@
     const width = Math.max(.05, Number(data.portraitModelWidth) || .3);
     const height = Math.max(.05, Number(data.portraitModelHeight) || width);
     const head = headScaleOf(data), source = data.neckRig?.skinnedPlane?.geometry || null;
-    const rebuilt = group.userData.familyBabySourceModel !== model
-      || group.userData.familyBabySourceGeometry !== source
-      || group.userData.familyBabyHeadScaleX !== head.x || group.userData.familyBabyHeadScaleY !== head.y
-      || group.userData.familyBabyHeadScaleZ !== head.z
+    const original = proxySources.get(group);
+    const rebuilt = original?.model !== model || original?.geometry !== source
+      || original?.headScale.x !== head.x || original?.headScale.y !== head.y
+      || original?.headScale.z !== head.z
       || Math.abs(width - (group.userData.familyBabyModelWidth || width)) > .0001
       || Math.abs(height - (group.userData.familyBabyModelHeight || height)) > .0001;
     if (rebuilt) {
@@ -128,6 +128,7 @@
       for (const node of [...group.children]) group.remove(node);
       for (const node of [...replacement.children]) group.add(node);
       Object.assign(group.userData, replacement.userData);
+      proxySources.set(group, proxySources.get(replacement));
       entry.burden.meshColliders = group.children.filter(node => node.isMesh); // Keep shared Shattercasks hits and draw-order tracking on the NEW geometry.
       window.Shattercasks?.refreshBurdenBounds?.(entry.burden);
     } else {
