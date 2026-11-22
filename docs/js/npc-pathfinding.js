@@ -459,7 +459,7 @@
     return false;
   }
 
-  const cliffDebug = { started: 0, completed: 0, replanFailures: 0, retriesSkipped: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
+  const cliffDebug = { started: 0, completed: 0, intentionalDrops: 0, replanFailures: 0, retriesSkipped: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
   function cliffNetwork(area) {
     const g = deps?.isZoneArea?.(area) && deps.npcGridForArea(area);
     return g && window.CliffRouteNetwork?.forGrid?.(g, {
@@ -476,6 +476,43 @@
     const fromC = Math.floor(walker.root.position.x), fromR = Math.floor(walker.root.position.z);
     const edge = window.CliffRouteNetwork?.toward?.(net, fromC, fromR, toC, toR);
     return edge ? { edge, net } : null;
+  }
+
+  function planNpcDrop(walker, toC, toR) {
+    if (!walker?.root?.position || ![toC, toR].every(Number.isFinite) ||
+        !deps?.isZoneArea?.(walker.area)) return null;
+    const net = cliffNetwork(walker.area), g = deps.npcGridForArea(walker.area); // Same terrain and components as the climb graph.
+    return window.CliffRouteNetwork?.findIntentionalDrop?.(net, g,
+      walker.root.position.x, walker.root.position.z, toC + 0.5, toR + 0.5, {
+        isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+        isSolid: deps.isSolid,
+        canLand: (col, row) => isNpcTileWalkable(walker.area, col, row),
+      }) || null;
+  }
+
+  function beginNpcDrop(walker, drop) {
+    const startY = deps.tileSurfaceYInArea(drop.startTile, walker.area); // Existing terrain-height adapter matches normal cliff climbing.
+    const endY = deps.tileSurfaceYInArea(drop.landTile, walker.area); // Landing height for the short jump-down animation.
+    walker._npcCliffClimb = {
+      drop: { startX: walker.root.position.x, startZ: walker.root.position.z, startY,
+        endX: drop.landingX, endZ: drop.landingZ, endY }, elapsed: 0,
+    }; // The scheduled walker tick owns the leap until its feet land.
+    walker._npcCliffGoal = null;
+    walker._npcCliffApproach = null; walker._npcCliffApproachKey = null;
+    walker._gridPath = null; walker.routePath = null; // Re-plan on the lower shelf, not toward a stale upper handhold.
+    cliffDebug.started++;
+    cliffDebug.intentionalDrops++;
+  }
+
+  // Retreat destinations across a nearby ledge are reachable without a long
+  // climb: prove the landing and a real swept path onward before selecting cover.
+  function canNpcReachByDrop(area, x, z, toC, toR) {
+    const walker = { area, root: { position: { x, z } } }; // Read-only planning proxy for the same walker descent predicate.
+    const drop = planNpcDrop(walker, toC, toR);
+    if (!drop) return false;
+    const continuation = findNpcPath(area, drop.landingX, drop.landingZ, toC, toR,
+      { padding: 5, maxNodes: 650 }); // Lower-shelf footpath must exist (an empty path means already there).
+    return continuation !== null;
   }
 
   function beginNpcCliff(walker, edge) {
@@ -495,6 +532,25 @@
     if (!climb) return false;
     const root = walker.root;
     if (!root?.position || !deps?.isZoneArea?.(walker.area)) { walker._npcCliffClimb = null; return false; }
+    if (climb.drop) {
+      const d = climb.drop; // One committed downhill leap; no further pathfinding occurs until it lands.
+      climb.elapsed = Math.min(0.42, climb.elapsed + Math.max(0, dt || 0));
+      const t = Math.min(1, climb.elapsed / 0.42);
+      root.position.x = d.startX + (d.endX - d.startX) * t;
+      root.position.z = d.startZ + (d.endZ - d.startZ) * t;
+      root.position.y = d.startY + (d.endY - d.startY) * t * t + Math.sin(t * Math.PI) * 0.24;
+      walker._cliffNpcY = root.position.y;
+      if (climb.elapsed >= 0.42) {
+        root.position.set(d.endX, d.endY, d.endZ);
+        walker._npcCliffClimb = null; walker._cliffNpcY = null;
+        walker.state = 'idle';
+        if (Number.isFinite(walker.footing)) window.FallSystem?.land?.(walker, {
+          dropWorld: Math.max(0, d.startY - d.endY), deliberate: true, source: 'intentional cliff descent',
+        }); // NPCs with ResourceSystem Footing pay the same landing cost as creatures.
+        cliffDebug.completed++;
+      }
+      return true;
+    }
     if (climb.index === climb.exit && !climb.start) {
       walker._npcCliffClimb = null;
       walker._cliffNpcY = null;
@@ -536,6 +592,8 @@
       if (!deps || !this.root?.position) return originalMoveToward.call(this, tx, tz, dt);
       if (this._npcCliffClimb) return false; // The NPC update loop owns each successive hop.
       const goal = this._npcCliffGoal || { c: Math.floor(tx), r: Math.floor(tz) };
+      const directDrop = planNpcDrop(this, goal.c, goal.r); // Only a lower reachable shelf triggers a deliberate leap.
+      if (directDrop) { beginNpcDrop(this, directDrop); return false; }
       const crossing = npcCliffEdge(this, goal.c, goal.r);
       if (crossing) {
         const { edge } = crossing, node = edge.route.nodes[edge.entry];
@@ -609,6 +667,8 @@
         const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + targetOccupiesFurniture(target);
         const now = Date.now();
         if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
+        const directDrop = planNpcDrop(this, target.c, target.r); // A nearby downhill shortcut beats a distant handhold.
+        if (directDrop) { beginNpcDrop(this, directDrop); return true; }
         const edge = npcCliffEdge(this, target.c, target.r);
         const foot = edge?.edge.route.nodes[edge.edge.entry];
         const waypointTarget = foot ? { c: Math.floor(foot.x), r: Math.floor(foot.z) } : target;
@@ -755,7 +815,7 @@
       ...debugStats,
       cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'Failed cliff-entry searches wait 750 ms before retrying from the same tile. Area routes still skip generated animal-den entrances.',
+      latestChange: 'NPCs can choose safe direct downhill cliff jumps; existing swept routing handles the approach and lower-shelf continuation.',
     };
   }
 
@@ -766,6 +826,7 @@
     isNpcPositionWalkable,
     canNpcTraverse,
     canNpcBeeline,
+    canNpcReachByDrop, // Fleeing followers can select proven cover across a lower ledge.
     canNpcEscapeExistingOverlap,
     findNpcPath,
     decorateWalkerCollision,
