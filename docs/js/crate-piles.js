@@ -315,6 +315,7 @@
     if (!window.Shattercasks?.discardBurden?.(burden)) return false;
     return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause,attacker);
   }
+  const lungeColliderScratch={origin:{x:0,y:0,z:0},direction:{x:0,y:0,z:0}}; // Reused by crate lunge probes instead of allocating Three.js vectors each movement frame.
   // The lunge probe and committed swing share the same crate collision filter.
   // No loot, blast, or persistence mutation occurs until sweepMelee commits the hit.
   function firstMeleePile(collider,opts={}) {
@@ -348,7 +349,7 @@
       if(pile.mapId===mapId && validPile(pile)){present=true;break;}
     }
     if(!present)return false; // Avoid even constructing the combat collider outside crate areas.
-    const collider=window.Combat?.meleeColliderVolume?.(actor,{...opts,debug:false});
+    const collider=window.Combat?.meleeColliderVolume?.(actor,opts,null,lungeColliderScratch);
     return !!firstMeleePile(collider,{actor,lungeContact:true});
   }
   function sweepMelee(collider,opts={}) {
