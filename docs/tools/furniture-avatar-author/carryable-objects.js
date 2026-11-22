@@ -560,6 +560,17 @@
       log('Baby profile import failed: '+(error?.message||error),'error');
     }finally{event.target.value='';}
   };
+  const originalHistoryStatePayload=historyStatePayload; // Existing undo owner; baby drafts are not furniture database edits.
+  historyStatePayload=function(...args){
+    const payload=originalHistoryStatePayload(...args);
+    if(editingBaby&&savedFurnitureCarry)payload.state.carryable=cloneJson(savedFurnitureCarry);
+    return payload; // Native gizmo-end callbacks may still queue history: keep its serialized furniture source unchanged.
+  };
+  const originalRestoreHistoryPayload=restoreHistoryPayload; // An explicit furniture Undo/Redo should exit isolated baby authoring safely.
+  restoreHistoryPayload=function(...args){
+    if(editingBaby)returnToFurniture();
+    return originalRestoreHistoryPayload(...args);
+  };
   const originalExport=exportData;
   exportData=function(...args) {
     const data=originalExport(...args);
