@@ -161,6 +161,7 @@
       applyDimensions();
     }
     applyDimensions(); // The midpoint between the authored hand grip (when available) and image-space emitter remains the root pivot.
+    setGripItemPoint(global.HobunjiHandToolGrips?.authoredPrimaryGripForTool?.('torch', 'melee')?.position); // Gameplay and Rig Coordinates preview share the real existing hand grip when its module is loaded.
     setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
       root, art, flame, setIdleScale, setSourceDimensions, setEmitterSourcePoint, setGripItemPoint,
