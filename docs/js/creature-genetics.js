@@ -297,6 +297,7 @@
     'uumkaoii-wild-den-mother': 'uumkaoii',
     'grehlr-den-mother': 'grehlr',
     'drenkirra-den-mother': 'drenkirra',
+    'dabinggi-hound-den-mother': 'dabinggi-hound',
     'voorg-ass-herd-mother': 'voorg-ass',
     'moot-herd-mother': 'moot', // Herd-Mother borrows Moot genotype art, eye overlays, and authored rig scales.
   };
@@ -363,7 +364,7 @@
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the authored class used by renderer/anchors.
     const ownProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]; // Newly authored species own their calibration directly; aliases are only a legacy fallback.
-    const profileKind = ownProfile ? kind : (CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind);
+    const profileKind = ownProfile ? kind : (window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatureTransformAliases?.[kind] || CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind); // Shared authored family aliases, without overriding explicit variant profiles.
     const authored = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.sizeScales?.[sizeClass]; // Canonical Animation Author export.
     const x = Number(authored?.x); // Applied to the creature plane's local width.
     const y = Number(authored?.y); // Applied to the creature plane's local height and ground lift.
@@ -379,7 +380,7 @@
       ? normalizeCreatureSizeClass(genotypeOrSizeClass)
       : creatureSizeClass(kind, genotypeOrSizeClass); // Selects the same authored size row used by creatureSizeScale().
     const ownProfile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[kind]; // Uses each species' authored floor calibration whenever it exists.
-    const profileKind = ownProfile ? kind : (CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind);
+    const profileKind = ownProfile ? kind : (window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatureTransformAliases?.[kind] || CREATURE_SIZE_PROFILE_ALIAS[kind] || GENOTYPE_SPECIES_ALIAS[kind] || kind); // Shared authored family aliases, without overriding explicit variant profiles.
     const authored = Number(window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatures?.[profileKind]?.groundOffsets?.[sizeClass]); // Absolute floor-to-creature-origin lift measured by moving the preview ground under a fixed animal.
     const speciesScale = kind === PUKTUK_KIND && profileKind !== kind ? PUKTUK_VISUAL_SCALE : 1; // Applies 75% only to the old Gar-wolf fallback, never to Puktuk's authored ground offsets.
     return Number.isFinite(authored) && authored > 0 ? authored * speciesScale : null; // Zero is the Rigging "Auto" sentinel; callers fall back to their existing half-height terrain baseline.
