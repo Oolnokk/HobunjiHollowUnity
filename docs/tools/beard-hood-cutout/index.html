@@ -632,6 +632,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       if(stretched.stretched!==1||ringAlpha[(94*SIZE+135)*4+3]>=64
           ||ringAlpha[(94*SIZE+140)*4+3]<64)
         throw Error('Tuft root did not pull the inner ring out to its corner');
+      const partial=blank(),pc=partial.getContext('2d');
+      pc.putImageData(new ImageData(new Uint8ClampedArray(pristineRing),SIZE,SIZE),0,0);
+      const quarter=Cut.stretchHoodToRoots(partial,[{x:140.5,y:94.5}],{maxStretch:.25});
+      const partialPixels=pc.getImageData(0,0,SIZE,SIZE).data;
+      let changedAlpha=0,translucentEdge=0;
+      for(let i=3;i<partialPixels.length;i+=4){
+        changedAlpha+=Math.abs(partialPixels[i]-pristineRing[i]);
+        if(partialPixels[i]>0&&partialPixels[i]<255)translucentEdge++;
+      }
+      if(quarter.stretched!==1||quarter.limited!==1
+          ||quarter.moves[0].appliedLength!==.25||changedAlpha<=0||translucentEdge<=0)
+        throw Error('A quarter-pixel cap must visibly move the inner edge without an activation threshold');
       const broad=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{subdivision:1});
       const fine=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{subdivision:16});
       if(!broad.moves.length||!fine.moves.length||broad.moves[0].radius<=fine.moves[0].radius)
@@ -645,7 +657,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
           ||Cut.deformationWeight(upper.moves[0],140.5,104.5)>=Cut.deformationWeight(lower.moves[0],140.5,104.5)
           ||Cut.deformationWeight(upper.moves[0],140.5,94.5)!==1)
         throw Error('Above/below sliders are not independently changing the influence or the corner pin drifted');
-      status('2D Canvas self-test PASS: cutout, opacity floor, ring stretch, subdivision locality, upper/lower influence and fixed tuft pin.');
+      status('2D Canvas self-test PASS: 0.25px stretch onset, continuous displacement, cutout, alpha floor, locality, upper/lower influence and fixed tuft pin.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
