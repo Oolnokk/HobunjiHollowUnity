@@ -194,6 +194,55 @@
   const babyEulerScratch=new THREE.Euler(0,0,0,'XYZ'),babyRotationScratch=new THREE.Quaternion(); // Shared inverse Euler/quaternion conversion for direct baby rotation.
   const status=message=>{const node=document.getElementById('carryAvatarStatus');if(node)node.textContent=message;};
   const previewActive=()=>activeEditorMode==='carry'&&previewEnabled;
+  // The Attack Editor's Proximal +Y shoulder/elbow hand solver calls this only for
+  // this furniture author's Mao'ao preview avatar; no global player/NPC arm targets are changed.
+  window.HobunjiFurnitureBabyElbowFor=(side,avatarRoot)=>
+    editingBaby && avatarRoot===previewActor && !babyPoseIsBack() ?state.carryable.elbows?.[side]||null:null;
+  function carrierShoulder(side,out) {
+    const fromRig=previewHands?.shoulderPositionLocal?.(side,out);
+    if(fromRig)return fromRig;
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+    const v=profile?.anchors?.[side==='left'?'leftHandShoulder':'rightHandShoulder']?.position;
+    if(v && ['x','y','z'].every(axis=>Number.isFinite(Number(v[axis]))))
+      return out.set(Number(v.x),Number(v.y),Number(v.z));
+    return out.set((side==='left'?-1:1)*modelW*.25,modelH*.72,0); // Missing async shoulder rig only.
+  }
+  function updateBabyElbowGuides(){
+    const show=editingBaby && !babyPoseIsBack() && !!el('carryBabyBones')?.checked && !!previewHands;
+    for(const side of ['left','right']){
+      const marker=guides[side==='left'?'elbowLeft':'elbowRight'];
+      if(!marker)continue;
+      marker.visible=show;
+      if(!show)continue;
+      const shoulder=carrierShoulder(side,elbowShoulderScratch);
+      const elbow=state.carryable.elbows?.[side];
+      if(elbow)marker.position.copy(shoulder).add(new THREE.Vector3(elbow.x,elbow.y,elbow.z));
+      else{
+        const hand=state.carryable.handTargets?.[side];
+        elbowHandScratch.set(hand?.x||0,hand?.y||0,hand?.z||0);
+        babyPoseFrame.updateWorldMatrix(true,false);
+        babyPoseFrame.localToWorld(elbowHandScratch);
+        elbowGuideRoot.updateWorldMatrix(true,false);
+        elbowGuideRoot.worldToLocal(elbowHandScratch);
+        marker.position.copy(shoulder).add(elbowHandScratch).multiplyScalar(.5); // Editor-only midpoint, not an authored runtime elbow.
+      }
+    }
+    window.ProceduralHandShoulderAim?.refreshPaperArmGuides?.();
+  }
+  function setBabyBones(enabled){
+    const toggle=el('carryBabyBones');
+    if(toggle)toggle.checked=!!enabled;
+    window.ProceduralHandShoulderAim?.setPaperArmGuideVisible?.(!!enabled&&editingBaby&&!babyPoseIsBack());
+    updateBabyElbowGuides();
+  }
+  function authorElbowFromMarker(side){
+    const marker=guides[side==='left'?'elbowLeft':'elbowRight'];
+    if(!marker)return;
+    const shoulder=carrierShoulder(side,elbowShoulderScratch);
+    const offset=marker.position.clone().sub(shoulder); // Attack Editor convention, shoulder-relative in carrier parent coordinates.
+    state.carryable.elbows ||= {};
+    state.carryable.elbows[side]={x:Number(offset.x.toFixed(4)),y:Number(offset.y.toFixed(4)),z:Number(offset.z.toFixed(4))};
+  }
   function babyPoseIsBack() {
     return state.selectedType==='carry'&&(state.selectedId==='back'||(state.selectedId==='baby'&&babyPoseView==='back'));
   }
@@ -283,6 +332,7 @@
         if(editingBaby)q.premultiply(babyPoseFrame.quaternion); // Hands turn with the infant, not independently through it.
         previewHands.placeHandWorld?.(side,world,q,calibration);
       }
+      updateBabyElbowGuides();
     }
     status((editingBaby?'Baby movable/rotatable; adult fixed · ':'')+(isBack?'Back-mounted posterior pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
   }
