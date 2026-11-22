@@ -45,17 +45,18 @@ const old = dens(8).map((den, index) => {
   const profile = Cave.__test.rollProfile('map_legacy_zone', den); // Production legacy identity and seeded contents.
   profile.schema = 3;
   profile.inhabitant = index === 0 ? Cave.TYPES.ANIMAL_DEN
-    : index === 1 ? Cave.TYPES.BANDIT_HIDEOUT : Cave.TYPES.NONE;
+    : index === 1 || index === 2 ? Cave.TYPES.BANDIT_HIDEOUT : Cave.TYPES.NONE;
   profile.layers = [profile.contents, profile.inhabitant].filter(t => t !== Cave.TYPES.NONE);
   return { ...den, caveSite: profile };
-}); // Forced old 1-den, 1-hideout, 6-empty distribution exercises the schema-3 upgrade.
+}); // Forced old 1-den, 2-hideout, 5-empty distribution exercises the schema-3 upgrade.
 const preserved = old.map(den => JSON.parse(JSON.stringify(den.caveSite))); // Original authored/cached labels and content identities.
-Cave.__test.runtimeStateBySignature.set(old[1].caveSite.signature, { discovered: true, occupantsCleared: true });
+Cave.__test.runtimeStateBySignature.set(old[2].caveSite.signature, { discovered: true, occupantsCleared: true });
 const migrated = Cave.applyWorkspaceProfiles('map_legacy_zone', { animalDens: old });
 assert.equal(migrated.filter(site => site.inhabitant === Cave.TYPES.ANIMAL_DEN).length, 6,
   'migration fills spare caves up to the zone den floor');
 assert.equal(migrated[0].inhabitant, Cave.TYPES.ANIMAL_DEN, 'existing animal den is never taken away');
-assert.equal(migrated[1].inhabitant, Cave.TYPES.BANDIT_HIDEOUT, 'visited bandit hideout stays a hideout');
+assert.equal(migrated[1].inhabitant, Cave.TYPES.BANDIT_HIDEOUT, 'existing undiscovered bandit hideout stays a hideout before save restoration');
+assert.equal(migrated[2].inhabitant, Cave.TYPES.BANDIT_HIDEOUT, 'explored and cleared bandit hideout stays a hideout');
 assert(migrated.every((site, index) => site.mapId === preserved[index].mapId
   && site.contents === preserved[index].contents && site.signature === preserved[index].signature
   && site.schema === 4), 'migration keeps original geometry IDs, contents, signatures and newer schema');
