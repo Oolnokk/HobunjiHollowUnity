@@ -112,7 +112,8 @@
     const key = liveManualBagKey();
     if (!key) {
       const hadOverride = Boolean(state.manualKey);
-      if (hadOverride) finishClear({ clearManual: false, restorePriorMode: restorePriorModeOnClear, reason: restorePriorModeOnClear ? 'hold-stop' : 'external-clear' });
+      const selectedGarment = rawManualHeldItem()?.kind === 'clothing'; // A new garment Hold cannot restore the old tool mode.
+      if (hadOverride) finishClear({ clearManual: false, restorePriorMode: restorePriorModeOnClear && !selectedGarment, reason: selectedGarment ? 'switch-to-clothing' : restorePriorModeOnClear ? 'hold-stop' : 'external-clear' });
       state.pendingSnapshot = null;
       return false;
     }
@@ -143,7 +144,17 @@
   }
 
   function releaseForNormalSelection(reason = 'normal-selection') {
-    return finishClear({ clearManual: true, restorePriorMode: false, reason });
+    const bagReleased = finishClear({ clearManual: true, restorePriorMode: false, reason }); // Clear any prior off-wheel Hold still pending synchronization.
+    const garmentReleased = rawManualHeldItem()?.kind === 'clothing'; // Selecting an item/tool must release a manually held garment.
+    if (garmentReleased) {
+      equipmentDeps?.setManualHeldItem?.(null); // Game owns the actual held-garment presentation cache.
+      state.lastEvent = { type: 'clear-clothing', reason, at: Date.now() };
+      refreshHeldUi();
+    }
+    return bagReleased || garmentReleased;
+  }
+  function hasManualSelection() {
+    return !!liveManualBagKey() || rawManualHeldItem()?.kind === 'clothing'; // Both Pack Hold types share the normal-selection release policy.
   }
 
   function clearExhaustedBagHold(key) {
@@ -486,8 +497,7 @@
         return previousIndex >= 0 ? previousIndex : Math.max(0, Math.min(stacks.length - 1, Number(actionRaw.getActiveItemIndex()) || 0));
       };
       deps.setActiveItemIndex = index => {
-        const heldKey = liveManualBagKey();
-        if (!heldKey) return actionRaw.setActiveItemIndex(index);
+        if (!hasManualSelection()) return actionRaw.setActiveItemIndex(index);
         const selectedKey = archStacks()[index]?.key || null; // Used to translate the arch's filtered index back into the normal stack after releasing Hold.
         releaseForNormalSelection('arch-item-select');
         const normal = rawStacks();
@@ -495,15 +505,15 @@
         return actionRaw.setActiveItemIndex(realIndex >= 0 ? realIndex : Math.max(0, Number(index) || 0));
       };
       deps.cycleActiveInventoryItem = dir => {
-        if (liveManualBagKey()) releaseForNormalSelection('arch-item-cycle');
+        if (hasManualSelection()) releaseForNormalSelection('arch-item-cycle');
         return actionRaw.cycleActiveInventoryItem(dir);
       };
       deps.setHeldMode = mode => {
-        if (mode !== 'item' && liveManualBagKey()) releaseForNormalSelection('switch-held-mode');
+        if (mode !== 'item' && hasManualSelection()) releaseForNormalSelection('switch-held-mode');
         return actionRaw.setHeldMode(mode);
       };
       deps.putAwayHeldEquipment = (...args) => {
-        if (liveManualBagKey()) releaseForNormalSelection('put-away');
+        if (hasManualSelection()) releaseForNormalSelection('put-away');
         return actionRaw.putAwayHeldEquipment(...args);
       };
       return init(deps, ...rest);
@@ -518,7 +528,7 @@
       if (typeof deps.cycleActiveInventoryItem === 'function') {
         hudRawCycle = deps.cycleActiveInventoryItem; // Used by the prev/next item-scroll buttons after a manual override is relinquished.
         deps.cycleActiveInventoryItem = dir => {
-          if (liveManualBagKey()) releaseForNormalSelection('hud-item-cycle');
+          if (hasManualSelection()) releaseForNormalSelection('hud-item-cycle');
           return hudRawCycle(dir);
         };
       }
