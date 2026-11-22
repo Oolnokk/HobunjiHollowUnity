@@ -244,6 +244,15 @@
     return Number.isFinite(stored) && stored > 0 ? stored : 1;
   }
 
+  function scaledNeckAdjustment(rig, relativeHeadScaleY) {
+    const headCenterY = Number(rig?.headCentroidLocal?.y); // Actual alpha-weighted base-head center in the same local plane space as the unscaled neck.
+    const neckY = Number(rig?.neckLocal?.y); // Rest contact point at the last painted head pixel, before head size is authored.
+    if (!rig?.headScaleJoint || !rig?.headOffsetJoint || !rig?.headCentroidLocal || !Number.isFinite(headCenterY) || !Number.isFinite(neckY)) return 0;
+    const scaleY = Number(relativeHeadScaleY); // Scaling the head about its centroid moves the chin and therefore the neck pivot.
+    if (!Number.isFinite(scaleY) || scaleY <= 0) return 0;
+    return (1 - scaleY) * (headCenterY - neckY); // Center-preserving offset of the scaled head's lowest pixel; zero at the default head size.
+  }
+
   function applyHeadCompensation(root, species, gender, overrides = {}, ageFraction = 0) {
     const found = findNeckRig(root);
     if (!found) return false;
@@ -255,8 +264,14 @@
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
     const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * childHeadFactorFor(overrides, found.node));
-    target.scale.set(bx > 0 ? head / bx : head, by > 0 ? head / by : head, 1);
+    const relativeHeadY = by > 0 ? head / by : head; // Local head-size factor after removing body height scaling.
+    target.scale.set(bx > 0 ? head / bx : head, relativeHeadY, 1);
     target.updateMatrix?.();
+    const scaledNeckDeltaY = scaledNeckAdjustment(rig, relativeHeadY); // Recalculate the head-bottom contact after size changes, before the spine/hunch solver runs.
+    if (rig.headOffsetJoint && rig.headScaleJoint && rig.headCentroidLocal) {
+      rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + scaledNeckDeltaY,
+        deltaY: scaledNeckDeltaY, relativeHeadScaleY: relativeHeadY }; // Mobile author diagnostics read the physically shifted neck pivot without rescanning sprite pixels.
+    }
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
@@ -265,7 +280,8 @@
       ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Explicit character spine overrides still win over the subspecies default.
     const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction;
     const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // The spline contributes its own shoulder share.
-    applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare, modelHeight);
+    applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare
+      + scaledNeckDeltaY / Math.max(1e-6, modelHeight), modelHeight); // Translate through the broad offset-only skinning fade so the scaled chin meets the newly placed neck without folding its 2px rotation band.
     return true;
   }
 
@@ -313,6 +329,7 @@
       target.scale.set(1, 1, 1);
       target.updateMatrix?.();
     }
+    if (found?.rig?.scaledNeckLocal) delete found.rig.scaledNeckLocal; // Resetting an authored scale also clears derived scaled-head contact diagnostics.
     if (offsetTarget) {
       if (Number.isFinite(offsetTarget.userData?.hobunjiHeadOffsetBaseY)) {
         offsetTarget.position.y = offsetTarget.userData.hobunjiHeadOffsetBaseY;
@@ -430,6 +447,7 @@
     scaleFor,
     applyToParent,
     applyHeadCompensation,
+    scaledNeckAdjustment, // Shared pure geometric calculation for the author and native regression tests.
     clearFromParent,
     rigScaleRootFor,
     rigScaleInheritedFor,
