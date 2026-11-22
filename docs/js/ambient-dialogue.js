@@ -701,9 +701,15 @@
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
     const originalMessage = String(text || '').trim(); // Keep the authored line as an immutable fallback if the optional vocabulary layer is unavailable.
-    const message = options.vocabulary === false || !options.speakerId
-      ? originalMessage
-      : (window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage); // Rewrites once BEFORE syllable cadence, textures, timing, tracing and the event payload.
+    let message = originalMessage; // Fallback must survive missing, malformed or failed optional vocabulary configuration.
+    if (options.vocabulary !== false && options.speakerId) {
+      try {
+        message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
+      } catch (error) {
+        message = originalMessage;
+        state.deps?.debugLog?.('[ambient-vocabulary] Using authored fallback: ' + (error?.message || error), 'warn'); // Mobile diagnostics, never a crashed dialogue bubble.
+      }
+    }
     if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
     if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
