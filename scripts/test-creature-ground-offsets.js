@@ -13,12 +13,12 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'), context);
 
 const expected = {
-  drenkirra: { large: 0.79, medium: 0.40, small: 0.17 },
-  grehlr: { large: 0.50, medium: 0.26, small: 0.13 },
-  'gar-wolf': { large: 0.50, medium: 0.33, small: 0.11 },
-  'dabinggi-hound': { large: 0.50, medium: 0.27, small: 0.09 },
-  uumkaoii: { large: 0.35, medium: 0.25, small: 0.05 },
-}; // Exact values from hobunji.attachment-rig-profiles.v10 exported 2026-08-30.
+  drenkirra: { large: 0.45, medium: 0.40, small: 0.17 },
+  grehlr: { large: 0.625, medium: 0.325, small: 0.13 },
+  'gar-wolf': { large: 0.525, medium: 0.35, small: 0.11 },
+  'dabinggi-hound': { large: 0.70, medium: 0.35, small: 0.09 },
+  uumkaoii: { large: 0.75, medium: 0.25, small: 0.05 },
+}; // Exact values from hobunji.attachment-rig-profiles.v10 exported 2026-11-22.
 for (const [kind, offsets] of Object.entries(expected)) {
   assert.deepEqual({ ...context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind].groundOffsets }, offsets, `${kind} ground offsets match authored v10 data`);
 }
@@ -39,8 +39,8 @@ context.CreatureGenetics.init({
   },
   clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
 });
-assert.equal(context.CreatureGenetics.creatureGroundOffset('drenkirra', 'large'), 0.79, 'explicit size class resolves as the authored floor-to-origin lift');
-assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.26, 'default size class resolves as the authored floor-to-origin lift');
+assert.equal(context.CreatureGenetics.creatureGroundOffset('drenkirra', 'large'), 0.45, 'explicit size class resolves as the authored floor-to-origin lift');
+assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.325, 'default size class resolves as the authored floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('gar-wolf-alpha', { sizeClass: 'small' }), 0.11, 'variant inherits base species floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('unknown-kind', 'medium'), null, 'unknown species requests automatic fallback');
 
