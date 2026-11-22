@@ -65,7 +65,7 @@
     '<div class="g2"><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
-    '<p class="muted">While editing a baby, the header Download JSON button becomes Download Baby JSON and exports the baby pose (not furniture). After returning to furniture, it exports furniture again. Apply baby grips saves a separate local gameplay override.</p>',
+    '<p class="muted">While editing a baby, Download JSON and Copy Current JSON both export the baby pose (not furniture). Returning to furniture restores both actions. Apply baby grips saves a separate local gameplay override.</p>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
     '<p class="muted">In baby mode, Rotate Baby turns the visible infant around its posterior-relative mount, while the adult stays fixed. Pitch/Yaw/Roll then describe the baby directly. Select Held anchor or Back-carry anchor to edit their mounts. Purple marks the adult posterior; cyan is the mount. Hand grip guides follow the infant art.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
@@ -818,32 +818,44 @@
     createGuides();renderControls();setHoldingVisibility();
     el('carryBabyStatus').textContent='Furniture grips restored; baby settings are separate.';
   }
+  function currentBabyProfile(){
+    const api=window.FamilyBabyCarryPose; // All copy/download/apply actions use the same current unsaved baby draft.
+    if(!api?.toProfile||!api?.snapshot)return null;
+    return editingBaby?api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight):api.snapshot();
+  }
   function applyBaby(){
     if(!editingBaby)return;
-    const api=window.FamilyBabyCarryPose;
-    if(!api?.toProfile)return;
-    const profile=api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight);
-    api.save(profile); // Device-local authoring override; world save data stays unchanged.
+    const profile=currentBabyProfile();
+    if(!profile)return;
+    window.FamilyBabyCarryPose.save(profile); // Device-local authoring override, separate from the save game.
     el('carryBabyStatus').textContent='Baby grips applied on this device. Reload gameplay to load this pose; export JSON to ship it.';
   }
   function exportBaby(){
-    const api=window.FamilyBabyCarryPose;
-    if(!api?.snapshot)return;
-    const profile=editingBaby
-      ?api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight)
-      :api.snapshot();
+    const profile=currentBabyProfile();
+    if(!profile)return;
     download('family-baby-carry-pose.json',new Blob([JSON.stringify(profile,null,2)+'\\n'],{type:'application/json'}));
     el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
   }
   const mainJsonButton=el('downloadJsonBtn'); // Existing header export switches meaning only while the isolated infant editor is active.
   const furnitureJsonLabel=mainJsonButton?.textContent||'Download JSON';
+  const mainCopyButton=el('copyJsonBtn'); // Same baby/furniture mode switch for the IO clipboard action.
+  const furnitureCopyLabel=mainCopyButton?.textContent||'Copy Current JSON';
   function syncBabyDownloadButton(){
     if(mainJsonButton)mainJsonButton.textContent=editingBaby?'Download Baby JSON':furnitureJsonLabel;
+    if(mainCopyButton)mainCopyButton.textContent=editingBaby?'Copy Baby JSON':furnitureCopyLabel;
   }
   mainJsonButton?.addEventListener('click',event=>{
     if(!editingBaby)return; // Outside baby mode, preserve the original furniture exporter completely.
     event.preventDefault();event.stopImmediatePropagation();
     exportBaby(); // Prevent a second misleading furniture JSON from being downloaded at the same time.
+  },true);
+  mainCopyButton?.addEventListener('click',event=>{
+    if(!editingBaby)return; // Outside baby mode, preserve the original furniture clipboard flow.
+    event.preventDefault();event.stopImmediatePropagation();
+    const profile=currentBabyProfile();
+    if(!profile)return;
+    void copyPlainTextWithFallback(JSON.stringify(profile,null,2),el('jsonText'),'Baby profile JSON');
+    el('carryBabyStatus').textContent='Baby JSON copied (or selected in the JSON text area if clipboard access was blocked).';
   },true);
   el('carryBabyEdit').onclick=editBaby;
   el('carryBabyRandom').onclick=()=>{void randomBaby();};
