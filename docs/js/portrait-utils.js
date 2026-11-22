@@ -2084,7 +2084,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const hoodPolicy = resolveHoodBeardPolicy(hood, resolvedFighter);
     const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
       {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
-        whiskerMask}); // Automatic cone follows the stretched ring; whiskers override protected pixels.
+        hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask}); // Automatic cone follows the stretched ring; whiskers override protected pixels.
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
@@ -2475,25 +2475,29 @@ function resolveBeardHoodAuthoring(option, fighter) {
 
 function resolveHoodBeardPolicy(option, fighter) {
   const api=window.PortraitBeardHoodCutout;
-  if (!option) return {mask:null,mode:'auto',coneSpread:0};
+  if (!option) return {mask:null,mode:'auto',coneSpread:0,alphaFloor:242};
   let mask=option.beardCutoutAllowedMask??null;
   let mode=option.beardCutoutPermissionMode;
   let spread=option.beardCutoutConeSpread;
+  let floor=option.beardCutoutPaintAlphaFloor; // 8-bit near-opaque hood paint / automatic ring threshold.
   if (fighter) {
     for(const key of portraitVariantKeysForFighter(fighter,option)){
       const hasMode=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutPermissionMode||{},key);
       const hasMask=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutAllowedMasks||{},key);
       const hasSpread=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutConeSpread||{},key);
-      if(!hasMode&&!hasMask&&!hasSpread)continue;
+      const hasFloor=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutPaintAlphaFloor||{},key);
+      if(!hasMode&&!hasMask&&!hasSpread&&!hasFloor)continue;
       if(hasMask)mask=option.variantBeardCutoutAllowedMasks[key];
       if(hasMode)mode=option.variantBeardCutoutPermissionMode[key];
       if(hasSpread)spread=option.variantBeardCutoutConeSpread[key];
+      if(hasFloor)floor=option.variantBeardCutoutPaintAlphaFloor[key];
       break;
     }
   }
   const resolvedMode=['auto','painted','all'].includes(mode)
     ? mode : (mask?'painted':'auto'); // Existing authored masks remain painted; absent policies use a generated cone.
-  return {mask,mode:resolvedMode,coneSpread:api?.normalizeConeSpread(spread)??0};
+  return {mask,mode:resolvedMode,coneSpread:api?.normalizeConeSpread(spread)??0,
+    alphaFloor:api?.alphaFloor(floor??242,242)??242};
 }
 
 function portraitOptionFromJson(entry, json) {
@@ -2565,8 +2569,10 @@ function portraitOptionFromJson(entry, json) {
   const beardCutoutPermissionMode = ['auto','painted','all'].includes(json.beardCutoutPermissionMode)
     ? json.beardCutoutPermissionMode : null; // Missing field selects painted if an authored mask exists, otherwise auto.
   const beardCutoutConeSpread = maskApi?.normalizeConeSpread?.(json.beardCutoutConeSpread) ?? 0; // Cone expansion below detected inner ring.
+  const beardCutoutPaintAlphaFloor = maskApi?.alphaFloor?.(json.beardCutoutPaintAlphaFloor??242,242) ?? 242; // Hood painting and automatic ring share an 8-bit opacity floor.
   const variantBeardCutoutPermissionMode = {}; // Explicit variant choice of auto/painted/allow-all.
-  const variantBeardCutoutConeSpread = {}; // Per-variant expansion rate. // A hood-owned removal permission mask; null is legacy fully-removable.
+  const variantBeardCutoutConeSpread = {}; // Per-variant expansion rate.
+  const variantBeardCutoutPaintAlphaFloor = {}; // Per-species hood opacity threshold. // A hood-owned removal permission mask; null is legacy fully-removable.
   const variantBeardCutoutAllowedMasks = {}; // Explicit empty masks mean this hood variant forbids all beard penetration.
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
   for (const [key, value] of Object.entries(json.speciesVariants || {})) {
@@ -2580,6 +2586,8 @@ function portraitOptionFromJson(entry, json) {
       variantBeardCutoutPermissionMode[key]=value.beardCutoutPermissionMode;
     if (value?.beardCutoutConeSpread != null)
       variantBeardCutoutConeSpread[key]=maskApi?.normalizeConeSpread?.(value.beardCutoutConeSpread)??0;
+    if (value?.beardCutoutPaintAlphaFloor != null)
+      variantBeardCutoutPaintAlphaFloor[key]=maskApi?.alphaFloor?.(value.beardCutoutPaintAlphaFloor,242)??242;
     if (Array.isArray(value?.hoodTuftRoots))
       variantHoodTuftRoots[key] = maskApi?.normalizeRoots?.(value.hoodTuftRoots) || []; // [] explicitly disables inherited shared corners.
     if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
@@ -2597,6 +2605,7 @@ function portraitOptionFromJson(entry, json) {
     beardCutoutAllowedMask, variantBeardCutoutAllowedMasks,
     beardCutoutPermissionMode,variantBeardCutoutPermissionMode,
     beardCutoutConeSpread,variantBeardCutoutConeSpread,
+    beardCutoutPaintAlphaFloor,variantBeardCutoutPaintAlphaFloor,
     hoodWhiskerMask,variantHoodWhiskerMasks };
 }
 
