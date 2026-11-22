@@ -91,6 +91,19 @@ async function testStandaloneEditorInteraction(rules) {
   assert.ok(input?.onchange, 'Master synonym edits must be interactive');
   input.value = 'canonical replacement for testing';
   input.onchange();
+  const kindInput = panel.querySelectorAll('[data-edit-kind]').find(node => node.dataset.editKind === stableId);
+  assert.ok(kindInput?.onchange, 'Master synonym category control must be interactive');
+  kindInput.value = 'old-slang';
+  kindInput.onchange();
+  const yearInput = panel.querySelectorAll('[data-edit-period]').find(node => node.dataset.editPeriod === stableId);
+  assert.ok(yearInput?.onchange, 'Historical cutoff year must be editable');
+  yearInput.value = '1850';
+  yearInput.onchange();
+  assert.equal(sample.lexicon[original][0].kind, 'old-slang', 'Style control must modify the canonical entry');
+  assert.equal(sample.lexicon[original][0].firstRecorded, 1850, 'Year control must retain valid pre-1900 dates');
+  yearInput.value = '1930';
+  yearInput.onchange();
+  assert.equal(sample.lexicon[original][0].firstRecorded, 1850, 'Editor rejects later historical slang attestation dates');
   assert.equal(sample.lexicon[original][0].id, stableId, 'Renaming a synonym must preserve the stable ID');
   assert.equal(sample.lexicon[original][0].text, 'canonical replacement for testing');
   assert.ok(sample.characters.pahu.selections[original].includes(stableId), 'Renaming a global entry must preserve character checkmarks');
@@ -187,6 +200,10 @@ async function main() {
   assert.ok(!rules.generateSelections({ nonsense: [{ id: 'too-new', text: 'modernism', kind: 'old-slang', firstRecorded: 1901 }] },
     { oldSlang: 100, breadth: 100, variety: 100 }, 'porakaneki_chief').nonsense,
     'Post-1899 slang must not be automatically generated');
+  assert.equal(rules.resolveSelections({ nonsense: [{ id: 'too-new', text: 'modernism', kind: 'old-slang', firstRecorded: 1901 }] },
+    { nonsense: ['too-new'] }).nonsense, undefined, 'Manual checkmarks cannot override the historical cutoff');
+  assert.equal(rules.resolveSelections({ nonsense: [{ id: 'undated', text: 'invented-era-slang', kind: 'old-slang' }] },
+    { nonsense: ['undated'] }).nonsense, undefined, 'Undated slang must remain inactive until dated in the editor');
   const manualSlang = rules.resolveSelections(config.lexicon, { nonsense: ['balderdash'] });
   assert.ok(manualSlang.nonsense.includes('balderdash'), 'Manual checkmarks always honor the master list regardless of sliders');
   engine.rewrite('Friend!', 'porakaneki_chief', () => 0);
