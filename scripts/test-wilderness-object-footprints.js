@@ -268,7 +268,7 @@ vm.runInNewContext(fs.readFileSync('docs/js/world-render-pipeline.js','utf8'),
 const festivalScene=new TestGroup(); // A lightweight active scene with real zone/Shift lifetime.
 let festivalArea='map_southern_cloud_forest'; // Mutable active area exercises the existing zone teardown behavior.
 const festivalLayouts=new Map([[festivalArea,{localeInstances:[
-  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:12}]},
+  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:12,key:'blossom-tree',collision:{mode:'custom',x:10,y:12,w:1,h:1}}]},
   {localeId:'locale_five_blossoms_rose',objects:[{x:16,y:12}]}
 ]}]]);
 festivalBrowser.GridTileAccessors={getActiveScene:()=>festivalScene};
@@ -288,6 +288,8 @@ hunt.update();
 const block=festivalBrowser.AreaFootprintBlockers;
 assert(block.providerIds().includes('five-blossoms-trunks'),'live blossom meshes share the existing AreaFootprintBlockers registry');
 assert(block.blocksPoint(festivalArea,10.5,12.5),'the amber blossom trunk has actual movement collision');
+assert(block.blocksPoint(festivalArea,10.98,12.5),'the exact authored custom trunk width, not an invented narrower radius, is used');
+assert.equal(block.blocksPoint(festivalArea,11.02,12.5),false,'the authored trunk edge is not expanded to the canopy');
 assert(block.blocksPoint(festivalArea,16.5,12.5),'the rose blossom trunk has actual movement collision');
 assert.equal(block.blocksBox(festivalArea,11.5,12.5,.1),false,'movement beside the canopy remains free');
 assert.equal(block.blocksBox(festivalArea,10.5,12.5,0,20),false,'shots above the flower crown do not hit the trunk');
