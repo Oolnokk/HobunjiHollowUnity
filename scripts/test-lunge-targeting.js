@@ -43,6 +43,46 @@ area = 'mapB'; hostiles = [];
 reset();
 assert.equal(LT.hasTargetInCone(cone), false, 'a lunge-stop target in another map does not count');
 
+// Lunge contact also commits the shared object AOE, once per lunge, not once per frame.
+const impacts = [];
+globalThis.Shattercasks = { sweepMelee: opts => impacts.push(opts) };
+globalThis.CratePiles = { hasLungeTarget: () => true };
+area = 'mapA'; hostiles = []; T.clear();
+player.lunging = true;
+player.lungeOriginMs = 1001;
+assert.equal(LT.hasTargetInCone(cone), true, 'a crate inside the melee cone stops the lunge');
+assert.equal(impacts.length, 1, 'crate contact invokes the existing destructible melee pass');
+assert.equal(impacts[0].actor, player);
+assert.equal(impacts[0].lungeContact, true);
+assert.equal(impacts[0].targetBurden, null);
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 1, 'repeated movement probes do not shatter a second crate');
+player.lungeOriginMs = 1002;
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 2, 'a new lunge may hit another crate');
+globalThis.CratePiles.hasLungeTarget = () => false;
+const suspended = { id: 'suspended' };
+const hangingEntry = T.register({ id: 'hanging', scope: 'mapA', owner: suspended, caps: [T.CAPS.LUNGE_STOP] });
+hangingEntry.toActor().hit = true;
+player.lungeOriginMs = 1003;
+assert.equal(LT.hasTargetInCone(cone), true);
+assert.equal(impacts.length, 3);
+assert.equal(impacts[2].targetBurden, suspended, 'the precise hanging-burden target reaches the impact handler');
+player.lunging = false;
+player.lungeOriginMs = 1004;
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 3, 'non-lunge targeting probes never cause object damage');
+T.clear();
+player.lunging = true;
+hostiles = [{ id:'foe', health:5, areaId:'mapA', hit:true }];
+player.lungeOriginMs = 1005;
+assert.equal(LT.hasTargetInCone(cone), true);
+assert.equal(impacts.length, 4, 'the same AOE can hit props when the lunge stops on an enemy');
+hostiles = [];
+player.lungeOriginMs = 1006;
+assert.equal(LT.hasTargetInCone(cone), false);
+assert.equal(impacts.length, 4, 'empty cones cannot generate object impacts');
+
 // uninitialised use is safe
 delete require.cache[require.resolve('../docs/js/lunge-targeting.js')];
 const fresh = require('../docs/js/lunge-targeting.js');
