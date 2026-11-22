@@ -29,6 +29,23 @@ assert.equal(sized.handTargets.right.x, -.3 * .4, 'right grip follows real portr
 assert.equal(sized.handTargets.left.z, .4 * .05, 'grip depth follows baby portrait height');
 assert.equal(sized.billboardAnchor.position.z, .4 * -.48, 'held anchor follows baby portrait height');
 assert.equal(sized.backCarry.rotation.y, 180, 'back stow pose retains the original orientation');
+const point = { x: -.18, y: .16, z: -.06 }; // Authoring the left/bottom grip of a rectangular 0.6×0.4 portrait.
+const uv = profile.pointToPortrait(point, .6, .4);
+assert(Math.abs(uv.u - .2) < 1e-10 && Math.abs(uv.v - .6) < 1e-10 && Math.abs(uv.depth + .15) < 1e-10,
+  'portrait coordinates are measured left-to-right / top-to-bottom, while Z is relative to portrait height');
+const world = profile.pointFromPortrait(uv, .6, .4);
+for(const axis of ['x','y','z'])assert(Math.abs(world[axis] - point[axis]) < 1e-10,
+  'portrait percentage round-trip preserves '+axis);
+const independent = profile.forSize(.6, .4);
+independent.handTargets.left.x = -.18; independent.handTargets.left.y = .16;
+const savedPercent = profile.toProfile(independent, .6, .4);
+const preservedSocket = independent.handTargets.left; // Live grip rig may hold a direct reference to this object.
+profile.applyFrom(independent, savedPercent, .3, .2);
+assert.equal(independent.handTargets.left, preservedSocket, 'resizing an unsaved draft leaves the original grip object intact');
+assert(Math.abs(independent.handTargets.left.x + .09) < 1e-10
+  && Math.abs(independent.handTargets.left.y - .08) < 1e-10,
+  'resizing unsaved baby keeps the exact U/V contact point instead of arbitrary world coordinates');
+
 const exported = profile.toProfile(sized, .3, .4);
 profile.save(exported);
 assert.equal(profile.forSize(.6, .8).handTargets.left.x, .6 * .4, 'JSON round-trip remains dimension independent');
