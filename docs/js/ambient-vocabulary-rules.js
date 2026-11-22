@@ -27,10 +27,10 @@
     return { groupId: null, sliders: {}, dialects: [], selections: {}, phoneticPreset: null }; // All other NPCs retain ordinary authored vocabulary.
   }
   function isEligibleKind(entry, selected, speakerId, word, dialects) {
-    if (entry?.dialect && !dialects.includes(entry.dialect)) return false; // Regional words cannot bleed into unrelated NPCs.
-
     const kind = String(entry?.kind || 'standard');
-    if (kind === 'standard' || kind === 'regional') return true;
+    if (kind === 'regional') return typeof entry?.dialect === 'string' && dialects.includes(entry.dialect); // No tag means no automatic regional leakage.
+    if (entry?.dialect && !dialects.includes(entry.dialect)) return false; // Historically attested slang can also be region-restricted.
+    if (kind === 'standard') return true;
     const slider = CATEGORY_SLIDER[kind];
     if (!slider || !Number.isFinite(Number(selected[slider]))) return false; // Unknown categories fail closed instead of leaking unusual words into everyone's speech.
     const strength = selected[slider];
