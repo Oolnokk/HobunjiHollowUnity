@@ -23,6 +23,7 @@ const W = {
 const context = vm.createContext({ window: W, performance: { now: () => clock }, Math, console });
 vm.runInContext(fs.readFileSync('docs/js/wildlife-threat-response.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/wildlife-food-web.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('docs/js/combat/animal-scent-targeting.js', 'utf8'), context); // Real scent module must not hijack predator flight.
 const R = W.WildlifeThreatResponse;
 const F = W.WildlifeFoodWeb;
 const movement = [];
@@ -80,6 +81,55 @@ nelk.state = 'idle';
 R.update(nelk, 0.3, [nelk], [player], ctx);
 assert.equal(nelk.def, original, 'pursuit overlay does not permanently mutate the species definition');
 
+// Even player-chasing predators accelerate, but only for as long as they are pursuing.
+nelk.state = 'chase'; nelk.targetPlayer = player;
+R.update(nelk, 0.3, [nelk], [player], ctx);
+assert(nelk.def.chaseSpeed >= 40 * 8.5, 'predators also sprint when actively pursuing a player');
+nelk.state = 'idle'; nelk.targetPlayer = null;
+R.update(nelk, 0.3, [nelk], [player], ctx);
+assert.equal(nelk.def, original, 'player-pursuit speed is restored after disengagement');
+
+// Passive species with a nonlethal wildlife wound are fast when they flee, without a permanent stat mutation.
+const injuredPuktuk = animal('puktuk', 230, 0, { state: 'fleeing-low-health', def: { hostile: false, diet: 'herbivore', chaseSpeed: 90 } });
+const preFlightDef = injuredPuktuk.def;
+R.update(injuredPuktuk, 0.3, [injuredPuktuk], [player], ctx);
+assert(injuredPuktuk.def.chaseSpeed >= 40 * 8.8, 'injured prey sprints on the existing wildlife retreat path');
+injuredPuktuk.state = 'return';
+R.update(injuredPuktuk, 0.3, [injuredPuktuk], [player], ctx);
+assert.equal(injuredPuktuk.def, preFlightDef, 'injured prey does not keep sprint stats when back at home');
+
+// A Voorg-Ass really runs AWAY from the visitor after its native kick, even if its old herd home is toward that visitor.
+const kickingVoorg = animal('voorg-ass', 45, 0, { homeX: 90 });
+R.update(kickingVoorg, 0.3, [kickingVoorg], [player], ctx);
+R.update(kickingVoorg, 0.3, [kickingVoorg], [player], ctx); // Capture the kick threat before native rearKick.finish clears it.
+kickingVoorg._voorgRearKickSpent = true; kickingVoorg._voorgRearKickThreat = null;
+kickingVoorg.state = 'fleeing-low-health'; // The native rear-kick completion state.
+R.update(kickingVoorg, 0.3, [kickingVoorg], [player], ctx);
+assert.equal(kickingVoorg.state, 'herd-panic', 'a finished rear kick switches to away-from-threat escape rather than homeward flee');
+const beforeEscape = kickingVoorg.x;
+F.tickForage(kickingVoorg, 0.1, ctx);
+assert(kickingVoorg.x < beforeEscape, 'Voorg-Ass runs away from the attacker, not toward its original herd home');
+
+// A trained carnivore is still a predator to wild Moots, but it must not receive wild-only chase tuning.
+const trainedNelk = animal('nelk', 10, 0, {
+  isCompanion: true, def: { hostile: false, diet: 'carnivore', chaseSpeed: 100 },
+});
+const frightenedMoot = animal('moot', 0, 0);
+R.update(frightenedMoot, 0.3, [frightenedMoot, trainedNelk], [player], ctx);
+assert.equal(frightenedMoot.state, 'herd-panic', 'prey also flee from trained animal predators');
+R.update(trainedNelk, 0.3, [trainedNelk], [player], ctx);
+assert.equal(trainedNelk.def.chaseSpeed, 100, 'owner companions keep their saved movement profile');
+
+// A cliff blocked three tiles away must not prevent movement into a safe nearby step.
+const cliffMoot = animal('moot', 0, 0, { state: 'herd-panic', _herdThreat: {
+  predatorX: 30, predatorY: 0, panicUntilMs: clock + 1000,
+  nextScanS: 1, engaged: false, engagedAtMs: 0,
+} });
+const cliffCtx = { ...ctx, canOccupyAt(x) { return x > -40; } };
+const cliffMove = R.tickPanic(cliffMoot, 0.1, cliffCtx);
+assert(cliffMove.handled && cliffMove.moving && cliffMoot.x < 0,
+  'cliff escape tests a nearby foothold instead of falsely rejecting a blocked distant endpoint');
+
 // Only nearby, living, wild adult members of the stolen offspring species react.
 const puktuk = animal('puktuk', 80, 20, { genotype: { sizeClass: 'large' } });
 const second = animal('puktuk', 100, 10);
@@ -108,8 +158,21 @@ R.update(puktuk, 0.3, [puktuk], [player], ctx);
 assert.equal(puktuk.def.hostile, false, 'maternal defense is temporary');
 assert.equal(puktuk.state, 'return', 'nonpermanent defenders return to their previous homes');
 
+// A stolen-nest defender also sees predators: neither ordinary player aggro nor scent can cancel its flight.
+const nestMoot = animal('moot', 75, 0);
+adults.add(nestMoot);
+nestListener({ type: 'nest_stolen', speciesKind: 'moot', itemKey: 'mootBaby',
+  x: 70, y: 0, areaId: ctx.zoneId, liveBirth: true });
+assert.equal(nestMoot.def.hostile, true, 'parental defensive profile is active before the predator arrives');
+R.update(nestMoot, 0.3, [nestMoot, wolf], [player], ctx);
+assert.equal(nestMoot.state, 'herd-panic', 'a predator outranks maternal player aggro');
+W.ResourceSystem = { getAffliction: entity => entity === player ? 1 : 0 }; // Simulate an attractive scent-marked player near the nest.
+W.AnimalScentTargeting.prioritizeWild(nestMoot, [player], [], ctx.zoneId, () => true);
+assert.equal(nestMoot.state, 'herd-panic', 'scent cannot hijack predator flight');
+
 const game = fs.readFileSync('docs/game.js', 'utf8');
 assert(game.includes("c.herdKey && herdNight && c.state !== 'herd-panic'"), 'nighttime herd sleep cannot overwrite predator flight');
+assert(game.includes("c.state !== 'herd-panic' && c.state !== 'chase'"), 'ordinary enemy aggro must exclude prey currently escaping a predator');
 const charged = fs.readFileSync('docs/js/combat/combat-animal-attacks.js', 'utf8');
 assert(charged.includes('guardChargeDamage'), 'Moot Guard Charge inflicts blunt Health damage instead of just knockback');
 const page = fs.readFileSync('docs/index.html', 'utf8');
