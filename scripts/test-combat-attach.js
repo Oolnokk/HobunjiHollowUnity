@@ -233,6 +233,30 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.calls.creature.find(hit => hit.target === swarm).opts.attacker, ally, 'only same-camp ally attacks');
 }
 
+// ---- an engaged Nelk can interrupt its own attack to strike swarms off its owner ----
+{
+  const w = world();
+  let interrupted = 0; // Ensures that the pre-existing attack actually yields to the emergency rescue.
+  const nelk = w.make({
+    creatureKey: 'nelk', x: 405, y: 400,
+    isCompanion: true, master: w.player, stableRole: 'companion',
+    def: { attackDamage: 24, attackTag: 'sharp', attackCooldownS: 1.2 },
+    _stage: { mode: 'backingUp', t: 0.4 },
+    _animalAttack: { id: 'pounce', state: {}, def: { cancel() { interrupted++; } } },
+  }); // Simulates an already-committed named strike against nearby honeyfuzzles.
+  const swarm = w.make({ x: 407, y: 400 });
+  w.companionObjects.add(nelk); w.hostileObjects.add(swarm);
+  assert(w.Combat.animalAttacks.isBusy(nelk), 'Nelk is initially busy fighting another opponent');
+  assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
+  run(w, swarm, 0.15);
+  assert.equal(interrupted, 1, 'Nelk preempts its ordinary attack for an owner rescue');
+  assert.equal(w.Combat.animalAttacks.isBusy(nelk), false, 'no old attack remains committed');
+  assert.equal(w.Combat.attach.isAttached(swarm), false, 'busy Nelk still knocks the swarm loose');
+  assert.equal(w.calls.creature[0].amount, 24, 'swarm takes a full Nelk strike');
+  assert.equal(w.calls.player[0].amount, 6, 'owner takes one quarter of that damage');
+  assert.equal(nelk._stage, null, 'old retreat beat does not resume after the rescue');
+}
+
 // ---- rescue priority: available fighters must beat mounts, interrupted or cooling allies ----
 {
   const w = world();
