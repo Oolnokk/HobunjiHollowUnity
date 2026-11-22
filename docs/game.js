@@ -791,6 +791,41 @@
       function applyKnockback(target, fromX, fromY, speedPxS) {
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
+        if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
+        if (target.tzatzulCapturedBy) return; // Talons own displacement until a genuine prone transition detaches the captive and starts a height-aware fall.
+        if (target._knockbackLedgeFall || target._cliffClimb?.phase === 'fall') {
+          // Already descending: damage still lands, but another hit must not rewind the fall.
+          if (target.prone) window.ImpactRagdollPlayback?.triggerTumble?.(target,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          return;
+        }
+        const hitAngle = Math.atan2(target.y - fromY, target.x - fromX);
+        if (target === player && target._freeJump?.phase === 'air') {
+          // A real free fall owns its own gravity. Add horizontal impulse there,
+          // never start the grounded knockback timer that used to reset the jump.
+          window.PlayerJump?.receiveKnockback?.(Math.cos(hitAngle), Math.sin(hitAngle), speedPxS);
+          if (target.prone) {
+            window.PlayerJump?.knockProne?.();
+            window.ImpactRagdollPlayback?.triggerTumble?.(target,
+              hitDirectionRelativeToFacing(target.angle, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          }
+          return;
+        }
+        if (target.prone) {
+          if (target === player && player.somersaultRecovering) {
+            player.somersaultRecovering = false; // Replacing a get-up animation cancels its completion callback; never strand the recovery flag.
+          }
+          // Prone is immune to additional Footing loss, not to being physically
+          // thrown. The dedicated prone throw has the existing swept wall/ledge collisions.
+          target.knockbackVX = Math.cos(hitAngle) * speedPxS;
+          target.knockbackVY = Math.sin(hitAngle) * speedPxS;
+          startProneThrow(target, target === player, target === player ? target.angle : target.facing,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY));
+          target.knockbackT = 0;
+          window.ImpactRagdollPlayback?.triggerTumble?.(target,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          return;
+        }
         if (target.onBranch) {
           window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
@@ -809,6 +844,11 @@
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
+          if (target === player && !Number.isFinite(target.lungeFlightWorldY)
+            && Number(target.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+            const floorY = knockbackSurfaceAtPixel(target.x, target.y);
+            if (Number.isFinite(floorY)) target._proneAirFallStartY = floorY + target.lungeHopCurrent; // Preserve the ordinary hop height before impact cancels the lunge.
+          }
           target.lunging = false;
           target.lungeHopCurrent = 0;
           if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
@@ -986,6 +1026,86 @@
         return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
       }
 
+      // A prone actor must keep its existing descent authority. For a
+      // freshly interrupted airborne lunge or cliff climb, transfer the height
+      // to that same cliff-fall resolver instead of snapping the portrait down.
+      function beginProneAirFall(entity, isPlayer) {
+        const perchedAirY = (entity.onBranch || entity.onPerch) && Number.isFinite(entity.branchSurfaceY)
+          ? entity.branchSurfaceY : null; // Snapshot the carrier's talon/branch height before detaching either support.
+        if (entity.tzatzulCapturedBy) window.TzatzulFlightRuntime?.releaseProneCaptive?.(entity);
+        if (entity.onBranch || entity.onPerch) window.PerchSupport?.release?.(
+          entity, 'knocked prone in air', { deferLegacyKnockback: true }); // No immediate flat injury: gravity and the cliff resolver will charge it once.
+        if (isPlayer) {
+          const hopSnapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null;
+          entity._proneAirFallStartY = null; // A prior harmless hit cannot seed a later unrelated fall.
+          if (window.PlayerJump?.knockProne?.()) return true;
+          if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // Releasing a horizontal cliff crossing must begin its vertical descent immediately.
+          if (entity._knockbackLedgeFall) {
+            entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+            window.KnockbackCollisionImpact?.cancel?.(entity); // An existing cliff fall must not queue a second throw on landing.
+            return true;
+          }
+          if (entity.onClimbSurface) {
+            const released = window.ClimbSurfaces?.release?.({ fall: true });
+            if (released) return window.PlayerJump?.knockProne?.() === true; // Wall-grab height transfers into the physical jump owner.
+          }
+          if (entity.climbing) {
+            const falling = window.ClimbSystem?.knockProneOffClimb?.(entity) === true;
+            if (falling) {
+              entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+              window.KnockbackCollisionImpact?.cancel?.(entity); // The climb's own falling interpolation owns the displacement.
+            }
+            return falling;
+          }
+          const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
+          const currentY = perchedAirY ?? (Number.isFinite(entity.lungeFlightWorldY)
+            ? entity.lungeFlightWorldY : hopSnapshotY);
+          if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+            entity.lunging = false;
+            entity.lungeHopCurrent = 0;
+            entity.lungeFlightWorldY = null;
+            entity.lungeLandingPending = false; // PlayerJump is the new vertical owner, not the cancelled lunge.
+            const flight = window.PlayerJump?.beginFlight?.({
+              x: entity.x / TILE, z: entity.y / TILE, y: currentY, vy: 0,
+              safeX: entity.x / TILE, safeZ: entity.y / TILE,
+            }, { source: 'prone airborne', deliberate: false });
+            if (flight) return window.PlayerJump?.knockProne?.() === true;
+          }
+          return false;
+        }
+        const snapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null; // Captured before a bandit attack's lunge cancellation.
+        entity._proneAirFallStartY = null;
+        if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // A prone target released during horizontal cliff transit must not hang in the air.
+        if (entity._knockbackLedgeFall) {
+          entity.proneThrowT = 0; // The existing fall stays in charge; no deferred throw after its landing.
+          return true;
+        }
+        if (entity._cliffClimb) {
+          if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+            entity.proneThrowT = 0;
+            return true;
+          }
+        }
+        const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
+        const airborneY = snapshotY ?? perchedAirY ?? (Number.isFinite(entity._climbLeap?.surfaceY) ? entity._climbLeap.surfaceY
+          : Number.isFinite(groundY) ? groundY + Math.max(0, Number(entity._banditLungeHopCurrent) || 0) : null);
+        if (!Number.isFinite(groundY) || !Number.isFinite(airborneY)
+          || airborneY <= groundY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false;
+        const dropWorld = airborneY - groundY, dropTiers = dropWorld / Math.max(0.001, PLATEAU_UNIT);
+        entity._knockbackLedgeFall = {
+          startX: entity.x, startY: entity.y, endX: entity.x, endY: entity.y,
+          startSurfaceY: airborneY, endSurfaceY: groundY, visualSurfaceY: airborneY,
+          elapsed: 0, duration: window.FormatUtils.clamp(0.14 + dropTiers * 0.055, 0.16, 0.36),
+          dropWorld, dropTiers, dirX: 0, dirY: 0,
+        }; // Same animation and collision-cost pipeline as a shove off an actual ledge.
+        entity._banditLungeHopCurrent = 0;
+        entity._climbLeap = null;
+        entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0; // Falling replaces, never queues, the ground throw.
+        window.KnockbackCollisionImpact?.cancel?.(entity);
+        return true;
+      }
+
       // The same full breakThrow knockdown (launch, action interruption and
       // pose hold) is shared by depleted Footing and the short timed Knockdown
       // debuff. Temporary knockdown does not modify the target's Footing.
@@ -993,6 +1113,11 @@
         if (entity.prone) return false;
         entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
+        if (beginProneAirFall(entity, isPlayer)) {
+          entity.knockbackT = 0; entity.knockbackVX = 0; entity.knockbackVY = 0;
+          entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+          window.KnockbackCollisionImpact?.cancel?.(entity); // Airborne gravity owns motion; a stale ground impulse must never resume after landing.
+        }
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
           return true;
@@ -1030,6 +1155,10 @@
           window.Combat?.animalAttacks?.cancel?.(entity);
           window.EnemyDodge?.cancel?.(entity);
           if (entity.isBandit) {
+            const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
+            const hopY = Number(entity._banditLungeHopCurrent) || 0;
+            if (Number.isFinite(groundY) && hopY > KNOCKBACK_LEDGE_HEIGHT_EPSILON)
+              entity._proneAirFallStartY = groundY + hopY; // Timed Knockdown also preserves a bandit's height before cancelLunge erases its hop.
             entity._banditAction?.cancel?.();
             entity._banditAction = null;
             entity.telegraphState = null;
@@ -1037,6 +1166,11 @@
             window.RangedWeapons?.cancelBanditAction?.(entity);
             window.BanditCombat?.cancelLunge?.(entity);
           }
+        }
+        if (isPlayer && entity.lunging && !Number.isFinite(entity.lungeFlightWorldY)
+          && Number(entity.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+          const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
+          if (Number.isFinite(floorY)) entity._proneAirFallStartY = floorY + entity.lungeHopCurrent; // Timed knockdown must also retain the hop without normal knockback.
         }
         startProneThrow(entity, isPlayer, facingAngle, direction);
         if (interruptingGetUp) {
@@ -1052,6 +1186,9 @@
       window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
 
       function proneRecoveryReady(entity) {
+        if (entity._knockbackLedgeAir || entity._knockbackLedgeFall ||
+            entity._cliffClimb?.phase === 'fall' || entity._climbFall ||
+            entity._freeJump?.phase === 'air') return false; // No human or animal can regain its feet before the fall owner lands.
         if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
         return entity._temporaryKnockdownProne === true
           ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
@@ -3601,6 +3738,10 @@
         );
       }
 
+      window.HobunjiCliffFallImpact = Object.freeze({
+        resolve: resolveKnockbackLedgeFallImpact,
+      }); // One landing authority shared by natural prone falls and horizontal cliff knockback.
+
       function advanceKnockbackLedgeFall(entity, dt) {
         const fall = entity?._knockbackLedgeFall;
         if (!fall) return false;
@@ -5624,7 +5765,14 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c); } // cancelLunge also lowers a mid-arc hop.
+        if (c.isBandit) {
+          const groundY = knockbackSurfaceAtPixel(c.x, c.y);
+          const hopY = Number(c._banditLungeHopCurrent) || 0; // Snapshot used if this hit also causes knockdown after cancelLunge clears the hop.
+          c._proneAirFallStartY = Number.isFinite(groundY) && hopY > KNOCKBACK_LEDGE_HEIGHT_EPSILON ? groundY + hopY : null;
+          c._banditAction?.cancel(); c._banditAction = null;
+          window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0;
+          window.BanditCombat?.cancelLunge?.(c);
+        }
         // Referenced by wildlife-territorial.js's own attackedDuringWarning
         // check (an already-attacked creature escalates straight to
         // fighting even from outside its proximity trigger) — that check
@@ -5672,6 +5820,7 @@
         }
         if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
+        if (!c.prone) c._proneAirFallStartY = null; // A non-knockdown stagger cannot contaminate a later fall.
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
@@ -5711,6 +5860,7 @@
           window.Combat?.cancelAllStaged?.();
           if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
+          if (!player.prone) player._proneAirFallStartY = null; // Normal staggers never retain a stale aerial snapshot.
         }
         if (player.health <= 0) {
           if (!environmentalImpact && window.PlayerDowned?.tryDown?.('damage')) return; // Combat damage puts the player down (Second Wind) instead of killing them outright.
@@ -8880,7 +9030,11 @@
             if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
             if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           }
-          if (c._knockbackLedgeFall) {
+          if (c._cliffClimb?.phase === 'fall') {
+            _clearCompanionTreasureCue(c, dt, 'falling');
+            _clearCompanionWatchIdle(c, 'falling');
+            window.CreatureCliffClimb?.update?.(c, dt, target); // Companions are outside updateHostiles; they still need their own fall tick.
+          } else if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
             advanceKnockbackLedgeFall(c, dt);
@@ -10103,6 +10257,7 @@
         // (and any ledge fall it can become) prevents the roll from cancelling
         // displacement that still has to resolve.
         if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
+            && player._freeJump?.phase !== 'air' && !(player.climbing && player._climbFall)
             && proneRecoveryReady(player)) {
           beginSomersaultRecovery();
         }
@@ -10119,7 +10274,8 @@
       // eligible.
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
-        if (!player.prone || player.somersaultRecovering) return false;
+        if (!player.prone || player.somersaultRecovering
+            || player._freeJump?.phase === 'air' || player._knockbackLedgeFall || (player.climbing && player._climbFall)) return false;
         if (!proneRecoveryReady(player)) {
           if (!window.ResourceSystem?.hasTimedDebuff?.(player, 'knockdown'))
             showToast("Footing hasn't recovered enough yet.", false);
@@ -19075,6 +19231,14 @@
           player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
           return;
         }
+        if (player.prone && (player._freeJump?.phase === 'air' || (player.climbing && player._climbFall))) {
+          // Gravity outranks dialogue, fishing, music, movement locks and mounted-control gates.
+          // Those modes may have been active when the airborne hit arrived.
+          if (player._freeJump?.phase === 'air') window.PlayerJump?.tick?.(dt);
+          else window.ClimbSystem?.updateClimb?.(dt);
+          updateProneState(dt);
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -19142,7 +19306,12 @@
         // recovery roll (player.somersaultRecovering) — both keep the player
         // fully out of normal movement/physics until recovery finishes and
         // clears player.prone itself (see beginSomersaultRecovery).
-        if (player.prone) { updateProneState(dt); return; }
+        if (player.prone) {
+          if (player._freeJump?.phase === 'air') window.PlayerJump?.tick?.(dt); // Gravity precedes the settled prone hold.
+          else if (player.climbing && player._climbFall) window.ClimbSystem?.updateClimb?.(dt); // A knocked-off handhold must finish descending.
+          updateProneState(dt);
+          return;
+        }
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 

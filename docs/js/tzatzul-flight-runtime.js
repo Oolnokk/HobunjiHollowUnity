@@ -235,10 +235,12 @@
     if (bird?._tzFlight) bird._tzFlight.delivered = false; // Completion is set only by the actual cave transition or victim store.
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
-    const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'
+    const proneAirDrop = reason === 'knocked prone midair'; // A combat knockdown transfers physical height to the regular cliff-fall owner rather than charging a flat perch impact.
+    const fellFromTalons = proneAirDrop || reason === 'fled carrying prey' || reason === 'carrier knocked from perch'
       || reason === 'carrier died'; // A killed carrier drops its actual prey; unloaded scenes still use the safe pickup.
     prey.tzatzulCapturedBy = null; // End talon attachment before native fall/knockback runs.
-    if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
+    if (proneAirDrop) window.PerchSupport?.forget?.(prey); // The caller has snapshotted branchSurfaceY and will land via the shared cliff collision profile.
+    else if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
     if (prey.health > 0) prey.state = record.state; // Death already owns the dying/corpse state; releasing cannot revive its AI.
@@ -763,6 +765,7 @@
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
     hasCaptives: () => captured.size > 0, // Gate the wildlife draw hook without scanning the roster.
+    releaseProneCaptive: prey => releaseCaptive(prey, 'knocked prone midair'), // Called only by the shared prone transition; preserves position for physical descent.
     carrierOf: prey => captured.get(prey)?.bird || null, // Direct lookup for player draw placement.
     forEachCaptive: visit => { for (const [prey, record] of captured) visit(prey, record.bird); },
     owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.

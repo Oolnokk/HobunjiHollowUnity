@@ -2507,7 +2507,7 @@
     }else if(platformBlocksAt(next.x,next.z,next.y)){
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
-    if(catchAirborneRope(f,previous))return; // The swept release arc can catch ordinary and air-only ropes without skipping between frames.
+    if(!deps?.player?.prone&&catchAirborneRope(f,previous))return; // Prone victims cannot re-grab another rope while descending.
     const chain=ropeChainPitAt(f.x,f.z,f.y);
     // The player must die BEFORE sampling floors lower down the same X/Z:
     // a missed upper-story catch could otherwise land on a lower deck and
@@ -2522,9 +2522,14 @@
       setPlayerWorld(f,true,true);
       state.flight=null;
       if (deps?.player?._freeJump === f) {
-        window.FallSystem?.land?.(deps.player, { dropWorld:Math.max(0,f.launchGround-f.y), deliberate:true, source:'ruin rope landing' });
+        const dropWorld=Math.max(0,(f.proneFall?f.proneFallStartY:f.launchGround)-f.y);
+        const cliffImpact=f.proneFall?window.HobunjiCliffFallImpact?.resolve?.(deps.player,{
+          dropWorld,dropTiers:window.FallSystem?.dropTiers?.(dropWorld)??dropWorld/2.5,
+          dirX:0,dirY:0,
+        }):null; // Ruin rope flights own external gravity but share the same prone cliff-impact authority.
+        if(!cliffImpact)window.FallSystem?.land?.(deps.player,{dropWorld,deliberate:!f.proneFall,source:'ruin rope landing'});
         window.PlayerJump?.reset?.();
-        window.DevRandomRuin?.acceptFreeJumpLanding?.(f.y);
+        if(!cliffImpact?.lethal)window.DevRandomRuin?.acceptFreeJumpLanding?.(f.y);
       }
       state.lastPlayerWorld=clonePoint(f);
       return;

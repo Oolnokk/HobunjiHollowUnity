@@ -821,7 +821,7 @@
   const AUTO_GRAB_GRACE_S = 0.15, AUTO_GRAB_RADIUS_TILES = 0.75, AUTO_GRAB_REACH_Y = 0.7;
   function tryAutoGrab(player, dt) {
     const fall = player._climbFall;
-    if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
+    if (!fall || player.prone || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false; // Prone characters cannot catch a handhold while tumbling.
     if (fall.noGrab) return false;
     const best = findAirRouteGrab({ x: player.x / deps.TILE, z: player.y / deps.TILE,
       y: player.climbSurfaceY }, null, AUTO_GRAB_RADIUS_TILES, AUTO_GRAB_REACH_Y); // Scripted falls share the free-jump handhold search.
@@ -832,6 +832,35 @@
     player._grip = Math.max(Number.isFinite(grip) ? grip : 1, 0.35); // A catch is a scramble: never a full reset, never an instant re-slip.
     deps.showToast?.('You catch a handhold!', false);
     climbSafetyDebug.lastJumpMode = 'auto-grab';
+    return true;
+  }
+
+  // Called when a real hit knocks a scripted climber prone. Reuse the
+  // existing scripted descent owner; don't strand its world-space height
+  // behind the prone movement gate or add a second, competing fall timer.
+  function knockProneOffClimb(player = deps?.player) {
+    if (!player?.climbing) return false;
+    if (player._climbFall) { player._climbFall.noGrab = true; return true; } // Already falling: do not restart the interpolation.
+    if (player._cliffRouteSession) return fallFromClimb(player, 'knocked prone');
+    const currentY = Number(player.climbSurfaceY);
+    const startY = Number(player.climbSurfaceStartY), endY = Number(player.climbSurfaceEndY);
+    if (![currentY, startY, endY].every(Number.isFinite)) return false;
+    const returnToStart = startY <= endY; // Fall to the lower existing endpoint, never teleport to a higher rim.
+    const landingX = returnToStart ? player.climbStartX : player.climbEndX;
+    const landingY = returnToStart ? player.climbStartY : player.climbEndY;
+    const landingHeight = Math.min(startY, endY);
+    const dropWorld = Math.max(0, currentY - landingHeight);
+    const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
+    player.climbStartX = player.x; player.climbStartY = player.y;
+    player.climbSurfaceStartY = currentY;
+    player.climbEndX = landingX; player.climbEndY = landingY;
+    player.climbSurfaceEndY = landingHeight;
+    player.climbHopCount = 1;
+    player.climbElapsed = 0;
+    player._climbLastHopIndex = -1;
+    player._climbTargetBranch = null; player._climbJumpDownAxis = null; player._cliffLandingShelf = null;
+    resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
+    player._climbFall = { dropWorld, deliberate: false, noGrab: true, source: 'knocked prone while climbing' };
     return true;
   }
 
@@ -906,13 +935,20 @@
       player._climbDropped = false;
       const fall = player._climbFall;
       player._climbFall = null;
-      if (fall) window.FallSystem?.land?.(player, fall);
+      if (fall) {
+        const impact = player.prone ? window.HobunjiCliffFallImpact?.resolve?.(player, {
+          dropWorld: fall.dropWorld, dropTiers: window.FallSystem?.dropTiers?.(fall.dropWorld) ?? fall.dropWorld / 2.5,
+          dirX: fall.dirX || 0, dirY: fall.dirY || 0,
+        }) : null; // Knocked-off prone climbers use the same cliff collision profile, not the gentle grip-slip Footing cost.
+        if (!impact) window.FallSystem?.land?.(player, fall);
+      }
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
         beginOnBranch(player, branch, 0);
       }
-      if (player._climbJumpDownAxis) {
+      if (player.prone) player._climbJumpDownAxis = null; // Landing prone must not queue a free evasive roll after recovery.
+      if (player._climbJumpDownAxis && !player.prone) {
         // Reuses the same tumble/roll movement state an evasive combat
         // dodge uses (see game.js's performDodge), just without its
         // stamina cost, cooldown, or invulnerability window — this is a
@@ -1131,7 +1167,7 @@
   }
 
   window.ClimbSystem = {
-    cliffDodge, jumpAction, tryAirGrab,
+    cliffDodge, jumpAction, tryAirGrab, knockProneOffClimb,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,
