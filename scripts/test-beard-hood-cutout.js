@@ -19,7 +19,7 @@ class Canvas {
       restore(){this.globalCompositeOperation=this._composite;},
       createImageData(w,h){return {width:w,height:h,data:new Uint8ClampedArray(w*h*4)};},
       putImageData(image){canvas.pixels.set(image.data);},
-      getImageData(){return {data:new Uint8ClampedArray(canvas.pixels)};},
+      getImageData(){return {data:new Uint8ClampedArray(canvas.pixels),width:canvas.width,height:canvas.height};},
       drawImage(source,dx=0,dy=0,w=source.width,h=source.height){
         for(let y=0;y<h;y++)for(let x=0;x<w;x++){
           const tx=Math.floor(dx+x),ty=Math.floor(dy+y);
