@@ -212,6 +212,8 @@ async function main() {
     object: target,
     onBurn: () => { burns++; return true; },
   }), 'fire-reactive target registers');
+  assert.equal(api.hasTarget('test-ceiling-target'),true,'cached cave targets can detect live registration');
+  assert.equal(api.hasTarget('nonexistent-target'),false,'missing targets report absent without allocating a new registry');
   api.updateProjectile(thrown.projectile, .016);
   assert.doesNotThrow(() => api.contactProjectile(
     thrown.projectile, thrown.projectile.mesh.position, thrown.projectile.mesh.position, 1, .05
@@ -272,6 +274,7 @@ async function main() {
   api.clear();
   assert.equal(api.debugSnapshot().heldFire, false, 'ruin cleanup removes held weapon fire too');
   assert.equal(api.debugSnapshot().reactiveTargets, 0, 'clear removes all fire-reactive targets');
+  assert.equal(api.hasTarget('test-ceiling-target'), false, 'cached cave callers can notice a global registry reset');
 
   const sourceBuilder=mechanismCode.slice(mechanismCode.indexOf('function buildSourceBrazier'),mechanismCode.indexOf('function buildNet'));
   assert(sourceBuilder.includes('world.group.add(group)'),

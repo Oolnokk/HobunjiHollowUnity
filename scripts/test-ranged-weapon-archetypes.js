@@ -594,3 +594,59 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   assert.strictEqual(vm.runInContext('lastTorchThrow.aimSource', torchContext), 'fallback-facing', 'Pixel Probe records the camera-less fallback source');
   console.log('torch muzzle-to-reticle convergence, elevation, scale isolation, fallback, and mobile debug regression checks passed');
 }
+
+// The actual shared aim solver must never inherit a stale ranged-slot ray for an adventuring torch.
+// A previous camera wrapper could keep an equipped ranged weapon's -X heading while the live reticle turned.
+{
+  class TorchVector3 {
+    constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+    clone(){return new TorchVector3(this.x,this.y,this.z);}
+    addScaledVector(other,scale){this.x+=other.x*scale;this.y+=other.y*scale;this.z+=other.z*scale;return this;}
+    sub(other){this.x-=other.x;this.y-=other.y;this.z-=other.z;return this;}
+    dot(other){return this.x*other.x+this.y*other.y+this.z*other.z;}
+    lengthSq(){return this.dot(this);}
+    length(){return Math.sqrt(this.lengthSq());}
+    normalize(){const len=this.length()||1;this.x/=len;this.y/=len;this.z/=len;return this;}
+  }
+  const cameraPosition={x:0,y:1,z:0}; // Camera-center ray stays separate from the hand and from the ranged-slot's old aim.
+  let centeredDirection={x:0,y:0,z:1}; // Change this between cardinal directions without changing the stale ranged ray.
+  let centeredAvailable=true; // A missing centered ray must still preserve ordinary aim fallback.
+  const heldPosition={x:.25,y:1,z:0}; // Off-center launch point tests proper camera-to-hand convergence.
+  const aimContext=vm.createContext({
+    THREE:{Vector3:TorchVector3,MathUtils:{clamp:(value,min,max)=>Math.max(min,Math.min(max,value))}},
+    AIM_EPSILON:1e-6,
+    deps:{player:{},hostileObjects:[],getCurrentArea:()=>'cave',getPlayerInteractionRay:()=>centeredAvailable?{
+      origin:cameraPosition,direction:centeredDirection,
+    }:null,getPlayerAimRay:()=>({origin:cameraPosition,direction:{x:-1,y:0,z:0}}),
+    getPlayerAimAngle:()=>Math.PI/2,getPlayerAimPitch:()=>0,TILE:64},
+    defFor:()=>({rangeTiles:7}),
+    playerProjectileOrigin:(_key,source)=>new TorchVector3(source.x,source.y,source.z),
+    projectileAimRadiusWorld:()=>.15,
+    segmentHitboxInterval:()=>null,actorHitbox:()=>null,
+    Math,Number,
+  });
+  vm.runInContext(extractNamedFunction(rangedWeaponsSource,'normalizedAimRay')+'\n'
+    +extractNamedFunction(rangedWeaponsSource,'playerAimSolution')+'\nthis.solveTorchAim=playerAimSolution;',aimContext);
+  const headings=[
+    ['east',{x:1,y:0,z:0},'x',1],
+    ['west',{x:-1,y:0,z:0},'x',-1],
+    ['north',{x:0,y:0,z:-1},'z',-1],
+    ['south',{x:0,y:0,z:1},'z',1],
+  ];
+  for(const [label,heading,axis,sign] of headings){
+    centeredDirection=heading;
+    const aim=aimContext.solveTorchAim('torch',heldPosition);
+    assert.equal(aim.cameraRaySource,'camera-centered-interaction',label+' uses the current reticle camera ray');
+    assert(aim.direction[axis]*sign>.95,'thrown torch follows '+label+' instead of a stale west-facing ranged ray');
+    assert.equal(aim.origin.x,.25,'launch and convergence use the same actual held position');
+    const ordinary=aimContext.solveTorchAim('crossbow',heldPosition);
+    assert(ordinary.direction.x<-.95,'other ranged weapons retain the existing ranged-focus callback');
+  }
+  centeredDirection={x:0,y:.6,z:.8};
+  assert(aimContext.solveTorchAim('torch',heldPosition).direction.y>.4,'a raised camera pitch changes the torch elevation');
+  centeredAvailable=false;
+  const fallback=aimContext.solveTorchAim('torch',heldPosition);
+  assert.equal(fallback.cameraRaySource,'facing-fallback','a missing camera ray falls back to player facing, never the stale ranged-slot ray');
+  assert(fallback.direction.z>.95,'camera-less torch throws follow player facing instead of the westward equipped ranged ray');
+  console.log('torch aim chooses live camera-centered east/west/north/south/pitch rather than stale equipped-ranged slot');
+}

@@ -159,6 +159,8 @@
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let timedNoteListener=null; // Every ruin/cave melody consumes only the player's real, plate-gated note events.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
+    const caveFireTargetIds=[]; // The cave's two DungeonFire contact targets are released alongside its scene.
+    let lightCaveSconce=null; // Shared ignition callback for ground-fire patches, swung torches and thrown torch projectiles.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
     let icePlacement=null; // The existing door-ice generator owns the visible stalagmites over the fire target.
     let flameVisuals=[]; // Authored particle emitters are ticked and disposed with their puzzle, never left running after a reroll.
@@ -430,8 +432,16 @@
         const visual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flame,{scale:.8,rateScale:.65}); // Shared campfire emitter palette, lifetime and rise speed.
         if(visual)flameVisuals.push(visual); // The cave's existing lifecycle ticks and disposes each torch's authored particles.
         bracket.userData.puzzleCaveSconce=true;
-        rec.sconces.push({x:px,z:pz,flame,lit:false});
+        rec.sconces.push({index,x:px,z:pz,bracket,flame,lit:false}); // The real stone cup is the shared melee/projectile contact surface.
       }
+      lightCaveSconce=sconce=>{
+        if(rec.disposed||rec.solved||!isActive()||sconce.lit)return false;
+        sconce.lit=true;sconce.flame.visible=true; // One persistent solve state no matter which fire source touched the cup.
+        root.RuinInteractionAudio?.igniteTorch?.();
+        options.onSconceLit?.(rec,sconce);
+        if(rec.sconces.every(entry=>entry.lit))complete();
+        return true;
+      };
       rec.animate=dt=>{
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
@@ -777,14 +787,34 @@
         if(standing)complete(); // One step permanently solves this cave instead of requiring a held timer or a second interaction.
       }
       if(kind==='fireSconces'&&!rec.solved&&isActive()){
+        if(caveFireTargetIds.length&&typeof fire?.hasTarget==='function'){
+          for(const targetId of caveFireTargetIds){
+            if(fire.hasTarget(targetId))continue;
+            caveFireTargetIds.length=0;rec.fireLinked=false; // Ruin teardown clears DungeonFire globally; cached caves must re-link on re-entry.
+            break; // Avoid allocating a predicate callback in the puzzle's per-frame contact check.
+          }
+        }
+        if(!caveFireTargetIds.length&&typeof fire?.registerTarget==='function'){
+          const registered=[]; // Register in the first active frame, after the real cave scene and DungeonFire runtime exist.
+          for(const sconce of rec.sconces){
+            const targetId=fire.registerTarget({
+              id:'puzzle-cave-fire-'+options.area+'-'+id+'-'+sconce.index,
+              object:sconce.bracket,active:true,contactPadding:.12,
+              isActive:()=>!rec.disposed&&!rec.solved&&!sconce.lit&&isActive(),
+              onBurn:()=>lightCaveSconce(sconce), // DungeonFire already sweeps thrown torch flames and tests swung torch Box3 contacts.
+            });
+            if(!targetId)break;
+            registered.push(targetId);
+          }
+          if(registered.length===rec.sconces.length){
+            caveFireTargetIds.push(...registered);rec.fireLinked=true;
+          }else for(const targetId of registered)fire.unregisterTarget?.(targetId);
+        }
         const fireZones=options.groundFire||root.PersistentGroundFire;
         for(const sconce of rec.sconces){
           if(sconce.lit||!fireZones?.intersects?.(options.area,sconce.x,sconce.z,.16))continue;
-          sconce.lit=true;sconce.flame.visible=true; // Lights persist after the ground patch burns out.
-          root.RuinInteractionAudio?.igniteTorch?.(); // Play the large recorded ignition at the actual flame transition.
-          options.onSconceLit?.(rec,sconce);
+          lightCaveSconce(sconce); // Ground fire retains its existing persistent-patch behavior.
         }
-        if(rec.sconces.every(sconce=>sconce.lit))complete();
       }
       if(kind==='timedMelody'||kind==='melodyEcho'){
         const plate=rec.melodyPlate; // The cave and every former echo use their own existing plate footprint.
@@ -876,6 +906,8 @@
       rec.releaseMelodyCamera?.(); // Dispose the clue-camera source before its meshes and puzzle are removed.
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
+      for(const targetId of caveFireTargetIds)fire?.unregisterTarget?.(targetId); // Cached caves must not leave fire targets in an old map.
+      caveFireTargetIds.length=0;
       rec.removePillarFootprints?.();
       if(rec.pillarScope)(options.DynamicSurfaces||root.DynamicSurfaces)?.clearScope?.(rec.pillarScope); // The pillar hall's solid blockers.
       rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
