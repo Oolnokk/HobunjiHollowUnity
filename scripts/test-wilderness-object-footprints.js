@@ -57,6 +57,13 @@ assert.equal(policy.isSceneryReserved(ghostZone,3,3),false,
   'a regenerated zone may update its previous scenery reservations in place');
 assert.equal(browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0})?.x,3);
 
+const debrisZone = {cols:9,rows:9}; // Same source layout authority covers off-center authored chunks as well as center stones.
+assert.equal(policy.reserveScenery(debrisZone,[{kind:'brokenPillar',point:{col:4,row:4}}]),25,
+  'broken-pillars reserve a two-tile radius so later temporary camps cannot intersect fallen shafts or scattered chips');
+assert.equal(policy.isSceneryReserved(debrisZone,6,4),true,'a fallen shaft outside the old one-tile pad remains reserved');
+assert.equal(policy.isSceneryReserved(debrisZone,7,4),false,'the camp policy must not reserve distant empty tiles');
+assert.equal(policy.reserveScenery(debrisZone,[{kind:'stoneCairn',point:{col:4,row:4}}]),9,
+  'ordinary single-tile cairns keep the old smaller reservation');
 const sourceZone = {cols:8,rows:8}; // One generated layout shared by multiple independently stamped tribal/bandit views.
 const syntheticCampView = {sourceLayout:sourceZone}; // Reproduces both factions' lightweight view-to-layout adapter.
 policy.reserveScenery(sourceZone,[{point:{col:3,row:4}}]);
