@@ -1,0 +1,191 @@
+{
+  "schema": "hobunji_shared_dialogue.v1",
+  "description": "Ordinary Talk lines scoped to the existing npc-reaction-profiles.json personality family assignments or to a single named NPC. The authored character's eligible lines take precedence over their family; specific quest/relationship dialogue remains in the NPC database. IDs are stable per owner for save history.",
+  "personalityFamilies": {
+    "neighborly": [
+      {
+        "id": "checking_in",
+        "label": "Checking in",
+        "text": "Good to see you out and about. How's your day treating you?"
+      },
+      {
+        "id": "rain_check",
+        "label": "Rainy day",
+        "text": "Rain's doing the land some good, at least.",
+        "conditions": {
+          "weather": [
+            "rain"
+          ]
+        }
+      },
+      {
+        "id": "see_you_again",
+        "label": "Returning friend",
+        "text": "There you are! I was wondering how you'd been.",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ],
+    "playful": [
+      {
+        "id": "make_you_laugh",
+        "label": "A little joke",
+        "text": "You look like you're carrying a serious thought. Want me to knock it loose?"
+      },
+      {
+        "id": "rain_joke",
+        "label": "Rain joke",
+        "text": "Careful—if it rains much harder, we'll all be swimming to breakfast.",
+        "conditions": {
+          "weather": [
+            "rain"
+          ]
+        }
+      },
+      {
+        "id": "good_to_see_you",
+        "label": "Familiar face",
+        "text": "Ha! There's a face I was hoping to see.",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ],
+    "reserved": [
+      {
+        "id": "quiet_greeting",
+        "label": "Quiet greeting",
+        "text": "Oh. Hello. I hope things are going well."
+      },
+      {
+        "id": "quiet_rain",
+        "label": "Watching the rain",
+        "text": "I like it when the rain makes everything a little quieter.",
+        "conditions": {
+          "weather": [
+            "rain"
+          ]
+        }
+      },
+      {
+        "id": "quiet_return",
+        "label": "Quiet welcome",
+        "text": "It's nice to see you again.",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ],
+    "proper": [
+      {
+        "id": "courteous_greeting",
+        "label": "Courteous greeting",
+        "text": "A pleasant day to you, {{playerName}}."
+      },
+      {
+        "id": "courteous_rain",
+        "label": "Rain observation",
+        "text": "Do mind the wet ground. It's easy to lose one's footing.",
+        "conditions": {
+          "weather": [
+            "rain"
+          ]
+        }
+      },
+      {
+        "id": "courteous_return",
+        "label": "Courteous welcome",
+        "text": "A pleasure to speak with you again.",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ],
+    "stern": [
+      {
+        "id": "brief_greeting",
+        "label": "Brief greeting",
+        "text": "Keep your eyes open. You never know what's around the next bend."
+      },
+      {
+        "id": "storm_warning",
+        "label": "Storm warning",
+        "text": "This is no weather to be wandering in without a reason.",
+        "conditions": {
+          "weather": [
+            "storm"
+          ]
+        }
+      },
+      {
+        "id": "brief_return",
+        "label": "Brief welcome",
+        "text": "You're back. Good.",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ],
+    "child": [
+      {
+        "id": "quick_hello",
+        "label": "Quick hello",
+        "text": "Hi! What have you been doing?"
+      },
+      {
+        "id": "rain_play",
+        "label": "Rainy day",
+        "text": "I bet the puddles are huge today!",
+        "conditions": {
+          "weather": [
+            "rain"
+          ]
+        }
+      },
+      {
+        "id": "again_hello",
+        "label": "Hello again",
+        "text": "Oh! You're here again!",
+        "conditions": {
+          "encounter": [
+            "returning"
+          ]
+        }
+      }
+    ]
+  },
+  "characters": {
+    "pahu": [
+      {
+        "id": "pahu_sailing",
+        "label": "Pahu's wind",
+        "text": "Now that's a fine wind! Makes me want to find a sail."
+      }
+    ],
+    "garanki_gabu": [
+      {
+        "id": "garanki_observation",
+        "label": "Garanki's observation",
+        "text": "An ordinary stone can tell quite a story, if you know where to look."
+      }
+    ],
+    "spearhead_unumanuk": [
+      {
+        "id": "spearhead_readiness",
+        "label": "Spearhead's vigilance",
+        "text": "Keep your guard up, even when the road looks clear."
+      }
+    ]
+  }
+}

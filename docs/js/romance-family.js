@@ -297,11 +297,14 @@
     return 'child';
   }
   function isBasketBaby(npcId) {
-    const child = fam.children.find(entry => entry.id === npcId); // The saved birthday, not a rendered avatar flag, decides whether the speaker is a newborn.
+    const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
   }
   function babyAmbientSound(npcId, random = Math.random) {
-    return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Separate module owns phonetics; saved age remains in the family owner.
+    return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Voice module owns phonetics, family owns saved age.
+  }
+  function syncChildAmbientGreetings(child) {
+    return window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()); // Single narrow age-stage notification.
   }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
   function toddlingFooting(child) {
@@ -329,7 +332,7 @@
       ...phaseScaleFields(phaseOf(child)),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
-      ambientGreetings: true, // Newborns babble; toddlers use short first words; older children keep normal greetings.
+      ambientGreetings: true, // Babies babble and toddlers have first words without a new speech loop.
       scheduleHooks: { rules: [] },
     };
   }
@@ -460,7 +463,7 @@
     ensureWalker(child);
     const walker = walkerFor(child);
     const phase = phaseOf(child);
-    window.FamilyBabyAmbientVoice?.sync?.(child.id, phase, cfg()); // Register only on age-phase transitions through the dedicated ambient voice module.
+    syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
@@ -476,7 +479,7 @@
     if (child.vatId && !vatObject(child)) { window.DewVats?.setExternalWorker?.(child.vatId, null); child.vatId = null; H.persist(); }
     if (child.vatId && phase !== 'basket') window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
     if (!walker) return; // Offscreen children still keep their vat jobs registered above.
-    if (walker.rec) walker.rec.ambientGreetings = true; // Existing children from older saves gain baby/toddler speech without rebuilding their NPC record.
+    if (walker.rec) walker.rec.ambientGreetings = true; // Old saved babies and toddlers can use ambient speech.
     // Proportions are baked when the avatar is built (PNGPlaneAvatar child
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
@@ -570,7 +573,7 @@
   }
   function registerChildDialogue(child) {
     window.DialogueContent?.registerTreeProvider?.(child.id, () => childTree(child));
-    window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()); // Dynamic family members share a single age-aware voice policy.
+    syncChildAmbientGreetings(child); // Standalone voice policy, original family Talk trees unchanged.
   }
 
   // ── Command wheel (family squeezing jobs) ─────────────────────────────
@@ -896,8 +899,8 @@
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
+    window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
-    window.FamilyBabyAmbientVoice?.clear?.(); // Clears dynamic child voice registrations from the prior saved world.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
@@ -921,6 +924,7 @@
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
+      babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
       children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
   }
@@ -935,7 +939,7 @@
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     isWardrobeChild: id => fam.children.some(child => child.id === id), // Fast per-frame physical wardrobe targeting avoids allocating a full family snapshot.
     wardrobeChildName: id => fam.children.find(child => child.id === id)?.name || null, // The interaction label follows a renamed child without querying the full family snapshot.
-    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, syncChildAmbientGreetings: child => window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()), getFamily: () => fam },
+    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, syncChildAmbientGreetings, getFamily: () => fam },
   };
   window.RomanceFamily = api;
 })();

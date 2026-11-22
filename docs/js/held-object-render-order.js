@@ -466,7 +466,7 @@
   // material groups), not from the camera or a second animation-state machine.
   function shoulderPetDrawFace(item) {
     const state = shoulderPetPresentation;
-    const avatar = state?.pet?.avatarRef;
+    const avatar = previouslyPresentedPet?.avatarRef;
     const mesh = item?.object;
     if (!avatar || !mesh?.isMesh) return null;
     const petFace = shoulderPetPortraitFace(mesh, avatar);
@@ -502,7 +502,7 @@
     // Use one consistent order for BOTH portrait faces. Pair-only overrides
     // violated transitivity when a skinned owner, split pet and hat overlays
     // were sorted together, so Array.sort could leave the pet on the old side.
-    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true;
+    const inward = previouslyPresentedPet?.__hobunjiShoulderFacingInward === true;
     const first = shoulderPetFaceSortRank(a, inward), second = shoulderPetFaceSortRank(b, inward);
     return first === null || second === null ? 0 : first - second;
   }
@@ -595,7 +595,7 @@
   function syncShoulderPetLayering(camera) {
     const state = shoulderPetPresentation;
     if (!state) return;
-    const pet = state.pet;
+    const pet = actorXrayEnabled.animals ? state.pet : null; // Ordinary portrait depth when animal x-ray is disabled.
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
       syncShoulderOwnerOverlayDepth(state, false);
@@ -853,13 +853,13 @@
 
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
-    if (!manual && !portraitOrder && !shoulderPetPresentation?.pet?.avatarRef) return draw();
+    if (!manual && !portraitOrder && !previouslyPresentedPet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
     const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
     const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
-    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
-    const activePetPortrait = !!shoulderPetPresentation?.pet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
+    const inward = previouslyPresentedPet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
+    const activePetPortrait = !!previouslyPresentedPet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
     const pairFace = item => {
       if (!pairCache.has(item)) pairCache.set(item, shoulderPetDrawFace(item));
       return pairCache.get(item);
@@ -1035,7 +1035,7 @@
   }
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
-    if ((!order && xrayRule('layers.manualOrder') !== 'on' && !shoulderPetPresentation?.pet?.avatarRef) || !renderer.setTransparentSort) return draw();
+    if ((!order && xrayRule('layers.manualOrder') !== 'on' && !previouslyPresentedPet?.avatarRef) || !renderer.setTransparentSort) return draw();
     const changed = new Set(); // Depth-write states of pants-free distant portraits, restored even on an interrupted draw.
     if (protectNearPortrait && order) {
       const pantsRanks = new Set(order.extras?.values() || []); // A wearer needs its real portrait depth to stop the pants drawn immediately afterward.
@@ -2688,6 +2688,49 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
+  const actorXrayEnabled = { animals: true, enemies: true, player: true }; // Settings gates shared by the main and shell passes.
+  let hasDisabledActorXray = false; // All-on keeps the existing replay selection fast path.
+  const actorXrayRoots = new Map(); // Current frame's character roots, shared across color and shell selection.
+  let actorXrayScene = null; // Scene whose actor roots the replay selector can reuse.
+
+  function refreshActorXrayRoots(scene) {
+    actorXrayRoots.clear();
+    actorXrayScene = scene;
+    const visuals = window.CharacterVisuals;
+    const area = window.GridTileAccessors?.getCurrentArea?.();
+    if (!visuals || area == null) return;
+    const kinds = visuals.KINDS; // Use the same actor categories as the rest of character rendering.
+    visuals.forEachCharacter(area, (kind, root, entity) => {
+      let group = 'animals'; // Creature, companion, mount, shoulder pet, livestock or creature corpse.
+      if (kind === kinds.PLAYER) group = 'player';
+      else if (kind === kinds.ENEMY || (kind === kinds.CORPSE && entity?.isBandit)) group = 'enemies';
+      else if (kind === kinds.NPC && root.userData?.namedAnimalNpc !== true
+          && entity?.avatarGroup?.userData?.namedAnimalNpc !== true) group = 'npc';
+      actorXrayRoots.set(root, group);
+    });
+  }
+
+  function actorXrayGroup(mesh, scene, followOwner = true) {
+    for (let node = mesh; node && node !== scene; node = node.parent) {
+      const group = actorXrayRoots.get(node); // The nearest actor wins, including a pet attached to the player.
+      if (group) return group;
+      if (node.userData?.namedAnimalNpc === true) return 'animals';
+      if (node.name === 'bandit_avatar_group') return 'enemies';
+      const owner = node.userData?.hobunjiHeldPortraitOwner; // Independent of the A/B weapon-budget owner link.
+      if (followOwner && owner?.isObject3D && owner !== node) return actorXrayGroup(owner, scene, false);
+    }
+    return actorRootForXrayMesh(mesh, scene)?.isPlayer ? 'player' : null; // Includes composer-owned external tools and rig roots.
+  }
+
+  function setActorXrayEnabled(group, value) {
+    if (!Object.hasOwn(actorXrayEnabled, group)) return null;
+    actorXrayEnabled[group] = value !== false;
+    hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false);
+    actorXrayRoots.clear();
+    actorXrayScene = null;
+    if (group === 'animals') syncShoulderPetLayering();
+    return actorXrayEnabled[group];
+  }
   // Non-player weapon x-ray budget. An armed character whose gear can reach
   // the floor gets its own x-ray group whenever its screen rectangle overlaps
   // another holder's, and in a fight everyone crowds the player: in the user's
@@ -2757,17 +2800,18 @@
     return isFoot ? withinFeetXrayDistance(mesh) : true;
   }
   function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
-    if (replayParticipantPolicy === 'all') return meshes;
-    const keep = [];
+    if (replayParticipantPolicy === 'all' && !hasDisabledActorXray) return meshes;
+    const keep = []; // Parts left to the existing replay after applying the Settings gates.
     for (const mesh of meshes) {
-      if (isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
+      const group = hasDisabledActorXray ? actorXrayGroup(mesh, scene) : null; // Resolve categories only when needed.
+      if (actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
       else {
         if (repairHeld) enforceHeldMesh(mesh); // Keep the regular-pass held invariant without a second owner lookup.
         others.push(mesh);
         nonParticipantReplaySkips++;
       }
     }
-    return repairHeld && !isFoot ? limitOtherWeaponParticipants(keep, scene, others) : keep;
+    return repairHeld && !isFoot && replayParticipantPolicy !== 'all' ? limitOtherWeaponParticipants(keep, scene, others) : keep;
   }
   // Keeps weapon x-ray for the otherWeaponXrayLimit nearest armed non-player
   // actors (by root distance to the camera); preserves the original order,
@@ -4241,9 +4285,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
     replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
 
-    if (isBaseWorldPass(scene, camera)) syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers and before this renderer's portrait/stencil passes.
+    const baseWorldPass = isBaseWorldPass(scene, camera); // Shared by actor selection and the ordinary world draw.
+    if (baseWorldPass) {
+      if (hasDisabledActorXray) refreshActorXrayRoots(scene);
+      syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers.
+    }
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
+      if (hasDisabledActorXray && actorXrayScene !== scene) refreshActorXrayRoots(scene);
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
       const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
@@ -4262,6 +4311,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
       if (!ground.length && !topFaceGround.length) {
+        lastShellElevationGroups = 0;
+        lastShellFullscreenReason = 'no-ground';
         return originalRender.call(this, scene, camera);
       }
       const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
@@ -4274,6 +4325,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       ordinaryShellMeshesDrawnOnce += ordinary.length;
       if (!groups.length) {
         ordinaryShellReplaysAvoided++;
+        lastShellFullscreenReason = 'ordinary-depth';
         return originalRender.call(this, scene, camera);
       }
       const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuine local floor exemptions need a depth reconstruction.
@@ -4298,7 +4350,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding);
       return shellResult;
     }
-    if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
+    if (!enabled || !baseWorldPass) return originalRender.call(this, scene, camera);
     // The normal world render pays no position lookup, allocation or preview submission
     // unless its developer-only circle checkbox has been enabled.
     if (xrayRule('ground.showZone') === 'on') {
@@ -4306,7 +4358,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (zonePreview?.updateGroundZone) {
         let playerScope = null; // Only the debug display resolves the player's world-space ground support.
         const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
-        if (player && isDescendantOf(player, scene)) {
+        if (actorXrayEnabled.player && player && isDescendantOf(player, scene)) {
           player.updateWorldMatrix?.(true, false);
           playerScope = actorXrayScope(player, scene, new Map());
         }
@@ -4316,6 +4368,20 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     lastBaseStencilBits = currentFramebufferStencilBits(this);
+    // A normal-depth frame can return before replay setup. Clear the previous replay's readings here.
+    lastBaseElevationGroups = 0;
+    lastBaseReplayCandidates = 0;
+    lastBaseOffscreenFiltered = 0;
+    lastHeldFullscreenReason = 'no-visible-participants';
+    lastForcedGroundDepthMaterials = 0;
+    lastElevationReplayGroups = 0;
+    lastXrayTileRegions = 0;
+    lastXrayOrdinaryMeshes = 0;
+    lastUnknownElevationMeshes = 0;
+    lastNearbyTintCovers = 0;
+    lastDistantTintCovers = 0;
+    lastWaterClipScopes = 0;
+    lastWaterClipOverflow = 0;
     lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
     lastFrontPortraitGearCandidates = 0;
     lastFrontPortraitMaskedGear = 0;
@@ -4343,6 +4409,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         && collectVisible(frontPortraitRegistry, scene).length > 0; // The mask can use physical depth when the private stencil is absent.
       if (!needsOwnerMask) {
         lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+        lastHeldFullscreenReason = 'no-cover-or-owner-mask';
         return renderBase();
       }
     }
@@ -4409,6 +4476,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return {
       installed: true,
       enabled,
+      actorXrayEnabled: { ...actorXrayEnabled }, // Included in the existing x-ray diagnostics.
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -4499,7 +4567,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} animals=${state.actorXrayEnabled.animals} enemies=${state.actorXrayEnabled.enemies} player=${state.actorXrayEnabled.player} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -4514,6 +4582,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
+    if (scene === actorXrayScene) {
+      actorXrayRoots.clear();
+      actorXrayScene = null;
+    }
     const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
     let removed = 0;
     for (const registry of registries) {
@@ -4553,6 +4625,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
     setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
+    getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
+    setActorXrayEnabled,
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
