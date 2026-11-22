@@ -51,6 +51,7 @@
     renderQueue: Promise.resolve(),
     lastFacingDebug: null, // Used by AmbientDialogue.getDebug and Pixel Probe to report the most recent greeting head-turn decision on mobile.
     lastAddressDebug: null, // Used by mobile debugging to inspect the last spoken nickname without browser devtools.
+    lastBabySpeech: null, // Most recently rendered newborn babble, anchor and carry state, exposed to the existing mobile diagnostics.
   };
 
   const runtimeGreetings = new Map(); // Runtime child greeting pools survive async authored config loads without mutating canonical JSON.
@@ -781,6 +782,7 @@
       visibleChars: -1,
     };
     state.active.push(event);
+    if (isNewborn) state.lastBabySpeech = { speakerId: options.speakerId, text: message, carried: !!carriedBaby, root: speechRoot?.name || null }; // Updated only for a rendered bubble, never for unsupported render attempts.
     window.HobunjiEmojiReactions?.reactToDialogue?.(speechRoot, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
     drawText(event, '');
     if (!event.revealSchedule.length) {
@@ -1113,6 +1115,7 @@
   function clear() {
     state.active.splice(0).forEach(dispose);
     state.proximity.clear();
+    state.lastBabySpeech = null; // Reset world-scoped baby-babble diagnostics alongside the active bubble list.
   }
 
   function init(deps) {
@@ -1152,6 +1155,7 @@
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
         lastAddress: state.lastAddressDebug ? { ...state.lastAddressDebug } : null, // Current address choice exposed through existing mobile diagnostics.
+        lastBabySpeech: state.lastBabySpeech ? { ...state.lastBabySpeech } : null, // Confirms the bubble used baby phonetics and followed the carried mesh.
         vocabulary: window.AmbientVocabulary?.getDebug?.() || null, // Mobile readout includes loaded status and latest synonym selection.
         spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
