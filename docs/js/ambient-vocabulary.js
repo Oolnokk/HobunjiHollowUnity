@@ -13,7 +13,7 @@
   function optionsFor(config, speakerId, profiles) {
     const id = String(speakerId || ''); // Only real NPC IDs qualify; status and player announcements must not be rewritten.
     if (!id || id === 'player' || id.startsWith('player-') || !config || config.enabled === false) return null;
-    const familyId = String(profiles?.assignments?.[id] || (/^child_[a-z0-9]+$/i.test(id) ? 'child' : '') || profiles?.defaultProfile || 'neighborly'); // Shares the established personality assignment and generated-child convention.
+    const familyId = String(profiles?.assignments?.[id] || (/^child_[a-z0-9]+$/i.test(id) ? 'child' : '') || (/^porakaneki(?:[_:-]|$)/i.test(id) ? 'porakaneki' : '') || profiles?.defaultProfile || 'neighborly'); // Shares the established personality assignment and generated-child convention.
     const family = config.families?.[familyId] || null; // Family defaults are used unless an individual generated table overrides them.
     const character = config.characters?.[id] || null; // Explicit character settings and generated table take precedence over family defaults.
     if (!family && !character) return null;
