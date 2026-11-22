@@ -319,10 +319,11 @@
     large: skeeriSmallGroundY * (2.2 / 0.65), medium: skeeriSmallGroundY * (1.15 / 0.65), small: skeeriSmallGroundY,
   };
   const skeeriShoulderGrip = clone(masterCreatures.pingdort.anchors.shoulderGrip); // All Skeeri variants inherit only Pingdort's approved grip, not its saddle or size scales.
-  const skeeriMediumRig = { // Preserve Medium Skeeri's independent saddle, size scales and all unrelated rig fields.
+  const skeeriMediumGroundOffsets = { large: 0.375, medium: 0.26, small: 0.1 }; // Distinct, fully authored Medium Skeeri floors from November 22; the other variants retain their native-width-derived values.
+  const skeeriMediumRig = { // Preserve Medium Skeeri's independent saddle, size scales and floor rig.
     kind: 'skeeri-medium',
     anchors: { saddle: identityAnchor([0, 0.12801484107971195, 0.02]), shoulderGrip: clone(skeeriShoulderGrip) },
-    groundOffsets: { ...skeeriGroundOffsets },
+    groundOffsets: { ...skeeriMediumGroundOffsets },
     saddleRule: {},
     shoulderGripRule: {},
     sizeScales: { large: { x: 1.5, y: 1.5 }, medium: { x: 1, y: 1 }, small: { x: 0.35, y: 0.35 } },
