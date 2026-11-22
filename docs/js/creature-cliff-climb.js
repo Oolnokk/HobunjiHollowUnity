@@ -351,6 +351,7 @@
   }
 
   function startLedgeDrop(c, drop) {
+    c._cliffEntryPath = null; c._cliffEntryKey = null; c._cliffEntryFailure = null; // Replan from the lower shelf on landing.
     beginClimb(c, drop, true); // Existing animated cliff descent owns position and surface height.
     advance(c, 0);
     return true;
