@@ -201,14 +201,15 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     paintMaskOverlay();
     maskedHood.getContext('2d').clearRect(0,0,SIZE,SIZE);
     maskedHood.getContext('2d').drawImage(hoodCanvas,0,0);
-    Cut.applyToHood(maskedHood,mask); // The exact runtime destination-out operation; never draw beard a second time.
+    const hidesBeard=hoodDoc?.tags?.includes('hides-facial-hair')===true;
+    if(!hidesBeard)Cut.applyToHood(maskedHood,mask); // Facewraps retain main's complete beard hiding policy.
 
     for(const id of ['before','after']){
       const canvas=$(id),ctx=canvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
-      if($('showHead').checked)ctx.drawImage(headCanvas,0,0);
       const species=variant.replace(/_(male|female)$/,'');
-      if(species==='mashtzarr')ctx.drawImage(beardCanvas,0,0); // Main places this species' beard under its head.
-      ctx.drawImage(beardCanvas,0,0); // Beard stays before front hood, as on main.
+      if(species==='mashtzarr'&&!hidesBeard)ctx.drawImage(beardCanvas,0,0); // Main's Mashtzarr beard is below the head.
+      if($('showHead').checked)ctx.drawImage(headCanvas,0,0);
+      if(species!=='mashtzarr'&&!hidesBeard)ctx.drawImage(beardCanvas,0,0); // Default main beard layer: above head, below front hood.
       ctx.drawImage(id==='before'?hoodCanvas:maskedHood,0,0);
     }
 
@@ -223,9 +224,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('maskJson').value=JSON.stringify(mask);
     $('status').textContent=(lastError?lastError+'\n':'')
       +'Beard-painted pixels: '+Cut.countMask(mask)
-      +'\nActual opaque hood pixels cut: '+occupied
+      +'\nActual opaque hood pixels cut: '+(hidesBeard?0:occupied)
       +'\nMask scope: '+scopeKey()
-      +'\nBeard order: unchanged (before hood)'
+      +'\nBeard order: unchanged (before hood)'+(hidesBeard?'\nFacewrap hides beard: no cutout is rendered':'')
       +'\nGeometry: none · X-ray: none';
     $('undo').disabled=!history.length;
   }
