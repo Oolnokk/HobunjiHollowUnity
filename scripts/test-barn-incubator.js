@@ -183,6 +183,14 @@ assert(nurseryChoices.length > 0);
 assert(nurseryChoices.every(choice => choice.troughIndex !== 0), 'occupied adult troughs never appear in the Nursery picker');
 assert.equal(B.startFromNursery('baby_1', { ...nurseryChoices[0], troughIndex: 999 }).ok, false, 'stale destinations are rejected');
 assert.equal(B.startFromNursery('missing_baby', nurseryChoices[0]).ok, false, 'stale baby selection changes no reservations');
+const reservedBaby = livestock.find(entry => entry.id === 'baby_1'); // Tests all entry paths against a real queued livestock record.
+window.PendingAnimalSales = { pendingFor: entry => entry?.pendingAnimalSale || null };
+reservedBaby.pendingAnimalSale = { price: 55, eligibleDay: 2 };
+const beforeQueuedIncubation = JSON.stringify(B.debugSnapshot().reservedTroughs); // Confirms rejection leaves trough reservations untouched.
+assert.equal(B.startFromNursery('baby_1', nurseryChoices[0]).ok, false, 'queued babies cannot enter Nursery incubators');
+assert.equal(JSON.stringify(B.debugSnapshot().reservedTroughs), beforeQueuedIncubation, 'blocked incubation does not reserve a trough');
+assert.equal(livestock.some(entry => entry.id === 'baby_1'), true, 'queued baby stays in the world roster');
+delete reservedBaby.pendingAnimalSale;
 const nurseryStart = B.startFromNursery('baby_1', nurseryChoices[0]);
 assert.equal(nurseryStart.ok, true, 'Nursery card selection directly reserves a trough and starts maturation');
 assert(!livestock.some(entry => entry.id === 'baby_1'), 'only the selected baby moves out of Nursery');
@@ -195,6 +203,9 @@ assert.equal(reserved.ok, true, 'unused trough can be reserved ahead of maturati
 assert(B.debugSnapshot().reservedTroughs.includes('barn_test:1'), 'reservation is visible in mobile debug state');
 
 const tonicBefore = inventory.growthTonic;
+reservedBaby.pendingAnimalSale = { price: 55, eligibleDay: 2 };
+assert.equal(B.startMaturation(placed.addition.id, 0, 'baby_1').ok, false, 'direct incubator API cannot consume a queued baby');
+delete reservedBaby.pendingAnimalSale;
 const started = B.startMaturation(placed.addition.id, 0, 'baby_1');
 assert.equal(started.ok, true, 'Nursery baby can enter a configured incubator slot');
 assert(!livestock.some(entry => entry.id === 'baby_1'), 'incubating baby leaves the ordinary Nursery/world roster while physically inside the incubator');
