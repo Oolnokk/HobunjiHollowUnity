@@ -25,8 +25,10 @@ class Geometry {dispose(){}}
 class Material {constructor(opts){Object.assign(this,opts);}dispose(){}}
 class Mesh extends Group {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
 class Texture {constructor(canvas){this.image=canvas;}dispose(){}}
+let opaqueHitAvailable=true; // Toggle between exact egg pixels and an aim ray crossing the surrounding cup.
 class Raycaster {
-  intersectObjects(hitPlanes){return hitPlanes.length?[{object:hitPlanes[0],distance:1,
+  constructor(origin,direction){this.ray={origin,direction};}
+  intersectObjects(hitPlanes){return opaqueHitAvailable&&hitPlanes.length?[{object:hitPlanes[0],distance:1,
     uv:{x:.5,y:.5},point:new Vector3(0,0,0)}]:[];}
 }
 const THREE={Group,Mesh,Vector3,Raycaster,PlaneGeometry:Geometry,MeshBasicMaterial:Material,
@@ -58,11 +60,12 @@ const sandbox={window,document,THREE,performance:{now:()=>1000},
 vm.runInNewContext(source,sandbox,{filename:'den-nest-system.js'});
 let holdSeconds=0,action='nest_take',pressed=true;
 const toasts=[];
+let aimDirection=new Vector3(0,-.35,2); // Tests reticle near-miss recovery and looking away from the nest.
 const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   getActiveScene:()=>scene,player,playerMesh:{position:{y:12.5}},TILE:64,
   inventory,ITEM_DEFS:{fertilePingdortEgg:{icon:'🥚',label:'Fertile Pingdort Egg'}},
   itemIconForKey:()=> '🥚',
-  getPlayerAimRay:()=>({origin:new Vector3(45.5,13,45.5),direction:new Vector3(0,-.4,1)}),
+  getPlayerAimRay:()=>({origin:new Vector3(45.5,13.25,43.5),direction:aimDirection}),
   getNestHoldT:()=>holdSeconds,setNestHoldT:value=>{holdSeconds=value;},
   getActiveAction:()=>action,getActionHeldDown:()=>pressed,
   clampInventoryStack(){},buildInventoryGrid(){},refreshItemScroll(){},
@@ -75,6 +78,15 @@ async function run(){
   assert.equal(window.DenNestSystem.currentAimedNest(),null,'eggs are initially queued');
   await Promise.resolve();await Promise.resolve();
   assert.equal(window.DenNestSystem.currentAimedNest(),nest,'aimed egg claims native interaction');
+  opaqueHitAvailable=false;
+  assert.equal(window.DenNestSystem.currentAimedNest(),nest,
+    'an aimed exterior nest cup claims the egg even if its small alpha pixel was missed');
+  assert.equal(window.DenNestSystem.debugSnapshot().lastFocusedAssisted,true,
+    'mobile debug records the assisted aim rather than pretending the egg pixel was hit');
+  aimDirection=new Vector3(0,0,-1);
+  assert.equal(window.DenNestSystem.currentAimedNest(),null,
+    'looking away from a nest must leave the cliff climb button available');
+  aimDirection=new Vector3(0,-.35,2);opaqueHitAvailable=true;
   for(let i=0;i<51;i++)window.DenNestSystem.updateNestInteraction(.1);
   assert.equal(inventory.fertilePingdortEgg,1,'five-second hold takes one real egg');
   assert.equal(nest.remaining,2,'clutch count updates after one egg');
