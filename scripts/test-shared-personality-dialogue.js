@@ -141,4 +141,25 @@ assert.equal(say(byId.sloomi), 'SHOP ACCESS', 'shared chatter cannot displace ge
 const anotherSloomiLine = say(byId.sloomi);
 assert.ok(anotherSloomiLine === 'SHOP ACCESS' || config.personalityFamilies.reserved.some(entry => entry.text === anotherSloomiLine), 'repeated dialogue cannot leak unrelated personality speech');
 
-console.log('Scoped personality/character shared dialogue passed.');
+const starter = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Full shipped character roster verifies existing authored greetings are never silently displaced.
+const starterScoped = compose(starter, config, personalities);
+assert.equal(starterScoped.npcs.length, starter.npcs.length, 'the shared layer preserves all starter NPC records');
+let personalGreetingsChecked = 0; // Counts canonical, individual greeting pools exercised before shared speech is allowed.
+for (let index = 0; index < starter.npcs.length; index++) {
+  const original = starter.npcs[index]; // Existing authored dialogue must remain byte-for-byte equivalent after composition.
+  const composedNpc = starterScoped.npcs[index]; // Runtime-composed record used to test first Talk selection and scopes.
+  assert.deepEqual(JSON.parse(JSON.stringify(composedNpc.dialogueTrees || [])),
+    JSON.parse(JSON.stringify(original.dialogueTrees || [])), original.id + ' authored tree changed');
+  assert.deepEqual(JSON.parse(JSON.stringify(composedNpc.phrasePools || [])),
+    JSON.parse(JSON.stringify(original.phrasePools || [])), original.id + ' authored phrase pool changed');
+  const fallbackTree = original.dialogueTrees?.find(tree => tree.id === 'tree_' + original.id + '_fallback'); // Canonical starter fallbacks route through a personal phrase pool.
+  if (!fallbackTree || !fallbackTree.nodes?.find(node => node.id === fallbackTree.entryNode)?.text?.includes('{{pool:')) continue;
+  const speech = say(composedNpc); // A real NPC's first Talk should consume the normal personal greeting instead of inherited personality dialogue.
+  const history = dialogueWindow.DialogueContent.getNpcDlgState(original.id); // The existing heardPoolEntries tracks genuine personal lines.
+  assert.ok(history.heardPoolEntries.length >= 1, original.id + ' personal greeting pool was bypassed');
+  assert.ok(speech && !/^<[^<>]+>$/.test(speech), original.id + ' showed an unfinished authoring placeholder');
+  assert.ok(!speech.includes('{{pool:'), original.id + ' leaked an unresolved personal pool token');
+  personalGreetingsChecked++;
+}
+assert.ok(personalGreetingsChecked >= 30, 'canonical starter roster exercised individual greetings widely enough');
+console.log('Scoped personality/character shared dialogue passed (' + personalGreetingsChecked + ' real NPC first-greeting checks).');
