@@ -119,4 +119,25 @@ const saved = window.ReagentPlants.serializeZoneReagentState();
 assert.strictEqual(saved[sampleZone].version, window.ReagentPlants.HABITAT_VERSION, 'habitat save version must persist');
 assert.strictEqual(saved[sampleZone].placements[0].harvested, true, 'harvested history must survive save serialization');
 
+
+// An already-generated habitat-v2 day must keep its gathered plants and
+// positions through the new mushroom catalog upgrade. New fungi join the next
+// daily scatter, never replacing today's known/harvested wild herbs mid-save.
+global.WildernessMapGenerator = { zoneMapIds: () => ZONES };
+const oldDay = { version:2, day:calendar.day, placements:[
+  { col:1, row:2, key:'frostcapMoss', harvested:true },
+  { col:3, row:5, key:'graniteThistle', harvested:true },
+] }; // Picked-only layout avoids needing a graphical THREE world in this migration check.
+reagentPersist.set(sampleZone, oldDay);
+reagentMeshes.delete(sampleZone);
+reagentObjects.delete(sampleZone);
+window.ReagentPlants.ensureZoneReagents(sampleZone);
+const upgraded = reagentPersist.get(sampleZone);
+assert.strictEqual(upgraded.version, window.ReagentPlants.HABITAT_VERSION,
+  'same-day v2 forage record promotes its schema without regenerating habitat placements');
+assert.deepStrictEqual(upgraded.placements, oldDay.placements,
+  'the schema bump preserves already picked locations and species until tomorrow');
+assert.strictEqual(upgraded.placements.every(row => row.harvested), true,
+  'schema bump cannot make previously harvested plants pickable again today');
+
 console.log('reagent habitat tests passed');
