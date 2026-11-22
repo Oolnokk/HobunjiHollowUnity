@@ -63,6 +63,21 @@ assert(migrated.every((site, index) => site.mapId === preserved[index].mapId
 assert.deepEqual(summary(Cave.applyWorkspaceProfiles('map_legacy_zone', { animalDens: old })), summary(migrated),
   'migrated cave allotment is stable across a second pass');
 
+// An explored empty cave is still a remembered place; a game update must
+// not suddenly spawn a predator family inside it just to satisfy a quota.
+const exploredEmpty = dens(4).map(den => {
+  const profile = Cave.__test.rollProfile('map_explored_empty_zone', den);
+  profile.schema = 3;
+  profile.inhabitant = Cave.TYPES.NONE;
+  profile.layers = [profile.contents];
+  return { ...den, caveSite: profile };
+});
+Cave.__test.runtimeStateBySignature.set(exploredEmpty[0].caveSite.signature, { discovered: true });
+const visitedMigration = Cave.applyWorkspaceProfiles('map_explored_empty_zone', { animalDens: exploredEmpty });
+assert.equal(visitedMigration[0].inhabitant, Cave.TYPES.NONE, 'visited empty cave is never repopulated by a schema migration');
+assert.equal(visitedMigration.filter(site => site.inhabitant === Cave.TYPES.ANIMAL_DEN).length, 3,
+  'remaining unvisited ordinary caves still satisfy the density floor where possible');
+
 // Independent puzzle caves are not ordinary wildlife homes.
 const puzzleDens = [{ ...dens(1)[0], caveSite: {
   ...Cave.__test.rollProfile('map_puzzle_zone', dens(1)[0]),
