@@ -269,8 +269,8 @@ function makeElement() {
   for (let i=0;i<20;i++) nextFrameTick();
   press('Button4'); // First failure on the second set triggers primary-folder sync.
   assert.equal(api.snapshot().phase, 'saving', 'lock timing freezes during folder persistence');
-  const beforeEscapeMisses = api.snapshot().misses;
-  const escape = { type:'keydown', code:'Escape', repeat:false, prevented:false, stopped:false,
+  const beforeEscapeMisses = api.snapshot().misses; // Confirms detached persistence preserves the failure count.
+  const escape = { type:'keydown', code:'Escape', repeat:false, prevented:false, stopped:false, // Capture-phase keyboard cancel event.
     preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
   keyEvents.get('keydown')(escape); // Player escapes while the folder save is unresolved.
   assert.equal(escape.prevented && escape.stopped, true);
