@@ -33,6 +33,7 @@ const deps={TILE:55,rnd:()=>.5,clamp:(x,lo,hi)=>Math.max(lo,Math.min(hi,x)),
   angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b))}; // Existing game world-to-tile and wrapped-bearing conventions.
 let simulatedNow=1000; // Shared 12ms pruning cadence for directional and queued records, under a deterministic clock.
 const context={window:windowStub,deps,WeakMap,Math,Number,Object,performance:{now:()=>simulatedNow},
+  banditEngagementReachPx:()=>170, // The real melee AI owns the attack reach; isolate that calculation in this coordinator-specific unit.
   resetBanditSwingToNatural(c){c.restored=true;}};
 const coordinator=vm.runInNewContext(
   '(()=>{' +
@@ -125,6 +126,7 @@ assert.strictEqual(coordinator.owner(target),null,'stagger/cancel releases turn 
 assert(coordinator.acquire(rear,alternate),'an unrelated target can be attacked independently');
 
 assert(coordinator.acquire(right,target),'an attack may coexist with a separate preparatory charge');
+specialist.x=-130; specialist.y=20; // Move into the ability's actual safe reach, as the full AI's approach does before beginning preparation.
 assert(coordinator.prepare(specialist,target),'a second actor can visibly draw a held charge while an attack is committed');
 const charge=specialist._banditPreparedCharge;
 assert(charge&&charge.action.windupS>0,'charge has a draw-only animation stage');
@@ -134,7 +136,11 @@ assert.equal(coordinator.prepare(front,target),false,'only one extra preparer is
 charge.t=charge.duration;
 assert.equal(coordinator.acquire(left,target),false,'current attacker still owns the sole committed slot');
 coordinator.release(right,target);
-assert.equal(coordinator.acquire(left,target),false,'fully readied held charge gets priority when the turn opens');
+specialist.x=-350; // Losing actual reach while charging must NOT freeze ready-to-strike squadmates.
+assert(coordinator.acquire(left,target),'an out-of-range prepared charge cannot starve the target');
+coordinator.release(left,target);
+specialist.x=-130;
+assert.equal(coordinator.acquire(left,target),false,'fully readied held charge gets priority only when it can release');
 assert(coordinator.acquire(specialist,target),'readied actor can commit after the other strike resolves');
 coordinator.uncharge(specialist,target,true);
 assert.strictEqual(coordinator.chargeOwner(target),null,'preparation is relinquished when the staged release takes over');
