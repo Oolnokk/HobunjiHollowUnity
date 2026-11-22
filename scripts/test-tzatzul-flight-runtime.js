@@ -46,6 +46,7 @@ const w={PerchSupport:supports,__farmLog(){},
   ].map(r=>{supports.register(area,r.support);return r;}):[],releaseInactive(){}},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
+vm.runInNewContext(file('docs/js/attack-readiness.js'),{window:w,Map,console});
 vm.runInNewContext(file('docs/js/flying-combat-orbit.js'),{window:w,Math,console});
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
 const deps={TILE:64,player,hostileObjects:creatures,companionObjects:companions,getCurrentArea:()=>zone,worldSurfaceY:()=>0,
@@ -230,6 +231,120 @@ assert.equal(blockedMother._tzFlight.phase,'swoop',
   'the nest mother resumes a real body-first attack between no-perch circles');
 assert(blockedMother._tzFlight.segment?.mode==='swoop','orbit combat reuses the existing flight/collision attack leg');
 delete w.TzatzulNestEncounter;
+// The generic readiness registry guards only the chosen player, not unrelated prey or combat.
+player.health=100;player.tzatzulCapturedBy=null;
+w.Fishing={state:{phase:'cast'}}; // The initial bait throw is protected before the ring appears.
+assert.equal(w.AttackReadiness.activityFor(player),'fishing');
+assert(w.AttackReadiness.shouldReady(farBird,player,player),'a fishing player is a readying target');
+assert.equal(w.AttackReadiness.shouldReady(farBird,secondCaptive,player),false,
+  'bandit prey is never given player-only QoL protection');
+w.Fishing.state=null;
+w.ChestLockpicking={isActive:()=>true};
+assert.equal(w.AttackReadiness.activityFor(player),'lockpicking','the saved lock session is protected');
+w.ChestLockpicking.isActive=()=>false;
+w.MusicMinigame={state:{instrumentMode:'puzzle'}};
+assert.equal(w.AttackReadiness.activityFor(player),'instrument','hosted music puzzle is protected');
+w.MusicMinigame.state=null;
+w.PuzzleCaveEntrances={isPlayerSolvingMelody:()=>true};
+assert.equal(w.AttackReadiness.activityFor(player),'exterior-melody','standing on a timed exterior melody plate is protected');
+w.PuzzleCaveEntrances.isPlayerSolvingMelody=()=>false;
+let otherActivity=true; // Demonstrates future activities can opt into readying without editing Tzatzul or combat.
+const unregisterOther=w.AttackReadiness.registerActivity('other-activity',()=>otherActivity);
+assert.equal(w.AttackReadiness.activityFor(player),'other-activity');
+otherActivity=false;assert.equal(w.AttackReadiness.activityFor(player),null);
+unregisterOther();
+const loaderHtml=file('docs/index.html');
+assert(loaderHtml.indexOf('attack-readiness.js')>0&&loaderHtml.indexOf('attack-readiness.js')<loaderHtml.indexOf('tzatzul-flight-runtime.js'),
+  'readiness policy is loaded before the flight consumer');
+assert.match(file('docs/js/puzzle-cave-entrances.js'),/isPlayerSolvingMelody/,
+  'the live exterior plate has a dedicated narrow activity predicate');
+assert.match(file('docs/js/wildlife-debug-panel.js'),/bird\.readyingActivity/,
+  'the mobile wildlife census exposes the actual reason a bird is circling');
+
+// Perched outdoor hunters start a real sky orbit, never a damaging strike, until the player finishes.
+assert(supports.attach(farBird,recoveredPoint));
+farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;farBird._tzFlight.retreating=false;
+farBird._tzFlight.readyingReleaseArmed=false;
+player.x=farBird.x-4*64;player.y=farBird.y;
+w.Fishing.state={phase:'active'};
+const oldSite=farBird.tzatzulNestMapId; // Real player hunting requires an authored cave and a native entry owner.
+farBird.tzatzulNestMapId='test-nest';
+w.TzatzulNestInterior={isNestMap:id=>id==='test-nest'};
+deps.enterBuilding=()=>{};
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(farBird),player,
+  'normal Tzatzul prey selection identifies the player when a valid nest is available');
+const hitsBeforeReady=hits;
+assert(w.TzatzulFlightRuntime.__test.seekFood(farBird),
+  'the natural hunter decision starts a readying orbit rather than requiring a direct test-only swoop call');
+farBird.tzatzulNestMapId=oldSite;delete w.TzatzulNestInterior;delete deps.enterBuilding;
+assert.equal(farBird._tzFlight.phase,'readying','a Tzatzul circles above an occupied player instead of diving');
+assert(farBird._tzFlight.segment?.to.worldY>=3,'the readying chord stays high above the player');
+for(let i=0;i<60;i++) {
+  w.TzatzulFlightRuntime.update(.1);
+  assert.notEqual(farBird._tzFlight.phase,'swoop','occupied player cannot be grabbed by a new dive');
+}
+assert.equal(hits,hitsBeforeReady,'readying orbits cannot damage the player through body collision');
+assert(w.TzatzulFlightRuntime.debugSnapshot().readiedLegs>0,'mobile debug records staging activity');
+assert.equal(farBird._tzFlight.readyingActivity,'fishing','mobile diagnostics explain why the bird is waiting');
+w.Fishing.state=null;
+let sawReleaseChord=false,sawResumeDive=false; // A short post-interaction orbit provides a visible warning before the next real attack.
+for(let i=0;i<80;i++) {
+  w.TzatzulFlightRuntime.update(.1);
+  if(farBird._tzFlight.phase==='readying'&&farBird._tzFlight.readyingWarning) {
+    sawReleaseChord=true;
+    assert.equal(w.TzatzulFlightRuntime.debugSnapshot().birds
+      .find(b=>b.id===farBird._tzFlight.identity.id)?.releaseChord,true,
+      'the in-game wildlife panel identifies the final warning DURING that chord');
+  }
+  if(farBird._tzFlight.phase==='swoop'){sawResumeDive=true;break;}
+}
+assert(sawReleaseChord,'finishing an activity adds one final warning orbit');
+assert.equal(farBird._tzFlight.readyingWarning,false,'the warning flag clears when the real attack resumes');
+assert.equal(w.TzatzulFlightRuntime.debugSnapshot().birds.find(b=>b.id===farBird._tzFlight.identity.id)?.releaseChord,
+  farBird._tzFlight.readyingWarning,'mobile release status reflects the actual warning chord');
+assert(sawResumeDive,'the predator eventually resumes its genuine swept-body swoop');
+assert(supports.attach(farBird,recoveredPoint));
+farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;
+player.x=farBird.x-4*64;player.y=farBird.y;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player),'normal combat remains possible outside protected activity');
+w.Fishing.state={phase:'bite'};
+w.TzatzulFlightRuntime.update(.1);
+assert.equal(farBird._tzFlight.phase,'readying','a minigame starting mid-dive reroutes the still-airborne bird');
+assert.equal(hits,hitsBeforeReady,'aborted committed dive never collides during the activity');
+const oldNestMap=farBird.tzatzulNestMapId; // A playable nest validates the capture boundary instead of relying on a missing transition.
+farBird.tzatzulNestMapId='test-nest';
+w.TzatzulNestInterior={isNestMap:id=>id==='test-nest'};
+deps.enterBuilding=()=>{};
+farBird._tzFlight.readyingReleaseArmed=false; // Exercise the live activity guard independently of the warning-chord grace.
+assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,player),false,
+  'even a direct late talon capture is rejected during protected player activity');
+farBird._tzFlight.readyingReleaseArmed=true;
+farBird.tzatzulNestMapId=oldNestMap;delete w.TzatzulNestInterior;delete deps.enterBuilding;
+w.Fishing.state=null;
+
+// If a cave wall or unavailable line-support prevents a new orbit during a dive,
+// the previously committed body path must finish harmlessly and enter safe recovery.
+assert(supports.attach(farBird,recoveredPoint));
+farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;
+farBird._tzFlight.readyingReleaseArmed=false;farBird._tzFlight.readyingWarning=false;
+player.x=farBird.x-4*64;player.y=farBird.y;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+const beforeBlockedReady=hits;
+const unblockedAttach=supports.attach; // The flight test intentionally rejects newly planned supports, not the existing committed line.
+supports.attach=function(actor,support,t) {
+  return actor===farBird&&support?.dimension===1 ? false : unblockedAttach(actor,support,t);
+};
+w.Fishing.state={phase:'waiting'};
+for(let i=0;i<35;i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeBlockedReady,'blocked orbit cannot cause a real body hit during fishing');
+assert.equal(farBird._tzFlight.phase,'await-roost',
+  'if no safe circling or return leg exists, the interrupted swoop does not immediately renew its attack');
+supports.attach=unblockedAttach;w.Fishing.state=null;
+for(let i=0;i<8;i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeBlockedReady,'restoring a safe flight support does not retroactively hit the player');
+assert(['orbit','readying','return','await-roost'].includes(farBird._tzFlight.phase),
+  'the bird recovers through aerial locomotion rather than a surprise new attack');
+
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
 assert(supports.attach(farBird,farBird._tzFlight.roost));

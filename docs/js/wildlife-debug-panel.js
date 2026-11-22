@@ -151,12 +151,15 @@
     const live = inhabitants.map(bird =>
       '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
       + (bird.target ? ' · target ' + fmt(bird.target) : '')
+       + (bird.readyingActivity ? ' · readying ' + fmt(bird.readyingActivity) : '')
+       + (bird.releaseChord ? ' · release warning' : '')
       + (bird.nestMinutesLeft != null ? ' · emerges in ' + fmt(bird.nestMinutesLeft) + ' game min' : '') + '</div>').join('');
     return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
       + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
       + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
-      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · no-perch orbits: ' + (flight.orbits || 0)
+      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · all orbits: ' + (flight.orbits || 0)
+       + ' · readying legs: ' + (flight.readiedLegs || 0)
       + ' · nest stays: ' + (flight.nestStays || 0) + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
       + (flight.nestExitProtected ? '<div>Tzatzul nest exit protection active</div>' : '')
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
