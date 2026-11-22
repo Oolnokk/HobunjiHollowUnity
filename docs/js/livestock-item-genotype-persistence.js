@@ -171,6 +171,66 @@
     return true;
   }
 
+  function acquireNestItem(itemKey, genotype, nextCount, { areaId = '', liveBirth = false, remaining = 0 } = {}) {
+    // One saved metadata write owns the new bag unit, its inherited bloodline, and the cave's reduced clutch.
+    // Independent writes can leave a phantom baby, or duplicate an already collected one, after a quota failure.
+    if (!debug.installed || !ensureLoaded() || !itemKey || !Number.isSafeInteger(nextCount) || nextCount < 1) {
+      debug.errors.push('nest-acquire: identity, installation, item key or inventory count invalid');
+      return false;
+    }
+    const ids = currentIds(); // The active world/member identity must match the same character that owns the live bag.
+    const meta = loadMeta(); // Fresh canonical save; never base this transaction on a stale cached copy.
+    const world = (meta?.worlds || []).find(entry => entry.id === ids.worldId);
+    const member = world?.members?.[ids.characterId];
+    if (!world || !member) {
+      debug.errors.push('nest-acquire: active world/member record missing');
+      return false;
+    }
+    const copy = genotype == null ? null : clonePlain(genotype); // The exact den-family genes, if present.
+    if (genotype != null && (!copy || typeof copy !== 'object')) {
+      debug.errors.push('nest-acquire: invalid inherited genotype for ' + itemKey);
+      return false;
+    }
+    const saved = serializedQueues(); // Candidate lineage queue; the live queue remains unchanged until storage succeeds.
+    if (copy) (saved[itemKey] || (saved[itemKey] = [])).push(copy);
+    if (Object.keys(saved).length) member[MEMBER_FIELD] = saved;
+    else delete member[MEMBER_FIELD];
+    member.nonGearInventory = member.nonGearInventory && typeof member.nonGearInventory === 'object'
+      ? member.nonGearInventory : {};
+    member.nonGearInventory[itemKey] = nextCount; // Commit the exact live bag count in the SAME metadata write as its genes.
+    const isCavern = typeof areaId === 'string' && areaId.startsWith('map_i_den_'); // Cave clutch records live on the world rather than on the character.
+    if (isCavern) {
+      const record = world.denTurnover?.records?.find(entry => entry?.cavernMapId === areaId); // Existing cave identity is required to prevent a collected baby respawning after reload.
+      if (!record) {
+        debug.errors.push('nest-acquire: saved cave turnover record missing for ' + areaId);
+        return false;
+      }
+      if (record.clutch?.itemKey && record.clutch.itemKey !== itemKey) {
+        debug.errors.push('nest-acquire: saved clutch species/item does not match ' + itemKey + ' in ' + areaId);
+        return false;
+      }
+      record.clutch = {
+        remaining: Math.max(0, Math.floor(Number(remaining) || 0)),
+        itemKey, liveBirth: !!liveBirth, genotype: copy || genotype || null,
+      }; // The cave can no longer regenerate a baby whose count and lineage were committed.
+    }
+    try {
+      localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta)); // localStorage.setItem replaces the entire record or throws without replacing it.
+    } catch (error) {
+      debug.errors.push('nest-acquire: ' + (error?.message || String(error)));
+      debug.lastAction = 'nest-acquire-failed';
+      return false;
+    }
+    if (copy) (queues[itemKey] || (queues[itemKey] = [])).push(copy); // Only update same-session grouping after the durable write is confirmed.
+    groupCache.delete(itemKey);
+    debug.queued += copy ? 1 : 0;
+    debug.saves++;
+    debug.lastItemKey = itemKey;
+    debug.lastAction = 'nest-acquire';
+    window.__farmLog?.('[genotype] committed den pickup for ' + itemKey + ', saved count=' + nextCount + ', cave=' + (isCavern ? areaId : 'other'), 'wildlife');
+    return true;
+  }
+
   function seedOriginalQueueIfNeeded(itemKey) {
     if (!ensureLoaded()) return false;
     const list = queues[itemKey];
@@ -318,6 +378,7 @@
     install,
     groupsFor,
     consumeVariant,
+    acquireNestItem,
     flush: saveQueues,
     reload() { activeIdentity = null; return ensureLoaded(); },
     getDebug() {
