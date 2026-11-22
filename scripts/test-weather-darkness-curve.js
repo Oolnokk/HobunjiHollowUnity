@@ -81,6 +81,23 @@ assert(nightStorm.weatherDarknessAddedAlpha < storm.weatherDarknessAddedAlpha * 
 assert(Math.abs(nightStorm.weatherDarknessAddedAlpha - (nightStorm.a - nightClear.a)) < 1e-12,
   'mobile weather diagnostics must report the applied darkness after nighttime clamping');
 
+for (let hour = 0; hour < 24; hour += 0.25) {
+  testHour = hour; // Samples sunrise, afternoon, twilight, midnight, and predawn for the whole day/night tint cycle.
+  const clearAtHour = sample('clear', 0, false); // Clear-weather reference for the current clock hour.
+  const lightAtHour = sample('rain', 1); // First weather step must never brighten a dark baseline.
+  const heavyAtHour = sample('rain', 2); // Added darkness may clamp but must not lighten the actual composited frame.
+  const stormAtHour = sample('storm', 3); // Last weather step must be no brighter than heavy rain, even around midnight.
+  const brightnesses = [clearAtHour, lightAtHour, heavyAtHour, stormAtHour].map(brightness); // Applied screen-space luminance from the live weather-tint math.
+  for (let i = 1; i < brightnesses.length; i++) {
+    assert(brightnesses[i] <= brightnesses[i - 1] + 1e-10,
+      `weather brightness must be monotonic at ${hour}:00, step ${i}: ${brightnesses.join(', ')}`);
+  }
+  for (const state of [clearAtHour, lightAtHour, heavyAtHour, stormAtHour]) {
+    assert(Number.isFinite(state.a) && state.a >= 0 && state.a <= 0.86 + 1e-10,
+      `weather overlay alpha must stay finite and bounded at ${hour}:00`);
+  }
+}
+
 testHour = 12;
 const mutableCalendar = { weather: 'clear', rainStrength: 0, isRaining: false }; // Reused during the transition test to mimic live weather changes.
 sky.attach(mutableCalendar);
