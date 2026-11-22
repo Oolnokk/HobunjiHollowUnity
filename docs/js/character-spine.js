@@ -38,7 +38,7 @@
   const FALLBACK_NECK_DROP = 0.25; // HobunjiCharacterRigScale.maxAgeHunchFraction when that module is absent (tools/tests).
   const SHOULDER_DROP_RATIO = 1; // The spline carries this share of the total head drop at its neck-base node; the head bone supplies any rest. 1: nothing for the head bone to fight the spline over.
   const WAIST_BELOW_NECK = 0.42; // Fallback only: with no authored posterior the spline starts this far (fraction of model height) below the neck base.
-  const NECK_BASE_BELOW_PIVOT = 0.08; // Fallback only: with no authored shoulders the neck base (where the spline ends) is this far (fraction of model height) below the head-turn pivot, which sits at the head's centre in x and its chin line in y.
+  const NECK_CONTACT_PIXELS = 2.5; // The seven-node spine ends just below the head's last opaque source pixel; the independent neck placement bone may not span an entire shoulder or torso.
   const SPLINE_NODES = 7; // Posterior (0) ... neck base (6).
   const SEGMENTS = SPLINE_NODES - 1;
   const DEFAULT_KYPHOSIS = 0.5; // The look before kyphosis is authored: a moderate forward hook.
@@ -147,22 +147,21 @@
     return floorY - modelHeight / 2 - (Number(placementRatio) - 0.5) * modelHeight;
   }
 
-  // The neck base in the skinned plane's frame: where the spline ends, i.e. where the head and neck meet the shoulders. It is NOT the head-turn
-  // pivot (that sits at the head's centre in x and its chin line in y, and stays where it is). Authored per species: the midpoint of the two
-  // hand-shoulder anchors (floor-relative like the posterior, so the same conversion into the plane's frame). Species without authored shoulders
-  // (the skeletons) get a point just below the pivot, on the root's axis. Returns { x, y }.
-  function neckBaseLocal({ speciesId, gender, modelHeight, placementRatio = 0.5, neckX = 0, neckY, posteriorY }) {
-    const fallback = { x: 0, y: neckY - NECK_BASE_BELOW_PIVOT * modelHeight };
-    if (!(modelHeight > 0) || !Number.isFinite(neckY)) return { x: Number(neckX) || 0, y: neckY };
-    const key = id => String(id || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-    const g = String(gender || '').toLowerCase() === 'female' ? 'female' : 'male';
-    const anchors = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${key(speciesId)}::${g}`]?.anchors;
-    const left = anchors?.leftHandShoulder?.position, right = anchors?.rightHandShoulder?.position;
-    if (![left?.x, left?.y, right?.x, right?.y].every(value => Number.isFinite(Number(value)))) return fallback;
-    const y = (Number(left.y) + Number(right.y)) / 2 - modelHeight / 2 - (Number(placementRatio) - 0.5) * modelHeight;
-    const floor = Number.isFinite(posteriorY) ? posteriorY : neckY - WAIST_BELOW_NECK * modelHeight;
-    const plausible = y < neckY - 0.01 * modelHeight && y > floor + 0.15 * modelHeight; // Under the pivot and well above the posterior.
-    return plausible ? { x: (Number(left.x) + Number(right.x)) / 2, y } : fallback;
+  // The last spine bone, not the long shoulder-to-head separation, owns the
+  // portrait up to the actual base-head bottom. Reserve only 2.5 SOURCE pixels
+  // for the independent head-placement/neck rotation hierarchy; distribute
+  // everything below this contact across all seven spline nodes.
+  // Hand-shoulder anchors are not neck bases: using them here previously left
+  // an enormous, sparsely skinned pseudo-neck between the shoulders and skull.
+  function neckBaseLocal({ modelHeight, neckX = 0, neckY, posteriorY, pixelHeight = 200 }) {
+    const height = Number(modelHeight); // Unscaled portrait model height used to convert actual source pixels to rig-space units.
+    const pivotY = Number(neckY); // Bottom of the undecorated, unscaled head sprite in the skinned plane's own coordinate frame.
+    const sourceHeight = Number(pixelHeight); // Source portrait height, not current mesh density or CSS display size.
+    if (!(height > 0) || !Number.isFinite(pivotY)) return { x: Number(neckX) || 0, y: pivotY };
+    const gap = NECK_CONTACT_PIXELS * height / (sourceHeight > 0 ? sourceHeight : 200); // Tiny rest connection even on 512/2048px art.
+    const posteriorGap = Number.isFinite(posteriorY) && posteriorY < pivotY
+      ? (pivotY - posteriorY) * .25 : gap; // Keep the top of the spline above a very high/implausible hip anchor.
+    return { x: Number(neckX) || 0, y: pivotY - Math.min(gap, posteriorGap) };
   }
 
   // Where the spline starts (the posterior); falls back to a fixed stretch below the neck when the posterior is unknown or implausible.
@@ -234,6 +233,12 @@
     const posteriorY = Number.isFinite(rig.spinePosteriorY) ? rig.spinePosteriorY : null;
     const layout = layoutFor(baseX, baseY, modelHeight, posteriorY, neckX, neckY);
     const curve = solveCurve(profile, layout, modelHeight);
+    const requestedReach = Number(rig.neckReachY) || 0; // The scaled head bottom plus authored head height, resolved before hunch.
+    const restSpan = layout.nodes[SEGMENTS].y - layout.nodes[0].y; // All additional head reach belongs to the spine, never to a long neck bone.
+    const safeReach = restSpan > 0 ? Math.max(-restSpan * .8, requestedReach) : requestedReach; // Extreme negative offsets cannot turn the upper spine inside out.
+    for (let k = 1; k < SPLINE_NODES; k++) curve[k].y += safeReach * (k / SEGMENTS); // Skin the entire intervening column through the real spine nodes.
+    rig.neckReachAppliedY = safeReach; // Mobile diagnostic distinguishes requested scale/offset from the physically possible compression.
+    rig.appliedSpineProfile = profile; // Later head-scale slider edits retain the current hunch, sway and kyphosis rather than resetting it.
     const skins = Array.isArray(nodes) ? [[nodes, 1]] : [[nodes.front, 1], [nodes.back, -1]];
     for (const [bones, sign] of skins) {
       if (!bones) continue;
@@ -247,9 +252,22 @@
         bone.updateMatrix?.();
       }
     }
-    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
+    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, neckReachY: safeReach, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
     profile.orbitOffset = deformAt(profile, baseY, {}); // The orbit centre is the shoulder line, where the spline ends.
     return true;
+  }
+
+  // Apply head-size / authored head-height reach BEFORE hunch is generated.
+  // Alters only the real spine nodes, not the short head-offset bone. Geometry
+  // stays bound to the original rest pose and weights, avoiding expensive
+  // re-tessellation and shader changes while dragging the Head slider.
+  function applyNeckReach(rig, reachY, modelHeight, hunch = null) {
+    if (!rig?.splineNodes || !(modelHeight > 0)) return false;
+    rig.neckReachY = Number.isFinite(Number(reachY)) ? Number(reachY) : 0; // Requested stretch of the spine toward the newly scaled skull.
+    const previous = rig.appliedSpineProfile; // Retains authored sway/kyphosis when age or scale changes are reapplied.
+    const next = hunch == null ? (previous || profileFor(0))
+      : profileFor(hunch, previous?.sway || 0, previous?.kyphosis ?? DEFAULT_KYPHOSIS);
+    return applyToRig(rig, next, modelHeight); // Idempotently rebuilds all bone offsets from their original authored rest positions.
   }
 
   // How far a rest-pose point at plane-local height y is carried by the curve: { x, y, z } in plane-local units (all 0 for an upright
@@ -392,6 +410,7 @@
     layoutFor,
     solveCurve,
     applyToRig,
+    applyNeckReach,
     deformAt,
     posteriorLocalY,
     neckBaseLocal,
