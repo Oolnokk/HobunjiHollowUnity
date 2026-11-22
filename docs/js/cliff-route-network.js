@@ -885,7 +885,7 @@
           yaw, visible, s.reward, s.id);
       } else if (s.reward === 'herbCluster') {
         const pool = (globalThis.AlchemySystem?.reagentsForZone?.(network.area) || [])
-          .filter(key => globalThis.AlchemySystem?.REAGENT_DEFS?.[key] && !/mushroom/i.test(key)); // Only plants native to this zone, never cave fungi.
+          .filter(key => { const def = globalThis.AlchemySystem?.REAGENT_DEFS?.[key]; return !!def && def.form !== 'mushroom'; }); // Mini-cliff herb bundles only use plant species; fungi keep their own cross-billboard art.
         const builder = globalThis.ReagentPlants?.buildReagentPlantMesh;
         if (!pool.length || !builder) continue;
         s.reagentKey = pool[hash(Math.floor(s.x * 100), Math.floor(s.z * 100), 197) % pool.length]; // Shared with mini-cliff forage interaction.
