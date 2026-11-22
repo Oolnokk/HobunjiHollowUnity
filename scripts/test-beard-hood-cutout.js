@@ -259,8 +259,26 @@ assert.equal(Cut.decodeMask(autoZero.mask)[at(100,145)],1,'default cone permits 
 assert.equal(Cut.decodeMask(autoZero.mask)[at(55,170)],0,'zero cone has no lateral extension');
 assert.equal(Cut.decodeMask(autoWide.mask)[at(55,170)],1,'positive cone widening permits pixels farther to the side');
 assert(autoWide.allowedPixels>autoZero.allowedPixels,'expanding the cone increases authorized pixel area');
+const lowerNearLine=Cut.autoHoodAllowanceMask(ringBefore,2.5);
+const lowerLine=Cut.autoHoodAllowanceMask(ringBefore,3);
+assert(lowerLine.allowedPixels>=lowerNearLine.allowedPixels,
+  'widening the lower cone to Line never removes previously allowed pixels');
+assert.equal(Cut.decodeMask(lowerLine.mask)[at(0,170)],1,'lower Line includes left portrait edge');
+assert.equal(Cut.decodeMask(lowerLine.mask)[at(SIZE-1,170)],1,
+  'lower Line includes right portrait edge');
+assert.equal(Cut.decodeMask(lowerLine.mask)[at(100,50)],0,
+  'lower Line does not reach above the bottom opening');
 assert.equal(Cut.normalizeConeSpread(-1),0,'cone widening never goes negative');
-assert.equal(Cut.normalizeConeSpread(200),2,'cone widening clamps at a reasonable maximum');
+assert.equal(Cut.normalizeConeSpread(200),3,'cone widening clamps to the flat-line endpoint');
+assert.equal(Cut.normalizeConeSpread(2),2,'existing authored 0–2 widening values remain unchanged');
+assert.equal(Cut.normalizeConeSpread(2.5),2.5,'the new post-legacy range remains editable');
+assert.equal(Cut.coneExpansion(0,3),0,'a straight line still passes through its cone origin');
+assert.equal(Cut.coneExpansion(1,0),0,'zero widening means a vertical column');
+assert.equal(Cut.coneExpansion(1,2),2,'old widening has identical numeric slope');
+assert.equal(Cut.coneExpansion(1,2.5),4,'expanded opening continues smoothly beyond the old maximum');
+assert(Cut.coneExpansion(1,2.975)>Cut.coneExpansion(1,2.5),
+  'widening toward the line continuously increases cone reach');
+assert.equal(Cut.coneExpansion(1,3),SIZE,'the final setting opens into a horizontal line across the portrait');
 const fadedRing=new Uint8ClampedArray(ringBefore);
 for(let i=3;i<fadedRing.length;i+=4)if(fadedRing[i])fadedRing[i]=235; // Below 95%, above a lowered 90% threshold.
 const ring95=Cut.autoHoodAllowanceMask(fadedRing,0,{alphaLimit:242});
@@ -284,6 +302,15 @@ assert.equal(Cut.decodeMask(upperZero.mask)[at(50,95)],0,
   'zero widening does not spread outside its vertical top rim columns');
 assert(upperWide.coverPixels>upperZero.coverPixels,
   'widening the top cone grows the protected upper-hood footprint');
+const topDownLine=Cut.autoHoodTopCoverMask(ringBefore,3,{
+  bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:20
+});
+assert.equal(Cut.decodeMask(topDownLine.mask)[at(0,80)],1,
+  'downward Line covers far left even when its origin is near the center');
+assert.equal(Cut.decodeMask(topDownLine.mask)[at(SIZE-1,80)],1,
+  'downward Line covers far right at the same row');
+assert.equal(Cut.decodeMask(topDownLine.mask)[at(0,145)],0,
+  'downward Line still stops at the configured droop and lower rim');
 const upOnly=Cut.autoHoodTopCoverMask(ringBefore,0,{
   bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:0
 });
@@ -305,6 +332,20 @@ assert.equal(Cut.decodeMask(upOnly.mask)[at(100,80)],0,
   'downward reach zero covers nothing below the rim');
 assert(upWide.coverPixels>upOnly.coverPixels,
   'upper widening expands coverage independently of downward droop length');
+const topUpNearLine=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:2.5,downLength:0
+});
+const topUpLine=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:3,downLength:0
+});
+assert(topUpLine.coverPixels>=topUpNearLine.coverPixels,
+  'upper cone widening toward a horizontal line never shrinks coverage');
+assert.equal(Cut.decodeMask(topUpLine.mask)[at(0,50)],1,
+  'upward Line covers left portrait edge');
+assert.equal(Cut.decodeMask(topUpLine.mask)[at(SIZE-1,50)],1,
+  'upward Line covers right portrait edge');
+assert.equal(Cut.decodeMask(topUpLine.mask)[at(100,130)],0,
+  'upward Line with zero downward depth does not touch lower beard');
 assert(downShort.coverPixels>upOnly.coverPixels,
   'positive downward length adds a lower protection cone');
 assert.equal(Cut.decodeMask(downShort.mask)[at(100,80)],0,
@@ -618,6 +659,11 @@ for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode',
   'removeRoot','clearRoots','hoodAllowMode','hoodProtectMode','protectWholeHood',
   'allowWholeHood','hoodJson','downloadHood','download','maskJson'])
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
+for(const id of ['coneSpread','topConeSpread','topConeUpSpread'])
+  assert(html.includes('id="'+id+'" type="range" min="0" max="3" step=".025"'),
+    'all cone widening sliders expose the 180-degree Line endpoint: '+id);
+assert(html.includes('Line (180°)')&&html.includes('formatConeSpread'),
+  'the editor clearly labels widening to a line instead of showing misleading pixel slopes');
 assert(html.includes('min="0" max="64" step="0.25"')
   && html.includes("Number($('maxStretch').value)")
   && !html.includes("Number($('maxStretch').value)||36"),
@@ -709,5 +755,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: bidirectional overhang cones, configurable downward length, strict whisker refusal, lower beard preservation, variants, 95% alpha and draw order pass.');
+  console.log('Beard/hood: all three cones widen monotonically into flat lines, with capped downward reach, whisker precedence, legacy settings and draw order preserved.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
