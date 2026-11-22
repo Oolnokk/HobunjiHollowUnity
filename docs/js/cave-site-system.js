@@ -339,9 +339,12 @@
       ensureStateLoaded(); // Check explored sites if a new, as-yet-untagged cave rolls a bandit hideout.
       const existingBandits = new Set(dens.filter(den => den?.caveSite?.inhabitant === TYPES.BANDIT_HIDEOUT)
         .map(den => String(den.caveSite.mapId))); // Protect old hideouts even if their world-save discovery flags have not yet been restored.
-      const candidates = ordinary.filter(profile => profile.inhabitant !== TYPES.ANIMAL_DEN
-        && (profile.inhabitant === TYPES.NONE
-          || (!existingBandits.has(String(profile.mapId)) && !runtimeStateBySignature.get(profile.signature)?.discovered)));
+      const candidates = ordinary.filter(profile => {
+        const state = runtimeStateBySignature.get(profile.signature); // A cave the player has already entered must not gain a new hostile family mid-save.
+        return profile.inhabitant !== TYPES.ANIMAL_DEN
+          && !state?.discovered && !state?.occupantsCleared
+          && (profile.inhabitant === TYPES.NONE || !existingBandits.has(String(profile.mapId)));
+      });
       candidates.sort((a, b) =>
         Number(a.inhabitant !== TYPES.NONE) - Number(b.inhabitant !== TYPES.NONE)
         || hashSeed(a.signature + ':den-balance') - hashSeed(b.signature + ':den-balance')
