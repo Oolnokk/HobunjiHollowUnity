@@ -459,7 +459,8 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20261114potionAudit1"></script>
+  <script src="js/pending-animal-sales.js?v=20261122cancelAnimal1"></script> <!-- Reversible livestock sale marker; FarmPanel initializes it, FarmCrates settles it at shipping collection. -->
+  <script src="js/farm-crates.js?v=20261122cancelAnimal1"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -750,7 +751,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261119fertilityFarmLoader2"></script>
+  <script src="js/farm-panel.js?v=20261122cancelAnimal1"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
