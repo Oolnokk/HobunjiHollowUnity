@@ -81,9 +81,9 @@ const THREE = {
   CanvasTexture: class { constructor(canvas) { this.image = canvas; } },
   TextureLoader: class { load(path, done) { const map = {
     image:{width:450,height:1204}, path, dispose(){this.disposed=true;},
-    clone(){ return { image:this.image, source:this, dispose(){this.disposed=true;} }; },
+    clone(){ return { image:this.image, source:this, minFilter:this.minFilter, magFilter:this.magFilter, generateMipmaps:this.generateMipmaps, dispose(){this.disposed=true;} }; },
   }; loadedMap = map; done(map); return map; } },
-  DoubleSide: 2, AdditiveBlending: 3, LinearFilter: 4,
+  DoubleSide: 2, AdditiveBlending: 3, LinearFilter: 4, NearestFilter: 5,
 }; // Minimal geometric API: the test cares about attachment ownership, not rasterization.
 const document = {
   createElement() {
@@ -216,6 +216,9 @@ assert.equal(belt.parent, avatar, 'rear-stowed torch follows live portrait yaw r
 assert.equal(torch.debug.belt.attachedToPortrait, true, 'mobile debug reports portrait-follow attachment');
 assert.notEqual(belt.children[0].material.map, handMap, 'belt owns its own separately recolored PNG map');
 assert.equal(belt.children[0].material.map.source, loadedMap, 'belt recolors a clone of the original authored torch PNG');
+assert.equal(loadedMap.minFilter, THREE.NearestFilter, 'source texture matches the held torch nearest-neighbor filter');
+assert.equal(belt.children[0].material.map.magFilter, THREE.NearestFilter, 'the cloned recolored torch keeps pixel-sharp magnification');
+assert.equal(belt.children[0].material.alphaTest, .08, 'stowed sprite uses the identical alpha cutoff as the carried torch');
 assert.equal(belt.children.length, 1, 'no extra decorative flame; real particles are children of the PNG plane');
 assert.equal(fireStarts, 1, 'one regular layer-effects fire is attached on stow');
 assert.equal(torch.debug.belt.fireEmitters, 1, 'Pixel Probe reports the actual reused particle emitter');
