@@ -142,7 +142,8 @@ assert.equal(beforeBaking.group.children[1].material.map, newerFront,
 // baby one time instead of shrinking the entire image into a flat card.
 const bakedGeometry = new PlaneGeometry(.48, .59);
 bakedGeometry.boundingBox = { min: { x: -.24, y: -.18 }, max: { x: .24, y: .41 } };
-const skinned = { isSkinnedMesh: true, geometry: { id: 'live-head-scaled-geometry' }, position: new Vector() };
+const skinned = { isSkinnedMesh: true, geometry: { id: 'live-head-scaled-geometry' }, position: new Vector(0, 0, .13) };
+rebuiltWalker.avatarGroup.userData.visualCentroidLocalZ = .13; // A live rig's skinnedPlane.position.z already contains the avatar anchor.
 rebuiltWalker.avatarGroup.userData.neckRig = { skinnedPlane: skinned, headScaleJoint: { scale: new Vector(1.8, 1.8, 1) } };
 let bakeCalls = 0;
 window.PNGPlaneAvatar = { meshBudget: { bakeStaticPortraitForCarry(_THREE, input) {
@@ -152,6 +153,8 @@ const sameBurden = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
 assert.equal(sameBurden, beforeBaking, 'switching the artwork keeps the one physical baby');
 assert.equal(sameBurden.group.children.length, 1, 'posed portrait replaces the flat proxy faces');
 assert.equal(sameBurden.group.children[0].geometry, bakedGeometry);
+assert.equal(sameBurden.group.children[0].position.z, .13,
+  'baked infant keeps the original portrait depth; the mesh anchor must not be added twice');
 assert.equal(sameBurden.group.children[0].material[1].map, newerFront, 'posed rear face remains colored');
 assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'colliders use current geometry');
 assert.equal(carry.snapshot().babies[0].artMode, 'posed-rig');
@@ -164,6 +167,14 @@ carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(sameBurden.group.children[0].material[0].map, newestFront, 'live front-art updates propagate');
 assert.equal(sameBurden.group.children[0].material[1].map, newestFront, 'rear fallback tracks front art');
 assert.equal(bakeCalls, 1, 'texture refresh does not re-bake');
+// Family restore may replace the JS child record without replacing the live burden.
+// OnPickup must update the current authoritative child, not its original closure value.
+const restoredRecord = { ...child, carryBy: null, carryPose: null };
+carry.sync(restoredRecord, rebuiltWalker, 'basket', persist);
+assert.equal(carry.takeIntoArms(restoredRecord, rebuiltWalker, persist), true);
+assert.equal(restoredRecord.carryBy, 'player', 'pickup writes to the replacement family child record');
+assert.equal(restoredRecord.carryPose, 'arms');
+assert.equal(child.carryBy, null, 'pickup cannot mutate an obsolete family record');
 carry.clear(); assert.equal(carry.snapshot().babies.length, 0);
 assert(persistCount > 0);
 
