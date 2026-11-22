@@ -128,7 +128,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       const data=entry[1]||{};
       drafts.set(entry[0],{mask:Cut.normalizeMask(data.mask||data)||empty(),
         roots:Cut.normalizeRoots(data.roots),
-        maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null});
+        maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null,
+        alphaFloor:Number.isFinite(Number(data.alphaFloor))&&data.alphaFloor!=null?Number(data.alphaFloor):null});
     }
   }catch(_){/* Private-browsing storage can be unavailable; normal JSON downloads still work. */}
   const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
@@ -140,7 +141,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
     drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),roots:Cut.normalizeRoots(roots),
-      maxStretch:selectedStretch()});
+      maxStretch:selectedStretch(),alphaFloor:selectedAlphaFloor()});
     try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
   }
@@ -276,7 +277,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         mask=maskForArtwork(draft?.mask||originalMask());
         roots=Cut.normalizeRoots(draft?.roots||originalRoots());
         $('maxStretch').value=draft?.maxStretch??originalMaxStretch();
-        $('alphaFloor').value=originalAlphaFloor();
+        $('alphaFloor').value=draft?.alphaFloor??originalAlphaFloor();
         updateLabels();
       }else mask=maskForArtwork(mask);
       await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
@@ -379,36 +380,100 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       +'\nGeometry: none · X-ray: none';
     $('undo').disabled=!history.length;
   }
-  function pushUndo(){history.push(JSON.stringify(mask));if(history.length>20)history.shift();}
+  function pushUndo(){
+    history.push(JSON.stringify({mask,roots:Cut.normalizeRoots(roots)})); // A single undo stack covers pixels AND tuft markers.
+    if(history.length>25)history.shift();
+  }
   function point(event){
     const r=$('paintCanvas').getBoundingClientRect();
     return {x:clamp((event.clientX-r.left)/r.width*SIZE,0,SIZE-.001),
       y:clamp((event.clientY-r.top)/r.height*SIZE,0,SIZE-.001)};
   }
+  function snapToPaintable(point,maxRadius=7){
+    let best=null,dist2=maxRadius*maxRadius;
+    for(let y=Math.max(0,Math.floor(point.y-maxRadius));y<=Math.min(SIZE-1,Math.ceil(point.y+maxRadius));y++)
+      for(let x=Math.max(0,Math.floor(point.x-maxRadius));x<=Math.min(SIZE-1,Math.ceil(point.x+maxRadius));x++){
+        if(beardPixels[(y*SIZE+x)*4+3]<selectedAlphaFloor())continue;
+        const d=(x+.5-point.x)**2+(y+.5-point.y)**2;
+        if(d<=dist2){dist2=d;best={x:x+.5,y:y+.5};}
+      }
+    return best;
+  }
+  function updateStroke(next){
+    const changed=Cut.paintMask(mask,beardPixels,next.x,next.y,Number($('brush').value),
+      mode==='erase',drag.last,selectedAlphaFloor());
+    if(JSON.stringify(mask)!==JSON.stringify(changed)){
+      if(!drag.changed){pushUndo();drag.changed=true;}
+      mask=changed;
+    }
+    drag.last=next;
+    if(drag.changed)render();
+  }
   const surface=$('paintCanvas');
   surface.addEventListener('pointerdown',event=>{
     if(drag||event.button!==0)return;
     event.preventDefault();
-    if(!artReady){status('Brush disabled: beard artwork is not readable. Reload the updated editor or use a local PNG override.');return;}
-    pushUndo();
-    drag={id:event.pointerId,last:point(event)};
+    if(!artReady){status('Artwork is unavailable; painting and tuft-root placement are disabled.');return;}
+    const at=point(event);
+    if(mode==='root'){
+      let existing=roots.findIndex(root=>Math.hypot(root.x-at.x,root.y-at.y)<8);
+      const snap=snapToPaintable(at);
+      if(existing<0&&!snap){status('No sufficiently opaque beard pixel here; lower the opacity floor or tap the tuft corner.');return;}
+      if(existing<0&&roots.length>=12){status('Maximum 12 tuft corners reached.');return;}
+      pushUndo();
+      if(existing<0){existing=roots.length;roots.push(snap);}
+      drag={id:event.pointerId,last:at,kind:'root',index:existing,changed:true};
+      surface.setPointerCapture(event.pointerId);
+      render();
+      return;
+    }
+    drag={id:event.pointerId,last:at,kind:'brush',changed:false};
     surface.setPointerCapture(event.pointerId);
-    mask=Cut.paintMask(mask,beardPixels,drag.last.x,drag.last.y,Number($('brush').value),mode==='erase');render();
+    updateStroke(at);
   });
   surface.addEventListener('pointermove',event=>{
     if(drag?.id!==event.pointerId)return;
-    event.preventDefault();const next=point(event);
-    mask=Cut.paintMask(mask,beardPixels,next.x,next.y,Number($('brush').value),mode==='erase',drag.last);
-    drag.last=next;render();
+    event.preventDefault();
+    const next=point(event);
+    if(drag.kind==='root'){
+      const snap=snapToPaintable(next);
+      if(snap){roots[drag.index]=snap;render();}
+    }else updateStroke(next);
+    drag.last=next;
   });
   for(const eventName of ['pointerup','pointercancel','lostpointercapture']){
-    surface.addEventListener(eventName,event=>{if(drag?.id!==event.pointerId)return;drag=null;remember();render();});
+    surface.addEventListener(eventName,event=>{
+      if(drag?.id!==event.pointerId)return;
+      const changed=drag.changed;drag=null;
+      if(changed)remember();
+      render();
+    });
   }
-  function chooseMode(next){mode=next;$('paintMode').classList.toggle('active',mode==='paint');$('eraseMode').classList.toggle('active',mode==='erase');}
-  $('paintMode').onclick=()=>chooseMode('paint');$('eraseMode').onclick=()=>chooseMode('erase');
+  function chooseMode(next){
+    mode=next;
+    $('paintMode').classList.toggle('active',mode==='paint');
+    $('eraseMode').classList.toggle('active',mode==='erase');
+    $('rootMode').classList.toggle('active',mode==='root');
+  }
+  $('paintMode').onclick=()=>chooseMode('paint');
+  $('eraseMode').onclick=()=>chooseMode('erase');
+  $('rootMode').onclick=()=>chooseMode('root');
   $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
-  $('undo').onclick=()=>{if(!history.length)return;mask=JSON.parse(history.pop());remember();render();};
-  $('clear').onclick=()=>{pushUndo();mask=empty();remember();render();};
+  $('alphaFloor').oninput=()=>{updateLabels();remember();render();};
+  $('maxStretch').oninput=()=>{updateLabels();remember();render();};
+  $('undo').onclick=()=>{
+    if(!history.length)return;
+    const previous=JSON.parse(history.pop());
+    mask=Cut.normalizeMask(previous.mask)||empty();roots=Cut.normalizeRoots(previous.roots);
+    remember();render();
+  };
+  $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();remember();render();};
+  $('removeRoot').onclick=()=>{
+    if(!roots.length)return;pushUndo();roots.pop();remember();render();
+  };
+  $('clearRoots').onclick=()=>{
+    if(!roots.length)return;pushUndo();roots=[];remember();render();
+  };
   $('showHead').onchange=render;$('showHood').onchange=render;
   async function refreshDoc(which){
     const selection=$(which).value,entry=catalog.find(item=>item.id===selection);
