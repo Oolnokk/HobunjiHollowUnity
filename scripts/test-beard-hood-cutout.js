@@ -490,7 +490,8 @@ assert(html.includes('destination.beardCutoutPermissionMode=hoodPermissionMode')
   && html.includes('destination.beardCutoutConeSpread=Cut.normalizeConeSpread(coneSpread)'),
   'variant policy export explicitly overrides inherited modes without modifying other cosmetics');
 assert(html.includes('hoodWhiskerMask:Cut.normalizeMask(whiskerMask)')
-  && html.includes('Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)'),
+  && html.includes('Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread,')
+  && html.includes('alphaLimit:selectedHoodAlphaFloor()'),
   'separate JSON exports retain beard whiskers and auto-cone generation');
 assert(html.includes('Cut.autoHoodAllowanceMask(hoodPixels,coneSpread,')
   && html.includes('alphaLimit:selectedHoodAlphaFloor()')
