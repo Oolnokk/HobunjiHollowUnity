@@ -184,6 +184,20 @@ materials in place once the config loads.
   actor; the normal resource system and shared hit scaling apply them in combat,
   and the Testing Arena log exposes `trinkets=` for mobile inspection. This
   changes enemy combat equipment, not their guaranteed corpse loot.
+- `docs/js/combat/combat-bandit.js` and `docs/js/combat/ranged-weapons.js` —
+  ordinary bandits now see foes from farther away, pursue them more decisively,
+  and maintain short coordinated standoff rings rather than drifting at 55 px/s
+  when a foe retreats. Chase speed starts at 290 px/s plus 6 per wilderness
+  danger tier and rank bonuses, before existing armor/debuff movement modifiers;
+  aggro begins at 8.5 tiles and leash at 16 tiles (plus rank bonuses). Ranged
+  bandits close ground beyond projectile range and between shots. Backstab
+  Flick fighters actively orbit behind their foe, with a two-second attempt and
+  retry timeout so a continuously turning target cannot stall combat. Exhaust
+  Cutter and Mercy Spike only roll when *their own* bonus condition holds,
+  scaling from 20% at tier zero to 83% at tier seven; Backstab Flick takes the
+  hit when it earns the behind condition. Non-bandit special humanoids and mine
+  encounters retain their existing chase/orbit behaviors. Testing Arena logs
+  `tactic=`, `quickChance=`, `chasePxS=`, and `flankT=` for mobile diagnosis.
 - `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
   Longsword/Broadsword with random, partial enchantments into the world
   inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,
