@@ -178,6 +178,8 @@ assert.equal(say(authoredNormal), 'AUTHORED NON-FALLBACK TALK', 'authored non-fa
 assert.equal(say(authoredNormal), 'AUTHORED NON-FALLBACK TALK', 'authored non-fallback line retains its priority after being heard');
 const standalone = { ...byId.sloomi, dialogueTrees: [], dialogueLines: ['EXPLICIT CHARACTER SPOKEN LINE'] }; // An authored standalone line must not be eclipsed by the Reserved family.
 assert.equal(say(standalone), 'EXPLICIT CHARACTER SPOKEN LINE', 'standalone NPC speech takes priority when no tree exists');
+const malformedLines = { ...byId.sloomi, dialogueTrees: [], dialogueLines: { mistaken: 'not an array' } }; // Edited or imported records may have malformed standalone copy.
+assert.ok(config.personalityFamilies.reserved.some(entry => entry.text === say(malformedLines)), 'malformed standalone dialogue does not crash the fallback selector');
 
 dialogueWindow.DialogueContent.loadNpcRelationships({ npcRelationships: {}, npcFavorRescaleApplied: true }); // Fresh world context isolates the complete starter-roster first-meeting audit from the synthetic fixtures above.
 const starter = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Full shipped character roster verifies existing authored greetings are never silently displaced.
