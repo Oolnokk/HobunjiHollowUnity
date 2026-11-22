@@ -811,8 +811,16 @@
     const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row))); // Natural rocks and mineable walls are already occupied.
     const reserved = new Set([...blockedKeys, ...rockKeys]); // Do not place resources on another feature or an animal nest.
     const near = plan.separator ? new Set(plan.separator.nearKeys) : null; // Secondary rewards remain reachable before mining any secret separator.
+    const clearanceBlocked = new Set(); // One-time 2-tile dilation of reserved floor: O(reservations), not O(candidates × reservations) string parses.
+    for (const key of reserved) {
+      const [col, row] = key.split(',').map(Number);
+      if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+      for (let dy = Math.floor(row) - 2; dy <= Math.ceil(row) + 2; dy++)
+        for (let dx = Math.floor(col) - 2; dx <= Math.ceil(col) + 2; dx++)
+          if (Math.hypot(dx - col, dy - row) < 2) clearanceBlocked.add(tileKey(dx,dy));
+    }
     const free = candidates.filter(tile => (!near || near.has(tileKey(tile.col, tile.row)))
-      && !reserved.has(tileKey(tile.col, tile.row)) && hasFeatureClearance(tile, reserved, 2));
+      && !clearanceBlocked.has(tileKey(tile.col, tile.row)));
     if (free.length < MIN_SECONDARY_POCKET_TILES) return;
     const count = clamp(Math.floor(free.length / 35), 2, 4); // A small pocket, not a second full-density ore field or mushroom forest.
     const freeByKey = new Map(free.map(tile => [tileKey(tile.col, tile.row), tile])); // Reachable, unoccupied floor for bounded one-room flood fills.
