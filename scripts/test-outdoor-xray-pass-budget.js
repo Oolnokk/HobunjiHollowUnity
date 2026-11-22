@@ -127,6 +127,35 @@ assert(entry.indexOf('const baseRenderEndedAt = performance.now()') < entry.inde
   'source meshes are frustum-checked only after the base render updates matrices');
 assert(entry.indexOf('filterOffscreenReplayMeshes(camera, held)') < entry.indexOf('replaySelectiveHeldOverlay(this, scene, camera, visibleHeld'),
   'out-of-view equipment cannot create extra elevation groups');
+// A frame with no visible replay participants must replace old debug values.
+const diagnosticNames = ['lastBaseReplayCandidates', 'lastBaseOffscreenFiltered', 'lastBaseElevationGroups',
+  'lastForcedGroundDepthMaterials', 'lastElevationReplayGroups', 'lastXrayTileRegions',
+  'lastXrayOrdinaryMeshes', 'lastUnknownElevationMeshes', 'lastNearbyTintCovers',
+  'lastDistantTintCovers', 'lastWaterClipScopes', 'lastWaterClipOverflow'];
+const noReplay = new Function(block('  function wrappedRender(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped')
+  + `
+    const internalReplay = false, enabled = true, hasDisabledActorXray = false;
+    const retiredScenes = new WeakSet(), window = {};
+    const heldRegistry = {}, groundRegistry = {}, topFaceGroundRegistry = {}, tintCoverRegistry = {};
+    const waterOccludedRegistry = {}, waterPortraitRegistry = {};
+    const isBaseWorldPass = () => true, isShellOutlinePass = () => false, xrayRule = () => 'off';
+    const currentFramebufferStencilBits = () => 8, collectVisible = () => [];
+    const syncShoulderPetLayering = () => {}, scanScene = () => {}, updateFrontPlaneHands = () => {};
+    const nearbyPortraitOrder = () => null, withPortraitDrawOrder = (_r, _order, draw) => draw();
+    const originalRender = () => 'base-world';
+    let replayCameraPosition, lastBaseStencilBits, lastFrontPortraitMaskCount, lastFrontPortraitGearCandidates;
+    let lastFrontPortraitMaskedGear, lastFrontPortraitMaskReason, lastRankedPortraitActors, lastWaterPortraits;
+    let lastDryGearWaterSkips, lastHeldFullscreenReason = 'skinned-mesh';
+    let ${diagnosticNames.map(name => name + ' = 4').join(', ')};
+    return {
+      draw: () => wrappedRender({isScene:true}, {isCamera:true, layers:{mask:1}}),
+      read: () => [${diagnosticNames.join(', ')}, lastHeldFullscreenReason],
+    };
+  `)();
+assert.equal(noReplay.draw(), 'base-world');
+assert.deepEqual(noReplay.read(), [...diagnosticNames.map(() => 0), 'no-visible-participants'],
+  'skipping the replay clears the last active replay counters and fallback reason');
+
 assert.match(pixel, /Held replay budget: offscreen=/,
   'Pixel Probe exposes effective skips, group scissor count and fullscreen reasons without devtools');
 console.log('outdoor x-ray pass-budget tests passed');

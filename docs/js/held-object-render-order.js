@@ -4311,6 +4311,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
       if (!ground.length && !topFaceGround.length) {
+        lastShellElevationGroups = 0;
+        lastShellFullscreenReason = 'no-ground';
         return originalRender.call(this, scene, camera);
       }
       const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
@@ -4323,6 +4325,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       ordinaryShellMeshesDrawnOnce += ordinary.length;
       if (!groups.length) {
         ordinaryShellReplaysAvoided++;
+        lastShellFullscreenReason = 'ordinary-depth';
         return originalRender.call(this, scene, camera);
       }
       const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuine local floor exemptions need a depth reconstruction.
@@ -4365,6 +4368,20 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     lastBaseStencilBits = currentFramebufferStencilBits(this);
+    // A normal-depth frame can return before replay setup. Clear the previous replay's readings here.
+    lastBaseElevationGroups = 0;
+    lastBaseReplayCandidates = 0;
+    lastBaseOffscreenFiltered = 0;
+    lastHeldFullscreenReason = 'no-visible-participants';
+    lastForcedGroundDepthMaterials = 0;
+    lastElevationReplayGroups = 0;
+    lastXrayTileRegions = 0;
+    lastXrayOrdinaryMeshes = 0;
+    lastUnknownElevationMeshes = 0;
+    lastNearbyTintCovers = 0;
+    lastDistantTintCovers = 0;
+    lastWaterClipScopes = 0;
+    lastWaterClipOverflow = 0;
     lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
     lastFrontPortraitGearCandidates = 0;
     lastFrontPortraitMaskedGear = 0;
@@ -4392,6 +4409,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         && collectVisible(frontPortraitRegistry, scene).length > 0; // The mask can use physical depth when the private stencil is absent.
       if (!needsOwnerMask) {
         lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+        lastHeldFullscreenReason = 'no-cover-or-owner-mask';
         return renderBase();
       }
     }
@@ -4549,7 +4567,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} animals=${state.actorXrayEnabled.animals} enemies=${state.actorXrayEnabled.enemies} player=${state.actorXrayEnabled.player} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
