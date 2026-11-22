@@ -100,7 +100,7 @@
       spline.a = 0; spline.b = 0; spline.wb = 0;
       if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
       const offsetWeight = hasPlacement ? (headWeight > 0
-        ? 1 - headWeight : avatarApi.headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight)) : 0;
+        ? 1 - headWeight : authorOffset ? avatarApi.headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) : 0) : 0; // Shared 10-bone torso follows the spine; only the independent 3-bone editor retains the old offset fade.
       headWeight = hasPlacement ? headWeight : Math.max(headWeight, headScaleWeight);
       const bodyWeight = 1 - headWeight - offsetWeight;
       for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
