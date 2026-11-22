@@ -2065,7 +2065,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   let negotiatedBeard = null, negotiatedHood = null, negotiation = null, negotiationError = null; // Prepared before the beard's original stage; errors must not let protected hood pixels be carved.
   if (cutoutApi && facialHairLayers.length && hoodLayers.length
       && !hiddenCosmeticGroups.has(facialHair)
-      && (paintedBeardMask?.runs?.length || whiskerMask?.runs?.length)) {
+      && (paintedBeardMask?.runs?.length || whiskerMask?.runs?.length
+        || beardAuthoring.requestMode==='silhouette')) {
     const beardScratch = canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'); // Reused per portrait instance, not per redraw.
     const hoodScratch = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Existing front-hood scratch surface.
     for (const scratch of [beardScratch, hoodScratch]) {
@@ -2087,7 +2088,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         topConeSpread:hoodPolicy.topConeSpread,
         topUpConeSpread:hoodPolicy.topUpConeSpread,
         topDownConeLength:hoodPolicy.topDownConeLength,
-        hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask}); // The upper cover cone, when authored, beats even whiskers; the lower cone permits ordinary requests.
+        hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask,
+        requestMode:beardAuthoring.requestMode}); // The upper cover cone, when authored, beats even whiskers; the lower cone permits ordinary requests.
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
@@ -2437,7 +2439,7 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function resolveBeardHoodAuthoring(option, fighter) {
-  if (!option) return {mask:null,whiskers:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
+  if (!option) return {mask:null,whiskers:null,requestMode:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
   const cutout = window.PortraitBeardHoodCutout;
   if (fighter) {
     const keys=portraitVariantKeysForFighter(fighter, option);
@@ -2451,11 +2453,13 @@ function resolveBeardHoodAuthoring(option, fighter) {
         ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftMaxStretch||{},key)
         ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftSubdivision||{},key)
         ||Object.prototype.hasOwnProperty.call(option.variantHoodWhiskerMasks||{},key)
+        ||Object.prototype.hasOwnProperty.call(option.variantHoodCutoutRequestModes||{},key)
       );
       if (!option.variantLayers?.[key]?.length && !exactSharedArt) continue;
       return {
         mask:option.variantHoodCutoutMasks?.[key] ?? option.hoodCutoutMask ?? null,
         whiskers:option.variantHoodWhiskerMasks?.[key] ?? option.hoodWhiskerMask ?? null,
+        requestMode:option.variantHoodCutoutRequestModes?.[key] ?? option.hoodCutoutRequestMode ?? null,
         roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] ?? option.hoodTuftRoots),
         maxStretch:Number.isFinite(option.variantHoodTuftMaxStretch?.[key])
           ? option.variantHoodTuftMaxStretch[key] : option.hoodTuftMaxStretch,
@@ -2469,6 +2473,7 @@ function resolveBeardHoodAuthoring(option, fighter) {
     }
   }
   return {mask:option.hoodCutoutMask||null,whiskers:option.hoodWhiskerMask||null,
+    requestMode:option.hoodCutoutRequestMode||null,
     roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[],
     maxStretch:option.hoodTuftMaxStretch,
     subdivision:cutout?.normalizeSubdivision(option.hoodTuftSubdivision),
@@ -2568,7 +2573,9 @@ function portraitOptionFromJson(entry, json) {
   const originalId = (json.appearance && json.appearance.originalId) || null;
   const maskApi = window.PortraitBeardHoodCutout;
   const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null;
-  const hoodWhiskerMask = maskApi?.normalizeMask?.(json.hoodWhiskerMask) || null; // Priority whisker pixels belong to beard cosmetic.
+  const hoodWhiskerMask = maskApi?.normalizeMask?.(json.hoodWhiskerMask) || null;
+  const hoodCutoutRequestMode = json.hoodCutoutRequestMode==='silhouette'?'silhouette':null; // Each beard's own art supplies the automatic request. // Priority whisker pixels belong to beard cosmetic.
+  const variantHoodCutoutRequestModes = {}; // Variant metadata can switch request shape without copying another beard mask.
   const variantHoodWhiskerMasks = {}; // Shared/variant whisker paint is independent from normal requests. // Authored in front-portrait coordinates, independent of beard art tint.
   const hoodTuftRoots = maskApi?.normalizeRoots?.(json.hoodTuftRoots) || []; // Optional inner-ring stretch targets, not extra beard geometry.
   const hoodTuftMaxStretch = json.hoodTuftMaxStretch != null && Number.isFinite(Number(json.hoodTuftMaxStretch))
@@ -2602,6 +2609,7 @@ function portraitOptionFromJson(entry, json) {
     const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
     const whiskers = maskApi?.normalizeMask?.(value?.hoodWhiskerMask);
     if (whiskers) variantHoodWhiskerMasks[key]=whiskers;
+    if (value?.hoodCutoutRequestMode==='silhouette') variantHoodCutoutRequestModes[key]='silhouette';
     if (mask) variantHoodCutoutMasks[key] = mask; // An explicitly empty variant mask clears the shared cutout.
     const allowed = maskApi?.normalizeMask?.(value?.beardCutoutAllowedMask);
     if (allowed) variantBeardCutoutAllowedMasks[key] = allowed;
@@ -2639,7 +2647,8 @@ function portraitOptionFromJson(entry, json) {
     beardCutoutTopUpConeSpread,variantBeardCutoutTopUpConeSpread,
     beardCutoutTopDownConeLength,variantBeardCutoutTopDownConeLength,
     beardCutoutPaintAlphaFloor,variantBeardCutoutPaintAlphaFloor,
-    hoodWhiskerMask,variantHoodWhiskerMasks };
+    hoodWhiskerMask,variantHoodWhiskerMasks,
+    hoodCutoutRequestMode,variantHoodCutoutRequestModes };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
