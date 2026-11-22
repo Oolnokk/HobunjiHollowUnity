@@ -179,6 +179,7 @@
   function releaseVisibleTree(node) {
     const zone = window.GridTileAccessors?.getZoneSceneInfo?.(visibleZone); // Some active scenes have already replaced their original culling array.
     window.FestivalBlossomPetals?.detach?.(node); // Dispose only the tree's own particle positions/material; cached native foliage stays shared.
+    window.ZoneTreeFade?.forget?.(node); // Release native temporary fade materials and active animation references before the tree leaves its culling registry.
     node.parent?.remove?.(node);
     for (const registry of new Set([visibleCullRegistries.get(node), zone?.cullables])) {
       if (!registry) continue;
