@@ -69,7 +69,7 @@ const win = {
   },
   RewardReadout: { enqueue() { assert.fail('Reactions must not enter the reward queue'); } },
   PNGPlaneAvatar: { getPortraitsFlipped: () => portraitsFlipped },
-  AnimalChatheadFrame: { frameForKind: kind => ({ frame: kind === 'pingdort' ? { x: .76, y: .12, width: .18, height: .28 } : { x: .25, y: .18, width: .30, height: .30 } }) }, // Test crops on opposite halves of the animal sprite.
+  AnimalChatheadFrame: { frameForKind: kind => ({ frame: kind === 'skeeri-medium' ? { x: .6611149088541667, y: .24899449865398673, width: .04, height: .04 } : { x: .25, y: .18, width: .30, height: .30 } }) }, // Skeeri's actual authored chathead is on source-right; other creatures use a source-left test crop.
 };
 const context = { // Runs both production modules with the minimal Three/canvas interface.
   window: win, Image: FakeImage, URL, URLSearchParams,
@@ -181,24 +181,25 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   rightHeadAnimal.position.set(2, 0, 0);
   const frontPlane = new Group(); // A rendered card can turn independently of its movement root.
   frontPlane.updateWorldMatrix = () => {};
-  const rightHeadOptions = { creatureKind: 'pingdort', width: 2.1, height: 1.1,
+  const rightHeadOptions = { creatureKind: 'skeeri-medium', width: 2.1, height: 1.1,
     faceWalker: { animalAvatarRef: { group: rightHeadAnimal, frontPlane } }, greeting: true };
   assert.equal(api.reactToDialogue(walker, rightHeadOptions), true);
   await settle();
   now += 200;
-  frontPlane.matrixWorld.elements[0] = -1;
+  frontPlane.matrixWorld.elements[0] = Math.cos(Math.PI / 2 + Math.PI / 2); // Real east-facing animal: front card +90°, group +90°; its back/mirrored card is visible.
   frontPlane.matrixWorld.elements[13] = .4; // The renderer shifts the card up to compensate for authored ground padding.
   step();
-  const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('pingdort').frame;
-  assert.ok(billboard().position.x > projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, 1, 1),
-    'reversed card places the named animal emoji outside the right-hand muzzle, even with an off-center crop');
+  const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('skeeri-medium').frame;
+  assert.ok(rightHeadFrame.x + rightHeadFrame.width / 2 > .5, 'Skeeri genuinely has a source-right head crop');
+  assert.ok(billboard().position.x < projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, 1, -1),
+    'east-facing Skeeri shows the mirrored source-right head on screen-left, so its emoji belongs on screen-left');
   assert.ok(Math.abs(billboard().position.y - (.4 + (0.5 - rightHeadFrame.y - rightHeadFrame.height * .5 + .045) * rightHeadOptions.height)) < 1e-9,
     'animal reaction follows the card’s rendered height after ground padding');
-  const cardOffset = billboard().position.x - rightHeadAnimal.position.x; // Root orientation stays fixed during this billboard turn.
-  frontPlane.matrixWorld.elements[0] = 1;
+  const cardOffset = billboard().position.x - rightHeadAnimal.position.x; // Root orientation stays fixed during the card's independently animated turn.
+  frontPlane.matrixWorld.elements[0] = Math.cos(-Math.PI / 2 + Math.PI / 2); // Real west-facing animal: front card +90°, group -90°, so the source art is shown unmirrored.
   step();
-  assert.ok(billboard().position.x < projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, -1, -1),
-    'source-facing named animal puts its emoji outside the left-hand muzzle after reversing');
+  assert.ok(billboard().position.x > projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, -1, 1),
+    'west-facing Skeeri shows the original right-hand head on screen-right, so its emoji belongs on screen-right');
   assert.ok(Math.abs(billboard().position.x - (rightHeadAnimal.position.x - cardOffset)) < 1e-9,
     'named animal emoji mirrors around its avatar group using the rendered card direction');
   now += 700;

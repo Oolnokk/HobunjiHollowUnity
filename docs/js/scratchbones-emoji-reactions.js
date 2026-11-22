@@ -159,10 +159,11 @@
     const frame = window.AnimalChatheadFrame?.frameForKind?.(creatureKind)?.frame
       || { x: .32, y: .12, width: .36, height: .36 }; // Sprite-normalized top-left fallback for species without a loaded chathead profile.
     const headCenterY = frame.y + frame.height * .5; // Places the reaction at the head's vertical center in the centered animal card.
-    const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space center, shared by both mirrored animal faces.
+    const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space head center, retained across both mirrored animal faces.
+    const sourceSide = headCenterX > 0 ? 1 : -1; // The authored crop locates the head at either source edge (Skeeri is on the right); the popup uses this to avoid the rump.
     const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the near edge of the head crop.
     return { height: (.5 - headCenterY) * modelHeight + modelHeight * .045,
-      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap, avatarRef } };
+      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap, sourceSide, avatarRef } };
   }
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
@@ -222,7 +223,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
-      latestChange: 'NPC reactions sit outside the mirrored portrait face; animal reactions sit outside the visible muzzle and follow both facing directions.' };
+      latestChange: 'NPC emojis mirror with portraits; animal emojis follow the real head side of each species crop, including right-headed Skeeri, and turn with the card.' };
   }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;

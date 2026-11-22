@@ -541,9 +541,10 @@
       const signedWidth = Number.isFinite(axisProjection) ? axisProjection : 0; // Zero-width cards retain the last side until the other face becomes visible.
       const headCenterScreenX = head.centerX * head.width * signedWidth; // Places the crop center relative to the animal root along the projected sprite width.
       const headHalfScreenWidth = head.halfWidth * head.width * Math.abs(signedWidth); // Head crop always extends equally left and right of its projected center.
-      if (Math.abs(signedWidth) > 1e-6) event.animalSide = signedWidth > 0 ? -1 : 1; // The authored animal faces source-left; put the reaction outside that edge, not on the rump side.
+      const sourceSide = head.sourceSide === 1 ? 1 : -1; // Source-space head location comes from the authored species crop, not a fixed all-animals-face-left rule.
+      if (Math.abs(signedWidth) > 1e-6) event.animalSide = signedWidth * sourceSide < 0 ? -1 : 1; // Mirror the crop's actual outward edge into camera space; edge-on cards retain their last side.
       sideOffset = headCenterScreenX + event.animalSide * (headHalfScreenWidth + head.gap * scaleX);
-      mirror = -event.animalSide; // Preserve leftward animation travel beside the visible animal muzzle; reverse it with the facing.
+      mirror = -event.animalSide; // Play emoji motion outward from whichever side holds this species' visible head.
     }
     plane.position.addScaledVector(cameraRight, sideOffset); // Horizontal displacement remains in screen space rather than world X.
     plane.quaternion.copy(camera.quaternion);
