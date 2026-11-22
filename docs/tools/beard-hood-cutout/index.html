@@ -86,6 +86,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     </div>
     <label class="check"><input id="showHood" type="checkbox" checked> Ghost the hood over the painting surface</label>
     <label class="check"><input id="showHead" type="checkbox" checked> Show approximate head reference</label>
+    <label class="check"><input id="showBeardGhost" type="checkbox" checked> Show translucent beard while painting hood permissions</label>
   </section>
   <section>
     <h2>Optional local art</h2>
@@ -472,6 +473,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(hoodPaint){
       if($('showHead').checked){painter.globalAlpha=.24;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
       painter.drawImage(hoodCanvas,0,0); // Permissions authored on original hood coordinates, then warped with the hood in-game.
+      if($('showBeardGhost').checked){
+        painter.save();painter.globalAlpha=.35;painter.drawImage(beardCanvas,0,0);painter.restore();
+      }
       painter.drawImage(permissionOverlay,0,0);
     }else{
       if($('showHead').checked){painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
@@ -536,10 +540,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       : mask;
     const changed=Cut.paintMask(current,hoodMode?hoodPixels:beardPixels,
       next.x,next.y,Number($('brush').value),mode==='erase'||mode==='hoodProtect',
-      drag.last,hoodMode?8:selectedAlphaFloor());
-    // Null means legacy all removable. A first hood brush stroke is a real
-    // policy transition even if no additional alpha-eligible pixel was hit.
-    if(hoodMode&&hoodAllowanceMask===null || JSON.stringify(current)!==JSON.stringify(changed)){
+      drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode);
+    // A transparent click must NOT silently convert a legacy permissive hood
+    // into a protect-all policy. Enter an explicit mask only after a real stroke.
+    if(JSON.stringify(current)!==JSON.stringify(changed)){
       if(!drag.changed){pushUndo();drag.changed=true;}
       if(hoodMode)hoodAllowanceMask=changed;
       else mask=changed;
@@ -623,7 +627,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   $('clearRoots').onclick=()=>{
     if(!roots.length)return;pushUndo();roots=[];remember();render();
   };
-  $('showHead').onchange=render;$('showHood').onchange=render;
+  $('showHead').onchange=render;$('showHood').onchange=render;$('showBeardGhost').onchange=render;
   async function refreshDoc(which){
     const selection=$(which).value,entry=catalog.find(item=>item.id===selection);
     if(!entry)return;
