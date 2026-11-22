@@ -380,7 +380,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
   }
 
   function syncSpineGuides() {
-    for (const entry of entries) entry.spineGuide?.sync(showSpineGuides && entry === selected); // Only selected avatar gets overlay, even while the lineup streams in.
+    for (const entry of entries) {
+      if (entry === selected || !entry.spineGuide) continue;
+      entry.spineGuide.dispose(); // Only one selected live guide consumes debug geometry on mobile.
+      entry.spineGuide = null;
+    }
+    if (showSpineGuides && selected && !selected.spineGuide && THREE) {
+      selected.spineGuide = window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, selected.model.userData.neckRig) || null; // Lazily bind the real seven-node gameplay spline to the selected skinned avatar.
+    }
+    selected?.spineGuide?.sync(showSpineGuides); // Head-scale and hunch sliders update the existing selected guide without building new textures.
   }
 
   function syncLongoranKyphosisAvailability() {
@@ -758,8 +766,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
-    const spineGuide = window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, model.userData.neckRig) || null; // Reuses the runtime spine's own seven live bones, not an authored approximation.
-    const entry = { ...rep, group, model, feet, spineGuide, profile: rigProfile, avatarProfile: avatar.profile };
+    const entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile }; // Preview does not allocate the diagnostic guide until this avatar is selected.
     if (rep.species === 'longoran') refreshLongoranSpine(entry); // Gameplay-static back curvature is visible on the initial lineup, not only after touching a slider.
     return entry;
   }
@@ -1070,11 +1077,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
         spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
-        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible, nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0 }, // Mobile-readable proof of the seven live bone positions and current overlay state. // Detects missing skinned rigs without devtools.
+        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible, nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0 }, // Mobile-readable overlay and rig availability without DevTools.
         gait: selected?.species === 'longoran' ? selected.feet?.getStandingPoseDebug?.()?.gait || null : null, // Exposes actual Maskbound gait state in the preview.
         portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
         portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
-        latestChange: 'Longoran spine hunch/kyphosis is visible above body scales without nested clipping; arm length offset remains in Rig Coordinates.',
+        latestChange: 'Full Character Scale now shows the live seven-node spine and recomputed scaled-head neck attachment; Longoran hunch follows head-scale adjustment.',
       }),
     });
     return true;
