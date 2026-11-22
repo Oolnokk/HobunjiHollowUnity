@@ -21,6 +21,7 @@
   const recoveryAxis = new THREE.Vector3(1, 0, 0); // Used by recovery rolls; dodge direction blends X/Z while prone recovery keeps +X.
   const tumbleAxis = new THREE.Vector3(1, 0, 0); // Reused by player prone-hit flips without per-frame vector allocation.
   const tumbleRotation = new THREE.Quaternion(); // Reused by updateTumble; the recorded prone tail stays the neutral starting/ending pose.
+  const tumbleBaseRotation = new THREE.Quaternion(); // Reused by player/creature tumble sampling so this animation allocates no frame-local quaternion.
   const playback = {
     active: false,
     holding: false,
@@ -417,8 +418,8 @@
       const t = Math.min(1, state.elapsedS / state.tumbleDurationS);
       const tail = state.clip.frames[state.clip.frames.length - 1];
       const body = tail.ragdoll.body;
-      tumbleRotation.setFromAxisAngle(state.tumbleAxis, t * Math.PI * 2).multiply(
-        new THREE.Quaternion(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w));
+      tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
+      tumbleRotation.setFromAxisAngle(state.tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
       state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(tumbleRotation).multiply(CREATURE_BASIS_INVERSE);
       state.pivot.position.y = (body.localPosition.y - state.baseBodyY + Math.sin(t * Math.PI) * 0.3) * state.heightScale;
       state.poseSession?.stamp();
@@ -524,8 +525,8 @@
     const t = Math.min(1, playback.elapsedS / playback.tumbleDurationS);
     const tail = playback.clip.frames[playback.clip.frames.length - 1];
     const body = tail.ragdoll.body;
-    tumbleRotation.setFromAxisAngle(tumbleAxis, t * Math.PI * 2)
-      .multiply(new THREE.Quaternion(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w));
+    tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
+    tumbleRotation.setFromAxisAngle(tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
     publishBodyPose(tumbleRotation, body.localPosition.y - baseBodyY + Math.sin(t * Math.PI) * 0.3);
     if (t >= 1) {
       if (window.Combat?.deps?.player?.prone) {
