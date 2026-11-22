@@ -28,7 +28,7 @@
   const DESCEND_ACTIVE_S = 0.42; // Going down is one leap, like the player's jump-down.
   const FOLLOW_DROP_NEAR_TILES = 5; // Only mirror a nearby owner's descent, not a distant cliff shortcut.
   const FOLLOW_DROP_LANDING_TILES = 3.5; // The landing must be on the owner's reachable lower shelf.
-  const UNSAFE_DROP_TILES = new Set(['river', 'stream', 'trench', 'water', 'lava', 'void', 'pit', 'chasm', 'abyss']); // Never auto-jump into a hazard.
+  const ESCAPE_STATES = new Set(['herd-panic', 'fleeing-low-health', 'flee', 'fleeing']); // Shared panic/retreat states allowed to leap down without a lower target.
   const FALL_S = 0.38;
   const MAX_WALL_TILES = 4;
   const TRIGGER_PROBE_TILES = 0.6; // How close to the wall's foot the creature must be.
@@ -37,7 +37,7 @@
   const FALL_FOOTING = 47.5;
   const FALL_HEALTH_MAX = 3;
 
-  const debug = { started: 0, completed: 0, knockedOff: 0, lastEvent: null };
+  const debug = { started: 0, completed: 0, knockedOff: 0, intentionalDrops: 0, lastEvent: null };
 
   function grid() { return deps?.getActiveGrid?.() || null; }
   function tileAtPx(g, x, y) { return g?.[Math.floor(y / deps.TILE)]?.[Math.floor(x / deps.TILE)] || null; }
@@ -103,7 +103,7 @@
     return null;
   }
 
-  function beginClimb(c, wall) {
+  function beginClimb(c, wall, intentionalDrop = false) {
     const area = deps.getCurrentArea();
     const descending = wall.landTier < wall.startTier;
     const surfaceStartY = deps.tileSurfaceYInArea(wall.startTile, area);
@@ -119,11 +119,13 @@
       surfaceStartY, surfaceEndY, surfaceY: surfaceStartY,
       originX: c.x, originY: c.y, originSurfaceY: surfaceStartY,
       descending,
+      intentionalDrop, // Landing applies the shared deliberate-fall rules only for a chosen shortcut.
     };
     c.vx = 0; c.vy = 0;
     c.facing = Math.atan2(wall.dir.y, wall.dir.x);
-    c.state = 'chase';
+    // Never overwrite flee, herd panic, return or companion states just to animate a jump.
     debug.started++;
+    if (intentionalDrop) debug.intentionalDrops++;
     debug.lastEvent = `${c.id || c.creatureKey} ${descending ? 'leaping down' : 'climbing'} toward tier ${wall.landTier}`;
     window.__farmLog?.(`[climb] ${c.creatureKey || 'hostile'} ${descending ? 'leaps down' : 'climbs'} a cliff after its target`, 'wildlife');
   }
@@ -170,6 +172,10 @@
       window.ResourceSystem?.spendFooting?.(c, FALL_FOOTING, 'fell from cliff');
       c._cliffClimbCooldownT = RETRY_COOLDOWN_S;
     } else {
+      if (climb.intentionalDrop) window.FallSystem?.land?.(c, {
+        dropWorld: Math.max(0, climb.surfaceStartY - climb.surfaceEndY),
+        deliberate: true, source: 'intentional cliff descent',
+      }); // Use the same Footing calculation as the player's deliberate jump-down.
       debug.completed++;
       c._cliffClimbCooldownT = 0.6;
     }
@@ -332,49 +338,42 @@
   // instead of first circling back to the network's designated climb handhold.
   // This is an optional short descent only: distant/blocked landings still use
   // the established CliffRouteNetwork paths, never a blind vertical snap.
+  function planLedgeDrop(c, goalX, goalY, network, options = {}) {
+    const area = deps.getCurrentArea(), tileSize = deps.TILE; // Both coordinate systems share the same route network.
+    return window.CliffRouteNetwork?.findIntentionalDrop?.(network, grid(),
+      c.x / tileSize, c.y / tileSize, goalX / tileSize, goalY / tileSize, {
+        ...options,
+        isBoundary,
+        isSolid: deps.isSolid,
+        canLand: (col, row, x, z) => deps.creatureCanEnterTile(c.def,
+          x * tileSize, z * tileSize, NaN, NaN, c, true),
+      });
+  }
+
+  function startLedgeDrop(c, drop) {
+    beginClimb(c, drop, true); // Existing animated cliff descent owns position and surface height.
+    advance(c, 0);
+    return true;
+  }
+
   function tryCompanionLedgeDrop(c, goalX, goalY, network) {
     if (!c.isCompanion || c.banditCompanion || (c.stableRole && c.stableRole !== 'companion') ||
-        !c._followOwnerDownCliff || !network || !window.CliffRouteNetwork?.componentAt) return false;
-    const follow = c._companionGroundFollow; // Only the current *owner-follow* destination may trigger a direct drop.
+        !c._followOwnerDownCliff) return false;
+    const follow = c._companionGroundFollow; // Only current owner-follow intent can commit this special leap.
     if (!follow || Math.abs(Number(follow.destinationX) - goalX) > 1 ||
         Math.abs(Number(follow.destinationY) - goalY) > 1) return false;
-    const active = grid(), tile = deps.TILE; // Reuses the current exterior terrain and pixel tile size.
-    if (!Number.isFinite(tile) || tile <= 0) return false;
-    const originCol = Math.floor(c.x / tile), originRow = Math.floor(c.y / tile);
-    const ownerCol = Math.floor(goalX / tile), ownerRow = Math.floor(goalY / tile);
-    const origin = active?.[originRow]?.[originCol], ownerGround = active?.[ownerRow]?.[ownerCol];
-    if (!origin || !ownerGround || origin.incline || ownerGround.incline ||
-        Math.hypot(goalX - c.x, goalY - c.y) > tile * FOLLOW_DROP_NEAR_TILES) return false;
-    const startTier = Number(origin.elevTier) || 0, goalTier = Number(ownerGround.elevTier) || 0;
-    if (startTier <= goalTier) return false;
-    const sourceComponent = window.CliffRouteNetwork.componentAt(network, originCol, originRow); // Only valid walkable upper shelves can launch a leap.
-    const goalComponent = window.CliffRouteNetwork.componentAt(network, ownerCol, ownerRow);
-    if (sourceComponent < 0 || goalComponent < 0 || sourceComponent === goalComponent) return false;
-    const towardX = goalX - c.x, towardY = goalY - c.y;
-    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
-      .sort((a, b) => b.x * towardX + b.y * towardY - a.x * towardX - a.y * towardY);
-    for (const dir of dirs) {
-      for (let step = 1; step <= MAX_WALL_TILES; step++) {
-        const col = originCol + dir.x * step, row = originRow + dir.y * step;
-        const landing = active?.[row]?.[col];
-        if (!landing || isBoundary(landing)) break;
-        if (landing.incline) continue; // Terrain may paint multiple cliff-face wall tiles.
-        const endTier = Number(landing.elevTier) || 0;
-        const x = (col + 0.5) * tile, y = (row + 0.5) * tile;
-        if (endTier >= startTier || endTier < goalTier ||
-            deps.isSolid(landing.type) || UNSAFE_DROP_TILES.has(String(landing.type).toLowerCase()) ||
-            (Number(landing.water) || 0) >= 0.003) break; // Dynamic flooded landings are hazards too.
-        if (window.CliffRouteNetwork.componentAt(network, col, row) !== goalComponent ||
-            Math.hypot(goalX - x, goalY - y) > tile * FOLLOW_DROP_LANDING_TILES ||
-            Math.hypot(goalX - x, goalY - y) >= Math.hypot(goalX - c.x, goalY - c.y) ||
-            !deps.creatureCanEnterTile(c.def, x, y, NaN, NaN, c, true)) break;
-        beginClimb(c, { dir, landCol: col, landRow: row, startTier, landTier: endTier,
-          wallTiles: step - 1, startTile: origin, landTile: landing });
-        advance(c, 0); // The existing animated drop owns position and sprite height until landing.
-        return true;
-      }
-    }
-    return false;
+    const drop = planLedgeDrop(c, goalX, goalY, network, {
+      maxGoalDistance: FOLLOW_DROP_NEAR_TILES,
+      maxLandingDistance: FOLLOW_DROP_LANDING_TILES,
+    });
+    return drop ? startLedgeDrop(c, drop) : false;
+  }
+
+  function tryIntentionalLedgeDrop(c, goalX, goalY, network) {
+    if (c._cliffClimbCooldownT > 0 || c._branchDefense ||
+        window.Combat?.animalAttacks?.isBusy?.(c)) return false;
+    const drop = planLedgeDrop(c, goalX, goalY, network, { escape: ESCAPE_STATES.has(c.state) });
+    return drop ? startLedgeDrop(c, drop) : false;
   }
 
   // Used both by chasing enemies and the shared moveCreatureToward choke
@@ -394,6 +393,7 @@
     const net = networkForCurrentArea();
     if (!net) return false;
     if (tryCompanionLedgeDrop(c, goalX, goalY, net)) return true; // Mirrored falls outrank the longer return-to-climb route.
+    if (tryIntentionalLedgeDrop(c, goalX, goalY, net)) return true; // Wildlife also chooses safe downhill shortcuts during travel or escape.
     const fromC = Math.floor(c.x / deps.TILE), fromR = Math.floor(c.y / deps.TILE);
     const goalC = Math.floor(goalX / deps.TILE), goalR = Math.floor(goalY / deps.TILE);
     const edge = window.CliffRouteNetwork.toward(net, fromC, fromR, goalC, goalR);
@@ -412,6 +412,7 @@
     knockOff,
     isClimbing: c => !!c?._cliffClimb,
     tryCompanionLedgeDrop, // Exposed for deterministic regression tests and mobile diagnostics.
+    tryIntentionalLedgeDrop,
     get debug() { return { ...debug, ...entryDebug }; },
   };
 })();
