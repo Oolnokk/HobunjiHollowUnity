@@ -164,6 +164,12 @@
       },
       announceAfterDays: 3 * DAYS_PER_MONTH,
       birthAfterDays: 4 * DAYS_PER_MONTH, // Pregnancy/egg lasts one month after the three-month announcement.
+      babyAmbientNoises: [ // Player's newborn: short phonetic utterances only; no adult dialogue until the toddler stage.
+        'Agoo!', 'Guh-buh!', 'Baba-ba!', 'Ahh-oo!', 'Mmm? Buh!', 'Gah-gah!', 'Ooh-ah!', 'Brrr-buh!', 'Eeeh!', 'Nuh-nuh!'
+      ],
+      toddlerAmbientGreetings: [ // First intelligible fragments begin when the baby leaves the basket phase.
+        'Da! Da!', 'Up! Up!', 'Hiya!', 'Look!', 'Me too!', 'Ta-da!'
+      ],
       basketDays: 1 * DAYS_PER_MONTH,
       toddlingDays: 5 * DAYS_PER_MONTH, // Toddling Footing eases 99 → 0 over this span after leaving the basket.
       independentAfterDays: 6 * DAYS_PER_MONTH, // Basket month + five toddler months, then village-child phase.
