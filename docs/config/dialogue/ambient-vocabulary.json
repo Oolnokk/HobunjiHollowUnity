@@ -1,0 +1,856 @@
+{
+  "schema": "hobunji_ambient_vocabulary.v1",
+  "description": "One-shot, editable vocabulary replacements for character-owned floating dialogue only. Ordinary Talk, cutscenes, player progression and system popups remain unchanged.",
+  "enabled": true,
+  "lexicon": {
+    "lovely": [
+      {
+        "text": "nice",
+        "verbosity": 20,
+        "color": 35,
+        "formality": 20
+      },
+      {
+        "text": "delightful",
+        "verbosity": 65,
+        "color": 75,
+        "formality": 70
+      },
+      {
+        "text": "splendid",
+        "verbosity": 65,
+        "color": 65,
+        "formality": 85
+      },
+      {
+        "text": "enchanting",
+        "verbosity": 85,
+        "color": 100,
+        "formality": 70
+      }
+    ],
+    "wonderful": [
+      {
+        "text": "great",
+        "verbosity": 20,
+        "color": 45,
+        "formality": 30
+      },
+      {
+        "text": "marvelous",
+        "verbosity": 70,
+        "color": 80,
+        "formality": 75
+      },
+      {
+        "text": "splendid",
+        "verbosity": 65,
+        "color": 70,
+        "formality": 85
+      },
+      {
+        "text": "magnificent",
+        "verbosity": 90,
+        "color": 100,
+        "formality": 90
+      }
+    ],
+    "beautiful": [
+      {
+        "text": "pretty",
+        "verbosity": 25,
+        "color": 65,
+        "formality": 25
+      },
+      {
+        "text": "lovely",
+        "verbosity": 45,
+        "color": 70,
+        "formality": 55
+      },
+      {
+        "text": "exquisite",
+        "verbosity": 80,
+        "color": 75,
+        "formality": 90
+      },
+      {
+        "text": "resplendent",
+        "verbosity": 95,
+        "color": 100,
+        "formality": 85
+      }
+    ],
+    "pleasant": [
+      {
+        "text": "nice",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 20
+      },
+      {
+        "text": "agreeable",
+        "verbosity": 60,
+        "color": 25,
+        "formality": 75
+      },
+      {
+        "text": "delightful",
+        "verbosity": 65,
+        "color": 80,
+        "formality": 65
+      }
+    ],
+    "happy": [
+      {
+        "text": "glad",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 30
+      },
+      {
+        "text": "cheerful",
+        "verbosity": 40,
+        "color": 60,
+        "formality": 40
+      },
+      {
+        "text": "delighted",
+        "verbosity": 65,
+        "color": 75,
+        "formality": 65
+      },
+      {
+        "text": "overjoyed",
+        "verbosity": 80,
+        "color": 95,
+        "formality": 55
+      }
+    ],
+    "strange": [
+      {
+        "text": "odd",
+        "verbosity": 15,
+        "color": 45,
+        "formality": 20
+      },
+      {
+        "text": "peculiar",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 60
+      },
+      {
+        "text": "unusual",
+        "verbosity": 55,
+        "color": 15,
+        "formality": 65
+      },
+      {
+        "text": "bizarre",
+        "verbosity": 75,
+        "color": 90,
+        "formality": 55
+      }
+    ],
+    "small": [
+      {
+        "text": "little",
+        "verbosity": 20,
+        "color": 45,
+        "formality": 25
+      },
+      {
+        "text": "tiny",
+        "verbosity": 30,
+        "color": 75,
+        "formality": 30
+      },
+      {
+        "text": "compact",
+        "verbosity": 50,
+        "color": 0,
+        "formality": 70
+      },
+      {
+        "text": "diminutive",
+        "verbosity": 90,
+        "color": 60,
+        "formality": 85
+      }
+    ],
+    "large": [
+      {
+        "text": "big",
+        "verbosity": 15,
+        "color": 40,
+        "formality": 20
+      },
+      {
+        "text": "sizeable",
+        "verbosity": 55,
+        "color": 25,
+        "formality": 55
+      },
+      {
+        "text": "substantial",
+        "verbosity": 70,
+        "color": 10,
+        "formality": 80
+      },
+      {
+        "text": "enormous",
+        "verbosity": 75,
+        "color": 85,
+        "formality": 55
+      }
+    ],
+    "quickly": [
+      {
+        "text": "fast",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 15
+      },
+      {
+        "text": "swiftly",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 70
+      },
+      {
+        "text": "rapidly",
+        "verbosity": 70,
+        "color": 5,
+        "formality": 75
+      },
+      {
+        "text": "with all haste",
+        "verbosity": 95,
+        "color": 85,
+        "formality": 90
+      }
+    ],
+    "careful": [
+      {
+        "text": "cautious",
+        "verbosity": 50,
+        "color": 15,
+        "formality": 60
+      },
+      {
+        "text": "mindful",
+        "verbosity": 55,
+        "color": 40,
+        "formality": 60
+      },
+      {
+        "text": "vigilant",
+        "verbosity": 75,
+        "color": 30,
+        "formality": 85
+      }
+    ],
+    "tired": [
+      {
+        "text": "worn out",
+        "verbosity": 30,
+        "color": 70,
+        "formality": 20
+      },
+      {
+        "text": "weary",
+        "verbosity": 60,
+        "color": 80,
+        "formality": 75
+      },
+      {
+        "text": "fatigued",
+        "verbosity": 75,
+        "color": 0,
+        "formality": 85
+      }
+    ],
+    "angry": [
+      {
+        "text": "upset",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 25
+      },
+      {
+        "text": "cross",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 60
+      },
+      {
+        "text": "furious",
+        "verbosity": 65,
+        "color": 80,
+        "formality": 55
+      },
+      {
+        "text": "incensed",
+        "verbosity": 85,
+        "color": 40,
+        "formality": 85
+      }
+    ],
+    "afraid": [
+      {
+        "text": "scared",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 25
+      },
+      {
+        "text": "fearful",
+        "verbosity": 55,
+        "color": 40,
+        "formality": 65
+      },
+      {
+        "text": "frightened",
+        "verbosity": 60,
+        "color": 60,
+        "formality": 60
+      },
+      {
+        "text": "apprehensive",
+        "verbosity": 85,
+        "color": 5,
+        "formality": 85
+      }
+    ],
+    "dangerous": [
+      {
+        "text": "risky",
+        "verbosity": 25,
+        "color": 25,
+        "formality": 25
+      },
+      {
+        "text": "unsafe",
+        "verbosity": 35,
+        "color": 5,
+        "formality": 55
+      },
+      {
+        "text": "perilous",
+        "verbosity": 75,
+        "color": 85,
+        "formality": 70
+      },
+      {
+        "text": "hazardous",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85
+      }
+    ],
+    "amazing": [
+      {
+        "text": "great",
+        "verbosity": 15,
+        "color": 45,
+        "formality": 25
+      },
+      {
+        "text": "remarkable",
+        "verbosity": 70,
+        "color": 30,
+        "formality": 80
+      },
+      {
+        "text": "astonishing",
+        "verbosity": 75,
+        "color": 75,
+        "formality": 75
+      },
+      {
+        "text": "extraordinary",
+        "verbosity": 90,
+        "color": 60,
+        "formality": 90
+      }
+    ],
+    "good to see you": [
+      {
+        "text": "glad to see you",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 20
+      },
+      {
+        "text": "happy to see you",
+        "verbosity": 25,
+        "color": 50,
+        "formality": 30
+      },
+      {
+        "text": "a pleasure to see you",
+        "verbosity": 70,
+        "color": 45,
+        "formality": 85
+      },
+      {
+        "text": "what a delight to see you",
+        "verbosity": 85,
+        "color": 95,
+        "formality": 80
+      }
+    ],
+    "gladly": [
+      {
+        "text": "sure",
+        "verbosity": 10,
+        "color": 30,
+        "formality": 20
+      },
+      {
+        "text": "of course",
+        "verbosity": 35,
+        "color": 30,
+        "formality": 55
+      },
+      {
+        "text": "with pleasure",
+        "verbosity": 65,
+        "color": 65,
+        "formality": 75
+      },
+      {
+        "text": "I'd be delighted",
+        "verbosity": 85,
+        "color": 80,
+        "formality": 80
+      }
+    ],
+    "perhaps": [
+      {
+        "text": "maybe",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 20
+      },
+      {
+        "text": "possibly",
+        "verbosity": 50,
+        "color": 5,
+        "formality": 65
+      },
+      {
+        "text": "perchance",
+        "verbosity": 80,
+        "color": 95,
+        "formality": 85
+      }
+    ],
+    "maybe": [
+      {
+        "text": "perhaps",
+        "verbosity": 55,
+        "color": 50,
+        "formality": 70
+      },
+      {
+        "text": "possibly",
+        "verbosity": 55,
+        "color": 10,
+        "formality": 70
+      },
+      {
+        "text": "conceivably",
+        "verbosity": 85,
+        "color": 5,
+        "formality": 90
+      }
+    ],
+    "certainly": [
+      {
+        "text": "sure",
+        "verbosity": 15,
+        "color": 30,
+        "formality": 20
+      },
+      {
+        "text": "absolutely",
+        "verbosity": 50,
+        "color": 60,
+        "formality": 35
+      },
+      {
+        "text": "without question",
+        "verbosity": 85,
+        "color": 40,
+        "formality": 85
+      }
+    ],
+    "not right now": [
+      {
+        "text": "not at the moment",
+        "verbosity": 40,
+        "color": 15,
+        "formality": 60
+      },
+      {
+        "text": "maybe later",
+        "verbosity": 25,
+        "color": 40,
+        "formality": 20
+      },
+      {
+        "text": "not just now",
+        "verbosity": 35,
+        "color": 35,
+        "formality": 50
+      },
+      {
+        "text": "perhaps another time",
+        "verbosity": 80,
+        "color": 55,
+        "formality": 85
+      }
+    ],
+    "not today": [
+      {
+        "text": "not this day",
+        "verbosity": 50,
+        "color": 70,
+        "formality": 70
+      },
+      {
+        "text": "perhaps tomorrow",
+        "verbosity": 65,
+        "color": 55,
+        "formality": 75
+      }
+    ],
+    "thank you": [
+      {
+        "text": "thanks",
+        "verbosity": 15,
+        "color": 35,
+        "formality": 20
+      },
+      {
+        "text": "many thanks",
+        "verbosity": 55,
+        "color": 45,
+        "formality": 65
+      },
+      {
+        "text": "thank you kindly",
+        "verbosity": 65,
+        "color": 70,
+        "formality": 70
+      }
+    ],
+    "welcome": [
+      {
+        "text": "greetings",
+        "verbosity": 50,
+        "color": 30,
+        "formality": 75
+      },
+      {
+        "text": "well met",
+        "verbosity": 65,
+        "color": 80,
+        "formality": 85
+      }
+    ],
+    "friend": [
+      {
+        "text": "pal",
+        "verbosity": 15,
+        "color": 65,
+        "formality": 20
+      },
+      {
+        "text": "companion",
+        "verbosity": 65,
+        "color": 25,
+        "formality": 65
+      },
+      {
+        "text": "comrade",
+        "verbosity": 65,
+        "color": 45,
+        "formality": 65
+      }
+    ],
+    "friends": [
+      {
+        "text": "pals",
+        "verbosity": 15,
+        "color": 65,
+        "formality": 20
+      },
+      {
+        "text": "companions",
+        "verbosity": 65,
+        "color": 25,
+        "formality": 65
+      },
+      {
+        "text": "comrades",
+        "verbosity": 65,
+        "color": 45,
+        "formality": 65
+      }
+    ],
+    "song": [
+      {
+        "text": "tune",
+        "verbosity": 20,
+        "color": 60,
+        "formality": 20
+      },
+      {
+        "text": "melody",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 55
+      },
+      {
+        "text": "composition",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85
+      }
+    ],
+    "tune": [
+      {
+        "text": "song",
+        "verbosity": 20,
+        "color": 60,
+        "formality": 20
+      },
+      {
+        "text": "melody",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 55
+      },
+      {
+        "text": "composition",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85
+      }
+    ],
+    "music": [
+      {
+        "text": "melodies",
+        "verbosity": 50,
+        "color": 75,
+        "formality": 50
+      },
+      {
+        "text": "musical performance",
+        "verbosity": 85,
+        "color": 0,
+        "formality": 90
+      }
+    ],
+    "rainfall": [
+      {
+        "text": "rain",
+        "verbosity": 15,
+        "color": 55,
+        "formality": 20
+      },
+      {
+        "text": "precipitation",
+        "verbosity": 85,
+        "color": 0,
+        "formality": 90
+      },
+      {
+        "text": "showers",
+        "verbosity": 45,
+        "color": 65,
+        "formality": 50
+      }
+    ],
+    "weather": [
+      {
+        "text": "conditions",
+        "verbosity": 45,
+        "color": 5,
+        "formality": 65
+      },
+      {
+        "text": "the elements",
+        "verbosity": 70,
+        "color": 85,
+        "formality": 75
+      }
+    ],
+    "interesting": [
+      {
+        "text": "curious",
+        "verbosity": 50,
+        "color": 60,
+        "formality": 55
+      },
+      {
+        "text": "intriguing",
+        "verbosity": 75,
+        "color": 50,
+        "formality": 80
+      },
+      {
+        "text": "fascinating",
+        "verbosity": 80,
+        "color": 80,
+        "formality": 75
+      }
+    ],
+    "important": [
+      {
+        "text": "big",
+        "verbosity": 20,
+        "color": 45,
+        "formality": 15
+      },
+      {
+        "text": "significant",
+        "verbosity": 65,
+        "color": 0,
+        "formality": 80
+      },
+      {
+        "text": "momentous",
+        "verbosity": 85,
+        "color": 85,
+        "formality": 80
+      }
+    ],
+    "quiet": [
+      {
+        "text": "still",
+        "verbosity": 20,
+        "color": 60,
+        "formality": 30
+      },
+      {
+        "text": "peaceful",
+        "verbosity": 50,
+        "color": 75,
+        "formality": 55
+      },
+      {
+        "text": "tranquil",
+        "verbosity": 75,
+        "color": 85,
+        "formality": 80
+      }
+    ],
+    "loud": [
+      {
+        "text": "noisy",
+        "verbosity": 25,
+        "color": 40,
+        "formality": 20
+      },
+      {
+        "text": "boisterous",
+        "verbosity": 65,
+        "color": 85,
+        "formality": 55
+      },
+      {
+        "text": "deafening",
+        "verbosity": 80,
+        "color": 85,
+        "formality": 55
+      }
+    ],
+    "terrible": [
+      {
+        "text": "awful",
+        "verbosity": 20,
+        "color": 50,
+        "formality": 25
+      },
+      {
+        "text": "dreadful",
+        "verbosity": 60,
+        "color": 75,
+        "formality": 65
+      },
+      {
+        "text": "horrendous",
+        "verbosity": 85,
+        "color": 65,
+        "formality": 80
+      }
+    ]
+  },
+  "families": {
+    "neighborly": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 45,
+        "formality": 45,
+        "breadth": 65,
+        "variety": 50,
+        "frequency": 35
+      }
+    },
+    "playful": {
+      "sliders": {
+        "verbosity": 65,
+        "color": 90,
+        "formality": 20,
+        "breadth": 80,
+        "variety": 85,
+        "frequency": 65
+      }
+    },
+    "reserved": {
+      "sliders": {
+        "verbosity": 15,
+        "color": 25,
+        "formality": 45,
+        "breadth": 30,
+        "variety": 20,
+        "frequency": 30
+      }
+    },
+    "proper": {
+      "sliders": {
+        "verbosity": 75,
+        "color": 35,
+        "formality": 92,
+        "breadth": 85,
+        "variety": 45,
+        "frequency": 60
+      }
+    },
+    "stern": {
+      "sliders": {
+        "verbosity": 20,
+        "color": 15,
+        "formality": 65,
+        "breadth": 40,
+        "variety": 20,
+        "frequency": 40
+      }
+    },
+    "child": {
+      "sliders": {
+        "verbosity": 20,
+        "color": 75,
+        "formality": 15,
+        "breadth": 50,
+        "variety": 85,
+        "frequency": 45
+      }
+    }
+  },
+  "characters": {}
+}
