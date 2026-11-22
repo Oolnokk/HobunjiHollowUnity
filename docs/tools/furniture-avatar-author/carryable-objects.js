@@ -65,6 +65,7 @@
     '<div class="g2"><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
+    '<p class="muted">Important: the header Download JSON exports FURNITURE ONLY. Use Export baby profile JSON above to keep or share your baby pose. Apply baby grips saves a separate local gameplay override.</p>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
     '<p class="muted">In baby mode, Rotate Baby turns the visible infant around its posterior-relative mount, while the adult stays fixed. Pitch/Yaw/Roll then describe the baby directly. Select Held anchor or Back-carry anchor to edit their mounts. Purple marks the adult posterior; cyan is the mount. Hand grip guides follow the infant art.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
