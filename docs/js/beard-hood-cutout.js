@@ -276,6 +276,18 @@
     }catch(error){return {...empty,error:String(error?.message||error)};}
   }
 
+  function deformHoodPermissionMask(allowanceMask, hoodMoves) {
+    if (allowanceMask == null || !Array.isArray(hoodMoves) || !hoodMoves.length)
+      return allowanceMask; // Null remains the legacy fully-removable policy.
+    const bits = decodeMask(allowanceMask);
+    const image = {width:SIZE,height:SIZE,data:new Uint8ClampedArray(PIXELS*4)}; // The same transform as visible hood cloth, never an unrelated sprite.
+    for (let i=0;i<PIXELS;i++) if (bits[i]) image.data[i*4+3]=255;
+    for (const move of hoodMoves) warpForRoot(image,move);
+    const warped=new Uint8Array(PIXELS);
+    for(let i=0;i<PIXELS;i++)if(image.data[i*4+3]>=128)warped[i]=1;
+    return encodeMask(warped);
+  }
+
   function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA) {
     // No authored hood permission mask means legacy permissive behavior.
     // An explicit EMPTY mask means no hood pixel may be removed.
@@ -341,7 +353,8 @@
       const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
       const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
       const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
-      const partition = partitionBeardHood(requestMask,allowanceMask,beard.data,hood.data);
+      const fittedAllowance = deformHoodPermissionMask(allowanceMask,options.hoodMoves);
+      const partition = partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data);
       const {approved,refused,requested,approvedPixels,refusedPixels} = partition;
       // Permission applies ONLY where the transformed front hood actually has
       // pixels. No hood at that coordinate means nothing to erase from beard.
@@ -374,6 +387,6 @@
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
     planTuftStretch, stretchHoodToRoots, applyToHood,
-    partitionBeardHood, applyRefusedBeardOutline, negotiateBeardHood,
+    partitionBeardHood, deformHoodPermissionMask, applyRefusedBeardOutline, negotiateBeardHood,
   });
 })();
