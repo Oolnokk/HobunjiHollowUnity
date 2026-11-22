@@ -10,6 +10,8 @@ on:
       - 'docs/js/bootstrap/classic-groups/cave-sites.js'
       - 'docs/index.html'
       - 'scripts/test-tzatzul-flight-runtime.js'
+      - 'scripts/test-flying-combat-orbit.js'
+      - 'scripts/test-puzzle-cave-exterior.js'
       - '.github/workflows/test-tzatzul-attack-readiness.yml'
   workflow_dispatch:
 
@@ -31,5 +33,8 @@ jobs:
           node --check docs/js/puzzle-cave-entrances.js
           node --check docs/js/wildlife-debug-panel.js
           node --check scripts/test-tzatzul-flight-runtime.js
-      - name: Exercise real Tzatzul flight AI and activity deferral
-        run: node scripts/test-tzatzul-flight-runtime.js
+      - name: Exercise normal flight, blocked-orbit recovery and attack-readiness transitions
+        run: |
+          node scripts/test-tzatzul-flight-runtime.js
+          node scripts/test-flying-combat-orbit.js
+          node scripts/test-puzzle-cave-exterior.js
