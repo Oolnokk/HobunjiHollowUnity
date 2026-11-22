@@ -224,8 +224,7 @@
     if (!fireState) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
     const delta = lastFireAt === null ? 0 : Math.max(0, Math.min(.05, (timestamp - lastFireAt) / 1000)); // Prevent resumed-tab particle bursts.
     lastFireAt = timestamp;
-    root.updateWorldMatrix?.(true, true); // World-rise particles must read the final 45° pose, not an earlier torch location.
-    for (const fx of fireState.fireEmitters || []) fx.group.updateMatrixWorld?.(true);
+    root.updateWorldMatrix?.(true, true); // Refresh the complete cached art/emitter subtree once; world-rise particles read the actual posterior and 45° pose.
     global.HobunjiLayeredWeaponEffects.stepFire(fireState, delta); // Exact held-fire behavior: recolored wick, lit darkening and world-up motes.
   }
 
