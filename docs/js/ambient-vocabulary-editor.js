@@ -133,7 +133,7 @@
       '" data-entry="' + safe(item.id) + '" role="button" tabindex="0"><b>' + safe(item.name) +
       '</b><div class="muted">' + safe(item.id) + '</div></div>').join('');
     $('list').querySelectorAll('[data-entry]').forEach(node => {
-      const choose = () => { model.selected = node.dataset.entry; sidebar(); render(); };
+      const choose = () => { model.selected = node.dataset.entry; model.previewResult = ''; sidebar(); render(); }; // A new speaker never inherits the previous NPC's preview.
       node.onclick = choose;
       node.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); } };
     });
@@ -310,7 +310,7 @@
       '<span class="muted">' + generatedCount + ' eligible source words · Regenerate replaces this NPC’s manual checkmarks</span></div></section>' +
       '<section class="card"><h3>Check this character’s allowed synonyms</h3>' +
       wordChooser('characterWord') +
-      '<div class="row"><strong>' + safe(word) + '</strong><span class="pill">' + checked.size + ' checked</span>' +
+      '<div class="row"><strong>' + safe(word) + '</strong><span class="pill" id="checkedSynonymCount">' + checked.size + ' checked</span>' +
       '<span class="muted">' + (own ? 'Manually configured' : 'Suggested by sliders') + '</span></div>' +
       options.map(entry => '<label class="friend" style="display:flex;align-items:center;gap:10px;padding:10px;margin-bottom:6px;border:1px solid var(--line);border-radius:8px">' +
         '<input type="checkbox" data-check-synonym="' + safe(entry.id) + '"' + (checked.has(entry.id) ? ' checked' : '') +
@@ -322,24 +322,31 @@
       '<div class="muted">Every change here edits only this NPC’s checkmarks. Edit the wording itself in Master dictionary to update it for everyone.</div></section>' +
       '<section class="card"><h3>Live speech preview</h3><textarea id="previewInput" class="compactText">' + safe(model.preview) + '</textarea>' +
       '<div class="row"><button id="previewButton" type="button" class="good">Try another variation</button>' +
-      '<span class="pill">Swap chance: ' + sliders.frequency + '%</span></div>' +
+      '<span class="pill" id="swapChance">Swap chance: ' + sliders.frequency + '%</span></div>' +
       '<div class="preview" id="previewResult">' + safe(model.previewResult || model.preview) + '</div></section>';
   }
   function wireCharacter(id) {
     wireSliders((key, value) => {
       const record = ensureCharacter(id);
-      record.sliders = { ...slidersFor(id), [key]: value }; // Style slider changes affect implicit checked words, but never overwrite manual picks.
-      notify('Character slider updated · regenerate all checkmarks if you want to replace existing choices');
+      record.sliders = { ...slidersFor(id), [key]: value }; // Manual checkmarks are protected; only generated defaults respond to slider changes.
+      model.previewResult = ''; // A previous preview must never masquerade as the newly configured voice.
+      const checked = new Set(candidateIds(id, activeWord())); // Update visible checkboxes without destroying the actively dragged range input.
+      $('editor').querySelectorAll('[data-check-synonym]').forEach(input => { input.checked = checked.has(input.dataset.checkSynonym); });
+      $('checkedSynonymCount').textContent = checked.size + ' checked';
+      $('swapChance').textContent = 'Swap chance: ' + slidersFor(id).frequency + '%';
+      notify('Character slider updated · implicit checkmarks refreshed; regenerate all to replace manual choices');
     });
     $('generateCharacter').onclick = () => {
       const record = ensureCharacter(id);
       record.sliders = slidersFor(id);
       record.selections = generated(id); // Explicit user action generates canonical IDs, NOT per-character duplicate synonym text.
+      model.previewResult = '';
       render(); notify('Regenerated all checked synonyms for ' + npcName(id));
     };
     $('resetCharacter').onclick = () => {
       const record = ensureCharacter(id);
       record.selections = {}; // Re-enable live family/slider generation for every word; do not alter character slider preferences.
+      model.previewResult = '';
       render(); notify('Cleared manual checkmarks; using generated defaults for ' + npcName(id));
     };
     wireWordChooser('characterWord');
@@ -347,6 +354,7 @@
       const rec = ensureCharacter(id);
       rec.selections ||= {};
       rec.selections[activeWord()] = [...new Set(ids)].filter(value => typeof value === 'string');
+      model.previewResult = '';
       render();
       notify('Updated ' + npcName(id) + ' checkmarks for ' + activeWord());
     }
@@ -363,6 +371,7 @@
     $('resetWord').onclick = () => {
       const record = ensureCharacter(id);
       delete record.selections?.[activeWord()]; // Restore this one word's automatically suggested checkboxes.
+      model.previewResult = '';
       render(); notify('Reset selected word to generated checkmarks');
     };
     $('previewInput').oninput = event => { model.preview = event.target.value; };
