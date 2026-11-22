@@ -242,7 +242,10 @@ assert.match(rangedCode, /textureSource, sourceTransform, visualScale: authoredS
 assert.match(rangedCode, /const sourceTransform = heldTransform\?\.position \? \{ position: heldTransform\.position \} : null/,
   'torch uses the held release point without copying the oversized held orientation or geometry');
 assert.match(rangedCode, /heldSpin:true,heldSpinRevolutions:2\.5/, 'torch now shares the thrown hatchet in-hand spin');
-assert.match(rangedCode, /invalidateAimTarget\?\.\('torch-strike-release', true\)/, 'torch samples a fresh strike-frame reticle like the hatchet');
+assert.match(rangedCode, /itemKey === 'torch' \? normalizedAimRay\(deps\.getPlayerInteractionRay\?\.\(\)\)/,
+  'the adventuring torch reads the live centered camera ray instead of the ranged-slot reticle wrapper');
+assert.doesNotMatch(rangedCode, /invalidateAimTarget\?\.\('torch-strike-release', true\)/,
+  'a torch throw no longer forces an unrelated ranged-slot focus scan');
 assert.match(game, /AdventuringTools\.updateThrow\(\{/, "torch projectile commits only from the active pose's strike frame");
 assert.match(game, /holdTorchAim/, 'touch keeps its throw aim after input release through the actual strike');
 assert.match(game, /torchThrowActionPresses\.delete\(actionId\)/, 'controller and keyboard release preserve throw input ownership');

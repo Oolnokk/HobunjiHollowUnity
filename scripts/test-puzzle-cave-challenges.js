@@ -10,7 +10,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../docs/js/area-footprin
 const areaFootprints=footprintContext.window.AreaFootprintBlockers; // The same blocksBox(area,x,z,half,worldY) API used by game.js.
 
 class Object3D {
-  constructor(){this.children=[];this.parent=null;this.userData={};this.visible=true;this.position={x:0,y:0,z:0,
+  constructor(){this.children=[];this.parent=null;this.userData={};this.isObject3D=true;this.visible=true;this.position={x:0,y:0,z:0,
     set(x,y,z){this.x=x;this.y=y;this.z=z;}};}
   add(child){if(child.parent)child.parent.remove(child);this.children.push(child);child.parent=this;}
   remove(child){this.children=this.children.filter(item=>item!==child);if(child.parent===this)child.parent=null;}
@@ -45,6 +45,17 @@ const dynamicSurfaces={registerBlocker:record=>{assert(!blockers.has(record.id),
 
 let lit=0,completed=0;
 const hot=new Set(); // Fire patches with the same area-scoped positions that PersistentGroundFire.intersects receives.
+const registeredFireTargets=new Map(); // Mirrors DungeonFire's registration lifecycle; its actual melee/projectile sweeps are exercised in test-dungeon-fire.js.
+globalThis.DungeonFire={
+  registerTarget(record){
+    assert(record.object.isObject3D,'the shared fire target must use the real stone sconce mesh');
+    assert(!registeredFireTargets.has(record.id),'cave target ids must be unique');
+    registeredFireTargets.set(record.id,record);
+    return record.id;
+  },
+  unregisterTarget:id=>registeredFireTargets.delete(id),
+  hasTarget:id=>registeredFireTargets.has(id),
+};
 const torchEmitters=[]; // Stand-in for the shared authored campfire renderer; asserts both sconces reuse it and dispose it.
 const puzzleFireVisuals={attachCampfireFlame(anchor,options){
   assert(anchor instanceof Group,'sconce flames use emitter anchors rather than triangle/cone geometry');
@@ -77,6 +88,7 @@ activeArea='other_map';
 assert(!fireCollider.enabled(),'cached cave collision never leaks into another map');
 activeArea=area;
 fire.tick(.016);
+assert.equal(registeredFireTargets.size,2,'the live cave registers both stone sconces with shared DungeonFire');
 assert.equal(completed,0,'unlit sconces cannot raise the stone gate');
 hot.add(fire.sconces[0].x+','+fire.sconces[0].z);
 fire.tick(.016);
@@ -100,10 +112,44 @@ assert(!areaFootprints.blocksBox(area,gateX,gateZ+1.3,.18),'the reward alcove is
 fire.tick(.016);
 assert.equal(completed,1,'a solved fire cave cannot award its treasure again');
 fire.dispose();
+assert.equal(registeredFireTargets.size,0,'cave teardown unregisters both DungeonFire targets');
 assert(torchEmitters.every(record=>record.disposed),'cave teardown disposes both authored flame emitters');
 assert.equal(blockers.size,0,'retiring the scene unregisters its physical collision');
 assert.equal(areaFootprints.providerIds().length,0,'retiring the cave removes its authoritative player and NPC footprint blocker');
 assert.equal(parent.children.length,0,'cave teardown removes mechanism meshes');
+
+// Both torch contact paths use DungeonFire.onBurn, while fire flasks continue to use PersistentGroundFire.
+let torchLit=0,torchSolved=0; // Distinguish this new cave's melee and thrown ignition from the ground-fire test above.
+const torchCave=compose({THREE,parent,room,id:'torch-fire-test',kind:'fireSconces',y:0,area,authoredCliffDoor:true,
+  isActive:()=>activeArea===area,onSolved:()=>torchSolved++,onSconceLit:()=>torchLit++,
+  DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
+  groundFire:{intersects:()=>false},puzzleFireVisuals,
+  getPlayerPosition:()=>({x:0,z:0}),getPlayerY:()=>0,
+});
+torchCave.tick(.016);
+assert.equal(registeredFireTargets.size,2,'a fresh cave registers two contact targets without duplicating retired cave targets');
+registeredFireTargets.clear(); // Simulates DungeonFire.clear() after exiting a Harlyao ruin with this cave scene still cached.
+torchCave.tick(.016);
+assert.equal(registeredFireTargets.size,2,'returning to a cached cave restores both torch contacts after the global fire registry was cleared');
+const [swingTarget,throwTarget]=[...registeredFireTargets.values()];
+assert.equal(swingTarget.object,torchCave.sconces[0].bracket,'melee tests the authored stone sconce, not its invisible particle emitter');
+assert.equal(throwTarget.object,torchCave.sconces[1].bracket,'projectile sweep tests that same physical contact mesh');
+activeArea='another_map';
+assert.equal(swingTarget.isActive(),false,'torch contact never leaks into another area');
+activeArea=area;
+assert.equal(swingTarget.isActive(),true);
+assert.equal(swingTarget.onBurn({projectile:{team:'player',dungeonFire:true}}),true,'a swung lit torch lights the first sconce through DungeonFire');
+assert.equal(torchLit,1);
+assert.equal(swingTarget.isActive(),false,'an already-lit stone cup is not targetable again');
+assert.equal(swingTarget.onBurn({projectile:{team:'player',dungeonFire:true}}),false,'repeated contact cannot replay ignition rewards');
+assert.equal(torchSolved,0,'one lit torch is insufficient to unlock the door');
+assert.equal(throwTarget.onBurn({projectile:{team:'player',dungeonFire:true}}),true,'a thrown torch lights the second sconce through the same receiver');
+assert.equal(torchLit,2);
+assert.equal(torchSolved,1,'mixed swung and thrown contact completes the cave exactly once');
+assert.equal(throwTarget.isActive(),false,'solved caves stop accepting projectile impacts');
+torchCave.dispose();
+assert.equal(registeredFireTargets.size,0,'tearing down a solved cave also unregisters the contact targets');
+assert.equal(blockers.size,0,'the separate torch cave leaves no movement blockers');
 
 const events=eventBus(); // The existing music bridge emits these exact instrument-input events.
 const timedPickBeats=[]; // Actual composed timed cave plates emit the shared mine-pick metronome events.

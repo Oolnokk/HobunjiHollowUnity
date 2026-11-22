@@ -1138,7 +1138,7 @@
     const heldTransform = visual?.sourceTransform || null; // Release-frame hand position remains authoritative for spawn, not for projectile artwork size/orientation.
     const sourceTransform = heldTransform?.position ? { position: heldTransform.position } : null; // Never copy the held throw's enlarged scale or world-space quaternion onto a flying torch.
     const textureSource = visual?.textureSource || null; // Keep the precise colored torch PNG.
-    window.HobunjiRangedCameraFocus?.invalidateAimTarget?.('torch-strike-release', true); // Read the current aim immediately before the projectile spawns.
+    // The torch is an adventuring tool, not the equipped ranged slot: the solver reads the live camera ray directly.
     const aim = playerAimSolution('torch',sourceTransform?.position); // Reuses the normal reticle/launch solver for fallback and valid muzzle coordinates.
     if (!aim?.origin || !aim?.direction) return null;
     const dir = aim.direction; // The shared reticle solver converges the camera ray on the held hand's release position, including close-up parallax.
@@ -1157,7 +1157,7 @@
         visualScale: projectile.visual.scale.x, launchTransformMode: projectile.launchTransformMode,
         planeWidth: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.width || 0,
         planeHeight: projectile.mesh.userData.projectilePlane?.geometry?.parameters?.height || 0,
-        aimSource,
+        aimSource, rayAuthority: aim.cameraRaySource, // On-device proof that the aim came from the live centered camera rather than a ranged-slot wrapper.
         targetPoint: aim.targetPoint ? { x: aim.targetPoint.x, y: aim.targetPoint.y, z: aim.targetPoint.z } : null, // Grounded reticle convergence point for the mobile projectile diagnostic.
       }; // Inspect trajectory and scale from Pixel Probe without a desktop console.
       playRangedActionSfx('torch','fire'); // The hatchet's swing-3 at 2× pitch sounds on the actual strike.
@@ -1437,7 +1437,8 @@
     let direction = null;
     let targetPoint = null;
     let reticleTarget = null;
-    const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
+    const centeredRay = itemKey === 'torch' ? normalizedAimRay(deps.getPlayerInteractionRay?.()) : null; // Adventuring torches must never inherit a stale ranged-slot camera/focus wrapper.
+    const cameraRay = itemKey === 'torch' ? centeredRay : normalizedAimRay(deps.getPlayerAimRay?.()); // A torch never falls through to a stale equipped-ranged ray; when camera data is missing it uses the normal facing fallback.
     const aimRadius = projectileAimRadiusWorld(def); // Reticle prediction shares the decoded opaque hitbox once the projectile art has loaded.
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
@@ -1470,6 +1471,7 @@
     }
     return {
       itemKey, origin, direction, targetPoint, reticleTarget,
+      cameraRaySource: centeredRay ? 'camera-centered-interaction' : cameraRay ? 'ranged-aim-fallback' : 'facing-fallback', // Mobile torch diagnostics distinguish the actual input ray.
       angle: Math.atan2(direction.z, direction.x),
       pitch: Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
       aimRadiusPx: aimRadius * deps.TILE,

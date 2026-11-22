@@ -47,7 +47,7 @@
   <script src="js/interior-scene-builder.js?v=20261027hfloorlesswalls1&window=20260926rebase1"></script>
   <script src="js/interior-ceilings.js?v=20261015h5328b1c"></script>
   <script src="js/building-door.js?v=20261114fullentry2"></script>
-  <script src="js/tile-pathfinding.js?v=20261018a"></script>
+  <script src="js/tile-pathfinding.js?v=20261122h80205e4"></script>
   <!-- Input-led local steering; keep next to the tile planner and ahead of game.js. -->
   <script src="js/ground-obstacle-avoidance.js?v=20261115footContactAudit4"></script>
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
@@ -155,7 +155,7 @@
   <script src="js/inventory-wheel-list.js?v=20261121wheelList1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261122ha7ef12d"></script>
+  <script src="debug.js?v=20261122h1fd4c9f"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261120h9d87715"></script>
@@ -553,16 +553,16 @@
   <script src="js/cliff-route-network.js?v=20261122intentionalDescent1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261122he076f87"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261122hd7a447f"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261122hb6f619e"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261122proneIntentionalMerge1"></script>
+  <script src="js/creature-cliff-climb.js?v=20261122h48e636a"></script>
   <script src="js/companion-follow-navigation.js?v=20261118followRecover1"></script> <!-- Single companion route decision and unseen stuck recovery; initialized by game.js. -->
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
   <script src="js/cell-grid-3d.js?v=20261103he7fa634"></script>
-  <script src="js/dynamic-surfaces.js?v=20261122h3263ed2"></script> <!-- Shared dynamic cliff balcony support, raised doors, moving ruin blockers and collision diagnostics; must exist before the wilderness mounts. -->
+  <script src="js/dynamic-surfaces.js?v=20261106puzzleCaveSupport1"></script> <!-- Shared dynamic cliff balcony support, raised doors, moving ruin blockers and collision diagnostics; must exist before the wilderness mounts. -->
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
@@ -890,7 +890,7 @@
   <script src="js/ruin-encounters.js?v=20261122h464deaf"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
   <script src="js/ruin-composer-playable.js?v=20261108witchBombExtern1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
-  <script src="js/dungeon-fire.js?v=20261120h5b31d4f"></script>
+  <script src="js/dungeon-fire.js?v=20261122hTorchFire1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
   <script src="js/zone-den-totem-features.js?v=20261121h523eb03"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
@@ -2950,7 +2950,7 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="game.js?v=20261122h1507de7"></script>
+  <script src="game.js?v=20261122h7e96092"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
