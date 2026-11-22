@@ -520,7 +520,7 @@
     if (!poolId) return false;
     const pool = (rec?.phrasePools || []).find(item => item.id === poolId || item.name === poolId); // Reuses this NPC's genuine authored phrases, never a second greeting catalog.
     const heard = heardPoolEntries || []; // The existing per-NPC pool history determines when family chatter becomes a supplement.
-    return (pool?.entries || []).some(entry => {
+    return (Array.isArray(pool?.entries) ? pool.entries : []).some(entry => { // Malformed imported pool data is treated as empty, not as a reason to abort all dialogue.
       const line = String(entry?.text || '').trim(); // Author-facing <placeholder> hint copy does not indefinitely prevent family speech.
       return entry?.id && line && !/^<[^<>]+>$/.test(line)
         && !heard.includes(entry.id) && _dlgEntryEligible(entry, world);
@@ -581,7 +581,7 @@
     const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Do not replace unplayed, eligible personal greetings.
     const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Literal single-line fallback is still heard once.
     const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Original character copy remains in the rotation on later repeats.
-    const hasStandaloneLines = !picked && (rec?.dialogueLines || []).some(line => typeof line === 'string' && line.trim() && !/^<[^<>]+>$/.test(line.trim())); // An NPC's explicit standalone dialogue is authored speech, not empty space for a personality replacement.
+    const hasStandaloneLines = !picked && Array.isArray(rec?.dialogueLines) && rec.dialogueLines.some(line => typeof line === 'string' && line.trim() && !/^<[^<>]+>$/.test(line.trim())); // An NPC's explicit standalone dialogue is authored speech, not empty space for a personality replacement.
     const maySupplement = scopedSpeech.length > 0 && !hasStandaloneLines && (!picked || (isFallback && !stillHasNamedLines && !firstAuthoredFallback)); // No broad override of authored non-fallback or standalone character content.
     const keepAuthoredThisTime = maySupplement && isFallback && sharedExhausted && Math.random() < 0.5; // Randomize only when a family-versus-personal choice is actually needed.
     if (maySupplement && !keepAuthoredThisTime) {
@@ -604,7 +604,7 @@
   // cycles through its unheard entries before repeating.
   function _pickPoolEntry(poolId, rec) {
     const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
-    if (!pool || !pool.entries?.length) return null;
+    if (!Array.isArray(pool?.entries) || !pool.entries.length) return null;
     const playable = pool.entries.filter(item => {
       const line = String(item?.text || '').trim(); // Writer-facing <placeholder> hints are not player dialogue until actually authored.
       return line && !/^<[^<>]+>$/.test(line);
