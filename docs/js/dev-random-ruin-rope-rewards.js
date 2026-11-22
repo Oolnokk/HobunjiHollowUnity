@@ -60,6 +60,8 @@
     mesh.position.set(x, authored ? y : y + .035, z); // The authored plate's own part already sits .035 up.
     mesh.userData.devRandomRuinPressurePlate = true;
     kit.group().add(mesh);
+    const support=window.DynamicSurfaces?.pressurePlateSurface?.(plateMesh||mesh,{id:'reward-plate-'+mesh.id});
+    if(support)kit.registerSurface(support);
     const plate = { id, x, y, z, mesh, material, pressed:false, onPress };
     plate.signal=window.FurniturePatternSurfaces?.attachStoneSignal?.(plateMesh||mesh,{
       width:.42,height:.42,idleColor:'#d7b27c',activeColor:'#ffe18a',

@@ -279,6 +279,10 @@
             width:.4,height:.4,idleColor:'#edac62',activeColor:'#72ffc7',
           }); // Only the engraved PNG rune lights when a Hachutu mechanism is activated.
           entry.plateMesh.userData.devRuinFootprintIgnore=true;
+          const support=window.DynamicSurfaces?.pressurePlateSurface?.(entry.plateMesh,{
+            id:'hachutu-pressure-plate-'+ring+'-'+index,
+          }); // The platform remains support around the slab's narrower cap.
+          if(support)kit.registerSurface(support);
         } // Each platform retains an independent glyph signal without modifying shared stone.
         kit.registerSurface({id:'hachutu-moving-'+ring+'-'+index,
           bounds:()=>({minX:entry.position.x-1.12,maxX:entry.position.x+1.12,minZ:entry.position.z-1.12,maxZ:entry.position.z+1.12}),

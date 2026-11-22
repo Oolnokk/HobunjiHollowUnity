@@ -34,7 +34,8 @@
     const baseY = Number.isFinite(surface) ? surface
       : Number.isFinite(continuous) ? continuous : deps.tileSurfaceYInArea?.(tile, area);
     if (!Number.isFinite(baseY)) return null;
-    return window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, baseY, area, maxSupportY) ?? baseY; // Jump launch and descending feet ignore raised decks that are still overhead.
+    const groundY = window.HobunjiWalkableElevation?.worldSurfaceTopAt?.(x, z, baseY, area, maxSupportY) ?? baseY; // Ignore raised decks that are still overhead.
+    return window.DynamicSurfaces?.samplePressurePlate?.(area, x, z, groundY, maxSupportY)?.y ?? groundY; // Jump takeoff and landing share the plate's live cap.
   }
 
   function coverAtTile(tile, col, row) {
@@ -71,7 +72,7 @@
       y: floorY,
       kind: window.HobunjiWalkableElevation?.isBalconyAt?.(x, z, floorY, deps.getCurrentArea()) ? 'balcony' : 'ground',
     } : null; // Keep a roof landing supported until the next jump or real fall-off.
-    const dynamic = window.DynamicSurfaces?.sampleSupport?.(x, z, { maxY, minY: -Infinity });
+    const dynamic = window.DynamicSurfaces?.sampleSupport?.(x, z, { maxY, minY: -Infinity, area: deps.getCurrentArea() });
     if (dynamic && (!best || dynamic.y > best.y)) best = { y: dynamic.y, kind: 'dynamic', id: dynamic.id };
     const c0 = Math.floor(x - CONFIG.radius), c1 = Math.floor(x + CONFIG.radius);
     const r0 = Math.floor(z - CONFIG.radius), r1 = Math.floor(z + CONFIG.radius);

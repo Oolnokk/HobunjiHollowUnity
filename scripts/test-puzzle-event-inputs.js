@@ -97,6 +97,22 @@ assert(bridgeSurface && !bridgeSurface.enabled(), 'upright pillar is not already
 assert.equal(WorldEvents.listenerCount('blast'), 1, 'one subscription for one input');
 assert.equal(on(pillar), false);
 
+const authoredPlate = node('authored-pressure-plate', mech([], {
+  behavior:'pressurePlate', standingSurface:{partId:bridgePart.id, minProgress:.95},
+})); // Pressure-plate mechanisms can still author an explicit support part and progress requirement.
+const plateMesh = { ...partMesh, userData:{} };
+authoredPlate.userData.meshById = new Map([[bridgePart.id, plateMesh]]);
+assert.equal(register(authoredPlate), true);
+const authoredPlateSupportId = authoredPlate.userData.puzzleStandingSurfaceId;
+const authoredPlateSupport = registeredSurfaces.get(authoredPlateSupportId);
+assert.equal(authoredPlateSupport?.enabled(), false);
+assert.equal(authoredPlateSupport.plateArea, MAP, 'grounded players can sample the authored plate in its own map');
+assert.equal(plateMesh.userData.walkableElevation, true);
+R.applyMechanism(authoredPlate, 1);
+assert.equal(authoredPlateSupport.enabled(), true, 'the explicit progress threshold remains in control');
+assert.equal(R.unregisterNode(MAP, authoredPlate.id), true);
+assert.equal(registeredSurfaces.has(authoredPlateSupportId), false);
+
 WorldEvents.emit('blast', { scope: MAP, x: 10, z: 20, radius: 4.4 });           // 10 tiles away, radius 4.4: out of reach
 assert.equal(on(pillar), false, 'a blast outside the authored trigger distance does nothing');
 WorldEvents.emit('blast', { scope: 'some_other_map', x: 10, z: 10, radius: 4.4 });

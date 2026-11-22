@@ -25561,7 +25561,7 @@
         // flips (see startClimb/updateClimb).
         const supportedJump = player._freeJump?.phase === 'supported'; // Elevated landings still use PlayerJump's current feet height, with the ruin's visual immersion applied.
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(supportedJump ? player.physicalFeetY : undefined);
-        const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+        let ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
           : supportedJump && Number.isFinite(ruinStandY) ? ruinStandY
@@ -25569,6 +25569,13 @@
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : activeSurfaceYAtWorld(wx, wz); // Exact farm/zone/town terrain contour replaces the old flat-tile approximation.
+        if (!player._freeJump && !player.climbing && !player.onBranch && !player.onClimbSurface
+            && !Number.isFinite(ruinStandY) && !sitInteraction && mountRideState === 'none') {
+          const plateSupport = window.DynamicSurfaces?.samplePressurePlate?.(
+            currentArea, wx, wz, ordinaryStandY, ordinaryStandY + (window.PlayerJump?.config?.maxStepUp ?? .25),
+          ); // Ordinary caves and cliff balconies keep their floor, with the plate's slab as a local step up.
+          if (plateSupport) ordinaryStandY = plateSupport.y;
+        }
         const physicalGroundOwnedByWalk = !player._freeJump && !player.climbing && !player.onBranch
           && !player.onCliffBalcony && !player.onClimbSurface && !Number.isFinite(ruinStandY)
           && !sitInteraction && mountRideState === 'none'; // Grounded prone and ordinary melee poses still stand on the same actual porch floor.
@@ -25601,7 +25608,8 @@
           player._walkableStandingX = wx; player._walkableStandingZ = wz;
         }
         const stoodOnRaisedSupport = !!reachableSupport && physicalSurfaceY > ordinaryStandY + 0.01; // Only real deck contact suppresses water wading.
-        if (physicalGroundOwnedByWalk && !Number.isFinite(player.lungeFlightWorldY)) {
+        const onBalconyFloor = player.onCliffBalcony && !player.climbing && !player._freeJump; // Balcony plates add to the existing shelf's standing height.
+        if ((physicalGroundOwnedByWalk || onBalconyFloor) && !Number.isFinite(player.lungeFlightWorldY)) {
           player.physicalFeetY = physicalSurfaceY; // Grounded melee/prone actors and subsequent jumps inherit the real floor.
         }
         const standY = knockbackVisualSurfaceY(player, physicalSurfaceY);

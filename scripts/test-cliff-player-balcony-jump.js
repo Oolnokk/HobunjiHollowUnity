@@ -32,6 +32,12 @@ ctx.window.CliffRouteNetwork = {
 ctx.window.CliffElevatedSurfaces = { canStandOn: (network, id, x, z, pad) => contains(shelf, x, z, pad) };
 const tiles = Array.from({ length: 14 }, () =>
   Array.from({ length: 14 }, () => ({ type: 'grass', elevTier: 0 })));
+vm.runInContext(fs.readFileSync('docs/js/dynamic-surfaces.js', 'utf8'), ctx);
+const surfaces = ctx.window.DynamicSurfaces;
+surfaces.registerSurface({
+  id:'test-cliff-plate', plateArea:net.area, topY:shelf.y+.08,
+  bounds:{minX:6.2,maxX:6.5,minZ:5.1,maxZ:5.9},
+}); // Exercise the actual area-scoped plate lookup at the balcony edge.
 const player = { x: shelf.x * 64, y: shelf.z * 64, onCliffBalcony: shelf.id,
   _cliffBalconyY: shelf.y, climbing: false, angle: 0, vx: 0, vy: 0 };
 let input = { x: 0, y: 0 };
@@ -49,6 +55,7 @@ ctx.window.ClimbSystem.init({
 // to tunnel down through it; leap to the first supported point beyond its edge.
 assert(ctx.window.ClimbSystem.jumpFromBalcony({ x: 1, y: 0 }));
 assert.equal(player.climbStartX, 5.5 * 64, 'keep actual takeoff location');
+assert.equal(player.climbSurfaceStartY, shelf.y, 'bare shelf retains its own height');
 assert(player.climbEndX / 64 > shelf.x + shelf.width / 2, 'land strictly beyond the shelf');
 const centerLanding = player.climbEndX / 64;
 ctx.window.ClimbSystem.updateClimb(0.42);
@@ -65,6 +72,8 @@ player.y = shelf.z * 64;
 player.onCliffBalcony = shelf.id;
 assert(ctx.window.ClimbSystem.jumpFromBalcony({ x: 1, y: 0 }));
 assert.equal(player.climbStartX / 64, 6.30);
+assert.equal(player.climbSurfaceStartY, shelf.y+.08, 'scripted jump starts on top of the slab');
+assert.equal(player._climbFall.dropWorld, shelf.y+.08, 'drop starts at the raised footing');
 assert(player.climbEndX / 64 > centerLanding, 'edge takeoff projects farther than center takeoff');
 assert(player.climbEndX / 64 >= 7, 'landing is ahead of the body, not behind it');
 
@@ -100,7 +109,7 @@ assert(ctx.window.ClimbSystem.updateBalcony(1/60)); // Real 60 fps frame: the fo
 assert(airborne, 'outward movement transfers the balcony fall into the shared airborne system');
 assert.equal(player.climbing, false, 'a directional fall does not start a scripted climb');
 assert.equal(player.onCliffBalcony, null, 'the old balcony no longer owns airborne movement');
-assert.equal(airborne.flight.y, shelf.y, 'the flight retains the shelf\'s true world elevation');
+assert.equal(airborne.flight.y, shelf.y+.08, 'the flight retains the plate height at the last supported point');
 assert(airborne.flight.x > 6.5, 'the flight begins just outside the physical shelf edge');
 assert(airborne.flight.vx > 0, 'outward walk-off retains a small directional drift');
 assert.equal(airborne.options.source, 'cliff balcony fall');

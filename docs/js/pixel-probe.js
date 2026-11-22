@@ -1164,6 +1164,11 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const feetY = window.DevRandomRuin?.getPlayerGroundSupportY?.() ?? deps.player?.physicalFeetY ?? playerMesh.position.y; // Inspect the physical surface during a tap, outside the render loop.
+    const footSupport = window.DynamicSurfaces?.sampleSupport?.(playerMesh.position.x, playerMesh.position.z, {
+      area:currentArea, minY:feetY-.25, maxY:feetY+.25,
+    });
+    if (footSupport?.record.walkableElevation) lines.push(`Pressure plate support: ${footSupport.id} top=${footSupport.y.toFixed(3)} feet=${feetY.toFixed(3)}`);
     const renderRecovery = window.WeatherFX?.getRenderRecoveryState?.(); // Makes WebGL context loss and CSS/backing-buffer desync diagnosable from the in-game report without desktop devtools.
     if (renderRecovery) {
       const lastRepair = renderRecovery.lastRepair;

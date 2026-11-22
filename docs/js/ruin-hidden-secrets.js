@@ -166,6 +166,10 @@
       plate.name='secret-Haouun-melody-pressure-stone-'+rec.id;
       plate.position.set(x,floor+.07,z);
       plate.userData.devRuinFootprintIgnore=true;group.add(plate);
+      const support=DS?.pressurePlateSurface?.(plate,{
+        id:rec.id+':plate',scope:options.scope||options.mapId||MAP_ID,plateArea:options.mapId||MAP_ID,
+      }); // Supports the stone in either the native ruin or a stacked wing.
+      if(support){DS.registerSurface(support);colliders.push(support.id);}
       rec.plate=plate;rec.platePoint={x,z}; // Same one-tile grounded circular trigger as the main timed melody puzzles.
       rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
         width:.12,height:.12,idleColor:'#e5aa55',activeColor:'#65ffaf'

@@ -967,6 +967,13 @@
     }
   }
 
+  function balconyTopAt(shelf, x, z) {
+    const stepUp = window.PlayerJump?.config?.maxStepUp ?? .25; // Same reachable height band as ordinary balcony walking.
+    return window.DynamicSurfaces?.samplePressurePlate?.(
+      deps.getCurrentArea(), x, z, shelf.y, shelf.y + stepUp,
+    )?.y ?? shelf.y;
+  }
+
   // Balcony movement keeps the support elevation independent from whichever
   // ground, plateau, or second balcony occupies the exact same X/Z cells.
   function jumpFromBalcony(direction = null) {
@@ -978,6 +985,7 @@
     const dir = length > 0.25 ? { x: raw.x / length, y: raw.y / length } : { x: shelf.normal.x, y: shelf.normal.z };
     const grid = deps.getActiveGrid();
     const takeoffX = player.x / deps.TILE, takeoffZ = player.y / deps.TILE; // Jump starts at the actual feet, not the authored balcony center.
+    const takeoffY = balconyTopAt(shelf, takeoffX, takeoffZ); // A pressure plate can raise the feet above the shelf.
     let destination = null;
     for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
       const wx = takeoffX + dir.x * distance, wz = takeoffZ + dir.y * distance;
@@ -992,21 +1000,21 @@
       if ((!Number.isFinite(floor) || floor >= shelf.y - 0.1) && !lower) continue;
       if (validGround && floor >= shelf.y - 0.1) continue; // Do not jump through a plateau roof.
       destination = { x: wx * deps.TILE, y: wz * deps.TILE,
-        surfaceY: lower?.y ?? floor, balconyId: lower?.id || null };
+        surfaceY: lower ? balconyTopAt(lower, wx, wz) : floor, balconyId: lower?.id || null };
       break;
     }
     if (!destination) return false; // Never leap into an ungrounded/unreachable void.
     player.onCliffBalcony = null;
     if (!startScriptedWorldClimb({
       endX: destination.x, endY: destination.y,
-      startWorldY: shelf.y, endWorldY: destination.surfaceY,
+      startWorldY: takeoffY, endWorldY: destination.surfaceY,
       hopCount: 2, shortHops: true
     })) { player.onCliffBalcony = shelf.id; return false; }
     player.climbHopCount = 1;
     player._cliffLandingShelf = destination.balconyId;
     player._climbJumpDownAxis = dir;
     resetClimbTiming(player, { activeS: 0.42, pauseS: 0, bounce: 0.32 });
-    player._climbFall = { dropWorld: Math.max(0, shelf.y - destination.surfaceY), deliberate: true, rolled: true, source: 'ledge jump', dirX: dir.x, dirY: dir.y };
+    player._climbFall = { dropWorld: Math.max(0, takeoffY - destination.surfaceY), deliberate: true, rolled: true, source: 'ledge jump', dirX: dir.x, dirY: dir.y };
     return true;
   }
 
@@ -1020,18 +1028,19 @@
     const length = Math.hypot(Number(raw?.x) || 0, Number(raw?.y) || 0);
     if (length <= 0.01) return false;
     const nx = raw.x / length, nz = raw.y / length; // Normalized movement aimed across the shelf lip.
+    const takeoffY = balconyTopAt(shelf, player.x / deps.TILE, player.y / deps.TILE); // Sample the final standing point inside the lip.
     let launchX = outside.x, launchZ = outside.z; // Actual physical edge is slightly beyond the walkability inset.
     for (let probe = 0; probe < 8; probe++) {
-      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, takeoffY) === false) return false;
       if (!window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02)) break;
       launchX += nx * 0.04; launchZ += nz * 0.04; // Short collision-checked sweep across the final lip; no teleport to the landing tile.
     }
     if (window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02) ||
-        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, takeoffY) === false) return false;
     const balconyId = player.onCliffBalcony; // Used only to restore the original support if flight creation fails.
     player.onCliffBalcony = null;
     const flight = window.PlayerJump.beginFlight({
-      x: launchX, y: shelf.y, z: launchZ,
+      x: launchX, y: takeoffY, z: launchZ,
       vx: nx * 0.6, vy: 0, vz: nz * 0.6,
       safeX: player.x / deps.TILE, safeZ: player.y / deps.TILE,
     }, { source: 'cliff balcony fall', deliberate: true });

@@ -155,6 +155,17 @@ async function main(){
         simple.tick(.016);
         if(simple.solved)throw Error('The fallback plate opened without a player standing on it');
         stepper.x=room.x+room.w/2;stepper.z=room.z+room.d/2-1.6;
+        const surfaces=window.DynamicSurfaces;
+        const plateAt=(x,z,testArea=area)=>surfaces.samplePressurePlate(testArea,x,z,0,.25);
+        const initialSupport=plateAt(stepper.x,stepper.z);
+        if(!simple.plate.userData.walkableElevation||Math.abs((initialSupport?.y??0)-.155)>1e-5)
+          throw Error('Pressure plate support must match the stone top, excluding the engraved decal');
+        if(plateAt(stepper.x+.4,stepper.z+.4)||plateAt(stepper.x,stepper.z,'other-map'))
+          throw Error('Circular plate support leaked outside the slab or cave');
+        simple.plate.position.y-=.04;
+        if(Math.abs((plateAt(stepper.x,stepper.z)?.y??0)-.115)>1e-5)
+          throw Error('Plate support did not follow a depressed slab');
+        simple.plate.position.y+=.04;
         simple.tick(.016);
         if(!simple.solved||state.solved!==2)throw Error('A single plate step did not latch the indoor cave gate open');
         simple.animate(1);
@@ -162,7 +173,9 @@ async function main(){
         if(!collision.blocksBox(area,room.x+.65,gateZ,.18))throw Error('Fallback bypasses the permanent cave wall');
         assertTallSideWalls(simple,'pressure-plate gate');
         await assertAuthoredGate(simple,'pressure plate');
+        if(!plateAt(stepper.x,stepper.z))throw Error('A solved plate stopped supporting the player');
         simple.dispose();simple=null;
+        if(plateAt(stepper.x,stepper.z))throw Error('Cave teardown left an invisible pressure plate');
         if(collision.providerIds().length!==countBefore)throw Error('Fallback cave leaked collision providers');
 
         state.phase='music';
