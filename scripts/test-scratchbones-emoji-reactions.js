@@ -69,7 +69,7 @@ const win = {
   },
   RewardReadout: { enqueue() { assert.fail('Reactions must not enter the reward queue'); } },
   PNGPlaneAvatar: { getPortraitsFlipped: () => portraitsFlipped },
-  AnimalChatheadFrame: { frameForKind: kind => ({ frame: kind === 'pingdort' ? { x: .76, y: .12, width: .18, height: .28 } : { x: .25, y: .18, width: .30, height: .30 } }) }, // Test crops on opposite halves of the animal sprite.
+  AnimalChatheadFrame: { frameForKind: kind => ({ frame: kind === 'skeeri-medium' ? { x: .6611149088541667, y: .24899449865398673, width: .04, height: .04 } : { x: .25, y: .18, width: .30, height: .30 } }) }, // Skeeri's actual authored chathead is on source-right; other creatures use a source-left test crop.
 };
 const context = { // Runs both production modules with the minimal Three/canvas interface.
   window: win, Image: FakeImage, URL, URLSearchParams,
@@ -144,26 +144,26 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   livestock.matrixWorld.elements[8] = 1; livestock.matrixWorld.elements[10] = 0; // Front-facing animal card projects its whole Z-axis sprite width onto camera right.
   step();
   const nelkFrame = win.AnimalChatheadFrame.frameForKind('nelk').frame; // Same species-authored normalized crop as the reaction.
-  const headLeft = projectedChatheadEdge(livestock, nelkFrame, animalOptions.width, 1, -1);
-  assert.ok(love.position.x < headLeft, 'animal emoji sits to the left of its chathead crop');
+  const headRight = projectedChatheadEdge(livestock, nelkFrame, animalOptions.width, 1, 1); // The simulated reversed card shows its muzzle on screen-right.
+  assert.ok(love.position.x > headRight, 'reversed animal emoji sits to the right of its visible muzzle crop');
   assert.ok(love.position.y > 2 && love.position.y < 2.5, 'animal emoji sits at chathead level, not above the full actor');
   assert.equal(love.position.z, 3, 'side anchoring must not move the popup toward or away from the camera');
   assert.equal(api.debugSnapshot().last.side, 'animal-facing');
   assert.equal(love.quaternion.source, camera.quaternion);
   const faceOnOffsetX = love.position.x; // Used to detect head alignment changes after rotating the animal plane.
   const initialDrift = icon.position.x; // Compare the same frame on both faces to verify the animation also mirrors.
-  assert.ok(initialDrift < 0);
+  assert.ok(initialDrift > 0, 'reversed animal animation drifts outward to screen-right');
   livestock.matrixWorld.elements[8] = 0; livestock.matrixWorld.elements[10] = 1; // Edge-on card projects a narrower head crop.
   step();
-  assert.ok(love.position.x > faceOnOffsetX && love.position.x < livestock.position.x, 'animal emoji follows projected head width as the sprite turns');
+  assert.ok(love.position.x < faceOnOffsetX && love.position.x > livestock.position.x, 'reversed animal emoji follows the projected muzzle width as the sprite turns');
   livestock.matrixWorld.elements[8] = -1; livestock.matrixWorld.elements[10] = 0; // Fully reverse the visible face, including the texture's horizontal mirroring.
   step();
-  assert.ok(love.position.x > projectedChatheadEdge(livestock, nelkFrame, animalOptions.width, -1, 1), 'animal emoji switches to the right edge when facing is reversed');
+  assert.ok(love.position.x < projectedChatheadEdge(livestock, nelkFrame, animalOptions.width, -1, -1), 'animal emoji switches to the left of the muzzle on the source-facing card');
   assert.ok(Math.abs(love.position.x - (2 * livestock.position.x - faceOnOffsetX)) < 1e-9, 'the head anchor and gutter mirror exactly');
   assert.equal(icon.position.x, -initialDrift, 'animal emoji animation mirrors with the anchor');
   livestock.matrixWorld.elements[8] = 0;
   step();
-  assert.ok(love.position.x > livestock.position.x, 'an edge-on card keeps the last visible side');
+  assert.ok(love.position.x < livestock.position.x, 'an edge-on card keeps the last visible muzzle side');
   assert.ok(icon.visible && icon.material.opacity > 0);
   const expectedSize = Math.max(.25, Math.min(.62, 1.7 * .38)) * 2 / 3; // Double the former one-third animal reaction size.
   const expectedScale = expectedSize * api.sample('love', now / 1650).scale; // Original curves still drive the billboard scale.
@@ -181,24 +181,25 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   rightHeadAnimal.position.set(2, 0, 0);
   const frontPlane = new Group(); // A rendered card can turn independently of its movement root.
   frontPlane.updateWorldMatrix = () => {};
-  const rightHeadOptions = { creatureKind: 'pingdort', width: 2.1, height: 1.1,
+  const rightHeadOptions = { creatureKind: 'skeeri-medium', width: 2.1, height: 1.1,
     faceWalker: { animalAvatarRef: { group: rightHeadAnimal, frontPlane } }, greeting: true };
   assert.equal(api.reactToDialogue(walker, rightHeadOptions), true);
   await settle();
   now += 200;
-  frontPlane.matrixWorld.elements[0] = -1;
+  frontPlane.matrixWorld.elements[0] = Math.cos(Math.PI / 2 + Math.PI / 2); // Real east-facing animal: front card +90°, group +90°; its back/mirrored card is visible.
   frontPlane.matrixWorld.elements[13] = .4; // The renderer shifts the card up to compensate for authored ground padding.
   step();
-  const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('pingdort').frame;
+  const rightHeadFrame = win.AnimalChatheadFrame.frameForKind('skeeri-medium').frame;
+  assert.ok(rightHeadFrame.x + rightHeadFrame.width / 2 > .5, 'Skeeri genuinely has a source-right head crop');
   assert.ok(billboard().position.x < projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, 1, -1),
-    'right-side source crop still gets an emoji left of its visible head');
+    'east-facing Skeeri shows the mirrored source-right head on screen-left, so its emoji belongs on screen-left');
   assert.ok(Math.abs(billboard().position.y - (.4 + (0.5 - rightHeadFrame.y - rightHeadFrame.height * .5 + .045) * rightHeadOptions.height)) < 1e-9,
     'animal reaction follows the card’s rendered height after ground padding');
-  const cardOffset = billboard().position.x - rightHeadAnimal.position.x; // Root orientation stays fixed during this billboard turn.
-  frontPlane.matrixWorld.elements[0] = 1;
+  const cardOffset = billboard().position.x - rightHeadAnimal.position.x; // Root orientation stays fixed during the card's independently animated turn.
+  frontPlane.matrixWorld.elements[0] = Math.cos(-Math.PI / 2 + Math.PI / 2); // Real west-facing animal: front card +90°, group -90°, so the source art is shown unmirrored.
   step();
   assert.ok(billboard().position.x > projectedChatheadEdge(rightHeadAnimal, rightHeadFrame, rightHeadOptions.width, -1, 1),
-    'right-side source crop also switches to the right edge after a full facing reversal');
+    'west-facing Skeeri shows the original right-hand head on screen-right, so its emoji belongs on screen-right');
   assert.ok(Math.abs(billboard().position.x - (rightHeadAnimal.position.x - cardOffset)) < 1e-9,
     'named animal emoji mirrors around its avatar group using the rendered card direction');
   now += 700;
@@ -212,24 +213,24 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   now += 300;
   step();
   const npcReaction = billboard(); // NPC popups anchor beside the head, not above the character.
-  assert.equal(api.debugSnapshot().last.side, 'npc-right');
-  assert.ok(npcReaction.position.x > npc.position.x, 'NPC emoji is to the right of the head');
+  assert.equal(api.debugSnapshot().last.side, 'npc-left');
+  assert.ok(npcReaction.position.x < npc.position.x, 'default flipped NPC portrait places its emoji left of the head');
   assert.ok(npcReaction.position.y > .9 && npcReaction.position.y < 1.7, 'NPC emoji is near the head rather than high above it');
   assert.equal(api.debugSnapshot().last.size, expectedSize / 2, 'NPCs retain their original size');
   const npcOffset = npcReaction.position.x - npc.position.x; // Compare the anchor at the same point in the shock animation.
   const shockRayX = npcReaction.children[0].position.x; // A leftmost ray crosses to the opposite side when mirrored.
-  assert.ok(shockRayX < 0);
+  assert.ok(shockRayX > 0, 'NPC shock rays mirror outward from the left-hand anchor');
   portraitsFlipped = false;
   step();
-  assert.equal(npcReaction.position.x, npc.position.x - npcOffset, 'active NPC reactions follow a live portrait flip');
+  assert.equal(npcReaction.position.x, npc.position.x - npcOffset, 'turning off portrait flip moves an active NPC emoji to screen-right');
   assert.equal(npcReaction.children[0].position.x, -shockRayX, 'shock rays mirror their travel');
   portraitsFlipped = true;
   step();
-  assert.equal(npcReaction.position.x, npc.position.x + npcOffset, 'restoring the portrait flip restores the active reaction side');
+  assert.equal(npcReaction.position.x, npc.position.x + npcOffset, 'restoring the portrait flip moves the active emoji back left');
   camera.matrixWorld.elements[0] = 0; camera.matrixWorld.elements[2] = 1; // Turn the camera's right vector onto world Z without rotating the actor.
   step();
   assert.equal(npcReaction.position.x, npc.position.x, 'side offset follows camera right, not fixed world X');
-  assert.ok(npcReaction.position.z > npc.position.z, 'NPC emoji remains on the visible right after camera turns');
+  assert.ok(npcReaction.position.z < npc.position.z, 'NPC emoji remains on the visible left after camera turns');
   camera.matrixWorld.elements[0] = 1; camera.matrixWorld.elements[2] = 0;
   now += 1600;
   step();

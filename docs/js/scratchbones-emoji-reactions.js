@@ -149,7 +149,7 @@
       || root.userData?.creatureKind || root.userData?.creatureId || ''; // Selects the authored chathead crop for named and ordinary animals.
   }
   function portraitSide() {
-    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === false ? -1 : 1; // Keep the right-hand anchor with the game's default flipped humanoid portrait.
+    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === false ? 1 : -1; // UV-flipped humanoid portraits face screen-left; keep the reaction on the head's outer side.
   }
   function animalAnchorFor(root, options, height, size, creatureKind, avatarRef) {
     const authoredHeight = Number(options.height) || Number(root.userData?.portraitModelHeight); // Full centered animal-plane height, not its bounding-box top above the root.
@@ -159,10 +159,11 @@
     const frame = window.AnimalChatheadFrame?.frameForKind?.(creatureKind)?.frame
       || { x: .32, y: .12, width: .36, height: .36 }; // Sprite-normalized top-left fallback for species without a loaded chathead profile.
     const headCenterY = frame.y + frame.height * .5; // Places the reaction at the head's vertical center in the centered animal card.
-    const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space center, shared by both mirrored animal faces.
+    const headCenterX = frame.x + frame.width * .5 - .5; // Normalized source-space head center, retained across both mirrored animal faces.
+    const sourceSide = headCenterX > 0 ? 1 : -1; // The authored crop locates the head at either source edge (Skeeri is on the right); the popup uses this to avoid the rump.
     const gap = Math.max(size * .9, modelWidth * .045); // Camera-facing gutter between the emoji and the near edge of the head crop.
     return { height: (.5 - headCenterY) * modelHeight + modelHeight * .045,
-      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap, avatarRef } };
+      headOffset: { centerX: headCenterX, halfWidth: frame.width * .5, width: modelWidth, gap, sourceSide, avatarRef } };
   }
   function trigger(root, inputType, options = {}) {
     const type = String(inputType || '').toLowerCase();
@@ -222,7 +223,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
-      latestChange: 'Character emojis follow the portrait flip, and animal emojis are twice as large and switch sides as the animal turns.' };
+      latestChange: 'NPC emojis mirror with portraits; animal emojis follow the real head side of each species crop, including right-headed Skeeri, and turn with the card.' };
   }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;
