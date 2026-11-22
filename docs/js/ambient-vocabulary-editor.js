@@ -397,7 +397,7 @@
         }
         pairs.push({ from, to }); seen.add(from.toLowerCase());
       }
-      preset.rules = pairs; // Retains the same preset object, whose cached matcher is reconstructed after config import/game reload.
+      cfg().phoneticPresets[group.phoneticPreset] = { ...preset, rules: pairs }; // Replacing the object invalidates the shared weak-cached matcher immediately, including in-editor previews.
       notify('Updated ' + pairs.length + ' phonetic rules for ' + id + ' · export to save');
     };
   }
