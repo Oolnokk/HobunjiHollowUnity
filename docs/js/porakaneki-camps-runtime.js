@@ -455,7 +455,10 @@
     for (const furniture of (layout.furniture || [])) blockRect(furniture.col, furniture.row);
     for (const transition of (layout.transitions || [])) blockRect(transition.col, transition.row);
     for (const totem of (layout.rootTotems || [])) blockRect(totem.x ?? totem.col, totem.y ?? totem.row, totem.w || 1, totem.h || 1);
-    for (const instance of (layout.localeInstances || [])) for (const object of (instance.objects || [])) blockRect(object.x, object.y, object.w || 1, object.h || 1);
+    for (const instance of (layout.localeInstances || [])) {
+      const boxes = window.WildernessObjectFootprints?.localePlacementBoxes?.(instance) || (instance.objects || []); // Same floor/object footprint authority used by bandit placement and scenery.
+      for (const box of boxes) blockRect(box.x, box.y, box.w || 1, box.h || 1);
+    }
 
     const zoneDef = combatDeps.EXTERIOR_ZONES?.[zoneId];
     const entry = layout.toTownExit
