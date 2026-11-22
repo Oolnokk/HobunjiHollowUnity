@@ -26,7 +26,7 @@
   }
   function herdSpecies(entity) { const kind = speciesOf(entity); return HERD_SPECIES.has(kind) ? kind : null; }
   function isPredator(entity) {
-    if (!entity || entity.isCompanion || entity.isBandit || entity.banditCompanion || entity.health <= 0 ||
+    if (!entity || entity.isBandit || entity.health <= 0 ||
         entity._denHidden || entity._deathTransitionStarted || entity.wildlifeRole === 'prey' || herdSpecies(entity)) return false;
     const def = entity.def || {};
     return entity.wildlifeRole === 'predator' ||
