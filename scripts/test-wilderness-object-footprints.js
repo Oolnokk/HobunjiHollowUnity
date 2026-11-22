@@ -90,6 +90,64 @@ assert.equal(policy.localeBlocksSite(bigLocale, 46, 12), true, 'outlying locale 
 assert.equal(policy.localeBlocksSite(bigLocale, 1, 1), false, 'distant wilderness remains available for scenery');
 assert.equal(policy.localeBlocksSite({x:12,y:13}, 12, 13), true, 'pre-metadata locales keep a safe anchor radius');
 
+// Exercise the actual camp-view builders, not just the policy helper. Two
+// independent factions must protect every painted locale tile, and bandits
+// must not mislabel native stone as clearable shrub clutter.
+const localeWithGround = {
+  x: 8, y: 8, footprint: {x: 8, y: 8, w: 4, h: 3},
+  objects: [{x: 15,y: 9,w: 1,h: 1}]
+}; // Locale floor and an outlying placed prop share a single claim source.
+assert.deepEqual(policy.localePlacementBoxes(localeWithGround),
+  [{x:8,y:8,w:4,h:3},{x:15,y:9,w:1,h:1}],
+  'both the painted floor and protruding authored objects are claimed');
+assert.deepEqual(policy.localePlacementBoxes({x:0,y:0,w:2,h:2}),[{x:0,y:0,w:2,h:2}],
+  'old exported locale bounds remain available without an explicit footprint record');
+
+const campMap = {cols:20,rows:20,tiles:[],localeInstances:[localeWithGround]}; // Real layout shape accepted by both temporary camp view builders.
+for(let row=0;row<campMap.rows;row++) for(let col=0;col<campMap.cols;col++)
+  campMap.tiles.push({c:col,r:row,type:'grass',elevTier:0});
+function setCampTerrain(col,row,type,extra={}) {
+  Object.assign(campMap.tiles.find(tile=>tile.c===col&&tile.r===row),{type,...extra});
+}
+setCampTerrain(2,2,'shrub');
+setCampTerrain(3,2,'rock',{rockKind:'undiggableBoulder',boulderId:'test'});
+setCampTerrain(4,2,'rock'); // Unidentified rock can be a solid natural cliff, never assumed removable.
+setCampTerrain(5,2,'rock',{rockKind:'diggableRockOre'});
+const tileTypes = {SHRUB:'shrub',ROCK:'rock',PATH:'path',RAMP:'ramp',WATERFALL:'waterfall'}; // Mimics the actual runtime terrain-kind constants.
+const campBrowser = {WildernessObjectFootprints:policy}; // Real browser global read by both production view builders.
+const banditSource = fs.readFileSync('docs/js/bandit-camps.js','utf8');
+const banditViewSource = banditSource.slice(
+  banditSource.indexOf('  function _banditZoneView(zoneId) {'),
+  banditSource.indexOf('\n  function _syncBanditFlora(zoneId, snapshots, restore) {')
+); // Extracts the exact shipping view builder, retaining all its real branches.
+assert(banditViewSource.startsWith('  function _banditZoneView'), 'the production bandit view builder is still discoverable');
+const banditView = vm.runInNewContext('('+banditViewSource.trim()+')', {
+  deps:{zoneLayouts:new Map([['map_test',campMap]]),WATERWAY_TYPES:new Set(),TileType:tileTypes,EXTERIOR_ZONES:{}},
+  _banditZoneViews:new Map(),window:campBrowser
+})('map_test');
+function occupant(view,col,row) {
+  return view.objects.find(object=>object.id===view.tiles[row][col].occupiedBy);
+}
+assert.equal(occupant(banditView,2,2).type,'shrub','ordinary flora remains safely removable by camps');
+for(const col of [3,4,5]){
+  assert.equal(occupant(banditView,col,2).type,'unique',
+    'boulders, cliffs and ore are all excluded rather than partially rewritten by bandit tents');
+}
+assert.equal(occupant(banditView,9,9).localeMeta,true,'bandit tents cannot overlap a locale\'s unfurnished painted floor');
+assert.equal(occupant(banditView,15,9).localeMeta,true,'bandits must avoid outlying locale furnishings');
+assert.equal(banditView.sourceLayout,campMap,'the bandit temporary view shares the original layout reservations');
+
+const tribeSource = fs.readFileSync('docs/js/porakaneki-camps-runtime.js','utf8');
+const tribeViewSource = tribeSource.slice(tribeSource.indexOf('  function buildZoneView(zoneId, layout) {'),
+  tribeSource.indexOf('\n  const MIN_HUNTER_SEPARATION_TILES',tribeSource.indexOf('  function buildZoneView(zoneId, layout) {')));
+assert(tribeViewSource.startsWith('  function buildZoneView'), 'the production tribal view builder is still discoverable');
+const tribeView = vm.runInNewContext('('+tribeViewSource.trim()+')',{
+  combatDeps:{WATERWAY_TYPES:new Set(),TileType:tileTypes,EXTERIOR_ZONES:{}},KEY:'porakaneki',window:campBrowser
+})('map_test',campMap);
+assert.equal(occupant(tribeView,9,9).localeMeta,true,'tribal tents cannot occupy an authored floor');
+assert.equal(occupant(tribeView,15,9).localeMeta,true,'tribal tents cannot occupy outlying locale props');
+assert.equal(tribeView.sourceLayout,campMap,'the tribal view retains the same original layout identity');
+
 const sceneryBrowser = {}; // VM browser isolates the renderer's globals from other headless test files.
 const rendererProps = new Map(); // Captures registered stone colliders through the real AreaFootprintBlockers-compatible API.
 class TestGroup {
