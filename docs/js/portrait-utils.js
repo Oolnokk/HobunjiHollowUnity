@@ -2574,7 +2574,8 @@ function portraitOptionFromJson(entry, json) {
   const maskApi = window.PortraitBeardHoodCutout;
   const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null;
   const hoodWhiskerMask = maskApi?.normalizeMask?.(json.hoodWhiskerMask) || null;
-  const hoodCutoutRequestMode = json.hoodCutoutRequestMode==='silhouette'?'silhouette':null; // Each beard's own art supplies the automatic request. // Priority whisker pixels belong to beard cosmetic.
+  const hoodCutoutRequestMode = ['silhouette','painted'].includes(json.hoodCutoutRequestMode)
+    ? json.hoodCutoutRequestMode : null; // Each beard's own art supplies the automatic request. // Priority whisker pixels belong to beard cosmetic.
   const variantHoodCutoutRequestModes = {}; // Variant metadata can switch request shape without copying another beard mask.
   const variantHoodWhiskerMasks = {}; // Shared/variant whisker paint is independent from normal requests. // Authored in front-portrait coordinates, independent of beard art tint.
   const hoodTuftRoots = maskApi?.normalizeRoots?.(json.hoodTuftRoots) || []; // Optional inner-ring stretch targets, not extra beard geometry.
@@ -2609,7 +2610,8 @@ function portraitOptionFromJson(entry, json) {
     const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
     const whiskers = maskApi?.normalizeMask?.(value?.hoodWhiskerMask);
     if (whiskers) variantHoodWhiskerMasks[key]=whiskers;
-    if (value?.hoodCutoutRequestMode==='silhouette') variantHoodCutoutRequestModes[key]='silhouette';
+    if (['silhouette','painted'].includes(value?.hoodCutoutRequestMode))
+      variantHoodCutoutRequestModes[key]=value.hoodCutoutRequestMode;
     if (mask) variantHoodCutoutMasks[key] = mask; // An explicitly empty variant mask clears the shared cutout.
     const allowed = maskApi?.normalizeMask?.(value?.beardCutoutAllowedMask);
     if (allowed) variantBeardCutoutAllowedMasks[key] = allowed;
