@@ -711,7 +711,8 @@
   function select(id) {
     if((id==='baby'||elbowSide(id))&&!editingBaby)id='anchor';
     if(!guides[id])return;
-    if(id==='anchor'||id==='back')babyPoseView=id; // The next Rotate Baby operation edits whichever carry mode was selected.
+    if(id==='anchor'||id==='back')babyPoseView=id; // The next Move/Rotate Baby edits the explicitly chosen held/back pose.
+    else if(id==='left'||id==='right'||elbowSide(id))babyPoseView='anchor'; // Hand/elbow controls only operate while the baby is HELD in arms.
     state.selectedType='carry';
     state.selectedId=id;
     if(editingBaby)setBabyBones(!!el('carryBabyBones')?.checked); // Re-enable real paper arms after switching back from back-stow.
