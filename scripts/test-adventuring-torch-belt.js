@@ -197,6 +197,12 @@ torch.init({
   getEquippedTool: () => 'torch', getUnlocked: () => [],
   refreshActionBar() {}, toolMeshMap,
 });
+const fireModule = fs.readFileSync('docs/js/stowed-torch-fire.js', 'utf8'); // Guard against future re-coupling of the fire adapter to world/avatar logic.
+const presenterModule = fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8'); // Runtime should only coordinate the separately owned visual and particle adapters.
+assert.doesNotMatch(fireModule, /PlayerBodyTransformComposer|WorldPortraitLife|positionAtPosterior|configuredSnapshot/,
+  'shared fire may not own player anatomy, portrait yaw or attachment profiles');
+assert.doesNotMatch(presenterModule, /registerLayer|activateStatic|new THREE\\.TextureLoader|rawTexture/,
+  'stow presenter may not duplicate layered-weapon fire, recoloring or source-texture ownership');
 const sync = subscribers.get('adventuring-torch-belt');
 assert.equal(typeof sync, 'function', 'presenter registers on the existing scheduler, not its own RAF');
 assert.equal(typeof world.HobunjiStowedTorchFire.create, 'function', 'independent fire adapter is available');
