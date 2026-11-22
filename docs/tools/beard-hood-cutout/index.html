@@ -915,18 +915,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       if(!imported||typeof imported!=='object'||Array.isArray(imported)||!imported.parts&&!imported.speciesVariants)
         throw Error('Expected a complete beard cosmetic JSON with parts or speciesVariants');
       remember();beardDoc=imported;drafts.delete(draftKey());
-      const importedScope=scopeKey();
-      const source=importedScope==='shared'?imported:imported.speciesVariants?.[variant]||imported;
-      mask=Cut.normalizeMask(source.hoodCutoutMask??imported.hoodCutoutMask)||empty();
-      whiskerMask=Cut.normalizeMask(source.hoodWhiskerMask??imported.hoodWhiskerMask)||empty();
-      roots=Cut.normalizeRoots(source.hoodTuftRoots??imported.hoodTuftRoots);
-      $('maxStretch').value=source.hoodTuftMaxStretch??imported.hoodTuftMaxStretch??36;
-      $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??DEFAULT_PAINT_ALPHA;
-      $('subdivision').value=source.hoodTuftSubdivision??imported.hoodTuftSubdivision??4;
-      $('aboveInfluence').value=source.hoodTuftAboveInfluence??imported.hoodTuftAboveInfluence??100;
-      $('belowInfluence').value=source.hoodTuftBelowInfluence??imported.hoodTuftBelowInfluence??100;
-      updateLabels();
-      await prepare(false);status('Imported '+file.name+'. Paint, mark corners, and export the revised cosmetic.');
+      await prepare(true,false); // Reload imported source artwork and its authored painted/automatic request mode.
+      status('Imported '+file.name+'. Paint, mark corners, and export the revised cosmetic.');
     }catch(error){status('Import failed: '+error.message);}
     $('beardJson').value='';
   };
@@ -965,16 +955,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function exportedJson(){
     if(!beardDoc)throw Error('No beard cosmetic loaded');
     const json=JSON.parse(JSON.stringify(beardDoc)),chosen=Cut.normalizeMask(mask)||empty();
-    const metadata={hoodCutoutMask:chosen,hoodWhiskerMask:Cut.normalizeMask(whiskerMask)||empty(),
+    const metadata={hoodWhiskerMask:Cut.normalizeMask(whiskerMask)||empty(),
       hoodTuftRoots:Cut.normalizeRoots(roots),
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
-      hoodPaintAlphaFloor:selectedAlphaFloor()}; // Exact authoring parameters round-trip in the cosmetic JSON.
-    if(scopeKey()==='shared')Object.assign(json,metadata);
-    else {
-      json.speciesVariants=json.speciesVariants||{};
-      json.speciesVariants[variant]={...(json.speciesVariants[variant]||{}),...metadata};
-    }
+      hoodPaintAlphaFloor:selectedAlphaFloor()}; // Only user-painted requests are frozen into RLE; generated requests remain derived from the beard art.
+    if(beardRequestAutomatic)metadata.hoodCutoutRequestMode='silhouette';
+    else {metadata.hoodCutoutMask=chosen;metadata.hoodCutoutRequestMode='painted';}
+    const destination=scopeKey()==='shared'?json:
+      (json.speciesVariants=json.speciesVariants||{},
+       json.speciesVariants[variant]=json.speciesVariants[variant]||{});
+    Object.assign(destination,metadata);
+    if(beardRequestAutomatic)delete destination.hoodCutoutMask;
     return json;
   }
   function exportedHoodJson(){
