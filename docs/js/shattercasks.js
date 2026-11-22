@@ -2379,23 +2379,32 @@
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
     window.CratePiles?.sweepMelee?.(collider,opts);
+    const stamp=Number(opts.actor?.lungeOriginMs); // Shared attack identity for suppressing a repeated lunge/strike on the same burden.
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
       if(vase.exploded||vase.carried||vase.hanging)continue;
+      if(!opts.lungeContact && Number.isFinite(stamp) && stamp>0
+        && vase.lastLungeContactStamp===stamp
+        && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
+      const directLungeContact=!!(opts.lungeContact && opts.targetBurden===vase); // Exact Targetables collision takes precedence over the older radius approximation.
+      if(opts.lungeContact && opts.targetBurden && !directLungeContact)continue;
       const box=worldHitbox(vase);
       const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
       const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
       const centerY=box?(box.min.y+box.max.y)/2:baseHeight(vase.col,vase.row)+.35;
-      const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
-      const height=box?(box.max.y-box.min.y)/2:.40;
-      const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
-      const radial=Math.hypot(dx,dz);
-      if(radial>collider.horizontalRangeWorld+radius)continue;
-      const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
-      if(delta>(collider.halfConeRad||.5)+.10)continue;
-      const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
-      if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      if(!directLungeContact) {
+        const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
+        const height=box?(box.max.y-box.min.y)/2:.40;
+        const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
+        const radial=Math.hypot(dx,dz);
+        if(radial>collider.horizontalRangeWorld+radius)continue;
+        const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
+        if(delta>(collider.halfConeRad||.5)+.10)continue;
+        const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
+        if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      }
+      if(opts.lungeContact && Number.isFinite(stamp) && stamp>0)vase.lastLungeContactStamp=stamp;
       window.WorldEvents?.emit('struck',{scope:vase.mapId,targetId:vase.id,targetKind:'burden',burdenKind:vase.kind,source:'melee',attackerId:opts.actor?.id||null,x:cx,y:centerY,z:cz});
       if(typeof vase.strikeHandler==='function') { // A burden that handles its own strikes (hanging on a rope: it swings) is not detonated by them.
         let handled=false;
