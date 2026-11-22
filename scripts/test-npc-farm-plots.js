@@ -340,22 +340,42 @@ console.log('ok - legacy overlapping family plots and safe ownership');
 
 // NPC town fields now use the same cached, PNG-based soil materials as the
 // player's farm; no extra texture load or solid-colour field-only pipeline.
-const soilMaterials = []; // Resolved by the actual NPC draw path in this small THREE harness.
-const soilHeights = []; // Reveals the shared furrow/irrigation relief geometry.
+const soilMaterials = []; // Shared terrain material resolutions requested by actual NPC plot drawTile.
+const soilHeights = []; // Interior/rim relief measured from the real drawTile geometry-building loop.
 class FakeSoilPlane {
-  constructor() {
-    this.position = { count: 4, getX: i => i % 2 ? 0.48 : -0.48, getZ: i => i > 1 ? 0.48 : -0.48,
-      setY: (_i, y) => soilHeights.push(y) };
+  constructor(width, height, segmentsX = 1, segmentsY = 1) {
+    this.width = width; this.height = height; this.segmentsX = segmentsX; this.segmentsY = segmentsY;
+    this.points = []; // Local vertices, heights and UV coordinates from the rotated, XZ-ground-aligned plane.
+    for (let row = 0; row <= segmentsY; row++) for (let col = 0; col <= segmentsX; col++) {
+      this.points.push({ x: (col / segmentsX - 0.5) * width, y: 0, z: (row / segmentsY - 0.5) * height,
+        u: col / segmentsX, v: row / segmentsY });
+    }
+    this.position = {
+      count: this.points.length,
+      getX: i => this.points[i].x, getZ: i => this.points[i].z,
+      setY: (i, y) => { this.points[i].y = y; soilHeights.push(y); },
+    }; // Exercise the actual 9-by-9 relief sampler rather than faking four high corners.
+    this.uv = {
+      count: this.points.length,
+      setXY: (i, u, v) => { this.points[i].u = u; this.points[i].v = v; },
+    }; // World-space UVs are inspected at adjoining plot edges.
   }
-  rotateX() { return this; }
-  getAttribute() { return this.position; }
+  rotateX() { return this; } // points are already represented in the post-rotation XZ plane.
+  getAttribute(name) { return name === 'position' ? this.position : name === 'uv' ? this.uv : null; }
+  clone() {
+    const copy = new FakeSoilPlane(this.width, this.height, this.segmentsX, this.segmentsY);
+    copy.points = this.points.map(point => ({ ...point })); // A per-tile UV translation never mutates the shared relief mesh.
+    return copy;
+  }
   computeVertexNormals() {}
+  dispose() { this.disposed = true; } // Ensures old tile-specific UV buffers are freed on plot removal.
 }
 class FakeSoilMesh {
   constructor(geometry, material) {
     this.geometry = geometry; this.material = material; this.userData = {}; this.rotation = { x: 0 };
     this.position = { set: (x, y, z) => { this.center = { x, y, z }; } };
   }
+  traverse(callback) { callback(this); } // Real Three Mesh traversal includes itself for geometry cleanup.
 }
 class FakeSoilGroup {
   constructor() { this.children = []; this.parent = null; }
@@ -374,14 +394,27 @@ win.TerrainTileMaterials = { resolveTileMat: (mapId, key) => {
 } };
 api.registerMap('map_hobunji_town', [
   { id: 'ginju_textured_bed', kind: 'till', tiles: [[4, 4]], tillers: ['gorobi_ginju'] },
-  { id: 'ginju_textured_trench', kind: 'dig', tiles: [[5, 4]], diggers: ['gikali_ginju'] },
+  { id: 'ginju_textured_trench', kind: 'dig', tiles: [[5, 4], [6, 4]], diggers: ['gikali_ginju'] },
 ]);
 api.init({ findWalker: () => null, normalizeNpcArea: id => id === 'map_hobunji_town' ? 'town' : id,
   getCurrentArea: () => 'town', getAreaScene: () => soilScene, surfaceY: () => 0 });
 api.tick();
-assert.deepEqual(soilMaterials.map(m => m.key).sort(), ['tilled', 'trench'], 'town soil and trench use shared authored material keys');
+assert.deepEqual(soilMaterials.map(m => m.key).sort(), ['tilled', 'trench', 'trench'], 'town soil and trench use shared authored material keys');
 assert.ok(soilMaterials.every(m => m.mapId === 'map_hobunji_town'), 'soil textures resolve in the map-specific material namespace');
-assert.equal(soilScene.children[0].children.length, 2, 'NPC bed and trench draw once into the current scene');
-assert.ok(soilHeights.some(y => y > 0.05), 'the old flat rectangles now have sculpted surface relief');
-console.log('ok - Ginju soil renders shared terrain textures and shallow furrows/trench lips');
+const [bed, trenchLeft, trenchRight] = soilScene.children[0].children; // Three adjacent, truly rendered fields (one bed plus two trench segments).
+assert.equal(soilScene.children[0].children.length, 3, 'NPC bed and paired trench cells draw once into the current scene');
+assert.ok(soilHeights.some(y => y > 0.05) && soilHeights.some(y => y < 0.04), 'beds and trench banks retain measurable surface relief');
+assert.equal(bed.geometry.points.length, 81, 'the sculpted soil retains all 9-by-9 vertices');
+assert.equal(bed.geometry.points.find(point => point.x === 0 && point.z === 0)?.u, 4.5, 'bed centre UV matches its world X position');
+const edge = (mesh, localX) => mesh.geometry.points.find(point =>
+  Math.abs(point.x - localX) < 0.00001 && point.z === 0); // Compare matching local edge points across consecutive trench tiles.
+const leftEdge = edge(trenchLeft, 0.48), rightEdge = edge(trenchRight, -0.48);
+assert.ok(leftEdge && rightEdge, 'the two trench tiles expose both adjoining 3D edges');
+assert.ok(Math.abs((rightEdge.u - leftEdge.u) - 0.04) < 0.00001, 'trench texture coordinates continue in world space rather than restarting per tile');
+assert.equal(leftEdge.v, rightEdge.v, 'adjoining trench edges use the same world-space texture V');
+const liveGeometries = [bed, trenchLeft, trenchRight].map(mesh => mesh.geometry); // Per-tile cloned buffers must be disposed when map ownership changes.
+api.registerMap('map_hobunji_town', []);
+assert.equal(soilScene.children[0].children.length, 0, 'reloaded town removes all stale plot objects');
+assert.ok(liveGeometries.every(geometry => geometry.disposed), 'reloaded town disposes every offset soil geometry without leaking buffers');
+console.log('ok - Ginju soil uses continuous world UVs, sculpts beds, and disposes reloaded plot buffers');
 process.exit(0);
