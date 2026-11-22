@@ -21,10 +21,12 @@
   }
 
   function releaseStandingSurface(object) {
-    const id = object?.userData?.puzzleStandingSurfaceId; // Registered for this specific object's animated part, not the map's other furniture.
-    if (!id) return;
-    window.DynamicSurfaces?.remove?.(id);
-    object.userData.puzzleStandingSurfaceId = null;
+    const data = object?.userData; // Surface IDs belong to this particular instance and its animated parts.
+    if (!data) return;
+    if (data.puzzleStandingSurfaceId) window.DynamicSurfaces?.remove?.(data.puzzleStandingSurfaceId);
+    for (const id of data.puzzlePlateSurfaceIds || []) window.DynamicSurfaces?.remove?.(id);
+    data.puzzleStandingSurfaceId = null;
+    data.puzzlePlateSurfaceIds = null;
   }
 
   // Standable moving furniture uses its real rendered top. Raycasting from above also handles tilted/fallen parts
@@ -81,6 +83,22 @@
     return true;
   }
 
+  function registerPlateSurfaces(mapId, object) {
+    const DS = window.DynamicSurfaces;
+    const parts = object.userData.puzzlePartMeshes; // Only authored stone meshes participate, never payloads or glow graphics.
+    const marked = [...parts.values()].filter(part => part.userData?.authoredPart?.walkableElevation === true);
+    const plate = parts.get('plate') || (parts.size === 1 ? parts.values().next().value : null); // Legacy single-slab authoring.
+    for (const part of marked.length ? marked : [plate]) {
+      const support = DS?.pressurePlateSurface?.(part, {
+        id:'furniture-puzzle-plate-'+object.id+'-'+part?.id, scope:String(mapId), plateArea:String(mapId),
+        enabled:() => object.visible !== false && part.visible !== false,
+      });
+      if (!support) continue;
+      DS.registerSurface(support);
+      (object.userData.puzzlePlateSurfaceIds ||= []).push(support.id);
+    }
+  }
+
   function initializeNode(mapId, record, object, options = {}) {
     const inheritedPuzzle = object?.userData?.furniturePuzzle;
     const instancePuzzle = record?.puzzle;
@@ -132,7 +150,8 @@
     window.FurnitureDecalRuntime?.setGlowState?.(object, object.userData.puzzleProgress);
     releaseStandingSurface(object);
     applyMechanism(object, object.userData.puzzleProgress);
-    registerStandingSurface(mapId, object);
+    if (puzzle.behavior === 'pressurePlate' || puzzle.behavior === 'burdenPlate') registerPlateSurfaces(mapId, object);
+    else registerStandingSurface(mapId, object);
     return id;
   }
 

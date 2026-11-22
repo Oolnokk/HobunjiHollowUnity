@@ -438,6 +438,12 @@
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
+      const surfaces=root.DynamicSurfaces; // The slab adds support above its existing cliff shelf.
+      const support=surfaces?.pressurePlateSurface?.(plate,{
+        id:portalTag+':plate:'+portal.area+':'+portal.denId,
+        scope:portalTag+':'+portal.area,plateArea:portal.area,
+      });
+      if(support){surfaces.registerSurface(support);portal.plateSurfaceId=support.id;}
       portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
         radius:.46,thickness:.09,
         toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
@@ -541,6 +547,7 @@
     if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
     portal.plateArt?.dispose?.(); // No ownership of the player instrument session; only the cave's own decal is retired.
     if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
+    if(portal.plateSurfaceId)root.DynamicSurfaces?.remove?.(portal.plateSurfaceId);
     portal.visualRoot?.parent?.remove?.(portal.visualRoot);
     portal.visualRoot?.traverse?.(child=>{
       if(!child.isMesh)return;
@@ -625,6 +632,7 @@
     if(wasInside&&player&&!player.climbing){
       player.x=(wasInside.entry.c+.5)*tile;player.y=(wasInside.entry.r+.5)*tile;
       player.onCliffBalcony=wasInside.shelf.id;
+      player._cliffBalconyY=wasInside.shelf.y; // Restore the shelf beneath the returned player before sampling its plate.
       player.climbSurfaceY=wasInside.shelf.y; // Same exact elevation owner as the existing cliff climbing movement system.
     }
     const px=Number(player?.x)/tile,pz=Number(player?.y)/tile;

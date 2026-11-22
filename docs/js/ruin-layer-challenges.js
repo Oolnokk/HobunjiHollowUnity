@@ -751,6 +751,12 @@
         });
       }
     }
+    const plateSurfaces=options.DynamicSurfaces||root.DynamicSurfaces; // These plates remain physical after their challenge is solved.
+    const plateSupport=plateSurfaces?.pressurePlateSurface?.(rec.plateArtStoneMesh||rec.plate,{
+      id:'layer-pressure-plate-'+group.id,scope:'layer-pressure-plate-'+id,
+      plateArea:options.area||options.mapId,
+    });
+    if(plateSupport)plateSurfaces.registerSurface(plateSupport);
     if(rec.session&&rec.glyphs?.length){
       rec.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
         area:options.area||options.mapId,
@@ -885,6 +891,7 @@
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
+      if(plateSupport)plateSurfaces.remove(plateSupport.id);
       rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
       if(rec.plateArt)rec.plateArtStoneMesh?.material?.dispose?.(); // Only the decorated visible stone material belongs to this mechanism.
       for(const emitter of flameVisuals)emitter.dispose?.();

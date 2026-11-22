@@ -547,6 +547,13 @@
           object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType; // Makes their authoritative occupancy source visible in Pixel Probe.
         }
       }
+      if (motion === 'pressurePlate') {
+        // The base remains above the fully depressed slab on native weighted plates.
+        for (const part of [d.pressPlate, object.children?.[0]]) {
+          const support = DS.pressurePlateSurface?.(part, { id:'devruin-pressure-plate-'+part?.id, scope:SCOPE });
+          if (support) DS.registerSurface(support);
+        }
+      }
       if (d.pushable && (motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock')) ruin.pushBlocks.push(object);
       if (d.transitDoor) ruin.transitDoors.push(object);
       if (d.ruinInteriorWall) walls.push(object);
@@ -2062,7 +2069,9 @@
         info={x,z,pit:!support,support:support||null};
       }else{
         const floor=grid.floorLevelAt(col,row,level);
-        info={x,z,pit:false,support:floor<0?null:{id:`shaft:${col},${row},${floor}`,y:grid.levelToY(floor)}};
+        const floorY=floor<0?null:grid.levelToY(floor); // Plate slabs sit on top of the voxel grid's structural floor.
+        const plate=floorY==null?null:DS.samplePressurePlate?.(MAP_ID,x,z,floorY,Math.max(floorY,ruin.supportY)+MAX_STEP_HEIGHT+.02);
+        info={x,z,pit:false,support:plate||(floor<0?null:{id:`shaft:${col},${row},${floor}`,y:floorY})};
       }
     }else info=positionInfo(deps.player.x,deps.player.y,ruin.levelRelativeSupport?ruin.supportY:null);
     if(grid && info.support && ruin.supportY-info.support.y>grid.cellHeight+.02){

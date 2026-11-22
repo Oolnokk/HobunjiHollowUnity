@@ -613,6 +613,25 @@
         approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
         revealUntil:0, lastPlayerKey:null, triggerCount:0,
       };
+      plateBatch.userData.walkableElevation = true;
+      const halfPlate = plateSize * .5; // One queryable footprint for the batch, with individual live slab heights.
+      const supportId = 'safe-path-plates-'+hall.id;
+      DS.registerSurface({
+        id:supportId,scope:SCOPE,walkableElevation:true,priority:15,
+        bounds:{
+          minX:Math.min(cells[0].x,cells.at(-1).x)-halfPlate,maxX:Math.max(cells[0].x,cells.at(-1).x)+halfPlate,
+          minZ:Math.min(cells[0].z,cells.at(-1).z)-halfPlate,maxZ:Math.max(cells[0].z,cells.at(-1).z)+halfPlate,
+        },
+        sampleTopY:(x,z)=>{
+          const col=Math.round(((axis==='x'?z:x)-originCross)/crossSpacing);
+          const row=Math.round(((axis==='x'?x:z)-originAlong)/alongSpacing);
+          if(col<0||col>=cols||row<0||row>=rows)return null;
+          const cell=cells[row*cols+col];
+          if(Math.abs(x-cell.x)>halfPlate||Math.abs(z-cell.z)>halfPlate)return null;
+          return cell.y+.028+.055*.5-(cell.renderDown?.032:0);
+        },
+      });
+      state.surfaceIds.add(supportId);
       state.safeGrids.push(grid);
       state.controls.push({
         kind:'safePathReveal', object:button, promptRoot:button, range:1.9, priority:20, touchIcon:'✦',
@@ -1246,6 +1265,10 @@
         width:.42,height:.42,idleColor:'#7de6c7',pressedColor:'#fff0a4',activeColor:'#ffe184',
       }); // Glowing glyph replaces all per-interaction stone recoloring.
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,signal,down:false,played:false,pressCount:0});
+    }
+    for(const plate of plates){
+      const support=DS.pressurePlateSurface?.(plate.mesh,{id:'chord-plate-'+plate.mesh.id,scope:SCOPE});
+      if(support){DS.registerSurface(support);state.surfaceIds.add(support.id);}
     }
     const scoreId='ruin:'+String(state.buildSeed)+':'+id; // The world seed and module ID fix both difficulty and tune across reloads.
     const song=composer.generate(scoreId,{difficulty:composer.ruinDifficulty?.(state.context?.tier)??3}); // Stable cave-style score with difficulty determined by this ruin's rarity tier.

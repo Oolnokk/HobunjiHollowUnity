@@ -10,7 +10,7 @@
   const scriptUrls = [
     "js/locale-cave-runtime.js?v=20261010h40fea5e",
     "js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1",
-    "js/puzzle-cave-entrances.js?v=20261121attackReadiness1",
+    "js/puzzle-cave-entrances.js?v=20261122h943ee34",
     "js/cave-tripwire-traps.js?v=20261110tripwire2",
     "js/cave-site-system.js?v=20261118cliffDoorRiddle1"
   ]; // Versioned game modules owned by this group.
