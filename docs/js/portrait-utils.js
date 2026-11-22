@@ -2472,8 +2472,8 @@ function portraitOptionFromJson(entry, json) {
   const maskApi = window.PortraitBeardHoodCutout;
   const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null; // Authored in front-portrait coordinates, independent of beard art tint.
   const hoodTuftRoots = maskApi?.normalizeRoots?.(json.hoodTuftRoots) || []; // Optional inner-ring stretch targets, not extra beard geometry.
-  const hoodTuftMaxStretch = Number.isFinite(Number(json.hoodTuftMaxStretch))
-    ? Math.max(2,Math.min(64,Number(json.hoodTuftMaxStretch))) : 36; // Limit deformation without modifying hood sprites.
+  const hoodTuftMaxStretch = json.hoodTuftMaxStretch != null && Number.isFinite(Number(json.hoodTuftMaxStretch))
+    ? Math.max(0,Math.min(64,Number(json.hoodTuftMaxStretch))) : 36; // Fractional displacement budget: 0 disables, no sudden all-or-nothing threshold.
   const hoodTuftSubdivision = maskApi?.normalizeSubdivision?.(json.hoodTuftSubdivision) ?? 4; // 1 broad to 16 local; 4 matches earlier deformation.
   const hoodTuftAboveInfluence = maskApi?.normalizeVerticalInfluence?.(json.hoodTuftAboveInfluence) ?? 100; // Above the marker; defaults to full legacy deformation.
   const hoodTuftBelowInfluence = maskApi?.normalizeVerticalInfluence?.(json.hoodTuftBelowInfluence) ?? 100; // Below the marker; independently controlled.
@@ -2489,7 +2489,7 @@ function portraitOptionFromJson(entry, json) {
     if (Array.isArray(value?.hoodTuftRoots))
       variantHoodTuftRoots[key] = maskApi?.normalizeRoots?.(value.hoodTuftRoots) || []; // [] explicitly disables inherited shared corners.
     if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
-      variantHoodTuftMaxStretch[key] = Math.max(2,Math.min(64,Number(value.hoodTuftMaxStretch)));
+      variantHoodTuftMaxStretch[key] = Math.max(0,Math.min(64,Number(value.hoodTuftMaxStretch)));
     if (value?.hoodTuftSubdivision != null)
       variantHoodTuftSubdivision[key] = maskApi?.normalizeSubdivision?.(value.hoodTuftSubdivision) ?? 4;
     if (value?.hoodTuftAboveInfluence != null)
