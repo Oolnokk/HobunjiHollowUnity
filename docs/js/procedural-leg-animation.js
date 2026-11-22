@@ -648,6 +648,20 @@
     return group;
   }
 
+  // Full Character Scale's isolated lineup can display anatomy from the
+  // opposite model-forward convention. Mirror only the Z of the *visual*
+  // subtree, not the leg-root, hip, IK chain, or anatomical X handedness.
+  // This must work for fallback feet now and asynchronously loaded GLBs later.
+  function alignPreviewFootFacing(THREE, foot, reverseDepth) {
+    if (!reverseDepth || !foot?.children?.length) return foot;
+    const visual = new THREE.Group(); // Carries preview-only depth reversal without changing leg targets or gameplay feet.
+    visual.name = 'full_scale_preview_foot_facing';
+    for (const child of [...foot.children]) visual.add(child);
+    visual.scale.z = -1; // Reverse forward/backward geometry, keep left/right and ankle roll exactly as authored.
+    foot.add(visual);
+    return foot;
+  }
+
   const _glbSceneCache = new Map(); // glb path -> Promise<THREE.Object3D>
 
   function loaderForThree(THREE) {
@@ -1220,8 +1234,10 @@
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
     }
 
-    const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
-    const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
+    const leftFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth); // Corrects the isolated author lineup, not shared gameplay leg transforms.
+    const rightFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth);
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
     legChains.left.calf.add(leftFallback);
@@ -1261,6 +1277,8 @@
         buildGlbFoot(THREE, footConfig, { speciesId, targetHeight, surfaceForRole }),
       ]).then(([leftMesh, rightMesh]) => {
         if (state.disposed) { disposeObjectResources(leftMesh); disposeObjectResources(rightMesh); return; }
+        alignPreviewFootFacing(THREE, leftMesh, options.previewReverseFootDepth); // Async replacement preserves the exact same preview convention as temporary feet.
+        alignPreviewFootFacing(THREE, rightMesh, options.previewReverseFootDepth);
         leftMesh.name = 'left_foot';
         rightMesh.name = 'right_foot';
         leftMesh.scale.x *= -1; // mirrors handedness for the left foot from a single authored mesh
