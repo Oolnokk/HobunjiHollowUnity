@@ -194,7 +194,7 @@ for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkao
 
 
 // November 16 export: animal-only updates. Character/NPC anatomy and posterior data from the same export are deliberately excluded.
-const novemberAnimalAuthoring = {"gar-wolf":{"grip":{"x":0.01,"y":-0.14097888312228624,"z":0.07486897921502367},"small":{"x":0.28,"y":0.34}},"dabinggi-hound":{"grip":{"x":-0.16036566987282258,"y":-0.12636677592420467,"z":0.12410100452746164},"small":{"x":0.35,"y":0.35}},"drenkirra":{"grip":{"x":-0.0036970156287619823,"y":-0.11914729549653388,"z":0.09707381568917758},"small":{"x":0.9,"y":0.9}},"puktuk":{"grip":{"x":0,"y":-0.257,"z":0.034273761545456985},"small":{"x":0.28,"y":0.28}},"voorg-ass":{"grip":{"x":0,"y":-0.11122461401165312,"z":0.05961047587703741},"small":{"x":0.34,"y":0.34}},"nelk":{"grip":{"x":0.05838103969211583,"y":-0.06616055534830413,"z":0.05330590874914502},"small":{"x":0.44,"y":0.44}},"nazgraku":{"grip":{"x":-0.010120303229480966,"y":-0.112,"z":0.04704726667943677},"small":{"x":0.5,"y":0.5}},"uumkaoii":{"grip":{"x":0,"y":-0.2057328849409156,"z":-0.004605298975405354},"small":{"x":0.24,"y":0.24}},"moot":{"grip":{"x":0,"y":-0.09985368986154525,"z":0.1},"small":{"x":0.35,"y":0.35},"saddle":{"x":0,"y":0.1892393302917481,"z":0.02},"large":{"x":1.5,"y":1.5},"medium":{"x":1,"y":1}}}; // Exact approved creature shoulders and Small sizes from the supplied rig JSON.
+const novemberAnimalAuthoring = {"gar-wolf":{"grip":{"x":0.01,"y":-0.14097888312228624,"z":0.07486897921502367},"small":{"x":0.28,"y":0.34}},"dabinggi-hound":{"grip":{"x":-0.16036566987282258,"y":-0.12636677592420467,"z":0.12410100452746164},"small":{"x":0.35,"y":0.35}},"drenkirra":{"grip":{"x":-0.0036970156287619823,"y":-0.11914729549653388,"z":0.09707381568917758},"small":{"x":0.9,"y":0.9}},"puktuk":{"grip":{"x":0,"y":-0.257,"z":0.034273761545456985},"small":{"x":0.28,"y":0.28}},"voorg-ass":{"grip":{"x":0,"y":-0.11122461401165312,"z":0.05961047587703741},"small":{"x":0.34,"y":0.34}},"nelk":{"grip":{"x":0.05838103969211583,"y":-0.06616055534830413,"z":0.05330590874914502},"small":{"x":0.44,"y":0.44}},"nazgraku":{"grip":{"x":-0.010120303229480966,"y":-0.112,"z":0.04704726667943677},"small":{"x":0.5,"y":0.5}},"uumkaoii":{"grip":{"x":0,"y":-0.2057328849409156,"z":-0.004605298975405354},"small":{"x":0.24,"y":0.24}},"moot":{"grip":{"x":0,"y":-0.09985368986154525,"z":0.1},"small":{"x":0.35,"y":0.35},"saddle":{"x":0,"y":0.1892393302917481,"z":0.02},"large":{"x":1,"y":1},"medium":{"x":0.75,"y":0.75}}}; // Exact approved creature shoulders and Small sizes from the supplied rig JSON.
 for (const [kind, expected] of Object.entries(novemberAnimalAuthoring)) {
   const animal = profiles.creatures[kind]; // Checks shared gameplay defaults used by Animation Author, without replacing any character fields.
   assert(animal, kind + ' must be present in canonical runtime rig profiles');
@@ -217,9 +217,9 @@ const expectedMootChathead = { x: 0.0843, y: 0.085, width: 0.26, height: 0.37, c
 const pingdort = profiles.creatures.pingdort; // Check the independent bird baseline instead of the old native-foot scaled default.
 assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.saddle), { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }, 'Pingdort uses the authored neutral saddle anchor');
 assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.shoulderGrip.position), { x: 0, y: -0.05596633162050327, z: 0.06962064405051654 }, 'Pingdort shoulder grip XYZ matches export');
-assert.deepStrictEqual(plainAnimalRig(pingdort.groundOffsets), { large: 0.14842300556586271, medium: 0.14842300556586271, small: 0.07 }, 'Pingdort floor lifts are independently authored by size');
+assert.deepStrictEqual(plainAnimalRig(pingdort.groundOffsets), { large: 0.14842300556586271, medium: 0.218, small: 0.07 }, 'Pingdort floor lifts are independently authored by size');
 assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScales), { large: { x: 3.5, y: 3.5 }, medium: { x: 1.75, y: 1.75 }, small: { x: 1, y: 1 } }, 'Pingdort scale table matches new export');
-assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScalePercentages), {}, 'Pingdort export intentionally leaves legacy percentage entries empty');
+assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScalePercentages), { large: { x: 350, y: 350 }, medium: { x: 175, y: 175 }, small: { x: 100, y: 100 } }, 'Pingdort percentage controls mirror its authored size classes');
 assert.deepStrictEqual(plainAnimalRig(pingdort.saddleRule), {}, 'Pingdort neutral saddle rule is preserved from export');
 assert.strictEqual(pingdort.chatheadFrame, null, 'Pingdort has no authored chathead crop');
 assert.strictEqual(pingdort.shoulderGripRule.authoredFixed, true, 'Pingdort fixed shoulder metadata remains intact');
@@ -234,6 +234,7 @@ const expectedSkeeriGround = { // Verifies the source Small Y is scaled to Mediu
   medium: skeeriSmallGroundY * (skeeriNativeWidths.medium / skeeriNativeWidths.small),
   small: skeeriSmallGroundY,
 };
+const expectedMediumSkeeriGround = { large: 0.375, medium: 0.26, small: 0.1 }; // The Medium sprite has independent floor calibrations from the November 22 export.
 const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width ruin varieties remain unscaled.
 const domesticSkeeriSizeScales = { // A domestic Small sprite must grow into Medium/Large in step with the exact floor-lift ratio.
   large: { x: skeeriNativeWidths.large / skeeriNativeWidths.small, y: skeeriNativeWidths.large / skeeriNativeWidths.small },
@@ -246,12 +247,13 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   assert.strictEqual(skeeri.kind, kind, kind + ' retains its own species key');
   assert.deepStrictEqual(plainAnimalRig(skeeri.chatheadFrame), expectedSkeeriChathead, kind + ' shares the approved idle-frame chathead crop');
   assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.shoulderGrip), plainAnimalRig(pingdort.anchors.shoulderGrip), kind + ' copies Pingdort\'s full grip, including yaw and scale');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), expectedSkeeriGround, kind + ' scales the source Small ground Y by Skeeri width');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), kind === 'skeeri-medium' ? expectedMediumSkeeriGround : expectedSkeeriGround, kind + ' uses its own authored ground calibration');
   assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults[kind]), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' runtime duplicate defaults use the new grip');
   assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : kind === 'skeeri' ? domesticSkeeriSizeScales : neutralSkeeriSizeScales, kind + ' keeps native ruin sizes while scaling domestic inherited size with ground Y');
   assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' retains its empty saddle rule');
   assert.deepStrictEqual(plainAnimalRig(skeeri.shoulderGripRule), {}, kind + ' retains its empty shoulder rule');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), {}, kind + ' does not inherit redundant percentage scales');
+  const percentSizes = Object.fromEntries(Object.entries(skeeri.sizeScales).map(([size, scale]) => [size, { x: scale.x * 100, y: scale.y * 100 }])); // Mirror the uploaded size percentages from each independent Skeeri profile.
+  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), percentSizes, kind + ' percent controls mirror its own size scales');
   assert.strictEqual(skeeri.creatureShoulderGripDefaultVersion, 4, kind + ' retains the exported grip-default version');
   if (kind === 'skeeri-medium') {
     assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.saddle.position), { x: 0, y: 0.12801484107971195, z: 0.02 }, 'Medium Skeeri keeps its independent saddle coordinates');
@@ -276,7 +278,7 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   legacy.groundOffsets = { large: 0, medium: 0, small: 0 };
   if (kind === 'skeeri-medium') legacy.anchors.shoulderGrip.position = { x: 0, y: -0.16357451915740964, z: 0 }; // Exact retired Medium Skeeri grip only.
   const migrated = guard.reconcileProfiles({ creatures: { [kind]: legacy } }).creatures[kind];
-  assert.deepStrictEqual(plainAnimalRig(migrated.groundOffsets), expectedSkeeriGround, kind + ' obsolete zero floor table migrates');
+  assert.deepStrictEqual(plainAnimalRig(migrated.groundOffsets), kind === 'skeeri-medium' ? expectedMediumSkeeriGround : expectedSkeeriGround, kind + ' obsolete zero floor table migrates');
   assert.deepStrictEqual(plainAnimalRig(migrated.anchors.shoulderGrip.position), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' old grip receives approved coordinates');
   const custom = plainAnimalRig(legacy); // A later hand-authored grip or positive floor table must not be mistaken for an obsolete stock value.
   custom.groundOffsets.small = 0.123;
@@ -420,9 +422,9 @@ assert.strictEqual(w.HobunjiHandShoulderPoints.keyFor('rakakoan', 'male'), 'kenk
 assert.strictEqual(w.HobunjiAttachmentRigRecovery, undefined, 'hand-shoulder config must not own attachment-rig recovery anymore');
 
 const newRigs = {
-  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.05838103969211583,-0.06616055534830413,0.05330590874914502], ground:[0.28,0.18,0.065] },
+  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.05838103969211583,-0.06616055534830413,0.05330590874914502], ground:[0.45,0.25,0.065] },
   nazgraku: { saddle:[0,0.07886458733711826,-0.0022188537422596633], grip:[-0.010120303229480966,-0.112,0.04704726667943677], ground:[0.31,0.2,0.07] },
-}; // Regression fixtures use the user's October 22 calibration exports, not guessed attachment defaults.
+}; // Regression fixtures preserve October 22 sockets while using the November 22 floor calibrations.
 for (const [kind, expected] of Object.entries(newRigs)) {
   const profile = profiles.creatures[kind]; // Runtime rig must contain the authored values without an editor import.
   for (const [anchor, coordinates] of [['saddle',expected.saddle],['shoulderGrip',expected.grip]]) {
@@ -446,7 +448,7 @@ assert.strictEqual(guard.reconcileProfiles({creatures:{nazgraku:{chatheadFrame:{
 const authoredUum = profiles.creatures.uumkaoii; // Compares every newly calibrated Uumkao'ii field with export (23).
 assert.deepStrictEqual(['x','y','z'].map(axis => authoredUum.anchors.shoulderGrip.position[axis]), [0,-0.2057328849409156,-0.004605298975405354]);
 assert.strictEqual(authoredUum.anchors.shoulderGrip.rotationDeg.y, 0, 'new Uumkaoii grip uses neutral yaw');
-assert.deepStrictEqual(['large','medium','small'].map(size => authoredUum.groundOffsets[size]), [0.35,0.25,0.05]);
+assert.deepStrictEqual(['large','medium','small'].map(size => authoredUum.groundOffsets[size]), [0.75,0.25,0.05]);
 assert.deepStrictEqual(['x','y','width','height'].map(key => authoredUum.chatheadFrame[key]), [0.022018283422815435,0.180707251642218,0.4241864686175028,0.6442119462386413]);
 assert.deepStrictEqual(['x','y'].map(axis => authoredUum.sizeScales.large[axis]), [1.5,1.5], 'Large size stays uniform after fixing the source aspect');
 const previousUum = { // Exact former master fingerprints must upgrade on old browser autosaves.

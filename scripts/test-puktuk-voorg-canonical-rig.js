@@ -54,15 +54,15 @@ const expected = {
   puktuk: {
     saddle: { x: 0, y: 0.1830394938019193, z: -0.012420318741466083 },
     grip: { x: 0, y: -0.257, z: 0.034273761545456985 },
-    scales: { large: { x: 1, y: 1 }, medium: { x: 0.6, y: 0.6 }, small: { x: 0.28, y: 0.28 } },
-    ground: { large: 0.4, medium: 0.24, small: 0.12 },
+    scales: { large: { x: 0.75, y: 0.75 }, medium: { x: 0.45, y: 0.45 }, small: { x: 0.28, y: 0.28 } },
+    ground: { large: 0.3, medium: 0.175, small: 0.12 },
     chathead: { x: 0.17142091899942474, y: 0.11029044613093768, width: 0.27636019798104444, height: 0.601013493102534, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
   },
   'voorg-ass': {
     saddle: { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 },
     grip: { x: 0, y: -0.11122461401165312, z: 0.05961047587703741 },
-    scales: { large: { x: 1.1, y: 1.1 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.34, y: 0.34 } },
-    ground: { large: 0.462, medium: 0.325, small: 0.11 },
+    scales: { large: { x: 1, y: 1 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.34, y: 0.34 } },
+    ground: { large: 0.39, medium: 0.3, small: 0.11 },
     chathead: { x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
   },
 };
@@ -84,8 +84,8 @@ for (const [kind, values] of Object.entries(expected)) {
   assert.deepEqual(plain(profiles.creatureShoulderGripDefaults[kind]), values.grip, kind + ' duplicate runtime grip defaults match canonical profile');
 }
 
-assert.equal(expected['voorg-ass'].scales.large.x, 1.1, 'Vorg-ass Large scale matches the October 25 Rig Coordinates export');
-assert.equal(expected['voorg-ass'].ground.large, 0.462, 'Vorg-ass Large ground offset matches the October 25 Rig Coordinates export');
+assert.equal(expected['voorg-ass'].scales.large.x, 1, 'Voorg-ass Large scale matches the November 22 animal rig export');
+assert.equal(expected['voorg-ass'].ground.large, 0.39, 'Voorg-ass Large ground offset matches the November 22 animal rig export');
 
 const listeners = new Map();
 windowStub.addEventListener = (type, callback) => listeners.set(type, callback);
