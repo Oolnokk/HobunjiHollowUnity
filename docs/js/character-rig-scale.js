@@ -268,20 +268,29 @@
     target.scale.set(bx > 0 ? head / bx : head, relativeHeadY, 1);
     target.updateMatrix?.();
     const scaledNeckDeltaY = scaledNeckAdjustment(rig, relativeHeadY); // Recalculate the head-bottom contact after size changes, before the spine/hunch solver runs.
-    if (rig.headOffsetJoint && rig.headScaleJoint && rig.headCentroidLocal) {
-      rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + scaledNeckDeltaY,
-        deltaY: scaledNeckDeltaY, relativeHeadScaleY: relativeHeadY }; // Mobile author diagnostics read the physically shifted neck pivot without rescanning sprite pixels.
-    }
-
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
     // The Longoran's permanent spine drop must survive later hand/rig rescaling even when the caller supplies NPC age 0.
     const boundLongoranHunch = normalizeKey(species) === 'longoran'
       ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Explicit character spine overrides still win over the subspecies default.
     const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction;
-    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // The spline contributes its own shoulder share.
-    applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare
-      + scaledNeckDeltaY / Math.max(1e-6, modelHeight), modelHeight); // Translate through the broad offset-only skinning fade so the scaled chin meets the newly placed neck without folding its 2px rotation band.
+    const spineApi = window.HobunjiCharacterSpine; // Shared seven-bone spline owns the upper torso, not a large head-offset weighting zone.
+    const distributeToSpine = !!rig.splineNodes && typeof spineApi?.applyNeckReach === 'function'; // Legacy editor/monster rigs without a spline keep their original independent head placement.
+    if (distributeToSpine) {
+      const reachY = clampOffset(baseOffset) * modelHeight + scaledNeckDeltaY; // Authored head height and scale-induced chin movement now stretch the whole spine.
+      applyHeadYOffset(offsetTarget, 0, modelHeight); // Restore the short 2.5px head/neck connection; never drag the pseudo-neck through the torso.
+      spineApi.applyNeckReach(rig, reachY, modelHeight, composedHunch); // Rebuild rest→scaled spine→hunch in that order, idempotent on touch-slider edits.
+      rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + (Number(rig.neckReachAppliedY) || 0),
+        deltaY: rig.neckReachAppliedY, relativeHeadScaleY: relativeHeadY }; // Debug reflects the physically achieved position when extreme offsets are clamped.
+    } else {
+      const spineShare = rig.splineNodes ? spineApi?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // Retained for older spline implementations.
+      applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare
+        + scaledNeckDeltaY / Math.max(1e-6, modelHeight), modelHeight); // Non-spline three-bone previews still use the original broad offset blend.
+      if (rig.headOffsetJoint && rig.headScaleJoint && rig.headCentroidLocal) {
+        rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + scaledNeckDeltaY,
+          deltaY: scaledNeckDeltaY, relativeHeadScaleY: relativeHeadY }; // Legacy diagnostics preserve their existing neck position.
+      }
+    }
     return true;
   }
 
@@ -330,6 +339,9 @@
       target.updateMatrix?.();
     }
     if (found?.rig?.scaledNeckLocal) delete found.rig.scaledNeckLocal; // Resetting an authored scale also clears derived scaled-head contact diagnostics.
+    if (found?.rig?.splineNodes && typeof window.HobunjiCharacterSpine?.applyNeckReach === 'function') {
+      window.HobunjiCharacterSpine.applyNeckReach(found.rig, 0, Number(found.modelHeight) || 1, 0); // Clear all scale-induced spine stretch and hunch when resetting a scale preview.
+    }
     if (offsetTarget) {
       if (Number.isFinite(offsetTarget.userData?.hobunjiHeadOffsetBaseY)) {
         offsetTarget.position.y = offsetTarget.userData.hobunjiHeadOffsetBaseY;
