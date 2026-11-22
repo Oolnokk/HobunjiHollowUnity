@@ -771,8 +771,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       remember();beardDoc=imported;drafts.delete(draftKey());
       const importedScope=scopeKey();
       const source=importedScope==='shared'?imported:imported.speciesVariants?.[variant]||imported;
-      mask=Cut.normalizeMask(source.hoodCutoutMask)||empty();
-      roots=Cut.normalizeRoots(source.hoodTuftRoots);
+      mask=Cut.normalizeMask(source.hoodCutoutMask??imported.hoodCutoutMask)||empty();
+      whiskerMask=Cut.normalizeMask(source.hoodWhiskerMask??imported.hoodWhiskerMask)||empty();
+      roots=Cut.normalizeRoots(source.hoodTuftRoots??imported.hoodTuftRoots);
       $('maxStretch').value=source.hoodTuftMaxStretch??imported.hoodTuftMaxStretch??36;
       $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??128;
       $('subdivision').value=source.hoodTuftSubdivision??imported.hoodTuftSubdivision??4;
@@ -791,9 +792,13 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         ||(!imported.parts&&!imported.speciesVariants))
         throw Error('Expected a complete hood cosmetic JSON with parts or speciesVariants');
       remember();hoodDoc=imported;hoodDrafts.delete(hoodDraftKey());
-      hoodAllowanceMask=originalHoodPermission();
+      const policy=originalHoodPolicy();
+      hoodAllowanceMask=policy.mask;
+      hoodPermissionMode=policy.mode;
+      coneSpread=policy.spread;automaticKey='';
+      $('coneSpread').value=coneSpread;updateLabels();
       await prepare(false,false);
-      status('Imported '+file.name+'. Hood permission mask is ready to edit.');
+      status('Imported '+file.name+'. Automatic cone or painted permissions are ready to edit.');
     }catch(error){status('Hood import failed: '+error.message);}
     $('hoodJson').value='';
   };
@@ -802,7 +807,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function exportedJson(){
     if(!beardDoc)throw Error('No beard cosmetic loaded');
     const json=JSON.parse(JSON.stringify(beardDoc)),chosen=Cut.normalizeMask(mask)||empty();
-    const metadata={hoodCutoutMask:chosen,hoodTuftRoots:Cut.normalizeRoots(roots),
+    const metadata={hoodCutoutMask:chosen,hoodWhiskerMask:Cut.normalizeMask(whiskerMask)||empty(),
+      hoodTuftRoots:Cut.normalizeRoots(roots),
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
       hoodPaintAlphaFloor:selectedAlphaFloor()}; // Exact authoring parameters round-trip in the cosmetic JSON.
@@ -815,19 +821,20 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function exportedHoodJson(){
     if(!hoodDoc)throw Error('No hood cosmetic loaded');
-    const json=JSON.parse(JSON.stringify(hoodDoc)); // Preserve every existing material, variant and cosmetic field.
+    const json=JSON.parse(JSON.stringify(hoodDoc)); // Never discard unrelated authored material/variant properties.
     const scope=hoodScopeKey();
     const destination=scope==='shared'?json:
       (json.speciesVariants[variant]={...(json.speciesVariants[variant]||{})});
-    if(hoodAllowanceMask===null){
-      if(scope!=='shared'&&Cut.normalizeMask(json.beardCutoutAllowedMask)){
-        destination.beardCutoutAllowedMask={size:SIZE,runs:[[0,SIZE*SIZE]]};
-        // A variant explicitly opting into "allow all" must override the
-        // hood's otherwise inherited, restricted shared permission mask.
-      }else delete destination.beardCutoutAllowedMask;
-    }else destination.beardCutoutAllowedMask=Cut.normalizeMask(hoodAllowanceMask)||empty();
+    destination.beardCutoutPermissionMode=hoodPermissionMode; // Explicit mode overrides inherited masks in any species variant.
+    destination.beardCutoutConeSpread=Cut.normalizeConeSpread(coneSpread);
+    if(hoodPermissionMode==='painted'){
+      destination.beardCutoutAllowedMask=Cut.normalizeMask(hoodAllowanceMask)||empty();
+    }else{
+      delete destination.beardCutoutAllowedMask; // Auto recomputes from ring, all means everything may be cut.
+    }
     return json;
   }
+
   function downloadCosmetic(json,filename){
     const body=JSON.stringify(json,null,2)+'\n',blob=new Blob([body],{type:'application/json'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -838,18 +845,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     try{
       if(!artReady)throw Error('Cannot export a cutout until the beard image is readable');
       downloadCosmetic(exportedJson(),beardEntry?.path.split('/').pop()||'beard.json');
-      status('Exported complete cosmetic JSON with cutout, tuft corners, locality subdivision, and upper/lower influence.');
+      status('Exported beard cosmetic JSON with ordinary requests, priority whiskers, tuft corners and deformation.');
     }catch(error){status(error.message);}
   };
   $('downloadHood').onclick=()=>{
     try{
       if(!artReady)throw Error('Cannot export hood permissions until hood artwork is readable');
       downloadCosmetic(exportedHoodJson(),hoodEntry?.path.split('/').pop()||'hood.json');
-      status('Exported complete hood cosmetic JSON with independent beard-removal permissions.');
+      status('Exported hood cosmetic JSON with lower-ring cone or custom permission policy.');
     }catch(error){status('Hood export failed: '+error.message);}
   };
   $('copy').onclick=async()=>{
-    try{await navigator.clipboard.writeText($('maskJson').value);status('Copied beard requests, hood permissions, tuft roots, and settings.');}
+    try{await navigator.clipboard.writeText($('maskJson').value);status('Copied beard requests, winning whiskers, auto cone and tuft settings.');}
     catch(_){$('maskJson').focus();$('maskJson').select();status('Clipboard unavailable; select and copy the mask text.');}
   };
   $('selfTest').onclick=()=>{
@@ -949,7 +956,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     setVariantOptions();await prepare(true,true);
   }
   window.BeardHoodCutoutDebug=()=>({
-    beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
+    beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),
+    maskPixels:Cut.countMask(mask),whiskerPixels:Cut.countMask(whiskerMask),
+    hoodPermissionMode,coneSpread,lowerRimPoints:automaticPermission?.bottomPoints?.length||0,
+    autoAllowedPixels:automaticPermission?.allowedPixels||0,
+    whiskerWins:negotiationStats?.whiskerWins||0,refusedPixels:negotiationStats?.refusedPixels||0,
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
     paintableAlphaFloor:selectedAlphaFloor(),paintablePixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=selectedAlphaFloor()),0),
     tuftRoots:Cut.normalizeRoots(roots),maxStretch:selectedStretch(),subdivision:selectedSubdivision(),
