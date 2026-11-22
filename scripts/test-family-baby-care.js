@@ -25,8 +25,9 @@ const W = {
   NpcFarmPlots: { targetFor: () => working ? { area: 'farm', c: 5, r: 5 } : null },
   Shattercasks: { heldBurdenInfo: () => null, stowOnBack: () => true },
   FamilyBabyBurdens: {
+    isAllowedArea: area => ['interior', 'farm', 'town'].includes(area),
     spouseCarry: (child, _baby, _parent, pose) => { holdingCalls.push(pose); child.carryBy = 'spouse'; child.carryPose = pose; return true; },
-    returnToBasket: child => { returnCalls++; child.carryBy = null; return true; },
+    returnToBasket: (child, basket) => { assert.equal(basket.col, 6, 'childcare passes the actual cup coordinate to the burden'); returnCalls++; child.carryBy = null; return true; },
     takeIntoArms: child => { child.carryBy = 'player'; return true; },
   },
 };
@@ -69,4 +70,14 @@ ctx.phaseOf = () => 'basket'; baby.carryBy = null;
 ctx.romance.activeSpouseOuting = () => ({npcId:'spouse1'});
 assert.equal(policy.planFor(baby), null, 'committed spouse outing is not stolen by baby care');
 assert.equal(persisted, 0, 'policy does not persist on each tick; burden state changes own persistence');
+ctx.romance.activeSpouseOuting = () => null;
+hour = 19; baby.carryBy = null;
+baby.carrySpot = { area: 'farm', c: 11, r: 12 };
+parent.area = 'farm'; infantWalker.area = 'farm';
+parent.root.position.x = 11.7; parent.root.position.z = 12.5;
+infantWalker.root.position.x = 11.5; infantWalker.root.position.z = 12.5;
+assert.equal(policy.spouseTarget(parent.rec).area, 'farm', 'caregiver navigates to the actual dropped child');
+assert.equal(policy.spouseTarget(parent.rec).c, 11, 'the saved landing tile overrides an empty basket');
+policy.tick();
+assert.equal(holdingCalls.at(-1), 'arms', 'caregiver can retrieve a child safely dropped on the farm');
 console.log('Spouse baby cradle/arms/back care, player handoff and child-stage gates: PASS');
