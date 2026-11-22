@@ -894,11 +894,14 @@
     } catch (_) {}
   }
 
+  let babyGreetingWorldPosition = null; // Reused for carried baby world-space distance checks at the normal 5 Hz ambient greeting cadence.
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
-    if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
-    if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    if (walker?.rec?.ambientGreetings === false) return false; // Dynamic family NPCs now use the normal greeting pipeline at each age.
+    const newborn = !!walker?.rec?.isChild && !!window.RomanceFamily?.isBasketBaby?.(speakerId); // Only saved basket-phase babies use this path.
+    const babyAnchor = newborn ? window.FamilyBabyBurdens?.ambientAnchorFor?.(speakerId) : null; // When carried, the real walker can remain at the original cradle.
+    if (!speakerId || (babyAnchor?.mapId || walker.area) !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
     // so this releases the NPC only after the prior greeting is fully gone.
@@ -907,7 +910,12 @@
     const proximityKey = `${speakerId}>${targetId}`; // Used by the existing dwell timer; relationship policy is intentionally deferred until a greeting is otherwise ready to fire.
     const key = greetPairKey(day, speakerId, targetId);
     if (state.greeted.has(key)) return false;
-    const distance = Math.hypot(walker.root.position.x - target.x, walker.root.position.z - target.z);
+    const three = state.deps?.THREE || window.THREE; // Reuses the active scene's Vector3 for correct world-space positions of parented baby burdens.
+    const location = babyAnchor?.group?.getWorldPosition && three?.Vector3
+      ? babyAnchor.group.getWorldPosition(babyGreetingWorldPosition || (babyGreetingWorldPosition = new three.Vector3()))
+      : walker.root?.position;
+    if (!location) return false;
+    const distance = Math.hypot(location.x - target.x, location.z - target.z);
     if (distance > state.settings.greetingRadiusTiles) {
       state.proximity.delete(proximityKey);
       return false;
@@ -915,15 +923,25 @@
     const enteredAt = state.proximity.get(proximityKey) ?? now;
     state.proximity.set(proximityKey, enteredAt);
     if (now - enteredAt < 300 || now - state.lastGreetingAt < state.settings.greetingCooldownMs) return false;
-    const playerPolicy = targetId === 'player' ? playerGreetingPolicy(walker) : null; // Used only after dwell/cooldown say a greeting is ready, never from updateActive/per-frame work.
+    const playerPolicy = targetId === 'player' && !newborn ? playerGreetingPolicy(walker) : null; // The player's newborn needn't pass adult rapport/name gates.
     if (playerPolicy && !playerPolicy.allowed) {
       state.proximity.set(proximityKey, Number.POSITIVE_INFINITY); // Blocks repeated policy evaluation until the player leaves this NPC's greeting radius and the existing distance path clears the entry.
       return false;
     }
+    const babyLine = newborn ? window.RomanceFamily?.babyAmbientSound?.(speakerId) : null; // Selected on the actual greeting, not on every proximity scan.
+    if (newborn && !babyLine) return false;
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    applyGreetingHeadTurn(walker, target); // Every ambient greeting preserves locomotion/seat heading and turns only the speaker's head toward the player or NPC friend.
+    if (newborn) {
+      show(babyAnchor?.group || walker.root, babyLine, {
+        speakerId, profile: walker.profile, mode: 'chathead', greeting: true,
+        directedAtPlayer: targetId === 'player', babyAmbient: true,
+        traceSource: 'config/romance-config.js family.babyAmbientNoises',
+      }); // No borrowed adult greeting, nickname, or attempted head-turn of the hidden infant rig.
+      return true;
+    }
+    applyGreetingHeadTurn(walker, target); // Ordinary villagers/toddlers retain their existing heading/neck behavior.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -983,7 +1001,8 @@
     const day = Number(state.deps?.getDay?.()) || 1;
     ensureGreetingLedger(day);
     const area = state.deps.getCurrentArea();
-    const walkers = (state.deps.getNpcWalkers?.() || []).filter(walker => walker.area === area);
+    const walkers = (state.deps.getNpcWalkers?.() || []).filter(walker => walker.area === area
+      || (walker.rec?.isChild && window.FamilyBabyBurdens?.ambientAnchorFor?.(walker.rec.id)?.mapId === area)); // Carried infants may be in a new zone while their hidden walker is still by the basket.
     const player = state.deps.getPlayerPosition?.();
     if (player) {
       for (const walker of walkers) {
@@ -995,7 +1014,8 @@
     for (const walker of walkers) {
       const friends = friendSetFor(walker.rec?.id);
       for (const other of walkers) {
-        if (walker === other || !friends.has(other.rec?.id)) continue;
+        if (walker === other || !friends.has(other.rec?.id)
+          || (other.rec?.isChild && window.FamilyBabyBurdens?.ambientAnchorFor?.(other.rec.id))) continue; // Do not aim another NPC's conversation at a hidden baby walker.
         if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, rec: other.rec, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
       }
     }
