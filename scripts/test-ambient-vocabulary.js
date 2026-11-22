@@ -134,7 +134,7 @@ async function testStandaloneEditorInteraction(rules) {
   assert.ok(harvestButton?.onclick, 'Doorstep candidate words must be actionable on mobile');
   const harvestedWord = harvestButton.dataset.harvestWord;
   harvestButton.onclick();
-  assert.deepEqual(sample.lexicon[harvestedWord], [], 'Harvesting must create only an empty canonical entry, never invent synonyms');
+  assert.deepEqual(plain(sample.lexicon[harvestedWord]), [], 'Harvesting must create only an empty canonical entry, never invent synonyms');
   assert.ok(panel.innerHTML.includes('Master synonym dictionary'), 'Harvested word should open the real master dictionary');
   const voiceTab = sidebar.querySelectorAll('[data-entry]').find(node => node.dataset.entry === 'voice:pahu');
   assert.ok(voiceTab?.onclick, 'Pahu voice group must be independently editable');
