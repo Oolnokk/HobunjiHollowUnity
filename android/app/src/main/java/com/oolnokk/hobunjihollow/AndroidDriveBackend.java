@@ -74,7 +74,9 @@ final class AndroidDriveBackend {
         JSONObject folder = metadata(id);
         if (!DIRECTORY.equals(folder.optString("mimeType")) || folder.optBoolean("trashed"))
             throw new IOException("Select a folder in Google Drive, not an individual file.");
-        if (!prefs.edit().putString(ROOT_ID, id).putString("rootName", name).commit())
+        String actualName = folder.optString("name", "").trim(); // Show the real selected folder, not a generic cloud label.
+        if (actualName.isEmpty()) actualName = name == null ? "Google Drive saves" : name;
+        if (!prefs.edit().putString(ROOT_ID, id).putString("rootName", actualName).commit())
             throw new IOException("Could not remember selected Google Drive folder.");
     }
 
