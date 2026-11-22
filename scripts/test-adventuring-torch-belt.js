@@ -112,15 +112,17 @@ const sourcePlane = { geometry:{ parameters:{ width:.5, height:realTorchHeight }
 const toolMeshMap = { adventuring: { userData: { toolPlane: sourcePlane } } };
 const subscribers = new Map(); // Captures the real shared frame-scheduler registration.
 const markerPoint = { x:300, y:1150, width:450, height:1204 }; // Deliberately off-center source-pixel emitter tests true pivot math in both axes.
-const midpointPosition = (width, height, scale) => ({ // Expected mesh offset after the 180° art flip; its parent remains the attachment pivot.
-  x: ((markerPoint.x + .5) / markerPoint.width - .5) * width * scale / 2,
-  y: (height * scale / 2 + (.5 - (markerPoint.y + .5) / markerPoint.height) * height * scale) / 2,
+const primaryGrip = { x:-.08, y:0, z:-.05 }; // Real Harlyao melee primary grip shared by the torch, not the old upper edge of its PNG.
+const midpointPosition = (width, height, scale) => ({ // Actual author grip and fire-marker midpoint before the 180° art flip.
+  x: (primaryGrip.x / .5 * width * scale + ((markerPoint.x + .5) / markerPoint.width - .5) * width * scale) / 2,
+  y: (-primaryGrip.z / realTorchHeight * height * scale + (.5 - (markerPoint.y + .5) / markerPoint.height) * height * scale) / 2,
 });
 function assertEmitterMidpoint(art, width, height, scale) {
   const expected = midpointPosition(width, height, scale);
   assert(Math.abs(art.position.x - expected.x) < 1e-8 && Math.abs(art.position.y - expected.y) < 1e-8,
     'the sprite is offset by the actual emission-pixel midpoint');
-  const gripX = art.position.x, gripY = art.position.y - height * scale / 2;
+  const gripX = art.position.x - primaryGrip.x / .5 * width * scale;
+  const gripY = art.position.y + primaryGrip.z / realTorchHeight * height * scale; // Mirrored PNG grip is the authored item grip, not the image's top edge.
   const imageEmitterX = ((markerPoint.x + .5) / markerPoint.width - .5) * width * scale;
   const imageEmitterY = (.5 - (markerPoint.y + .5) / markerPoint.height) * height * scale;
   const flameX = art.position.x - imageEmitterX, flameY = art.position.y - imageEmitterY;
@@ -144,6 +146,10 @@ const world = {
   },
   CharacterMetaSave: { update() {} },
   WeaponToolStances: { poses:{ torchHold:{ scale:.68 } } }, // Simulates the same idle stance consumed by the game and editor.
+  HobunjiHandToolGrips: { authoredPrimaryGripForTool(item,context) {
+    assert.equal(item, 'torch');assert.equal(context,'melee');
+    return {position:primaryGrip}; // Canonical Harlyao handle authored through the game's grip editor.
+  } },
   HobunjiLayeredWeaponEffects: {
     registerLayer(state, mesh, layer, image) {
       assert.equal(layer.material, 'marker', 'stowed cloth uses the held torch marker material');
@@ -226,6 +232,10 @@ assert.equal(belt.children.length, 1, 'no extra decorative flame; real particles
 assert.equal(fireStarts, 1, 'one regular layer-effects fire is attached on stow');
 assert.equal(torch.debug.belt.fireEmitters, 1, 'Pixel Probe reports the actual reused particle emitter');
 assert.equal(world.AdventuringTorchBelt.debug.pivot, 'grip-emitter midpoint', 'mobile debug names the geometry pivot');
+assert(Math.abs(torch.debug.belt.gripSourcePoint.x - (.5 + primaryGrip.x / .5)) < 1e-8,
+  'stowed grip follows Harlyao-authored horizontal hand socket rather than the generic PNG edge');
+assert(Math.abs(torch.debug.belt.gripSourcePoint.y - (.5 + primaryGrip.z / realTorchHeight)) < 1e-8,
+  'stowed grip follows Harlyao-authored longitudinal hand socket');
 assert.equal(belt.children[0].rotation.z, Math.PI, 'authored -Y torch tip is upright on the belt');
 assert.equal(belt.children[0].scale.x, .68, 'belt torch reads the authored idle scale, not its raw size');
 assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .5 * .68) < 1e-8, 'belt width matches the held tool width multiplied by Neutral scale');
