@@ -326,7 +326,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('variant').replaceChildren(...keys.map(key=>new Option(key.replace(/_/g,' ').replace(/-/g,' '),key)));
     if(keys.includes(variant))$('variant').value=variant;else variant=$('variant').value;
   }
-  async function prepare(resetMask=false){
+  async function prepare(resetMask=false,resetHood=false){
     const ticket=++generation;
     artReady=false;
     lastError='';
@@ -356,6 +356,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         $('belowInfluence').value=draft?.belowInfluence??originalBelowInfluence();
         updateLabels();
       }else mask=maskForArtwork(mask);
+      if(resetHood||resetMask){
+        hoodAllowanceMask=hoodDrafts.has(hoodDraftKey())
+          ? hoodDrafts.get(hoodDraftKey()) : originalHoodPermission(); // null is a valid saved fully-removable policy.
+      }
       await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
       if(ticket!==generation)return;
       history=[];render();
@@ -570,10 +574,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   async function refreshDoc(which){
     const selection=$(which).value,entry=catalog.find(item=>item.id===selection);
     if(!entry)return;
-    if(which==='beard')remember();
+    remember(); // Preserve unsaved masks for BOTH the old beard and old hood before switching either.
     if(which==='beard'){beardEntry=entry;beardDoc=await loadJson(entry);overrideBeard=null;$('beardPng').value='';}
     else {hoodEntry=entry;hoodDoc=await loadJson(entry);overrideHood=null;$('hoodPng').value='';}
-    setVariantOptions();await prepare(which==='beard');
+    setVariantOptions();await prepare(which==='beard',which==='hood');
   }
   $('beard').onchange=()=>refreshDoc('beard').catch(e=>status(e.message));
   $('hood').onchange=()=>refreshDoc('hood').catch(e=>status(e.message));
@@ -716,7 +720,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(!beardEntry||!hoodEntry)throw Error('No indexed beard/hood art was found.');
     [beardDoc,hoodDoc]=await Promise.all([loadJson(beardEntry),loadJson(hoodEntry)]);
     if(ticket!==generation)return;
-    setVariantOptions();await prepare(true);
+    setVariantOptions();await prepare(true,true);
   }
   window.BeardHoodCutoutDebug=()=>({
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
