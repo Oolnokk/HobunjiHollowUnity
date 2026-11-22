@@ -176,8 +176,8 @@
     let awakened = 0;
     for (const c of combat.hostileObjects) {
       if (!c || c.health <= 0 || c.isCompanion || c.areaId !== area ||
-          speciesOf(c) !== species || c.def?.hostile !== false ||
-          c.genotype?.sizeClass === 'small' ||
+          speciesOf(c) !== species || (c._nestDefense?.originalDef || c.def)?.hostile !== false ||
+          c.genotype?.sizeClass === 'small' || c.isBaby || c.isJuvenile ||
           Math.hypot(c.x - nestX, c.y - nestY) > NEST_DEFENSE_TILES * combat.TILE) continue;
       const prior = c._nestDefense; // Repeated theft extends the same encounter without nesting temporary definition overlays.
       c._nestDefense = {
