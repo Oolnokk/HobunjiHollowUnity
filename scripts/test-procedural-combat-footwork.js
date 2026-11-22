@@ -115,7 +115,9 @@ assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startCon
   'Leg length alone must not make the 3D foot larger or move the planted sole');
 assert(Math.abs(independent.legs.getRestStance().left.hip.y - extendedHip) < 1e-9,
   'Pants and the real limb solver see the updated hip, not a cosmetic leg-height illusion');
+const revisionAfterStretch = independent.legs.anatomyRevision(); // Read the real pants/cuff refresh counter after one meaningful change.
 assert.equal(independent.legs.setLegLengthMultiplier(1.75), extendedHip, 'repeated leg slider values never accumulate stretch');
+assert.equal(independent.legs.anatomyRevision(), revisionAfterStretch, 'unchanged legs must not trigger any redundant IK or pants rebuild');
 const sizedFoot = independent.legs.setFootScaleMultiplier(1.4);
 assert.equal(sizedFoot, 1.4, 'independent Foot scale accepts the species multiplier');
 const afterFootSize = independent.legs.getStandingPoseDebug();
@@ -136,6 +138,12 @@ independent.legs.setFootScaleMultiplier(1);
 independent.legs.setLegLengthMultiplier(1);
 assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
   'restoring both independent controls returns the entire leg chain to the original bind pose');
+const explicitlyScaledParent = new Group(); // Tests a hostile/game caller that authors a unique scale on its parent before attaching feet.
+explicitlyScaledParent.userData.hobunjiCharacterRigScaleState = { factor: { x: 1.1, y: .8 }, legLength: 1.6 };
+const explicitlyScaledLegs = context.window.ProceduralLegAnimation.attach(THREE, explicitlyScaledParent, { speciesId: 'test', modelHeight: 1 });
+assert.equal(explicitlyScaledLegs.legLengthMultiplier, 2,
+  'first procedural leg attachment honors the character parent\'s authored leg-to-portrait ratio, even if species defaults differ');
+explicitlyScaledLegs.dispose(); // Real root registry must release one-off hostile previews after disposal.
 const independentAspect = rig(1, null, { x: 1, y: 1 }); // Independent leg slider remains meaningful when Portrait height changes during an idle preview.
 independentAspect.legs.setLegLengthMultiplier(1.8);
 independentAspect.parent.userData.testBodyScale = { x: 1.5, y: .75 };
