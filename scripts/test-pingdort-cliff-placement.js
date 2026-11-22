@@ -8,6 +8,8 @@ global.window = {CliffRouteNetwork: route};
 require('../docs/js/pingdort-flocks.js'); // This module registers pure siteForShelf without initializing wildlife or rendering.
 const siteForShelf = global.window.PingdortFlocks.siteForShelf; // Shares the actual one-time nest selector used by flock generation.
 assert.equal(typeof siteForShelf, 'function');
+assert.equal(siteForShelf(null),null,'missing shelf data must not break wildlife generation');
+assert.equal(siteForShelf({footprint:[]}),null,'empty caps cannot create phantom nests');
 
 function grid(rows, cols, cliffCols) {
   return Array.from({length:rows}, () => Array.from({length:cols}, (_, c) => ({
