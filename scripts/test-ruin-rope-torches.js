@@ -15,7 +15,9 @@ assert(html.includes('js/ruin-rope-torches.js?') && html.indexOf('js/weapon-laye
 assert.match(simple, /RuinRopeTorch\?\.attach\?\.\(marker\)/);
 assert.match(simple, /RuinRopeTorch\?\.tick\?\.\(rope\.torch,dt,ropeCamera\)/);
 assert.match(simple, /RuinRopeTorch\?\.dispose\?\.\(rope\?\.torch\)/);
-assert.match(simple, /for \(const rope of state\.ropes\) window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
+assert.match(simple, /for \(const rope of state\.ropes\) \{/);
+assert.match(simple, /window\.HangingRopes\?\.removeRope\?\.\(rope\)/); // Both burden registration and rope-flame resources must retire on the same reroll.
+assert.match(simple, /window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
 
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z)}
