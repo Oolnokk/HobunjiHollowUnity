@@ -23,6 +23,8 @@
   const SECONDARY_KEY_B = [0xC0, 0x9C, 0x09]; // Used by throwing_flask.png's shaded Afflict-color region.
   const KEY_HUE_TOLERANCE = 35;
   const DUAL_KEY_MODE_PREFIX = 'dual-keyed:'; // Used to carry a second tint through existing spriteMode call sites.
+  const MUSHROOM_CAP_KEY = [0x98, 0xE3, 0xC7]; // Mint source pigment painted on mushroom.png caps; the off-white stalk is intentionally not keyed.
+  const MUSHROOM_CAP_HUE_TOLERANCE = 43; // Includes cap highlights/shadows while excluding neutral, low-saturation stalk and outline ink.
 
   function colorFillApi() {
     const api = window.ColorFill;
@@ -77,6 +79,18 @@
       const secondaryTargetHex = secondaryTargetFromMode(mode, opts); // Used to recolor throwing_flask.png's second authored liquid region.
       if (secondaryTargetHex == null) throw new Error('dual-keyed sprite recolor requires a secondary target color');
       recolorDualKeyedPixels(data, targetHex, secondaryTargetHex, opts);
+      return;
+    }
+    if (mode === 'mushroom') {
+      const capHue = rgbToHsv(...MUSHROOM_CAP_KEY).h; // Stable authored cap hue; shared by world plants and inventory icons.
+      const target = rgbToHsv(tr, tg, tb); // Species-specific cap dye with original pixel brightness retained.
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        const source = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+        if (source.s < 0.20 || hueDistance(source.h, capHue) > MUSHROOM_CAP_HUE_TOLERANCE) continue; // Preserve off-white stems, dark outline ink and transparent pixels.
+        const [r, g, b] = hsvToRgb(target.h, target.s, source.v);
+        data[i] = r; data[i + 1] = g; data[i + 2] = b;
+      }
       return;
     }
     if (mode === 'keyed') {
@@ -215,7 +229,7 @@
     parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20261115fishStyleCounters1',()=>!!window.FishingPresentationDebug);
   }
 
-  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,SECONDARY_KEY_A,SECONDARY_KEY_B,KEY_HUE_TOLERANCE,DUAL_KEY_MODE_PREFIX};
+  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,SECONDARY_KEY_A,SECONDARY_KEY_B,KEY_HUE_TOLERANCE,DUAL_KEY_MODE_PREFIX,MUSHROOM_CAP_KEY};
   loadFishCatalogForGame();
   loadFishingEventsForGame();
   loadAmphibiousFishingForGame();
