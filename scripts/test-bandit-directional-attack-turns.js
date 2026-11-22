@@ -162,6 +162,18 @@ const counterStage=stages.at(-1);
 counterStage.onStrike(counterStage);
 assert.strictEqual(coordinator.owner(target),null,'Counter Shield turn releases after resolving its own reactive hit');
 
+
+// Older mine/special humanoids must still have their original two-angle capacity.
+const specialTarget={x:500,y:500,angle:0,health:100,areaId:'zone'}; // Independent enemy target with its own two-slot legacy choreography.
+const oldSpecials=[actor('s1',600,500),actor('s2',400,500),actor('s3',500,600)];
+for(const c of oldSpecials)c.def.banditStandoffMaxTiles=null; // Real def factory opts non-bandit classes out of the new coordinator.
+assert(coordinator.claim(oldSpecials[0],0,specialTarget));
+assert(coordinator.claim(oldSpecials[1],0,specialTarget));
+assert.equal(coordinator.claim(oldSpecials[2],0,specialTarget),null,'special humanoids keep their two-slot limit');
+assert.equal(coordinator.slots.filter(s=>s.target===specialTarget).length,2);
+assert.match(source,/_banditSlotForActor = new WeakMap/,'directional coordinator does not linearly scan for every existing actor on every frame');
+assert.match(source,/BANDIT_SLOT_PRUNE_INTERVAL_MS = 12/,'dead/unloaded slot pruning is batched rather than repeated for each actor');
+
 assert.match(source,/const readyToStrike = distToPlayer <= engageRangePx && !!slot && inSector && attackPermission/,'real combat AI uses direction and one-attacker gating');
 assert.match(source,/claimBanditAttackTurn\(c, targetPlayer\)/,'real combat AI claims the turn before spending Stamina or starting an attack');
 assert.match(source,/fireBanditChargedBreaker\(c, def, targetPlayer, prep\)/,'prepared releases reuse the actual Charged Breaker ability');
