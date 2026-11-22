@@ -197,6 +197,20 @@ assert.equal(w.TzatzulFlightRuntime.carrierOf(liftedBandit),farBird);
 assert(w.TzatzulFlightRuntime.__test.releaseCaptive(liftedBandit,'returned to roost'));
 assert.equal(liftedBandit.state,'chase','a surviving released bandit returns to its prior AI state');
 
+const pronePrey = { creatureKey: 'bandit', isBandit: true, health: 90, areaId: zone, x: farBird.x, y: farBird.y, state: 'chase' }; // Reuses the real carrier and keeps an original live actor.
+assert(w.TzatzulFlightRuntime.__test.capture(farBird, pronePrey));
+assert(w.TzatzulFlightRuntime.__test.carryCaptive(farBird));
+const proneFlightPoint = { x: pronePrey.x, y: pronePrey.y, height: pronePrey.branchSurfaceY }; // The game fall owner snapshots this before calling releaseProneCaptive.
+const perchInjuriesBefore = drops.length;
+assert(w.TzatzulFlightRuntime.releaseProneCaptive(pronePrey), 'a prone captive is released without a second fixed perch injury');
+assert.equal(pronePrey.x, proneFlightPoint.x, 'prone release retains the actual flight position rather than teleporting to pickup');
+assert.equal(pronePrey.y, proneFlightPoint.y);
+assert(proneFlightPoint.height > 0, 'a genuine elevated flight has a height for the later cliff resolver');
+assert.equal(pronePrey.tzatzulCapturedBy, null);
+assert.equal(pronePrey.onBranch, null, 'talon attachment is gone before prone falling physics');
+assert.equal(drops.length, perchInjuriesBefore, 'deferred prone drop does not charge the old instantaneous perch collision');
+assert.equal(farBird._tzFlight.captive, null, 'the bird cannot drag the falling actor back into its nest');
+assert.equal(w.TzatzulFlightRuntime.releaseProneCaptive(pronePrey), false, 'the captive release remains idempotent');
 const dyingPrey={creatureKey:'gar-wolf',health:10,areaId:zone,x:farBird.x,y:farBird.y,state:'chase'};
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,dyingPrey));
 dyingPrey.health=0;dyingPrey.state='dying';

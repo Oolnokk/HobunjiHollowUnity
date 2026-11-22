@@ -19,6 +19,9 @@
   const creatureStates = new Set(); // Tracks active creature reactions for mobile diagnostics and cleanup when playback ends.
 
   const recoveryAxis = new THREE.Vector3(1, 0, 0); // Used by recovery rolls; dodge direction blends X/Z while prone recovery keeps +X.
+  const tumbleAxis = new THREE.Vector3(1, 0, 0); // Reused by player prone-hit flips without per-frame vector allocation.
+  const tumbleRotation = new THREE.Quaternion(); // Reused by updateTumble; the recorded prone tail stays the neutral starting/ending pose.
+  const tumbleBaseRotation = new THREE.Quaternion(); // Reused by player/creature tumble sampling so this animation allocates no frame-local quaternion.
   const playback = {
     active: false,
     holding: false,
@@ -342,6 +345,63 @@
     return clip.durationSeconds * durationMultiplier;
   }
 
+  // Repeated blows can throw an already prone actor without authoring another
+  // four-directional blend. Start/end are the existing breakThrow held pose;
+  // a full procedural revolution is composed between them. Translation makes
+  // a short ground knockback look airborne while actual world height remains
+  // owned exclusively by the player jump / creature cliff-fall systems.
+  function tumbleDirectionAxis(direction, axis) {
+    if (direction === 'right') axis.set(0, 0, 1);
+    else if (direction === 'left') axis.set(0, 0, -1);
+    else axis.set(direction === 'back' ? -1 : 1, 0, 0);
+    return axis;
+  }
+
+  function triggerTumble(entity, direction = 'front', durationS = 0.34) {
+    if (!entity?.prone || entity.health <= 0) return false;
+    const duration = Math.max(0.18, Number(durationS) || 0.34);
+    if (entity === window.Combat?.deps?.player) {
+      const clip = window.ImpactBlendLibrary?.getClip('breakThrow', direction);
+      if (!clip?.frames?.length) return false;
+      playback.active = true;
+      playback.holding = false;
+      playback.bank = 'tumble';
+      playback.direction = direction;
+      playback.clip = clip;
+      playback.elapsedS = 0;
+      playback.tumbleDurationS = duration;
+      playback.suppressLocomotion = true; // The held ragdoll legs rotate with the body, not a fresh gait solve.
+      playback.recoveryBlend = null;
+      baseBodyY = Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0;
+      tumbleDirectionAxis(direction, tumbleAxis);
+      const tail = clip.frames[clip.frames.length - 1];
+      applyFrame(tail, tail, 0);
+      return true;
+    }
+    if (entity._deathRecordedThrow) return false;
+    const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
+    const clip = window.ImpactBlendLibrary?.getClip('breakThrow', mappedDirection);
+    if (!clip?.frames?.length) return false;
+    stopCreature(entity);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!pivot) return false;
+    const poseSession = createCreaturePoseSession(pivot, 'impact-creature-prone-tumble');
+    if (poseSession === false) return false;
+    const visibleHeight = Math.max(0.05, Number(entity.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
+    const state = {
+      entity, pivot, poseSession, bank: 'tumble', direction: mappedDirection,
+      clip, elapsedS: 0, tumbleDurationS: duration, holding: false,
+      baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
+      heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
+      tumbleAxis: tumbleDirectionAxis(direction, new THREE.Vector3()),
+    }; // New reaction owns this one creature's existing impact pivot; no extra rig, bone or recorded animation.
+    entity._impactRagdollPlayback = state;
+    creatureStates.add(state);
+    const tail = clip.frames[clip.frames.length - 1];
+    applyCreatureFrame(state, tail, tail, 0);
+    return true;
+  }
+
   function updateCreature(entity, dt) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return false;
@@ -351,6 +411,22 @@
     }
     if (state.holding) {
       if (!entity.prone) stopCreature(entity);
+      return true;
+    }
+    if (state.bank === 'tumble') {
+      state.elapsedS += Math.max(0, Number(dt) || 0);
+      const t = Math.min(1, state.elapsedS / state.tumbleDurationS);
+      const tail = state.clip.frames[state.clip.frames.length - 1];
+      const body = tail.ragdoll.body;
+      tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
+      tumbleRotation.setFromAxisAngle(state.tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
+      state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(tumbleRotation).multiply(CREATURE_BASIS_INVERSE);
+      state.pivot.position.y = (body.localPosition.y - state.baseBodyY + Math.sin(t * Math.PI) * 0.3) * state.heightScale;
+      state.poseSession?.stamp();
+      if (t >= 1) {
+        if (entity.prone) { state.bank = 'breakThrow'; state.holding = true; applyCreatureFrame(state, tail, tail, 0); }
+        else stopCreature(entity);
+      }
       return true;
     }
 
@@ -444,6 +520,22 @@
     setRecoveryDirectionBlend(player, playback.suppressLocomotion);
   }
 
+  function updateTumble(dt) {
+    playback.elapsedS += Math.max(0, Number(dt) || 0);
+    const t = Math.min(1, playback.elapsedS / playback.tumbleDurationS);
+    const tail = playback.clip.frames[playback.clip.frames.length - 1];
+    const body = tail.ragdoll.body;
+    tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
+    tumbleRotation.setFromAxisAngle(tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
+    publishBodyPose(tumbleRotation, body.localPosition.y - baseBodyY + Math.sin(t * Math.PI) * 0.3);
+    if (t >= 1) {
+      if (window.Combat?.deps?.player?.prone) {
+        playback.bank = 'breakThrow'; playback.holding = true;
+        applyFrame(tail, tail, 0); // Restore the real held pose and recorded leg bend, not a guessed standing reset.
+      } else stop();
+    }
+  }
+
   function updateRecoveryArc(dt) {
     if (playback.suppressLocomotion && playerLegsRef?.update) {
       playerLegsRef.update(dt, 0, true, false);
@@ -469,6 +561,10 @@
     if (!playback.active) return;
     if (playback.bank === 'recovery') {
       updateRecoveryArc(dt);
+      return;
+    }
+    if (playback.bank === 'tumble') {
+      updateTumble(dt);
       return;
     }
     if (playback.holding) return;
@@ -530,6 +626,7 @@
     attach,
     holdHumanoidProne, clearHumanoidProne,
     trigger,
+    triggerTumble,
     update,
     beginRecoveryArc,
     stop,
