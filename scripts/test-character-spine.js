@@ -178,6 +178,8 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   spine.applyNeckReach(reachRig, -100 * H, H, 0);
   assert.ok(chain(reachRig.splineNodes)[6].y > posterior, 'extreme negative height cannot invert the spine below its own pelvis');
   assert.ok(reachRig.neckReachAppliedY > -100 * H, 'impossible compression is clamped and exposed diagnostically');
+  spine.applyNeckReach(reachRig, -100 * H, H, 1);
+  assert.ok(chain(reachRig.splineNodes)[6].y > posterior, 'combined maximal hunch + negative head height cannot cross the pelvis');
   spine.applyNeckReach(reachRig, 0, H, 0);
   near(chain(reachRig.splineNodes)[6].y, baseY, 'reset restores the authored seven-node rest chain');
 
