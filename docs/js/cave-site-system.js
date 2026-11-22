@@ -334,9 +334,12 @@
     const minimum = Math.ceil(ordinary.length * MIN_DEN_SHARE); // Shared floor applies to every wilderness zone, independent of its cave count.
     let missing = minimum - ordinary.filter(profile => profile.inhabitant === TYPES.ANIMAL_DEN).length; // Number of existing cave interiors to share with wildlife.
     if (missing > 0) {
-      ensureStateLoaded(); // Check explored hideouts before deciding which previously uninhabited caves may gain an occupant.
+      ensureStateLoaded(); // Check explored sites if a new, as-yet-untagged cave rolls a bandit hideout.
+      const existingBandits = new Set(dens.filter(den => den?.caveSite?.inhabitant === TYPES.BANDIT_HIDEOUT)
+        .map(den => String(den.caveSite.mapId))); // Protect old hideouts even if their world-save discovery flags have not yet been restored.
       const candidates = ordinary.filter(profile => profile.inhabitant !== TYPES.ANIMAL_DEN
-        && (profile.inhabitant === TYPES.NONE || !runtimeStateBySignature.get(profile.signature)?.discovered));
+        && (profile.inhabitant === TYPES.NONE
+          || (!existingBandits.has(String(profile.mapId)) && !runtimeStateBySignature.get(profile.signature)?.discovered)));
       candidates.sort((a, b) =>
         Number(a.inhabitant !== TYPES.NONE) - Number(b.inhabitant !== TYPES.NONE)
         || hashSeed(a.signature + ':den-balance') - hashSeed(b.signature + ':den-balance')
