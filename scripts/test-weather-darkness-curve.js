@@ -12,6 +12,7 @@ assert(source.includes(initHooks), 'sky dome initialization hooks should be reac
 const harnessHooks = `  window.__testSkyLighting = {
     attach(calendar) { deps = { calendar }; overcastLevel = 0; overcastInitialized = false; },
     sample: fullDayLightingState,
+    cloudBucket: currentCloudBucket,
     advance: advanceOvercast,
   };`; // Uses original production functions; only the costly real scene hooks are bypassed.
 const testWindow = { CalendarSystem: { getHour: () => testHour } }; // Supplies the same hour accessor used in game.
@@ -53,6 +54,16 @@ const stormForecast = sample('storm', 0, false); // A storm forecast should be g
 const stormAfterDownpour = sample('storm', 2, true); // The scheduled second storm window is heavy rain, not a lightning-intensity downpour.
 const staleDryStrength = sample('clear', 3, false); // Saved rainStrength data must not darken a sky while precipitation is inactive.
 assert(rainyForecast.weatherDarknessAddedAlpha > 0, 'rain forecast cloud cover remains overcast between showers');
+sky.attach({ weather: 'storm', isRaining: false, rainStrength: 0 });
+const dryStormBucket = sky.cloudBucket(); // Original all-day storm atlas should be reused before, during, and after the actual downpour.
+sky.attach({ weather: 'storm', isRaining: true, rainStrength: 3 });
+assert.equal(sky.cloudBucket(), dryStormBucket, 'storms cannot trigger extra cloud-atlas rebuilds at rain window boundaries');
+sky.attach({ weather: 'storm', isRaining: true, rainStrength: 2 });
+assert.equal(sky.cloudBucket(), dryStormBucket, 'heavy evening rain must reuse the same storm cloud atlas');
+sky.attach({ weather: 'rain', isRaining: false, rainStrength: 0 });
+const dryRainBucket = sky.cloudBucket(); // Ordinary rainy days should also retain their preexisting atlas bucket.
+sky.attach({ weather: 'rain', isRaining: true, rainStrength: 2 });
+assert.equal(sky.cloudBucket(), dryRainBucket, 'regular showers must not repeatedly rebuild the large cloud atlas');
 assert(stormForecast.a > rainyForecast.a && stormForecast.a < storm.a,
   'a dry interval on a storm day is heavily overcast but not full-storm dark');
 assert(Math.abs(stormForecast.a - heavy.a) < 1e-12,
