@@ -51,6 +51,7 @@ close(high.quickAttackChance,.83,'tier seven has higher conditional Quick Attack
 const oldMine = makeBanditDef({ ...tuning, _preserveMineEnemyTiers:true, combatPursuit:null, quickAttackTuning:null },'grunt',3,0,1); // Mine Ghouls explicitly opt out through makeBanditEntity.
 assert.equal(oldMine.chaseSpeed,180,'mine progression remains unchanged');
 close(oldMine.quickAttackChance,.45,'special enemy Quick Attack chance preserves the previous fallback');
+assert.equal(oldMine.banditStandoffMaxTiles,null,'special enemies keep their original full-size standoff rings');
 
 const quickChance = vm.runInNewContext(
   '(function(){' + section(bandit,'  const BANDIT_QUICK_ATTACK_CHANCE =','  const BANDIT_GUARD_WINDOW_S') +
@@ -85,7 +86,7 @@ assert(reachedRear,'Backstab contender should circle into the real behind bonus 
 assert(Math.abs(fighter.y)>40,'Backstab movement must go around the opponent rather than run straight through their center');
 assert.match(bandit,/const flank = banditBackstabFlankPoint\(c, targetPlayer, engageRangePx, movementPoint\)/,'live melee AI uses the tested orbit helper');
 assert.match(bandit,/const chance = banditQuickAttackChance\(c, loadout, cond\)/,'live attack AI uses the tested technique-specific chance');
-assert.match(bandit,/const travelSpeed = distToTarget > deps\.TILE \* 0\.45 \? def\.chaseSpeed/,'waiting enemies sprint if their assigned point drifts away');
+assert.match(bandit,/const travelSpeed = distToTarget > sprintThreshold \? def\.chaseSpeed/,'waiting enemies sprint if their assigned point drifts away');
 assert.match(bandit,/const BANDIT_MAX_ATTACK_SLOTS = 2/,'coordinated melee attack slot limit is retained');
 
 const rangedDeps = {
@@ -105,16 +106,20 @@ const updateRanged = vm.runInNewContext(
   '(function(){' + section(ranged,'  function updateBanditAI(', '  function updateBanditVisual(') +
   '\nreturn updateBanditAI;})()',rangedContext
 );
-const shooter={x:0,y:0,def:{rangedWeaponKey:'crossbow',chaseSpeed:300},_rangedCooldownT:0}; // Actual shoot-capable bandit outside its 300-pixel envelope.
+const shooter={x:0,y:0,enemyLoadoutKind:'bandit:captain',def:{rangedWeaponKey:'crossbow',chaseSpeed:300},_rangedCooldownT:0}; // Actual shoot-capable bandit outside its 300-pixel envelope.
 const beyond = updateRanged(shooter,.1,{x:800,y:0,health:100},800);
 assert.equal(beyond.handled,true);
 assert.equal(beyond.moving,true,'ranged bandits chase rather than freeze beyond weapon range');
 assert.equal(shooter.x,30);
 assert.equal(shooter._banditTactic,'ranged-pursuit');
-const cooling={x:0,y:0,def:{rangedWeaponKey:'crossbow',chaseSpeed:300},_rangedCooldownT:.6}; // In weapon range but farther than preferred closing distance.
+const cooling={x:0,y:0,enemyLoadoutKind:'bandit:captain',def:{rangedWeaponKey:'crossbow',chaseSpeed:300},_rangedCooldownT:.6}; // In weapon range but farther than preferred closing distance.
 const closer=updateRanged(cooling,.1,{x:260,y:0,health:100},260);
 assert.equal(closer.chasingRange,true,'ranged bandits close ground between shots');
 assert.equal(cooling.x,30);
+const specialShooter={x:0,y:0,enemyLoadoutKind:'ghoul:shadowknight',def:{rangedWeaponKey:'crossbow',chaseSpeed:300},_rangedCooldownT:0}; // Dedicated special enemy should keep its original ranged station.
+const specialResult=updateRanged(specialShooter,.1,{x:800,y:0,health:100},800);
+assert.equal(specialResult.holdingRange,true,'special ranged enemies keep their encounter-specific behavior');
+assert.equal(specialShooter.x,0);
 assert.match(arenaLog,/quickChance=/,'mobile arena diagnostics expose tier Quick Attack chance');
 assert.match(arenaLog,/tactic=/,'mobile arena diagnostics expose pursuit versus flanking');
 
