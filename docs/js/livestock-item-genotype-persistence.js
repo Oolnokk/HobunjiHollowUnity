@@ -197,6 +197,11 @@
     else delete member[MEMBER_FIELD];
     member.nonGearInventory = member.nonGearInventory && typeof member.nonGearInventory === 'object'
       ? member.nonGearInventory : {};
+    const previousSavedCount = Math.max(0, Math.floor(Number(member.nonGearInventory[itemKey]) || 0)); // Reject stale/double pickup attempts instead of silently minting lineage.
+    if (previousSavedCount !== nextCount - 1) {
+      debug.errors.push('nest-acquire: saved bag count mismatch for ' + itemKey + ': saved=' + previousSavedCount + ', expected=' + (nextCount - 1));
+      return false;
+    }
     member.nonGearInventory[itemKey] = nextCount; // Commit the exact live bag count in the SAME metadata write as its genes.
     const isCavern = typeof areaId === 'string' && areaId.startsWith('map_i_den_'); // Cave clutch records live on the world rather than on the character.
     if (isCavern) {
@@ -207,6 +212,10 @@
       }
       if (record.clutch?.itemKey && record.clutch.itemKey !== itemKey) {
         debug.errors.push('nest-acquire: saved clutch species/item does not match ' + itemKey + ' in ' + areaId);
+        return false;
+      }
+      if (record.clutch?.remaining != null && Number(record.clutch.remaining) !== remaining + 1) {
+        debug.errors.push('nest-acquire: saved clutch count mismatch in ' + areaId + ': saved=' + record.clutch.remaining + ', expected=' + (remaining + 1));
         return false;
       }
       record.clutch = {
