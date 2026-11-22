@@ -38,7 +38,8 @@
         id: synonymId(item),
         distance: Math.abs(clamp(item.verbosity ?? 50) - selected.verbosity) * 0.9
           + Math.abs(clamp(item.color ?? 50) - selected.color)
-          + Math.abs(clamp(item.formality ?? 50) - selected.formality) * 0.7,
+          + Math.abs(clamp(item.formality ?? 50) - selected.formality) * 0.7
+          - (CATEGORY_SLIDER[item.kind] ? Math.max(0, selected[CATEGORY_SLIDER[item.kind]] - 35) * 0.8 : 0), // Strong style sliders make approved historical/childlike choices competitive with standard synonyms.
         text: item.text.trim(),
       })).filter(item => item.id && item.text.toLocaleLowerCase() !== key)
         .sort((left, right) => left.distance - right.distance || left.text.localeCompare(right.text));
