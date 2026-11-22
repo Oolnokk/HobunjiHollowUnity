@@ -53,7 +53,7 @@
     }
     if (hasBox) return false;
     const anchorX = Number(instance?.x ?? instance?.col), anchorY = Number(instance?.y ?? instance?.row); // Older locale instances may have only an anchor.
-    return Number.isFinite(anchorX) && Number.isFinite(anchorY) && Math.hypot(x - anchorX, z - anchorY) < 6 + pad;
+    return Number.isFinite(anchorX) && Number.isFinite(anchorY) && Math.hypot(col - anchorX, row - anchorY) < 6; // Preserve the original seed's anchor-only compatibility policy.
   }
 
   function clearExportedObjects(workspace, objectIds) {
