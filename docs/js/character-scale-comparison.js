@@ -585,6 +585,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
     }
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
+    selected.feet?.update?.(0, 0, false, null); // Full Character Scale is static between edits: actively refresh foot contacts when portrait Y changes.
     syncLegPortraitAlignment(selected); // Hip and painted torso stay attached under separate Leg length and Portrait height edits.
     if (changedField === 'handScale') scheduleHandResize(selected); // Debounced cached GLB replacement keeps mobile slider movement responsive.
     syncSpineGuides(); // The guide follows the true resized body, not the former combined Height factor.
@@ -623,6 +624,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (previousFoot !== foot) applyAnatomyConfig(selected.profile); // Freeze the saved hand multiplier when resizing feet so the previous inherited hand/foot coupling cannot return.
     selected.feet?.setFootScaleMultiplier?.(foot); // Real GLB/fallback foot sizes update live, with sole contact preserved.
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
+    selected.feet?.update?.(0, 0, false, null); // Keep the fallback unguarded preview's planted sole contacts in sync with the changed aspect.
     syncLegPortraitAlignment(selected); // Reanchor the portrait to the actual resized hips without stretching the hands/feet or moving the floor.
     if (previousHand !== hand) scheduleHandResize(selected); // Avoid hundreds of expensive hand GLB reconstructions during a mobile slider drag.
     syncSpineGuides();
