@@ -1364,6 +1364,12 @@
     try{burden.onTransfer?.(burden,oldMapId,mapId);}catch(error){console.warn('[burden] transfer callback failed',error);}
     lastEvent='carried '+nextId+' into '+mapId;
   }
+  // Reuse the back-burden map migration for an NPC parent carrying a real infant burden.
+  function transferCarriedBurdenToArea(mapId, burden) {
+    if (!burden?.carried || !mapId || mapId !== area()) return false;
+    transferBackToArea(mapId, burden);
+    return burden.mapId === mapId;
+  }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
   // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
   function detachHeldBurden() {
@@ -2757,7 +2763,7 @@
 
   window.Shattercasks=Object.freeze({
     init,releaseZone,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
-    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,
+    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,transferCarriedBurdenToArea,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
