@@ -312,6 +312,58 @@ async function main() {
   assert.ok(!rules.generateSelections({ hello: [{ id: 'untagged', text: 'regional word', kind: 'regional' }] },
     { breadth: 100, variety: 100 }, 'pahu', ['west-country']).hello,
     'A regional word with no dialect label must never leak into automatic tables');
+  // Voice authoring audit: compare the LIVE floating renderer against source NPC bios,
+  // authored phrase pools, reaction personalities, and their own greetings.
+  const roster = JSON.parse(file('docs/config/npcs/hobunji-starter-npc-database.json')).npcs; // Source-of-truth NPC bios and phrase pools.
+  const records = new Map(roster.map(npc => [npc.id, npc])); // Used only to validate hand-authored character voices in this regression.
+  const greetings = JSON.parse(file('docs/config/dialogue/ambient-dialogue.json')).npcGreetings; // Actual random floating greetings, not synthetic examples.
+  const nativeLines = id => records.get(id).phrasePools
+    .filter(pool => /greetings/i.test(pool.name)).flatMap(pool => pool.entries.map(entry => entry.text));
+  assert.equal(records.get('pahu').ageBand, 'old');
+  assert.match(records.get('pahu').bio, /silly and warm.*Leaf/i);
+  assert.match(records.get('gorobi_ginju').bio, /proud.*competitive/i);
+  assert.match(records.get('gikali_ginju').bio, /kind-hearted but anxious/i);
+  assert.match(records.get('aliri_ginju').bio, /dutiful.*competitive/i);
+  assert.ok(nativeLines('aliri_ginju').some(line => line.includes("How's it goin'?")),
+    'Aliri has casual, teasing greetings and must not be configured with stiff proper reactions');
+  assert.equal(profiles.assignments.aliri_ginju, 'playful', 'Aliri shares the playful reaction family; her own vocabulary is independently tuned');
+  assert.match(records.get('gantami_ginju').bio, /mischievous little brother/i);
+  for (const id of ['pahu','gorobi_ginju','gikali_ginju','aliri_ginju','gantami_ginju']) {
+    assert.ok(greetings[id].player.length >= 5, 'Author multiple grounded random greetings for ' + id);
+    assert.ok(config.characters[id]?.sliders && Object.keys(config.characters[id].sliders).length >= 3,
+      'Individual NPC voice sliders must be tuned for ' + id);
+    for (const line of [...greetings[id].player, ...nativeLines(id)]) {
+      for (const chance of [0, 0.3, 0.75, 0.98]) {
+        const output = engine.rewrite(line, id, () => chance);
+        const protectedTerms = line.match(/\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\}|<[^<>\n]{1,80}>/g) || [];
+        for (const term of protectedTerms) assert.ok(output.includes(term),
+          'The voiced line must preserve literal authored tokens (' + id + '): ' + term);
+        assert.ok(!/\b(?:a not safe|an not safe|you without question|i i ain't|my my)\b/i.test(output),
+          'Avoid semantics/grammar regressions in ' + id + ': ' + output);
+      }
+    }
+  }
+  const voiceCases = [
+    ['pahu', "Isn't it time to fight?", "Ain't it toime to foight?"],
+    ['pahu', 'I am getting my things together.', "Oym gettin' moy things together."],
+    ['gikali_ginju', "It's good to see you, my friend.", "It's nice to see you, my friend."],
+    ['aliri_ginju', 'You certainly have spirit.', 'You sure have spirit.'],
+    ['gantami_ginju', "I am not very happy about that terrible weather.", "I ain't very glad about that very bad weather."],
+    ['leaf', "At least they're quiet.", "At least they're quiet."],
+    ['hreesh', "It's good to see you, friend.", "It's good to see you, friend."],
+    ['kzubug', 'Good to see you safe, {targetName}.', 'Good to see you safe, {targetName}.'],
+    ['jubmir', "It's good to see you, my friend.", "It's a pleasure to see you, my friend."],
+  ];
+  for (const [npcId, authored, expected] of voiceCases) {
+    assert.equal(engine.rewrite(authored, npcId, () => 0), expected, 'Voice snapshot for ' + npcId);
+  }
+  assert.equal(engine.rewrite('The weather is terrible.', 'gorobi_ginju', () => 0).includes('The weather is'), true,
+    'Changing weather to plural "elements" would break sentence agreement');
+  assert.ok(!engine.rewrite('Not right now.', 'gikali_ginju', () => 0).includes('maybe later'),
+    'A refusal must not become an implicit promise');
+  assert.ok(!Object.hasOwn(config.lexicon, 'weather'), 'Remove synonym roots that cannot keep subject agreement');
+  assert.ok(!config.lexicon.quiet.some(entry => entry.text === 'peaceful'),
+    'Quiet ambient sound is not automatically the same as peaceful mood');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
@@ -342,6 +394,6 @@ async function main() {
   assert.ok(editor.includes('previewResult'));
   new Function('window', editor); // Parse actual integration script even without a browser DOM.
   await testStandaloneEditorInteraction(rules);
-  console.log('Ambient vocabulary tests passed: pre-1900 slang, childlike/malaprop presets, tribe detection, shared checkbox references, article agreement, floating speech isolation, standalone editor.');
+  console.log('Ambient vocabulary tests passed: authored NPC identity snapshots, sampled greetings, regional slang, Pahu phonetics, semantic safeguards, shared checkbox references and editor.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
