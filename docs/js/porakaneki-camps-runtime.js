@@ -1025,7 +1025,8 @@
   }
 
   function getNearbyGiftWalker(x, z, radius = GIFT_REACH_TILES) {
-    if (!Number.isFinite(x) || !Number.isFinite(z) || window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(z)
+      || (window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false && window.NpcGifting?.isTribalTrophyHeld?.() !== true)) return null; // Once the daily gift was used, only a held trophy can request another hunter interaction.
     let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
     let distance = Math.max(0, Math.min(GIFT_REACH_TILES, num(radius, GIFT_REACH_TILES))); // Neither an external caller nor a stale action may reach beyond two tiles.
     for (const camp of activeCamps(currentZoneState())) for (const hunter of camp.hunters) {
@@ -1037,9 +1038,25 @@
       entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: `${LABEL} Hunter`, species: SPECIES_ID }, isTribeHunter: true, tribeId: KEY, isPorakanekiHunter: KEY === 'porakaneki' }; // Cached interaction-only proxy shares the actual hunter root.
       entity._porakanekiGiftWalker.root = entity.avatarRef.group;
       entity._porakanekiGiftWalker.area = entity.areaId;
+      entity._porakanekiGiftWalker.tribeCampKind = camp.kind; // Currency trades at the seasonal great camp can use an ordinary resident, not only the chief.
       closest = entity._porakanekiGiftWalker;
     }
     return closest;
+  }
+
+  function isAtChiefCamp(walker) {
+    const camp = state.zones.get(state.chiefZoneId)?.chiefCamp; // Only the currently active seasonal great camp buys enemy trophies.
+    if (!camp || !walker || (walker.area || walker.areaId || currentArea()) !== camp.zoneId) return false;
+    if (walker.isTribeHunter) return walker.tribeId === KEY && walker.tribeCampKind === 'chief'; // Hunter proxy is minted by getNearbyGiftWalker from a verified active camp.
+    if (walker.rec?.id !== (cfg?.reputation?.npcId || CHIEF_ID)) return false;
+    const site = camp.instance?.site; // Stamped tile-space rectangle; the chief may wander a couple of tiles around its edge.
+    const position = walker.root?.position;
+    const tileSize = Number(combatDeps?.TILE) || 1; // NPC root coordinates are world units; camp site bounds are tile indices.
+    const col = Number(position?.x) / tileSize; // Named chief must use the same tile basis as the ordinary hunter gifting proxy.
+    const row = Number(position?.z) / tileSize;
+    return !!site && Number.isFinite(col) && Number.isFinite(row)
+      && col >= site.x - 2 && col <= site.x + site.w + 2
+      && row >= site.y - 2 && row <= site.y + site.h + 2;
   }
 
   function chiefWalker() {
@@ -2337,6 +2354,7 @@
     speciesId: SPECIES_ID,
     ensureZoneState,
     getNearbyGiftWalker,
+    isAtChiefCamp, // Cheap, no debugSnapshot/camp rebuild in the frequently rendered NPC action menu.
     update,
     ensureWorldCamps,
     senseTargets, // Perception's 24-tile bronze-verdigris highlight, shared by Porakaneki and Omgurku camps.
