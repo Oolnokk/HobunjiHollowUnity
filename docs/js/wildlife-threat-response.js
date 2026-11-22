@@ -14,8 +14,10 @@
   const THREAT_RELEASE_TILES = 5.5; // Approachers who retreat this far no longer trigger an endless pursuit.
   const NEST_DEFENSE_TILES = 11; // Every nearby adult of the stolen species hears/sees a nest being raided.
   const NEST_DEFENSE_MS = 14000; // Temporary defensive hostility, restored when the intruder leaves or time expires.
-  const PREDATOR_PURSUIT_SPEED_TILES_S = 8.5; // Pursuing wildlife predators can keep up with sprinting prey.
-  const debug = { panic: 0, approaches: 0, nestAlerts: 0, nestDefenders: 0, predatorSprints: 0, last: '' }; // Lightweight wildlife panel/console-free diagnostics.
+  const PREDATOR_PURSUIT_SPEED_TILES_S = 8.5; // Wild predators sprint when hunting wildlife or actively chasing a player.
+  const WILDLIFE_FLIGHT_SPEED_TILES_S = 8.8; // Injured wildlife sprints instead of slowly walking home while pursued.
+  const POST_KICK_ESCAPE_MS = 2300; // A Voorg-Ass runs away from its kicker's target after the rear-kick pose finishes.
+  const debug = { panic: 0, approaches: 0, postKickEscapes: 0, nestAlerts: 0, nestDefenders: 0, predatorSprints: 0, preySprints: 0, last: '' }; // Lightweight wildlife panel/console-free diagnostics.
 
   const nowMs = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   function speciesOf(entity) {
@@ -36,6 +38,7 @@
     return c._herdThreat || (c._herdThreat = {
       nextScanS: (Math.abs((Number(c.x) || 0) + (Number(c.y) || 0)) % 7) * PREDATOR_SCAN_S / 7,
       predatorX: 0, predatorY: 0, panicUntilMs: 0, engaged: false, engagedAtMs: 0,
+      kickArmed: false, kickThreatX: 0, kickThreatY: 0,
     }); // Per-animal scan phase and short-lived panic/approach state; no per-frame allocated maps.
   }
   function closestPredator(c, actors, tile) {
@@ -57,6 +60,7 @@
       c.targetPlayer = null; c.targetCreature = null;
       c._voorgRearKickThreat = null;
       state.engaged = false;
+      state.kickArmed = false; // Predator panic replaces, rather than queues, the visitor's defensive rear kick.
       debug.panic++;
       debug.last = speciesOf(c) + ' fled ' + speciesOf(predator);
       window.__farmLog?.('[wildlife-threat] ' + debug.last, 'wildlife');
@@ -88,15 +92,19 @@
     }
     return true;
   }
-  function speedUpPredatorPursuit(c, tile) {
-    if (!isPredator(c)) return;
-    const hunting = c.state === 'patrol-chase' && c.targetCreature?.health > 0 &&
-      c.targetCreature.areaId === c.areaId && !c.targetCreature.isCompanion && !c.targetCreature.isBandit;
-    if (hunting && !c._wildPursuitOriginalDef) {
-      c._wildPursuitOriginalDef = c.def; // Only the pursuing individual gets a temporary speed overlay.
-      c.def = { ...c.def, chaseSpeed: Math.max(Number(c.def?.chaseSpeed) || 0, tile * PREDATOR_PURSUIT_SPEED_TILES_S) };
-      debug.predatorSprints++;
-    } else if (!hunting && c._wildPursuitOriginalDef) {
+  function speedUpWildMovement(c, tile) {
+    const predator = isPredator(c);
+    const pursuing = predator && (c.state === 'chase' ||
+      (c.state === 'patrol-chase' && c.targetCreature?.health > 0 && c.targetCreature.areaId === c.areaId));
+    const fleeing = c.state === 'fleeing-low-health';
+    const speed = fleeing ? WILDLIFE_FLIGHT_SPEED_TILES_S
+      : pursuing ? PREDATOR_PURSUIT_SPEED_TILES_S : 0; // Ordinary grazing/patrolling and resting remain at authored speeds.
+    if (speed > 0 && !c._wildPursuitOriginalDef) {
+      c._wildPursuitOriginalDef = c.def; // Nonpersistent actor overlay: restores authored move/chase values after the sprint.
+      c.def = { ...c.def, chaseSpeed: Math.max(Number(c.def?.chaseSpeed) || 0, tile * speed) };
+      if (predator) debug.predatorSprints++;
+      else debug.preySprints++;
+    } else if (!speed && c._wildPursuitOriginalDef) {
       c.def = c._wildPursuitOriginalDef;
       c._wildPursuitOriginalDef = null;
     }
@@ -105,16 +113,36 @@
     if (!c || c.health <= 0 || c.isCompanion || !ctx?.tile) return;
     const kind = herdSpecies(c);
     if (!kind) {
-      speedUpPredatorPursuit(c, ctx.tile);
+      if (!c._nestDefense) speedUpWildMovement(c, ctx.tile); // Temporary maternal stat changes never nest under movement speed overlays.
+      else if (c._wildPursuitOriginalDef) {
+        c.def = c._wildPursuitOriginalDef;
+        c._wildPursuitOriginalDef = null;
+      }
       updateNestDefense(c);
       return;
     }
     const state = herdState(c);
+    if (kind === 'voorg-ass' && c._voorgRearKickThreat) {
+      state.kickArmed = true; // Capture the attacker before rearKick.finish clears its combat target.
+      state.kickThreatX = c._voorgRearKickThreat.x;
+      state.kickThreatY = c._voorgRearKickThreat.y;
+    }
     state.nextScanS -= Math.max(0, Number(dt) || 0);
     if (state.nextScanS <= 0) {
       state.nextScanS = PREDATOR_SCAN_S;
       const predator = closestPredator(c, actors, ctx.tile);
       if (predator) beginPanic(c, state, predator, ctx.tile);
+    }
+    if (kind === 'voorg-ass' && c.state === 'fleeing-low-health' && c._voorgRearKickSpent && state.kickArmed) {
+      state.kickArmed = false;
+      state.engaged = false;
+      state.predatorX = state.kickThreatX; state.predatorY = state.kickThreatY;
+      state.panicUntilMs = nowMs() + POST_KICK_ESCAPE_MS;
+      c.state = 'herd-panic'; // Reuse collision-safe high-speed away movement, rather than retreating toward a possibly dangerous home tile.
+      c.targetPlayer = null; c.targetCreature = null;
+      debug.postKickEscapes++;
+      debug.last = 'voorg-ass fled after rear kick';
+      window.__farmLog?.('[wildlife-threat] ' + debug.last, 'wildlife');
     }
     if (c.state === 'herd-panic') {
       if (nowMs() < state.panicUntilMs) return;
@@ -157,8 +185,9 @@
     let moving = false, angle = awayAngle;
     for (const offset of directions) {
       angle = awayAngle + offset;
-      const x = c.x + Math.cos(angle) * tile * 3, y = c.y + Math.sin(angle) * tile * 3;
-      if (ctx.canOccupyAt && !ctx.canOccupyAt(x, y, tile * 0.32)) continue;
+      const vx = Math.cos(angle), vy = Math.sin(angle); // One bearing drives both the nearby terrain check and the distant escape goal.
+      const x = c.x + vx * tile * 3, y = c.y + vy * tile * 3;
+      if (ctx.canOccupyAt && !ctx.canOccupyAt(c.x + vx * tile * 0.7, c.y + vy * tile * 0.7, tile * 0.32)) continue; // Check the first step, not a remote tile that may be blocked beyond reachable open ground.
       moving = !!ctx.moveCreatureToward?.(c, x, y, Math.max(tile * PANIC_SPEED_TILES_S, Number(c.def?.chaseSpeed) || 0), dt);
       if (moving) break;
     }
@@ -179,6 +208,10 @@
           speciesOf(c) !== species || (c._nestDefense?.originalDef || c.def)?.hostile !== false ||
           c.genotype?.sizeClass === 'small' || c.isBaby || c.isJuvenile ||
           Math.hypot(c.x - nestX, c.y - nestY) > NEST_DEFENSE_TILES * combat.TILE) continue;
+      if (c._wildPursuitOriginalDef) {
+        c.def = c._wildPursuitOriginalDef;
+        c._wildPursuitOriginalDef = null; // Remove any prior fleeing-speed overlay before storing the maternal baseline.
+      }
       const prior = c._nestDefense; // Repeated theft extends the same encounter without nesting temporary definition overlays.
       c._nestDefense = {
         originalDef: prior?.originalDef || c.def,
