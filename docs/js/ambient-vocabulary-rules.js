@@ -2,7 +2,7 @@
 // No asset loading, persistent state, or gameplay dependencies.
 (() => {
   'use strict';
-  const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55 }); // Default axis values for incomplete profiles and new NPCs.
+  const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55, oldSlang: 0, simplicity: 0, nearMiss: 0 }); // Default axis values for incomplete profiles and new NPCs.
   const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
   const normalizeSliders = values => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(values?.[key] ?? DEFAULT_SLIDERS[key])])); // Shared generator/runtime/editor input validation.
   function hash(text) {
@@ -13,6 +13,19 @@
   function synonymId(entry) {
     return String(entry?.id || entry?.text || '').trim().toLocaleLowerCase(); // Immutable canonical ID; the editor keeps it when synonyms are renamed.
   }
+  const WORD_KINDS = Object.freeze(['standard', 'old-slang', 'simple', 'near-miss']); // Shared editor/runtime classifications: historical slang pre-1900, plain childlike forms, intentional almost-right words.
+  const CATEGORY_SLIDER = Object.freeze({ 'old-slang': 'oldSlang', simple: 'simplicity', 'near-miss': 'nearMiss' }); // Every nonstandard kind has its own independent inclusion slider.
+  function isEligibleKind(entry, selected, speakerId, word) {
+    const kind = String(entry?.kind || 'standard');
+    if (kind === 'standard') return true;
+    const slider = CATEGORY_SLIDER[kind];
+    if (!slider || !Number.isFinite(Number(selected[slider]))) return false; // Unknown categories fail closed instead of leaking unusual words into everyone's speech.
+    const strength = selected[slider];
+    if (strength < 20) return false; // Ordinary villagers never inherit historical slang/misnamings from a zero-weight preset.
+    if (kind === 'old-slang' && (!Number.isInteger(entry?.firstRecorded) || entry.firstRecorded >= 1900)) return false; // Documented period slang only; anything undated requires explicit manual checkmarks.
+    const roll = (hash(speakerId + ':kind:' + word + ':' + synonymId(entry)) >>> 0) / 4294967296; // Stable per-speaker sample, generated only on first bubble/editor preview.
+    return roll < (strength - 10) / 90;
+  }
   function generateSelections(lexicon, sliders, speakerId = '') {
     const selected = normalizeSliders(sliders); // Independent axes determine which globally authored words each character is allowed to say.
     const selections = {}; // Only canonical synonym IDs are stored, not copies of another character's word list.
@@ -21,7 +34,7 @@
       if (!key || key.length > 80 || /[{}]/.test(key) || !Array.isArray(entries)) continue;
       const coverage = 0.12 + (selected.breadth / 100) * 0.88; // Broad characters know more words; low breadth excludes entire entries.
       if ((hash(speakerId + ':known:' + key) >>> 0) / 4294967296 >= coverage) continue;
-      const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({
+      const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim() && isEligibleKind(item, selected, speakerId, key)).map(item => ({
         id: synonymId(item),
         distance: Math.abs(clamp(item.verbosity ?? 50) - selected.verbosity) * 0.9
           + Math.abs(clamp(item.color ?? 50) - selected.color)
@@ -77,7 +90,8 @@
   function seedSliders(familySliders, speakerId) {
     const values = normalizeSliders(familySliders); // Existing personality family is the center of each character's vocabulary.
     return Object.fromEntries(Object.entries(values).map(([key, value]) => [
-      key, clamp(value + hash(String(speakerId) + ':' + key) % 25 - 12),
+      key, value === 0 && ['oldSlang', 'simplicity', 'nearMiss'].includes(key) ? 0
+        : clamp(value + hash(String(speakerId) + ':' + key) % 25 - 12),
     ])); // Stable ±12-point individual variation; no random changes every time a character speaks.
   }
   const expressionCache = new WeakMap(); // Each stable NPC table is compiled once and reused across its floating dialogue bubbles.
@@ -129,5 +143,5 @@
     }).join('');
     return { text, hits, swaps };
   }
-  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, seedSliders, synonymId, generateSelections, mergeSelections, resolveSelections, migrateLegacyTable, generateTable, rewriteLine });
+  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, WORD_KINDS, normalizeSliders, seedSliders, synonymId, generateSelections, mergeSelections, resolveSelections, migrateLegacyTable, generateTable, rewriteLine });
 })();
