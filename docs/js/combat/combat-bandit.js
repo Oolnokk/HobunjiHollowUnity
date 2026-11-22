@@ -1967,7 +1967,8 @@
     const charge = preparer?._banditPreparedCharge;
     if (!charge || charge.target !== target || charge.t < charge.duration) return false;
     const dx = preparer.x - target.x, dy = preparer.y - target.y;
-    if (dx * dx + dy * dy > deps.TILE * deps.TILE * 16) return false; // A charged fighter far away cannot monopolize everybody else's melee attempts.
+    const releaseRange = Number.isFinite(charge.reachPx) && charge.reachPx > 0 ? charge.reachPx : deps.TILE * 2.5; // A drawn charge has no right to block fighters who can already hit while its own lunge cannot reach.
+    if (dx * dx + dy * dy > releaseRange * releaseRange) return false;
     const slot = _banditSlotForActor.get(preparer); // The existing per-actor WeakMap avoids a global scan for every waiting attacker.
     if (!slot || slot.target !== target) return false;
     if (slot.sector == null) return true;
@@ -2008,7 +2009,8 @@
     const rawWindup = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
     const duration = Math.max(0.25, Number(rawWindup) / speed || 0.5); // The visible preparatory windup runs even while a second bandit attacks.
     const preview = { windupS: duration, strikeS: 0.01, t: 0, phase: 'windup' }; // Draw-only stage: Combat.beginStagedAction is not called until attack permission becomes free.
-    const charge = { target, t: 0, duration, chargeT, action: preview }; // A single per-actor state object, reused until release/cancel; no per-frame allocations.
+    const releaseRange = banditEngagementReachPx(c, c.def, c.def.banditAbilityLoadout, target); // The same existing safe attack-commit reach used by the real Charged Breaker release.
+    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
     banditTurnState(target).charge = { actor: c, target };
     c._banditPreparedCharge = charge;
     c._rangedMode = false; // The held melee weapon, not a stowed crossbow, represents the charge.
