@@ -512,16 +512,41 @@
     ];
   }
 
+  // Shared hit hierarchy test for both ordinary animal companions and shoulder pets.
+  function _pixelProbeIsDescendant(obj, ancestor) {
+    if (!ancestor) return false;
+    let node = obj; // Walks raycast hits back to the owning creature's avatar.
+    while (node) { if (node === ancestor) return true; node = node.parent; }
+    return false;
+  }
+
+  // Mobile users can tap an ordinary companion (including Nelk) to inspect
+  // the exact live yaw skin and paint isolation without opening DevTools.
+  function _pixelProbeCompanionHeadLines(hits) {
+    const objects = hits.map(hit => hit.object); // World-space clicked meshes supplied by the existing Pixel Probe raycast.
+    for (const companion of deps.companionObjects || []) {
+      if (companion?.stableRole !== 'companion' || !companion.avatarRef?.group
+        || !objects.some(object => _pixelProbeIsDescendant(object, companion.avatarRef.group))) continue;
+      const avatar = companion.avatarRef; // Runtime head rig installed on the actual animal, not a static species preview.
+      const rig = avatar.headRig; // Current pitch/yaw state, including the independently turning head bones.
+      const geometry = avatar.frontPlane?.geometry?.userData || {}; // Includes the rendered pivot and horizontal head/leg boundary.
+      const material = avatar.headMaterialResponse?.dump?.(); // Existing map diagnostics expose whether material paint is applied to yaw.
+      const format = value => Number.isFinite(value) ? (value * 100).toFixed(1) + '%' : '-'; // Compact source-space values on a mobile report.
+      return [
+        '', '=== Animal companion head yaw ===',
+        `Companion: ${companion.creatureKey || 'unknown'} id=${companion.id || '-'} headRig=${rig ? 'active' : 'missing'}`,
+        `Head: pitch=${Number(rig?.appliedDeg || 0).toFixed(2)}° yaw=${Number(rig?.currentYawDeg || 0).toFixed(2)}° target=${Number(rig?.targetYawDeg || 0).toFixed(2)}°`,
+        `Head yaw: mode=${rig?.yawMode || 'legacy'} mask=${geometry.hobunjiAnimalYawMask || rig?.yawMask || 'unknown'} neckX=${format(geometry.hobunjiAnimalYawFoldPivotX)} bottomY=${format(geometry.hobunjiAnimalYawFoldBottomV)} paintedMaterialYaw=${material?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`,
+      ];
+    }
+    return null;
+  }
+
   // The same compositor now owns shoulder-pet pose ordering, temporary portrait
   // depth writes and owner front-art weapon stencil. The probe checks its
   // selected preset and actual material state alongside the physical attachment.
   function _pixelProbeShoulderPetLines(hits) {
-    const isDescendant = (obj, ancestor) => {
-      if (!ancestor) return false;
-      let n = obj;
-      while (n) { if (n === ancestor) return true; n = n.parent; }
-      return false;
-    };
+    const isDescendant = _pixelProbeIsDescendant; // The same ownership test is used by the companion diagnostic.
     const currentArea = deps.getCurrentArea();
     const player = deps.player;
     let liveActivePet = null;
@@ -1583,6 +1608,8 @@
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
+    const companionHeadLines = _pixelProbeCompanionHeadLines(hits); // On-demand Nelk/companion yaw evidence for the mobile Pixel Probe report.
+    if (companionHeadLines) lines.push(...companionHeadLines);
 
     const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
     if (npcSchedulingLines) lines.push(...npcSchedulingLines);
