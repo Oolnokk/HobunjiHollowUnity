@@ -795,6 +795,7 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
+      footprint: { x: selected.anchorC + compiled.footprint.minC, y: selected.anchorR + compiled.footprint.minR, w: compiled.footprint.maxC - compiled.footprint.minC + 1, h: compiled.footprint.maxR - compiled.footprint.minR + 1 }, // Real authored floor bounds protect the whole locale from later scenery, not just its anchor.
       shiftGeneratedSecret: locale.placement?.shiftGeneratedSecret === true || (!locale.placement?.alwaysVisibleOnMap && locale.placement?.preferSeclusion !== false
         && (locale.placement?.preferSeclusion === true || ['ruin_entrance','great_fey_shrine'].includes(locale.category))
         && locale.id !== 'locale_banubu_shrine'), // A named event locale can opt into yearly map-marker rediscovery without requiring distant or secluded placement.
