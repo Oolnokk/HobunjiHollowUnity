@@ -137,6 +137,31 @@ echoed.onComplete(echoed);
 assert.equal(hits,4,'both ordinary and both Fey strikes actually called the production callback');
 assert.equal(empowered._feyHypedNpcSequence,undefined,'Fey second-strike state is cleaned up');
 
+
+// A reactive Counter Shield riposte must obey the same single-strike rule.
+windowStub.Combat.counterShieldData={COUNTER_DAMAGE_MUL:1,COUNTER_RANGE_MUL:1,COUNTER_HALF_CONE_DEG:30,COUNTER_KNOCKBACK_MUL:1};
+windowStub.Combat.meleeAimSolution=()=>({pitch:0});
+windowStub.Combat.meleeHit=()=>false;
+const riposte=vm.runInNewContext(
+  '(()=>{'+section(source,'  function fireBanditCounterRiposte(', '  // "Choose an attack, then judge how close to get"')+
+  'return fireBanditCounterRiposte;})()',{
+    window:windowStub,deps,Math,Number,banditDirectional:()=>true,
+    claimBanditAttackTurn:coordinator.acquire,releaseBanditAttackTurn:coordinator.release,
+    banditAttackBaseline:()=>({damage:5,rangePx:60,knockbackPxS:60}),spawnBanditTrailArc(){},
+  }
+);
+const countBeforeCounter=stages.length;
+assert(coordinator.acquire(front,target));
+riposte(left,{attackTag:'blunt',weaponShapeStats:{speed:1}},target);
+assert.equal(stages.length,countBeforeCounter,'reactive Counter Shield cannot overlap a committed melee windup');
+coordinator.release(front,target);
+riposte(left,{attackTag:'blunt',weaponShapeStats:{speed:1}},target);
+assert.equal(stages.length,countBeforeCounter+1,'Counter Shield acquires the one free melee turn');
+assert.strictEqual(coordinator.owner(target),left);
+const counterStage=stages.at(-1);
+counterStage.onStrike(counterStage);
+assert.strictEqual(coordinator.owner(target),null,'Counter Shield turn releases after resolving its own reactive hit');
+
 assert.match(source,/const readyToStrike = distToPlayer <= engageRangePx && !!slot && inSector && attackPermission/,'real combat AI uses direction and one-attacker gating');
 assert.match(source,/claimBanditAttackTurn\(c, targetPlayer\)/,'real combat AI claims the turn before spending Stamina or starting an attack');
 assert.match(source,/fireBanditChargedBreaker\(c, def, targetPlayer, prep\)/,'prepared releases reuse the actual Charged Breaker ability');
