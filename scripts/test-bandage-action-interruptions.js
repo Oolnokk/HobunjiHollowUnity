@@ -84,7 +84,7 @@ assert.equal(helper('obj_door_toggle'), false, 'duplicate action ownership canno
 // Guard the early-return integration points without reimplementing their action semantics.
 assert.match(gameSource, /interruptBandagingForAction\(activeAction, attackAction \? 'attack' : 'action'\);[\s\S]{0,300}isLocked/);
 assert.match(gameSource, /function beginHeldItemActionDescriptor\(action\) \{\s*if \(action === 'consume_held_item' \|\| action\.startsWith\('obj_process_'\)\) interruptBandagingForAction/);
-assert.match(gameSource, /btn\.action === 'torch_throw' \|\| btn\.action === 'campfire_menu'\) interruptBandagingForAction/);
+assert.match(gameSource, /if \(btn\.action === 'campfire_menu'\) \{\s*if \(window\.WildernessCampfire\?\.beginInteractionHold/, 'campfire action routes through its own interruptible hold owner');
 assert.match(gameSource, /if \(!btn\) \{ performJumpAction\(\); return; \}/, 'an empty Interact still falls back to Jump');
 
 console.log('Bandage input interruption passed: world callbacks, repeated inputs, passive queries, and special action routing.');

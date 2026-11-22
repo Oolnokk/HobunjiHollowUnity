@@ -25,6 +25,9 @@ const toolStart = gameCode.indexOf("if (actionId === 'toolSelect') {", gameCode.
 const toolEnd = gameCode.indexOf('if (window._desktopSelectionArc?.toolMenuOpen?.())', toolStart);
 assert(toolStart > 0 && toolEnd > toolStart, 'test finds game.js\'s canonical Tool Select route');
 const toolBranch = gameCode.slice(toolStart, toolEnd); // Executed, rather than reimplementing the controller pickup logic.
+const interruptStart = gameCode.indexOf('      function interruptBandagingForAction('); // Finds the actual gameplay helper referenced by the extracted Tool Select branch.
+const interruptEnd = gameCode.indexOf('      function useActiveAction()', interruptStart); // Bounds the helper without duplicating its implementation.
+assert(interruptStart >= 0 && interruptEnd > interruptStart, 'tool pickup test includes the game\'s bandage interruption helper');
 
 const toolSelectPress = { down:false, held:false, timer:null, lastScrollAt:0, contextPickup:false }; // Emulates game.js's live Tool Select gesture state.
 let pickupNearby = true; // Simulates facing an intact Shattercask in range.
@@ -34,10 +37,22 @@ let recalls = 0; // Must stay zero on every release belonging to a pickup.
 let opened = 0; // Must stay zero for a held pickup that outlives the selector threshold.
 let timerCount = 0; // Detects whether pickup accidentally starts the normal tool-select timer.
 let now = 1000; // Drives the selector's tap/hold thresholds with deterministic frames.
+let bandaging = true; // Simulates an active bandage during each nearby pickup gesture.
+let interruptions = 0; // Confirms only a real pickup, not an ordinary tool selection, interrupts a bandage.
 const binding = { toolSelect:'Button5', itemSelect:null, utilityMenu:null, socialWheel:null }; // Remaps to Button9 in the second scenario.
 
 const windowMock = {
   addEventListener() {},
+  BandageSystem: {
+    cancel(reason, detail) {
+      if (!bandaging) return false;
+      assert.equal(reason, 'world-interaction');
+      assert.equal(detail.action, 'shattercask_collect');
+      interruptions++;
+      bandaging = false;
+      return true;
+    },
+  },
   Shattercasks: {
     toolArchAction: () => pickupNearby ? 'pickup' : null,
     toolArchTap: () => {
@@ -63,8 +78,13 @@ const windowMock = {
   },
 }; // One production-like shared global for both controller consumers.
 const timers = new Map(); // Identifies any ordinary selection hold timer incorrectly armed during pickup.
+const interruptBandagingForAction = vm.runInNewContext(
+  '(function() { ' + gameCode.slice(interruptStart, interruptEnd) + ' return interruptBandagingForAction; })()',
+  { window:windowMock }, { filename:'game-bandage-action-helper.js' },
+); // Uses the production helper that the isolated Tool Select branch calls.
 const toolContext = {
   window:windowMock,
+  interruptBandagingForAction,
   toolSelectPress,
   desktopTapWindowMs: () => 350,
   setTimeout(callback) { const id = ++timerCount; timers.set(id,callback); return id; },
@@ -104,6 +124,8 @@ function pickupGesture(code, startTime, holdDuration) {
   runToolSelect('toolSelect','press'); // The real physical button route performs pickup.
   assert(heldCask,'the canonical game controller handler picked up the Shattercask');
   assert.equal(pickups,before+1,'one physical press causes exactly one pickup');
+  assert.equal(bandaging,false,'a pickup cancels the active bandage before proceeding');
+  assert.equal(interruptions,before+1,'each successful pickup interrupts once, never from the controller selector');
   assert.equal(toolSelectPress.contextPickup,true,'native handler reserves its corresponding release');
   assert.equal(timerCount,0,'pickup never starts the ordinary tool-selector hold timer');
   select(frame(code,true,false,startTime+holdDuration)); // May exceed the normal 350ms selection threshold.
@@ -122,12 +144,15 @@ function pickupGesture(code, startTime, holdDuration) {
 }
 
 pickupGesture('Button5',1000,100); // Quick tap.
-pickupNearby = true; heldCask = false;
+pickupNearby = true; heldCask = false; bandaging = true;
 binding.toolSelect = 'Button9'; // Current controller remapping must remain authoritative.
 pickupGesture('Button9',2000,600); // Long hold.
 
 const normalBefore = recalls;
+bandaging = true;
 runToolSelect('toolSelect','press'); // No Shattercask is in pickup range now.
+assert.equal(bandaging,true,'ordinary tool selection does not cancel bandaging');
+assert.equal(interruptions,2,'only two real pickups interrupted bandaging');
 assert.equal(timers.size,1,'ordinary Tool Select still starts its tap/hold timer');
 runToolSelect('toolSelect','release');
 assert.equal(recalls,normalBefore+1,'ordinary Tool Select still recalls the remembered tool');

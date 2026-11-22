@@ -28,6 +28,8 @@ assert.match(game, /AdventuringTools\?\.beginThrow\?\.\(inputActionId\)/,
 const timers = new Map(); // Synthetic timeout queue verifies the hold duration deterministically.
 let timerId = 0; // Unique key for each scheduled test timeout.
 let combat = false; // Flips the live campfire interaction's combat eligibility.
+let bandaging = true; // Starts with a bandage in progress to verify the campfire hold interrupts before it owns Action 2.
+let bandageInterrupts = 0; // Only valid new holds may end bandaging, never an already-active or combat-blocked attempt.
 let saves = 0; // Counts actual selections of Save Game after range checks.
 let cooks = 0; // Counts actual selections of Cook Here after perk checks.
 const notices = []; // Captures player-visible failure messages for out-of-range menu choices.
@@ -66,6 +68,16 @@ function startTouch(pointerId, x = 700, y = 320) {
 const windowMock = {
   PerkSystem: { rank: discipline => discipline === 'foraging' ? 1 : 0 },
   GameplayInputRouter: { isInCombat: () => combat },
+  BandageSystem: {
+    cancel(reason, detail) {
+      if (!bandaging) return false;
+      assert.equal(reason,'world-interaction');
+      assert.equal(detail.action,'campfire_menu');
+      bandaging = false;
+      bandageInterrupts++;
+      return true;
+    },
+  },
   _desktopSelectionArc: arch,
   HobunjiSaveCheckpoints: { saveCampfire: async () => { saves++; return {ok:true}; } },
   CookingSystem: { openAtHearth: () => { cooks++; } },
@@ -104,6 +116,12 @@ assert.equal(actions[0].inputAction,'action2');
 assert.equal(actions[0].requiresHold,true);
 assert.equal(actions[0].holdSeconds,0.5,'without shared settings, the authored 500 ms hold remains available');
 assert.equal(camp.beginInteractionHold('action2'),true);
+assert.equal(bandaging,false,'starting a campfire hold releases bandaging on keyboard/controller');
+assert.equal(bandageInterrupts,1);
+bandaging = true;
+assert.equal(camp.beginInteractionHold('action2'),false,'a second press cannot replace the active campfire hold');
+assert.equal(bandaging,true,'duplicate press must not interrupt bandaging');
+bandaging = false;
 assert.equal(timers.size,1);
 assert.equal([...timers.values()][0].ms,500,'older hosts retain the baseline hold threshold');
 camp.endInteractionHold('action2');
@@ -244,7 +262,14 @@ listeners.blur();
 assert.equal(timers.size,0,'lost input focus cancels the campfire timer');
 assert.equal(camp.getDebugState().interactionHold,null,'mobile debug reports no stale hold');
 combat=true;
+bandaging = true;
 assert.equal(camp.beginInteractionHold('action2'),false,'campfire interaction is blocked during combat');
+assert.equal(bandaging,true,'a combat-blocked campfire attempt must not cancel a bandage');
+combat=false;
+assert.equal(camp.beginInteractionHold('touch-arch:50'),true,'touch begins the same real campfire hold');
+assert.equal(bandaging,false,'touch-arch campfire holds must also cancel bandaging');
+assert.equal(bandageInterrupts,2);
+camp.endInteractionHold('touch-arch:50',true);
 
 
 // Verify the production shared selection-arch presenter as well as the compact unit-test

@@ -28664,7 +28664,6 @@
         const btn = actionButtonForPhysicalSlot(slotIndex);
         if (!btn || btn.allowed === false) return;
         activeAction = btn.action;
-        if (btn.action === 'torch_throw' || btn.action === 'campfire_menu') interruptBandagingForAction(btn.action); // These input owners return before useActiveAction.
         if (btn.action === 'torch_throw') {
           if (window.AdventuringTools?.beginThrow?.(inputActionId)) torchThrowActionPresses.add(inputActionId);
           return; // Action 2 press starts a held windup, never an immediate projectile.
