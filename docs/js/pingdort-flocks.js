@@ -185,6 +185,7 @@
   const NEST_CAP_INSET=.2, NEST_ROCK_CLEARANCE=.4; // Keep the actual cup on the cap and away from the parent rock wall.
   const NEST_SUBTILE_OFFSETS=[.125,.375,.625,.875]; // Sample exposed quarter-tile positions when no safely spaced tile centre exists.
   function clearNestTile(shelf){
+    if(!shelf||!Array.isArray(shelf.footprint)||!shelf.footprint.length)return null; // Defensive entry check for the read-only wildlife diagnostic seam.
     const solidBase=[...(shelf?.base?.footprint||[]),...(shelf?.base?.boundaryCells||[])]; // Both the parent plateau and painted stone face obstruct the cup.
     const reward=shelf.reward==='herbCluster'&&shelf.herbTile
       ?{x:shelf.herbTile.c+.5,z:shelf.herbTile.r+.5}:shelf;
@@ -251,6 +252,7 @@
       areaId:session.area,remaining:NEST_EGGS,itemKey:FERTILE_EGG,
       genotype:nestFamilyGenotype(session,session.area+':'+shelf.id), // Same stored bloodline as its guarding flock, including after re-entry.
       col:Math.floor(x),row:Math.floor(z),w:1,h:1,
+      exteriorCliffNest:true, // DenNestSystem measures interaction reach from the exact sub-tile cup position.
       mesh:group,group,fallbackArt,flockLoaded:false,deadBirdSlots:new Set()};
     nest.x=x*unit();nest.y=z*unit(); // Native DenNestSystem uses pixel-space nest coordinates like branch nests.
     nest.onEggCollected=()=>eggCollected(session,nest); // Shares the normal hold-to-take and one-item inventory path.
