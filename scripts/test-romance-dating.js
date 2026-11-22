@@ -39,7 +39,10 @@ const clock = { rawDay: 10, hour: 10 };
 const intervals = [];
 const timeouts = [];
 const windowListeners = {};
+const devPanels = new Map(); // Captures registered companion panels so timing/arrival status can be tested without opening a popup.
 const windowStub = {
+  DevCompanion: { registerPanel(spec) { devPanels.set(spec.id, spec); return true; } },
+  __hobunjiGameStarted: true,
   CalendarSystem: {
     timeDebugSnapshot: () => ({ rawDay: clock.rawDay, civilDay: clock.rawDay, time01: (clock.hour - 6) / 24 }),
     getHour: () => clock.hour,
@@ -151,6 +154,11 @@ W.RomanceSystem.init({
 });
 const tick = () => W.RomanceSystem._test.tick();
 const choose = (stepIndex, choiceIndex) => W.DialogueContent.handlers.romance({ op: 'choose', step: stepIndex, choice: choiceIndex });
+
+const familyPanel = devPanels.get('family-arrivals'); // Actual panel registration is exercised by RomanceSystem.init.
+assert.ok(familyPanel, 'family arrivals register in the existing Dev Companion Now panels');
+assert.equal(familyPanel.when(), true, 'the panel is shown after game start');
+assert.match(familyPanel.render().summary, /No family arrival scheduled/, 'before marriage no due date is invented');
 
 // ── Asking out ──────────────────────────────────────────────────────────
 relState('tooth_hatayap').favor = 40; // 1 heart: not enough
@@ -329,6 +337,11 @@ clock.hour = 12;
 W.RomanceFamily.tick();
 const plan = W.RomanceFamily.snapshot().pregnancy;
 assert.equal(plan.dueRawDay - plan.announceRawDay, 28, 'pregnancy lasts one 28-day month');
+assert.match(familyPanel.render().summary, /Birth due in 112 game days/, 'birth countdown uses the actual wedding-based due day');
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Delivery trigger')[1], /Farmhouse sleep/, 'due dates never claim an automatic birth');
+clock.rawDay = plan.dueRawDay + 3;
+assert.match(familyPanel.render().summary, /Birth due — sleep required/, 'overdue pregnancies remain due until farmhouse sleep');
+clock.rawDay = W.RomanceSystem.getSpouse().marriedRawDay;
 assert.equal(plan.dueRawDay - W.RomanceSystem.getSpouse().marriedRawDay, 112, 'first child is due four months after the wedding');
 assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').level, 2, 'spouse starts at usefulness rank two');
 assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').intelligenceMultiplier, 1, 'adult intelligence grants full XP');
@@ -426,6 +439,21 @@ assert.equal(fam.postponeDream(14), true);
 assert.equal(dream.nextDreamRawDay, clock.rawDay + 14, 'two-week postponement uses fourteen game days');
 assert.equal(fam.postponeDream(28), true);
 assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement uses the 28-day calendar');
+assert.match(familyPanel.render().summary, /Adoption dream in 28 game days/, 'postponement updates the displayed arrival countdown');
+clock.rawDay = dream.nextDreamRawDay + 1;
+assert.match(familyPanel.render().summary, /Adoption dream eligible/, 'the panel distinguishes a ready dream from an arriving visitor');
+clock.rawDay = dream.nextDreamRawDay - 28;
+fam.getFamily().pendingAdoption = { spouseId: 'tooth_hatayap' }; // A finished dream queues Father Hunundi without an exact timestamp.
+assert.match(familyPanel.render().summary, /Adoption visit queued/, 'finished dream reports the queued doorstep visit');
+assert.match(familyPanel.render().note, /Exit the farmhouse/, 'the visitor depends on a farmhouse exit');
+W.DoorstepVisits = { activeVisitKey: () => 'romance_adoption' }; // Tests the already-spawned visitor separately from merely scheduled visits.
+assert.match(familyPanel.render().summary, /visitor at farmhouse/, 'a spawned visitor is visibly distinct from a pending one');
+delete W.DoorstepVisits;
+fam.getFamily().pendingAdoption = null;
+fam.getFamily().pendingBaby = { origin: 'adopted', bornRawDay: clock.rawDay - 2 }; // An interrupted naming prompt must outrank later plans.
+assert.match(familyPanel.render().summary, /Adopted baby arrived/, 'pending naming reports the child already arrived');
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Status')[1], /Awaiting newborn naming/);
+fam.getFamily().pendingBaby = null;
 fam.getFamily().pregnancy = priorPlan;
 player.area = oldArea;
 
