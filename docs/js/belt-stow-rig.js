@@ -114,9 +114,11 @@
     let sourceWidth = TORCH_WIDTH; // Live held-plane width, used to size the belt without a miniature surrogate.
     let sourceHeight = TORCH_HEIGHT; // Live held-plane height, used to preserve the PNG aspect and handle-end position.
     let emitterSourcePoint = null; // Normalized original-PNG marker centroid; gameplay supplies the exact particle emission location.
+    let gripSourcePoint = null; // Normalized held-tool grip, projected from the authored 3D Harlyao/torch item frame onto its original sprite plane.
     function applyDimensions() {
       art.scale.set(sourceWidth / TORCH_WIDTH * idleScale, sourceHeight / TORCH_HEIGHT * idleScale, 1);
-      const gripX = 0, gripY = sourceHeight * idleScale * .5; // The original PNG's +Y handle end is the grip reference, before its 180° display flip.
+      const gripX = gripSourcePoint ? (gripSourcePoint.x - .5) * sourceWidth * idleScale : 0;
+      const gripY = gripSourcePoint ? (.5 - gripSourcePoint.y) * sourceHeight * idleScale : sourceHeight * idleScale * .5; // Prefer the real primary grip over the former top-edge fallback.
       const emitterX = emitterSourcePoint ? (emitterSourcePoint.x - .5) * sourceWidth * idleScale : 0;
       const emitterY = emitterSourcePoint ? (.5 - emitterSourcePoint.y) * sourceHeight * idleScale
         : -sourceHeight * idleScale * .5 - .05 * idleScale; // The preview has a conservative tip fallback until real marker pixels are available.
@@ -142,6 +144,15 @@
       emitterSourcePoint = next; applyDimensions(); // Applied once per source PNG; subsequent stance scaling reuses this fraction.
       return true;
     }
+    function setGripItemPoint(point) {
+      const x = Number(point?.x), z = Number(point?.z); // In-hand tool plane has -90° X rotation: item Z maps to negative image Y.
+      if (!Number.isFinite(x) || !Number.isFinite(z) || Math.abs(x) > 3 || Math.abs(z) > 3) return false;
+      const next = { x:.5 + x / TORCH_WIDTH, y:.5 + z / TORCH_HEIGHT }; // Original PNG UV coordinates, independent of neutral scale and species dimensions.
+      if (gripSourcePoint && Math.abs(gripSourcePoint.x - next.x) < 1e-6 && Math.abs(gripSourcePoint.y - next.y) < 1e-6) return false;
+      gripSourcePoint = next;
+      applyDimensions(); // The same source-space grip tracks live torch size changes without resampling pixels.
+      return true;
+    }
     function setIdleScale(value) {
       const numeric = Number(value); // Current authored torch Neutral scale from WeaponToolStances, including editor overrides.
       const next = Number.isFinite(numeric) && numeric > 0 ? Math.min(3, Math.max(.1, numeric)) : 1;
@@ -149,11 +160,12 @@
       idleScale = next;
       applyDimensions();
     }
-    applyDimensions(); // The midpoint between the handle grip and the image-space emitter remains the root pivot.
+    applyDimensions(); // The midpoint between the authored hand grip (when available) and image-space emitter remains the root pivot.
     setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
-      root, art, flame, setIdleScale, setSourceDimensions, setEmitterSourcePoint,
+      root, art, flame, setIdleScale, setSourceDimensions, setEmitterSourcePoint, setGripItemPoint,
       get emitterSourcePoint() { return emitterSourcePoint; },
+      get gripSourcePoint() { return gripSourcePoint; },
       get idleScale() { return idleScale; },
       get sourceDimensions() { return { width: sourceWidth, height: sourceHeight }; }, // On-demand author/mobile preview, never sampled by the render loop.
       setTexture(texture) {
