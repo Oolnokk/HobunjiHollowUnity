@@ -14,7 +14,7 @@ target selection or ring radius changes. Full homeostasis and despawn still
 dispose the geometry. No new rendering pass or idle per-frame scene walk.
 
 `ResourceRings.debugSnapshot()` exposes `resourceArcRebuilds`,
-`resourceArcReuses` and `targetHaloRebuilds` for profiling. The existing
+`resourceArcReuses` and `targetHaloRebuilds` for profiling; the mobile Pixel Probe also shows these counts. The existing
 source-executed `test-resource-rings.js` now checks reuse, disposal,
 cross-resource affliction invalidation, target changes and radius changes.
 Device FPS and actual allocation reductions remain to be measured.
