@@ -109,6 +109,41 @@ async function main(){
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
 
+        // Exercise the real DungeonFire contact owner with authored Three.js stone cups, not direct onBurn callbacks.
+        const dungeonFire=window.DungeonFire;
+        if(!dungeonFire?.contactMelee||!dungeonFire?.contactProjectile||!dungeonFire?.hasTarget)
+          throw Error('Shared lit-torch contact runtime is unavailable in the running game');
+        state.phase='torch-fire';
+        let torchLit=0,torchSolved=0; // Independent fire-mechanism outcome verifies melee and thrown contact without changing the older ground-fire counts.
+        fire=window.RuinLayerChallenges.compose({
+          THREE,parent:group,room,id:'browser-torch-fire-test',kind:'fireSconces',area,y:0,authoredCliffDoor:true,
+          isActive:()=>state.phase==='torch-fire',onSolved:()=>torchSolved++,
+          groundFire:{intersects:()=>false},onSconceLit:()=>torchLit++,
+          getPlayerY:()=>0,getPlayerPosition:()=>({x:0,z:0}),
+        });
+        fire.tick(.016); // One game tick registers both real stone vessels with DungeonFire.
+        const [first,second]=fire.sconces;
+        const idFor=index=>'puzzle-cave-fire-'+area+'-browser-torch-fire-test-'+index;
+        if(!dungeonFire.hasTarget(idFor(0))||!dungeonFire.hasTarget(idFor(1)))
+          throw Error('Live cave sconces were not registered as fire-contact targets');
+        const struck=dungeonFire.contactMelee(object=>object===first.bracket
+          ?new THREE.Vector3(first.x,1.2,first.z):null);
+        if(!struck||torchLit!==1||torchSolved!==0||!first.lit)
+          throw Error('A lit swung torch did not ignite exactly one sconce through melee fire contact');
+        const sweepFrom=new THREE.Vector3(second.x,1.1,second.z-2);
+        const sweepTo=new THREE.Vector3(second.x,1.1,second.z+.2);
+        const thrown={team:'player',dungeonFire:true}; // DungeonFire accepts the same flame-bearing projectile fields produced by RangedWeapons.
+        dungeonFire.contactProjectile(thrown,sweepFrom,sweepTo,.15,.05);
+        if(second.lit)throw Error('Thrown torch flame ignited a sconce behind a clipped cover sweep');
+        if(!dungeonFire.contactProjectile(thrown,sweepFrom,sweepTo,1,.05)
+          ||!second.lit||torchLit!==2||torchSolved!==1||!fire.solved)
+          throw Error('Lit thrown torch failed to ignite the second sconce and unlock the cave');
+        fire.dispose();fire=null;
+        if(dungeonFire.hasTarget(idFor(0))||dungeonFire.hasTarget(idFor(1)))
+          throw Error('Detached puzzle cave left orphaned shared torch contact targets');
+        if(collision.providerIds().length!==countBefore)
+          throw Error('Thrown-torch cave leaked movement collision providers');
+
         state.phase='simple';
         const stepper={x:room.x,z:room.z}; // Live player position is moved onto the fallback plate only after checking the closed gate.
         simple=window.RuinLayerChallenges.compose({
