@@ -58,6 +58,14 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <p>Only beard pixels at or above this alpha may be painted or marked as tuft corners. Erasing remains unrestricted.</p>
     <label for="maxStretch">Maximum hood-ring stretch <span id="stretchLabel">36 px</span></label>
     <input id="maxStretch" type="range" min="2" max="64" step="1" value="36">
+    <label for="subdivision">Deformation subdivision <span id="subdivisionLabel">4 / 16 · Medium</span></label>
+    <input id="subdivision" type="range" min="1" max="16" step="1" value="4">
+    <p>Low subdivision spreads deformation broadly; high subdivision makes it more local. It controls the falloff area, not polygons.</p>
+    <label for="aboveInfluence">Influence above tuft corner <span id="aboveInfluenceLabel">100%</span></label>
+    <input id="aboveInfluence" type="range" min="0" max="200" step="5" value="100">
+    <label for="belowInfluence">Influence below tuft corner <span id="belowInfluenceLabel">100%</span></label>
+    <input id="belowInfluence" type="range" min="0" max="200" step="5" value="100">
+    <p>Upper and lower sliders independently change how strongly surrounding cloth follows the tuft. The marked corner itself stays fixed at its target position.</p>
     <p>In corner mode, tap the beard to place a tuft root, or drag a marker to move it. The nearest inner hood ring stretches to that root if it lies outside. The stretch limit prevents extreme warping.</p>
     <div class="row" style="margin-top:10px">
       <button id="undo" type="button">Undo</button>
@@ -80,7 +88,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <h2>Export</h2>
     <div class="row"><button id="download" class="primary" type="button">Download cosmetic JSON</button><button id="copy" type="button">Copy authoring JSON</button></div>
     <label for="maskJson">Compact saved 200px cutout mask</label><textarea id="maskJson" readonly></textarea>
-    <p>Export preserves original cosmetic fields and adds <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code> in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata.</p>
+    <p>Export preserves original cosmetic fields and adds <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code>, <code>hoodTuftSubdivision</code>, and separate upper/lower influence values in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata.</p>
   </section>
 </div>
 <div>
@@ -115,6 +123,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let mask=empty(),roots=[],beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
   const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,128); // Editor paint threshold, not a change to the authored beard PNG.
   const selectedStretch=()=>Math.max(2,Math.min(64,Number($('maxStretch').value)||36)); // The same bound passed to game rendering.
+  const selectedSubdivision=()=>Cut.normalizeSubdivision($('subdivision').value); // Smaller influence region at higher values.
+  const selectedAboveInfluence=()=>Cut.normalizeVerticalInfluence($('aboveInfluence').value); // Strength on pixels above the tuft marker.
+  const selectedBelowInfluence=()=>Cut.normalizeVerticalInfluence($('belowInfluence').value); // Strength on pixels below the marker.
   let hoodPixels=new Uint8ClampedArray(SIZE*SIZE*4); // Read once after verified CORS-safe loading; rendering never reads an untrusted canvas.
   let artReady=false; // The brush cannot record empty strokes while the selected artwork is unavailable.
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
@@ -129,7 +140,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       drafts.set(entry[0],{mask:Cut.normalizeMask(data.mask||data)||empty(),
         roots:Cut.normalizeRoots(data.roots),
         maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null,
-        alphaFloor:Number.isFinite(Number(data.alphaFloor))&&data.alphaFloor!=null?Number(data.alphaFloor):null});
+        alphaFloor:Number.isFinite(Number(data.alphaFloor))&&data.alphaFloor!=null?Number(data.alphaFloor):null,
+        subdivision:data.subdivision==null?null:Cut.normalizeSubdivision(data.subdivision),
+        aboveInfluence:data.aboveInfluence==null?null:Cut.normalizeVerticalInfluence(data.aboveInfluence),
+        belowInfluence:data.belowInfluence==null?null:Cut.normalizeVerticalInfluence(data.belowInfluence)});
     }
   }catch(_){/* Private-browsing storage can be unavailable; normal JSON downloads still work. */}
   const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
@@ -145,7 +159,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
     drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),roots:Cut.normalizeRoots(roots),
-      maxStretch:selectedStretch(),alphaFloor:selectedAlphaFloor()});
+      maxStretch:selectedStretch(),alphaFloor:selectedAlphaFloor(),subdivision:selectedSubdivision(),
+      aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence()});
     try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
   }
@@ -161,6 +176,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftMaxStretch;
     return Math.max(2,Math.min(64,Number(local??beardDoc?.hoodTuftMaxStretch??36)||36));
   }
+  function originalSubdivision(){
+    const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftSubdivision;
+    return Cut.normalizeSubdivision(local??beardDoc?.hoodTuftSubdivision);
+  }
+  function originalAboveInfluence(){
+    const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftAboveInfluence;
+    return Cut.normalizeVerticalInfluence(local??beardDoc?.hoodTuftAboveInfluence);
+  }
+  function originalBelowInfluence(){
+    const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftBelowInfluence;
+    return Cut.normalizeVerticalInfluence(local??beardDoc?.hoodTuftBelowInfluence);
+  }
   function originalAlphaFloor(){
     const local=beardDoc?.speciesVariants?.[variant]?.hoodPaintAlphaFloor;
     return Cut.alphaFloor(local??beardDoc?.hoodPaintAlphaFloor,128);
@@ -168,6 +195,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function updateLabels(){
     $('alphaFloorLabel').textContent=Math.round(selectedAlphaFloor()/255*100)+'% ('+selectedAlphaFloor()+'/255)';
     $('stretchLabel').textContent=selectedStretch()+' px';
+    $('subdivisionLabel').textContent=selectedSubdivision()+' / 16 · '
+      +(selectedSubdivision()<=2?'Broad':selectedSubdivision()<=5?'Medium':selectedSubdivision()<=10?'Local':'Very local');
+    $('aboveInfluenceLabel').textContent=selectedAboveInfluence()+'%';
+    $('belowInfluenceLabel').textContent=selectedBelowInfluence()+'%';
   }
   const assetUrl=path=>new URL(base+String(path||'').replace(/^\.\//,''),location.href).href;
   const cosmeticUrl=entry=>new URL(base+'config/cosmetics/'+entry.path.replace(/^\.\//,''),location.href).href;
