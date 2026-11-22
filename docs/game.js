@@ -7261,7 +7261,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
+          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'herd-panic' && c.state !== 'chase' && c.state !== 'searching' &&
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
