@@ -356,7 +356,7 @@
     disposeProjectile,
     contactProjectile, contactMelee,
     registerTarget,
-    unregisterTarget,
+    unregisterTarget, hasTarget,
     clear,
     debugSnapshot:() => ({
       armed:pendingIgnition, reactiveTargets:TARGETS.size,
