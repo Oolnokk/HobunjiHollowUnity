@@ -23,8 +23,8 @@
   const SECONDARY_KEY_B = [0xC0, 0x9C, 0x09]; // Used by throwing_flask.png's shaded Afflict-color region.
   const KEY_HUE_TOLERANCE = 35;
   const DUAL_KEY_MODE_PREFIX = 'dual-keyed:'; // Used to carry a second tint through existing spriteMode call sites.
-  const MUSHROOM_CAP_KEY = [0x98, 0xE3, 0xC7]; // Mint source pigment painted on mushroom.png caps; the off-white stalk is intentionally not keyed.
-  const MUSHROOM_CAP_HUE_TOLERANCE = 43; // Includes cap highlights/shadows while excluding neutral, low-saturation stalk and outline ink.
+  const MUSHROOM_CAP_KEY = [0x6B, 0x86, 0x6B]; // Actual uploaded mushroom.png cap pigment; #99BF99 highlight shares its green hue.
+  const MUSHROOM_CAP_HUE_TOLERANCE = 20; // Narrow green-only key; the pale ivory stalk and dark ink must never be recolored.
 
   function colorFillApi() {
     const api = window.ColorFill;
@@ -87,7 +87,7 @@
       for (let i = 0; i < data.length; i += 4) {
         if (data[i + 3] === 0) continue;
         const source = rgbToHsv(data[i], data[i + 1], data[i + 2]);
-        if (source.s < 0.20 || hueDistance(source.h, capHue) > MUSHROOM_CAP_HUE_TOLERANCE) continue; // Preserve off-white stems, dark outline ink and transparent pixels.
+        if (source.s < 0.14 || hueDistance(source.h, capHue) > MUSHROOM_CAP_HUE_TOLERANCE) continue; // The actual light cap highlight has only ~0.199 saturation; preserve low-saturation ivory and ink.
         const [r, g, b] = hsvToRgb(target.h, target.s, source.v);
         data[i] = r; data[i + 1] = g; data[i + 2] = b;
       }
