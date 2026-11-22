@@ -248,6 +248,12 @@
     let persisted = deps._zoneReagentPersist.get(mapId);
     if (persisted?.day === deps.calendar.day && persisted?.version === HABITAT_VERSION) {
       if (deps._zoneReagentMeshGroups.has(mapId)) return; // already built for today
+    } else if (persisted?.day === deps.calendar.day && persisted.version === HABITAT_VERSION - 1
+      && Array.isArray(persisted.placements)) {
+      // Version 2 already had habitat-correct placements. Keep this in-progress day's
+      // harvests and positions; new fungi join the next normal daily respawn.
+      persisted = { ...persisted, version: HABITAT_VERSION }; // One-time save upgrade without spawning extra same-day plants.
+      deps._zoneReagentPersist.set(mapId, persisted);
     } else {
       const previousPlacements = persisted?.placements || []; // Includes harvested entries so every prior herb tile is excluded from the next respawn.
       persisted = { version: HABITAT_VERSION, day: deps.calendar.day, placements: scatterReagentsForZone(mapId, previousPlacements) };
