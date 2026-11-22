@@ -41,7 +41,12 @@
       handTargets:{
         left:grip(hand.left,{x:-.3,y:.46,z:.08}),
         right:grip(hand.right,{x:.3,y:.46,z:.08})
-      }
+      },
+      elbows:Object.fromEntries(['left','right'].map(side=>{
+        const e=obj.elbows?.[side];
+        return [side,e&&['x','y','z'].every(axis=>Number.isFinite(Number(e[axis])))
+          ?vector(e,{x:0,y:0,z:0}):null]; // Exact Attack Editor shoulder-relative elbow pose contract.
+      }))
     };
   }
   state.carryable=normalized(state.carryable);
@@ -75,12 +80,20 @@
     '<div class="g2"><button type="button" id="carrySelectLeft">◉ Left hand grip</button><button type="button" id="carrySelectRight">◉ Right hand grip</button></div>',
     '<div id="carryBabyPortraitSection" class="section" hidden><h2>Baby portrait grips</h2>',
     '<p class="muted">Drag L (yellow) relative to the infant posterior or R (cyan) relative to its neck pivot. The portrait appears above an extra drag region so either grip can go BELOW the artwork. Saved offsets are baby-local distances, NOT percentages of portrait size.</p>',
-    '<canvas id="carryBabyGripCanvas" width="280" height="280" style="display:block;width:min(100%,280px);height:auto;aspect-ratio:1;touch-action:none;border:1px solid #667"></canvas>',
+    '<canvas id="carryBabyGripCanvas" width="280" height="400" style="display:block;width:min(100%,280px);height:auto;touch-action:none;border:1px solid #667"></canvas>',
     '<div class="g3"><label>Anchor offset X<input id="carryBabyOffsetX" type="number" step="0.005"></label>',
     '<label>Anchor offset Y<input id="carryBabyOffsetY" type="number" step="0.005"></label>',
     '<label>Anchor offset Z<input id="carryBabyOffsetZ" type="number" step="0.005"></label></div>',
     '<p class="muted" id="carryBabyGripOrigin">L = posterior · R = neck</p>',
     '<p class="muted" id="carryBabyScaleReadout">Baby portrait proportions loading…</p></div>',
+    '<div id="carryBabyElbowSection" class="section" hidden><h2>Carrying arm elbows</h2>',
+    '<label class="row"><input id="carryBabyBones" type="checkbox"> Show arm bones (shoulder → elbow → hand)</label>',
+    '<p class="muted">The Attack Animation Editor arm solver is used here too. Elbows are offsets from the CARRIER shoulders, not the infant. Green = shoulders, orange = elbows, cyan = hands; bones use the existing shoulder-aim guide and hand rotation. Set halfway creates an authored elbow; Clear restores legacy shoulder aiming.</p>',
+    '<div class="g2"><button type="button" id="carryBabyElbowLeft">Edit left elbow</button><button type="button" id="carryBabyElbowRight">Edit right elbow</button></div>',
+    '<div class="g2"><button type="button" id="carryBabyMidLeft">Left halfway</button><button type="button" id="carryBabyMidRight">Right halfway</button></div>',
+    '<div class="g2"><button type="button" id="carryBabyClearLeft">Clear left elbow</button><button type="button" id="carryBabyClearRight">Clear right elbow</button></div>',
+    '<p class="muted" id="carryBabyElbowStatus">Elbows unkeyed; current hands aim toward shoulders.</p>',
+    '</div>',
     '<div class="section"><h2>Projectile / impact hitbox</h2>',
     '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
     '<button type="button" id="carrySelectHitbox">▧ Edit hitbox in viewport</button>',
@@ -132,6 +145,7 @@
   let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT; // Current full PNG-plane dimensions for display only, never grip offset scaling.
   let babyGripAnchors=window.FamilyBabyCarryPose?.anchorsForAvatar?.({},BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)||null; // Preview/game share anatomy anchor math.
   let babyFrontCanvas=null; // Random Baby's actual painted portrait, reused by the 2D touch grip author.
+  let babyPortraitPlacementRatio=.5; // Rendered PNG position ratio adjusts touch projection for Kenkari/Mao'ao padding, not grip offsets.
   let editingBaby=false, savedFurnitureCarry=null, babyDraft=null; // Preserve ordinary furniture grips while baby guides are active.
   let babyRenderTicket=0, babyPreviewRolls=0; // Async randomized child previews are invalidated on exit and rapid rerolls.
   let babyPreviewStatus=''; // Mobile-visible result/error for the active randomized infant, never serialized into furniture.
@@ -164,6 +178,9 @@
   const heldPreview=new THREE.Group();
   heldPreview.name='carry_avatar_preview_only';
   heldPreview.visible=false;helperRoot.add(heldPreview);
+  const elbowGuideRoot=new THREE.Group(); // Selectable orange elbow markers live in the CARRIER frame, unlike baby-local grip markers.
+  elbowGuideRoot.name='baby_carry_elbow_editor_guides';heldPreview.add(elbowGuideRoot);
+  const elbowShoulderScratch=new THREE.Vector3(),elbowHandScratch=new THREE.Vector3(),elbowWorldScratch=new THREE.Vector3(); // Temporary world↔carrier transforms for midpoint/marker updates.
   let previewEnabled=true,previewStarted=false,previewActor=null,previewHands=null,modelW=.9,modelH=.9;
   let previewPortraitModel=null,previewSource='not-started'; // Replaces the immediate placeholder with loaded portrait art; mobile diagnostics report which is visible.
   let previewPosterior=new THREE.Vector3(0,.42,0),posteriorMarker=null,attachmentMarker=null,attachmentLine=null;
@@ -387,7 +404,10 @@
   document.getElementById('carryFrameHoldingPose').addEventListener('click',frameHoldingPreview);
 
 
+  function elbowSide(id) { return id==='elbowLeft'?'left':id==='elbowRight'?'right':null; }
   function positionGuide(id) {
+    const side=elbowSide(id);
+    if(side)return state.carryable.elbows?.[side]||{x:0,y:0,z:0}; // Fields are SHOULDER-RELATIVE; their gizmo is at shoulder + offset.
     const c=state.carryable;
     return id==='anchor'?c.billboardAnchor.position:id==='back'?c.backCarry.position:id==='hitbox'?c.hitbox.center:c.handTargets[id];
   }
