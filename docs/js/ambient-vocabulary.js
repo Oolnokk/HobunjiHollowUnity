@@ -4,12 +4,10 @@
   'use strict';
   const CONFIG_PATH = 'config/dialogue/ambient-vocabulary.json'; // The Vocabulary tab exports this independent authored configuration.
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
-  const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55 }); // Used for an unassigned NPC or incomplete imported settings.
+  const DEFAULT_SLIDERS = window.AmbientVocabularyRules?.DEFAULT_SLIDERS || Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55, oldSlang: 0, simplicity: 0, nearMiss: 0 }); // Shared generator is authoritative for all nine axes; fallback only supports missing rule scripts.
   const MAX_CACHED_SPEAKERS = 128; // Bounds memory even when many unique wildlife actor IDs produce ambient text.
   const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
-  const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
-  const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
-  const normalizeSliders = value => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(hasOwn(value, key) ? value[key] : DEFAULT_SLIDERS[key])])); // Every slider is bounded before selecting vocabulary.
+  const normalizeSliders = value => window.AmbientVocabularyRules?.normalizeSliders?.(value) || { ...DEFAULT_SLIDERS }; // Never maintain a second slider whitelist: historical/childlike axes must survive runtime normalization.
   function optionsFor(config, speakerId, profiles) {
     const id = String(speakerId || ''); // Only real NPC IDs qualify; status and player announcements must not be rewritten.
     if (!id || id === 'player' || id.startsWith('player-') || !config || config.enabled === false) return null;
