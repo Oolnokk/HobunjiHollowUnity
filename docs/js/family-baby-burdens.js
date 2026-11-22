@@ -49,7 +49,31 @@
       group.add(plane);
     }
     group.visible = false; // Real baby NPC alone is visible while in the basket.
+    group.userData.familyBabyWidth = width; group.userData.familyBabyHeight = height; // Detect rebuilt avatar dimensions without replacing the carry burden.
     return group;
+  }
+  function refreshProxyArt(entry, walker) {
+    const data = walker?.avatarGroup?.userData, group = entry.burden?.group; // An unloaded/rebuilt NPC may have new textures while the physical burden survives.
+    const front = data?.frontTexture, back = data?.backTexture || front;
+    if (!group || !front || group.children.length < 2) return;
+    for (const [plane, texture] of [[group.children[0], front], [group.children[1], back]]) {
+      if (plane.material.map !== texture) { plane.material.map = texture; plane.material.needsUpdate = true; }
+    }
+    const width = Math.max(.05, Number(data.portraitModelWidth) || .3);
+    const height = Math.max(.05, Number(data.portraitModelHeight) || width);
+    if (Math.abs(group.userData.familyBabyWidth - width) < .0001
+        && Math.abs(group.userData.familyBabyHeight - height) < .0001) return;
+    const previous = group.children[0].geometry, geometry = new window.THREE.PlaneGeometry(width, height); // Both live sprite faces share one resized quad.
+    for (const plane of group.children) { plane.geometry = geometry; plane.position.y = height / 2; }
+    previous?.dispose?.();
+    group.userData.familyBabyWidth = width; group.userData.familyBabyHeight = height;
+    const carryable = entry.burden.data?.carryable; // Authored player grips must track the baby's rebuilt width.
+    if (carryable) {
+      carryable.handTargets.left.x = width * .40; carryable.handTargets.left.y = height * .5;
+      carryable.handTargets.right.x = -width * .40; carryable.handTargets.right.y = height * .5;
+      carryable.billboardAnchor.position.y = height * .06; carryable.billboardAnchor.position.z = -height * .48;
+      carryable.backCarry.position.y = height * .16; carryable.backCarry.position.z = -height * .48;
+    }
   }
   function moveToWalker(entry) {
     const root = entry.walker?.root, burden = entry.burden;
@@ -95,8 +119,10 @@
     let entry = entries.get(child.id);
     if (entry) {
       entry.child = child;
+      if (walker?.root && walker.root !== entry.walker?.root) showWalker(entry, true); // Restore the old NPC visibility before adopting a newly spawned walker.
       entry.walker = walker || entry.walker;
       entry.persist = persist;
+      refreshProxyArt(entry, entry.walker);
       return entry;
     }
     const api = window.Shattercasks, area = currentArea(); // Shared Burden owns real hands, stowing, throws and safe landing.
@@ -202,7 +228,8 @@
   }
   function spouseCarry(child, walker, spouse, pose, persist) {
     const entry = ensure(child, walker, persist);
-    if (!entry || !spouse?.root?.parent || entry.burden.flying || child.carryBy === 'player') return false;
+    if (!entry || !spouse?.root?.parent || spouse.area !== currentArea()
+        || entry.burden.flying || child.carryBy === 'player') return false; // An off-scene spouse cannot steal the newborn or attach its mesh across zone scenes.
     const api = window.Shattercasks;
     if (api?.heldBurdenInfo?.()?.id === entry.burden.id
         || api?.backCarriedInfo?.()?.id === entry.burden.id) return false;
@@ -226,10 +253,17 @@
     if (changed) entry.persist?.();
     return true;
   }
-  function returnToBasket(child) {
+  function returnToBasket(child, basket = null) {
     const entry = entries.get(child?.id);
     if (!entry || child.carryBy === 'player') return false;
     if (child.carryBy !== 'spouse') return true;
+    const ctx = window.RomanceFamily?.careContext?.(); // Existing family basket location, never a parallel furniture lookup.
+    const target = basket || ctx?.basketObject?.(child) || ctx?.helpers?.bedSpot?.();
+    const root = entry.walker?.root;
+    if (root && Number.isFinite(target?.col ?? target?.c) && Number.isFinite(target?.row ?? target?.r)) {
+      root.position.x = Number(target.col ?? target.c) + .5;
+      root.position.z = Number(target.row ?? target.r) + .5; // Put the REAL child back inside the open cup, not at a previous landing.
+    }
     settle(entry, entry.burden, true);
     return true;
   }
@@ -247,6 +281,10 @@
   window.FamilyBabyBurdens = Object.freeze({
     isAllowedArea, sync, takeIntoArms, spouseCarry, returnToBasket, discard, clear,
     carrying: id => ['player', 'spouse'].includes(entries.get(id)?.child?.carryBy), // Dev Companion knows either parent is holding the infant.
+    isProxyActive: id => { // The NPC command wheel must never target the original invisible baby while a proxy is carried or flying.
+      const entry = entries.get(id);
+      return !!entry && (entry.burden.flying || ['player', 'spouse'].includes(entry.child.carryBy));
+    },
     snapshot: () => ({ ...debug, babies: [...entries].map(([id, e]) => ({
       id, by: e.child.carryBy || 'basket', pose: e.child.carryPose || null,
       area: e.burden.mapId, parent: e.burden.group.parent?.name || null,
