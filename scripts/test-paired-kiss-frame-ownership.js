@@ -21,7 +21,7 @@ const moveSource = between(game, '        if (!pairedPoseLocked) {\n          co
 const facingSource = between(game, '        if (pairedPoseLocked) {\n          // Paired action owns root yaw',
   '        // Bob animation when moving'); // Covers ALL of game.js's facing branches and their foot-root overwrites.
 const gaitSource = between(game, '        if (pairedPoseLocked) { /* Kiss/dance solves its own actual legs',
-  '        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh);');
+  '      }\n\n      // ── Update reticle');
 assert.match(game, /if \(speed > 5 && !pairedPoseLocked\)/,
   'walk bob must not add position.y after the paired pose captured its position');
 assert.match(gaitSource, /else playerLegs\?\.update\(dt, gaitSpeed/,

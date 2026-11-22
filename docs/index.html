@@ -21,7 +21,7 @@
        prototype render() base every presentation hook runs through.
        See docs/architecture/visual-render-pipeline.md. -->
   <script src="js/render-layers.js?v=20261119visualCore1"></script>
-  <script src="js/render-hooks.js?v=20261119visualCore1"></script>
+  <script src="js/render-hooks.js?v=20261122h000df8a"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -38,7 +38,7 @@
   <script src="js/xray-hierarchy.js?v=20261119h7933e82"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
-  <script src="js/geometry-auto-lod.js?v=20261110cloneaudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
+  <script src="js/geometry-auto-lod.js?v=20261122hc64fabe"></script> <!-- Opt-in render-only idle-time optimization. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/instanced-mesh-bounds.js?v=20261112meshbounds1"></script>
   <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
@@ -68,12 +68,12 @@
        window.InputBindings.loadInputBindings() during its own setup. -->
   <script src="js/input-bindings.js?v=20261116dungeonJump2"></script>
   <!-- Canonical gameplay input router (legacy WorldActionInputClaims API): world claims, contextual attack suppression and interrupted hold ownership across all devices. -->
-  <script src="js/world-action-input-claims.js?v=20261118archClaims1"></script>
+  <script src="js/world-action-input-claims.js?v=20261122bandageAction1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
   <!-- Shared contextual prompt, controller binding hints, and physical action-arch layout extracted out of game.js;
        uses window.InputBindings.buttonLabel, so must load after it and
        before game.js, which calls window.ActionPromptUI.init(...). -->
-  <script src="js/action-prompt-ui.js?v=20261118archClaims1"></script>
+  <script src="js/action-prompt-ui.js?v=20261122bandageAction1"></script>
   <!-- Cutscene Director preview standalone helpers extracted out of
        game.js; the stateful runCutscenePreview runner itself stays in
        game.js and calls into these. Must load before game.js. -->
@@ -111,8 +111,9 @@
        game.js, which calls window.ActionArcUI.init(...) (binds its own
        toolBtn/itemBtn/btnUtilityMenu listeners) during its own setup. -->
   <script src="js/action-arc-ui.js?v=20261118backCarryArch1"></script>
-  <script src="js/belt-stow-rig.js?v=20261118BeltTrueSize3"></script> <!-- Shared rendered belt art and authoring rig coordinates. -->
-  <script src="js/adventuring-tools.js?v=20261118torchLaunchDebug3"></script> <!-- Adventure tools; torch and later unlocks. -->
+  <script src="js/belt-stow-torch-display.js?v=20261122stowSplit1"></script> <!-- Torch-only PNG, source pivot and optional preview flame. -->
+  <script src="js/belt-stow-rig.js?v=20261122stowSplit1"></script> <!-- Shared rendered belt art and authoring rig coordinates. -->
+  <script src="js/adventuring-tools.js?v=20261122bandageAction1"></script> <!-- Adventure tools; torch and later unlocks. -->
   <script src="js/tool-world-upright.js?v=20261114torchTipMinusY1"></script> <!-- Shared authored world-space neutral rotation. -->
   <!-- Farm editor + farm layout save/load persistence, extracted out of
        game.js. The feature manifest owns its ordered scripts and cache versions.
@@ -154,7 +155,7 @@
   <script src="js/inventory-wheel-list.js?v=20261121wheelList1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261121h7713580"></script>
+  <script src="debug.js?v=20261122ha7ef12d"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261120h9d87715"></script>
@@ -183,7 +184,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261120h3e0b419"></script>
+  <script src="js/png-plane-avatar.js?v=20261122h2cff8de"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -193,14 +194,14 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261119he2d7cd6"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261120h976a64e"></script>
+  <script src="js/held-action-animations.js?v=20261122hab4961b"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
-  <script src="js/rig-transform-layers.js?v=20261118pairedRig1"></script>
+  <script src="js/rig-transform-layers.js?v=20261122hc3370fb"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261120grehlrBaseBeard1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261122bandageAction1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -217,7 +218,7 @@
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261117waistWidthSolve1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261117waistWidthSolve1"></script>
+  <script src="js/pants-garment-renderer.js?v=20261121pantsGpuSafe9"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -362,7 +363,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261118captainWeapon1"></script>
+  <script src="js/bandit-camps.js?v=20261122tribalHeldMerge1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -546,6 +547,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/perch-support.js?v=20261105perchAudit7"></script>
+  <script src="js/attack-readiness.js?v=20261121attackReadiness1"></script> <!-- Shared player-activity attack staging; other predator AIs may opt in without changing minigames. -->
   <script src="js/flying-combat-orbit.js?v=20261118circleFallback1"></script> <!-- Shared foe-centred aerial evasion geometry; flight owners still perform their own collision checks. --> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
@@ -568,7 +570,7 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261122h9db07df"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-shaft-support-pillars.js?v=20261120h4fa8451"></script> <!-- Original square furniture, vertical IKMC-style span, slim square bases. -->
   <script src="js/ruin-jump-shaft.js?v=20261122hbfb3947"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
-  <script src="js/ruin-rope-shaft.js?v=20261122ropeSwings1"></script> <!-- Alternate central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
+  <script src="js/ruin-rope-shaft.js?v=20261122ropeSwings1"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261122h7fb6f80"></script>
   <script src="js/ruin-layer-plan.js?v=20261122hdf993f1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
@@ -593,9 +595,9 @@
   <script src="js/flying-animal-rig.js?v=20261117animalDensity40"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261122ha120488"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261118hTzPortrait4"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261122hd98e58b"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261118combatOrbit1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261122h9cbc941"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
@@ -710,7 +712,7 @@
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20261117campfireRelease6"></script>
+  <script src="js/wilderness-campfire.js?v=20261122bandageAudit2"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -759,7 +761,7 @@
   <script src="js/tasks-panel.js?v=20261118fiveBlossomsHunt2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261118flightOrbitUI1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261122h4f96547"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -868,8 +870,8 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261118h8f63ed1"></script>
-  <script src="js/crate-piles.js?v=20261112lootPickup2"></script>
+  <script src="js/shattercasks.js?v=20261121lungeAoeAudit3"></script>
+  <script src="js/crate-piles.js?v=20261121lungeAoeAudit3"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
   <script src="js/pingdort-flocks.js?v=20261117hypedCreatureBoulder6"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
@@ -2819,7 +2821,7 @@
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261120h24ca029"></script>
+  <script src="js/world-popup-text.js?v=20261121emojiHeadCrop2"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2926,7 +2928,7 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261109family1"></script>
-  <script src="js/romance-family.js?v=20261109familyaudit2"></script>
+  <script src="js/romance-family.js?v=20261122familyarrivals1"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
@@ -2944,9 +2946,10 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
-  <script src="js/lunge-targeting.js?v=1"></script>
+  <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261122hb1408ff"></script>
+  <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
+  <script src="game.js?v=20261122he46c13c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -675,7 +675,11 @@
         mesh.frustumCulled = false;
         mesh.userData.hobunjiPantsGarment = true;
         mesh.userData.hobunjiPantsPreview = true; // Also keeps the editor's Apply-to-NPC mesh builder from mistaking this for the portrait plane.
+        mesh.userData.hobunjiXrayDeformPadding = 0.8; // Conservative GPU-leg-posed scissor margin consumed by held-object-render-order.js, in local garment units.
         avatarGroup.add(mesh);
+        // One registration per live mesh shares the feet's road/ground exemption, solid-cover depth, and water tint.
+        // If the compositor has not loaded, its scene scan can adopt this mesh from the semantic tag later.
+        if (!global.HeldObjectRenderOrder?.markWaterOccludedMesh?.(mesh)) mesh.userData.hobunjiWaterOccludedBySurface = true;
         handle.mesh = mesh;
       } else {
         handle.material?.dispose?.();
@@ -906,6 +910,9 @@
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
       const gpu = gpuSkinUsable(handle);
+      // Only the authored GPU material can use the padded-rest-bounds replay optimization.
+      // Foreign/CPU materials deform the position buffer itself, so they use exact live bounds.
+      if (handle.mesh.userData.hobunjiPantsGpuBoundsSafe !== gpu) handle.mesh.userData.hobunjiPantsGpuBoundsSafe = gpu;
       if (gpu !== handle.gpuSkinActive) { // Switching paths: the position buffer holds rest vertices (GPU) or skinned ones (CPU), so redo this frame.
         handle.gpuSkinActive = gpu;
         handle.maskUniforms.uPantsGpuSkin.value = gpu ? 1 : 0;
@@ -924,7 +931,15 @@
       transforms[4] = boneTransform('right', 'knee', 'ankle', aim);
       const position = handle.geometry.getAttribute('position');
       if (gpu) { // The vertex shader skins: only the bone and ring uniforms change per pose, the vertex buffer holds the rest grid.
-        if (handle.uploadedBaseVersion !== handle.baseVersion) { position.array.set(handle.basePositions); position.needsUpdate = true; handle.uploadedBaseVersion = handle.baseVersion; }
+        if (handle.uploadedBaseVersion !== handle.baseVersion) {
+          position.array.set(handle.basePositions);
+          position.needsUpdate = true;
+          // Returning from CPU mode replaces skinned vertices with rest vertices; neither
+          // the old CPU box nor the previous rest box may be reused by the x-ray scissor.
+          handle.geometry.boundingBox = null;
+          handle.geometry.boundingSphere = null;
+          handle.uploadedBaseVersion = handle.baseVersion;
+        }
         writeGpuSkinUniforms(handle, transforms, aim);
         return;
       }
@@ -953,6 +968,10 @@
       if (handle.spineShift) for (let i = 0; i < out.length; i++) out[i] += handle.spineShift[i]; // Carried by the portrait's spine curve (see rebuildSpineShift).
       if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
+      // CPU fallback moves vertex positions. Invalidate on a real pose change only;
+      // the x-ray scissor recomputes exact live bounds lazily if this garment is visible.
+      handle.geometry.boundingBox = null;
+      handle.geometry.boundingSphere = null;
       if (handle.mesh.userData?.hobunjiPantsLitNormals) handle.geometry.computeVertexNormals(); // Lit ghoul trousers need current surface normals after each actual pose change, never per idle frame.
     };
 
@@ -1068,6 +1087,10 @@
       const restPosition = handle.geometry.getAttribute('position'); // CPU/debug preview also sees the latest rest hem immediately.
       restPosition.array.set(handle.basePositions);
       restPosition.needsUpdate = true;
+      // The x-ray scissor uses these cached geometric bounds. Refit only on a real rig-rest
+      // realignment, not every animated frame, so replay bounds never use obsolete cuffs.
+      handle.geometry.boundingBox = null;
+      handle.geometry.boundingSphere = null;
       handle.baseVersion = (handle.baseVersion || 0) + 1; // The GPU path re-uploads the rest grid once per realignment, not per frame.
 
     };

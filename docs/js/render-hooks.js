@@ -73,6 +73,7 @@
     CROP_BILLBOARD: 500,
     HEFTROOT_BILLBOARD: 600,
     CROP_SPRITE_ART: 700,
+    ACTOR_RENDER_PLACEMENT: 790, // Wildlife carry placement comes before actor-specific draw hooks.
     PLAYER_BODY_COMPOSER: 800,
     NPC_PERFORMANCE_LOCK: 900,
     NPC_SOCIAL_INHIBITION: 1000,

@@ -395,6 +395,7 @@
       .filter(([name]) => name.startsWith('currentLivestock miss caller: '))
       .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
+    const frozenPortraits = root.PNGPlaneAvatar?.meshBudget?.frozenSnapshot?.(); // Expose pose reuse in the mobile performance overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const npcVisual = root.NpcViewFrustumCull?.snapshot?.() || null; // Counters for the last world-render view, independent of NPC simulation.
     const actorOcclusion = root.ActorRenderOcclusion?.snapshot?.() || null; // Mobile-query culling counts without devtools.
@@ -422,13 +423,17 @@
         ? `Scheduler top (avg ≥${SCHEDULER_SUBSCRIBER_DISPLAY_FLOOR_MS}ms):\n${schedulerTop.map(entry => `  ${entry.id} [${entry.phase}] ${entry.averageDurationMs.toFixed(2)} ms  last ${entry.lastDurationMs.toFixed(2)} ms  ×${entry.callCount}`).join('\n')}`
         : (schedulerProfile?.profilingEnabled ? 'Scheduler top: none above display floor yet' : 'Scheduler timings: profiler disabled'),
       ...(outlinePerfLine ? [outlinePerfLine] : []),
+      ...(frozenPortraits?.enabled ? [`Frozen portraits: ${frozenPortraits.flat} flat · ${frozenPortraits.posed} baked · ${frozenPortraits.trianglesSaved} fewer triangles per eligible draw`] : []),
       npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
       actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.corpseFrustumHidden + actorOcclusion.corpseOccludedHidden}/${actorOcclusion.corpseCandidates} corpse rigs culled · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
       (() => { // Whether the held/shell x-ray replays copy depth back (cheap) or redraw the whole scene (the fallback).
         const depth = root.ScissorDepthSnapshot?.snapshot?.();
-        if (!depth) return 'X-ray depth snapshot: unavailable';
         const held = root.HeldObjectRenderOrder?.snapshot?.() || {};
-        return `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}`;
+        const depthLine = depth ? `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}` : 'X-ray depth snapshot: unavailable';
+        const lod = root.GeometryAutoLOD?.snapshot?.();
+        const ground = held.groundMaterialCacheHits !== undefined ? `${held.groundMaterialCacheHits} ground cache hits · ${held.groundMaterialCacheBuilds} builds` : 'ground cache unavailable';
+        const geometry = lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off';
+        return `${depthLine}\nRender reuse: ${ground} · ${geometry}`;
       })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,

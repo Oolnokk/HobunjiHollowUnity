@@ -79,6 +79,7 @@ const context = vm.createContext({ window, THREE, Float32Array, Map, Set, Math, 
 const read = relative => fs.readFileSync(path.resolve(__dirname, '..', relative), 'utf8');
 vm.runInContext(read('docs/js/building-grass-suppression.js'), context, { filename: 'building-grass-suppression.js' });
 vm.runInContext(read('docs/js/vegetation-crop-rendering.js'), context, { filename: 'vegetation-crop-rendering.js' });
+vm.runInContext(read('docs/js/npc-farm-plots.js'), context, { filename: 'npc-farm-plots.js' }); // Use the real managed-key registry that the town map loader already calls.
 const filter = window.BuildingGrassSuppression; // Production billboard source/footprint filtering, not duplicate test logic.
 const renderer = window.VegetationCropRendering; // Production farm grass/weed instance generator.
 
@@ -89,6 +90,15 @@ const grid = [[
   { type: TileType.GRASS, crop: '' },
   { type: TileType.WEEDS, crop: '' },
 ]]; // Real terrain and crop state, not merely the family plot designation.
+let townGrid = [[0, 1, 2].map(() => ({ type: TileType.GRASS, elevTier: 0 }))]; // Normalized base cells in the actual town loader.
+const townZone = { id: 'map_hobunji_town' }; // The production town layout intentionally does not retain farmPlots.
+const plotOwner = window.NpcFarmPlots; // Authoritative source of plot membership shared by floor and billboard renderers.
+plotOwner.registerMap(townZone.id, [
+  { id: 'bed', tiles: [[0, 0]], tillers: ['gorobi_ginju'] },
+  { id: 'trench', kind: 'dig', tiles: [[1, 0]], diggers: ['gikali_ginju'] },
+  { id: 'unassigned', tiles: [[2, 0]], tillers: [] },
+]);
+const townScene = { children: [], add(mesh) { this.children.push(mesh); }, remove(mesh) { const i = this.children.indexOf(mesh); if (i >= 0) this.children.splice(i, 1); } }; // Test scene for rebuilding town grass.
 const scene = {
   children: [], add(mesh) { this.children.push(mesh); },
   remove(mesh) { const index = this.children.indexOf(mesh); if (index >= 0) this.children.splice(index, 1); },
@@ -96,7 +106,7 @@ const scene = {
 renderer.init({
   COLS: 4, ROWS: 1, PLATEAU_UNIT: 2.5, TileType, scene,
   getGrid: () => grid, getGrassEnabled: () => true, getWeed3D: () => false,
-  getTownSceneBuilt: () => false, applySeasonalGrassAppearance() {},
+  getTownSceneBuilt: () => false, getTownZone: () => townZone, getTownGrid: () => townGrid, getTownScene: () => townScene, applySeasonalGrassAppearance() {},
   combatConfig: () => ({ cuttableTargetGlow: {} }), tileSurfaceY: () => 0,
   tileYCenter: () => 0, resolveTileMat: () => ({}), markTerrainEdgeId() {},
   terrainCategoryFor: type => type, NORMAL_TOP: 0,
@@ -159,4 +169,49 @@ renderer.refreshTileMesh(3, 0);
 assert.deepEqual(visibleCells(weedMesh), [3], 'weeds return to weed ground when a crop is removed');
 
 assert.equal(filter.refreshRebuiltBillboardMesh({}), null, 'non-billboard scene objects are ignored');
+
+// The town floor is grass beneath simulated beds; no instance of that grass
+// may survive in either the renderer's source or its compacted scene buffer.
+renderer.buildTownGrassBillboards(3, 1);
+let townBillboard = townScene.children.find(mesh => mesh.isInstancedMesh);
+assert.ok(townBillboard, 'town grass has a source mesh');
+assert.deepEqual(sourceCells(townBillboard), [2], 'tillers and trench diggers suppress both kinds of Ginju plot');
+assert.deepEqual(visibleCells(townBillboard), [2], 'only the unassigned grassy lawn gets billboards');
+filter.filterBillboardMesh(townBillboard, new Set(), 'hobunjiTownBuildingGrass');
+assert.deepEqual(visibleCells(townBillboard), [2], 'building-footprint refresh does not resurrect plot grass');
+
+// Reloading the same town replaces the authoritative plot set without keeping
+// an old grass mask or spuriously suppressing an unassigned tile.
+plotOwner.registerMap(townZone.id, [{ id: 'runtime-bed', tiles: [[1, 0]], tillers: ['gikali_ginju'] }]);
+renderer.buildTownGrassBillboards(3, 1);
+townBillboard = townScene.children.find(mesh => mesh.isInstancedMesh);
+assert.deepEqual(sourceCells(townBillboard), [0, 2], 'reloaded plot registry follows changed management and restores released grass');
+
+// Exercise the complete real Ginju map instead of assuming a mocked field
+// shape: it has four cultivated beds and three irrigation trench groups.
+const authoredMap = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'docs/config/maps/hobunji_hollow_town.map.json'), 'utf8')); // Canonical real town source for grass ownership.
+plotOwner.registerMap(authoredMap.id, authoredMap.farmPlots);
+const plotTiles = new Set(authoredMap.farmPlots.flatMap(plot => plot.tiles.map(([c, row]) => `${c},${row}`))); // Exact ground footprints, including the north/south trench orientation.
+assert.equal(authoredMap.farmPlots.length, 7, 'Ginju has seven assigned field and irrigation groups');
+assert.equal(plotTiles.size, 174, 'all 174 farm tiles remain distinct and assigned');
+assert.ok([...plotTiles].every(key => {
+  const [c, row] = key.split(',').map(Number);
+  return plotOwner.isManagedTile(authoredMap.id, c, row);
+}), 'all authored Ginju crop and trench cells are recognized by the actual NPC plot runtime');
+
+townGrid = Array.from({ length: authoredMap.rows }, (_, row) => Array.from({ length: authoredMap.cols }, (_, c) => {
+  const type = authoredMap.tiles[`${c},${row}`]?.type || TileType.GRASS;
+  return { type: plotOwner.isManagedTile(authoredMap.id, c, row) ? TileType.GRASS : type, elevTier: 0 };
+})); // Mirror game.js's town-layout conversion before VegetationCropRendering builds billboards.
+renderer.buildTownGrassBillboards(authoredMap.cols, authoredMap.rows);
+townBillboard = townScene.children.find(mesh => mesh.isInstancedMesh);
+const projectedSource = townBillboard.userData.hobunjiBillboardSourceMatrices; // Immutable base matrices consumed later by height and building render passes.
+const projectedCount = townBillboard.userData.hobunjiBillboardSourceCount;
+for (let i = 0; i < projectedCount; i++) {
+  const x = projectedSource[i * 16 + 12], z = projectedSource[i * 16 + 14];
+  assert.equal(plotTiles.has(`${Math.floor(x)},${Math.floor(z)}`), false, 'not one grass billboard root sits inside a real Ginju field');
+}
+const grassCount = townGrid.flat().filter(tile => tile.type === TileType.GRASS).length - plotTiles.size; // Whole-town expected count with all 174 plot cells hidden.
+assert.equal(townBillboard.count, grassCount * BLADES, 'town retains lawn billboards but removes every managed plot source instance');
+console.log('ok - all seven real Ginju fields and trenches exclude grass from the town render source');
 console.log('ok - production farm grass/weed renderer and footprint-source cache stay synchronized');

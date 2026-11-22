@@ -129,6 +129,50 @@ target.strikeHandler = () => { throw new Error('boom'); };
 const warn = console.warn; console.warn = () => {};
 assert.doesNotThrow(() => Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: 0.6, yaw: 0, pitch: 0 })); console.warn = warn;
 
+// An exact lunge stop on a suspended burden must resolve the strike even if the
+// older broad-phase approximation misses; the normal strike must not swing it twice.
+const lungeTarget = burden('lunge-only', { x: 5.5, y: .35, z: 20.5 });
+lungeTarget.strikeHandler = (b, info) => { calls.push([b.id, info.attacker === player, info.source]); return true; };
+const originalCollider = collider;
+collider = { origin: new Vector3(-100, .35, -100), yaw: 0, horizontalRangeWorld: .5,
+  verticalRiseWorld: 0, halfConeRad: .3, halfHeightWorld: .1, direction: new Vector3(1, 0, 0) };
+player.lungeOriginMs = performance.now();
+const beforeDirect = calls.length;
+Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0,
+  lungeContact: true, targetBurden: lungeTarget });
+assert.equal(calls.length, beforeDirect + 1, 'confirmed hanging burden contact executes its strike handler');
+assert.equal(lungeTarget.exploded, false, 'rope-strike handler keeps the burden intact');
+collider = originalCollider;
+Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0 });
+assert.equal(calls.length, beforeDirect + 1, 'the scheduled melee pass does not repeat that lunge contact');
+
+
+// Multi-target contact uses the same exact Targetables Box3 probes as hostile melee.
+const secondLungeBurden=burden('lunge-second',{x:5.6,y:.35,z:20.5}); // A second simultaneous suspended target.
+secondLungeBurden.strikeHandler=(b,info)=>{calls.push([b.id,info.attacker===player,info.source]);return true;};
+game.Combat.meleeHit=(_actor,candidate,options)=>candidate?.owner===secondLungeBurden && options.debug===false;
+const multiBefore=calls.length;
+player.lungeOriginMs=performance.now();
+Sh.sweepMelee({actor:player,rangePx:3*64,halfConeRad:.6,yaw:0,pitch:0,
+  lungeContact:true,targetBurden:lungeTarget});
+assert.equal(calls.length,multiBefore+2,'one contact strikes both suspended burdens');
+assert.equal(lungeTarget.exploded,false);
+assert.equal(secondLungeBurden.exploded,false);
+Sh.sweepMelee({actor:player,rangePx:3*64,halfConeRad:.6,yaw:0,pitch:0});
+assert.equal(calls.length,multiBefore+2,'scheduled swing does not strike either suspended burden a second time');
+delete game.Combat.meleeHit;
+// Fixed hanging non-fruit burdens may also be hit: the Soursap fall-only rule remains.
+const ceiling=burden('ceiling', {x:5.5,y:.35,z:20.5},{hanging:true});
+const fruit=burden('canopy-fruit',{x:5.5,y:.35,z:20.5},{hanging:true,kind:'soursap'});
+let ceilingHits=0,fruitHits=0;
+ceiling.strikeHandler=()=>{ceilingHits++;return true;};
+fruit.strikeHandler=()=>{fruitHits++;return true;};
+player.lungeOriginMs=performance.now();
+Sh.sweepMelee({actor:player,rangePx:3*64,halfConeRad:.6,yaw:0,pitch:0,
+  lungeContact:true,targetBurden:ceiling});
+assert.equal(ceilingHits,1,'ceiling-hung burden is strikeable');
+assert.equal(fruitHits,0,'hanging Soursap is still protected until it falls');
+
 // ---- interact hangs a carried burden on a rope when one is in reach, otherwise drops it
 let hangCalls = 0, hangResult = true;
 game.HangingRopes = { tryHang: held => { hangCalls++; return hangResult && !!held; }, tick() { game.__ropeTicks = (game.__ropeTicks || 0) + 1; } };

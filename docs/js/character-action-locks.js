@@ -119,7 +119,7 @@
   const controllerSelectionUi = new URL('controller-selection-ui.js?v=20261118categoryJump1', base).href; // Gives held controller wheel/arch openers automatic both-stick navigation with no authored mode shift.
   const archButtonLabels = new URL('arch-button-labels.js?v=20261107h88d59f7', base).href; // Adds centered non-attack meanings plus live lower-right configured-input subscripts to gameplay arch icons.
   const inputDefaultsResetUi = new URL('input-default-reset-ui.js?v=20261119cfShortCull1', base).href; // Adds independent keyboard/controller Reset to Defaults buttons after the Settings binding lists render.
-  const bandageSystem = new URL('bandage-system.js?v=20261014hc54d1ae', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
+  const bandageSystem = new URL('bandage-system.js?v=20261122bandageAction1', base).href; // Bandaging shares these action locks and must exist before the post-load Potion Select adapter can route quick taps into it.
   const socialRhythmRuntime = new URL('social-rhythm-runtime.js?v=20260925metromix1', base).href;
   const socialRenderBridge = new URL('social-action-r128-render-bridge.js?v=20260903social5', base).href;
   const npcAmbientMusicStimuliRuntime = new URL('npc-ambient-music-stimuli-runtime.js?v=20260903social10', base).href;
@@ -128,7 +128,7 @@
   const socialBodyPlaneRuntime = new URL('social-action-body-plane-runtime.js?v=20261115hposelease07', base).href;
   const socialCameraRuntime = new URL('social-action-camera-runtime.js?v=20260903social7', base).href;
   const npcDancePresentationRuntime = new URL('npc-dance-presentation-runtime.js?v=20261119hsmileRace2', base).href;
-  const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20261117hRigForearm1', base).href;
+  const proceduralHandForearmAlignmentRuntime = new URL('procedural-hand-forearm-alignment-runtime.js?v=20261122h354e046', base).href;
   const npcSillinessReactionRuntime = new URL('npc-silliness-reaction-runtime.js?v=20261103crr3', base).href;
   const npcPerformanceReactionLockRuntime = new URL('npc-performance-reaction-lock-runtime.js?v=20261119h3ae2935', base).href; // Loads last so it can guard every social physical-reaction wrapper while an NPC is actively performing an instrument.
   document.write(`<script src="${chathead}"><\/script><script src="${dialogue}"><\/script><script src="${livestockHarvestStaging}"><\/script><script src="${social}"><\/script><script src="${socialArchAdapter}"><\/script><script src="${controllerSelectionUi}"><\/script><script src="${archButtonLabels}"><\/script><script src="${inputDefaultsResetUi}"><\/script><script src="${bandageSystem}"><\/script><script src="${socialRhythmRuntime}"><\/script><script src="${socialRenderBridge}"><\/script><script src="${npcAmbientMusicStimuliRuntime}"><\/script><script src="${npcSocialInhibitionRuntime}"><\/script><script src="${socialDanceRuntime}"><\/script><script src="${socialBodyPlaneRuntime}"><\/script><script src="${socialCameraRuntime}"><\/script><script src="${npcDancePresentationRuntime}"><\/script><script src="${proceduralHandForearmAlignmentRuntime}"><\/script><script src="${npcSillinessReactionRuntime}"><\/script><script src="${npcPerformanceReactionLockRuntime}"><\/script>`);

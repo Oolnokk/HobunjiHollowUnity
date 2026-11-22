@@ -43,6 +43,57 @@ area = 'mapB'; hostiles = [];
 reset();
 assert.equal(LT.hasTargetInCone(cone), false, 'a lunge-stop target in another map does not count');
 
+// Lunge contact also commits the shared object AOE, once per lunge, not once per frame.
+const impacts = [];
+globalThis.Shattercasks = { sweepMelee: opts => impacts.push(opts) };
+globalThis.CratePiles = { hasLungeTarget: () => true };
+area = 'mapA'; hostiles = []; T.clear();
+player.lunging = true;
+player.lungeOriginMs = 1001;
+assert.equal(LT.hasTargetInCone(cone), true, 'a crate inside the melee cone stops the lunge');
+assert.equal(impacts.length, 1, 'crate contact invokes the existing destructible melee pass');
+assert.equal(impacts[0].actor, player);
+assert.equal(impacts[0].lungeContact, true);
+assert.equal(impacts[0].targetBurden, null);
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 1, 'repeated movement probes do not shatter a second crate');
+player.lungeOriginMs = 1002;
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 2, 'a new lunge may hit another crate');
+globalThis.CratePiles.hasLungeTarget = () => false;
+const suspended = { id: 'suspended' };
+const hangingEntry = T.register({ id: 'hanging', scope: 'mapA', owner: suspended, caps: [T.CAPS.LUNGE_STOP] });
+hangingEntry.toActor().hit = true;
+player.lungeOriginMs = 1003;
+assert.equal(LT.hasTargetInCone(cone), true);
+assert.equal(impacts.length, 3);
+assert.equal(impacts[2].targetBurden, suspended, 'the precise hanging-burden target reaches the impact handler');
+player.lunging = false;
+player.lungeOriginMs = 1004;
+LT.hasTargetInCone(cone);
+assert.equal(impacts.length, 3, 'non-lunge targeting probes never cause object damage');
+T.clear();
+player.lunging = true;
+hostiles = [{ id:'foe', health:5, areaId:'mapA', hit:true }];
+player.lungeOriginMs = 1005;
+assert.equal(LT.hasTargetInCone(cone), true);
+assert.equal(impacts.length, 4, 'the same AOE can hit props when the lunge stops on an enemy');
+hostiles = [];
+player.lungeOriginMs = 1006;
+assert.equal(LT.hasTargetInCone(cone), false);
+assert.equal(impacts.length, 4, 'empty cones cannot generate object impacts');
+
+// A frozen camera aim must be shared by the stop probe AND the object strike.
+const cameraAim = {x:0,y:.6,z:.8}; // This off-axis aim is used by the following hostile probe and AOE.
+globalThis.Combat.deps = {getPlayerMeleeAimDirection:()=>cameraAim};
+hostiles = [{id:'aim-target',health:5,areaId:'mapA',hit:true}];
+player.lungeOriginMs = 1007;
+reset();
+assert.equal(LT.hasTargetInCone(cone),true);
+assert.equal(probes[0].opts.direction,cameraAim,'the hostile probe gets committed camera aim');
+assert.equal(impacts[4].direction,cameraAim,'the crate/burden AOE uses precisely the same aim direction');
+delete globalThis.Combat.deps;
+
 // uninitialised use is safe
 delete require.cache[require.resolve('../docs/js/lunge-targeting.js')];
 const fresh = require('../docs/js/lunge-targeting.js');

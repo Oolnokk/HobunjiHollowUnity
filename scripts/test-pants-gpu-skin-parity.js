@@ -86,15 +86,20 @@ model.updateMatrixWorld(true);
 Renderer.setGpuSkinning(false);
 handle.update();
 assert.strictEqual(handle.gpuSkinActive, false);
+assert.strictEqual(handle.mesh.userData.hobunjiPantsGpuBoundsSafe, false,
+  'CPU-skinned garments cannot use the padded-rest-geometry x-ray shortcut');
 const position = handle.geometry.getAttribute('position');
 const cpu = Float32Array.from(position.array);
 let moved = 0;
 for (let i = 0; i < cpu.length; i++) moved = Math.max(moved, Math.abs(cpu[i] - handle.basePositions[i]));
 assert(moved > 0.02, `the pose deforms the garment on the CPU path (max ${moved})`);
+assert(moved < 0.8, `representative walking pose fits the configured local .8-unit GPU scissor margin (max ${moved})`);
 
 Renderer.setGpuSkinning(true);
 handle.update();
 assert.strictEqual(handle.gpuSkinActive, true, 'switching back re-runs the frame on the GPU path');
+assert.strictEqual(handle.mesh.userData.hobunjiPantsGpuBoundsSafe, true,
+  'the original GPU shader can safely use the configured conservative padding');
 assert.strictEqual(handle.maskUniforms.uPantsGpuSkin.value, 1);
 for (let i = 0; i < cpu.length; i++) assert.strictEqual(position.array[i], handle.basePositions[i], 'the GPU path uploads the rest grid, not skinned vertices');
 
@@ -118,14 +123,24 @@ assert(u.uPantsRingShift.value.some(s => s.lengthSq() > 0), 'the ankle-ring corr
 // A still frame costs nothing on either path; a material swapped in by another system (ghostify, mine-lit) falls back to the CPU skin.
 handle.update();
 handle.mesh.material = new THREE.MeshBasicMaterial();
+handle.geometry.computeBoundingBox(); // Simulate stale GPU-rest bounds present before the material switch.
 handle.update();
 assert.strictEqual(handle.gpuSkinActive, false, 'a foreign material has no skinning shader: CPU path');
+assert.strictEqual(handle.mesh.userData.hobunjiPantsGpuBoundsSafe, false,
+  'foreign materials fall back to ordinary conservative replay grouping');
+assert.strictEqual(handle.geometry.boundingBox, null,
+  'CPU fallback invalidates prior rest bounds when it writes animated vertices');
+handle.geometry.computeBoundingBox(); // An x-ray scissor recomputes the live deformed geometry lazily.
 let cpuAgain = 0;
 for (let i = 0; i < cpu.length; i++) cpuAgain = Math.max(cpuAgain, Math.abs(position.array[i] - cpu[i]));
 assert(cpuAgain < 1e-6, 'the CPU fallback rewrites the skinned vertices');
 handle.mesh.material = material;
 handle.update();
 assert.strictEqual(handle.gpuSkinActive, true);
+assert.strictEqual(handle.mesh.userData.hobunjiPantsGpuBoundsSafe, true,
+  'returning to the authored GPU material re-enables safe padded batching');
+assert.strictEqual(handle.geometry.boundingBox, null,
+  'switching back to GPU rest vertices clears the previous CPU-pose bounds');
 for (let i = 0; i < cpu.length; i++) assert.strictEqual(position.array[i], handle.basePositions[i], 'returning to the GPU path restores the rest grid');
 
 // Camera-only yaw rotates the model, legs and garment together. Their relative bone pose

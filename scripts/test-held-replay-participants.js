@@ -63,6 +63,22 @@ const feetOthers = [];
 const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar], scene, feetOthers, true);
 assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
 assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
+// Pants must follow the production FEET policy through real avatar ancestry,
+// not merely pass a mocked standalone owner predicate. This also verifies
+// distant NPC garments never force extra actor-centered depth replays.
+const pantsAt = (actor, x) => at(node('PantsGarmentMesh', node('avatar', actor),
+  { hobunjiPantsGarment: true }), x, 0); // Same nesting as the authored separate pants mesh.
+const playerPantsNear = pantsAt(player, 2), playerPantsFar = pantsAt(player, 10);
+const tallPants = pantsAt(tall, 1);
+const shortPantsNear = pantsAt(shorty, 3), shortPantsFar = pantsAt(shorty, 20);
+const pantsOthers = [];
+const includedPants = api.split([playerPantsNear, playerPantsFar, tallPants, shortPantsNear, shortPantsFar],
+  scene, pantsOthers, true);
+assert.deepEqual(includedPants, [playerPantsNear, shortPantsNear],
+  'actual player/short avatar pants follow exactly the near-camera feet replay policy');
+assert.deepEqual(pantsOthers, [playerPantsFar, tallPants, shortPantsFar],
+  'far pants and taller NPC pants stay in ordinary world depth without a replay');
+
 
 // Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
 // with userData.hobunjiHeldPortraitOwner. With the link off they are unowned

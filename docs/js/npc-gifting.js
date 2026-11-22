@@ -22,6 +22,7 @@
 
   let deps = null;
   let lastBarterReward = null; // Shown in the existing mobile gift diagnostic log.
+  let lastTrophyTrade = null; // Last successful tribal currency exchange, exposed to mobile diagnostics.
   const BARTER_DEFAULTS = Object.freeze({ // Configurable favor thresholds and future unique gifts live beside the social rules.
     mediumFavor: 4, largeFavor: 10, uniqueFavor: 10,
     animalChance: 0.35, uniqueChance: 0.20,
@@ -30,6 +31,33 @@
 
   const TRIBE_CHIEFS = Object.freeze({ porakaneki: 'porakaneki_chief', omgurku: 'omgurku_chief' }); // Tribe members gift and barter on their chief's shared Favor.
   const TRIBE_LABELS = Object.freeze({ porakaneki: 'Porakaneki', omgurku: 'Omgurku' });
+  const TROPHY_TIERS = Object.freeze([{ rank: 1, cost: 1, label: 'Small', quantity: 5 }, { rank: 2, cost: 2, label: 'Medium', quantity: 10 }, { rank: 3, cost: 3, label: 'Large', quantity: 15 }]); // Existing barter bundle ranks determine the exact three currency prices.
+  const BARTER_CATEGORIES = Object.freeze([ // Existing return pools, not a new vendor stock list.
+    Object.freeze({ id: 'herbs', label: 'Herbs' }),
+    Object.freeze({ id: 'fish', label: 'Fish' }),
+    Object.freeze({ id: 'meat', label: 'Meat' }),
+    Object.freeze({ id: 'animals', label: 'Animals' }),
+    Object.freeze({ id: 'unique', label: 'Unique gifts' }),
+  ]);
+  let trophyDialog = null; // One lazily built controller/touch dialog is reused for every great-camp trade.
+  let trophyActionLock = null; // Existing CharacterActionLocks blocks movement, tools and attacks while the controller/touch menu is open.
+  let trophyWalker = null; // Revalidated against live camp and reach when a tier is selected.
+  let trophyHeldKey = null; // The currently held trophy must match the one that opened the dialog.
+  let trophyFocus = null; // Restores focus on dialog dismissal.
+  const TRIBAL_TROPHIES = Object.freeze({ // One persistent inventory currency per defeated tribe; never ordinary gifts or shop stock.
+    omgurkuHorn: Object.freeze({ tribe: 'omgurku', label: 'Omgurku Horn', icon: '📯', cat: 'material', noGift: true, sellPrice: 0, tags: ['Currency', 'Tribal Trophy'], desc: 'Present it to the Porakaneki great camp for a return gift, or the Omgurku for Favor alone.' }),
+    porakanekiQuill: Object.freeze({ tribe: 'porakaneki', label: 'Porakaneki Quill', icon: '🪶', cat: 'material', noGift: true, sellPrice: 0, tags: ['Currency', 'Tribal Trophy'], desc: 'Present it to the Omgurku great camp for a return gift, or the Porakaneki for Favor alone.' }),
+  });
+  function registerTribalTrophyItems(itemDefs = deps?.getItemDefs?.(), inventoryItems = deps?.inventoryItems) {
+    if (!itemDefs) return false;
+    for (const [key, spec] of Object.entries(TRIBAL_TROPHIES)) {
+      itemDefs[key] = { ...spec, ...(itemDefs[key] || {}), noGift: true, sellPrice: 0 };
+      if (Array.isArray(inventoryItems) && !inventoryItems.some(item => item?.key === key)) {
+        inventoryItems.push({ key, icon: spec.icon, label: spec.label.toUpperCase(), max: 99 });
+      }
+    }
+    return true;
+  }
   function tribeOf(walker) {
     const rec = walker?.rec; // Named and procedural NPCs share this species/faction check.
     const species = String(rec?.species || '').toLowerCase();
@@ -41,9 +69,20 @@
   }
   function isPorakaneki(walker) { return tribeOf(walker) === 'porakaneki'; }
   function withinPorakanekiGiftReach(walker) {
-    if (!isPorakaneki(walker)) return true;
+    if (!tribeOf(walker)) return true;
     const distance = window.FurnitureTableSystem?.npcDistance?.(walker); // The same two-tile reach applies to named chiefs and generated hunters, including stale button presses.
     return Number.isFinite(distance) && distance <= 2; // A missing/uninitialized distance authority must never allow a stale remote gift press.
+  }
+  function isTribalTrophyHeld(held = deps?.getHeldGiftItem?.()) {
+    return (held?.kind === 'item' || held?.kind === 'bagItem') && !!TRIBAL_TROPHIES[held?.key]
+      && (Number(deps?.inventory?.[held.key]) || 0) > 0; // Only a genuinely held bag item qualifies; stowed tools, weapons and burdens cannot trade.
+  }
+  function isTribalTrophyExchange(walker, held = deps?.getHeldGiftItem?.()) {
+    const receivingTribe = tribeOf(walker); // A trophy's enemy is the only tribe that pays a return gift.
+    if (!receivingTribe || !isTribalTrophyHeld(held) || !withinPorakanekiGiftReach(walker)) return false;
+    const trophy = TRIBAL_TROPHIES[held.key]; // Own-tribe trophies buy Favor alone at any friendly camp.
+    return trophy.tribe === receivingTribe
+      || window.TribeCamps?.get?.(receivingTribe)?.isAtChiefCamp?.(walker) === true;
   }
   function relationshipId(walker) {
     const tribe = tribeOf(walker);
@@ -56,6 +95,17 @@
   function barterTuning() {
     return { ...BARTER_DEFAULTS, ...(window.SCRATCHBONES_CONFIG?.game?.socialRelationships?.porakanekiBarter || {}) };
   }
+  function barterFavorForTier(rank) {
+    const tuning = barterTuning(); // Preserve configured thresholds and the existing high-tier unique reward gate.
+    return rank === 3 ? Math.max(Number(tuning.largeFavor) || 10, Number(tuning.uniqueFavor) || 10, Number(tuning.mediumFavor) || 4) : rank === 2 ? Number(tuning.mediumFavor) || 4 : 0;
+  }
+  function trophyTradingRank(receivingTribe) {
+    const pointsRank = Number(window.NpcFavorBalance?.factionRank?.('faction:' + receivingTribe)); // Existing saved faction reputation is the only unlock authority.
+    return Number.isFinite(pointsRank) ? Math.max(0, Math.floor(pointsRank)) : 0;
+  }
+  function trophyPurchaseCost(tier, category = null) {
+    return tier.cost + (category == null ? 0 : tier.rank + 1); // Specific pool adds 2/3/4 tokens for small/medium/large.
+  }
   function giftRapportAmount() {
     const maximum = Number(window.NpcRapport?.config?.rapportMax); // Positive gifts always earn one quarter of the daily cap, independent of quality and favor magnitude.
     return (Number.isFinite(maximum) ? Math.max(0, maximum) : 100) * 0.25;
@@ -63,27 +113,48 @@
   function randomPick(list) {
     return list[Math.min(list.length - 1, Math.floor((deps?.random?.() ?? Math.random()) * list.length))];
   }
-  function rollBarterReward(favorGain, held) {
-    const tuning = barterTuning(); // All reward probabilities/tiers are evaluated once per accepted daily gift.
-    const pools = deps?.getPorakanekiRewardPools?.() || {}; // Uses the current region's existing reagent, fishing, wildlife, and loot definitions.
-    const rank = favorGain >= tuning.largeFavor ? 3 : favorGain >= tuning.mediumFavor ? 2 : 1; // Controls bundle size and guaranteed rare animal traits.
-    const quantity = rank * 5; // Small/medium/large bundles contain exactly 5/10/15 items.
-    const capacity = (key, qty) => !!deps.getItemDefs()[key] && (Number(deps.inventory[key]) || 0) - (held?.kind !== 'clothing' && held?.key === key ? 1 : 0) + qty <= (deps.getInventoryMax?.(key) ?? 99); // Projects space after consuming the gift so returned bundles are never truncated.
+  function eligibleBarterRewardPools(favorGain, held, spent = 1) {
+    const tuning = barterTuning(); // One eligibility calculation serves both ordinary random gifts and paid targeted pool selection.
+    const pools = deps?.getPorakanekiRewardPools?.() || {};
+    const rank = favorGain >= tuning.largeFavor ? 3 : favorGain >= tuning.mediumFavor ? 2 : 1;
+    const quantity = rank * 5;
+    const capacity = (key, qty) => !!deps.getItemDefs()[key]
+      && (Number(deps.inventory[key]) || 0) - (held?.kind !== 'clothing' && held?.key === key ? spent : 0) + qty <= (deps.getInventoryMax?.(key) ?? 99); // Predict space only after all trophies are deducted.
     const unique = (Array.isArray(tuning.uniqueRewards) ? tuning.uniqueRewards : []).filter(entry =>
       favorGain >= Math.max(Number(tuning.uniqueFavor) || 10, Number(entry.minFavor) || 0)
-      && (entry.trinketId ? !!window.TrinketSystem?.DEFINITIONS?.[entry.trinketId] : capacity(entry.itemKey, 1))); // New authored unique item/trinket entries automatically join the highest tier.
-    if (unique.length && (deps?.random?.() ?? Math.random()) < tuning.uniqueChance) {
-      return { ...randomPick(unique), quantity: 1, type: 'unique', rank };
+      && (entry.trinketId ? !!window.TrinketSystem?.DEFINITIONS?.[entry.trinketId] : capacity(entry.itemKey, 1)));
+    const animals = (pools.animals || []).filter(entry => capacity(entry.itemKey, 1));
+    const bundles = ['herbs', 'fish', 'meat'].map(type => ({
+      type, keys: [...new Set(pools[type] || [])].filter(key => capacity(key, quantity)),
+    })).filter(pool => pool.keys.length);
+    return { tuning, rank, quantity, unique, animals, bundles };
+  }
+
+  function availableBarterCategories(favorGain, held, spent = 1) {
+    const options = eligibleBarterRewardPools(favorGain, held, spent); // Menu shows only real regional pools that can currently pay out.
+    return BARTER_CATEGORIES.filter(category => {
+      if (category.id === 'unique') return options.unique.length > 0;
+      if (category.id === 'animals') return options.animals.length > 0 && typeof window.CreatureGenetics?.makeRareGiftGenotype === 'function';
+      return options.bundles.some(bundle => bundle.type === category.id);
+    });
+  }
+
+  function rollBarterReward(favorGain, held, spent = 1, category = null) {
+    const { tuning, rank, quantity, unique, animals, bundles } = eligibleBarterRewardPools(favorGain, held, spent);
+    if (category != null && !BARTER_CATEGORIES.some(entry => entry.id === category)) return null; // Never silently substitute a random pool for an invalid paid request.
+    if (category === 'unique' || (category == null && unique.length && (deps?.random?.() ?? Math.random()) < tuning.uniqueChance)) {
+      return unique.length ? { ...randomPick(unique), quantity: 1, type: 'unique', rank } : null;
     }
-    const animals = (pools.animals || []).filter(entry => capacity(entry.itemKey, 1)); // Only regional egg/baby keys with room can be returned.
-    const bundles = ['herbs', 'fish', 'meat'].map(type => ({ type, keys: [...new Set(pools[type] || [])].filter(key => capacity(key, quantity)) })).filter(pool => pool.keys.length); // Pick a category first so large herb catalogs do not drown out fish/meat rewards.
-    if (animals.length && (!bundles.length || (deps?.random?.() ?? Math.random()) < tuning.animalChance)) {
-      const animal = randomPick(animals); // Regional species are resolved to the existing livestock genotype kind.
-      const genotype = window.CreatureGenetics?.makeRareGiftGenotype?.(animal.kind, rank); // Genetics owns palette constraints, expressed patterns, and rare coat traits.
+    if (category === 'animals' || (category == null && animals.length
+      && (!bundles.length || (deps?.random?.() ?? Math.random()) < tuning.animalChance))) {
+      if (!animals.length) return null;
+      const animal = randomPick(animals);
+      const genotype = window.CreatureGenetics?.makeRareGiftGenotype?.(animal.kind, rank); // Rank still controls inherited patterns when the animal pool is chosen.
       if (genotype) return { ...animal, genotype, quantity: 1, type: 'animal', rank };
+      if (category === 'animals') return null; // Paid pool guarantees its category, or charges nothing.
     }
-    if (!bundles.length) return null;
-    const bundle = randomPick(bundles); // Every resource bundle contains one region-native item type.
+    const bundle = category != null ? bundles.find(entry => entry.type === category) : bundles.length ? randomPick(bundles) : null;
+    if (!bundle) return null;
     return { itemKey: randomPick(bundle.keys), quantity, type: bundle.type, rank };
   }
   function grantBarterReward(reward, favorGain) {
@@ -99,6 +170,7 @@
   }
   function init(injectedDeps) {
     deps = injectedDeps;
+    registerTribalTrophyItems(); // Canonical bag definitions are shared by corpse loot, the wheel and save restore.
     window.NpcFoodGiftPreferences?.init?.({ getItemDefs: injectedDeps?.getItemDefs }); // Shares only item-definition lookup with the extracted food preference runtime.
   }
 
@@ -251,7 +323,7 @@
 
   function itemDefFor(held) {
     if (held.kind === 'clothing') return null; // Clothing isn't in ITEM_DEFS — see js/equipment-panel.js.
-    return held.def || deps.getItemDefs()[held.key] || null;
+    return held.def || deps.getItemDefs()[held.key] || TRIBAL_TROPHIES[held.key] || null;
   }
 
   function itemLabelFor(held) {
@@ -269,7 +341,9 @@
       return !!deps.getPackClothing?.()?.some(item => item?.uid === uid && !item.cursed); // A cursed garment (looted lich circlet, Maskbound mask) is never handed to an NPC to wear or stash; the curse has to be lifted first.
     }
     const def = itemDefFor(held);
-    return !!def && !def.noGift && (Number(deps.inventory?.[held.key]) || 0) > 0;
+    if (!['item', 'bagItem'].includes(held.kind) || !def || def.noGift) return false;
+    if (def.isTool || def.isWeapon || def.isBurden || def.isInstrument || ['tool', 'weapon', 'burden', 'instrument'].includes(String(def.cat || '').toLowerCase())) return false; // Reuse main's held-gift policy: a visible tool/burden is not an ordinary gift.
+    return (Number(deps.inventory?.[held.key]) || 0) > 0;
   }
 
   function traitsForHeld(held) {
@@ -298,7 +372,7 @@
       npcId: rec?.id || null,
       itemKey: held?.key || held?.instance?.cosmeticId || null,
       giftable: isItemGiftable(held),
-      latestChange: 'Permanent gear cannot be held or given away; pack clothing remains giftable.',
+      latestChange: 'NPC gifts require the actual item in hand; tools, weapons, burdens, performances, vessels and stowed modes are excluded.',
       tier: evaluation.tier,
       score: evaluation.score,
       metalTier: evaluation.metalTier || null,
@@ -397,7 +471,17 @@
         label: `Give ${esc(itemLabelFor(held))} to Boney Shinjimi`,
         action: 'npc_offer_gift', style: 'secondary', allowed: true, contextualHeldItem: true };
     } // His secret in-house exchange bypasses ordinary preferences, Favor and daily gifts.
-    if (!isItemGiftable(held)) return null;
+    if (isTribalTrophyExchange(walker, held)) {
+      const receivingTribe = tribeOf(walker);
+      const trophy = TRIBAL_TROPHIES[held.key];
+      const paysReward = trophy.tribe !== receivingTribe;
+      return { icon: trophy.icon,
+        label: paysReward
+          ? `Trade ${esc(trophy.label)} ×1–3 for a ${TRIBE_LABELS[receivingTribe]} gift (choose tier)`
+          : `Turn in ${esc(trophy.label)} for ${TRIBE_LABELS[receivingTribe]} Favor (−rival Favor)`,
+        action: 'npc_offer_gift', style: 'secondary', allowed: true, contextualHeldItem: true };
+    }
+    if (TRIBAL_TROPHIES[held?.key] || !isItemGiftable(held)) return null; // Trophies cannot bypass the camp restriction as normal gifts.
     const prefRec = preferenceRecord(walker); // Reused by both armor-specific and ordinary warning calculations.
     const metalArmor = isHeldMetalArmor(held); // Prevents unrelated clothing/color dislikes from leaking into the metal-armor prompt.
     const traits = metalArmor ? [METAL_ARMOR_TRAIT] : traitsForHeld(held);
@@ -414,9 +498,115 @@
     };
   }
 
+  function exchangeTribalTrophy(walker, rank = 1, expectedKey = null, category = null) {
+    const tier = TROPHY_TIERS.find(t => t.rank === rank); // Reject unsupported tiers even from stale/controller inputs.
+    const held = deps?.getHeldGiftItem?.(); // Never trust a held item captured when the choice dialog opened.
+    if (!tier || (expectedKey && held?.key !== expectedKey) || !isTribalTrophyExchange(walker, held)
+      || typeof window.DialogueContent?.adjustNpcFavor !== 'function') return false;
+    const receivingTribe = tribeOf(walker);
+    const trophy = TRIBAL_TROPHIES[held.key];
+    const paysReward = trophy.tribe !== receivingTribe;
+    const rankAtPurchase = trophyTradingRank(receivingTribe); // Capture the unlock rank before awarding Favor: this transaction can cross a threshold.
+    if (!paysReward && (rank !== 1 || category != null)) return false; // Own-tribe trophies earn Favor only.
+    if (category != null && (!BARTER_CATEGORIES.some(entry => entry.id === category)
+      || rankAtPurchase < rank)) return false; // Server-side reward authority: reputation must still unlock the selected tier's category.
+    const cost = paysReward ? trophyPurchaseCost(tier, category) : 1;
+    if ((Number(deps.inventory[held.key]) || 0) < cost) {
+      deps.showToast?.(`Need ${cost}× ${trophy.label} for the ${tier.label.toLowerCase()} return gift.`, false);
+      return false;
+    }
+    const favorId = TRIBE_CHIEFS[receivingTribe];
+    const rivalId = TRIBE_CHIEFS[Object.keys(TRIBE_CHIEFS).find(id => id !== receivingTribe)];
+    const favorEquivalent = barterFavorForTier(rank); // The same existing regional/animal/unique reward rolls as ordinary gifts.
+    const reward = paysReward ? rollBarterReward(favorEquivalent, held, cost, category) : null;
+    if (paysReward && !reward) {
+      deps.showToast?.(category ? 'The selected gift category has no available return. Check inventory space or choose another pool.' : 'Make room for the return gift before spending trophies.', false);
+      return false;
+    }
+    deps.inventory[held.key] = (Number(deps.inventory[held.key]) || 0) - cost;
+    deps.clampInventoryStack?.(held.key);
+    window.DialogueContent.adjustNpcFavor(favorId, cost, 'tribal_trophy_turn_in', false, true);
+    window.DialogueContent.adjustNpcFavor(rivalId, -cost, 'tribal_trophy_rival_penalty', false, true);
+    if (reward) grantBarterReward(reward, favorEquivalent);
+    else deps.showToast?.(`${TRIBE_LABELS[receivingTribe]} accepts the ${trophy.label}: +1 Favor, −1 rival Favor.`, true);
+    lastTrophyTrade = { trophyKey: held.key, receivingTribe, rank: paysReward ? rank : 0,
+      category, recipientRank: rankAtPurchase, spent: cost,
+      favorDelta: cost, rivalFavorDelta: -cost, reward: reward && { ...reward } }; // Mobile diagnostics include selected pool and total trophy price.
+    window.__farmLog?.(`[tribal trophy] ${JSON.stringify(lastTrophyTrade)}`, 'info', 'social'); // In-game mobile diagnostics show the selected tier and cost.
+    deps.refreshItemScroll?.();
+    deps.buildInventoryGrid?.();
+    deps.refreshActionBar?.();
+    deps.saveMemberWorldData?.();
+    return true;
+  }
+
+  function closeTrophyTradeMenu() {
+    if (!trophyDialog) return;
+    trophyDialog.style.display = 'none';
+    trophyActionLock?.release?.(); trophyActionLock = null; // Same modal lifecycle as FestivalUI; never strand gameplay input.
+    trophyWalker = null;
+    trophyHeldKey = null;
+    trophyFocus?.focus?.();
+    trophyFocus = null;
+  }
+
+  function openTrophyTradeMenu(walker, held) {
+    if (!isTribalTrophyExchange(walker, held) || TRIBAL_TROPHIES[held.key].tribe === tribeOf(walker)
+      || typeof document === 'undefined' || !document.body) return false;
+    if (!trophyDialog) { // Build once; normal action-bar polling never creates or updates DOM.
+      const root = document.createElement('section');
+      root.id = 'tribalTrophyTradeDialog';
+      for (const [key, value] of Object.entries({ role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Tribal trophy trade tiers', 'data-ctrl-panel': '', 'data-ctrl-modal': '' })) root.setAttribute(key, value);
+      root.style.cssText = 'display:none;position:fixed;inset:0;z-index:1200;background:#071318cc;align-items:center;justify-content:center;padding:14px;box-sizing:border-box';
+      root.innerHTML = '<div data-ctrl-scroll style="width:min(480px,100%);max-height:88dvh;overflow:auto;padding:18px;box-sizing:border-box;border:2px solid #bcae83;border-radius:12px;background:#192a25;color:#f5edda;box-shadow:0 15px 55px #0009"><h2 style="margin:0 0 8px">Tribal return gifts</h2><p data-trophy-summary></p><div data-trophy-tiers style="display:grid;gap:8px"></div><p style="font-size:13px;line-height:1.4;color:#ced5cb">Each trophy spent earns +1 Favor with this tribe and −1 with its rival. All reward pools match ordinary gifts.</p><button type="button" data-trophy-close data-ctrl-cancel style="min-height:44px;width:100%;padding:10px;border:1px solid #aab6a6;border-radius:7px;background:#30483d;color:white;font:inherit">Cancel</button></div>';
+      root.addEventListener('pointerdown', event => event.stopPropagation());
+      root.addEventListener('pointerup', event => event.stopPropagation());
+      root.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); event.preventDefault(); closeTrophyTradeMenu(); } });
+      root.addEventListener('click', event => {
+        event.stopPropagation(); // A modal click must not also trigger the gameplay scene's pointer handlers.
+        const button = event.target.closest?.('button');
+        if (!button || button.disabled) { if (event.target === root) closeTrophyTradeMenu(); return; }
+        if (button.hasAttribute('data-trophy-close')) { closeTrophyTradeMenu(); return; }
+        const rank = Number(button.getAttribute('data-trophy-tier'));
+        const category = button.getAttribute('data-trophy-category') || null; // Missing attribute means the unchanged random-pool purchase.
+        if (Number.isInteger(rank) && exchangeTribalTrophy(trophyWalker, rank, trophyHeldKey, category)) closeTrophyTradeMenu();
+      });
+      document.body.append(root);
+      trophyDialog = root;
+    }
+    const trophy = TRIBAL_TROPHIES[held.key];
+    const count = Math.max(0, Number(deps.inventory[held.key]) || 0);
+    const tradingRank = trophyTradingRank(tribeOf(walker)); // Rep rank I/II/III unlocks paid targeting of the corresponding return tier.
+    trophyDialog.querySelector('[data-trophy-summary]').textContent = `${TRIBE_LABELS[tribeOf(walker)]} great camp · Rank ${tradingRank} · ${count}× ${trophy.label} available. Choose a reward tier or unlockable category:`;
+    trophyDialog.querySelector('[data-trophy-tiers]').innerHTML = TROPHY_TIERS.map(tier => {
+      const randomAvailable = count >= tier.cost; // Normal random-gift purchases never have a reputation requirement.
+      const random = `<button type="button" data-trophy-tier="${tier.rank}" ${tier.rank === 1 ? 'data-ctrl-default' : ''} ${randomAvailable ? '' : 'disabled'} style="min-height:52px;padding:9px 12px;border:1px solid #bcae83;border-radius:8px;background:#30483d;color:white;font:inherit;text-align:left;opacity:${randomAvailable ? '1' : '.45'}"><strong>${tier.label} · random pool · ${tier.cost}× ${esc(trophy.label)}</strong><span style="display:block;font-size:13px;margin-top:3px">${tier.quantity} resource items or a chance at an animal${tier.rank === 3 ? ' / unique gift' : ''}</span></button>`;
+      const bonusCost = trophyPurchaseCost(tier, 'herbs'); // Every pool in a reward tier has the same 2/3/4 trophy targeting surcharge.
+      const categories = tradingRank >= tier.rank
+        ? availableBarterCategories(barterFavorForTier(tier.rank), held, bonusCost) : [];
+      const targeted = tradingRank < tier.rank
+        ? `<p style="margin:5px 0 0;font-size:12px;color:#b8c8b9">Targeted ${tier.label.toLowerCase()} pool unlocks at tribal rank ${tier.rank}.</p>`
+        : categories.length ? `<div data-ctrl-group style="display:flex;flex-wrap:wrap;gap:6px;padding-top:8px"><div style="width:100%;font-size:13px">Choose a category · ${bonusCost} trophies total (+${tier.rank + 1}):</div>${categories.map(category => `<button type="button" data-trophy-tier="${tier.rank}" data-trophy-category="${category.id}" ${count >= bonusCost ? '' : 'disabled'} style="min-height:44px;padding:8px 10px;border:1px solid #91a892;border-radius:7px;background:#24443a;color:white;font:inherit;opacity:${count >= bonusCost ? '1' : '.45'}">${esc(category.label)}</button>`).join('')}</div>`
+          : '<p style="margin:5px 0;font-size:12px;color:#eac9a7">No available categories at this tier; check reward inventory capacity.</p>';
+      return `<section style="padding:10px;border:1px solid #657765;border-radius:10px"><div style="font-weight:600;margin-bottom:7px">${tier.label} tier</div>${random}${targeted}</section>`;
+    }).join('');
+    trophyWalker = walker;
+    trophyHeldKey = held.key;
+    trophyFocus = document.activeElement;
+    trophyDialog.style.display = 'flex';
+    document.exitPointerLock?.(); // Follow the established full-screen festival menu input handoff.
+    trophyActionLock?.release?.();
+    trophyActionLock = window.CharacterActionLocks?.acquire?.({ owner: 'tribal-trophy-menu', reason: 'Selecting a tribal return gift', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
+    trophyDialog.querySelector('button:not([disabled])')?.focus?.();
+    window.__farmLog?.(`[tribal trophy] tier menu opened: ${count}× ${trophy.label}`, 'info', 'social');
+    return true;
+  }
+
   function offerGift(walker) {
     const npcId = relationshipId(walker);
     const held = deps?.getHeldGiftItem?.();
+    if (TRIBAL_TROPHIES[held?.key]) return TRIBAL_TROPHIES[held.key].tribe === tribeOf(walker)
+      ? exchangeTribalTrophy(walker, 1, held.key) : openTrophyTradeMenu(walker, held); // Choose enemy return tier; own-tribe turn-in has no reward.
     if (walker?.rec?.id === 'boney_shinjimi') {
       return isItemGiftable(held) && window.BoneyShinjimiWilderness?.offerMilk?.(held, deps) === true;
     } // Boney only consumes milk when his post-confrontation cutscene grants a Fey weapon.
@@ -430,7 +620,7 @@
       recordDiscoveredTraits(npcId, preferenceTier, evaluation.matches[preferenceTier]);
     }
 
-    const favorGain = Math.round(evaluation.favorDelta * (window.FestivalSystem?.giftMultiplier?.() || 1) * (evaluation.favorDelta > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) * (window.FestivalSystem?.blessingMultiplier?.('goodwill') || 1) : 1) * 10) / 10; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
+    const favorGain = Math.round(evaluation.favorDelta * (window.NpcFavorBalance?.activeGiftQualityMultiplier?.() ?? 1) * (window.FestivalSystem?.giftMultiplier?.() || 1) * (evaluation.favorDelta > 0 ? (window.AlchemySystem?.getPositiveFavorMultiplier?.() || 1) * (window.FestivalSystem?.blessingMultiplier?.('goodwill') || 1) * (window.NpcFavorBalance?.gainMultiplierForNpc?.(npcId) || 1) : 1) * 10000) / 10000; // Mirrors DialogueContent's actual favor gain, including existing positive-favor buffs.
     const tribe = tribeOf(walker); // Both tribes barter a return gift for presents.
     const barterReward = tribe ? rollBarterReward(favorGain, held) : null; // Preflight the promised return before consuming anything.
     if (tribe && !barterReward) { deps.showToast?.(`Make room for a ${TRIBE_LABELS[tribe]} return gift.`, false); return false; }
@@ -482,6 +672,15 @@
     isPorakaneki,
     tribeOf,
     relationshipId,
+    registerTribalTrophyItems,
+    isTribalTrophyHeld,
+    isTribalTrophyExchange,
+    lastTrophyTrade: () => lastTrophyTrade && { ...lastTrophyTrade },
+    exchangeTribalTrophy, // Explicit-tier transaction also serves focused tests without a browser.
+    closeTrophyTradeMenu,
+    availableBarterCategories, // Direct test/debug lookup returns currently available source pools, never synthetic vendor products.
+    trophyTradingRank,
+    trophyPurchaseCost,
     rollBarterReward,
     reactionTier,
     evaluateGiftReaction,

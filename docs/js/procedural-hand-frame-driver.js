@@ -936,6 +936,9 @@
       // pose with it (visible as a one-frame hand pop).
       const frameId = global.RuntimeFrameScheduler?.frameId?.();
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
+      // A draw-only placement moves the already-solved hand with its rig. Sampling
+      // it here would teach the persistent hand solver the talon pose next frame.
+      if (global.ActorRigCompositor?.renderPoseOwner?.(sentinel)) return;
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
       restoreHeldItemReach(record); // A previous carried object's visual lift never leaks into an action or another holder.

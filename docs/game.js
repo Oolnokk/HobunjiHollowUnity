@@ -7123,7 +7123,6 @@
             updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // The carrier owns position; ground AI and attacks must not overwrite it.
           }
           // Beastmaster pets stay in hostileObjects so player targeting and
@@ -7977,8 +7976,6 @@
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
       const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
       const SHOULDER_PET_POSE_HOLD_MIN_S = 1.5; // Both local facing poses are sustained, but switch often enough to keep the perched animal lively.
       const SHOULDER_PET_POSE_HOLD_MAX_S = 3.0;
       const SHOULDER_PET_INWARD_CHANCE = 0.5; // No idle/moving bias: each sustained pose selection is an even 50/50 roll.
@@ -8186,15 +8183,12 @@
         state.timer -= dt;
         if (state.timer <= 0) {
           const facingInward = rnd() < SHOULDER_PET_INWARD_CHANCE; // One 50/50 pose roll only when the current multi-second hold expires.
-          const leanSide = rnd() < 0.5 ? -1 : 1; // Body lean can vary independently; head yaw below always turns away from the character.
           state.facingInward = facingInward;
           state.inwardChance = SHOULDER_PET_INWARD_CHANCE;
           state.phase = facingInward ? 'inward' : 'outward';
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetLeanDeg = leanSide * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
           state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
             + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
@@ -8207,7 +8201,10 @@
           c.__hobunjiShoulderFacingInward = state.facingInward; // Cheap hot-reload/state repair; no random work or transform traversal.
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentLeanDeg += window.FormatUtils.clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        // Old curiosity snapshots may still contain body-lean values. Neutralize them;
+        // the attachment root changes only for the two observation orientations.
+        state.currentLeanDeg = 0;
+        state.targetLeanDeg = 0;
         state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
         state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
@@ -8215,9 +8212,8 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        // updateShoulderPetMeshPin applies this state to the pet root around the
-        // authored grip. Rotating the two image cards here would pivot each
-        // around its image center and then get cleared by the final pin.
+        // The attachment root applies only the inward/outward observation flip.
+        // Continuous curiosity pitch/yaw belongs exclusively to the head bones.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
@@ -8657,7 +8653,6 @@
           if (c.tzatzulCapturedBy) {
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // Captured companions share the carrier's flight path instead of following their master.
           }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
@@ -17821,6 +17816,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        releaseManualClothingForEquipmentSwitch(); // Item wheel selection replaces any held Pack garment.
         window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
@@ -17838,7 +17834,17 @@
       // switching the item wheel does not clear it, and it does not clear
       // itself — the player (or a successful gift) clears it back to "let
       // the wheel decide" via clearManualHeldItem.
-      let manualHeldItem = null; // { kind: 'clothing', uid } | null
+      let manualHeldItem = null; // { kind: 'clothing', uid } | { kind: 'bagItem', key } | null
+      let manualHeldClothingVisual = null; // Cached presentation for the precise Pack garment in the player's hands; avoids per-frame outfit lookup/composition.
+      function getVisibleInventoryItem() {
+        return manualHeldClothingVisual || getActiveInventoryItem(); // Both gifting and the held-item renderer use the same visual identity.
+      }
+      function releaseManualClothingForEquipmentSwitch() {
+        if (manualHeldItem?.kind !== 'clothing') return false;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null; // Replacing/stowing the garment releases both selection and visible pose without per-frame scans.
+        return true;
+      }
       function setManualHeldItem(item) {
         if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
           showToast('A cursed garment cannot be given away until its curse is lifted.', false);
@@ -17849,35 +17855,57 @@
           return;
         }
         manualHeldItem = item || null;
+        manualHeldClothingVisual = null; // Clearing/changing Hold must stop displaying the previous garment immediately.
+        if (item?.kind === 'clothing') {
+          const garment = packClothing.find(article => article.uid === item.uid); // Resolve once on Hold; gift ownership is still rechecked at action time.
+          if (garment) {
+            manualHeldClothingVisual = window.HeldGiftPolicy.createClothingVisual(garment, {
+              getSprite: cosmeticId => window.EquipmentPanel?.clothingSpriteForCosmetic?.(cosmeticId), // Reuse Pack artwork.
+              compose: (article, sprite) => window.ClothingWeavingSystem?.iconSpriteForCosmetic?.(article, sprite), // The existing compositor creates final colors/patterns on Hold.
+              isCurrent: visual => visual === manualHeldClothingVisual, // Discard stale async results after item switches.
+              onError: error => window.__farmLog?.('[held-clothing] sprite failed: ' + String(error?.message || error), 'warn', 'inventory'),
+            });
+            window.AdventuringTools?.stow?.();
+            heldMode = 'item'; // Clicking clothing Hold must actually put an item in the hands, like the Pack item Hold button.
+          }
+        }
         refreshActionBar();
       }
-      function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
+      function clearManualHeldItem() {
+        if (!manualHeldItem) return;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null;
+        refreshActionBar();
+      }
       function getManualHeldItem() { return manualHeldItem; }
 
-      // The one accessor gifting (and anything else that wants "whatever
-      // the player is currently offering up") should call — resolves the
-      // manual hold first, falling back to the ordinary wheel selection.
+      // Only the actively held item can be offered. The selected wheel item
+      // remains remembered when tools/weapons are drawn or hands are stowed;
+      // both Gift prompts and the transfer itself re-check this accessor.
       function getHeldGiftItem() {
-        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
-        if (manualHeldItem?.kind === 'clothing') {
-          const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
-          if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
-          manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
+        if (heldMode !== 'item') return null; // Remembered wheel items cannot be given while a tool or empty hands are active.
+        const result = window.HeldGiftPolicy.resolve({
+          heldMode,
+          burdenHeld: !!window.Shattercasks?.heldBurdenInfo?.(),
+          festivalHeld: !!(window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()),
+          instrumentHeld: !!window.MusicMinigame?.state?.instrumentItem,
+          manualHeldItem,
+          clothingVisual: manualHeldClothingVisual,
+          visibleItem: getVisibleInventoryItem(),
+          packClothing,
+          inventory,
+          itemDefs: ITEM_DEFS,
+          isClothingGiftable: held => window.NpcGifting?.isItemGiftable?.(held),
+        }); // The extracted policy decides eligibility while this owner retains mutable equipment state.
+        if (result === window.HeldGiftPolicy.STALE_HOLD) {
+          manualHeldItem = null;
+          manualHeldClothingVisual = null; // A stale manual Hold may never fall back to the remembered wheel item.
+          return null;
         }
-        // A wheel-ineligible material/etc explicitly held via the Inventory
-        // panel's "Hold" button (see selectInventoryItem) — the wheel
-        // itself never contains these (see isWheelEligible), so this is
-        // the only way one becomes giftable.
-        if (manualHeldItem?.kind === 'bagItem') {
-          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
-          manualHeldItem = null; // Ran out since it was picked — fall through to the wheel.
-        }
-        const active = getActiveInventoryItem();
-        if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
-        return null;
+        return result;
       }
 
-      function clampInventoryStack(key) {
+            function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
         if (key) window.AlchemySystem?.syncPotionStack?.(key); // Consuming or transferring a potion can change the stack's most common recipe.
@@ -18125,6 +18153,7 @@
             mkBtn('🤲 Hold', 'equip', () => {
               window.CookingSystem?.setHeldQuality?.(key, stack?.stars);
               const index = getInventoryStackItems().findIndex(item => item.key === key);
+              releaseManualClothingForEquipmentSwitch(); // A new Pack item replaces any garment in hand.
               if (index >= 0) activeItemIndex = index;
               window.AdventuringTools?.stow?.();
               heldMode = 'item';
@@ -20702,13 +20731,18 @@
           : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
+      function interruptBandagingForAction(action, reason = 'action') {
+        if (!action || action === 'none' || action === 'potion_select' || action === 'ammo_select') return false;
+        return window.BandageSystem?.cancel?.(reason, { action }) === true; // Releases only the bandaging lock before the original action-owner check.
+      }
       function useActiveAction() {
         // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
         if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
           || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
           || activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet')) return;
+        const attackAction = (activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot'); // Preserves attack-specific cancellation diagnostics.
+        interruptBandagingForAction(activeAction, attackAction ? 'attack' : 'action');
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
-        if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (window.PlayerDowned?.allowsAction?.(heldMode, activeTool) === false) return; // Only the ranged weapon works while downed (js/player-downed.js).
         if (sitInteraction) {
@@ -23981,13 +24015,13 @@
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
-        window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Held sprite planes use the same newly authored art as Pack and action-arch icons.
+        if (item.kind !== 'packClothingVisual') window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Authored garment silhouettes bypass generic object categorization and accidental palette recoloring.
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
         // Authored items start with their PNG, so a bottle never flashes or
         // remains as an emoji while the ingredient recolor resolves.
-        const spritePath = def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null;
+        const spritePath = item.heldSpritePath || (def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null); // Pack clothing uses its authored/composited garment PNG without pretending to be an ITEM_DEFS object sprite.
         // Plane is assigned below and read only from the texture loader's async callback.
         let plane = null;
         const fallbackTexture = spritePath
@@ -24390,7 +24424,7 @@
         _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
+          || (vessel || getVisibleInventoryItem()); // The displayed Pack garment, gift resolver and hand pose now agree on one actual held object.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -24443,8 +24477,9 @@
         const isKurraya = item.key === 'kurraya';
         const heldPotion = String(item.key).startsWith('alchemy_') && !!window.AlchemySystem?.parseBrewedItemKey?.(item.key); // Only alchemy stacks have batch-majority pigments.
         if (heldPotion) window.AlchemySystem?.syncPotionStack?.(item.key); // Refresh the dominant liquid before checking the held plane.
-        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode) : null; // Compared only for potion items; ordinary held objects keep their old O(1) key-only path.
-        if (item.key !== _heldItemKey || (heldPotion && appearanceSignature !== _heldItemAppearanceSignature)) {
+        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode)
+          : item.kind === 'packClothingVisual' ? String(item.heldSpriteVersion || 0) : null; // Rebuild an asynchronously composed garment once when its image resolves.
+        if (item.key !== _heldItemKey || appearanceSignature !== _heldItemAppearanceSignature) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
           // The Kurraya's real art lives at assets/toolsprites (the same
           // sprite/texture Foroji's NPC station prop uses — see
@@ -25595,7 +25630,6 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
-        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -26937,6 +26971,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        releaseManualClothingForEquipmentSwitch(); // Tool and weapon selection relinquish an explicit clothing Hold.
         if (activeTool === 'adventuring' && tool !== 'adventuring') {
           if (pendingAction?.tool === 'adventuring') pendingAction = null;
           if (combatSwingAnim && toolSwingT > 0) {
@@ -26999,7 +27034,8 @@
       // gear slots. The remembered activeTool/activeItemIndex are restored by
       // the next tool, item, or weapon selection.
       function putAwayHeldEquipment(opts = {}) {
-        if (heldMode === 'none') return;
+        const clearedClothing = releaseManualClothingForEquipmentSwitch(); // Everything stowed must clear the garment itself, not only its Gift button.
+        if (heldMode === 'none') { if (clearedClothing) refreshActionBar(); return; }
         heldMode = 'none';
         activeAction = 'none';
         actionHeldDown = false;
@@ -28580,6 +28616,7 @@
       // HobunjiDrunkGameplayBridge (food/drink) and makeProcessingFurniture
       // (processor insertion) respectively.
       function beginHeldItemActionDescriptor(action) {
+        if (action === 'consume_held_item' || action.startsWith('obj_process_')) interruptBandagingForAction(action); // Free both hands before a food/drink/processor hold starts.
         if (action === 'consume_held_item') return !!window.HobunjiDrunkGameplayBridge?.beginHeldItemAction?.();
         if (action.startsWith('obj_process_')) return beginHeldProcessorInsertion(action);
         return false;
@@ -28727,7 +28764,11 @@
           return;
         }
         if (window.FarmworkUI?.isPlanning?.()) {
-          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source); return; }
+          if (['action1', 'action2', 'action3'].includes(actionId)) {
+            if (phase === 'press') interruptBandagingForAction('farmwork-' + actionId, 'world-interaction');
+            dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source);
+            return;
+          }
           if (actionId === 'dodge' || actionId === 'toolSelect') {
             if (phase === 'press') window.FarmworkUI.setPlanning(false);
             return;
@@ -28736,6 +28777,10 @@
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
           return;
+        }
+        if (phase === 'press' && ['action1', 'action2', 'interact'].includes(actionId)
+          && (window.DevMapFurniture?.isActive?.() || window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.())) {
+          interruptBandagingForAction('furniture-editor-' + actionId, 'world-interaction'); // Placement claims can execute before the usual action dispatcher.
         }
         if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar();
@@ -28770,7 +28815,9 @@
           // The controller gameplay loop independently resolves physical buttons:
           // it does NOT consult ControllerInput.frame.pressed deletion. Claim
           // pickup here so the same release cannot recall/re-equip a tool.
-          if (window.Shattercasks?.toolArchAction?.() === 'pickup' && window.Shattercasks?.toolArchTap?.()) {
+          const shattercaskPickup = window.Shattercasks?.toolArchAction?.() === 'pickup'; // This pickup shortcut bypasses the normal action dispatcher.
+          if (shattercaskPickup) interruptBandagingForAction('shattercask_collect', 'world-interaction');
+          if (shattercaskPickup && window.Shattercasks?.toolArchTap?.()) {
             toolSelectPress.down = true;
             toolSelectPress.held = false;
             toolSelectPress.contextPickup = true;
@@ -28846,6 +28893,7 @@
           return;
         }
         if (phase === 'press' && furniturePlacementModeArmed() && (actionId === 'action1' || actionId === 'interact' || actionId === 'action2')) {
+          interruptBandagingForAction('furniture-place-' + actionId, 'world-interaction'); // Placing/canceling held furniture happens on this initial press.
           furniturePlacementActionPresses.add(actionId);
           if (actionId === 'action2') {
             cancelFurniturePlacementMode(true); // Action 2 mirrors the visible mobile Cancel button.
@@ -28885,12 +28933,16 @@
           return;
         }
         if (window.Fishing?.state?.active) {
-          if (actionId === 'interact' || actionId === 'action1') window.Fishing?.primaryAction();
+          if (actionId === 'interact' || actionId === 'action1') {
+            interruptBandagingForAction('fish_primary', 'world-interaction');
+            window.Fishing?.primaryAction();
+          }
           return;
         }
         if (menuOpen || farmEditMode) return;
         if(dispatchWorldInputClaim(actionId,'press',source))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (heldMode === 'item' && actionId === 'action1' && window.AlchemyFlasks?.heldActions?.().length) {
+          interruptBandagingForAction('alchemy_flask_primary');
           if (window.AlchemyFlasks.beginAim()) flaskActionPresses.add(actionId);
           return;
         }
@@ -31610,7 +31662,7 @@
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
           _heldItemPlane=null;_heldItemKey=null;_heldItemAppearanceSignature=null;heldItemHolder.visible=false;
         },
-        equipFestivalBowl: () => { window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        equipFestivalBowl: () => { releaseManualClothingForEquipmentSwitch(); window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
           updateHeldItemHolder(0);
@@ -31991,12 +32043,12 @@
         player,
         getInventoryStackItems,
         getActiveItemIndex: () => activeItemIndex,
-        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        setActiveItemIndex: (v) => { releaseManualClothingForEquipmentSwitch(); activeItemIndex = v; }, // The item arch replaces a Pack garment.
         ITEM_DEFS,
         applyItemSpriteIcon,
         clearItemSpriteIcon,
         getHeldMode: () => heldMode,
-        setHeldMode: (v) => { if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
+        setHeldMode: (v) => { if (v !== 'item') releaseManualClothingForEquipmentSwitch(); if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
         getLastHeldFarmTool: () => lastHeldFarmTool,
         setLastHeldFarmTool: (v) => { lastHeldFarmTool = v; },
         setActiveTool,

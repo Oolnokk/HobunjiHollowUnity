@@ -303,7 +303,7 @@
   // vertical edge is centered on the attacker's portrait volume, while its
   // whole sector rises/falls with pitch instead of narrowing to a 3D cone tip.
   function meleeColliderVolume(attacker, opts = {}, solutionOverride = null, reuse = null) {
-    const solution = solutionOverride || meleeSolutionForOptions(attacker, opts);
+    const solution = solutionOverride || (reuse && meleeProbeSolution(attacker, opts)) || meleeSolutionForOptions(attacker, opts); // Reused collider probes reuse the scratch aim as well; no throwaway Three.js vectors each frame.
     const rangeWorld = Math.max(0, Number(opts.rangePx) || 0) / (deps?.TILE || 64);
     const pitch = THREE.MathUtils.clamp(solution.pitch, -MAX_MELEE_AIM_PITCH_RAD, MAX_MELEE_AIM_PITCH_RAD);
     const box = solution.attackerHitbox?.box;

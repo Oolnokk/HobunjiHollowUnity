@@ -5,7 +5,7 @@
   const scriptUrls = [
     "js/input-hold-timing.js?v=20261116tapHoldAudit2",
     "js/combat/weapon-shape-stats.js?v=20261109grappledonor1",
-    "js/combat/combat-core.js?v=20261115h07ca528",
+    "js/combat/combat-core.js?v=20261121lungeProbeScratch1",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261117hRigImpact2",

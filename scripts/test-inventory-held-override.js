@@ -118,4 +118,22 @@ assert.equal(manualHeldItem, null, 'switching back to a tool clears the manual i
 assert.equal(heldMode, 'tool', 'tool selection takes control back normally');
 assert.equal(getActiveKey(), 'wheelB', 'tool selection does not corrupt the remembered item-arch selection');
 
+heldMode = 'tool';
+clickHold('✋ Hold', () => { manualHeldItem = { kind: 'bagItem', key: 'offArch' }; });
+clickHold('✋ Hold', () => { manualHeldItem = { kind: 'clothing', uid: 'pack-cloak' }; heldMode = 'item'; });
+assert.equal(heldMode, 'item', 'switching from bag Hold to clothing Hold never restores the old tool');
+assert.equal(manualHeldItem.kind, 'clothing', 'manual Hold now targets the garment');
+actionDeps.setActiveItemIndex(0);
+assert.equal(manualHeldItem, null, 'choosing a wheel item releases manual clothing Hold');
+assert.equal(getActiveKey(), 'wheelA', 'the new wheel selection remains active');
+
+clickHold('✋ Hold', () => { manualHeldItem = { kind: 'clothing', uid: 'pack-cloak' }; heldMode = 'item'; });
+actionDeps.putAwayHeldEquipment();
+assert.equal(manualHeldItem, null, 'stowing clears the manually held garment');
+assert.equal(heldMode, 'none', 'stow leaves empty hands');
+clickHold('✋ Hold', () => { manualHeldItem = { kind: 'clothing', uid: 'pack-cloak' }; heldMode = 'item'; });
+actionDeps.setHeldMode('tool');
+assert.equal(manualHeldItem, null, 'drawing a weapon releases the manual garment');
+assert.equal(heldMode, 'tool');
+
 console.log('inventory held override tests passed');

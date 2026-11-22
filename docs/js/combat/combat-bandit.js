@@ -534,10 +534,10 @@
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -668,6 +668,7 @@
 
     return {
       group, frontPlane: frontPivot, backPlane: backPivot, legsPivot, legs,
+      frontPortraitMesh: renderedFrontMesh, backPortraitMesh: renderedBackMesh, // Exact carriers used by frozen stance rendering.
       handsPivot, syncHandFrame() { handsPivot.rotation.y = (legsPivot.rotation.y || 0) + Math.PI / 2; }, // Keeps the hands frame turned exactly like the legs/planes (see game.js updateCreatureMesh, creature-death).
       handRigAvatarRoot: portrait, textureRoot: portrait, resolvedRosterDyes, spine,
       frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, profile,
@@ -2147,7 +2148,7 @@
   const BANDIT_NECK_LOOK_RAD = Math.PI / 180;
 
   function _updateBanditNeckYaw(c, targetDeg, dt) {
-    if (c?._maskboundHeadtakerNeckControlled) return; // Headtaker owns only scripted neck rotation; victim remains free to move and animate its body.
+    if (c?._maskboundHeadtakerNeckControlled) return; // Preserve the scripted turn; the weapon pose publisher keeps its rig live.
     const neck = c.avatarRef?.neckJoint;
     if (!neck?.front || !neck?.back) return;
     const state = c._banditNeckYaw || (c._banditNeckYaw = { currentDeg: 0 });
@@ -2164,9 +2165,27 @@
     // The pose's body yaw (idle weapon stance, swing wind-up) turns the whole group; the head must keep looking where the
     // glance/forward target says, exactly like the player's neck (target world yaw minus body yaw) and the Attack Editor's
     // automatic counter-turn. Recorded each frame by updateBanditToolMesh from the same sampled pose that yaws the group.
+    syncBanditForwardHead(c);
+  }
+
+  function syncBanditForwardHead(c) {
+    const neck = c.avatarRef?.neckJoint; // The shared melee/ranged idle pose turns both sides against the authored body yaw.
+    if (!neck?.front || !neck?.back) return;
+    const state = c._banditNeckYaw;
     const counterYawRad = -(Number(c._banditBodyYawRad) || 0);
-    neck.front.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
-    neck.back.rotation.y = state.currentDeg * BANDIT_NECK_LOOK_RAD + counterYawRad;
+    const busy = c._banditAction || c._banditToolTail || c._rangedAction || c._banditFlaskActionActive || c._maskboundHeadtakerNeckControlled;
+    const forwardYaw = busy ? null : counterYawRad; // Live actions and glances stay skinned even when briefly stationary.
+    const portrait = c.avatarRef;
+    if (portrait.frontPortraitMesh?.isSkinnedMesh) portrait.frontPortraitMesh.userData.hobunjiPortraitForwardYaw = forwardYaw;
+    if (portrait.backPortraitMesh?.isSkinnedMesh) portrait.backPortraitMesh.userData.hobunjiPortraitForwardYaw = forwardYaw;
+    if (c._maskboundHeadtakerNeckControlled) return;
+    neck.front.rotation.y = (state?.currentDeg || 0) * BANDIT_NECK_LOOK_RAD + counterYawRad;
+    neck.back.rotation.y = (state?.currentDeg || 0) * BANDIT_NECK_LOOK_RAD + counterYawRad;
+  }
+
+  function setBanditBodyYaw(c, radians) {
+    c._banditBodyYawRad = radians;
+    syncBanditForwardHead(c);
   }
 
   // Eases the neck glance back to center — called from game.js's hostile
@@ -2676,7 +2695,7 @@
     syncBanditWeaponScale(c, c._banditRangedToolHolder, c.def?.rangedWeaponKey, 'ranged');
     syncBanditWeaponScale(c, c._banditFlaskToolHolder, BANDIT_FLASK_TOOL_KEY, 'ranged');
     const holder = flaskActive ? c._banditFlaskToolHolder : c._banditToolHolder;
-    if (!holder) { releaseBanditBodySink(c); return; }
+    if (!holder) { setBanditBodyYaw(c, 0); releaseBanditBodySink(c); return; }
     if (flaskActive) {
       if (c._banditToolHolder) c._banditToolHolder.visible = false;
       if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
@@ -2835,7 +2854,7 @@
     const yawRad = sampled.yawRad;
     const rollRad = sampled.rollRad;
     const bodyYawRad = sampled.bodyYawRad;
-    c._banditBodyYawRad = bodyYawRad; // Read by _updateBanditNeckYaw so the head stays forward independent of body yaw.
+    setBanditBodyYaw(c, bodyYawRad); // Finalize the face-forward counter-turn in the same frame as the weapon stance.
     if (handDriverRoot) window.HobunjiDualWieldWeaponVisuals?.setCarriedSample(sampled, c._banditHandRecordKey ||= { avatarRoot: handDriverRoot }); // The invisible idle offhand tool peels the pose this holder carries right now.
     const sinkWorld = applyBanditBodySink(c, sampled, timelineLive); // Authored per-pose body sink (percent of height): sinks the body and folds the knees; the weapon below follows.
     if (c.avatarRef?.riderMount) {
@@ -3271,7 +3290,7 @@
     rollRoster: rollBanditRoster,
     clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
     updateCombatAI: updateBanditCombatAI,
-    restNeckLook,
+    restNeckLook, setBanditBodyYaw,
     updateMovementHeadLook,
     updateToolMesh: measuredBanditToolMesh, // Unchanged gameplay/pose calculation, with optional per-bandit swing timing.
     get swingPoseCpuMs() { return { ...banditSwingPoseCpuStats }; }, // Cheap mobile diagnostics without a full performance snapshot.

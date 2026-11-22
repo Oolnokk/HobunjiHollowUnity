@@ -323,6 +323,7 @@
 
   function beginInteractionHold(source = 'action2') {
     if (interactionHold || !withinInteractionRange()) return false;
+    window.BandageSystem?.cancel?.('world-interaction', { action:'campfire_menu' }); // Action 2 may arrive through the touch arch directly; interrupt before the held menu starts on every device.
     const owner = String(source); // Pairs this exact keyboard/controller or touch pointer with its eventual release.
     const hold = { owner, timer:null, opened:false, pointerCleanup:null, pointerStart:null, dragPoint:null, didDrag:false, durationMs:campfireHoldMs() }; // Captures the press threshold, touch/mouse origin and any deliberate pre-open drag.
     const touchPointerId = owner.startsWith('touch-arch:') ? Number(owner.slice('touch-arch:'.length)) : null; // Touch-arch ownership encodes its physical pointer ID.

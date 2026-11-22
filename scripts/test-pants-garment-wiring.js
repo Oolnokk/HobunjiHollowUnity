@@ -11,6 +11,45 @@ vm.createContext(win);
 for (const file of ['docs/config/pants-rigs.js', 'docs/js/pants-rig-core.js', 'docs/js/pants-garment-renderer.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), win, { filename: file });
 const Renderer = win.PantsGarmentRenderer;
 assert(Renderer, 'renderer did not install');
+
+// Real garment mesh creation: pants join the foot replay without changing global X-ray layer ranks.
+{
+  const garmentSource = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Executes the production mesh creation and registration path.
+  const start = garmentSource.indexOf('      if (!handle.mesh) {', garmentSource.indexOf('    handle.setAppearance = async next => {'));
+  const end = garmentSource.indexOf('      } else {', start);
+  assert(start >= 0 && end > start, 'garment creation block is available for the x-ray integration test');
+  const createMesh = new Function('THREE', 'handle', 'material', 'avatarGroup', 'global', 'MESH_NAME',
+    garmentSource.slice(start, end) + '      }\nreturn handle.mesh;');
+  const attached = []; // Tracks meshes made visible before the compositor receives their registration.
+  const avatarGroup = { add(mesh) { attached.push(mesh); mesh.parent = this; } };
+  const MockMesh = class {
+    constructor(geometry, material) {
+      this.isMesh = true;
+      this.geometry = geometry;
+      this.material = material;
+      this.userData = {};
+      this.layers = { mask: 1 };
+    }
+  };
+  const registered = []; // Production hook must be used instead of faking a color render-order change.
+  const runtime = { HeldObjectRenderOrder: { markWaterOccludedMesh(mesh) {
+    assert(mesh.parent === avatarGroup, 'pants must be attached before compositor registration');
+    registered.push(mesh);
+    mesh.userData.hobunjiWaterOccludedBySurface = true;
+    return true;
+  } } };
+  const live = createMesh({ Mesh: MockMesh }, { mesh: null, geometry: {} }, {}, avatarGroup, runtime, 'PantsGarmentMesh');
+  assert.strictEqual(registered.length, 1, 'pants register for selective foot-style replay exactly once');
+  assert.strictEqual(registered[0], live, 'the real garment is the registered participant');
+  assert.strictEqual(attached[0], live, 'the same mesh is attached to the avatar');
+  assert.strictEqual(live.userData.hobunjiPantsGarment, true);
+  assert.strictEqual(live.userData.hobunjiWaterOccludedBySurface, true);
+  assert(live.userData.hobunjiXrayDeformPadding > 0, 'GPU-skinned pants have conservative replay scissor bounds');
+  const late = createMesh({ Mesh: MockMesh }, { mesh: null, geometry: {} }, {}, avatarGroup, {}, 'PantsGarmentMesh');
+  assert.strictEqual(late.userData.hobunjiWaterOccludedBySurface, true,
+    'pants created before the compositor are tagged for the next scene scan');
+}
+
 const rendererSource = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Production portrait/feet depth contract, not a synthetic replacement.
 assert(rendererSource.includes('const PANTS_REST_PLANE_Z = 0;'),
   'rest garment lies on its owner\'s portrait rather than protruding through it');
