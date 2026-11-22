@@ -439,10 +439,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const api = window.HobunjiLongoranSpecies;
     const spineValues = api?.spineFor?.(entry.gender); // Single authored posture source shared with the game's portrait rig.
     const spine = window.HobunjiCharacterSpine?.bind?.(entry.model, { speciesId: 'longoran', gender: entry.gender, spine: spineValues });
-    entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // Exposed in mobile diagnostics if a portrait could not build its skinned spline.
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.('longoran', entry.gender, entry.profile);
-    if (scale) window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, 'longoran', entry.gender, scale, spine?.hunch || 0);
-    entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the real hunch immediately.
+    if (scale) window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, 'longoran', entry.gender, scale, spine?.hunch || 0); // Head scale and alpha-centroid neck contact resolve before generating the hunch.
+    entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // The spline is bent only after the skull-to-neck connection has been updated.
+    entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the actual scale/hunch result immediately.
   }
 
   function rebuildLongoranFeet(entry) {
