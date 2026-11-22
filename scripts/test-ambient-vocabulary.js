@@ -16,6 +16,84 @@ const context = vm.createContext({
   fetch: async url => ({ ok: true, status: 200, json: async () => String(url).includes('ambient-vocabulary.json') ? config : profiles }),
 }); // Evaluates actual browser modules with their configuration fetches, not a test-only clone.
 
+async function testStandaloneEditorInteraction(rules) {
+  const elements = new Map(); // Simulates the editor's minimal DOM event and content surfaces without requiring a browser binary.
+  function element(id, dataset = {}) {
+    let html = ''; // Kept per node so querying the same HTML returns the event-enabled nodes already bound by the editor.
+    const lookup = new Map();
+    return {
+      id, dataset, value: '', textContent: '', checked: false,
+      get innerHTML() { return html; },
+      set innerHTML(value) { html = String(value); lookup.clear(); },
+      querySelectorAll(selector) {
+        if (lookup.has(selector)) return lookup.get(selector);
+        const attribute = /^\[data-([a-z-]+)\]$/.exec(selector);
+        if (!attribute) return [];
+        const name = attribute[1]; // Exactly the editor's data-attribute selectors, not a general-purpose HTML parser.
+        const nameJs = name.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
+        const found = [];
+        const matchValue = new RegExp('data-' + name + '="([^"]+)"', 'g');
+        for (const match of html.matchAll(matchValue)) {
+          const node = element('', { [nameJs]: match[1] });
+          node.checked = /\bchecked(?:\s|>|$)/.test(html.slice(match.index, match.index + 160));
+          found.push(node);
+        }
+        lookup.set(selector, found);
+        return found;
+      },
+    };
+  }
+  const document = {
+    getElementById(id) {
+      if (!elements.has(id)) elements.set(id, element(id));
+      return elements.get(id);
+    },
+  }; // Provides only the IDs and event handlers used by the standalone editor.
+  const sample = JSON.parse(JSON.stringify(config)); // UI smoke edits an isolated document, never the fixture shared by other tests.
+  const sandboxWindow = { AmbientVocabularyRules: rules }; // Same rule implementations already executed in the runtime tests.
+  const fetch = async url => ({ ok: true, status: 200, json: async () => String(url).includes('ambient-vocabulary.json') ? sample
+    : String(url).includes('npc-reaction-profiles.json') ? profiles
+    : { npcs: [{ id: 'pahu', name: 'Pahu' }, { id: 'sloomi', name: 'Sloomi' }] } });
+  vm.runInNewContext(file('docs/js/ambient-vocabulary-editor.js'), { window: sandboxWindow, document, fetch });
+  for (let i = 0; i < 16; i++) await Promise.resolve(); // Resolve the same three configuration requests used during real editor boot.
+  const panel = document.getElementById('editor');
+  const sidebar = document.getElementById('list');
+  assert.ok(panel.innerHTML.includes('Master synonym dictionary'), 'Standalone dictionary should load on its own');
+  const chooseNpc = sidebar.querySelectorAll('[data-entry]').find(node => node.dataset.entry === 'npc:pahu');
+  assert.ok(typeof chooseNpc?.onclick === 'function', 'NPC chooser must be interactive');
+  chooseNpc.onclick();
+  assert.ok(panel.innerHTML.includes('data-check-synonym='), 'The NPC editor must expose shared synonym checkboxes');
+  const original = Object.keys(sample.lexicon).sort((a, b) => a.localeCompare(b))[0];
+  document.getElementById('checkNone').onclick();
+  assert.equal(sample.characters.pahu.selections[original].length, 0, 'Uncheck all must store an explicit empty override');
+  document.getElementById('checkAll').onclick();
+  assert.equal(sample.characters.pahu.selections[original].length, sample.lexicon[original].length, 'Check all must reference every master synonym ID');
+  assert.equal(Object.hasOwn(sample.characters.pahu, 'table'), false, 'Checkbox operations must not copy synonym text');
+  const slider = panel.querySelectorAll('[data-axis]').find(node => node.dataset.axis === 'verbosity');
+  assert.ok(slider?.oninput, 'NPC verbosity slider should be interactive');
+  slider.value = '93';
+  slider.oninput();
+  assert.equal(sample.characters.pahu.sliders.verbosity, 93, 'Slider changes must reach the correct NPC');
+
+  const chooseMaster = sidebar.querySelectorAll('[data-entry]').find(node => node.dataset.entry === 'dictionary');
+  chooseMaster.onclick();
+  const candidate = sample.lexicon[original][0];
+  const stableId = candidate.id;
+  const input = panel.querySelectorAll('[data-edit-synonym]').find(node => node.dataset.editSynonym === stableId);
+  assert.ok(input?.onchange, 'Master synonym edits must be interactive');
+  input.value = 'canonical replacement for testing';
+  input.onchange();
+  assert.equal(sample.lexicon[original][0].id, stableId, 'Renaming a synonym must preserve the stable ID');
+  assert.equal(sample.lexicon[original][0].text, 'canonical replacement for testing');
+  assert.ok(sample.characters.pahu.selections[original].includes(stableId), 'Renaming a global entry must preserve character checkmarks');
+  assert.ok(rules.resolveSelections(sample.lexicon, sample.characters.pahu.selections)[original]
+    .includes('canonical replacement for testing'), 'One shared text update must affect character vocabulary');
+
+  chooseNpc.onclick(); // The old sidebar node is deliberately re-used to ensure selecting a different pane remains safe.
+  assert.ok(panel.innerHTML.includes('canonical replacement for testing'), 'NPC checkboxes must display the updated canonical word');
+  assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().characterOverrides, 1);
+}
+
 async function main() {
   vm.runInContext(file('docs/js/ambient-vocabulary-rules.js'), context);
   vm.runInContext(file('docs/js/ambient-vocabulary.js'), context);
@@ -124,6 +202,7 @@ async function main() {
   assert.ok(!editor.includes('data-vocab-table-alternatives'), 'NPC editor must not store duplicate synonym text lists');
   assert.ok(editor.includes('previewResult'));
   new Function('window', editor); // Parse actual integration script even without a browser DOM.
+  await testStandaloneEditorInteraction(rules);
   console.log('Ambient vocabulary tests passed: shared checkbox references, global synonym updates, article agreement, tokens, floating dialogue isolation, standalone editor.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
