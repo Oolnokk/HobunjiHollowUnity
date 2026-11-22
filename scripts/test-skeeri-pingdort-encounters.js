@@ -339,7 +339,7 @@ async function check(){
   const savedLineage=[...storage.entries()].find(([key])=>key.startsWith('pingdort:family:unit:map_southern_cloud_forest:'));
   assert(savedLineage&&JSON.stringify(JSON.parse(savedLineage[1]))===JSON.stringify(homeNest.genotype),
     'the family genotype survives a streamed nest rebuild and page reload');
-  assert(wildBirds.every(a=>a.branchSurfaceY>=12.5),'all roosting birds remain above their raised shelf, not buried in terrain');
+  assert(wildBirds.every(a=>a.branchSurfaceY===homeNest.worldY),'every resting bird uses the physical nest shelf height, with no hidden flock or slot lift');
   const nest=w.PingdortFlocks.debugSnapshot().habitats[0].nests[0];
   assert.equal(nest.y,12.5,'nest visuals and egg records use the physical minicliff elevation');
   assert.equal(nest.x,47.5,'nest uses the exposed cap tile rather than solid parent-cliff rock');
