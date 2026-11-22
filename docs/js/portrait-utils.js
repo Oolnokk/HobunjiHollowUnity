@@ -2060,10 +2060,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const cutoutApi = window.PortraitBeardHoodCutout;
   const beardAuthoring = resolveBeardHoodAuthoring(facialHair, resolvedFighter);
   const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride || beardAuthoring.mask;
+  const whiskerMask = renderOptions?.beardHoodWhiskerMaskOverride || beardAuthoring.whiskers; // Priority beard marks defeat protected hood pixels.
   const tuftRoots = renderOptions?.beardHoodTuftRootsOverride || beardAuthoring.roots;
   let negotiatedBeard = null, negotiatedHood = null, negotiation = null, negotiationError = null; // Prepared before the beard's original stage; errors must not let protected hood pixels be carved.
   if (cutoutApi && facialHairLayers.length && hoodLayers.length
-      && !hiddenCosmeticGroups.has(facialHair) && paintedBeardMask?.runs?.length) {
+      && !hiddenCosmeticGroups.has(facialHair)
+      && (paintedBeardMask?.runs?.length || whiskerMask?.runs?.length)) {
     const beardScratch = canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'); // Reused per portrait instance, not per redraw.
     const hoodScratch = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Existing front-hood scratch surface.
     for (const scratch of [beardScratch, hoodScratch]) {
@@ -2079,9 +2081,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
       aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
     });
-    const allowance = resolveHoodBeardAllowanceMask(hood, resolvedFighter);
-    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, allowance,
-      {hoodMoves:stretch.moves}); // Permission pixels follow the same deformed front cloth.
+    const hoodPolicy = resolveHoodBeardPolicy(hood, resolvedFighter);
+    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
+      {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
+        whiskerMask}); // Automatic cone follows the stretched ring; whiskers override protected pixels.
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
@@ -2431,7 +2434,7 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function resolveBeardHoodAuthoring(option, fighter) {
-  if (!option) return {mask:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
+  if (!option) return {mask:null,whiskers:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
   const cutout = window.PortraitBeardHoodCutout;
   if (fighter) {
     const keys=portraitVariantKeysForFighter(fighter, option);
@@ -2444,10 +2447,12 @@ function resolveBeardHoodAuthoring(option, fighter) {
         ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftRoots||{},key)
         ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftMaxStretch||{},key)
         ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftSubdivision||{},key)
+        ||Object.prototype.hasOwnProperty.call(option.variantHoodWhiskerMasks||{},key)
       );
       if (!option.variantLayers?.[key]?.length && !exactSharedArt) continue;
       return {
         mask:option.variantHoodCutoutMasks?.[key] ?? option.hoodCutoutMask ?? null,
+        whiskers:option.variantHoodWhiskerMasks?.[key] ?? option.hoodWhiskerMask ?? null,
         roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] ?? option.hoodTuftRoots),
         maxStretch:Number.isFinite(option.variantHoodTuftMaxStretch?.[key])
           ? option.variantHoodTuftMaxStretch[key] : option.hoodTuftMaxStretch,
@@ -2460,23 +2465,35 @@ function resolveBeardHoodAuthoring(option, fighter) {
       };
     }
   }
-  return {mask:option.hoodCutoutMask||null,roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[],
+  return {mask:option.hoodCutoutMask||null,whiskers:option.hoodWhiskerMask||null,
+    roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[],
     maxStretch:option.hoodTuftMaxStretch,
     subdivision:cutout?.normalizeSubdivision(option.hoodTuftSubdivision),
     aboveInfluence:cutout?.normalizeVerticalInfluence(option.hoodTuftAboveInfluence),
     belowInfluence:cutout?.normalizeVerticalInfluence(option.hoodTuftBelowInfluence)};
 }
 
-function resolveHoodBeardAllowanceMask(option, fighter) {
-  if (!option) return null;
-  const variants = option.variantBeardCutoutAllowedMasks;
-  if (fighter && variants) {
-    // Explicit variant permissions take precedence even when the hood itself
-    // uses shared artwork. Empty variant masks intentionally protect all cloth.
-    for (const key of portraitVariantKeysForFighter(fighter, option))
-      if (Object.prototype.hasOwnProperty.call(variants,key)) return variants[key];
+function resolveHoodBeardPolicy(option, fighter) {
+  const api=window.PortraitBeardHoodCutout;
+  if (!option) return {mask:null,mode:'auto',coneSpread:0};
+  let mask=option.beardCutoutAllowedMask??null;
+  let mode=option.beardCutoutPermissionMode;
+  let spread=option.beardCutoutConeSpread;
+  if (fighter) {
+    for(const key of portraitVariantKeysForFighter(fighter,option)){
+      const hasMode=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutPermissionMode||{},key);
+      const hasMask=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutAllowedMasks||{},key);
+      const hasSpread=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutConeSpread||{},key);
+      if(!hasMode&&!hasMask&&!hasSpread)continue;
+      if(hasMask)mask=option.variantBeardCutoutAllowedMasks[key];
+      if(hasMode)mode=option.variantBeardCutoutPermissionMode[key];
+      if(hasSpread)spread=option.variantBeardCutoutConeSpread[key];
+      break;
+    }
   }
-  return option.beardCutoutAllowedMask ?? null; // Legacy hoods without a mask accept every beard request.
+  const resolvedMode=['auto','painted','all'].includes(mode)
+    ? mode : (mask?'painted':'auto'); // Existing authored masks remain painted; absent policies use a generated cone.
+  return {mask,mode:resolvedMode,coneSpread:api?.normalizeConeSpread(spread)??0};
 }
 
 function portraitOptionFromJson(entry, json) {
@@ -2530,7 +2547,9 @@ function portraitOptionFromJson(entry, json) {
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
   const maskApi = window.PortraitBeardHoodCutout;
-  const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null; // Authored in front-portrait coordinates, independent of beard art tint.
+  const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null;
+  const hoodWhiskerMask = maskApi?.normalizeMask?.(json.hoodWhiskerMask) || null; // Priority whisker pixels belong to beard cosmetic.
+  const variantHoodWhiskerMasks = {}; // Shared/variant whisker paint is independent from normal requests. // Authored in front-portrait coordinates, independent of beard art tint.
   const hoodTuftRoots = maskApi?.normalizeRoots?.(json.hoodTuftRoots) || []; // Optional inner-ring stretch targets, not extra beard geometry.
   const hoodTuftMaxStretch = json.hoodTuftMaxStretch != null && Number.isFinite(Number(json.hoodTuftMaxStretch))
     ? Math.max(0,Math.min(64,Number(json.hoodTuftMaxStretch))) : 36; // Fractional displacement budget: 0 disables, no sudden all-or-nothing threshold.
@@ -2542,14 +2561,25 @@ function portraitOptionFromJson(entry, json) {
   const variantHoodTuftSubdivision = {}; // Individual variant beard art can set its own influence locality.
   const variantHoodTuftMaxStretch = {}; // Species-specific settings, when explicitly authored.
   const variantHoodTuftRoots = {}; // Species-specific tuft positions match the same resolved beard artwork.
-  const beardCutoutAllowedMask = maskApi?.normalizeMask?.(json.beardCutoutAllowedMask) || null; // A hood-owned removal permission mask; null is legacy fully-removable.
+  const beardCutoutAllowedMask = maskApi?.normalizeMask?.(json.beardCutoutAllowedMask) || null;
+  const beardCutoutPermissionMode = ['auto','painted','all'].includes(json.beardCutoutPermissionMode)
+    ? json.beardCutoutPermissionMode : null; // Missing field selects painted if an authored mask exists, otherwise auto.
+  const beardCutoutConeSpread = maskApi?.normalizeConeSpread?.(json.beardCutoutConeSpread) ?? 0; // Cone expansion below detected inner ring.
+  const variantBeardCutoutPermissionMode = {}; // Explicit variant choice of auto/painted/allow-all.
+  const variantBeardCutoutConeSpread = {}; // Per-variant expansion rate. // A hood-owned removal permission mask; null is legacy fully-removable.
   const variantBeardCutoutAllowedMasks = {}; // Explicit empty masks mean this hood variant forbids all beard penetration.
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
   for (const [key, value] of Object.entries(json.speciesVariants || {})) {
     const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
+    const whiskers = maskApi?.normalizeMask?.(value?.hoodWhiskerMask);
+    if (whiskers) variantHoodWhiskerMasks[key]=whiskers;
     if (mask) variantHoodCutoutMasks[key] = mask; // An explicitly empty variant mask clears the shared cutout.
     const allowed = maskApi?.normalizeMask?.(value?.beardCutoutAllowedMask);
     if (allowed) variantBeardCutoutAllowedMasks[key] = allowed;
+    if (['auto','painted','all'].includes(value?.beardCutoutPermissionMode))
+      variantBeardCutoutPermissionMode[key]=value.beardCutoutPermissionMode;
+    if (value?.beardCutoutConeSpread != null)
+      variantBeardCutoutConeSpread[key]=maskApi?.normalizeConeSpread?.(value.beardCutoutConeSpread)??0;
     if (Array.isArray(value?.hoodTuftRoots))
       variantHoodTuftRoots[key] = maskApi?.normalizeRoots?.(value.hoodTuftRoots) || []; // [] explicitly disables inherited shared corners.
     if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
@@ -2564,7 +2594,10 @@ function portraitOptionFromJson(entry, json) {
   return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots, hoodTuftMaxStretch, variantHoodTuftMaxStretch, hoodTuftSubdivision, variantHoodTuftSubdivision,
     hoodTuftAboveInfluence, hoodTuftBelowInfluence,
     variantHoodTuftAboveInfluence, variantHoodTuftBelowInfluence,
-    beardCutoutAllowedMask, variantBeardCutoutAllowedMasks };
+    beardCutoutAllowedMask, variantBeardCutoutAllowedMasks,
+    beardCutoutPermissionMode,variantBeardCutoutPermissionMode,
+    beardCutoutConeSpread,variantBeardCutoutConeSpread,
+    hoodWhiskerMask,variantHoodWhiskerMasks };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
