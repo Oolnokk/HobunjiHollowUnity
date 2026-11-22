@@ -475,16 +475,27 @@
 
   // ── Effect channels ──────────────────────────────────────────────
   const MIN_STACKED_MULTIPLIER = 0.1; // Prevents additive reductions from removing all incoming damage, recovery or Stamina cost.
-  function additiveMultiplier(values) {
-    let delta = 0; // Each percentage contributes relative to the unmodified baseline, never to another trinket.
-    for (const value of values) if (Number.isFinite(value) && value > 0) delta += value - 1;
-    return Math.max(MIN_STACKED_MULTIPLIER, 1 + delta);
-  }
-
   function statMultiplier(entity, key) {
     if (!entity) return 1;
     if (entity !== player()) return entity._enemyTrinketStats?.[key] ?? 1; // Enemies use spawn-cached definitions; unassigned NPCs remain unchanged.
-    return additiveMultiplier(equippedEntries().map(entry => Number(entry.def?.effects?.stats?.[key])));
+    let delta = 0; // Each trinket adds its percentage relative to baseline, not to the result of previous trinkets.
+    for (const entry of equippedEntries()) {
+      const value = Number(entry.def?.effects?.stats?.[key]);
+      if (Number.isFinite(value) && value > 0) delta += value - 1;
+    }
+    return Math.max(MIN_STACKED_MULTIPLIER, 1 + delta);
+  }
+
+  function scaleEnemyHit(entity, amount, options = {}) {
+    if (!entity?._enemyTrinketStats || entity === player()) return null;
+    const health = statMultiplier(entity, 'outgoingHealthDamage'); // Combat damage uses the identical additive bonus as the player's stat provider.
+    const footing = statMultiplier(entity, 'outgoingFootingDamage'); // Footing must not inherit an unrelated Health-only trinket bonus.
+    if (health === 1 && footing === 1) return null;
+    const priorFooting = Number(options.footingDamageMultiplier); // The attack's pre-existing Footing coefficient remains authoritative.
+    return {
+      amount: amount * health,
+      options: { ...options, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * footing / health },
+    };
   }
 
   function configureEnemy(entity, ids) {
@@ -714,6 +725,7 @@
     statMultiplier,
     configureEnemy,
     rollEnemyLoadout,
+    scaleEnemyHit,
     combatMultiplier: key => statMultiplier(player(), key), // Shared player-only combat-effect read for collision, flask, and dodge adapters.
     perkBonusRanks,
     companionModifiers,
