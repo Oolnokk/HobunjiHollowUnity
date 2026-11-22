@@ -2,12 +2,12 @@
   'use strict';
   // combat-enemies: feature-owned classic scripts in the original parser execution order.
   const scriptUrls = [
-    "js/combat/ranged-weapons.js?v=20261118torchAimSize5",
+    "js/combat/ranged-weapons.js?v=20261122hec773cf",
     "js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/melee-hud-reticle.js?v=20261114musicReticleMerge1",
     "js/combat/enemy-loadout-rules.js?v=20261101playerhead3",
     "js/combat/npc-duel-staging.js?v=20261117hypedNpc1",
-    "js/combat/combat-bandit.js?v=20261119hb4433e2",
+    "js/combat/combat-bandit.js?v=20261122h899925a",
     "js/combat/ghoul-special-variants.js?v=20261031ghoulvar1",
     "js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1",
     "js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b",

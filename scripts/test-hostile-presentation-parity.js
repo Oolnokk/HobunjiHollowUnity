@@ -55,9 +55,33 @@ assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/procedural
 // 4. Head stays forward independent of body yaw.
 {
   const bandit = read('docs/js/combat/combat-bandit.js');
-  assert.match(bandit, /c\._banditBodyYawRad = bodyYawRad;/, 'sampled body yaw is recorded');
-  assert.match(bandit, /const counterYawRad = -\(Number\(c\._banditBodyYawRad\) \|\| 0\);/, 'neck counter-turns the body yaw');
-  assert.match(bandit, /neck\.front\.rotation\.y = state\.currentDeg \* BANDIT_NECK_LOOK_RAD \+ counterYawRad;/, 'front neck uses it');
+  assert.match(bandit, /setBanditBodyYaw\(c, bodyYawRad\);/, 'sampled body yaw is recorded');
+  assert.match(read('docs/js/combat/ranged-weapons.js'), /setBanditBodyYaw\?\.\(c, bodyYawRad\)/, 'ranged stance uses the same forward head counter-turn');
+  const start = bandit.indexOf('  const BANDIT_NECK_LOOK_MAX_YAW_DEG');
+  const end = bandit.indexOf('  // Eases the neck glance', start);
+  const { setBanditBodyYaw, look } = vm.runInNewContext(`${bandit.slice(start, end)}
+({ setBanditBodyYaw, look: _updateBanditNeckYaw })`);
+  const front = { rotation: { y: 0 } }, back = { rotation: { y: 0 } }; // Both authored portrait faces carry the same world-facing yaw.
+  const frontPortraitMesh = { isSkinnedMesh: true, userData: {} };
+  const backPortraitMesh = { isSkinnedMesh: true, userData: {} };
+  const actor = { avatarRef: { neckJoint: { front, back }, frontPortraitMesh, backPortraitMesh } };
+  for (const yaw of [0.2, -0.35, 0.42]) {
+    setBanditBodyYaw(actor, yaw);
+    near(front.rotation.y, -yaw, 'front remains forward in the ready stance');
+    near(back.rotation.y, -yaw, 'rear remains forward in the ready stance');
+    near(frontPortraitMesh.userData.hobunjiPortraitForwardYaw, -yaw, 'bake targets the exact authored counter-turn');
+    near(backPortraitMesh.userData.hobunjiPortraitForwardYaw, -yaw, 'rear bake uses the same forward yaw');
+  }
+  look(actor, 14, 1);
+  near(front.rotation.y, -0.42 + 14 * Math.PI / 180, 'independent gaze is still applied on top of the stance');
+  near(frontPortraitMesh.userData.hobunjiPortraitForwardYaw, -0.42, 'the independent turn differs from the frozen forward pose');
+  actor._rangedAction = { kind: 'fire' };
+  setBanditBodyYaw(actor, 0.33);
+  assert.equal(frontPortraitMesh.userData.hobunjiPortraitForwardYaw, null, 'a live ranged action cannot reuse a frozen idle');
+  actor._maskboundHeadtakerNeckControlled = true;
+  front.rotation.y = 0.83;
+  setBanditBodyYaw(actor, 0.04);
+  near(front.rotation.y, 0.83, 'the scripted turn retains ownership');
   assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /restNeckLook\(c, dt\)/, 'workshop runs the idle neck update');
 }
 
