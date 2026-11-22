@@ -75,7 +75,7 @@
 
   async function loadSettings() {
     try {
-      const response = await fetch('config/dialogue/ambient-dialogue.json');
+      const response = await fetch('config/dialogue/ambient-dialogue.json', { cache: 'no-store' }); // Fresh authored NPC greetings on next launch; one startup request, never per bubble.
       state.settings = mergeSettings(response.ok ? await response.json() : null);
     } catch (_) {
       state.settings = mergeSettings(null);
