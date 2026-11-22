@@ -1046,6 +1046,27 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
           ||Cut.decodeMask(autoNarrow.mask)[120*SIZE+100]!==0
           ||Cut.decodeMask(autoNarrow.mask)[145*SIZE+100]!==1)
         throw Error('Lower inner-ring auto detection or cone widening failed');
+      const testUpperCone=Cut.autoHoodTopCoverMask(pristineRing,0,{bottomPoints:autoNarrow.bottomPoints});
+      const testWideUpperCone=Cut.autoHoodTopCoverMask(pristineRing,.5,{bottomPoints:autoNarrow.bottomPoints});
+      const testCoverBits=Cut.decodeMask(testUpperCone.mask);
+      if(testUpperCone.topPoints.length<20 || testWideUpperCone.coverPixels<=testUpperCone.coverPixels
+          ||testCoverBits[80*SIZE+100]!==1 || testCoverBits[145*SIZE+100]!==0)
+        throw Error('Upper rim is not detected, widened or stopped at lower rim');
+      const droopingBeardTest=blank(),droopingHoodTest=blank();
+      const droopBeardCtx=droopingBeardTest.getContext('2d'),droopHoodCtx=droopingHoodTest.getContext('2d');
+      droopBeardCtx.fillStyle='#b87f5c';droopHoodCtx.fillStyle='#668aaf';
+      for(const y of [80,145]){droopBeardCtx.fillRect(100,y,1,1);droopHoodCtx.fillRect(100,y,1,1);}
+      const testTopWhiskerBits=new Uint8Array(SIZE*SIZE);
+      testTopWhiskerBits[80*SIZE+100]=1;testTopWhiskerBits[145*SIZE+100]=1;
+      const topNegotiation=Cut.negotiateBeardHood(droopingBeardTest,droopingHoodTest,null,empty(),{
+        whiskerMask:Cut.encodeMask(testTopWhiskerBits),permissionMode:'painted',
+        topConeSpread:0,topCover:testUpperCone
+      });
+      if(topNegotiation.topCoverWhiskers!==1||topNegotiation.whiskerWins!==1
+          ||droopBeardCtx.getImageData(100,80,1,1).data[3]!==0
+          ||droopHoodCtx.getImageData(100,80,1,1).data[3]!==255
+          ||droopHoodCtx.getImageData(100,145,1,1).data[3]!==0)
+        throw Error('Upper cover did not beat whiskers ONLY near their roots');
       const winnerBeard=blank(),winnerHood=blank();
       const wb=winnerBeard.getContext('2d'),wh=winnerHood.getContext('2d');
       wb.fillStyle='#b87f5c';wb.fillRect(92,92,1,1);
@@ -1058,7 +1079,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         ||wh.getImageData(92,92,1,1).data[3]!==0
         ||wb.getImageData(92,92,1,1).data[3]!==255)
         throw Error('Priority whisker did not defeat protected hood pixels');
-      status('2D Canvas self-test PASS: hood/bristle 95% opacity cutoffs, adjustable ring threshold, expanding cone, winning whiskers, outlines and 0.25px stretch.');
+      status('2D Canvas self-test PASS: strict upper cover beats whisker roots, lower whiskers win, two cones, 95% alpha, outlines and subpixel stretch.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
