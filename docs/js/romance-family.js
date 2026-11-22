@@ -32,7 +32,6 @@
   let pendingBabyPromptScheduled = false; // Prevents the lifecycle tick from racing an already queued birth/naming overlay.
   let registeredSocialGraph = null; // Previously linked social graph, used to detect world changes.
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
-  const registeredChildSpeechPhases = new Map(); // Tracks last successfully registered ambient greeting phase for each child; used only by family tick/restore.
 
   function defaultFamily() {
     return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, spouseVatId: null, spouseVatWorkerId: null };
@@ -301,15 +300,8 @@
     const child = fam.children.find(entry => entry.id === npcId); // The saved birthday, not a rendered avatar flag, decides whether the speaker is a newborn.
     return !!child && phaseOf(child) === 'basket';
   }
-  const fallbackBabyNoises = Object.freeze(['Agoo!', 'Guh-buh!', 'Baba-ba!', 'Ahh-oo!']); // Safe fallback if a custom family configuration omits infant utterances.
   function babyAmbientSound(npcId, random = Math.random) {
-    if (!isBasketBaby(npcId)) return null; // Toddlers and older children return immediately to their normal age-appropriate speech.
-    const authored = cfg().babyAmbientNoises;
-    const options = Array.isArray(authored) ? authored.filter(line => typeof line === 'string' && line.trim()) : fallbackBabyNoises; // Authorable phonetic syllables; never a generated synonym or stage-direction text.
-    const pool = options.length ? options : fallbackBabyNoises;
-    const roll = Number(random());
-    const index = Math.min(pool.length - 1, Math.max(0, Math.floor((Number.isFinite(roll) ? roll : 0) * pool.length)));
-    return pool[index];
+    return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Separate module owns phonetics; saved age remains in the family owner.
   }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
   function toddlingFooting(child) {
@@ -468,7 +460,7 @@
     ensureWalker(child);
     const walker = walkerFor(child);
     const phase = phaseOf(child);
-    syncChildAmbientGreetings(child); // Refresh only when growing from baby to toddler/child; no per-frame text generation.
+    window.FamilyBabyAmbientVoice?.sync?.(child.id, phase, cfg()); // Register only on age-phase transitions through the dedicated ambient voice module.
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
@@ -576,20 +568,9 @@
     const text = lines[(H.rawDay() + child.id.length) % lines.length];
     return { id: `tree_${child.id}`, label: `${child.name}`, trigger: 'interact', priority: 1, entryNode: `${child.id}_n1`, nodes: [{ id: `${child.id}_n1`, type: 'text', text, next: null, expression: 'smile' }] };
   }
-  function syncChildAmbientGreetings(child) {
-    const phase = phaseOf(child);
-    if (registeredChildSpeechPhases.get(child.id) === phase) return;
-    const pool = phase === 'basket' ? cfg().babyAmbientNoises
-      : phase === 'toddler' ? cfg().toddlerAmbientGreetings
-      : ['Hi {targetName}!', 'Hiya!', 'Look what I found!', 'Can we play later?']; // Existing older-child greetings, with the AmbientDialogue-supported {targetName} token.
-    const lines = Array.isArray(pool) && pool.some(text => typeof text === 'string' && text.trim())
-      ? pool.filter(text => typeof text === 'string' && text.trim())
-      : phase === 'basket' ? fallbackBabyNoises : phase === 'toddler' ? ['Da! Da!', 'Up! Up!'] : ['Hiya!'];
-    if (window.AmbientDialogue?.setNpcGreetings?.(child.id, { player: lines })) registeredChildSpeechPhases.set(child.id, phase); // Retry on later family ticks if ambient dialogue has not initialized yet.
-  }
   function registerChildDialogue(child) {
     window.DialogueContent?.registerTreeProvider?.(child.id, () => childTree(child));
-    syncChildAmbientGreetings(child);
+    window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()); // Dynamic family members share a single age-aware voice policy.
   }
 
   // ── Command wheel (family squeezing jobs) ─────────────────────────────
@@ -916,8 +897,7 @@
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
-    for (const child of fam.children) window.AmbientDialogue?.setNpcGreetings?.(child.id, null); // Remove old-world runtime child pools before replacing saved family members.
-    registeredChildSpeechPhases.clear(); // Different saved world/character may reuse an old child ID with a different age.
+    window.FamilyBabyAmbientVoice?.clear?.(); // Clears dynamic child voice registrations from the prior saved world.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
@@ -955,7 +935,7 @@
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     isWardrobeChild: id => fam.children.some(child => child.id === id), // Fast per-frame physical wardrobe targeting avoids allocating a full family snapshot.
     wardrobeChildName: id => fam.children.find(child => child.id === id)?.name || null, // The interaction label follows a renamed child without querying the full family snapshot.
-    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, syncChildAmbientGreetings, getFamily: () => fam },
+    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, syncChildAmbientGreetings: child => window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()), getFamily: () => fam },
   };
   window.RomanceFamily = api;
 })();
