@@ -129,6 +129,23 @@ target.strikeHandler = () => { throw new Error('boom'); };
 const warn = console.warn; console.warn = () => {};
 assert.doesNotThrow(() => Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: 0.6, yaw: 0, pitch: 0 })); console.warn = warn;
 
+// An exact lunge stop on a suspended burden must resolve the strike even if the
+// older broad-phase approximation misses; the normal strike must not swing it twice.
+target.strikeHandler = (b, info) => { calls.push([b.id, info.attacker === player, info.source]); return true; };
+const originalCollider = collider;
+collider = { origin: new Vector3(-100, .35, -100), yaw: 0, horizontalRangeWorld: .5,
+  verticalRiseWorld: 0, halfConeRad: .3, halfHeightWorld: .1, direction: new Vector3(1, 0, 0) };
+player.lungeOriginMs = performance.now();
+const beforeDirect = calls.length;
+Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0,
+  lungeContact: true, targetBurden: target });
+assert.equal(calls.length, beforeDirect + 1, 'confirmed hanging burden contact executes its strike handler');
+assert.equal(target.exploded, false, 'rope-strike handler keeps the burden intact');
+collider = originalCollider;
+Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0 });
+assert.equal(calls.length, beforeDirect + 1, 'the scheduled melee pass does not repeat that lunge contact');
+
+
 // ---- interact hangs a carried burden on a rope when one is in reach, otherwise drops it
 let hangCalls = 0, hangResult = true;
 game.HangingRopes = { tryHang: held => { hangCalls++; return hangResult && !!held; }, tick() { game.__ropeTicks = (game.__ropeTicks || 0) + 1; } };
