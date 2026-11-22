@@ -696,7 +696,7 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(api.debugSnapshot().ecology.bandits, 0, 'mobile ecology diagnostics exclude carried actors from ground combat');
   bandit.tzatzulCapturedBy = null; bandit.state = 'return'; // Release restores normal target selection on the next ecology pass.
   api.__test.updateChunkEcology();
-  assert.equal(pora._chunkCombatTarget, bandit, 'a surviving released bandit can rejoin the fight');
+  assert.equal(bandit._chunkCombatTarget, pora, 'a surviving released bandit can rejoin the fight without stealing a still-committed tribal target');
 
 
   hostileObjects.delete(bandit);
