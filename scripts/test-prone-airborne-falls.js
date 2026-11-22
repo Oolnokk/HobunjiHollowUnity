@@ -157,4 +157,46 @@ assert.equal(beginProneAirFall(player, true), true, 'already falling player stay
 assert.equal(player.proneThrowT, 0);
 assert.equal(player._knockbackLedgeFall.elapsed, .2);
 
+// A captured player and a creature on a high perch must detach at their
+// live flight height, not snap to the pre-capture floor or take an extra
+// immediate branch injury before the final cliff-impact calculation.
+let captiveDrops = 0, legacyPerchDamage = 0, physicalFlight = null;
+airWorld.TzatzulFlightRuntime = { releaseProneCaptive(actor) {
+  captiveDrops++;
+  actor.tzatzulCapturedBy = null;
+  actor.onPerch = null; actor.onBranch = null;
+  return true;
+} };
+airWorld.PerchSupport = { release(actor, _reason, options) {
+  assert.equal(options.deferLegacyKnockback, true);
+  legacyPerchDamage++;
+  actor.onPerch = null; actor.onBranch = null;
+  return { fell: true };
+} };
+airWorld.PlayerJump = {
+  knockProne: () => player._freeJump?.phase === 'air',
+  beginFlight: flight => { physicalFlight = { ...flight, phase: 'air' }; player._freeJump = physicalFlight; return physicalFlight; },
+};
+player._knockbackLedgeFall = null;
+player.climbing = false; player.onClimbSurface = null; player._freeJump = null;
+player.tzatzulCapturedBy = 'carrier'; player.onBranch = { perchSupport: true };
+player.onPerch = { id: 'talon' }; player.branchSurfaceY = 6.2;
+player.proneThrowT = 0.34;
+assert.equal(beginProneAirFall(player, true), true);
+assert.equal(captiveDrops, 1);
+assert.equal(player.tzatzulCapturedBy, null);
+assert.equal(legacyPerchDamage, 0, 'Tzatzul release already detached the perch; no second release is applied');
+assert.equal(physicalFlight.y, 6.2, 'player flight starts at live talon elevation');
+assert.equal(physicalFlight.vy, 0);
+assert.equal(player.prone, true);
+const highPerchCreature = {
+  health: 60, x: 100, y: 100, prone: true, onBranch: { perchSupport: true },
+  onPerch: { id: 'branch' }, branchSurfaceY: 3.75,
+};
+assert.equal(beginProneAirFall(highPerchCreature, false), true);
+assert.equal(legacyPerchDamage, 1);
+assert.equal(highPerchCreature._knockbackLedgeFall.startSurfaceY, 3.75);
+assert.equal(highPerchCreature._knockbackLedgeFall.endSurfaceY, 1);
+assert.equal(highPerchCreature._knockbackLedgeFall.dropWorld, 2.75);
+
 console.log('Prone airborne gravity, cliff cost, repeated hits and throw routing: OK');
