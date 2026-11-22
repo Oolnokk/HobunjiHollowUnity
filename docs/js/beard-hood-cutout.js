@@ -156,17 +156,26 @@
     return Number.isFinite(n) ? Math.max(1, Math.min(16, Math.round(n))) : 4;
   }
 
+  function normalizeVerticalInfluence(value) {
+    // Authored percentages 0–200; keeps baseline behavior at 100% in old cosmetics.
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(200, Math.round(n))) : 100;
+  }
+
   function planTuftStretch(hoodPixels, inputRoots, options = {}) {
     const roots = normalizeRoots(inputRoots);
     const maxStretch = Math.max(2, Math.min(64, Number(options.maxStretch) || 36));
     const subdivision = normalizeSubdivision(options.subdivision); // 1=broad, 4=previous behavior, 16=concentrated local deformation.
+    const aboveInfluence = normalizeVerticalInfluence(options.aboveInfluence);
+    const belowInfluence = normalizeVerticalInfluence(options.belowInfluence);
     const alphaLimit = alphaFloor(options.hoodAlphaLimit, 64);
     const center = options.openingCenter && Number.isFinite(options.openingCenter.x)
       && Number.isFinite(options.openingCenter.y)
       ? options.openingCenter : openingSeed(hoodPixels, alphaLimit);
     const moves = [];
     const diagnostics = {requested:roots.length,stretched:0,insideRing:0,tooFar:0,
-      missingRing:0,openingCenter:center,maxStretch,subdivision,moves};
+      missingRing:0,openingCenter:center,maxStretch,subdivision,
+      aboveInfluence,belowInfluence,moves};
     if (!center) {diagnostics.missingRing=roots.length;return diagnostics;}
     for (const root of roots) {
       const edge = ringEdgeOnRay(hoodPixels, center, root, alphaLimit);
@@ -182,7 +191,7 @@
       // Subdivision changes the influence region, NOT the target: even the
       // tightest setting still reaches the marked corner exactly.
       const radius = Math.max(8, Math.min(100, normalRadius * Math.sqrt(4 / subdivision)));
-      moves.push({from:edge,to:root,delta,radius});
+      moves.push({from:edge,to:root,delta,radius,aboveInfluence,belowInfluence});
       diagnostics.stretched++;
     }
     return diagnostics;
@@ -199,7 +208,14 @@
       const dist2=(x+.5-to.x)**2+(y+.5-to.y)**2;
       if(dist2>=r2)continue;
       const t=1-dist2/r2;
-      const weight=t*t; // Smooth, compact falloff: source ring exactly reaches tuft at t=1.
+      const baseWeight=t*t; // Compact 2D falloff; displacement reaches the root at the center.
+      const signedY=y+.5-to.y;
+      const sideInfluence=(signedY<0 ? move.aboveInfluence : move.belowInfluence)/100;
+      // Blend vertical influence in progressively away from the pin. Exactly
+      // at the marked corner the weight stays 1, regardless of either slider.
+      const sideDistance=Math.min(1,Math.abs(signedY)/Math.max(4,radius*.3));
+      const smoothSide=sideDistance*sideDistance*(3-2*sideDistance);
+      const weight=Math.max(0,Math.min(1,baseWeight*(1+(sideInfluence-1)*smoothSide)));
       const sx=Math.max(0,Math.min(width-1,Math.round(x-delta.x*weight)));
       const sy=Math.max(0,Math.min(height-1,Math.round(y-delta.y*weight)));
       const src=(sy*width+sx)*4,dst=(y*width+x)*4;
@@ -227,6 +243,7 @@
 
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
-    normalizeRoots, normalizeSubdivision, planTuftStretch, stretchHoodToRoots, applyToHood,
+    normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence,
+    planTuftStretch, stretchHoodToRoots, applyToHood,
   });
 })();
