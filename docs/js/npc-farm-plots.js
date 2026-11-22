@@ -373,15 +373,34 @@
   }
 
   // ── Drawing ───────────────────────────────────────────────────────────
-  const shared = {};
+  const shared = {}; // One set of soil geometries/material fallbacks for every NPC field tile.
   function sharedAssets() {
     const THREE = window.THREE;
     if (shared.patch || !THREE) return shared;
-    shared.patch = new THREE.BoxGeometry(0.94, 0.05, 0.94);
-    shared.pit = new THREE.BoxGeometry(0.94, 0.04, 0.94);
+    const makeSoilSurface = trench => {
+      const geometry = new THREE.PlaneGeometry(0.96, 0.96, 8, 8); // One textured draw per tile, unlike stacks of ridged boxes.
+      geometry.rotateX(-Math.PI / 2);
+      const position = geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        const x = position.getX(i), z = position.getZ(i);
+        const edge = Math.max(Math.abs(x), Math.abs(z));
+        // The original grass floor remains intact under an NPC trench: a
+        // raised, sloping lip makes the recessed basin visible without
+        // cutting a hole in the merged town heightfield.
+        const height = trench
+          ? 0.016 + 0.075 * Math.max(0, Math.min(1, (edge - 0.23) / 0.25))
+          : 0.043 + 0.012 * (0.5 + 0.5 * Math.cos(x * Math.PI * 6.25));
+        position.setY(i, height);
+      }
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+      return geometry;
+    };
+    shared.patch = makeSoilSurface(false); // Subtle hoe furrows on the planted beds.
+    shared.pit = makeSoilSurface(true); // Recessed-looking irrigation channel with raised banks.
     shared.water = new THREE.PlaneGeometry(0.8, 0.8);
-    shared.tilledMat = new THREE.MeshLambertMaterial({ color: 0x6b4a30 });
-    shared.pitMat = new THREE.MeshLambertMaterial({ color: 0x2d1d10 });
+    shared.tilledMat = new THREE.MeshLambertMaterial({ color: 0x6b4a30 }); // Fallback until shared terrain textures are available.
+    shared.pitMat = new THREE.MeshLambertMaterial({ color: 0x2d1d10 }); // Fallback for trench soil.
     shared.waterMat = new THREE.MeshBasicMaterial({ color: 0x3b6f9a, transparent: true, opacity: 0.85 });
     return shared;
   }
@@ -426,8 +445,9 @@
     const y = num(deps.surfaceY?.(plot.area, c, r), 0);
     const objects = [];
     if (s.dug) {
-      const pit = new THREE.Mesh(assets.pit, assets.pitMat);
-      pit.position.set(c + 0.5, y + 0.02, r + 0.5);
+      const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'trench') || assets.pitMat; // Same PNG shade-fill as the player's trenches.
+      const pit = new THREE.Mesh(assets.pit, material);
+      pit.position.set(c + 0.5, y, r + 0.5);
       objects.push(pit);
       if (s.water) {
         const water = new THREE.Mesh(assets.water, assets.waterMat);
@@ -436,8 +456,9 @@
         objects.push(water);
       }
     } else {
-      const patch = new THREE.Mesh(assets.patch, assets.tilledMat);
-      patch.position.set(c + 0.5, y + 0.025, r + 0.5);
+      const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'tilled') || assets.tilledMat; // Reuse the authored canvas soil material, not a flat brown box.
+      const patch = new THREE.Mesh(assets.patch, material);
+      patch.position.set(c + 0.5, y, r + 0.5);
       objects.push(patch);
       if (s.crop) {
         const built = deps.buildCropMesh?.(s.crop, growth, !!s.ready, c, r);
