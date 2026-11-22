@@ -558,6 +558,7 @@
     const index = list.findIndex(entry => entry.id === babyId && isFarmBaby(entry)); // Exact baby record location.
     if (index < 0) return { ok: false, message: 'That Nursery baby is no longer available.' };
     const baby = list[index]; // Persist the full baby before removing its Nursery copy.
+    if (window.PendingAnimalSales?.pendingFor?.(baby)) return { ok: false, message: 'Cancel the pending sale before incubating this baby.' };
     slot.baby = deepClone(baby);
     slot.daysRemaining = CONFIG.gameplay.maturationDays;
     slot.blockedReason = null;
