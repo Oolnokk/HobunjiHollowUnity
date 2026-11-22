@@ -308,35 +308,31 @@
   }
 
   function applyRefusedBeardOutline(beardRGBA, refused) {
-    // Blacken *surviving* non-black opaque beard pixels bordering rejected
-    // pixels. Placing the outline in the rejected (transparent) pixels would
-    // hide it behind the subsequently drawn hood. Never outline unrelated
-    // pre-existing edges or overwrite authored black lines.
-    const remaining = new Uint8ClampedArray(beardRGBA); // Snapshot prevents recursive halos during the 8-neighbor scan.
+    // Generate an inward, one-pixel black outline on surviving dyed beard
+    // pixels adjacent to freshly refused pixels. An exterior outline inside
+    // erased pixels would be hidden by the intact hood, so stay on beard art.
+    const remaining = new Uint8ClampedArray(beardRGBA); // Read-only source is never mutated during adjacency discovery.
+    const edge = new Uint8Array(PIXELS); // Marks only neighbors of NEW erasures, not all authored silhouette edges.
     let erasedPixels = 0, outlinedPixels = 0;
-    for (let i = 0; i < PIXELS; i++) {
+    for (let i=0; i<PIXELS; i++) {
       if (!refused[i]) continue;
-      const offset = i * 4;
-      if (beardRGBA[offset + 3]) erasedPixels++;
-      remaining[offset] = remaining[offset + 1] = remaining[offset + 2] = remaining[offset + 3] = 0;
-    }
-    for (let i = 0; i < PIXELS; i++) {
-      if (refused[i]) continue;
-      const offset = i * 4;
-      if (beardRGBA[offset + 3] < 64) continue;
-      if (beardRGBA[offset] <= 30 && beardRGBA[offset + 1] <= 30 && beardRGBA[offset + 2] <= 30)
-        continue; // Already black (or near-black) authored edge pixels.
-      const x = i % SIZE, y = (i / SIZE) | 0;
-      let exposed = false;
-      for (let dy = -1; dy <= 1 && !exposed; dy++) for (let dx = -1; dx <= 1; dx++) {
-        if (!dx && !dy) continue;
-        const px = x + dx, py = y + dy;
-        if (px >= 0 && py >= 0 && px < SIZE && py < SIZE && refused[py * SIZE + px]) {
-          exposed = true; break;
-        }
+      const offset=i*4;
+      if (beardRGBA[offset+3]) erasedPixels++;
+      remaining[offset]=remaining[offset+1]=remaining[offset+2]=remaining[offset+3]=0;
+      const x=i%SIZE,y=(i/SIZE)|0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++) {
+        if(!dx&&!dy)continue;
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=SIZE||ny>=SIZE)continue;
+        const index=ny*SIZE+nx,o=index*4;
+        if(refused[index]||beardRGBA[o+3]<64)continue;
+        if(beardRGBA[o]<=30&&beardRGBA[o+1]<=30&&beardRGBA[o+2]<=30)continue;
+        edge[index]=1;
       }
-      if (!exposed) continue;
-      remaining[offset] = remaining[offset + 1] = remaining[offset + 2] = 0;
+    }
+    for(let i=0;i<PIXELS;i++)if(edge[i]){
+      const offset=i*4;
+      remaining[offset]=remaining[offset+1]=remaining[offset+2]=0;
       outlinedPixels++;
     }
     return {pixels:remaining,erasedPixels,outlinedPixels};
