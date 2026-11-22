@@ -12,8 +12,8 @@ Individual dialogue history is still stored per NPC, using namespaced stable gen
 
 ## Priority
 
-1. Queued/scripted trees, feature providers, authored non-fallback trees and Shop/Chat access retain their existing rules.
-2. Existing individual fallback text and condition-eligible, **not-yet-heard**, genuinely authored entries in its phrase pool are allowed to speak first. Writer-facing `<placeholder>` hints are not playable dialogue until replaced with actual text.
+1. Queued/scripted trees, feature providers, authored non-fallback trees and Shop/Chat access retain their existing rules. The **original** authored selection is passed to festival, spouse, and in-law context providers before shared speech is even considered.
+2. Existing individual fallback text and condition-eligible, **not-yet-heard**, genuinely authored entries in its phrase pool are allowed to speak first. Explicit standalone `dialogueLines` also retain priority when there is no tree. Writer-facing `<placeholder>` hints are not playable dialogue until replaced with actual text.
 3. After that personal content, eligible unheard character-scoped shared speech goes before eligible unheard family-scoped speech.
 4. Once both the personal and scoped lines have circulated, each new ordinary Talk conversation has a chance to use the individual's original fallback again, or a random eligible scoped line. An unmet weather/relationship/location condition never promotes ineligible lines.
 
@@ -41,8 +41,8 @@ Every shared entry supports `id` (stable per owning character or family), `label
 
 ## Composition and debugging
 
-`LocalDBOverrides.loadDatabase('npcDatabase')` and the direct NPC database fetch path both compose the same shared layer in `docs/js/local-db-overrides.js`. Canonical NPC JSON and local editor overrides are not rewritten. The process is idempotent, and optional config failure leaves the preexisting NPC dialogue intact.
+`LocalDBOverrides.loadDatabase('npcDatabase')` and the direct NPC database fetch path both compose the same shared layer in `docs/js/local-db-overrides.js`. Canonical NPC JSON and local editor overrides are not rewritten. The process is idempotent; config requests bypass stale browser caches, and a transient failure can be retried on a later database load while the original NPC dialogue stays intact.
 
 The Dev Companion **Conversation state** panel displays the resolved `Shared voice family` and `Scoped shared lines`, and dialogue traces mark whether a selected tree came from the personality/character shared config. This is usable without a desktop browser console.
 
-Run `node scripts/test-shared-personality-dialogue.js` to exercise the actual composer, condition selector and conversation renderer. The original NPC database also has unique greetings for most starter characters; do not migrate or delete those when adding shared lines.
+Run `node scripts/test-shared-personality-dialogue.js` to exercise the actual composer, condition selector, conversation renderer, real festival/spouse context providers, direct fetch and normal database load, and transient fetch-failure recovery. The original NPC database also has unique greetings for most starter characters; do not migrate or delete those when adding shared lines.
