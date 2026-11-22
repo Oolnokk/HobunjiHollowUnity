@@ -31,6 +31,12 @@ async function main() {
         if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
         return applyKissPresetV1546();
       };
+      window.MultiAvatarAnimationAuthor.__testKissInputs = () => { // Failure diagnostics only: the exact height-solver inputs CI saw.
+        const pair = kissPairHeightV1546();
+        return { solution: pair.solution, actors: animationAuthor.actors.map(actor => ({ name: actor.label,
+          height: kissActorHeightV1546(actor), mouth: kissNeutralMouthHeightV1552(actor), visualScaleY: actor.visualOffset?.scale?.y,
+          legLengths: (actor.rigFeetPreview?.motionAnatomy?.() || []).map(record => record?.length), hipY: actor.rigFeetPreview?.standingPosteriorY ?? null })) };
+      };
       window.MultiAvatarAnimationAuthor.__testRealMouths = () => {
         const THREE = state.three.THREE; // Probe actual species-specific B'shuakauitl mouth coordinates.
         const pose = window.SharedAttackPose;
@@ -460,6 +466,8 @@ async function main() {
     } catch (_) { snapshot = { pageNotReadable: true }; }
     console.error('Animation URL smoke FAILED:', error.stack || error);
     console.error('Author diagnostics:', JSON.stringify(snapshot));
+    try { console.error('Kiss solver inputs:', JSON.stringify(await page.evaluate(() => window.MultiAvatarAnimationAuthor?.__testKissInputs?.() || null))); }
+    catch (kissError) { console.error('Kiss solver inputs unavailable:', kissError.message); }
     console.error('JS errors:', errors.slice(0, 15).join('\n\n'));
     console.error('Request failures:', failures.slice(-15).join('\n'));
     process.exitCode = 1;
