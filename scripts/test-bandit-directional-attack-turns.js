@@ -266,6 +266,7 @@ simulation=vm.runInNewContext(
   section(source,'  function beginBanditMeleeStage(', '  function resolvedBanditCombatTarget(') +
   section(source,'  function updateBanditCombatAI(', '  // ── Bandit weapon visuals') +
   'return {tick:updateBanditCombatAI,slot:claimBanditAttackSlot,owner:banditAttackTurnOwner,' +
+  'acquire:claimBanditAttackTurn,release:releaseBanditAttackTurn,' +
   'chargeOwner:banditChargeOwner,stage:beginBanditMeleeStage};})()',aiGlobals
 );
 const simulatedTarget={x:0,y:0,angle:0,health:100,stamina:100,maxHealth:100,maxStamina:100};
@@ -293,5 +294,21 @@ assert.equal(decisions.length,2,'the next attack is the separately prepared char
 assert.equal(decisions[1].kind,'charged-release');
 assert(decisions[1].prep.chargeT>0,'release carries the original sampled charge strength');
 assert.strictEqual(simulation.owner(simulatedTarget),chargingFighter,'the released held attack takes the single committed permission');
+
+// The full AI must also respect its OWN reactive Counter Shield permission,
+// even though a counter intentionally does not set the actor's _banditAction.
+const counterSimTarget={x:900,y:0,angle:0,health:100,stamina:100,maxHealth:100,maxStamina:100};
+const counterSimActor=actor('counter-sim',955,0);
+counterSimActor.def.chaseSpeed=290;counterSimActor.def.moveSpeed=118;
+counterSimActor.def.attackRangePx=55;counterSimActor.def.attackStaminaCost=10;
+counterSimActor.def.banditStandoffTierStepTiles=.2;counterSimActor.attackCooldownT=0;
+counterSimActor.stamina=100;counterSimActor.facing=0;
+assert(simulation.acquire(counterSimActor,counterSimTarget),'reactive counter holds one committed attack turn');
+const decisionsBeforeCounter=decisions.length;
+simulation.tick(counterSimActor,.1,counterSimTarget,55);
+assert.equal(decisions.length,decisionsBeforeCounter,'full AI must NOT start a regular attack while the same actor is countering without _banditAction');
+simulation.release(counterSimActor,counterSimTarget);
+simulation.tick(counterSimActor,.1,counterSimTarget,Math.hypot(counterSimActor.x-counterSimTarget.x,counterSimActor.y-counterSimTarget.y));
+assert.equal(decisions.length,decisionsBeforeCounter+1,'same fighter may commit a new real attack after its counter hit resolves');
 
 console.log('bandit directional melee: 4 sectors, one resolved attack, parallel charge, cancellations and Fey echo passed');
