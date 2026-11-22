@@ -817,11 +817,32 @@
   }
 
   const activeLegHandles = new Set(); // Rare proportion edits update existing hips without per-frame scans or recreating any imported GLBs.
+  function alignPortraitWithLegs(parent, handle) {
+    if (!parent || !handle) return false;
+    const desired = Number(handle.standingPosteriorY) - Number(handle.restPosteriorY); // Parent-local additional leg reach, with feet remaining at floor Y=0.
+    if (!Number.isFinite(desired)) return false;
+    let portrait = null;
+    parent.traverse?.(node => {
+      if (portrait || node === parent) return;
+      if (node.userData?.neckRig?.available && node.position) portrait = node; // Never reposition the ground-root that also owns the feet.
+    });
+    if (!portrait) return false;
+    portrait.userData ||= {};
+    const previous = Number(portrait.userData.hobunjiLegLengthPortraitOffsetY) || 0; // Remembers our offset so unrelated action animations are not wiped on later slider updates.
+    if (Math.abs(desired - previous) <= 1e-9) return true;
+    let betweenY = 1; // Converts parent-floor-relative delta into the actual portrait parent's coordinates when wrappers carry a uniform species scale.
+    for (let current = portrait.parent; current && current !== parent; current = current.parent) betweenY *= Number(current.scale?.y) || 1;
+    portrait.position.y += (desired - previous) / (Math.abs(betweenY) > 1e-6 ? betweenY : 1);
+    portrait.userData.hobunjiLegLengthPortraitOffsetY = desired;
+    portrait.updateMatrix?.();
+    return true;
+  }
   function syncScaleForParent(parent, legRatio) {
     for (const handle of activeLegHandles) {
       for (let current = handle.group?.parent; current; current = current.parent) {
         if (current !== parent) continue;
         handle.setLegLengthMultiplier(legRatio); // Keep the actual seven-node portrait and hip-to-foot reach separate.
+        alignPortraitWithLegs(parent, handle); // Upper-body artwork rides the new hip, without scaling head or feet to fake leg length.
         break;
       }
     }
@@ -1945,12 +1966,14 @@
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
     activeLegHandles.add(handle); // Lightweight registry for the occasional explicit rig-scale edit; removed during dispose().
+    alignPortraitWithLegs(parent, handle); // Spawn with an already-authored independent leg length leaves portrait and hips attached immediately.
     return handle;
   }
 
   window.ProceduralLegAnimation = {
     attach,
     syncScaleForParent, // Shared scale runtime notifies already-attached feet when portrait/leg ratios diverge.
+    alignPortraitWithLegs, // Preview and game use exactly the same floor-relative hip/portrait reconnection.
     worldQuaternionWithoutScale, // Scale-independent orientation shared with the climb renderer.
     setShowBones: (visible) => { showLegBoneGuides = !!visible; },
     get showBones() { return showLegBoneGuides; },
