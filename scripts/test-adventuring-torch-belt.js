@@ -164,7 +164,10 @@ const world = {
       fireStarts++;
     },
     stepFire(state, dt) {
-      assert(dt >= 0 && dt <= .05, 'particle time step is capped after stalls');
+      const first = !state.hasRenderedFire; // The initial stowed frame primes the portion of the 180ms ignition cloth transition that occurred in hand.
+      state.hasRenderedFire = true;
+      assert(dt >= 0 && dt <= (first ? .180001 : .05), 'only the first lit-stow frame may prime carried wick elapsed time');
+      if (first) assert(Math.abs(dt - .18) < 1e-7, 'already-burning carried wick does not flash back to neutral when stowed');
       assert.equal(state.fireEmitters.length, 1);
       fireTicks++;
     },
