@@ -353,8 +353,13 @@
     }
     const floorMask = new Uint8Array(grid.cols * grid.rows); // No rectangular floor visible under the clipped octagon.
     const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
+    // Ground-story wing doorways are carved through the shell outside the octagon. Upper doorways get their floor
+    // from the ledge faces (solid voxels below), but level 0 has none, so its tunnels were walkable void.
+    const groundPortal=new Set();
+    for(const p of result.wingPortals||[])if(p.level===0)for(const t of p.tunnel)groundPortal.add(t.col+','+t.row);
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
-      if(grid.canStand(c,r,0)&&!((result.obelisks||result.jumpShaft)&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
+      if(groundPortal.has(c+','+r)&&grid.canStand(c,r,0))floorMask[r*grid.cols+c]=1;
+      else if(grid.canStand(c,r,0)&&!((result.obelisks||result.jumpShaft)&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
     const floor = part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
     if (floor) floor.userData.hobunjiGroundTopFacesOnly = true;
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,{...surface,ruin:true})); // Real V50 ladder art replaces the old colored climb tile overlays.

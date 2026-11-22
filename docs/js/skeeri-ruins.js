@@ -609,6 +609,7 @@
   function update(dt=0) {
     const session=owner;
     if(!session||!isActive(session))return;
+    if(window.DevInspectTools?.enemiesFrozen?.())return; // Developer "Enemies off" holds hatches, flights and bomb runs.
     if(!session.bombersSpawned)spawnBombers(session);
     const step=clamp(dt,0,.1),player=currentPlayer(),playerY=Number(session.getPlayerY?.())||0;
     for(const hatch of session.hatches)updateHatch(session,hatch,step,player,playerY);

@@ -990,6 +990,7 @@
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
     const ceilingMesh=buildTexturedCeiling(meta); // Gives the rope mounts and support pillars a real visible stone ceiling at the exact wall-top datum they already target.
     if(ceilingMesh)scene.add(ceilingMesh);
+    if(ceilingMesh)roots.localeRoot.userData.ruinCeilingClosure=window.DevRandomRuinWallPlanes?.closeUnderCeiling?.(roots.localeRoot,ceilingMesh.userData.devRandomRuinCeilingY,meta)||null; // Omitted/short "ruined" V50 walls and open arch tops left void under the roof.
     roots.particleRoot.scale.x*=RUIN_TILE_SCALE;roots.particleRoot.scale.z*=RUIN_TILE_SCALE;
     roots.particleRoot.position.set(roots.localeRoot.position.x,0,roots.localeRoot.position.z); // Snapshotted V50 sprites are in the original 2D world coordinate system and need the same horizontal projection as stone meshes.
     scene.add(roots.particleRoot);

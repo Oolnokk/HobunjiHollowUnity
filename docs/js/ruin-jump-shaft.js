@@ -298,6 +298,17 @@
     const pitY = plan.pit.bottomY, pitSize = plan.central;
     const basin = new THREE.Mesh(new THREE.BoxGeometry(pitSize, .4, pitSize), basic(0x211c1b));
     basin.position.set(cx, pitY - .22, cz); basin.name = 'jump-shaft-death-pit'; group.add(basin); owned.push(basin);
+    // The basin's four sides, from below its bed up to the ground gallery. Without them the 8-unit drop was open
+    // to the black void on every side (and a fall showed straight past the gallery). Same patch-stretched carved
+    // stone as the shaft masonry (RuinWallFaces); faces point into the pit only. Visual only: the pit stays fatal.
+    const Faces = root.RuinWallFaces || (typeof module === 'object' && module.exports ? require('./ruin-wall-faces.js') : null);
+    if (Faces?.pitWallQuads && THREE.BufferGeometry) {
+      const wallStone = makeStone(); materials.push(wallStone); // Own material: the slab floor x-ray uniforms must not reach the pit walls.
+      const pitWalls = new THREE.Mesh(Faces.toGeometry(THREE, Faces.pitWallQuads({ minX: cx - half, minZ: cz - half, size: pitSize, bottom: pitY - .42, top: plan.options.baseY })), wallStone);
+      pitWalls.name = 'jump-shaft-death-pit-walls';
+      pitWalls.layers?.disable?.(1); // Each stretched carved-stone patch carries its own ink: no generated shell outline.
+      group.add(pitWalls); owned.push(pitWalls);
+    }
     if (tradition !== 'kanthic') {
       const sheet = new THREE.Mesh(new THREE.PlaneGeometry(pitSize, pitSize), basic(tradition === 'tothal' ? 0xb7ecfa : 0xff4215));
       sheet.rotation.x = -Math.PI / 2; sheet.position.set(cx, pitY + .03, cz); sheet.name = 'jump-shaft-' + tradition + '-hazard'; group.add(sheet); owned.push(sheet);
