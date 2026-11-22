@@ -4,48 +4,63 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * Small, testable remote publication transaction for existing canonical saves.
- * Google Drive has no atomic rename/CAS across two file resources. This
- * minimizes the non-atomic interval, verifies just before switching, and
- * restores the old canonical name if the new file cannot be published.
+ * Minimal, independently tested commit/rollback policy for Drive saves.
+ * Google Drive v3 does not expose atomic compare-and-swap across file renames;
+ * recover safely from network failures where a rename may have happened even
+ * though Android never received its HTTP success response.
  */
 final class AndroidDrivePublication {
     interface Remote {
         void verifyUnchanged() throws Exception;
         void rename(String id, String name) throws Exception;
-        boolean canonicalExists() throws Exception;
+        String canonicalId() throws Exception; // Ground each decision in Google's current file ID, not a guessed status.
     }
 
     private AndroidDrivePublication() {}
 
-    /** Returns true if a recoverable previous-version file was created. */
+    /** True if an old canonical file was successfully preserved as a backup. */
     static boolean publish(String name, String pendingId, String previousId, Remote remote) throws Exception {
         remote.verifyUnchanged();
-        boolean moved = false; // True only after Google confirms the old canonical file was renamed.
+        boolean movedOld = false; // Set only after verifying that the previous ID no longer owns the canonical name.
         if (previousId != null) {
-            remote.rename(previousId, ".hobunji-previous-" + name + "-" + UUID.randomUUID());
-            moved = true;
+            try {
+                remote.rename(previousId, ".hobunji-previous-" + name + "-" + UUID.randomUUID());
+                movedOld = true;
+            } catch (Exception uncertainMove) {
+                // Google might have committed the move and lost the response.
+                // Recover the previous canonical name only if no other file has it.
+                try {
+                    String current = remote.canonicalId();
+                    if (current == null) remote.rename(previousId, name);
+                    else if (!previousId.equals(current)) uncertainMove.addSuppressed(
+                            new IOException("Another device changed the canonical name; the earlier file remains recoverable."));
+                } catch (Exception recoveryFailure) { uncertainMove.addSuppressed(recoveryFailure); }
+                throw uncertainMove;
+            }
         }
         try {
-            // A second device could publish between our version check and the
-            // rename; fail instead of knowingly adding a duplicate canonical.
-            if (remote.canonicalExists())
-                throw new IOException("Google Drive changed during publication. The previous save was retained.");
+            if (remote.canonicalId() != null)
+                throw new IOException("Another device published a canonical save during this upload.");
             remote.rename(pendingId, name);
-            return moved;
-        } catch (Exception publishFailure) {
-            if (moved) {
-                try {
-                    if (!remote.canonicalExists()) remote.rename(previousId, name);
-                    else publishFailure.addSuppressed(new IOException(
-                            "Another device published the canonical file while rolling back; the previous save remains as a recovery copy."));
-                } catch (Exception rollbackFailure) {
-                    publishFailure.addSuppressed(new IOException(
-                            "The previous save is still present under its recovery name, but restoring the canonical name failed.",
-                            rollbackFailure));
+            if (!pendingId.equals(remote.canonicalId()))
+                throw new IOException("Google Drive did not confirm the staged file as canonical.");
+            return movedOld;
+        } catch (Exception uncertainPublish) {
+            try {
+                String current = remote.canonicalId();
+                if (pendingId.equals(current)) return movedOld; // Upload published but acknowledgement was lost.
+                if (movedOld && current == null) {
+                    remote.rename(previousId, name);
+                } else if (movedOld) {
+                    uncertainPublish.addSuppressed(new IOException(
+                            "The old save remains in recovery: another file now owns the canonical name."));
                 }
+            } catch (Exception rollbackFailure) {
+                uncertainPublish.addSuppressed(new IOException(
+                        "Google Drive's prior save remains recoverable, but canonical restoration was not confirmed.",
+                        rollbackFailure));
             }
-            throw publishFailure;
+            throw uncertainPublish;
         }
     }
 }
