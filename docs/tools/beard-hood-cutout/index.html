@@ -465,9 +465,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
 
   function ensureAutomaticPermission(){
-    const key=stretchKey+'|'+coneSpread;
+    const key=stretchKey+'|'+coneSpread+'|'+selectedHoodAlphaFloor(); // Threshold affects which hood pixels define the inner ring.
     if(automaticKey===key)return;
-    automaticPermission=artReady?Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)
+    automaticPermission=artReady?Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread,{
+      alphaLimit:selectedHoodAlphaFloor()
+    })
       : {mask:empty(),bottomPoints:[],allowedPixels:0};
     automaticKey=key; // Brush strokes don't re-run the raycast and cone fill.
   }
@@ -495,7 +497,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const ctx=permissionOverlay.getContext('2d'),image=ctx.createImageData(SIZE,SIZE);
     if(permissionMask!==null){
       const allowed=Cut.decodeMask(permissionMask);
-      for(let i=0;i<allowed.length;i++)if(sourcePixels[i*4+3]>=8){
+      for(let i=0;i<allowed.length;i++)if(sourcePixels[i*4+3]>=selectedHoodAlphaFloor()){
         const o=i*4;
         image.data[o]=allowed[i]?45:239;
         image.data[o+1]=allowed[i]?227:74;
@@ -561,12 +563,13 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       painter.drawImage(maskOverlay,0,0);
       drawRootGuides(painter);
     }
-    let paintable=0,hoodArea=0,permittedArea=0;
+    let paintable=0,hoodPaintable=0,hoodArea=0,permittedArea=0;
     const allowed=permissionMask==null?null:Cut.decodeMask(permissionMask);
     const policyPixels=hoodPermissionMode==='auto'?stretchedHoodPixels:hoodPixels;
     for(let i=0;i<SIZE*SIZE;i++){
       if(beardPixels[i*4+3]>=selectedAlphaFloor())paintable++;
-      if(policyPixels[i*4+3]>=8){
+      if(hoodPixels[i*4+3]>=selectedHoodAlphaFloor())hoodPaintable++;
+      if(policyPixels[i*4+3]>=selectedHoodAlphaFloor()){
         hoodArea++;
         if(!allowed||allowed[i])permittedArea++;
       }
@@ -591,7 +594,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       +'\nHood policy: '+hoodPermissionMode+' · cone spread: '+coneSpread
       +'\nDetected lower rim pixels: '+(automaticPermission?.bottomPoints?.length||0)
       +'\nBeard opacity cutoff: '+Math.round(selectedAlphaFloor()/255*100)+'% · hood opacity cutoff: '+Math.round(selectedHoodAlphaFloor()/255*100)+'%'
-      +'\nPaintable beard pixels: '+paintable
+      +'\nPaintable beard pixels: '+paintable+' · hood pixels: '+hoodPaintable
       +'\nDeformation subdivision: '+selectedSubdivision()
       +' · above: '+selectedAboveInfluence()+'% · below: '+selectedBelowInfluence()+'%'
       +'\nTuft roots: '+roots.length+' · stretched: '+(stretchSnapshot?.stretched||0)
@@ -630,7 +633,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       current=hoodPermissionMode==='painted'
         ? hoodAllowanceMask||empty()
         : hoodPermissionMode==='auto'
-          ? Cut.autoHoodAllowanceMask(hoodPixels,coneSpread).mask // In manual mode permissions are painted on original, unstretched hood art.
+          ? Cut.autoHoodAllowanceMask(hoodPixels,coneSpread,{
+              alphaLimit:selectedHoodAlphaFloor()
+            }).mask // Manual painting starts from a cone on the original, unstretched hood art.
           : {size:SIZE,runs:[[0,SIZE*SIZE]]};
     }
     const erase=mode==='erase'||mode==='hoodProtect'||mode==='whiskerErase';
@@ -1001,6 +1006,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     whiskerWins:negotiationStats?.whiskerWins||0,refusedPixels:negotiationStats?.refusedPixels||0,
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
     paintableAlphaFloor:selectedAlphaFloor(),paintablePixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=selectedAlphaFloor()),0),
+    hoodPaintablePixels:hoodPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=selectedHoodAlphaFloor()),0),
     tuftRoots:Cut.normalizeRoots(roots),maxStretch:selectedStretch(),subdivision:selectedSubdivision(),
     aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence(),
     ringStretch:stretchSnapshot&&{
