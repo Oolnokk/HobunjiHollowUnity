@@ -392,7 +392,8 @@
       area: e.burden.mapId, parent: e.burden.group.parent?.name || null,
       visible: e.burden.group.visible, artMode: e.burden.group.userData.familyBabyArtMode,
       rearArt: e.burden.group.userData.familyBabyRearArt,
-      dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight },
+      dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight }, // Source-portrait coordinate basis used for hand grips.
+      posedDimensions: { width: e.burden.group.userData.familyBabyPosedWidth, height: e.burden.group.userData.familyBabyPosedHeight }, // Expanded head is visual only.
       meshes: e.burden.group.children.length,
     })) }),
   });
