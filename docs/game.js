@@ -1023,11 +1023,23 @@
       function beginProneAirFall(entity, isPlayer) {
         if (isPlayer) {
           if (window.PlayerJump?.knockProne?.()) return true;
+          if (entity._knockbackLedgeFall || entity._knockbackLedgeAir) {
+            entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+            window.KnockbackCollisionImpact?.cancel?.(entity); // An existing cliff fall must not queue a second throw on landing.
+            return true;
+          }
           if (entity.onClimbSurface) {
             const released = window.ClimbSurfaces?.release?.({ fall: true });
             if (released) return window.PlayerJump?.knockProne?.() === true; // Wall-grab height transfers into the physical jump owner.
           }
-          if (entity.climbing) return window.ClimbSystem?.knockProneOffClimb?.(entity) === true;
+          if (entity.climbing) {
+            const falling = window.ClimbSystem?.knockProneOffClimb?.(entity) === true;
+            if (falling) {
+              entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+              window.KnockbackCollisionImpact?.cancel?.(entity); // The climb's own falling interpolation owns the displacement.
+            }
+            return falling;
+          }
           const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
           const currentY = Number(entity.lungeFlightWorldY);
           if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
