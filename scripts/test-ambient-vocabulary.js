@@ -206,6 +206,12 @@ async function main() {
     { nonsense: ['undated'] }).nonsense, undefined, 'Undated slang must remain inactive until dated in the editor');
   const manualSlang = rules.resolveSelections(config.lexicon, { nonsense: ['balderdash'] });
   assert.ok(manualSlang.nonsense.includes('balderdash'), 'Manual checkmarks always honor the master list regardless of sliders');
+  const chiefSpeech = engine.rewrite('Go way. No want trouble', 'porakaneki_chief', () => 0);
+  assert.ok(chiefSpeech.startsWith('Skedaddle.'), 'Real Porakaneki warning text must use its pre-1900 slang in the RUNTIME, not only the generator');
+  const childSpeech = engine.rewrite("I'm hungry.", 'child_test123', () => 0);
+  assert.equal(childSpeech, "I'm tummy-rumbly.", 'Real child speech must use the generated simplicity/near-miss axes in the RUNTIME');
+  const everydaySpeech = engine.rewrite('Nonsense!', 'pahu', () => 0);
+  assert.equal(everydaySpeech, 'Nonsense!', 'Ordinary playful NPCs do not acquire historical slang by default');
   engine.rewrite('Friend!', 'porakaneki_chief', () => 0);
   assert.equal(engine.getDebug().last.familyId, 'porakaneki', 'The named chief uses the tribal vocabulary family');
   engine.rewrite('Friend!', 'porakaneki_small_map_test_0:resident:0', () => 0);
