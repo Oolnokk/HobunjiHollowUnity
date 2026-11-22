@@ -67,6 +67,13 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   assert.equal(unauthored.x, 0.05, 'the short neck is under the painted head, not re-centered on the torso');
   const hires = spine.neckBaseLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, neckX: 0.05, neckY: 0.1, posteriorY: -0.3, pixelHeight: 2048 });
   near(hires.y, 0.1 - 2.5 * H / 2048, '2048px portraits retain a true 2.5-source-pixel neck, not a giant percentage gap');
+  const maoAo = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mao-ao::male'].anchors; // The original authored hand-shoulder coordinates must still control held-item/attack orbit projections.
+  const shoulder = spine.shoulderLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, placementRatio: 0.5, neckX: 0.02, neckY, posteriorY: posterior });
+  near(shoulder.y, (maoAo.leftHandShoulder.position.y + maoAo.rightHandShoulder.position.y) / 2 - H / 2, 'shoulder orbit still uses its authored shoulder Y');
+  near(shoulder.x, (maoAo.leftHandShoulder.position.x + maoAo.rightHandShoulder.position.x) / 2, 'shoulder orbit still uses its authored shoulder X');
+  assert.ok(shoulder.y < authoredBase.y, 'the shoulder reference stays BELOW the new near-skull spine endpoint');
+  near(spine.shoulderLocal({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: H, neckY }).y, neckY - .08 * H,
+    'unconfigured skeleton shoulder sockets keep their original fallback height');
 
   // Skin weights: the two neighbouring nodes by height, linear between them; below the posterior rides node 0, above the neck base the last node.
   const w = {};
@@ -173,6 +180,15 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   near(extended[6].y, baseY + reachHunch[6].y + 0.12 * H, 'spine tip receives the full head-scale reach plus hunch');
   const intermediate = extended[3].y - layout.nodes[3].y - reachHunch[3].y;
   near(intermediate, 0.06 * H, 'middle spine bone carries half the stretched space, not a huge neck bone');
+  const shoulderRig = { splineNodes: fakeBones(), neckLocal: { x: neckX, y: neckY },
+    spineBase: { x: baseX, y: baseY }, spinePosteriorY: posterior, shoulderLocalY: baseY - .05 * H }; // Real hand-shoulder Y may be lower than the near-skull spine endpoint.
+  spine.applyNeckReach(shoulderRig, .12 * H, H, .6);
+  const shoulderProfile = shoulderRig.appliedSpineProfile;
+  const projected = spine.deformAt(shoulderProfile, shoulderRig.shoulderLocalY, {});
+  near(shoulderProfile.orbitOffset.y, projected.y, 'held weapons project from the authored shoulder, never from the skull-high spine endpoint');
+  assert.ok(shoulderProfile.orbitOffset.y > shoulderProfile.curve[6].y,
+    'shoulder orbit does not inherit the full head-scale reach and hunch reserved for the spine tip');
+
   spine.applyNeckReach(reachRig, 0.12 * H, H, 0.6);
   near(chain(reachRig.splineNodes)[6].y, extended[6].y, 'repeated Head slider updates never accumulate spine reach');
   spine.applyNeckReach(reachRig, -100 * H, H, 0);
@@ -230,6 +246,10 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   near(spine.fromRoot(child).hunch, 0.6, 'children find the root spine');
   spine.bind(root, {});
   assert.equal(spine.fromRoot(child), null, 'rebinding upright clears it');
+  const elongated = { userData: { neckRig: { neckReachAppliedY: .1, appliedSpineProfile: { hunch: 0, orbitOffset: { x: 0, y: .05, z: 0 } } } }, parent: null };
+  spine.bind(elongated, {}); // Age=0 must not erase the shoulder projection of an already-scaled, extended spine.
+  assert.strictEqual(spine.fromRoot(elongated), elongated.userData.neckRig.appliedSpineProfile,
+    'an upright character with head-scaled spine still exposes its live shoulder reach to held equipment');
 
   // Orbit centre: transformPosePoint moves the whole orbit by orbitOffset (in the pose frame, turned by its facing); untransform is its exact inverse.
   const pose = window.HobunjiSpeciesPoseScale;
