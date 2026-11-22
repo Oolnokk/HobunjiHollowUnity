@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// The "rope swings" central-shaft puzzle (js/ruin-rope-shaft.js), an alternate to the jump-platform
-// staircase that tiered ruins roll between (RuinLayerPlan.SHAFT_PUZZLES). Checked independently of the
-// module's own proof:
+// The "rope swings" central-shaft puzzle (js/ruin-rope-shaft.js), the default for tiered ruins in place of
+// the jump-platform staircase (RuinLayerPlan.DEFAULT_SHAFT_PUZZLE). Checked independently of the module's own proof:
 //  * no slab overlaps another in plan, so no support pillar (pit floor -> its own slab) passes through a slab,
 //    and every story uses fewer slabs than the staircase;
 //  * each story has a rope, and RopeCore.reachAmplitude (the rope rooms' check) with a separate flight
@@ -74,13 +73,13 @@ for (const tier of ['cave', 'hole', 'lich']) for (const theme of ['tothal', 'hro
   }
 }
 
-// It is a central-shaft puzzle the tiers roll for, alongside the staircase; an explicit choice wins.
-assert.deepEqual([...Plan.SHAFT_PUZZLES], ['jumpPlatforms', 'ropeSwings']);
+// It is the default central-shaft puzzle of every tiered (site) ruin; the staircase stays available explicitly.
+assert.deepEqual([...Plan.SHAFT_PUZZLES].sort(), ['jumpPlatforms', 'ropeSwings']);
+assert.equal(Plan.DEFAULT_SHAFT_PUZZLE, 'ropeSwings');
 assert(!Plan.TRAVERSAL_METHODS.includes('ropeSwings'), 'the untiered dev ruin keeps its own pool');
-const rolled = new Set();
-for (let seed = 1; seed <= 40; seed++) rolled.add(Plan.compose({ seed: seed * 7919, spacing: 64, anchorX: 256, anchorZ: 256, groundEntranceSide: 'S', ...Plan.tierOptions('hole') }).options.shaftTraversal);
-assert.deepEqual([...rolled].sort(), ['jumpPlatforms', 'ropeSwings'], 'tier ruins roll both shaft puzzles');
-assert.equal(Plan.compose({ seed: 5, spacing: 64, anchorX: 256, anchorZ: 256, groundEntranceSide: 'S', ...Plan.tierOptions('lich'), shaftTraversal: 'ropeSwings' }).options.shaftTraversal, 'ropeSwings');
+for (const tier of ['cave', 'hole', 'lich']) for (let seed = 1; seed <= 20; seed++)
+  assert.equal(Plan.compose({ seed: seed * 7919, spacing: 64, anchorX: 256, anchorZ: 256, groundEntranceSide: 'S', ...Plan.tierOptions(tier) }).options.shaftTraversal, 'ropeSwings', `${tier} ruins swing by default`);
+assert.equal(Plan.compose({ seed: 5, spacing: 64, anchorX: 256, anchorZ: 256, groundEntranceSide: 'S', ...Plan.tierOptions('lich'), shaftTraversal: 'jumpPlatforms' }).options.shaftTraversal, 'jumpPlatforms', 'the staircase can still be chosen');
 
 // The real hub composes it (with the bomber headroom story) for every tier.
 for (const tier of ['cave', 'hole', 'lich']) {

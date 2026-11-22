@@ -13,9 +13,10 @@
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
   const TRAVERSAL_METHODS=Object.freeze(['reachingObelisks']); // Expand this list as distinct complete shaft methods are authored.
-  // Central-shaft puzzles a tiered (site) ruin rolls between, per seed: the jump-platform staircase
-  // (js/ruin-jump-shaft.js) or the spaced-out platforms with swing ropes (js/ruin-rope-shaft.js).
-  const SHAFT_PUZZLES=Object.freeze(['jumpPlatforms','ropeSwings']);
+  // Central-shaft puzzles a tiered (site) ruin can use: the spaced-out platforms with swing ropes
+  // (js/ruin-rope-shaft.js, the default) or the jump-platform staircase (js/ruin-jump-shaft.js).
+  const SHAFT_PUZZLES=Object.freeze(['ropeSwings','jumpPlatforms']);
+  const DEFAULT_SHAFT_PUZZLE='ropeSwings';
   // Ruin size by rarity. `centralScale` shrinks only the empty central chamber
   // (the 35-cell space inside the 5-cell balcony galleries); the galleries keep
   // their thickness, so shaftSize = central + 2 * GALLERY_WIDTH. `wings` is the
@@ -46,7 +47,7 @@
       wingsPerFloor:distributeWings(t.wings,t.floors),
       minChallenges:t.wingRooms-1,maxChallenges:t.wingRooms-1,
       nativeV50:false, // Native V50 upper floors would add unaccounted rooms and braziers; tiers specify exact counts.
-      shaftTraversal:null,shaftPuzzles:SHAFT_PUZZLES, // Rolled per seed in compose(); an explicit shaftTraversal still wins.
+      shaftTraversal:DEFAULT_SHAFT_PUZZLE, // Every site ruin swings; an explicit shaftTraversal (e.g. 'jumpPlatforms') still wins.
       tier,
     };
   }
@@ -303,5 +304,5 @@
     add('braziersMatchWings',plan.totalBraziers===plan.totalWings);
     return checks;
   }
-  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,SHAFT_PUZZLES,TIERS,tierOptions,distributeWings,compose,verify,snap,intersects});
+  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,SHAFT_PUZZLES,DEFAULT_SHAFT_PUZZLE,TIERS,tierOptions,distributeWings,compose,verify,snap,intersects});
 });

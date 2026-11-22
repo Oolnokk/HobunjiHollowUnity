@@ -1,5 +1,5 @@
-// RuinRopeShaft — the "rope swings" central-shaft traversal: an alternate to the jump-platform staircase
-// (js/ruin-jump-shaft.js), rolled per ruin from RuinLayerPlan.SHAFT_PUZZLES.
+// RuinRopeShaft — the "rope swings" central-shaft traversal: the default for tiered ruins (RuinLayerPlan.
+// DEFAULT_SHAFT_PUZZLE), in place of the jump-platform staircase (js/ruin-jump-shaft.js), which stays selectable.
 //
 // The jump staircase loops the whole ring once per story, so every story's slabs sit over the story
 // below and the upper slabs' support pillars run straight through the lower slabs. Here each story owns

@@ -47,7 +47,7 @@ Camera shake, controller rumble, hit-stop, the hurt flash, puzzle progress/solve
 
 ## Ruin size, shaft traversal and witch-bombs
 
-Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.TIERS`; the central shaft is rolled per seed from `RuinLayerPlan.SHAFT_PUZZLES`: a free-jump platform staircase (`docs/js/ruin-jump-shaft.js`) or spaced-out slabs with swing ropes (`docs/js/ruin-rope-shaft.js`), not the old obelisk timing puzzle; witch-bombs are three variants (Hronal / Tothal frost / Kanthic plasm) of one pipeline that follow the ruin's tradition. Read [`docs/architecture/ruin-tiers-and-jump-shaft.md`](docs/architecture/ruin-tiers-and-jump-shaft.md) before changing wing counts, shaft size, platform hazards or bomb behaviour, and extend `TIERS` / `VARIANTS` / `SHAFT_PUZZLES` rather than adding another special case.
+Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.TIERS`; the central shaft defaults to spaced-out slabs with swing ropes (`docs/js/ruin-rope-shaft.js`, `RuinLayerPlan.DEFAULT_SHAFT_PUZZLE`); the free-jump platform staircase (`docs/js/ruin-jump-shaft.js`) stays selectable via `shaftTraversal`, and neither is the old obelisk timing puzzle; witch-bombs are three variants (Hronal / Tothal frost / Kanthic plasm) of one pipeline that follow the ruin's tradition. Read [`docs/architecture/ruin-tiers-and-jump-shaft.md`](docs/architecture/ruin-tiers-and-jump-shaft.md) before changing wing counts, shaft size, platform hazards or bomb behaviour, and extend `TIERS` / `VARIANTS` / `SHAFT_PUZZLES` rather than adding another special case.
 
 ## Visual changes: render pipeline, hooks and layers
 

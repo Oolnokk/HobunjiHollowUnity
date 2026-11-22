@@ -140,7 +140,7 @@
     const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : Math.floor(Math.random() * 2147483647);
     const wasFlying = active;
     if (wasFlying) setFlying(false); // Arrival places the follow camera; flying resumes from there.
-    const traversal = TRAVERSALS.includes(options.traversal) ? options.traversal : (TRAVERSALS.includes(shaftChoice()) ? shaftChoice() : null); // null: the ruin rolls its own shaft puzzle.
+    const traversal = TRAVERSALS.includes(options.traversal) ? options.traversal : (TRAVERSALS.includes(shaftChoice()) ? shaftChoice() : null); // null: the ruin's default shaft puzzle.
     const ok = await ruin.generate(seed, { tier, theme, shaftTraversal: traversal });
     if (ok) toast('Dungeon: ' + tier + ' / ' + theme + (traversal ? ' / ' + traversal : '') + ' #' + seed);
     if (ok && wasFlying) setFlying(true);
@@ -255,7 +255,7 @@
     add('devRandomDungeonBtn', 'Random dungeon', () => randomDungeon());
     const shaft = document.createElement('select'); // Central-shaft puzzle for the next random dungeon.
     shaft.id = 'devRandomDungeonShaft'; shaft.className = 'settings-small-btn'; shaft.setAttribute('aria-label', 'Dungeon shaft puzzle');
-    shaft.innerHTML = '<option value="">Any shaft</option><option value="jumpPlatforms">Jump platforms</option><option value="ropeSwings">Rope swings</option>';
+    shaft.innerHTML = '<option value="">Default shaft (rope swings)</option><option value="ropeSwings">Rope swings</option><option value="jumpPlatforms">Jump platforms</option>';
     row.appendChild(shaft);
     anchor.insertAdjacentElement('afterend', row);
     refreshButtons();

@@ -14,7 +14,7 @@
   gallery ring (the "balcony thickness") never changes.
 * `tierOptions(tier)` also fixes `floorHeight` (6 / 10 / 12), turns native V50 upper
   floors off (they would add unaccounted rooms and braziers) and selects the
-  `jumpPlatforms` traversal. `distributeWings` spreads the wings over the floors with the
+  `ropeSwings` traversal (the `jumpPlatforms` staircase on request). `distributeWings` spreads the wings over the floors with the
   remainder on the upper ones; the ground floor is capped at 3 (the entrance wall).
 * Sized ruins have no local door seals: the Great Door opens when exactly the wing
   braziers are lit. (`context.tier` suppresses the sanctum's local braziers.)
@@ -61,12 +61,12 @@ reach (`compose().checks`, also run by `scripts/test-ruin-tiers-jump-shaft.js`).
 * Large bomber Skeeri (`js/skeeri-ruins.js`) are created once the ruin is the active area (creating them during generation clamped them into the previous area's grid) and nest in the headroom story; the nest and attack
   range scale with the shaft, and they drop the ruin's own tradition of witch-bomb.
 
-## Rope-swing shaft (`js/ruin-rope-shaft.js`) — alternate central-shaft puzzle
+## Rope-swing shaft (`js/ruin-rope-shaft.js`) — the default central-shaft puzzle
 
-Tier ruins roll their central-shaft puzzle per seed from `RuinLayerPlan.SHAFT_PUZZLES`
-(`jumpPlatforms`, `ropeSwings`); an explicit `shaftTraversal` wins (developers: the "Random dungeon" shaft
-selector in Settings, or `DevRandomRuin.generate(seed, {tier, theme, shaftTraversal})`). The untiered dev ruin
-keeps `TRAVERSAL_METHODS` (reaching obelisks).
+Every tier ruin uses `RuinLayerPlan.DEFAULT_SHAFT_PUZZLE` (`ropeSwings`). The jump-platform staircase stays in
+`SHAFT_PUZZLES` and is used when `shaftTraversal: 'jumpPlatforms'` is passed (developers: the "Random dungeon"
+shaft selector in Settings, or `DevRandomRuin.generate(seed, {tier, theme, shaftTraversal})`). The untiered dev
+ruin keeps `TRAVERSAL_METHODS` (reaching obelisks).
 
 * The staircase loops the whole ring every story, so upper slabs sit over lower ones and their support pillars
   pass through them. The rope shaft gives each story its own stretch of the ring: no slab overlaps another in
