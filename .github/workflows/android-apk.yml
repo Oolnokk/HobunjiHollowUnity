@@ -91,7 +91,23 @@ jobs:
               html = archive.read("assets/game/index.html").decode("utf-8")
               assert 'src="android-bridge.js"' in html, "Android save bridge is not loaded"
               assert "../vendor/three.min.js" in html, "Three.js was not localized"
-          print("Android APK includes the full game, storage bridge and bundled Three.js")
+          # Google Drive's native authorization protects much more sensitive data
+          # than ordinary game scripts. Never ship executable off-origin JS.
+          from html.parser import HTMLParser
+          class ScriptAudit(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.external = []
+              def handle_starttag(self, tag, attrs):
+                  if tag != "script":
+                      return
+                  src = dict(attrs).get("src", "")
+                  if src.lower().startswith(("https://", "http://", "//")):
+                      self.external.append(src)
+          audit = ScriptAudit()
+          audit.feed(html)
+          assert not audit.external, "APK loads remotely executable JavaScript: " + str(audit.external)
+          print("Android APK includes the full game, private save bridge, local Three.js and no remote script tags")
           PY
       - name: Smoke-test signed Android release packaging (disposable CI key)
         working-directory: android
