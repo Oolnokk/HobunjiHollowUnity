@@ -106,10 +106,25 @@
     walker.root.parent.add(group);
     group.position.copy(walker.root.position);
     entry = { child, walker, persist, burden: null, hiddenRoot: null, previousVisibility: true, disposing: false };
+    const infantWidth = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelWidth) || .3); // Reuses the already age-scaled portrait for both hand contacts.
+    const infantHeight = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelHeight) || infantWidth);
     const burden = api.registerBurden({
       id: 'family_baby_' + child.id, mapId: area, // Let Shattercasks pick the canonical active world scene; an NPC sub-group would reset zone burden records.
       group, kind: 'familyBaby', displayName: child.name || 'Baby',
       hanging: false, invulnerable: true, noHang: true,
+      data: { carryable: {
+        enabled: true,
+        billboardAnchor: { coordinateSpace: 'posterior-relative',
+          position: { x: 0, y: infantHeight * .06, z: -infantHeight * .48 },
+          rotation: { x: 0, y: 0, z: 0 }, size: 1 }, // Shared Burden held-pose owner locates the baby at the parent's torso.
+        handTargets: { // Standard grip solver places both player's hands around the actual infant, not at the posterior anchor.
+          left: { x: infantWidth * .40, y: infantHeight * .5, z: .015, rotation: { x: 180, y: 0, z: -90 } },
+          right: { x: -infantWidth * .40, y: infantHeight * .5, z: .015, rotation: { x: 0, y: 0, z: 90 } },
+        },
+        backCarry: { position: { x: 0, y: infantHeight * .16, z: -infantHeight * .48 },
+          rotation: { x: 0, y: 180, z: 0 }, size: 1,
+          portraitAnchor: { x: 0, y: 0, z: 0 } }, // Same species-adjusted back-stow rig as other carryables.
+      } },
       onPickup: () => {
         child.carryBy = 'player'; child.carryPose = 'arms'; child.carrySpot = null;
         group.visible = true; showWalker(entry, false);
