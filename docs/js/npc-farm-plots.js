@@ -405,6 +405,17 @@
     return shared;
   }
 
+  function worldUvSoilGeometry(base, c, r) {
+    const geometry = base.clone(); // Per-tile UV translation; the sculpted base geometry itself stays shared.
+    const positions = geometry.getAttribute('position'); // Local X/Z after the ground-plane rotation.
+    const uvs = geometry.getAttribute('uv'); // Uses absolute world-space UVs like TerrainGeometry farm beds/trenches.
+    for (let i = 0; i < uvs.count; i++) {
+      uvs.setXY(i, c + 0.5 + positions.getX(i), r + 0.5 + positions.getZ(i));
+    }
+    uvs.needsUpdate = true;
+    return geometry; // A worked tile owns/disposes this small UV buffer when the soil changes.
+  }
+
   function visualFor(areaId) {
     let v = visuals.get(areaId);
     const scene = deps?.getAreaScene?.(areaId);
@@ -446,7 +457,8 @@
     const objects = [];
     if (s.dug) {
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'trench') || assets.pitMat; // Same PNG shade-fill as the player's trenches.
-      const pit = new THREE.Mesh(assets.pit, material);
+      const pit = new THREE.Mesh(worldUvSoilGeometry(assets.pit, c, r), material);
+      pit.userData.ownGeometry = true; // disposeTile releases this tile's offset UV buffer.
       pit.position.set(c + 0.5, y, r + 0.5);
       objects.push(pit);
       if (s.water) {
@@ -457,7 +469,8 @@
       }
     } else {
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'tilled') || assets.tilledMat; // Reuse the authored canvas soil material, not a flat brown box.
-      const patch = new THREE.Mesh(assets.patch, material);
+      const patch = new THREE.Mesh(worldUvSoilGeometry(assets.patch, c, r), material);
+      patch.userData.ownGeometry = true; // Always free this tile's own shifted UV geometry.
       patch.position.set(c + 0.5, y, r + 0.5);
       objects.push(patch);
       if (s.crop) {
