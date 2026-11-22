@@ -166,7 +166,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
       const omg=await spawn('omgurku',-0.4),pora=await spawn('porakaneki',0.4); // Start within hatchet reach so the smoke tests attack dispatch, not arena navigation.
-      window.__tribeQa={omg,pora,sawMutualTargets:false,aiCalls:{omg:0,pora:0},toolCalls:{omg:0,pora:0},lastAi:{}}; // Live counters distinguish a skipped hostile frame from a blocked melee decision.
+      window.__tribeQa={omg,pora,sawMutualTargets:false,aiCalls:{omg:0,pora:0},toolCalls:{omg:0,pora:0},lastAi:{},aiErrors:[]}; // A game-loop catch must not turn an actual AI ReferenceError into a silent 12s visual-wait timeout. // Live counters distinguish a skipped hostile frame from a blocked melee decision.
       if (!window.__tribeQaObserverInstalled) {
         const originalAi=window.BanditCombat.updateCombatAI,originalToolMesh=window.BanditCombat.updateToolMesh; // Production implementations stay untouched; the browser QA only observes their dispatches.
         window.BanditCombat.updateCombatAI=function(actor,dt,target,...rest){
@@ -176,7 +176,14 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
             qa.aiCalls[id]++;
             qa.lastAi[id]={dt,lastTargetIsRival:target===(id==='omg'?qa.pora:qa.omg),lastTargetIsPlayer:target===window.Combat?.deps?.player,atMs:performance.now()};
           }
-          return originalAi.call(this,actor,dt,target,...rest);
+          try { return originalAi.call(this,actor,dt,target,...rest); }
+          catch(error) {
+            if(actor===qa?.omg||actor===qa?.pora) {
+              const id=actor===qa.omg?'omg':'pora';
+              qa.aiErrors.push({actor:id,message:String(error),stack:String(error?.stack||'').slice(0,1800)}); // The failing actor, not a generic idle snapshot, now identifies the broken production helper.
+            }
+            throw error; // Preserve real game-loop exception semantics; the test observes without suppressing failures.
+          }
         };
         window.BanditCombat.updateToolMesh=function(actor,...rest) {
           const qa=window.__tribeQa;
@@ -196,7 +203,10 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
           && Math.hypot(holder.x-rider.x,holder.z-rider.z)<0.9;
       }; // The three-RAF heuristic was nondeterministic on software WebGL; accept the pose only after gameplay really updated it.
       const poseDeadline=performance.now()+12000; // Bounded browser wait; failures remain failures and report the real missing hostile update.
-      while(!toolPoseReady()&&performance.now()<poseDeadline)await new Promise(resolve=>requestAnimationFrame(resolve));
+      while(!toolPoseReady()&&performance.now()<poseDeadline) {
+        if(window.__tribeQa.aiErrors.length) throw new Error('Rival fighter AI failed before its tool pose was updated: '+JSON.stringify(window.__tribeQa.aiErrors.slice(0,3)));
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+      }
       const holder=omg._banditToolHolder?.position;
       const floorY=ref.group.position.y-omg.halfHeight;
       const poseY=Number(omg._banditMountedPoseY); // Actual last authored Y, including an elevated Heavy Neutral or active windup; a weapon is not required to sit at its unanimated hand anchor.
