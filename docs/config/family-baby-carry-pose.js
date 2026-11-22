@@ -13,6 +13,7 @@
       left: { anchor: 'posterior', offset: { x: .12, y: .075, z: .015 }, rotation: { x: 180, y: 0, z: -90 } },
       right: { anchor: 'neck', offset: { x: -.12, y: -.065, z: .015 }, rotation: { x: 0, y: 0, z: 90 } },
     },
+    elbows: { left: null, right: null }, // Attack Animation Editor convention: shoulder-relative XYZ; unset retains legacy arm aiming.
   };
   const axes = ['x', 'y', 'z']; // Shared coordinate axes in the authoring schema and live carryable definition.
   const finite = (value, fallback, limit = 10) => {
@@ -34,6 +35,11 @@
     return {
       held: pose(source.held, DEFAULT_PROFILE.held),
       back: pose(source.back, DEFAULT_PROFILE.back, true),
+      elbows: Object.fromEntries(['left','right'].map(side => {
+        const point=source.elbows?.[side];
+        return [side,point && ['x','y','z'].every(axis=>Number.isFinite(Number(point[axis])))
+          ?vector(point,{x:0,y:0,z:0},2):null]; // Identical to Attack Editor nullable per-side elbow targets.
+      })),
       grips: Object.fromEntries(['left', 'right'].map(side => {
         const input = source.grips?.[side] || {}, defaults = DEFAULT_PROFILE.grips[side];
         const legacy = input.position && !input.offset; // V1 portrait fractions from earlier editor exports/localStorage.
@@ -100,6 +106,7 @@
         rotation: { ...held.rotation }, size: held.size, posteriorOffset: { ...held.posteriorOffset } },
       backCarry: { position: scaled(back.position, w, h), rotation: { ...back.rotation }, size: back.size,
         posteriorOffset: { ...back.posteriorOffset }, portraitAnchor: { ...back.portraitAnchor } },
+      elbows: Object.fromEntries(['left','right'].map(side => [side,source.elbows[side]?{...source.elbows[side]}:null])),
       handTargets: Object.fromEntries(['left', 'right'].map(side => {
         const grip = source.grips[side];
         const point = grip.position ? scaled(grip.position, w, h) // V1 portrait-fraction compatibility.
@@ -134,6 +141,11 @@
     return normalize({
       held: pose(held, DEFAULT_PROFILE.held, false),
       back: pose(back, DEFAULT_PROFILE.back, true),
+      elbows: Object.fromEntries(['left','right'].map(side => {
+        const point=carryable?.elbows?.[side];
+        return [side,point && ['x','y','z'].every(axis=>Number.isFinite(Number(point[axis])))
+          ?vector(point,{x:0,y:0,z:0},2):null];
+      })),
       grips: Object.fromEntries(['left', 'right'].map(side => [side, {
         anchor: side === 'left' ? 'posterior' : 'neck',
         offset: gripOffset(side, carryable?.handTargets?.[side], anchors, w, h),
@@ -153,6 +165,11 @@
       }
       target.size = source.size;
       if (key === 'billboardAnchor') target.coordinateSpace = 'posterior-relative';
+    }
+    const elbows=carryable.elbows||(carryable.elbows={}); // Same parent-local, shoulder-relative targets used by ProceduralHandShoulderAim.
+    for(const side of ['left','right']){
+      const target=pose.elbows[side];
+      elbows[side]=target ?Object.assign(elbows[side]||{},target):null;
     }
     const hands = carryable.handTargets || (carryable.handTargets = {});
     for (const side of ['left', 'right']) {
