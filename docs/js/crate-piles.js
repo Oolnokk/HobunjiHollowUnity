@@ -315,28 +315,50 @@
     if (!window.Shattercasks?.discardBurden?.(burden)) return false;
     return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause,attacker);
   }
-  function sweepMelee(collider,opts={}) {
-    if (!collider) return false;
-    let hit=false;
+  // The lunge probe and committed swing share the same crate collision filter.
+  // No loot, blast, or persistence mutation occurs until sweepMelee commits the hit.
+  function firstMeleePile(collider,opts={}) {
+    if (!collider) return null;
     const mapId=currentArea();
     for(const pile of piles.values()) {
-      if (pile.mapId!==mapId || !validPile(pile)) continue;
+      if(pile.mapId!==mapId || !validPile(pile))continue;
+      const stamp=Number(opts.actor?.lungeOriginMs); // Suppresses the later ordinary strike only for a crate already hit by this lunge.
+      if(!opts.lungeContact && Number.isFinite(stamp) && stamp>0
+        && pile.lastLungeContactStamp===stamp
+        && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
       const p=positionOf(pile.group);
       const dx=p.x-collider.origin.x,dz=p.z-collider.origin.z;
       const radial=Math.hypot(dx,dz);
-      if (radial>collider.horizontalRangeWorld+.40) continue;
+      if(radial>collider.horizontalRangeWorld+.40)continue;
       const angle=Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),
         Math.cos(Math.atan2(dz,dx)-collider.yaw));
-      if (Math.abs(angle)>(collider.halfConeRad||.5)+.17) continue;
+      if(Math.abs(angle)>(collider.halfConeRad||.5)+.17)continue;
       const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/
         Math.max(.1,collider.horizontalRangeWorld);
-      if (Math.abs(expectedY-(p.y+.35))>collider.halfHeightWorld+.32) continue;
-      // The melee sweep strikes one crate at a time; ordinary decorative furniture has no registration.
-      reducePile(pile);hit=true;
-      breakAt(mapId,pile.scene,p.x,p.y+.32,p.z,'melee',opts.actor||null);
-      break;
+      if(Math.abs(expectedY-(p.y+.35))>collider.halfHeightWorld+.32)continue;
+      return pile;
     }
-    return hit;
+    return null;
+  }
+  function hasLungeTarget(actor,opts={}) {
+    if(!actor || !(opts.rangePx>0))return false;
+    let present=false;
+    const mapId=currentArea();
+    for(const pile of piles.values()) {
+      if(pile.mapId===mapId && validPile(pile)){present=true;break;}
+    }
+    if(!present)return false; // Avoid even constructing the combat collider outside crate areas.
+    const collider=window.Combat?.meleeColliderVolume?.(actor,{...opts,debug:false});
+    return !!firstMeleePile(collider,{actor,lungeContact:true});
+  }
+  function sweepMelee(collider,opts={}) {
+    const pile=firstMeleePile(collider,opts);
+    if(!pile)return false;
+    const p=positionOf(pile.group);
+    if(!reducePile(pile))return false; // No blast or loot without actually removing a crate.
+    if(opts.lungeContact)pile.lastLungeContactStamp=Number(opts.actor?.lungeOriginMs);
+    breakAt(pile.mapId,pile.scene,p.x,p.y+.32,p.z,'melee',opts.actor||null);
+    return true;
   }
   function restoreAreaDrops(mapId,scene) {
     if(!mapId||!scene||restoredScenes.get(mapId)===scene)return;
@@ -394,5 +416,5 @@
     lastJunkPickupMs,supplySaveQueued,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
-    shatterBurden,sweepMelee,tick,forgetPile,releaseZone,debugSnapshot};
+    shatterBurden,sweepMelee,hasLungeTarget,tick,forgetPile,releaseZone,debugSnapshot};
 })();
