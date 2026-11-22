@@ -78,8 +78,14 @@ const authorWindow = {
     mutate(change) { change(handConfigData); handRefreshes++; },
   },
 };
-const configureAnatomy = vm.runInNewContext('(' + productionFunction(comparison, 'applyAnatomyConfig') + ')',
-  { window: authorWindow, normalizeSpecies: v => v, normalizeGender: v => v });
+const partRuntimes = vm.runInNewContext(`(() => {
+  const originalPartRuntime = new Map(); // Real production ownership: one snapshot across all species in the lineup.
+  ${productionFunction(comparison, 'rememberPartRuntimeDefaults')}
+  ${productionFunction(comparison, 'restorePartRuntimeDefaults')}
+  ${productionFunction(comparison, 'applyAnatomyConfig')}
+  return { applyAnatomyConfig, restorePartRuntimeDefaults };
+})()`, { window: authorWindow, normalizeSpecies: v => v, normalizeGender: v => v });
+const configureAnatomy = partRuntimes.applyAnatomyConfig;
 const independentAnatomy = { species: 'mao-ao', gender: 'male', anatomy: { handScale: 1, footScale: 1.5 } };
 configureAnatomy(independentAnatomy);
 assert.equal(handConfigData.speciesScaleOverrides['mao-ao'].male, 1,
@@ -89,6 +95,14 @@ independentAnatomy.anatomy.footScale = 1.75;
 configureAnatomy(independentAnatomy);
 assert.equal(handRefreshes, 1, 'the hand GLB is rebuilt only once, not every time the independent Foot slider moves');
 assert.equal(handConfigData.speciesScaleOverrides['mao-ao'].male, 1, 'hands stay 100% after repeated 175% foot edits');
+partRuntimes.restorePartRuntimeDefaults();
+assert.equal(handConfigData.speciesScaleOverrides['mao-ao'], undefined,
+  'Reset all also removes edited hand-model overrides so future spawns inherit the original hand size');
+assert.equal(authorWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['mao-ao'], undefined,
+  'Reset all restores the actual foot-scale lookup, not just the displayed profile numbers');
+assert.equal(handRefreshes, 2, 'reverting both edited hands in one batch costs only one additional GLB update');
+partRuntimes.restorePartRuntimeDefaults();
+assert.equal(handRefreshes, 2, 'repeating Reset all cannot trigger redundant hand rebuilds');
 
 const characters = { 'mao-ao::male': { species: 'mao-ao', gender: 'male', anatomy: {
   portraitScale: 1.1, handScale: .9, footScale: 1.05, rigScaleY: 1.12,
