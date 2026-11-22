@@ -14,6 +14,7 @@ const incubatorSource = fs.readFileSync('docs/js/barn-incubator.js', 'utf8');
 const indexSource = fs.readFileSync('docs/index.html', 'utf8');
 const bridgeSource = fs.readFileSync('docs/js/livestock-nursery-install-bridge.js', 'utf8');
 const loaderSource = fs.readFileSync('docs/js/farm-panel.js', 'utf8');
+const shippingUiSource = fs.readFileSync('docs/js/shipping-panel.js', 'utf8'); // Keeps diagnostics in the already-existing mobile Shipping window.
 
 const original = { id: 'animal_7', kind: 'grehlr', name: 'Stripe', lifeStage: 'adult',
   barnId: 'barn_3', genotype: { fur: { main: '#829eab' }, pattern: { stripes: 2 }, sizeClass: 'small' },
@@ -236,5 +237,7 @@ assert.match(indexSource, /js\/world-meta-store\.js\?v=20261122cancelAnimal2/);
 assert.match(indexSource, /js\/pending-animal-sales\.js\?v=20261122cancelAnimal2/);
 assert.match(bridgeSource, /barn-incubator\.js\?v=20261122cancelAnimal2/);
 assert.match(loaderSource, /farm-panel-core\.js\?v=20261122cancelAnimal2/);
+assert.match(shippingUiSource, /pendingAnimalSales:\s*standaloneDebugVisible/, 'animal sale diagnostics are on-demand in the mobile shipping window');
+assert.match(indexSource, /shipping-panel\.js\?v=20261122cancelAnimal2/);
 
 console.log('atomic reversible animal sales regression checks passed');
