@@ -214,7 +214,8 @@
   }
   function takeIntoArms(child, walker, persist) {
     const entry = ensure(child, walker, persist), api = window.Shattercasks;
-    if (!entry || !api?.pickUp || entry.burden.flying) return false;
+    if (!entry || !api?.pickUp || entry.burden.flying
+        || (child.carryBy !== 'spouse' && entry.walker?.area !== currentArea())) return false; // The child must be present, unless the visible spouse is handing them over.
     if (api.heldBurdenInfo?.()?.id === entry.burden.id) return true;
     if (api.backCarriedInfo?.()?.id === entry.burden.id) return api.takeFromBack?.() === true;
     if (api.heldBurdenInfo?.()) { debug.lastError = 'hands occupied'; return false; }
