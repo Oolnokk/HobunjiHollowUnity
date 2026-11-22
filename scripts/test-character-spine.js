@@ -56,18 +56,17 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   assert.equal(spine.layoutFor(0, neckY, H, neckY + 1).nodes[0].y, neckY - 0.42 * H, 'an implausible posterior falls back to the base-relative estimate');
   assert.equal(spine.layoutFor(0, neckY, H).nodes[0].y, neckY - 0.42 * H, 'and so does a missing one');
 
-  // Neck base: the midpoint of the authored hand-shoulder anchors (the shoulder line), converted like the posterior; species without authored
-  // shoulders get a point just under the pivot on the root's axis; an implausible anchor falls back too.
-  const authoredBase = spine.neckBaseLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, placementRatio: 0.5, neckX: 0.02, neckY, posteriorY: posterior });
-  const maoAo = window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mao-ao::male'].anchors;
-  near(authoredBase.y, (maoAo.leftHandShoulder.position.y + maoAo.rightHandShoulder.position.y) / 2 - H / 2, 'authored shoulders give the neck base (y)');
-  near(authoredBase.x, (maoAo.leftHandShoulder.position.x + maoAo.rightHandShoulder.position.x) / 2, 'and (x)');
-  assert.ok(authoredBase.y < neckY, 'below the head-turn pivot');
+  // Skinning boundary: the uppermost spline node must reach practically the
+  // last opaque head pixel, regardless of authored shoulder coordinates.
+  const authoredBase = spine.neckBaseLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, placementRatio: 0.5, neckX: 0.02, neckY, posteriorY: posterior, pixelHeight: 200 });
+  near(authoredBase.y, neckY - 2.5 * H / 200, 'authored shoulders do not steal the upper torso from the seven-node spine');
+  near(authoredBase.x, 0.02, 'the last spine node directly reaches the actual base-head X');
+  assert.ok(authoredBase.y < neckY, 'only the short source-pixel contact remains below the chin');
   const unauthored = spine.neckBaseLocal({ speciesId: 'mao-ao-skeleton', gender: 'male', modelHeight: H, neckX: 0.05, neckY, posteriorY: posterior });
-  near(unauthored.y, neckY - 0.08 * H, 'no authored shoulders: just under the pivot');
-  assert.equal(unauthored.x, 0, 'on the root\'s axis');
-  const implausible = spine.neckBaseLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, neckX: 0.05, neckY: 0.1, posteriorY: -0.3 });
-  near(implausible.y, 0.1 - 0.08 * H, 'shoulders that would land above the pivot are ignored');
+  near(unauthored.y, neckY - 2.5 * H / 200, 'without authored shoulders the same short neck gap applies');
+  assert.equal(unauthored.x, 0.05, 'the short neck is under the painted head, not re-centered on the torso');
+  const hires = spine.neckBaseLocal({ speciesId: 'mao-ao', gender: 'male', modelHeight: H, neckX: 0.05, neckY: 0.1, posteriorY: -0.3, pixelHeight: 2048 });
+  near(hires.y, 0.1 - 2.5 * H / 2048, '2048px portraits retain a true 2.5-source-pixel neck, not a giant percentage gap');
 
   // Skin weights: the two neighbouring nodes by height, linear between them; below the posterior rides node 0, above the neck base the last node.
   const w = {};
@@ -162,6 +161,25 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   assert.deepEqual([front[0].position.x, front[0].position.y, front[0].position.z], [0, posterior, 0], 'the posterior node never moves off the root');
   spine.applyToRig({ splineNodes: front, neckLocal: { x: neckX, y: neckY }, spineBase: { x: baseX, y: baseY }, spinePosteriorY: posterior }, spine.profileFor(0.5), H);
   near(chain(front)[6].y, layout.nodes[6].y + spine.solveCurve(spine.profileFor(0.5), layout, H)[6].y, 'reapplying is relative to the bind pose, never cumulative');
+
+  // Head-scale and authored offsets now lengthen the REAL spline before hunch;
+  // the independent head-offset bone itself must remain a 2.5-source-pixel link.
+  const reachRig = { splineNodes: fakeBones(), neckLocal: { x: neckX, y: neckY },
+    spineBase: { x: baseX, y: baseY }, spinePosteriorY: posterior };
+  assert.ok(spine.applyNeckReach(reachRig, 0.12 * H, H, 0.6));
+  const extended = chain(reachRig.splineNodes);
+  const reachHunch = spine.solveCurve(spine.profileFor(0.6), layout, H);
+  near(extended[0].y, posterior, 'head scale cannot displace the pelvis / spine root');
+  near(extended[6].y, baseY + reachHunch[6].y + 0.12 * H, 'spine tip receives the full head-scale reach plus hunch');
+  const intermediate = extended[3].y - layout.nodes[3].y - reachHunch[3].y;
+  near(intermediate, 0.06 * H, 'middle spine bone carries half the stretched space, not a huge neck bone');
+  spine.applyNeckReach(reachRig, 0.12 * H, H, 0.6);
+  near(chain(reachRig.splineNodes)[6].y, extended[6].y, 'repeated Head slider updates never accumulate spine reach');
+  spine.applyNeckReach(reachRig, -100 * H, H, 0);
+  assert.ok(chain(reachRig.splineNodes)[6].y > posterior, 'extreme negative height cannot invert the spine below its own pelvis');
+  assert.ok(reachRig.neckReachAppliedY > -100 * H, 'impossible compression is clamped and exposed diagnostically');
+  spine.applyNeckReach(reachRig, 0, H, 0);
+  near(chain(reachRig.splineNodes)[6].y, baseY, 'reset restores the authored seven-node rest chain');
 
   // Point deformation: anchors keep their 2D coordinates and ride the same curve at their own height.
   const bound = spine.profileFor(1, 0.3);
