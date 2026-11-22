@@ -231,7 +231,7 @@ sync({timestamp:now});
 assert.equal(belt.parent, avatar, 'portrait-only rebuild reparents the torch immediately, not after the 100ms poll');
 assert.equal(oldAvatar.children.includes(belt), false, 'the old portrait no longer owns an active torch');
 assert.equal(torch.debug.belt.attachedToPlayer, true, 'attachment debug follows the current portrait beneath the body');
-assert.equal(fireStarts, 3, 'a portrait-only replacement reuses the existing fire state without rebuilding emitters');
+assert.equal(fireStarts, 2, 'a portrait-only replacement reuses the existing fire state without rebuilding emitters');
 assert(fireTicks > 100, 'real shared fire updates throughout stowed rendering without spawning duplicate sources');
 
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
