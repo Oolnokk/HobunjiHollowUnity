@@ -66,6 +66,12 @@ assert.equal(quickChance({def:low},{tap2:'backstabFlick'},{behind:true}),1,'Back
 assert.equal(quickChance({def:high},{tap2:'backstabFlick'},{lowHealth:true}),0,'Backstab Flick cannot trigger from unrelated target conditions');
 assert.equal(quickChance({def:high},{tap2:'none'},{behind:true,exhausted:true}),0,'nonexistent Quick Attack must never be rolled');
 
+const behind = vm.runInNewContext(
+  '(function(){' + section(bandit,'  function banditBehindTarget(', '  function banditQuickAttackConditions(') +
+  'return banditBehindTarget;})()', {Number, Math}
+); // Same cheap geometric predicate the combat bonus and opportunistic flank use.
+assert.equal(behind({x:100,y:0},{x:0,y:0,angle:0}),false,'front position cannot claim a backstab bonus');
+assert.equal(behind({x:-100,y:0},{x:0,y:0,angle:0}),true,'rear position satisfies the real behind condition');
 const flankDeps = { TILE:55, angleDiff:(target,current)=>Math.atan2(Math.sin(target-current),Math.cos(target-current)) }; // Shared short-angle turn convention used by the bandit module.
 const flankPoint = vm.runInNewContext(
   '(function(){' + section(bandit,'  function banditRingPoint(', '  // Bandits frequently request two personal-space nudges') +
@@ -82,7 +88,7 @@ for(let step=0;step<20;step++){
   const dot=fighter.x/Math.max(.001,Math.hypot(fighter.x,fighter.y));
   if(dot<-.35){reachedRear=true;break;}
 }
-assert(reachedRear,'Backstab contender should circle into the real behind bonus within its two-second budget');
+assert(reachedRear && behind(fighter,foe),'Backstab contender should circle into the REAL behind bonus within its two-second budget');
 assert(Math.abs(fighter.y)>40,'Backstab movement must go around the opponent rather than run straight through their center');
 assert.match(bandit,/const flank = banditBackstabFlankPoint\(c, targetPlayer, engageRangePx, movementPoint\)/,'live melee AI uses the tested orbit helper');
 assert.match(bandit,/const chance = banditQuickAttackChance\(c, loadout, cond\)/,'live attack AI uses the tested technique-specific chance');
