@@ -5,13 +5,23 @@
   'use strict';
   if (window.FamilyBabyCarryPose) return;
   const STORAGE_KEY = 'hobunji.familyBabyCarryPose.v1'; // Preserve existing device-local draft storage; legacy V1 positions migrate at resolution.
+  // Authored defaults (screenshot-verified in game against a newborn Mao'ao bust, Nov 22):
+  // HELD = cradle. The infant lies ~65 degrees across the carrier's lower chest, head in the
+  // carrier's RIGHT arm, face tipped slightly up; the right hand cups the head/neck from below,
+  // the left hand supports the bottom. Both mounts pivot at the infant's posterior (portrait
+  // y = .486, the bust's lower edge), so posteriorOffset reads as "where the baby's bottom sits".
+  // BACK = Sacajawea-style stow: upright high between the shoulder blades, offset toward the
+  // carrier's left shoulder, facing BEHIND the carrier so the over-the-shoulder gameplay camera
+  // sees the face; head leans in against the carrier's neck and peeks over the shoulder line.
+  // Euler values are the gameplay ANCHOR (Shattercasks applies their inverse to the infant).
   const DEFAULT_PROFILE = {
-    held: { position: { x: 0, y: .06, z: -.48 }, rotation: { x: 0, y: 0, z: 0 }, size: 1, posteriorOffset: { x: 0, y: 0, z: 0 } },
-    back: { position: { x: 0, y: .16, z: -.48 }, rotation: { x: 0, y: 180, z: 0 }, size: 1,
-      posteriorOffset: { x: 0, y: 0, z: 0 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
+    held: { position: { x: 0, y: .486, z: 0 }, rotation: { x: 4.95, y: -10.92, z: -64.53 }, size: 1,
+      posteriorOffset: { x: .11, y: .075, z: .13 } },
+    back: { position: { x: 0, y: .486, z: 0 }, rotation: { x: -174.07, y: -.94, z: 171.05 }, size: 1,
+      posteriorOffset: { x: .065, y: .19, z: -.07 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
     grips: {
-      left: { anchor: 'posterior', offset: { x: .12, y: .075, z: .015 }, rotation: { x: 180, y: 0, z: -90 } },
-      right: { anchor: 'neck', offset: { x: -.12, y: -.065, z: .015 }, rotation: { x: 0, y: 0, z: 90 } },
+      left: { anchor: 'posterior', offset: { x: -.046, y: -.043, z: -.02 }, rotation: { x: 180, y: 0, z: -90 } }, // Under the bottom.
+      right: { anchor: 'neck', offset: { x: -.12, y: .044, z: -.02 }, rotation: { x: 0, y: 0, z: 90 } }, // Under the head, toward the crown.
     },
     elbows: { left: null, right: null }, // Attack Animation Editor convention: shoulder-relative XYZ; unset retains legacy arm aiming.
   };

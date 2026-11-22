@@ -19,7 +19,10 @@ const window={};new Function('window',apiSource)(window);const api=window.Family
 const width=.216,height=.216,ratio=.7;
 const anchors=api.anchorsForAvatar({visualCentroidLocalY:.0432,portraitVerticalPlacementRatio:ratio,
   neckRig:{spinePosteriorY:-.04,spineBase:{x:.02},neckLocal:{x:-.01,y:.06,z:.02}}},width,height);
-const state={selectedType:'carry',selectedId:'left',carryable:api.forSize(width,height,anchors)};
+// Pin a wide side-grip fixture: this test exercises the editor's nearest-grip touch picking,
+// independent of the shipped cradle default (where both hands sit close together under the infant).
+const sideGrips={grips:{left:{offset:{x:.12,y:.075,z:.015}},right:{offset:{x:-.12,y:-.065,z:.015}}}};
+const state={selectedType:'carry',selectedId:'left',carryable:api.forSizeFrom(sideGrips,width,height,anchors)};
 const actions=new Map(),drawCalls=[],selected=[];
 const context={clearRect(){},fillRect(){},drawImage(...args){drawCalls.push(args)},
   beginPath(){},arc(){},moveTo(){},lineTo(){},fill(){},stroke(){},fillText(){}};

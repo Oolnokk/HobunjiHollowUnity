@@ -42,13 +42,14 @@ close(pinned.posterior.x,0,'posterior root remains centered even when shoulder/n
 close(anchors.neck.x,.02,'right grip uses head-turn pivot X rather than shoulder midpoint');
 close(anchors.neck.y,.46,'neck uses unscaled head-turn pivot, not top of painted alpha');
 const sized=profile.forSize(.3,.4,anchors);
-close(sized.handTargets.left.x,anchors.posterior.x+.12,'left grip is relative to baby posterior');
-close(sized.handTargets.left.y,anchors.posterior.y+.075,'left grip Y is unscaled anatomy-relative distance');
-close(sized.handTargets.left.z,anchors.posterior.z+.015,'left grip depth is unscaled by baby height');
-close(sized.handTargets.right.x,anchors.neck.x-.12,'right grip is relative to baby neck');
-close(sized.handTargets.right.y,anchors.neck.y-.065,'right grip Y is relative to neck joint');
-assert.equal(sized.billboardAnchor.position.z,.4*-.48,'legacy baby mount still scales with portrait');
-assert.equal(sized.backCarry.rotation.y,180,'back stow pose retains orientation');
+const D=profile.defaultProfile, GL=D.grips.left.offset, GR=D.grips.right.offset; // Authored defaults, not hardcoded numbers.
+close(sized.handTargets.left.x,anchors.posterior.x+GL.x,'left grip is relative to baby posterior');
+close(sized.handTargets.left.y,anchors.posterior.y+GL.y,'left grip Y is unscaled anatomy-relative distance');
+close(sized.handTargets.left.z,anchors.posterior.z+GL.z,'left grip depth is unscaled by baby height');
+close(sized.handTargets.right.x,anchors.neck.x+GR.x,'right grip is relative to baby neck');
+close(sized.handTargets.right.y,anchors.neck.y+GR.y,'right grip Y is relative to neck joint');
+close(sized.billboardAnchor.position.y,.4*D.held.position.y,'baby mount pivot still scales with portrait');
+close(sized.backCarry.rotation.z,D.back.rotation.z,'back stow pose retains authored orientation');
 assert.equal(sized.elbows.left,null,'legacy shoulder fallback remains when elbow is not explicitly authored');
 
 // Readout-only portrait coordinates are separate from saved world-local offsets.
@@ -63,17 +64,17 @@ for(const axis of ['x','y','z'])close(world[axis],point[axis],'portrait projecti
 const savedProfile=profile.toProfile(sized,.3,.4,anchors);
 assert.equal(savedProfile.grips.left.anchor,'posterior','left grip declares real anatomical basis');
 assert.equal(savedProfile.grips.right.anchor,'neck','right grip declares real anatomical basis');
-close(savedProfile.grips.left.offset.y,.075,'saved left Y is direct distance from posterior');
-close(savedProfile.grips.right.offset.y,-.065,'saved right Y is direct distance from neck');
+close(savedProfile.grips.left.offset.y,GL.y,'saved left Y is direct distance from posterior');
+close(savedProfile.grips.right.offset.y,GR.y,'saved right Y is direct distance from neck');
 // New randomized infant: different portrait size/pivots, SAME raw local offsets.
 const newAnchors=profile.anchorsForAvatar({
   visualCentroidLocalY:.045,neckRig:{spinePosteriorY:-.07,neckLocal:{x:-.01,y:.055}},
 },.2,.25);
 const rerolled=profile.forSizeFrom(savedProfile,.2,.25,newAnchors);
-close(rerolled.handTargets.left.x-newAnchors.posterior.x,.12,'random baby preserves left posterior offset regardless of size');
-close(rerolled.handTargets.left.y-newAnchors.posterior.y,.075,'random baby preserves left posterior height offset');
-close(rerolled.handTargets.right.x-newAnchors.neck.x,-.12,'random baby preserves right neck offset');
-close(rerolled.handTargets.right.y-newAnchors.neck.y,-.065,'random baby preserves right neck height offset');
+close(rerolled.handTargets.left.x-newAnchors.posterior.x,GL.x,'random baby preserves left posterior offset regardless of size');
+close(rerolled.handTargets.left.y-newAnchors.posterior.y,GL.y,'random baby preserves left posterior height offset');
+close(rerolled.handTargets.right.x-newAnchors.neck.x,GR.x,'random baby preserves right neck offset');
+close(rerolled.handTargets.right.y-newAnchors.neck.y,GR.y,'random baby preserves right neck height offset');
 
 // Compatibility: previously saved percentage-based baby grips are still accepted.
 const legacy={grips:{left:{position:{x:.4,y:.5,z:.05}},
@@ -101,7 +102,7 @@ close(independent.handTargets.left.y-newAnchors.posterior.y,.16-oldAnchors.poste
 close(independent.elbows.left.y,-.12,'authored elbow remains shoulder-relative across baby sizes');
 
 profile.save(savedProfile);
-close(profile.forSize(.6,.8,newAnchors).handTargets.left.x-newAnchors.posterior.x,.12,
+close(profile.forSize(.6,.8,newAnchors).handTargets.left.x-newAnchors.posterior.x,GL.x,
   'saved anatomy-relative grip persists independently of child portrait width');
 const carried={billboardAnchor:{position:{},rotation:{}},backCarry:{position:{},rotation:{}},
   handTargets:{left:{rotation:{}},right:{rotation:{}}}};

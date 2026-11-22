@@ -1018,6 +1018,13 @@
       const rank = actors.get(portraitStencilOwner(mesh, scene));
       if (rank) extras.set(mesh, rank);
     }
+    // A carried Burden (held baby at 30, stowed Burden at 2.15 between the 2.05 rear and 2.25 front
+    // portrait passes) belongs to the player's actor slot. Unranked, it compared its raw renderOrder
+    // against the ranked portrait's PORTRAIT_SORT_ORDER (2) and drew after the carrier's front face,
+    // so a back-stowed baby showed through the parent's chest whenever another actor was nearby.
+    const carrierRank = actors.get(player);
+    for (const mesh of window.Shattercasks?.carrierSortMeshes?.() || [])
+      if (mesh?.parent && mesh.visible !== false && !ranks.has(mesh)) extras.set(mesh, carrierRank);
     return { ranks, extras, nearest, count };
   }
 

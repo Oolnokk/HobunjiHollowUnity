@@ -116,17 +116,17 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   assert.equal(first.scale.x,1,'a newborn already scaled by PNGPlaneAvatar must not be scaled to the arbitrary .30 reference');
   assert.equal(first.position.y,.288/2,'newborn stays at its actual portrait-height placement');
   assert.equal(environment.dimensions[0],.288,'initial portrait width comes from the existing PNGPlaneAvatar dimensions');
-  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-.12)<1e-9,
-    'left grip remains .12 baby-local units from its actual posterior');
-  assert(Math.abs(state.carryable.handTargets.right.x-environment.anchors.neck.x+.12)<1e-9,
-    'right grip remains .12 baby-local units left of its neck');
+  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-window.FamilyBabyCarryPose.defaultProfile.grips.left.offset.x)<1e-9,
+    'left grip keeps its authored baby-local distance from its actual posterior');
+  assert(Math.abs(state.carryable.handTargets.right.x-environment.anchors.neck.x-window.FamilyBabyCarryPose.defaultProfile.grips.right.offset.x)<1e-9,
+    'right grip keeps its authored baby-local distance from its neck');
   assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288,environment.anchors)),stable(originalGrips),
     'real newborn changes hand origin locations but preserves saved posterior/neck local distances');
   assert.equal(await environment.randomBaby(),true,'subsequent random baby replaces the current preview');
   assert(environment.current!==first,'two rolls create different preview model instances');
   assert.equal(environment.dimensions[0],.216,'smaller species keep their physically smaller portrait width');
   assert.equal(environment.current.scale.x,1,'randomizing a smaller species never expands it to .30 units');
-  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-.12)<1e-9,
+  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-window.FamilyBabyCarryPose.defaultProfile.grips.left.offset.x)<1e-9,
     'grip is not scaled by the second baby portrait width');
   assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216,environment.anchors)),stable(originalGrips),
     'unsaved baby hand offsets survive random species changes without portrait percentage scaling');
