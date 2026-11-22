@@ -1030,6 +1030,11 @@
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
     const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
     if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
+    const wildlifeThreatDebug = window.WildlifeThreatResponse?.getDebug?.(); // On-demand counters reveal nest alarms, predator sprints and herd reactions in the mobile Pixel Probe.
+    if (wildlifeThreatDebug) lines.push('Wildlife threat reactions: ' + JSON.stringify(wildlifeThreatDebug));
+    const attachRescue = window.Combat?.attach; // Existing attach owner provides rescue evidence without sampling companions on every frame.
+    if (attachRescue) lines.push('Honeyfuzzle ally rescues: ' + attachRescue.rescueCount +
+      '  current player swarmers: ' + (attachRescue.attachersOf?.(window.Combat?.deps?.player)?.length || 0));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     try {
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
