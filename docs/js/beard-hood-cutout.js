@@ -451,13 +451,14 @@
       coneSpread:spread,upSpread,downLength,coverPixels,lowerCap};
   }
 
-  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null, topCoverMask = null) {
+  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null, topCoverMask = null, requestMode = null) {
     // No authored hood permission mask means legacy permissive behavior.
     // An explicit EMPTY mask means no hood pixel may be removed.
     const request = decodeMask(requestMask);
     const whiskers = decodeMask(whiskerMask); // Explicit beard override defeats otherwise protected hood areas.
     const allowed = allowanceMask == null ? null : decodeMask(allowanceMask);
     const topCover = topCoverMask == null ? null : decodeMask(topCoverMask); // Strictly higher precedence than whiskers.
+    const autoRequest = requestMode === 'silhouette'; // Source-art alpha substitutes for authored request pixels.
     const approved = new Uint8Array(PIXELS);
     const refused = new Uint8Array(PIXELS);
     let requested = 0, approvedPixels = 0, refusedPixels = 0, whiskerWins = 0;
@@ -465,7 +466,8 @@
     if (!beardRGBA || !hoodRGBA || beardRGBA.length !== PIXELS * 4 || hoodRGBA.length !== PIXELS * 4)
       return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
     for (let i = 0; i < PIXELS; i++) {
-      if ((!request[i]&&!whiskers[i]) || beardRGBA[i * 4 + 3] < 8 || hoodRGBA[i * 4 + 3] < 8) continue;
+      if ((!request[i] && !whiskers[i] && !(autoRequest && beardRGBA[i*4+3]>=242))
+        || beardRGBA[i*4+3]<8 || hoodRGBA[i*4+3]<8) continue;
       requested++;
       if(topCover?.[i]){
         refused[i]=1;refusedPixels++;topCoverWins++;
@@ -517,7 +519,8 @@
       erasedPixels:0,outlinedPixels:0,whiskerWins:0,topCoverWins:0,topCoverWhiskers:0,
       automaticOpeningPixels:null,bottomRingPoints:null,topCoverPixels:null,topRingPoints:null};
     if (!beardCanvas || !hoodCanvas ||
-        (!normalizeMask(requestMask)?.runs.length && !normalizeMask(options.whiskerMask)?.runs.length)) return empty;
+        (!normalizeMask(requestMask)?.runs.length && !normalizeMask(options.whiskerMask)?.runs.length
+          && options.requestMode!=='silhouette')) return empty;
     try {
       const beardCtx = beardCanvas.getContext('2d',{willReadFrequently:true});
       const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
@@ -537,7 +540,7 @@
           upSpread:options.topUpConeSpread,downLength:options.topDownConeLength
         }));
       const partition=partitionBeardHood(requestMask,fittedAllowance,
-        beard.data,hood.data,options.whiskerMask,cover?.mask);
+        beard.data,hood.data,options.whiskerMask,cover?.mask,options.requestMode);
       const {approved,refused,requested,approvedPixels,refusedPixels,whiskerWins,
         topCoverWins,topCoverWhiskers} = partition;
       // Permission applies ONLY where the transformed front hood actually has
