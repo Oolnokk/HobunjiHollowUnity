@@ -87,7 +87,7 @@
     root.userData.adventuringTorchBelt = true;
     root.userData.nonInteractive = true;
     const art = new THREE.Mesh(new THREE.PlaneGeometry(TORCH_WIDTH, TORCH_HEIGHT),
-      new THREE.MeshBasicMaterial({ transparent:true, depthTest:true, depthWrite:false, side:THREE.DoubleSide }));
+      new THREE.MeshBasicMaterial({ transparent:true, alphaTest:0.08, depthTest:true, depthWrite:false, side:THREE.DoubleSide }));
     art.name = 'stowed_torch_png';
     art.rotation.z = Math.PI; // The existing torch.png's burning end points along image -Y.
     art.renderOrder = 2.16; // Between the rear and front portrait passes, like other back-stowed gear.
