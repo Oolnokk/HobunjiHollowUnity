@@ -49,12 +49,15 @@
   ]);
 
   const INHABITANT_WEIGHTS = Object.freeze([
-    [TYPES.ANIMAL_DEN, 45],
-    [TYPES.NONE, 33],
-    [TYPES.BANDIT_HIDEOUT, 22],
+    [TYPES.ANIMAL_DEN, 70],
+    [TYPES.NONE, 12],
+    [TYPES.BANDIT_HIDEOUT, 18],
   ]);
+  const MIN_DEN_SHARE = 0.65; // Per-zone floor on inhabited ordinary cave anchors; preserves wilderness homes without adding entrances or new AI.
+  const SECONDARY_POCKET_CHANCE = 0.8; // Large ordinary caves may reuse spare navigable floor for a few ore rocks or mushrooms, never extra actors.
+  const MIN_SECONDARY_POCKET_TILES = 18; // Only meaningful unused cave-floor space is eligible after nests, exits, walls and primary content reserve theirs.
 
-  const PROFILE_SCHEMA = 3; // Independent puzzle-cave generation; reroll legacy profiles that consumed ordinary cave slots.
+  const PROFILE_SCHEMA = 4; // Den-balance migration keeps cave IDs and contents while updating legacy inhabitant allocation.
   const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
   const MUSHROOM_INTERACT_RADIUS_TILES = 1.55; // Used only for aimed, explicit cave-cluster pickup; walking across a cluster never harvests it.
   const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
@@ -316,18 +319,33 @@
   }
 
   // One assignment path for both freshly generated workspaces and cached
-  // Tothal layouts (which skip the generator capture), so a zone's caves get
-  // the same profiles either way. Dens already tagged keep their profile.
+  // Tothal layouts (which skip the generator capture). Preserve all old cave
+  // identities, contents and animal dens when migrating schema-3 workspaces.
   function assignZoneProfiles(zoneId, dens) {
     const key = String(zoneId || '');
-    const profiles = dens.map(den => den?.caveSite?.mapId && den.caveSite.schema === PROFILE_SCHEMA ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
-    if (profiles.length && !profiles.some(profile => profile.inhabitant === TYPES.ANIMAL_DEN)) {
-      const candidates = profiles.filter(profile => profile.contents !== TYPES.PUZZLE_CAVE); // An authored Puzzle Cave must never secretly turn into a Den-Mother lair.
-      const rng = makeRng(`${key}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
-      const preserving = candidates.length ? candidates : profiles;
-      const chosen = preserving[Math.floor(rng() * preserving.length)]; // If the whole zone rolled Puzzle Caves, reserve one for a proper ordinary animal den.
-      if(chosen.contents===TYPES.PUZZLE_CAVE)chosen.contents=TYPES.ORE_MINE;
-      forceAnimalProfile(chosen);
+    const profiles = dens.map(den => {
+      const prior = den?.caveSite; // Existing cave identity, loot signature and contents must survive a den-density update.
+      if (prior?.mapId && (prior.schema === PROFILE_SCHEMA || prior.schema === 3)) {
+        return { ...clone(prior), schema: PROFILE_SCHEMA }; // Migration never rerolls a known cave or takes a den away.
+      }
+      return rollProfile(key, den);
+    });
+    const ordinary = profiles.filter(profile => profile.contents !== TYPES.PUZZLE_CAVE); // Separate authored puzzle caves cannot become nests.
+    const minimum = Math.ceil(ordinary.length * MIN_DEN_SHARE); // Shared floor applies to every wilderness zone, independent of its cave count.
+    let missing = minimum - ordinary.filter(profile => profile.inhabitant === TYPES.ANIMAL_DEN).length; // Number of existing cave interiors to share with wildlife.
+    if (missing > 0) {
+      ensureStateLoaded(); // Check explored hideouts before deciding which previously uninhabited caves may gain an occupant.
+      const candidates = ordinary.filter(profile => profile.inhabitant !== TYPES.ANIMAL_DEN
+        && (profile.inhabitant === TYPES.NONE || !runtimeStateBySignature.get(profile.signature)?.discovered));
+      candidates.sort((a, b) =>
+        Number(a.inhabitant !== TYPES.NONE) - Number(b.inhabitant !== TYPES.NONE)
+        || hashSeed(a.signature + ':den-balance') - hashSeed(b.signature + ':den-balance')
+        || a.signature.localeCompare(b.signature)); // Fill empty space before touching undiscovered bandits; stable across loads and den order.
+      for (const profile of candidates) {
+        if (missing <= 0) break;
+        forceAnimalProfile(profile);
+        missing--;
+      }
     }
     for (let index = 0; index < dens.length; index++) {
       const den = dens[index]; // Existing compatibility record consumed by terrain/collision/turnover systems.
@@ -758,6 +776,39 @@
     const tiles = [...hidden, ...pickSpacedTiles(rng, candidates, count - hidden.length, blockedKeys, 1.6)];
     plan.mushrooms = tiles.map((tile, index) => ({ id: `cave_mushroom_${index + 1}`, col: tile.col, row: tile.row, reagentKey: MUSHROOM_REAGENT_KEY, size: 0.8 + rng() * 0.6 }));
     mapData.caveMushrooms = clone(plan.mushrooms);
+  }
+
+  // Optional second activity for the portions of ordinary caves not already
+  // occupied by the den, original contents, a sealed-room reward or a bandit.
+  // Reuse the normal ore and mushroom records: there is no new runtime entity,
+  // renderer, save flag, cave entrance, or per-frame work.
+  function addSecondaryPocket(mapData, profile, candidates, blockedKeys, plan) {
+    if (profile.contents === TYPES.PUZZLE_CAVE) return;
+    const rng = makeRng(`${profile.signature}:secondary-pocket`); // Independent seed means existing primary cave loot and encounters do not reshuffle.
+    if (rng() >= SECONDARY_POCKET_CHANCE) return;
+    const rockKeys = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col, rock.row))); // Natural rocks and mineable walls are already occupied.
+    const reserved = new Set([...blockedKeys, ...rockKeys]); // Do not place resources on another feature or an animal nest.
+    const near = plan.separator ? new Set(plan.separator.nearKeys) : null; // Secondary rewards remain reachable before mining any secret separator.
+    const free = candidates.filter(tile => (!near || near.has(tileKey(tile.col, tile.row)))
+      && !reserved.has(tileKey(tile.col, tile.row)) && hasFeatureClearance(tile, reserved, 2));
+    if (free.length < MIN_SECONDARY_POCKET_TILES) return;
+    const count = clamp(Math.floor(free.length / 35), 2, 4); // A small pocket, not a second full-density ore field or mushroom forest.
+    const tiles = pickSpacedTiles(rng, free, count, reserved, 2.2);
+    if (!tiles.length) return;
+    const kind = [TYPES.ORE_MINE, TYPES.CATACOMB, TYPES.RUIN_ENTRANCE].includes(profile.contents) ? 'mushrooms' : 'ore';
+    if (kind === 'mushrooms') {
+      plan.mushrooms.push(...tiles.map((tile, index) => ({
+        id: `cave_secondary_mushroom_${index + 1}`, col: tile.col, row: tile.row,
+        reagentKey: MUSHROOM_REAGENT_KEY, size: 0.8 + rng() * 0.6,
+      })));
+      mapData.caveMushrooms = clone(plan.mushrooms); // Existing regrowth and harvest code owns both primary and secondary clusters.
+    } else {
+      const rocks = tiles.map(tile => ({ col: tile.col, row: tile.row, oreKind: mineOreKind(rng) })); // Existing mining interaction/loot path.
+      mapData.oreRocks = [...(mapData.oreRocks || []), ...rocks];
+      plan.mineRocks.push(...rocks.map(rock => ({ ...rock })));
+    }
+    for (const tile of tiles) blockedKeys.add(tileKey(tile.col, tile.row)); // Shared object footprint avoids later feature overlap if layer ordering changes.
+    plan.secondaryPocket = { kind, count: tiles.length }; // Mobile debug field without a new gameplay/save subsystem.
   }
 
   function addRuinLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -1199,6 +1250,8 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
+    addSecondaryPocket(mapData, profile, awayFromEntrance, blockedKeys, plan); // After all existing objectives/inhabitants so spare rooms are the only candidates.
+
     if(profile.contents === TYPES.PUZZLE_CAVE && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)) {
       mapData.entrySpots = {
         ...(mapData.entrySpots || {}),
@@ -1229,6 +1282,7 @@
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
       coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length, rewardType:plan.hiddenReward?.type || null } : null,
+      secondaryPocket: plan.secondaryPocket || null, // Lightweight reuse of leftover cave floor; report for the mobile Cave Site inspector.
     };
     plansByMapId.set(String(mapId), plan);
     window.__farmLog?.(`[cave-sites] built ${mapId}: ${profile.contents}+${profile.inhabitant} separator=${plan.separator ? `${plan.separator.col},${plan.separator.row}` : 'none'} ore=${mapData.oreRocks?.length || 0} bandits=${plan.banditSpawns.length} traps=${plan.traps.length}`, 'world');
@@ -1885,12 +1939,14 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Mineable cave walls now conceal a guaranteed real cache, Puzzle Cave door or safe existing ruin threshold. Inspect currentPlan.hiddenReward on mobile.',
+      latestChange: 'Shared wilderness cave sites now favor animal dens (70% roll, 65% zone floor) and may include a small second ore/mushroom pocket without new cave entrances or actors.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
       caveTripwires: window.CaveTripwireTraps?.debugSnapshot?.(currentArea) || null, // Mobile-friendly armed/disarmed/rope state.
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
       caveCount: sites.length, // Ordinary caves only.
+      animalDenCount: sites.filter(site => site.inhabitant === TYPES.ANIMAL_DEN).length, // Mobile check for den density across all requested wilderness zones.
+      mixedUseCount: sites.filter(site => site.inhabitant !== TYPES.NONE && site.contents !== TYPES.PUZZLE_CAVE).length, // Inhabited caves still retain their independent content layer.
       puzzleCaveCount: cliffSites.length + rockSites.length, // Separate from the ordinary cave count.
       outdoorPuzzleCaveCount:cliffSites.length,
       outdoorSiteVisibility:cliffSites.map(site => ({ mapId:site.mapId, shelfId:site.shelfId, seclusion:site.seclusion || null })), // Phone-readable Shift sightline diagnostics.
@@ -1917,6 +1973,7 @@
         puzzleProgress: puzzleChallengesByMapId.get(currentArea)?.challenge?.melodyState||null,
         puzzleActiveKind: puzzleChallengesByMapId.get(currentArea)?.challenge?.kind||null, // Mobile diagnostics show pressure-plate runtime fallback even when the seeded kind was music/fire.
         mushrooms: plansByMapId.get(currentArea).mushrooms,
+        secondaryPocket: plansByMapId.get(currentArea).secondaryPocket || null,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
     };
