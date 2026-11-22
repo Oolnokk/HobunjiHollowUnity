@@ -437,6 +437,80 @@
       el(idKey)?.classList.toggle('active',id===key);
     }
   }
+  function drawBabyGripCanvas() {
+    const canvas=el('carryBabyGripCanvas'); // Touch-friendly 2D view of the painted infant portrait, independent of 3D camera rotation.
+    if(!canvas||!editingBaby)return;
+    const ctx=canvas.getContext?.('2d');
+    if(!ctx)return;
+    const size=canvas.width,api=window.FamilyBabyCarryPose;
+    ctx.clearRect(0,0,size,size);
+    ctx.fillStyle='#263139';ctx.fillRect(0,0,size,size);
+    if(babyFrontCanvas)ctx.drawImage(babyFrontCanvas,0,0,size,size);
+    else{
+      ctx.fillStyle='#9fc9dc';ctx.globalAlpha=.55;
+      ctx.fillRect(size*.35,size*.15,size*.30,size*.7);
+      ctx.globalAlpha=1;
+    }
+    for(const side of ['left','right']){
+      const uv=api?.pointToPortrait?.(state.carryable.handTargets[side],babyPortraitWidth,babyPortraitHeight);
+      if(!uv)continue;
+      const x=uv.u*size,y=uv.v*size;
+      ctx.beginPath();ctx.arc(x,y,11,0,Math.PI*2);
+      ctx.fillStyle=side==='left'?'#e6ca74':'#74d8ed';
+      ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#111';ctx.stroke();
+      ctx.fillStyle='#111';ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(side==='left'?'L':'R',x,y);
+    }
+  }
+  function setBabyPortraitGrip(side,uv){
+    const api=window.FamilyBabyCarryPose,grip=state.carryable?.handTargets?.[side];
+    if(!editingBaby||!api?.pointFromPortrait||!grip)return false;
+    const prev=api.pointToPortrait(grip,babyPortraitWidth,babyPortraitHeight);
+    const next=api.pointFromPortrait({...prev,...uv},babyPortraitWidth,babyPortraitHeight);
+    Object.assign(grip,{x:next.x,y:next.y,z:next.z}); // Only local portrait X/Y/Z change; grip wrist rotation is preserved.
+    refreshGuides();syncHoldingPreview();renderControls();
+    return true;
+  }
+  function babyPointerCoordinates(event){
+    const canvas=el('carryBabyGripCanvas'),rect=canvas?.getBoundingClientRect?.();
+    if(!rect?.width||!rect?.height)return null;
+    return {u:(event.clientX-rect.left)/rect.width,v:(event.clientY-rect.top)/rect.height};
+  }
+  const gripCanvas=el('carryBabyGripCanvas'); // One pointer listener set; no per-frame canvas polling or observers.
+  gripCanvas?.addEventListener('pointerdown',event=>{
+    if(!editingBaby)return;
+    const uv=babyPointerCoordinates(event),api=window.FamilyBabyCarryPose;
+    if(!uv||!api?.pointToPortrait)return;
+    const distance=side=>{
+      const point=api.pointToPortrait(state.carryable.handTargets[side],babyPortraitWidth,babyPortraitHeight);
+      return Math.hypot((point.u-uv.u),(point.v-uv.v));
+    };
+    const nearest=distance('left')<=distance('right')?'left':'right';
+    babyPointerSide=nearest;babyPointerId=event.pointerId;
+    gripCanvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    select(nearest);
+    setBabyPortraitGrip(nearest,uv);
+  });
+  gripCanvas?.addEventListener('pointermove',event=>{
+    if(!editingBaby||babyPointerId!==event.pointerId||!babyPointerSide)return;
+    const uv=babyPointerCoordinates(event);
+    if(uv){event.preventDefault();setBabyPortraitGrip(babyPointerSide,uv);}
+  });
+  const endBabyPointer=event=>{
+    if(babyPointerId!==event.pointerId)return;
+    babyPointerId=null;babyPointerSide=null;
+    if(gripCanvas.hasPointerCapture?.(event.pointerId))gripCanvas.releasePointerCapture(event.pointerId);
+  };
+  gripCanvas?.addEventListener('pointerup',endBabyPointer);
+  gripCanvas?.addEventListener('pointercancel',endBabyPointer);
+  for(const id of ['carryBabyU','carryBabyV','carryBabyDepth'])el(id)?.addEventListener('change',()=>{
+    const side=state.selectedType==='carry'&&['left','right'].includes(state.selectedId)?state.selectedId:null;
+    if(!editingBaby||!side)return;
+    const fields=['carryBabyU','carryBabyV','carryBabyDepth'].map(key=>Number(el(key).value));
+    if(fields.some(value=>!Number.isFinite(value)))return;
+    setBabyPortraitGrip(side,{u:fields[0]/100,v:fields[1]/100,depth:fields[2]/100});
+  });
   function createGuides() {
     for(const item of guideRoot.children.slice()){
       guideRoot.remove(item);
@@ -734,6 +808,7 @@
   function returnToFurniture(){
     if(!editingBaby)return;
     babyRenderTicket++; // Invalidate a queued NPC render before the visual/controls are restored.
+    babyPointerId=null;babyPointerSide=null; // End any mobile grip drag when leaving baby mode.
     babyDraft=cloneJson(state.carryable); // Keep incomplete mobile edits if the user revisits the baby tab.
     state.carryable=savedFurnitureCarry;savedFurnitureCarry=null;editingBaby=false;
     root.visible=true;babyReference.visible=false;babyRotateProxy.visible=false;
@@ -835,7 +910,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:babyPoseIsBack(),preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:babyPoseIsBack(),preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,babyPortraitWidth,babyPortraitHeight,babyPortraitUV:true,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
