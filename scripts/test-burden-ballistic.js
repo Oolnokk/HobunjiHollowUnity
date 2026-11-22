@@ -131,16 +131,17 @@ assert.doesNotThrow(() => Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfCo
 
 // An exact lunge stop on a suspended burden must resolve the strike even if the
 // older broad-phase approximation misses; the normal strike must not swing it twice.
-target.strikeHandler = (b, info) => { calls.push([b.id, info.attacker === player, info.source]); return true; };
+const lungeTarget = burden('lunge-only', { x: 5.5, y: .35, z: 20.5 });
+lungeTarget.strikeHandler = (b, info) => { calls.push([b.id, info.attacker === player, info.source]); return true; };
 const originalCollider = collider;
 collider = { origin: new Vector3(-100, .35, -100), yaw: 0, horizontalRangeWorld: .5,
   verticalRiseWorld: 0, halfConeRad: .3, halfHeightWorld: .1, direction: new Vector3(1, 0, 0) };
 player.lungeOriginMs = performance.now();
 const beforeDirect = calls.length;
 Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0,
-  lungeContact: true, targetBurden: target });
+  lungeContact: true, targetBurden: lungeTarget });
 assert.equal(calls.length, beforeDirect + 1, 'confirmed hanging burden contact executes its strike handler');
-assert.equal(target.exploded, false, 'rope-strike handler keeps the burden intact');
+assert.equal(lungeTarget.exploded, false, 'rope-strike handler keeps the burden intact');
 collider = originalCollider;
 Sh.sweepMelee({ actor: player, rangePx: 3 * 64, halfConeRad: .6, yaw: 0, pitch: 0 });
 assert.equal(calls.length, beforeDirect + 1, 'the scheduled melee pass does not repeat that lunge contact');
