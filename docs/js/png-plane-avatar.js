@@ -2175,10 +2175,11 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  // Treat the painted head as a rigid, cut-out paper card hinged at the authored neck.
-  // The Influence map decides head/body membership, NOT the amount of yaw: every
-  // head vertex receives the same yaw rotation, while chest and legs remain fixed.
-  // Keep two existing mesh columns near the vertical hinge without adding vertices.
+  // Head yaw uses the neck's geometric cutout, entirely separate from painted
+  // Influence/Compressibility/Stretchability. Some species (including Nelk)
+  // have pitch paint on front legs, which must not cause those legs to yaw.
+  // Preserve two narrow mesh columns at the neck for a clean paper hinge.
+  const ANIMAL_YAW_NECK_MARGIN_V = 0.035; // Extends the head cut a little below its pivot, stopping before forelegs.
   function alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width) {
     const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
     const uv = geometry.getAttribute('uv'); // Keep texture coordinates aligned with the displaced columns.
@@ -2202,6 +2203,30 @@
     uv.needsUpdate = true;
   }
 
+  // The independent horizontal neck cut needs the same narrow crease as the
+  // vertical hinge. Reposition existing vertices, keeping the animal mesh
+  // density and authored UVs synchronized instead of adding triangles.
+  function alignAnimalYawFoldRows(geometry, bottomTopV, segmentsX, segmentsY, height) {
+    const position = geometry.getAttribute('position'); // Existing grid positions to keep aligned with the shifted UV rows.
+    const uv = geometry.getAttribute('uv'); // Source art coordinates; the yaw gate samples these on both faces.
+    if (!position?.setY || !uv?.setY || segmentsY < 3) return;
+    const bottom = clamp(bottomTopV, 0.001, 0.999); // Neck cut in normalized top-down sprite space.
+    const halfHeight = Math.min(0.003, bottom * 0.25, (1 - bottom) * 0.25); // Narrow paper crease, like the vertical fold.
+    const upperRow = clamp(Math.round(bottom * (segmentsY - 1)), 1, segmentsY - 2); // Top-side vertex row bordering the cut.
+    for (let row = 0; row <= segmentsY; row++) {
+      const topV = row <= upperRow
+        ? (bottom - halfHeight) * row / upperRow
+        : bottom + halfHeight + (1 - bottom - halfHeight) * (row - upperRow - 1) / (segmentsY - upperRow - 1); // Retains both sprite edges.
+      for (let col = 0; col <= segmentsX; col++) {
+        const index = row * (segmentsX + 1) + col; // Shared position and UV index in the indexed plane.
+        position.setY(index, (0.5 - topV) * height);
+        uv.setY(index, 1 - topV);
+      }
+    }
+    position.needsUpdate = true;
+    uv.needsUpdate = true;
+  }
+
   function buildAnimalWeightedGeometry(THREE, sourceGeometry, rig, mirrorX, fallbackDimensions = {}, gridOverride = null, spriteWarp = null) {
     const params = sourceGeometry?.parameters || {}; // Legacy PlaneGeometry dimensions used to preserve exact animal scale.
     const width = finite(params.width, finite(fallbackDimensions.width, 1));
@@ -2215,6 +2240,8 @@
     const renderedPivot = spriteWarp?.destinationFor?.(rig.pivot) || rig.pivot; // Baby/Small sprite warp moves the fold with the visible head.
     const pivotU = clamp(finite(renderedPivot.x, rig.pivot.x), 0, 1); // Source-side neck X, not the painted head silhouette.
     alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width);
+    const yawBottomTopV = clamp(finite(renderedPivot.y, rig.pivot.y) + ANIMAL_YAW_NECK_MARGIN_V, 0.001, 0.999); // Follow the rendered neck when a baby sprite is warped.
+    alignAnimalYawFoldRows(geometry, yawBottomTopV, segmentsX, segmentsY, height);
     const indices = geometry.index?.array; // Mirror the quad diagonals along with UVs so both faces interpolate the same skin.
     if (mirrorX && indices) {
       for (let i = 0; i < indices.length; i += 6) {
@@ -2228,6 +2255,7 @@
     const skinWeights = new Float32Array(uv.count * 4); // Pitch follows graded paint; yaw follows a binary head cutout.
     const sourceCoordinates = spriteWarp ? new Float32Array(uv.count * 2) : null; // Keep original rig-paint UVs alongside the rendered sprite UVs.
     const source = {}; // Reused for each vertex when sampling the baby pixel warp.
+    const originalYawBottomTopV = clamp(rig.pivot.y + ANIMAL_YAW_NECK_MARGIN_V, 0, 1); // Source-space head/foreleg boundary, independent of pitch paint.
     for (let i = 0; i < uv.count; i++) {
       const sourceU = mirrorX ? 1 - uv.getX(i) : uv.getX(i); // Reverse-facing plane samples the horizontally mirrored authored map.
       const sourceTopV = 1 - uv.getY(i); // Author coordinates start at sprite top-left; Three UVs start bottom-left.
@@ -2236,8 +2264,10 @@
         sourceCoordinates[i * 2] = source.x;
         sourceCoordinates[i * 2 + 1] = source.y;
       }
-      const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV); // Irregular Influence remains pitch-only.
-      const yawWeight = headWeight >= 0.5 ? 1 : 0; // Binary head ownership only: never yaw unpainted front legs/chest, and never grade yaw by irregular material weight.
+      const paintU = sourceCoordinates ? source.x : sourceU; // Pitch keeps the original author map coordinates after baby head warping.
+      const paintV = sourceCoordinates ? source.y : sourceTopV; // Same source coordinates supply the independent geometric yaw cut.
+      const headWeight = sampleWeight(rig, paintU, paintV); // Irregular Influence affects pitch only.
+      const yawWeight = paintU < rig.pivot.x && paintV < originalYawBottomTopV ? 1 : 0; // Rigid head-side cut: lower muzzle rotates, forelegs/body do not, even when fully painted.
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
@@ -2256,8 +2286,9 @@
     geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
     geometry.userData.hobunjiAnimalYawFold = true; // Material-response adapter must preserve the separate yaw skin weights.
-    geometry.userData.hobunjiAnimalYawMask = 'binary-head'; // Debug confirms no irregular yaw blending or body-front bending.
+    geometry.userData.hobunjiAnimalYawMask = 'neck-bounded-head'; // Mobile diagnostics identify the paint-independent yaw cut.
     geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck hinge on warped sprites.
+    geometry.userData.hobunjiAnimalYawFoldBottomV = yawBottomTopV; // Horizontal neck cut in rendered UV space, including baby warps.
     return geometry;
   }
 
@@ -2334,7 +2365,7 @@
       frontYawBone: front.yawBone, backYawBone: back.yawBone,
       frontCombinedBone: front.combinedBone, backCombinedBone: back.combinedBone,
       yawMode: 'paper-fold', // Mobile diagnostics and corpse rendering identify the independent yaw axis.
-      yawMask: 'binary-head', // The species' painted Influence is a cutout mask, never a graded yaw deformation.
+      yawMask: 'neck-bounded-head', // Geometry around the authored neck, not painted Influence, determines head-only yaw.
       currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
       currentYawDeg: 0, targetYawDeg: 0,
     }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.
