@@ -118,9 +118,13 @@
     const y = Number(anatomy.rigScaleY);
     const head = Number(anatomy.headScale);
     const offsetY = Number(anatomy.headOffsetY);
+    const legacyHeight = clampScale(Number.isFinite(y) && y > 0 ? y : (hasLegacy ? legacy : defaults.y)); // Old Height saves apply to portrait AND legs until an independent leg length is authored.
+    const leg = Number(anatomy.legLengthScale); // Independent hip-to-foot reach, authored per species/gender in Full Character Scale.
     return {
       x: clampScale(Number.isFinite(x) && x > 0 ? x : (hasLegacy ? legacy : defaults.x)),
-      y: clampScale(Number.isFinite(y) && y > 0 ? y : (hasLegacy ? legacy : defaults.y)),
+      y: legacyHeight, // Compatibility alias: older callers use y for portrait height.
+      portraitHeight: legacyHeight, // Explicit editor label and scale export.
+      legLength: clampScale(Number.isFinite(leg) && leg > 0 ? leg : legacyHeight),
       head: clampScale(Number.isFinite(head) && head > 0 ? head : (hasLegacy ? legacy : defaults.head)),
       offsetY: clampOffset(Number.isFinite(offsetY) ? offsetY : defaults.offsetY),
     };
@@ -160,13 +164,17 @@
     if (explicitScale == null) return fallback;
     if (typeof explicitScale === 'number') {
       const uniform = clampScale(explicitScale);
-      return { x: uniform, y: uniform, head: fallback.head, offsetY: fallback.offsetY };
+      return { x: uniform, y: uniform, portraitHeight: uniform, legLength: uniform, head: fallback.head, offsetY: fallback.offsetY }; // Legacy number remains uniform across portrait and legs.
     }
-    const x = Number(explicitScale.x), y = Number(explicitScale.y), head = Number(explicitScale.head);
+    const x = Number(explicitScale.x), y = Number(explicitScale.portraitHeight ?? explicitScale.y), head = Number(explicitScale.head);
+    const legLength = Number(explicitScale.legLength); // New independent leg factor; an old explicit y continues to scale both regions.
     const offsetY = Number(explicitScale.offsetY);
+    const normalizedY = Number.isFinite(y) && y > 0 ? clampScale(y) : fallback.y;
+    const normalizedLeg = Number.isFinite(legLength) && legLength > 0 ? clampScale(legLength)
+      : Number.isFinite(y) && y > 0 ? normalizedY : (fallback.legLength || normalizedY);
     return {
       x: Number.isFinite(x) && x > 0 ? clampScale(x) : fallback.x,
-      y: Number.isFinite(y) && y > 0 ? clampScale(y) : fallback.y,
+      y: normalizedY, portraitHeight: normalizedY, legLength: normalizedLeg,
       head: Number.isFinite(head) && head > 0 ? clampScale(head) : fallback.head,
       offsetY: Number.isFinite(offsetY) ? clampOffset(offsetY) : fallback.offsetY,
     };
@@ -303,7 +311,7 @@
   function applyToParent(parent, species, gender, explicitScale = null, ageFraction = 0) {
     if (!parent?.isObject3D || !parent.scale) return false;
     const resolved = normalizeExplicitScale(explicitScale, scaleFor(species, gender));
-    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) };
+    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) }; // Y denotes portrait height, with leg length separately tracked.
     parent.userData ||= {};
     const previous = parent.userData.hobunjiCharacterRigScaleState || null;
     const current = { x: Number(parent.scale.x), y: Number(parent.scale.y), z: Number(parent.scale.z) };
@@ -317,6 +325,7 @@
     parent.scale.set(output.x, output.y, output.z);
     parent.userData.hobunjiCharacterRigScaleState = {
       factor: next,
+      legLength: clampScale(resolved.legLength || next.y), // Procedural legs use this independently authored reach.
       base,
       output,
       species: transformSpecies(species),
@@ -327,6 +336,7 @@
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
     applyHeadCompensation(parent, species, gender, resolved, ageFraction);
+    window.ProceduralLegAnimation?.syncScaleForParent?.(parent, clampScale(resolved.legLength || next.y) / next.y); // Refresh already-attached legs without rebuilding their GLB or IK joints.
     return true;
   }
 
@@ -463,6 +473,7 @@
     defaultScaleFor,
     profileFor,
     scaleFor,
+    legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
     applyToParent,
     applyHeadCompensation,
     scaledNeckAdjustment, // Shared pure geometric calculation for the author and native regression tests.
