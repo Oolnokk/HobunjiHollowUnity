@@ -102,6 +102,25 @@ assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are nor
 }
 
 
+// Child waist uses the real front portrait (often nested below a wrapper) and inherits body scale exactly once.
+{
+  const canvas={width:200,height:200,getContext:()=>({getImageData:(_x,y,w)=>{
+    const data=new Uint8Array(w*4); // Torso alpha remains normalized even when the whole baby avatar is only 32% adult size.
+    if(y<=183)for(let x=50;x<150;x++)data[x*4+3]=255;
+    return {data};
+  }})};
+  const plane={material:{map:{image:canvas}}}; // Front material carries the real source when its parent wrapper does not.
+  const baby={userData:{portraitModelWidth:.9*.32},traverse() {}};
+  assert.strictEqual(Renderer.portraitSourceCanvas(baby,plane),canvas,'nested front art is found');
+  assert.strictEqual(Renderer.portraitSourceCanvas(baby,plane,canvas),canvas,'explicit author canvas takes priority');
+  assert.strictEqual(Renderer.portraitSourceCanvas({userData:{sourceCanvas:canvas}},{}),canvas,'existing direct avatar source still works');
+  assert.strictEqual(Renderer.portraitSourceCanvas({traverse(fn){fn({userData:{sourceCanvas:canvas}})}},{}),canvas,'nested avatar metadata works');
+  const fit=Renderer.fitBeltToVisibleTorso(Renderer.resolveCharacter('nuhongan','male'),Renderer.portraitSourceCanvas(baby,plane));
+  assert(fit && fit.source==='connected-torso-alpha');
+  assert(Math.abs(fit.width*baby.userData.portraitModelWidth-.144)<1e-9,'fitted baby waistband scales 32% exactly once');
+  assert.strictEqual(Renderer.portraitSourceCanvas({},{}),null,'missing canvas falls back to authored waist');
+}
+
 // Every humanoid NPC gets the free pants with a deterministic dye; animals and opt-outs do not.
 const npc = { id: 'tester', equippedCosmetics: ['tankan_tunic'] };
 assert.strictEqual(Renderer.ensureNpcPants(npc), true);

@@ -237,7 +237,7 @@
     if (Array.isArray(appearance.bodyDeform)) profile.bodyDeform = appearance.bodyDeform;
 
     const catalog = window.ScratchbonesAccount.getShopCatalog();
-    const equippedIds = Array.isArray(npc.equippedCosmetics) ? npc.equippedCosmetics : [];
+    const equippedIds = (Array.isArray(npc.equippedCosmetics) ? npc.equippedCosmetics : []).map(id => window.canonicalRiverlandKasaId?.(id) || id); // Old Kenkari kasa items are Riverland kasa.
     const resolveVariantId = (category, equippedId) => {
       if (!equippedId) return null;
       const base = catalog.find(i => i.id === equippedId);

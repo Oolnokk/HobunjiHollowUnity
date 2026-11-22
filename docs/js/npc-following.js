@@ -16,6 +16,9 @@
     })).flat());
   let lastDecision = null; // Exposed in snapshot() for mobile troubleshooting.
 
+  // The basket-phase baby stays at home; toddlers and older children use normal companion commands.
+  const isBasketBaby = rec => rec?.isChild === true && window.RomanceFamily?.isBasketBaby?.(rec.id) === true;
+
   function clearRetreat(npcId) {
     if (npcId) retreats.delete(npcId);
     else retreats.clear();
@@ -105,6 +108,7 @@
 
   function target(rec, session, distance = 1.7) {
     if (!deps || !session || !rec?.id) return null;
+    if (isBasketBaby(rec)) { companions.delete(rec.id); clearRetreat(rec.id); return null; } // Drop old follower sessions before they move a newborn.
     if (session.mode === 'wait' && session.waitSpot) {
       clearRetreat(rec.id);
       return { ...session.waitSpot, activity: 'waiting for you' };
@@ -161,6 +165,7 @@
       return mode === 'dismiss' ? window.RomanceSystem.dismissDate() : window.RomanceSystem.setDateMode(mode);
     }
     if (!id || walker.rec.dead || walker.rec.deceased || !['follow', 'wait', 'dismiss'].includes(mode)) return false;
+    if (isBasketBaby(walker.rec) && mode !== 'dismiss') return false; // Direct callers obey the same infant restriction.
     const accepted = mode !== 'follow' || (window.NpcRapport?.get?.(id) ?? 0) >= 0;
     const text = !accepted ? 'No, I would rather stay here.'
       : mode === 'follow' ? 'Of course. Lead the way!'
@@ -183,7 +188,7 @@
   }
 
   function commandOptionsFor(walker) {
-    if (!walker?.rec?.id || walker.rec.dead || walker.rec.deceased || walker._doorstepVisitor
+    if (!walker?.rec?.id || walker.rec.dead || walker.rec.deceased || isBasketBaby(walker.rec) || walker._doorstepVisitor
       || walker._slagothimTrader || walker.isPorakanekiHunter || window.RomanceSystem?.isOnDateWith?.(walker.rec.id)) return [];
     const session = companions.get(walker.rec.id);
     if (!session) return [{ id: 'follow', icon: '👣', label: 'Follow me', run: () => setMode(walker, 'follow') }];

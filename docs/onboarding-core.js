@@ -800,7 +800,7 @@
 
     // Apply equipped clothing (collections tab)
     const catalog    = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
-    const equipped   = _state.equippedCosmetics;
+    const equipped   = _state.equippedCosmetics.map(id => window.canonicalRiverlandKasaId?.(id) || id); // Render old Kenkari kasa saves with the canonical hat.
     const none       = { id: 'none', tintSlot: null, layers: [] };
     const resolveVar = (cat, eqId) => {
       if (!eqId) return null;
@@ -1607,7 +1607,7 @@
 
   function renderCollectionsBody() {
     const catalog   = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
-    const equipped  = _state.equippedCosmetics;
+    const equipped  = _state.equippedCosmetics.map(id => window.canonicalRiverlandKasaId?.(id) || id); // The Collections selector shows old purchases under Riverland Kasa.
     const ap        = _state.appearance;
 
     let slotsHtml = '';
@@ -2161,7 +2161,7 @@
     const result = {
       nickname: (_state.nickname || '').trim(),
       appearance: { ..._state.appearance, cosmetics: { ..._state.appearance.cosmetics }, bodyColors: { ..._state.appearance.bodyColors } },
-      equippedCosmetics: [..._state.equippedCosmetics],
+      equippedCosmetics: _state.equippedCosmetics.map(id => window.canonicalRiverlandKasaId?.(id) || id),
       appliedDyes: { ...(_state.appliedDyes || {}), ...clothDyes },
     };
     _creatorSession = null;

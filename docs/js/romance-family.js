@@ -296,6 +296,10 @@
     if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
+  function isBasketBaby(npcId) {
+    const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
+    return !!child && phaseOf(child) === 'basket';
+  }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
   function toddlingFooting(child) {
     if (phaseOf(child) !== 'toddler') return phaseOf(child) === 'basket' ? 99 : 0;
@@ -411,6 +415,11 @@
     const phase = phaseOf(child);
     const hour = H.clockHour();
     if (phase === 'basket') {
+      const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
+      if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
+          && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
+        return { area: carry.area, c: carry.c, r: carry.r, activity: 'resting after being carried' };
+      }
       const basket = basketObject(child);
       if (basket) return { area: 'interior', c: basket.col, r: basket.row, activity: 'napping in the basket' };
       const anchor = interiorAnchor();
@@ -472,6 +481,7 @@
       return;
     }
     walker._childPhase = phase;
+    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
       const now = performance.now();
@@ -565,15 +575,17 @@
     const child = fam.children.find(entry => entry.id === workerId);
     const spouse = R?.getSpouse?.();
     const isSpouse = spouse?.npcId === workerId;
-    if (!isSpouse && (!child || phaseOf(child) === 'basket')) return [];
+    const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // The same held-NPC wheel offers Hold Baby / spouse handoffs.
+    if (child && phaseOf(child) === 'basket') return infantOptions;
+    if (!isSpouse && !child) return [];
     const vatId = isSpouse ? fam.spouseVatId : child.vatId;
-    if (vatId) return [{ id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+    if (vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
       window.DewVats?.setExternalWorker?.(vatId, null);
       if (isSpouse) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; } else child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
     } }];
     const vats = (window.DewVats?.listSqueezingVats?.() || []).filter(vat => !window.DewVats.assignedWorkerForVat(vat.id));
-    return [{ id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
+    return [...infantOptions, { id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
       const available = (window.DewVats?.listSqueezingVats?.() || []).find(vat => !window.DewVats.assignedWorkerForVat(vat.id));
       if (!available) { H.toast('There is no free squeezing vat on the farm.', false); return; }
       if (isSpouse) { fam.spouseVatId = available.id; fam.spouseVatWorkerId = workerId; } else child.vatId = available.id;
@@ -588,6 +600,8 @@
       const bed = (bedSpot || H.bedSpot)();
       return bed ? { ...bed, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
     }
+    const babyCare = window.FamilyBabyCare?.spouseTarget?.(rec, { bedSpot }); // Nursery time precedes idle wandering, not assigned farmwork.
+    if (babyCare) return babyCare;
     if (fam.spouseVatId && R.getSpouse()?.npcId === rec.id && H.clockHour() >= 8 && H.clockHour() < 18) {
       const vat = (window.DewVats?.listSqueezingVats?.() || []).find(entry => entry.id === fam.spouseVatId);
       if (vat) {
@@ -636,6 +650,10 @@
     if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (_) {} }
     uiOverlay = document.createElement('div');
     uiOverlay.id = 'romanceFamilyOverlay';
+    uiOverlay.setAttribute('data-ctrl-panel', ''); // Route dream and naming interactions through the existing menu controller.
+    uiOverlay.setAttribute('data-ctrl-modal', ''); // Prevent other visible panels from stealing focus.
+    uiOverlay.setAttribute('role', 'dialog');
+    uiOverlay.setAttribute('aria-modal', 'true');
     uiOverlay.innerHTML = `<div class="rf-card">${html}</div>`;
     uiOverlay.addEventListener('keydown', event => event.stopPropagation()); // Typing a name must not drive the game.
     uiOverlay.addEventListener('keyup', event => event.stopPropagation());
@@ -662,8 +680,8 @@
       <h2>🌙 A child in your dream</h2>
       <p>A child waits for you, familiar and yet unknown. Are you ready to welcome them into your family?</p>
       <div class="rf-actions" style="flex-direction:column">
-        <button class="rf-primary" data-rf-ready>Yes. I want to meet them.</button>
-        <button data-rf-postpone="soon">Soon, but not yet (ask again in 24 hours)</button>
+        <button class="rf-primary" data-rf-ready data-ctrl-default>Yes. I want to meet them.</button>
+        <button data-rf-postpone="soon" data-ctrl-cancel>Soon, but not yet (ask again in 24 hours)</button>
         <button data-rf-postpone="time">I need some time (ask again in 2 weeks)</button>
         <button data-rf-postpone="month">I'm not ready yet (ask again in 1 month)</button>
       </div>`);
@@ -745,7 +763,7 @@
       <h2>👶 Name your ${baby.gender === 'female' ? 'daughter' : 'son'}</h2>
       <p>What will you call them?</p>
       <canvas width="200" height="200" data-rf-preview></canvas>
-      <input type="text" maxlength="32" autocomplete="off" spellcheck="false" data-rf-name value="${randomName(baby.speciesId, baby.gender).replace(/"/g, '')}">
+      <input type="text" maxlength="32" autocomplete="off" spellcheck="false" data-ctrl-default data-rf-name value="${randomName(baby.speciesId, baby.gender).replace(/"/g, '')}">
       <div class="rf-actions"><button data-rf-random>Random</button><button class="rf-primary" data-rf-done>Name them</button></div>`);
     const input = root.querySelector('[data-rf-name]');
     renderPreview(root.querySelector('[data-rf-preview]'), baby);
@@ -851,6 +869,7 @@
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
     for (const child of fam.children) updateChild(child);
+    window.FamilyBabyCare?.tick?.(); // One lightweight family update, not a new per-frame character behavior.
     if (R.getSpouse()?.npcId && fam.spouseVatId) {
       const available = (window.DewVats?.listSqueezingVats?.() || []).some(vat => vat.id === fam.spouseVatId);
       if (!available) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; H.persist(); }
@@ -871,6 +890,8 @@
   function serialize() { return JSON.parse(JSON.stringify(fam)); }
   function restore(saved) {
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
+    window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
+    window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
@@ -894,13 +915,15 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
+      babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
   }
 
   const api = {
     init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby,
+    careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality,
     isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
     openDreamPicker, openNamingPrompt, createChild,
