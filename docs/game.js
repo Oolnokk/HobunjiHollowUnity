@@ -7737,6 +7737,7 @@
               && !c.prone
               && !c._animalSleeping
               && c.state !== 'return'
+              && c.state !== 'herd-panic' // Predators take movement/head-look priority; don't keep glancing back at the player during escape.
               && c.state !== 'patrol-chase'
               && !window.Combat?.telegraph?.isBusy(c)
               && !window.Combat?.animalAttacks?.isBusy(c);
