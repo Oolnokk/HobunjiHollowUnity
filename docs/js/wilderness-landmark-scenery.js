@@ -93,7 +93,7 @@ function witnessDyes(seed) {
 const cache=new WeakMap(); // Folded zone layout + world-cycle identity -> stable physical landmark positions.
 let deps=null,scene=null,group=null,area='',serial=0,report=null,error=null,renderedLayout=null,renderedIdentity=''; // Used by update() to invalidate the physical marker when either the layout or the Tothal generation changes.
 let unregisterStoneCollision=null; // Removes the current zone's stationary masonry colliders on shift or scene teardown.
-const SOLID_STONE_KINDS = new Set(['markedBoulder','witnessStone','stoneCairn','brokenPillar']); // Visible stone is physical; intentionally decorative deadwood remains non-blocking.
+const SOLID_LANDMARK_KINDS = new Set(['markedBoulder','witnessStone','stoneCairn','brokenPillar','deadTree']); // All permanent landmarks, including dead-tree trunks, use the same movement blocker.
 function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
 function rng(seed){let v=seed>>>0;return()=>{v=(Math.imul(v^(v>>>15),2246822507)+0x9e3779b9)>>>0;return(v>>>8)/16777216;};}
 function tileLookup(layout){
@@ -311,7 +311,7 @@ function deadwood(host,sites){
   if(!tree){error='FoliageGenerator.buildDeadTreeMesh unavailable';continue;}
   tree.name='wilderness-dead-tree-landmark';tree.position.set(site.point.col+.5,elevation(site),site.point.row+.5);
   tree.rotation.y=site.yaw;tree.scale.multiplyScalar(site.size);tree.userData.wildernessLandmarkScenery=true;
-  ignoreHits(tree,true);host.add(tree); // Decorative only, never entered into harvestable tree indices.
+  ignoreHits(tree,true);root.HobunjiOutlines?.markShellOutline?.(tree);host.add(tree); // Native bark uses the standard shell layer; unharvestable tree trunks still block movement.
  }
 }
 async function debris(host,sites,ticket,zoneId){
@@ -341,9 +341,10 @@ async function debris(host,sites,ticket,zoneId){
 }
 function registerStoneCollision(zone,sites){
  unregisterStoneCollision?.();unregisterStoneCollision=null; // Each shift must tear down the old formation before registering its replacements.
- const stoneSites=sites.filter(site=>SOLID_STONE_KINDS.has(site.kind)).map(site=>({
+ const stoneSites=sites.filter(site=>SOLID_LANDMARK_KINDS.has(site.kind)).map(site=>({
   x:site.point.col+.5,z:site.point.row+.5,y:elevation(site),
-  half:.36*Math.max(.6,Number(site.size)||1),height:1.25*Math.max(.6,Number(site.size)||1)
+  half:(site.kind==='deadTree'?.32:.36)*Math.max(.6,Number(site.size)||1),
+  height:(site.kind==='deadTree'?4.2:1.25)*Math.max(.6,Number(site.size)||1)
  })); // Cached extents avoid geometry or scene lookup during movement/pathing checks.
  const blockers=root.AreaFootprintBlockers; // Shared player/NPC/projectile collision service; render meshes stay raycast-inert for interactables.
  if(!stoneSites.length||!blockers?.register)return stoneSites.length;
