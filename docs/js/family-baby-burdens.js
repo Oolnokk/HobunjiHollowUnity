@@ -96,7 +96,7 @@
     group.position.copy(walker.root.position);
     entry = { child, walker, persist, burden: null, hiddenRoot: null, previousVisibility: true, disposing: false };
     const burden = api.registerBurden({
-      id: 'family_baby_' + child.id, mapId: area, scene: walker.root.parent,
+      id: 'family_baby_' + child.id, mapId: area, // Let Shattercasks pick the canonical active world scene; an NPC sub-group would reset zone burden records.
       group, kind: 'familyBaby', displayName: child.name || 'Baby',
       hanging: false, invulnerable: true, noHang: true,
       onPickup: () => {
