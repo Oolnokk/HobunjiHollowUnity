@@ -2080,7 +2080,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
     });
     const allowance = resolveHoodBeardAllowanceMask(hood, resolvedFighter);
-    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, allowance);
+    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, allowance,
+      {hoodMoves:stretch.moves}); // Permission pixels follow the same deformed front cloth.
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
