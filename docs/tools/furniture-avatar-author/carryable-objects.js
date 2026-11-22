@@ -465,9 +465,20 @@
     const c=state.carryable,id=state.selectedType==='carry'?state.selectedId:'anchor';
     const pos=id==='baby'?babyRotateProxy.position:positionGuide(id)||c.billboardAnchor.position;
     el('carryEnabled').checked=!!c.enabled;
-    el('carryGuideLabel').textContent=id==='baby'?(babyTransformMode==='translate'?'Move baby':'Rotate baby')+' · '+(babyPoseView==='back'?'back carry':'held'):id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
+    el('carryGuideLabel').textContent=id==='baby'?(babyTransformMode==='translate'?'Move baby':'Rotate baby')+' · '+(babyPoseView==='back'?'back carry':'held'):id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':id==='elbowLeft'?'Left elbow (shoulder-relative)':id==='elbowRight'?'Right elbow (shoulder-relative)':'Impact hitbox center';
     const portraitSection=el('carryBabyPortraitSection'); // Grip authoring uses image UV, never scene X/Y units.
     if(portraitSection)portraitSection.hidden=!editingBaby;
+    const elbowsSection=el('carryBabyElbowSection');
+    if(elbowsSection)elbowsSection.hidden=!editingBaby;
+    for(const side of ['left','right']){
+      const point=state.carryable.elbows?.[side];
+      const node=el(side==='left'?'carryBabyElbowLeft':'carryBabyElbowRight');
+      node?.classList.toggle('active',elbowSide(id)===side);
+      const status=el('carryBabyElbowStatus');
+      if(status)status.textContent=['left','right'].map(which=>{
+        const v=state.carryable.elbows?.[which];return which+': '+(v?'('+['x','y','z'].map(key=>v[key]?.toFixed?.(3)??v[key]).join(', ')+')':'unset · shoulder fallback');
+      }).join(' | ');
+    }
     if(editingBaby){
       const side=['left','right'].includes(id)?id:'left';
       const api=window.FamilyBabyCarryPose;
@@ -492,7 +503,7 @@
       :id==='anchor'?c.billboardAnchor.rotation:id==='back'?c.backCarry.rotation:c.handTargets[id]?.rotation||{};
     el('carryRotationLabel').textContent=id==='baby'?'Baby visual orientation (degrees; inverse-mapped to gameplay mount)'
       :id==='anchor'||id==='back'?'Mount orientation (degrees)':'Hand socket rotation relative to its calibrated GLB (degrees)';
-    el('carryAnchorRotation').hidden=id==='hitbox';
+    el('carryAnchorRotation').hidden=id==='hitbox'||!!elbowSide(id); // Elbows author XYZ only, matching Attack Editor.
     el('carryHitboxEnabled').checked=c.hitbox.enabled;
     for(const axis of ['X','Y','Z']) {
       const field=el('carryHitboxS'+axis);
@@ -514,6 +525,9 @@
     el('carryBabyReturn').disabled=!editingBaby;
     el('carryBabyApply').disabled=!editingBaby;
     el('carryBabyCopy').disabled=!editingBaby;
+    for(const control of ['carryBabyElbowLeft','carryBabyElbowRight','carryBabyMidLeft','carryBabyMidRight','carryBabyClearLeft','carryBabyClearRight']){
+      const node=el(control);if(node)node.disabled=!editingBaby;
+    }
     el('carryBabyMove').disabled=!editingBaby;
     el('carryBabyMove').classList.toggle('active',id==='baby'&&babyTransformMode==='translate');
     el('carryBabyRotate').disabled=!editingBaby;
@@ -627,6 +641,15 @@
       guideRoot.remove(item);
       item.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.();});
     }
+    for(const old of elbowGuideRoot.children.slice()){elbowGuideRoot.remove(old);old.traverse?.(node=>{node.geometry?.dispose?.();node.material?.dispose?.();});}
+    for(const side of ['left','right']){
+      const id=side==='left'?'elbowLeft':'elbowRight',marker=new THREE.Group();
+      marker.name='carry_baby_'+id;marker.userData.carryGuide=id;
+      const ball=new THREE.Mesh(new THREE.SphereGeometry(.027,12,10),
+        new THREE.MeshBasicMaterial({color:0xf97316,depthTest:false,depthWrite:false})); // Matches Attack Editor orange elbow.
+      ball.renderOrder=10001;marker.add(ball,new THREE.AxesHelper(.095));
+      elbowGuideRoot.add(marker);guides[id]=marker;
+    }
     for(const id of ['anchor','back','left','right','hitbox']){
       const marker=new THREE.Group();
       marker.name='carry_author_'+id;
@@ -659,6 +682,7 @@
     refreshGuides();
     // Rebind to the new marker after any furniture rebuild or JSON import.
     if(activeEditorMode==='carry')select(state.selectedType==='carry'&&guides[state.selectedId]?state.selectedId:'anchor');
+    updateBabyElbowGuides();
   }
   function refreshGuides() {
     const c=state.carryable;
@@ -681,19 +705,22 @@
         marker.quaternion.copy(handTurn[id]).multiply(handAbsolute.setFromEuler(handLocalEuler));
       }
     }
+    updateBabyElbowGuides();
   }
   function select(id) {
-    if(id==='baby'&&!editingBaby)id='anchor';
+    if((id==='baby'||elbowSide(id))&&!editingBaby)id='anchor';
     if(!guides[id])return;
     if(id==='anchor'||id==='back')babyPoseView=id; // The next Rotate Baby operation edits whichever carry mode was selected.
     state.selectedType='carry';
     state.selectedId=id;
     babyPivotAxes.visible=id==='baby'; // Don't overlay an unrelated axis cross on hand/anchor editing.
+    if(elbowSide(id))setBabyBones(true); // Elbow selection exposes the authoritative Attack Editor bone chain.
     transform.detach();
     transform.enabled=true;
     transform.visible=true;
     transform.setSpace?.('local'); // Rotation gizmo follows actual calibrated hand socket orientation.
     if(id==='baby')setTransformMode(babyTransformMode); // Select direct translation OR rotation without resetting the user's tool.
+    else if(elbowSide(id))setTransformMode('translate'); // Shoulder-relative elbows are position-only in the Attack Editor.
     else if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
     syncHoldingPreview();
     transform.attach(guides[id]);
