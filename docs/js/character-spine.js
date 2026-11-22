@@ -304,7 +304,17 @@
         bone.renderOrder = 42; bone.frustumCulled = false; group.add(bone); guideBones.push(bone);
       }
     }
+    const headPivot = rig.headOffsetJoint || null; // Shared game head-placement bone; its current position is the actual neck endpoint after authored adjustments.
+    const pivotJoint = headPivot ? new THREE.Mesh(jointGeometry, guideMaterial(0x57d9ff, 0.95)) : null; // Cyan endpoint distinguishes the moving skull attachment from the violet spine tip.
+    const pivotLink = headPivot ? new THREE.Mesh(cylinderGeometry, guideMaterial(0xc77dff, 0.8)) : null; // Shows the physical connection between the spine tip and the adjusted neck pivot.
+    if (pivotJoint && pivotLink) {
+      pivotJoint.name = 'spine_scaled_head_attachment'; pivotJoint.renderOrder = 44; pivotJoint.frustumCulled = false;
+      pivotLink.name = 'spine_neck_connection'; pivotLink.renderOrder = 43; pivotLink.frustumCulled = false;
+      group.add(pivotJoint, pivotLink);
+    }
     const points = Array.from({ length: SPLINE_NODES }, () => new THREE.Vector3());
+    const pivotPoint = new THREE.Vector3(); // Reused in sync() so the overlay remains allocation-free while dragging a scale slider.
+    const pivotDirection = new THREE.Vector3(); // Reused direction vector for the colored neck connector.
     plane.add(group);
     let visible = false;
     return {
@@ -322,6 +332,17 @@
           bone.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2);
           bone.scale.set(1, Math.max(1e-4, length), 1);
           bone.quaternion.setFromUnitVectors(bone.up, new THREE.Vector3(dx, dy, dz).multiplyScalar(1 / Math.max(1e-6, length)));
+        }
+        if (pivotJoint && pivotLink) {
+          const tip = points[SPLINE_NODES - 1]; // Actual last spine bone in the same skinned-plane frame as the guides.
+          pivotPoint.copy(tip).add(headPivot.position);
+          if (rig.neckJoint?.position) pivotPoint.add(rig.neckJoint.position); // A future post-scale neck correction moves this endpoint too.
+          pivotJoint.position.copy(pivotPoint);
+          pivotLink.position.copy(tip).add(pivotPoint).multiplyScalar(0.5);
+          pivotDirection.copy(pivotPoint).sub(tip);
+          const length = Math.max(1e-5, pivotDirection.length());
+          pivotLink.scale.set(1, length, 1);
+          pivotLink.quaternion.setFromUnitVectors(pivotLink.up, pivotDirection.multiplyScalar(1 / length));
         }
       },
       dispose() {
