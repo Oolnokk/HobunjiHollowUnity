@@ -811,6 +811,9 @@
           return;
         }
         if (target.prone) {
+          if (target === player && player.somersaultRecovering) {
+            player.somersaultRecovering = false; // Replacing a get-up animation cancels its completion callback; never strand the recovery flag.
+          }
           // Prone is immune to additional Footing loss, not to being physically
           // thrown. The dedicated prone throw has the existing swept wall/ledge collisions.
           target.knockbackVX = Math.cos(hitAngle) * speedPxS;
@@ -1023,7 +1026,8 @@
       function beginProneAirFall(entity, isPlayer) {
         if (isPlayer) {
           if (window.PlayerJump?.knockProne?.()) return true;
-          if (entity._knockbackLedgeFall || entity._knockbackLedgeAir) {
+          if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // Releasing a horizontal cliff crossing must begin its vertical descent immediately.
+          if (entity._knockbackLedgeFall) {
             entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
             window.KnockbackCollisionImpact?.cancel?.(entity); // An existing cliff fall must not queue a second throw on landing.
             return true;
@@ -1056,7 +1060,8 @@
         }
         const snapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null; // Captured before a bandit attack's lunge cancellation.
         entity._proneAirFallStartY = null;
-        if (entity._knockbackLedgeFall || entity._knockbackLedgeAir) {
+        if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // A prone target released during horizontal cliff transit must not hang in the air.
+        if (entity._knockbackLedgeFall) {
           entity.proneThrowT = 0; // The existing fall stays in charge; no deferred throw after its landing.
           return true;
         }
@@ -1131,6 +1136,10 @@
           window.Combat?.animalAttacks?.cancel?.(entity);
           window.EnemyDodge?.cancel?.(entity);
           if (entity.isBandit) {
+            const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
+            const hopY = Number(entity._banditLungeHopCurrent) || 0;
+            if (Number.isFinite(groundY) && hopY > KNOCKBACK_LEDGE_HEIGHT_EPSILON)
+              entity._proneAirFallStartY = groundY + hopY; // Timed Knockdown also preserves a bandit's height before cancelLunge erases its hop.
             entity._banditAction?.cancel?.();
             entity._banditAction = null;
             entity.telegraphState = null;
