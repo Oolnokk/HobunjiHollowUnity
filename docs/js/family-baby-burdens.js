@@ -101,8 +101,11 @@
     item.group.visible = false;
     showWalker(entry, true);
     const root = entry.walker?.root;
-    if (!basket && root && entry.walker.area === item.mapId) {
-      root.position.x = item.col + .5; root.position.z = item.row + .5;
+    if (!basket && root) {
+      if (entry.walker.area !== item.mapId) entry.walker.transferToArea?.(item.mapId, { c: item.col, r: item.row }); // The existing NPC zone mover relocates the authoritative baby after farm/town landings.
+      if (entry.walker.area === item.mapId) {
+        root.position.x = item.col + .5; root.position.z = item.row + .5;
+      }
     }
     moveToWalker(entry);
     entry.persist?.();
@@ -263,8 +266,9 @@
     const target = basket || ctx?.basketObject?.(child) || ctx?.helpers?.bedSpot?.();
     const root = entry.walker?.root;
     if (root && Number.isFinite(target?.col ?? target?.c) && Number.isFinite(target?.row ?? target?.r)) {
-      root.position.x = Number(target.col ?? target.c) + .5;
-      root.position.z = Number(target.row ?? target.r) + .5; // Put the REAL child back inside the open cup, not at a previous landing.
+      const c = Number(target.col ?? target.c), r = Number(target.row ?? target.r); // Reuse the actual family furniture tile.
+      if (entry.walker.area !== 'interior') entry.walker.transferToArea?.('interior', { c, r }); // Same native NPC portal mover as weddings and schedules.
+      root.position.x = c + .5; root.position.z = r + .5; // Put the REAL child inside the cup, not at a previous landing.
     }
     settle(entry, entry.burden, true);
     return true;
