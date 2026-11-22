@@ -131,6 +131,36 @@ for (let y = 15; y < 148; y++) for (let x = 25; x < authored.width - 25; x++) {
 assert(capPixels > 10000 && tintedCapPixels / capPixels > .95,
   'at least 95% of actual colored cap pixels, including the highlight, must accept dye');
 
+// Verify the real SpriteRecolor image-loading path downscales mushroom
+// renders only; other authored sprites must keep their established dimensions.
+let decodedImages = 0; // The ordinary SpriteRecolor image cache should load one source across multiple tint modes.
+class SourceImage {
+  constructor() { this.naturalWidth = 378; this.naturalHeight = 378; decodedImages++; }
+  set src(path) { assert.equal(path, 'assets/objectsprites/mushroom.png'); queueMicrotask(() => this.onload?.()); }
+}
+context.Image = SourceImage; // VM Image stand-in provides only source dimensions and async readiness.
+context.document = { createElement: tag => {
+  assert.equal(tag, 'canvas');
+  const canvas = { width: 0, height: 0 };
+  canvas.getContext = () => ({
+    imageSmoothingEnabled: false, imageSmoothingQuality: 'low',
+    drawImage: () => {},
+    getImageData: () => ({ data: new Uint8ClampedArray(canvas.width * canvas.height * 4) }),
+    putImageData: () => {},
+  }); // Workload remains bounded to 128px for mushrooms in the actual async canvas creation code.
+  return canvas;
+} };
+const resizeTest = Promise.all([
+  WINDOW.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/mushroom.png', 0xb34d69, 'mushroom'),
+  WINDOW.SpriteRecolor.getRecoloredCanvas('assets/objectsprites/mushroom.png', 0xb34d69, 'keyed'),
+]).then(([mushroomCanvas, otherCanvas]) => {
+  assert.equal(mushroomCanvas.width, 128, 'mushroom renders use a small runtime bitmap');
+  assert.equal(mushroomCanvas.height, 128, 'the authored square aspect ratio is retained');
+  assert.equal(otherCanvas.width, 378, 'non-mushroom sprite modes keep their original resolution');
+  assert.equal(otherCanvas.height, 378, 'other item artwork is unaffected');
+  assert.equal(decodedImages, 1, 'multiple recolor modes share one source image decode');
+});
+
 class Group { constructor() { this.children = []; this.userData = {}; } add(mesh) { this.children.push(mesh); } } // Lightweight world-card aggregate.
 class Mesh { constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = { y: 0 }; this.scale = { set: (...values) => { this.scaling = values; } }; } } // Exposes the same mesh mutation API used by the real world art.
 class Geometry { translate() { return this; } } // Reusable ground-anchored plane geometry.
@@ -152,6 +182,7 @@ const c = plants.buildReagentPlantMesh('flintcapMushroom');
 assert.equal(a.children.length, 2, 'two crossed PNG cards per mushroom plant, without a 3D outline');
 assert.equal(a.children[0].geometry, 'legacy-grass', 'missing/pending asset keeps the existing safe grass silhouette');
 (async () => {
+  await resizeTest; // Verify the real async canvas and image cache in addition to the mesh/mat substitutes.
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); // Flush the real shared asynchronous material setup.
   assert.equal(loadCount, 2, 'two different mushroom colors cause only two loads, not one per instance');
   assert(a.children.every(mesh => mesh.geometry instanceof Geometry), 'loaded mushroom artwork replaces the grass plane');
