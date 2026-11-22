@@ -4,7 +4,7 @@
   const scriptUrls = [
     "js/wilderness-seclusion.js?v=20261114tothalSecretLos1",
     "js/wilderness-object-footprints.js?v=20261122generatedFootprints1",
-    "js/wilderness-map-generator.js?v=20261118goldWesternSlopeCache1",
+    "js/wilderness-map-generator.js?v=20261122boulderFootprints1",
     "js/locale-terrain-placement.js?v=20261122generatedFootprints1"
   ]; // Version tokens for these modules are owned in their feature manifest.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
