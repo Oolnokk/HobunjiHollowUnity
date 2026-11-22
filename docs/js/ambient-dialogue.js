@@ -53,6 +53,8 @@
     lastAddressDebug: null, // Used by mobile debugging to inspect the last spoken nickname without browser devtools.
   };
 
+  const runtimeGreetings = new Map(); // Runtime child greeting pools survive async authored config loads without mutating canonical JSON.
+
   function structuredCloneSafe(value) {
     return JSON.parse(JSON.stringify(value));
   }
@@ -80,6 +82,7 @@
     } catch (_) {
       state.settings = mergeSettings(null);
     }
+    for (const [id, greetings] of runtimeGreetings) state.settings.npcGreetings[id] = greetings; // Newborn/toddler dynamic pools win even if their registration raced the async settings fetch.
     return structuredCloneSafe(state.settings);
   }
 
@@ -1134,8 +1137,8 @@
     setNpcGreetings(npcId, greetings) {
       const id = String(npcId || '');
       if (!id || !state.settings?.npcGreetings) return false;
-      if (greetings) state.settings.npcGreetings[id] = greetings;
-      else delete state.settings.npcGreetings[id];
+      if (greetings) { runtimeGreetings.set(id, greetings); state.settings.npcGreetings[id] = greetings; }
+      else { runtimeGreetings.delete(id); delete state.settings.npcGreetings[id]; } // Restoring a different family cannot leave old child voices registered.
       return true;
     },
     friendIdsFor: npcId => [...friendSetFor(npcId)], // Shared meal/group planning reuses authored friendship circles.
