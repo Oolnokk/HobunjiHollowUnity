@@ -32,6 +32,8 @@ const data={
 };
 const anchors=profile.anchorsForAvatar(data,.3,.4);
 close(anchors.posterior.y,.20,'posterior uses real infant spine pivot and portrait placement');
+close(anchors.posterior.x,0,'posterior starts at pinned spline node 0, not the offset neck base');
+close(anchors.neck.x,.02,'right grip uses head-turn pivot X rather than shoulder midpoint');
 close(anchors.neck.y,.46,'neck uses unscaled head-turn pivot, not top of painted alpha');
 const sized=profile.forSize(.3,.4,anchors);
 close(sized.handTargets.left.x,anchors.posterior.x+.12,'left grip is relative to baby posterior');
