@@ -335,6 +335,7 @@
   // produced for that footprint, without re-running the whole generator.
   function release(zone, instance) {
     if (!instance) return;
+    root.WildernessObjectFootprints?.releaseTemporaryLocale?.(zone,instance); // Reopening the site also reopens scenery placement for a later shift.
     clearOccupied(zone, instance.site.x, instance.site.y, instance.site.w, instance.site.h);
     zone.objects = (zone.objects || []).filter(o => o.temporaryLocaleInstanceId !== instance.id);
 
