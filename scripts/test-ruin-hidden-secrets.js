@@ -2,6 +2,9 @@
 // Optional dungeon secrets use their own RNG, room state and collision registry.
 const assert=require('node:assert/strict');
 const api=require('../docs/js/ruin-hidden-secrets.js');
+global.window=global;
+require('../docs/js/area-footprint-blockers.js'); // Test the registry normal player movement actually uses.
+const area='map_i_dev_random_ruin';
 const room={id:'floor1-E-room2',kind:'challenge-room',challenge:'pressurePlate',x:40,z:50,w:16,d:15,y:12};
 assert.equal(api.planForRoom({...room,challenge:'ropeChain'},0,'tothal'),null);
 assert.equal(api.planForRoom({...room,w:8},0,'tothal'),null);
@@ -70,7 +73,12 @@ global.DevRandomRuinSimplePuzzles={hasActiveRuinState:()=>true,
 const fire=new Map();
 global.DungeonFire={registerTarget(t){fire.set(t.id,t);return t.id;},unregisterTarget(id){fire.delete(id)}};
 let feetY=12,groundOn=false,player={x:43,z:53}; // Scenario controls simulate stacked floor fire and remote instrument input.
-global.PersistentGroundFire={intersects:()=>groundOn};
+let flames=0,flameUpdates=0; // Source flame participates in the room lifecycle.
+global.PersistentGroundFire={intersects:()=>groundOn,attachCampfireFlame(anchor){
+  assert(anchor.parent,'permanent fire is mounted with the puzzle');
+  flames++;
+  return {update(){flameUpdates++;},dispose(){flames--;}};
+}};
 global.RuinInteractionAudio={watchPlate(){}};
 let notesReceived=0,melodyListener=null; // Confirms one secret score cannot receive a different plate's notes.
 global.PuzzleCaveMelody={ruinDifficulty:()=>3,generate:()=>({notes:[{index:1}],bpm:90}),
@@ -128,9 +136,24 @@ for(const [key,seed] of Object.entries(found)){
    assert.equal(owner.targets.length,1);owner.targets[0].onHit();assert(owner.unlocked);
  }
  if(key==='closet:fire'){
+   const gate=owner.gate.position;
+   const source=owner.ignitionSource;
+   const blocked=(point,y=undefined,scope=area)=>AreaFootprintBlockers.blocksBox(scope,point.x,point.z,.15,y);
+   assert(source&&Math.hypot(source.x-owner.firePoint.x,source.z-owner.firePoint.z)>2.5);
+   assert.equal(flames,1);
+   assert(flameUpdates>0);
+   assert(owner.group.children.some(node=>node.children.some(part=>part.userData.fireHazard)),
+     'the permanent flame exposes a torch-strike ignition hitbox');
+   assert(blocked(gate)&&blocked(owner.firePoint)&&blocked(owner.chest.group.position)&&blocked(source));
+   assert(!blocked(gate,room.y+5)&&!blocked(gate,room.y-5)&&!blocked(gate,room.y,'other-area'));
+   assert.equal(owner.chest.control.available(),false);
    feetY=30;groundOn=true;owner.tick(.05);
-   assert(!owner.unlocked,'ground fire on another floor cannot unlock the secret brazier');
+   assert(!blocked(gate)&&!owner.unlocked,'other stories cannot collide or ignite through the floor');
    feetY=12;owner.tick(.05);assert(owner.unlocked,'ground fire on the correct floor unlocks the brazier');
+   assert(blocked(gate),'the door remains solid until it clears the opening');
+   for(let i=0;i<12;i++)owner.tick(.05);
+   assert(!blocked(gate)&&blocked(owner.chest.group.position));
+   assert(owner.chest.control.available());
    groundOn=false;
  }
  if(key==='closet:melody'){
@@ -164,6 +187,8 @@ for(const [key,seed] of Object.entries(found)){
  owner.dispose();
  assert.equal(global.DynamicSurfaces.ids.size,0);
  assert.equal(global.DynamicSurfaces.blockers.size,0,'no hidden cache leaves collision behind after unloading');
+ assert.equal(AreaFootprintBlockers.providerIds().length,0);
+ assert.equal(flames,0);
  assert.equal(projectiles.size,0);
  assert.equal(fire.size,0);
  assert.equal(controls.size,0);

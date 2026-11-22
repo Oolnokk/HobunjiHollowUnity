@@ -1145,6 +1145,15 @@
         lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
       }
     }
+    const shaftRide=window.DevRandomRuinSimplePuzzles?.debugShaftRide?.(); // On-demand stick, pendulum and release diagnostics.
+    if(shaftRide)lines.push('Shaft rope: '+JSON.stringify(shaftRide));
+    for(const hit of hits){
+      let owner=hit.object; // Resolve the clicked brazier, partition, or chest to its optional puzzle.
+      while(owner&&!owner.userData?.ruinSecretSnapshot)owner=owner.parent;
+      if(!owner)continue;
+      lines.push('Hidden ruin alcove: '+JSON.stringify(owner.userData.ruinSecretSnapshot()));
+      break;
+    }
     const rubblePickupPerf = window.Shattercasks?.debugSnapshot?.().performance; // Read only on Pixel Probe request, never on a gameplay frame.
     const junkPickupPerf = window.CratePiles?.debugSnapshot?.(); // Mobile-only loot hitch timing and save diagnostics.
     if (rubblePickupPerf || junkPickupPerf || window.BanditCamps) {

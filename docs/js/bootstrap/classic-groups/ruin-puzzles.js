@@ -7,7 +7,7 @@
     "js/puzzle-cave-plate-art.js?v=20261110tankanring1",
     "js/ruin-melody-glyph-decal.js?v=20261114ruinCaveParity1",
     "js/ruin-layer-challenges.js?v=20261122h2f8f011",
-    "js/ruin-hidden-secrets.js?v=20261122h91c0a48",
+    "js/ruin-hidden-secrets.js?v=20261122h7d219d7",
     "js/ruin-room-system.js?v=20261122h0b048c1",
     "js/ruin-layer-playable.js?v=20261122hd505b4d",
     "js/ruin-v50-native-mechanisms.js?v=20261122hbc5c6e2",

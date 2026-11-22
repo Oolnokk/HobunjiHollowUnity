@@ -214,6 +214,9 @@
     const dx=Number(to.x)-Number(from.x),dz=Number(to.z)-Number(from.z),distance=Math.hypot(dx,dz);
     const steps=Math.max(1,Math.ceil(distance/.18));
     let last={x:Number(from.x),y:Number(from.y),z:Number(from.z)};
+    const shaftMotion=state?.activeRope?.shaftRopeId||state?.flight?.shaftRopeId; // Shaft ropes sweep the same solid voxels as other player movement.
+    const layeredMotion=state?.activeRope?.externalRopeChain||state?.flight?.layerRopeChain; // Layered wing ropes also sweep across narrow progression gates.
+    const ruin=window.DevRandomRuin; // Voxel collision authority for both layered routes.
     for(let step=1;step<=steps;step++){
       const t=step/steps;
       const point={x:Number(from.x)+dx*t,y:Number(from.y)+(Number(to.y)-Number(from.y))*t,z:Number(from.z)+dz*t};
@@ -221,12 +224,11 @@
       // stacked wing must also respect this floor's real SOLID voxel gates,
       // or ballistic release could bypass an unsolved challenge while
       // reconcilePlayer deliberately yields movement ownership to the rope.
-      const layeredMotion=!!state?.activeRope?.externalRopeChain||!!state?.flight?.layerRopeChain;
-      const shaftHit=layeredMotion?window.DevRandomRuin?.shaftSegmentHit?.(
+      const shaftHit=layeredMotion?ruin?.shaftSegmentHit?.(
         {x:last.x,y:last.y+.8,z:last.z},{x:point.x,y:point.y+.8,z:point.z},
         radius,(start,end,hitbox,hitRadius)=>segmentBoxInterval(start,end,hitbox.box,hitRadius)):null;
-      if(ropeBlockedAt(point.x,point.z,radius,point.y)||shaftHit!==null&&shaftHit!==undefined)
-        return{blocked:true,last,point};
+      if(ropeBlockedAt(point.x,point.z,radius,point.y)||shaftHit!=null
+        ||(shaftMotion&&ruin?.shaftBodyBlocksAtFeet?.(point.x,point.z,radius,point.y)))return{blocked:true,last,point};
       last=point;
     }
     return{blocked:false,last:to,point:null};
@@ -869,16 +871,31 @@
     return bob;
   }
 
+  function canGrabShaftRope(rope) {
+    const player=playerWorld(); // Match the interaction to the live end and the supported launch pad.
+    const feet=window.DevRandomRuin?.getPlayerGroundSupportY?.();
+    const pad=rope.launchPad;
+    const bob=rope.bob;
+    return !!(player&&pad&&bob&&!deps.player.prone&&deps.player._freeJump?.phase!=='air'
+      &&Number.isFinite(feet)&&Math.abs(feet-pad.y)<.25
+      &&Math.abs(player.x-pad.x)<=pad.w/2+.04&&Math.abs(player.z-pad.z)<=pad.d/2+.04
+      &&Math.abs(bob.y-feet)<=1.5&&Math.hypot(player.x-bob.x,player.z-bob.z)<=1.25);
+  }
+
   function attachRope(rope) {
-    if (!rope || state.flight || rope.attached) return false;
+    if (!rope || rope.attached || state.flight || state.activeRope || (rope.shaftRopeId&&!canGrabShaftRope(rope))) return false;
     const intent=ropeIntent(rope,true); // Preserve the approach impulse on auto-grab; attached pumping switches to the game's published movement intent.
-    rope.omega=Math.sign(rope.omega||1)*Math.max(Math.abs(rope.omega),.28)+intent.forward*.35; // Catch the rope where it actually is instead of snapping it back to the authored launch angle.
+    if (rope.shaftRopeId && Math.abs(rope.omega)<.28) {
+      rope.omega=(Math.sign(intent.forward)||1)*.28+intent.forward*.35; // Pulling back on a resting shaft rope starts a backswing.
+    } else rope.omega=Math.sign(rope.omega||1)*Math.max(Math.abs(rope.omega),.28)+intent.forward*.35; // Catch the rope where it actually is instead of snapping it back to the authored launch angle.
     rope.attached = true;
     rope.braking = false;
     state.activeRope = rope;
     holsterRopeEquipment();
     updateRopeVisual(rope);
-    deps?.showToast?.('Caught the rope — move to pump; Dodge to jump off.', true);
+    deps?.showToast?.(rope.shaftRopeId
+      ? 'Move with the swing to gain height. Jump off as you rise toward the next ledge.'
+      : 'Caught the rope — move to pump; Dodge to jump off.', true);
     return true;
   }
 
@@ -886,7 +903,7 @@
     if (!rope?.attached) return false;
     const bob = updateRopeVisual(rope);
     const flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id,
-      layerRopeChain:rope.externalRopeChain===true }; // Preserve 3D gate collision authority after rope release.
+      layerRopeChain:rope.externalRopeChain===true,shaftRopeId:rope.shaftRopeId }; // Preserve 3D gate collision authority after rope release.
     state.flight = window.PlayerJump?.beginFlight?.(flight, { external:true, source:'ruin rope swing', ropeId:rope.id }) || flight; // Shared physical airborne state; the ruin retains the layered collision integrator.
     rope.attached = false;
     rope.braking = false;
@@ -941,7 +958,7 @@
   // in state.ropes: callers validate the route first, then push it (or call
   // disposeRopeObject). grabPoint null = only catchable mid-air from another
   // rope (no ground 'Grab Rope' prompt).
-  function createRopeObject({room,idSuffix='',anchor,yaw,length,maxLength=length,minBobY,angle=0,startPlatform=null,endPlatform=null,grabPoint=null,mountObject=null}) {
+  function createRopeObject({room,idSuffix='',anchor,yaw,length,maxLength=length,minBobY,angle=0,startPlatform=null,endPlatform=null,grabPoint=null,mountObject=null,shaftRopeId=null,launchPad=null}) {
     const suffix=idSuffix?'_'+idSuffix:'';
     let mount=mountObject; // A furniture rope hangs from its own authored mount, which this runtime must not create, move or dispose.
     if(!mount){
@@ -961,14 +978,14 @@
     marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
     marker.material.colorWrite=false;marker.material.depthWrite=false; // Invisible raycast/prompt target: the PNG brush tip is the only visible rope end.
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
-    const torch=window.RuinRopeTorch?.attach?.(marker)||null; // Existing bob marker carries the authored flaming brazier; no change to grabs, rope arcs or collision.
+    const torch=shaftRopeId?null:(window.RuinRopeTorch?.attach?.(marker)||null); // A shaft rider sees and grabs the bare rope tip.
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
       roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,torch,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
       yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
       attached:false,braking:false,startPlatform,endPlatform,externalMount:!!mountObject,
       hazard:null,airOnly:!grabPoint,
-      grabPoint,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,airCatchCount:0,
+      grabPoint,shaftRopeId,launchPad,bob:null,lastSafeBob:null,collisionStops:0,autoGrabCount:0,airCatchCount:0,
     };
   }
 
@@ -1018,6 +1035,7 @@
   // hanging length, never above the shortest grip length or below its end.
   function ropeCatchPoint(rope,point) {
     const bob=rope.bob||ropeBobAt(rope);
+    if(rope.shaftRopeId)return Math.hypot(point.x-bob.x,point.y-bob.y,point.z-bob.z)<=ROPE_AIR_CATCH_RADIUS;
     const ax=rope.anchor.x,ay=rope.anchor.y,az=rope.anchor.z;
     const sx=bob.x-ax,sy=bob.y-ay,sz=bob.z-az,len2=sx*sx+sy*sy+sz*sz;
     if(len2<1e-6)return false;
@@ -1030,7 +1048,8 @@
   // Mid-air catch: the rope takes the flyer at the grip height they reached,
   // with their velocity turned into swing so rope-to-rope chains keep momentum.
   function catchRopeInFlight(rope,f) {
-    RopeCore.catchFromFlight(rope,f);
+    const contact=rope.shaftRopeId?{...f,...rope.bob}:f; // Keep the proven shaft rope at its full deployed length.
+    RopeCore.catchFromFlight(rope,contact);
     rope.attached=true;rope.braking=false;rope.airCatchCount++;
     state.flight=null;
     window.PlayerJump?.reset?.(); // A successful catch transfers airborne movement ownership to the pendulum.
@@ -2501,9 +2520,11 @@
       allowVelocityFallback?{vx:(Number(player?.vx)||0)/tile,vz:(Number(player?.vy)||0)/tile}:null);
   }
 
+  const fixedBrakeIntent=Object.freeze({forward:0,side:0}); // The shaft brake stops the swing without moving it out of the generated route.
   const ropeSweepBlocked=(from,to)=>sweptRopePoint(from,to).blocked;
   function updateAttachedRope(rope,dt) {
-    const step=RopeCore.stepAttached(rope,ropeIntent(rope),dt,ropeSweepBlocked);
+    const intent=ropeIntent(rope);
+    const step=RopeCore.stepAttached(rope,rope.shaftRopeId&&rope.braking?fixedBrakeIntent:intent,dt,ropeSweepBlocked);
     const bob=updateRopeVisual(rope); // Blocked or not, the rider sits at the (safe) bob.
     rope.lastSafeBob=clonePoint(bob);
     setPlayerWorld(bob,true,false);
@@ -2537,9 +2558,11 @@
     // evade the instant-death abyss. Likewise never mistake an overhead
     // support at another level for the intended landing bank.
     if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;}
-    const support=state.flight?.layerRopeChain
-      ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.2,maxY:f.y+.25,pad:.02})
-      :sampleSupport(f.x,f.z,f.y+.25);
+    const support=f.shaftRopeId&&f.vy<=0
+      ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.08,maxY:previous.y+.03,pad:.02}) // A fast fall can cross a full slab between two frames.
+      :f.layerRopeChain
+        ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.2,maxY:f.y+.25,pad:.02})
+        :sampleSupport(f.x,f.z,f.y+.25);
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
       setPlayerWorld(f,true,true);
@@ -2654,12 +2677,13 @@
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
     if(!state.context.singleRoomTrial)for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);} // No stale composer prompts in isolated mode.
     for(const candidate of state.ropes){
-      if(candidate.attached||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
+      if(state.activeRope||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
       controls.push({
         kind:'ropeGrab',
         object:candidate.marker,
         promptRoot:candidate.marker,
-        point:candidate.grabPoint, // Interaction range is measured from the authored launch-side grab point while the floating popup remains visually anchored to the live swinging rope bob.
+        point:candidate.shaftRopeId?candidate.bob:candidate.grabPoint, // Shaft grab range follows the visible end.
+        ...(candidate.shaftRopeId?{available:()=>canGrabShaftRope(candidate)}:{}),
         range:1.25,
         priority:32,
         claimAction1:true, // Nearby rope grab intentionally replaces weapon Action 1; WorldActionInputClaims suppresses the attack until this interaction leaves range.
@@ -2689,7 +2713,7 @@
         range:99,
         priority:99,
         touchIcon:'✋',
-        label:'Hold to Stop / Adjust Rope',
+        label:rope.shaftRopeId?'Hold to Brake':'Hold to Stop / Adjust Rope',
         onHoldStart:()=>{rope.braking=true;},
         onHoldEnd:()=>{rope.braking=false;},
       });
@@ -2773,6 +2797,7 @@
     const rope=createRopeObject({
       room:{id:'furniture_'+String(spec.id)},anchor:spec.anchor,yaw:Number(spec.yaw)||0,length,maxLength,
       minBobY:spec.anchor.y-maxLength-.05,angle:Number(spec.angle)||0,mountObject,
+      shaftRopeId:spec.shaftRopeId,launchPad:spec.launchPad,
       grabPoint:{x:spec.anchor.x,z:spec.anchor.z,y:spec.anchor.y-length}, // the rope's resting grip, at the foot of the rope, is where the 'Grab Rope' prompt is measured
     });
     rope.furnitureId=String(spec.id);
@@ -2886,6 +2911,14 @@
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
+    isRidingRope:()=>!!state?.activeRope&&inRuin(), // Ground locomotion still publishes camera-resolved stick input before yielding to the swing.
+    debugShaftRide:()=>{
+      const rope=state?.activeRope;
+      if(rope?.shaftRopeId)return {id:rope.shaftRopeId,bob:clonePoint(rope.bob),angle:rope.angle,
+        speed:rope.omega,braking:rope.braking,input:ropeIntent(rope),collisionStops:rope.collisionStops};
+      const flight=state?.flight;
+      return flight?.shaftRopeId?{id:flight.shaftRopeId,flight:clonePoint(flight),verticalSpeed:flight.vy}:null;
+    },
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):window.HangingRopes?.releaseActiveRope?.()===true, // The native Dodge action also dismounts outdoor ropes.
     catchAirborneRope, // Called by PlayerJump after a physical airborne approach, including jumps into generated ruin ropes.
     respawnAtCheckpoint,
