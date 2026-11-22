@@ -14,7 +14,7 @@
   const THREAT_RELEASE_TILES = 5.5; // Approachers who retreat this far no longer trigger an endless pursuit.
   const NEST_DEFENSE_TILES = 11; // Every nearby adult of the stolen species hears/sees a nest being raided.
   const NEST_DEFENSE_MS = 14000; // Temporary defensive hostility, restored when the intruder leaves or time expires.
-  const PREDATOR_PURSUIT_SPEED_TILES_S = 8.5; // Wild predators sprint when hunting wildlife or actively chasing a player.
+  const PREDATOR_PURSUIT_SPEED_TILES_S = 10.2; // Hunting predators are slightly faster than panicked 9.5-tile/s prey, so pursuit remains dangerous.
   const WILDLIFE_FLIGHT_SPEED_TILES_S = 8.8; // Injured wildlife sprints instead of slowly walking home while pursued.
   const POST_KICK_ESCAPE_MS = 2300; // A Voorg-Ass runs away from its kicker's target after the rear-kick pose finishes.
   const debug = { panic: 0, approaches: 0, postKickEscapes: 0, nestAlerts: 0, nestDefenders: 0, predatorSprints: 0, preySprints: 0, last: '' }; // Lightweight wildlife panel/console-free diagnostics.
