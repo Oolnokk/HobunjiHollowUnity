@@ -276,9 +276,104 @@
     }catch(error){return {...empty,error:String(error?.message||error)};}
   }
 
+  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA) {
+    // No authored hood permission mask means legacy permissive behavior.
+    // An explicit EMPTY mask means no hood pixel may be removed.
+    const request = decodeMask(requestMask);
+    const allowed = allowanceMask == null ? null : decodeMask(allowanceMask);
+    const approved = new Uint8Array(PIXELS);
+    const refused = new Uint8Array(PIXELS);
+    let requested = 0, approvedPixels = 0, refusedPixels = 0;
+    if (!beardRGBA || !hoodRGBA || beardRGBA.length !== PIXELS * 4 || hoodRGBA.length !== PIXELS * 4)
+      return {approved, refused, requested, approvedPixels, refusedPixels};
+    for (let i = 0; i < PIXELS; i++) {
+      if (!request[i] || beardRGBA[i * 4 + 3] < 8 || hoodRGBA[i * 4 + 3] < 8) continue;
+      requested++;
+      if (!allowed || allowed[i]) {approved[i] = 1;approvedPixels++;}
+      else {refused[i] = 1;refusedPixels++;}
+    }
+    return {approved, refused, requested, approvedPixels, refusedPixels};
+  }
+
+  function applyRefusedBeardOutline(beardRGBA, refused) {
+    // Blacken *surviving* non-black opaque beard pixels bordering rejected
+    // pixels. Placing the outline in the rejected (transparent) pixels would
+    // hide it behind the subsequently drawn hood. Never outline unrelated
+    // pre-existing edges or overwrite authored black lines.
+    const remaining = new Uint8ClampedArray(beardRGBA); // Snapshot prevents recursive halos during the 8-neighbor scan.
+    let erasedPixels = 0, outlinedPixels = 0;
+    for (let i = 0; i < PIXELS; i++) {
+      if (!refused[i]) continue;
+      const offset = i * 4;
+      if (beardRGBA[offset + 3]) erasedPixels++;
+      remaining[offset] = remaining[offset + 1] = remaining[offset + 2] = remaining[offset + 3] = 0;
+    }
+    for (let i = 0; i < PIXELS; i++) {
+      if (refused[i]) continue;
+      const offset = i * 4;
+      if (beardRGBA[offset + 3] < 64) continue;
+      if (beardRGBA[offset] <= 30 && beardRGBA[offset + 1] <= 30 && beardRGBA[offset + 2] <= 30)
+        continue; // Already black (or near-black) authored edge pixels.
+      const x = i % SIZE, y = (i / SIZE) | 0;
+      let exposed = false;
+      for (let dy = -1; dy <= 1 && !exposed; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const px = x + dx, py = y + dy;
+        if (px >= 0 && py >= 0 && px < SIZE && py < SIZE && refused[py * SIZE + px]) {
+          exposed = true; break;
+        }
+      }
+      if (!exposed) continue;
+      remaining[offset] = remaining[offset + 1] = remaining[offset + 2] = 0;
+      outlinedPixels++;
+    }
+    return {pixels:remaining,erasedPixels,outlinedPixels};
+  }
+
+  function negotiateBeardHood(beardCanvas, hoodCanvas, requestMask, allowanceMask = null, options = {}) {
+    // Both scratch canvases have exactly 200x200 portrait coordinates. Mutate
+    // only the two supplied layers; never punch holes into a full portrait.
+    const empty = {applied:false,requested:0,approvedPixels:0,refusedPixels:0,
+      erasedPixels:0,outlinedPixels:0};
+    if (!beardCanvas || !hoodCanvas || !normalizeMask(requestMask)?.runs.length) return empty;
+    try {
+      const beardCtx = beardCanvas.getContext('2d',{willReadFrequently:true});
+      const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
+      const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
+      const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
+      const partition = partitionBeardHood(requestMask,allowanceMask,beard.data,hood.data);
+      const {approved,refused,requested,approvedPixels,refusedPixels} = partition;
+      // Permission applies ONLY where the transformed front hood actually has
+      // pixels. No hood at that coordinate means nothing to erase from beard.
+      for (let i = 0; i < PIXELS; i++) if (approved[i]) {
+        const offset = i * 4;
+        hood.data[offset] = hood.data[offset+1] = hood.data[offset+2] = hood.data[offset+3] = 0;
+      }
+      if (approvedPixels) hoodCtx.putImageData(hood,0,0);
+      let erasedPixels = 0, outlinedPixels = 0;
+      if (refusedPixels) {
+        const outlined = applyRefusedBeardOutline(beard.data,refused);
+        beard.data.set(outlined.pixels);
+        beardCtx.putImageData(beard,0,0);
+        erasedPixels = outlined.erasedPixels;
+        outlinedPixels = outlined.outlinedPixels;
+      }
+      const stats = {applied:approvedPixels>0||refusedPixels>0,
+        requested,approvedPixels,refusedPixels,erasedPixels,outlinedPixels};
+      if (options.includeMasks) {
+        stats.approvedMask = encodeMask(approved);
+        stats.refusedMask = encodeMask(refused);
+      }
+      return stats;
+    } catch(error) {
+      return {...empty,error:String(error?.message||error)};
+    }
+  }
+
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
     planTuftStretch, stretchHoodToRoots, applyToHood,
+    partitionBeardHood, applyRefusedBeardOutline, negotiateBeardHood,
   });
 })();
