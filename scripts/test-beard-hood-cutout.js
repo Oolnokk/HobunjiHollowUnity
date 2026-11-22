@@ -227,6 +227,60 @@ for(let x=100;x<=102;x++)allowedBits[at(x,80)]=1;
 const requestMask=Cut.encodeMask(requestedBits),permission=Cut.encodeMask(allowedBits);
 const originalBeard=new Uint8ClampedArray(sampleBeard.pixels);
 const originalHood=new Uint8ClampedArray(sampleHood.pixels);
+// Automatic hood permission: detect the lower (inner) opening ring, extend each
+// bottom-rim column downward, then fan it outward as the cone slider increases.
+const autoZero=Cut.autoHoodAllowanceMask(ringBefore,0);
+const autoWide=Cut.autoHoodAllowanceMask(ringBefore,.5);
+assert(autoZero.bottomPoints.length>20,'automatic detector finds the lower opening arc');
+assert.equal(autoZero.openingSeed.x,100.5,'detection seeds inside the transparent face opening');
+const centerRim=autoZero.bottomPoints.find(p=>p.x===100);
+assert(centerRim&&centerRim.y>=122&&centerRim.y<=126,
+  'center of bottom ring is the INNER opening edge, not the bottom of outer hood fabric');
+assert.equal(Cut.decodeMask(autoZero.mask)[at(100,120)],0,'auto permission excludes pixels ABOVE the lower opening');
+assert.equal(Cut.decodeMask(autoZero.mask)[at(100,145)],1,'default cone permits straight down from bottom opening');
+assert.equal(Cut.decodeMask(autoZero.mask)[at(55,170)],0,'zero cone has no lateral extension');
+assert.equal(Cut.decodeMask(autoWide.mask)[at(55,170)],1,'positive cone widening permits pixels farther to the side');
+assert(autoWide.allowedPixels>autoZero.allowedPixels,'expanding the cone increases authorized pixel area');
+assert.equal(Cut.normalizeConeSpread(-1),0,'cone widening never goes negative');
+assert.equal(Cut.normalizeConeSpread(200),2,'cone widening clamps at a reasonable maximum');
+const missingRing=Cut.autoHoodAllowanceMask(new Uint8ClampedArray(SIZE*SIZE*4),.5);
+assert.equal(missingRing.allowedPixels,0,'no detectable hood inner rim does not accidentally allow all');
+
+const autoBeard=new Canvas(),autoHood=new Canvas();
+autoHood.pixels.set(ringBefore);
+setPixel(autoBeard,100,140,255);setPixel(autoBeard,65,140,255);
+const autoRequests=new Uint8Array(SIZE*SIZE);
+autoRequests[at(100,140)]=autoRequests[at(65,140)]=1;
+const automaticCut=Cut.negotiateBeardHood(autoBeard,autoHood,Cut.encodeMask(autoRequests),null,{
+  permissionMode:'auto',coneSpread:0
+});
+assert.equal(automaticCut.approvedPixels,1,'automatic lower-opening permission wins beneath the inner rim');
+assert.equal(automaticCut.refusedPixels,1,'ordinary beard outside the cone loses to the hood');
+assert.equal(alpha(autoBeard,65,140),0,'automatic refusal erases the losing beard pixel');
+assert.equal(alpha(autoHood,100,140),0,'automatic approval removes hood cloth only at requested overlap');
+
+// Priority whiskers are an independent painted mask, not contingent on normal
+// cutout requests. They defeat protected hood areas without erasing themselves.
+const whiskerBits=new Uint8Array(SIZE*SIZE);whiskerBits[at(104,80)]=1;
+const winBeard=new Canvas(),winHood=new Canvas();
+winBeard.pixels.set(originalBeard);winHood.pixels.set(originalHood);
+const win=Cut.negotiateBeardHood(winBeard,winHood,requestMask,permission,{
+  whiskerMask:Cut.encodeMask(whiskerBits),includeMasks:true
+});
+assert.equal(win.whiskerWins,1,'whisker paint defeats one explicitly protected hood pixel');
+assert.equal(win.approvedPixels,4,'winning whisker overrides the ordinary refusal');
+assert.equal(win.refusedPixels,2,'other protected beard requests still lose');
+assert.equal(alpha(winHood,104,80),0,'whisker removes protected hood cloth');
+assert.equal(alpha(winBeard,104,80),255,'priority whisker itself survives');
+const whiskerOnlyBeard=new Canvas(),whiskerOnlyHood=new Canvas();
+whiskerOnlyBeard.pixels.set(originalBeard);whiskerOnlyHood.pixels.set(originalHood);
+const whiskerOnly=Cut.negotiateBeardHood(whiskerOnlyBeard,whiskerOnlyHood,null,{size:SIZE,runs:[]},{
+  whiskerMask:Cut.encodeMask(whiskerBits)
+});
+assert.equal(whiskerOnly.approvedPixels,1,'whiskers work with no ordinary cutout mask');
+assert.equal(whiskerOnly.whiskerWins,1,'whisker override is counted independently');
+
+
 const approved=Cut.negotiateBeardHood(sampleBeard,sampleHood,requestMask,permission,{includeMasks:true});
 assert.equal(approved.requested,6,'only beard pixels under actual opaque hood need arbitration');
 assert.equal(approved.approvedPixels,3,'hood author allows three removal pixels');
@@ -305,8 +359,12 @@ assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardScratch.getCont
   && portrait.includes('const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch')
   && portrait.includes('ctx.drawImage(negotiatedHood'),
   'beard and hood are negotiated offscreen and composite back only at their original positions');
-assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('resolveHoodBeardAllowanceMask'),
-  'hood cosmetic JSON and species variants supply independent permission masks');
+assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('resolveHoodBeardPolicy')
+  && portrait.includes('variantBeardCutoutConeSpread'),
+  'gameplay resolves automatic, painted and permissive hood policy from cosmetic JSON');
+assert(portrait.includes('hoodWhiskerMask')&&portrait.includes('variantHoodWhiskerMasks')
+  && portrait.includes('whiskerMask});'),
+  'gameplay resolves priority whiskers independently of normal cutout requests');
 assert(portrait.includes('const exactSharedArt=key===keys[0]')
   && portrait.includes('option.variantHoodCutoutMasks'),
   'exact wearer-specific beard masks work even when the underlying beard sprite is shared');
@@ -337,6 +395,7 @@ for(const text of [original,studio,attack])
     'every portrait entrypoint loads the cutout core before portrait-utils');
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
+  'hoodAutoMode','coneSpread','coneSpreadLabel','whiskerMode','whiskerEraseMode','clearWhiskers',
   'alphaFloor','maxStretch','subdivision','aboveInfluence','belowInfluence',
   'removeRoot','clearRoots','hoodAllowMode','hoodProtectMode','protectWholeHood',
   'allowWholeHood','hoodJson','downloadHood','download','maskJson'])
@@ -363,12 +422,15 @@ assert(html.includes('Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hood
 assert(html.includes('drawCosmetic(hoodDoc,overrideHood,true)')
   && html.includes("layerName!=='back'"),
   'editor permission strokes never target authored rear hood layers');
-assert(html.includes("if(scope!=='shared'&&Cut.normalizeMask(json.beardCutoutAllowedMask))")
-  && html.includes("destination.beardCutoutAllowedMask={size:SIZE,runs:[[0,SIZE*SIZE]]}"),
-  'per-variant allow-all can override inherited shared hood restrictions');
+assert(html.includes('destination.beardCutoutPermissionMode=hoodPermissionMode')
+  && html.includes('destination.beardCutoutConeSpread=Cut.normalizeConeSpread(coneSpread)'),
+  'variant policy export explicitly overrides inherited modes without modifying other cosmetics');
+assert(html.includes('hoodWhiskerMask:Cut.normalizeMask(whiskerMask)')
+  && html.includes('Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)'),
+  'separate JSON exports retain beard whiskers and auto-cone generation');
 assert(html.includes('drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode')
-  && !html.includes('if(hoodMode&&hoodAllowanceMask===null ||'),
-  'hood eraser uses opaque-only painting without creating policy on a transparent click');
+  && html.includes("hoodPermissionMode='painted'"),
+  'manual hood paint starts with the auto cone and switches to an authored permission policy');
 assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
   && html.includes('id="showBeardGhost"'),
   'mobile editor supports separate hood import/export and an alignment ghost');
@@ -409,5 +471,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: two-mask arbitration, opaque-only hood brushes, approved cloth cuts, refused beard erasure, inset black outlines, warped permissions, original draw order, safe fallback and CORS retry pass.');
+  console.log('Beard/hood: lower ring detector, expanding auto cone, priority whiskers, manual mask arbitration, black outlines, original draw order and CORS retry pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
