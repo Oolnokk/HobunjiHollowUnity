@@ -5,16 +5,9 @@
   if (global.AdventuringTorchBelt) return;
 
   const SAMPLE_INTERVAL_MS = 100; // Resample the posterior rig at 10 Hz; avoid repeated profile lookup on each frame.
-  const TORCH_SOURCE = 'assets/toolsprites/torch.png'; // Original uncolored mask source, identical to the carried torch's assembly definition.
-  let root = null; // One posterior stow display, reparented when the player's mesh is rebuilt.
-  let art = null; // Own stowed mesh; uses the exact same authored PNG and material recipe as the held torch.
-  let rawTexture = null; // Loaded original source PNG; marker masks must never sample the held instance's already-tinted canvas.
-  let rawLoading = false; // Only one source request, even if many frames pass before load.
-  let nextTextureRetryAt = 0; // Throttle failed image fetches instead of retrying during every render frame.
-  let nextFireRetryAt = 0; // A renderer error can recover without triggering a shader/texture allocation storm.
-  let fireState = null; // The ordinary HobunjiLayeredWeaponEffects state for this one stowed PNG.
-  let lastFireAt = null; // Limits particle simulation to the period actually stowed.
-  let fireError = null; // Mobile diagnostics for missing renderer/source failures.
+  let root = null; // One stowed attachment root, kept alive across drawing/stowing transitions.
+  let art = null; // The reusable authored PNG owned by HobunjiBeltStowTorchDisplay.
+  let fire = null; // Independent HobunjiStowedTorchFire adapter for PNG loading, tinting, motes and their lifetime.
   let lastSampleAt = -Infinity; // Throttles posterior profile lookup while preserving the live character height.
   let placement = 'not ready'; // Mobile Pixel Probe reports actual positioning provenance.
   let display = null; // Shared stow display consumes the same authored idle-scale multiplier used by the held torch.
@@ -46,6 +39,8 @@
     display = preview;
     root = preview.root;
     art = preview.art;
+    fire = global.HobunjiStowedTorchFire?.create?.(THREE, art, display) || null; // Fire effects are decoupled from attachment and preview ownership.
+    if (!fire) { placement = 'stowed fire adapter unavailable'; display.dispose?.(); root = art = display = null; return null; }
     return root;
   }
   function belongsToBody(node, body) {
@@ -58,89 +53,6 @@
     const rigged = avatar.userData?.neckRig?.skinnedPlane; // Back-carried Burdens follow this active skinned portrait rather than a stale legacy mesh.
     if (rigged?.parent && belongsToBody(rigged, avatar)) return rigged;
     return avatar; // Rigid portraits already follow their group: no per-frame mesh traversal or stale plane cache.
-  }
-  function sourceImageDimensions(image) {
-    return { width:Number(image?.naturalWidth || image?.width) || 0,
-      height:Number(image?.naturalHeight || image?.height) || 0 }; // Same original PNG dimensions used by WeaponSpriteAssemblies.
-  }
-  function prepareFire(THREE) {
-    if (fireState || !art || !rawTexture?.image) return;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Only used on setup failures, never on an emitting frame.
-    if (now < nextFireRetryAt) return;
-    const effects = global.HobunjiLayeredWeaponEffects; // Reuse the carried torch's recolor, cloth-darkening and particle engine verbatim.
-    const base = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.torch?.base; // Authoritative torch material and VFX settings.
-    const { width } = sourceImageDimensions(rawTexture.image);
-    if (!effects?.registerLayer || !effects?.activateStatic || !effects?.stepFire || !effects?.dispose
-      || !base || !(width > 0) || !rawTexture.clone) {
-      fireError = 'shared weapon fire unavailable'; return;
-    }
-    let partiallyBuilt = null; // Retire emitter groups even if activation throws halfway through setup.
-    try {
-      const copy = rawTexture.clone(); // Private map: recoloring the belt cannot mutate the cached source or an in-hand torch.
-      copy.needsUpdate = true;
-      art.material.map = copy;
-      art.material.needsUpdate = true;
-      const state = { THREE, plane:art, itemKey:'torch', masteryLevel:() => 5, dead:false }; // Fields consumed by the same layer-effects calls as a held rigid weapon.
-      partiallyBuilt = state;
-      effects.registerLayer(state, art, { id:'base', ...base }, rawTexture.image);
-      effects.activateStatic(state, base, [], [], rawTexture.image, (global.HobunjiBeltStowRig?.TORCH_WIDTH || .5) / width);
-      const emitter = state.fireEmitters?.find(fx => fx.sources?.length); // Real flame marker pixels, including bottom-tip fallback when a marker is absent.
-      if (emitter) {
-        const sourceWidth = Number(emitter.image?.width) || width; // Same unmodified image dimensions used by the particle emitter.
-        const sourceHeight = Number(emitter.image?.height) || sourceImageDimensions(rawTexture.image).height;
-        let sumX = 0, sumY = 0;
-        for (const pixel of emitter.sources) {
-          sumX += pixel % sourceWidth;
-          sumY += Math.floor(pixel / sourceWidth);
-        }
-        display?.setEmitterSourcePoint?.(sumX / emitter.sources.length, sumY / emitter.sources.length,
-          sourceWidth, sourceHeight); // Rotate about the actual grip/emission midpoint, not the PNG bounds' midpoint.
-      }
-      fireState = state;
-      lastFireAt = null;
-      fireError = emitter ? null : 'source PNG yielded no fire emitter'; // Fail visibly in Pixel Probe instead of pretending a torch without particles is ready.
-    } catch (error) {
-      fireError = String(error?.message || error);
-      nextFireRetryAt = now + 2000;
-      try { if (partiallyBuilt) effects?.dispose?.(partiallyBuilt); } catch {} // A failed setup cannot leak a half-built particle group into the scene.
-      global.__farmLog?.('[stowed torch] Shared fire init failed: ' + fireError, 'warn');
-      art.material.map?.dispose?.();
-      art.material.map = null; art.material.needsUpdate = true;
-    }
-  }
-  function retireFire() {
-    if (!fireState) return;
-    global.HobunjiLayeredWeaponEffects?.dispose?.(fireState); // Clear every mote on draw, burnout and character rebuild.
-    fireState = null; lastFireAt = null;
-    art?.material?.map?.dispose?.(); // Only the belt-owned clone is released; the shared source texture is retained.
-    if (art?.material) { art.material.map = null; art.material.needsUpdate = true; }
-  }
-  function updateTexture(THREE) {
-    if (rawTexture) { prepareFire(THREE); return; }
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Asset errors are bounded; successful loads never poll time.
-    if (rawLoading || now < nextTextureRetryAt) return;
-    rawLoading = true;
-    try {
-      new THREE.TextureLoader().load(TORCH_SOURCE, texture => {
-        global.HobunjiSpritePngSurface?.configureTexture?.(THREE, texture, TORCH_SOURCE);
-        if (THREE.NearestFilter !== undefined) texture.minFilter = texture.magFilter = THREE.NearestFilter; // Match the held tool factory's pixel-sharp sampling, not the portrait pipeline's linear filtering.
-        texture.generateMipmaps = false;
-        texture.needsUpdate = true;
-        rawTexture = texture;
-        rawLoading = false;
-        if (root?.visible) prepareFire(THREE); // Late texture load immediately enables both the recolor and the correct fire.
-      }, undefined, error => {
-        rawLoading = false;
-        nextTextureRetryAt = now + 5000;
-        fireError = 'source PNG: ' + String(error?.message || error);
-        global.__farmLog?.('[stowed torch] ' + fireError, 'warn');
-      });
-    } catch (error) {
-      rawLoading = false;
-      nextTextureRetryAt = now + 5000;
-      fireError = 'source PNG loader: ' + String(error?.message || error);
-      global.__farmLog?.('[stowed torch] ' + fireError, 'warn');
-    }
   }
   function positionAtPosterior(body, timestamp, target) {
     if (timestamp - lastSampleAt < SAMPLE_INTERVAL_MS && root.parent === target) return;
@@ -195,21 +107,21 @@
     const body = playerBody();
     if (!torch || !body || !global.THREE) {
       if (root) root.visible = false;
-      retireFire(); // A temporarily missing avatar cannot retain old lit motes in the previous scene.
+      fire?.retire(); // A temporarily missing avatar cannot retain old lit motes in the previous scene.
       ownerBody = null; portraitMount = null; lastPoseKey = null; lastSampleAt = -Infinity;
       return;
     }
     const THREE = global.THREE;
     if (!ensureRoot(THREE)) return;
     if (ownerBody !== body) {
-      retireFire(); body.add(root); ownerBody = body;
+      fire?.retire(); body.add(root); ownerBody = body;
       portraitMount = null; lastPoseKey = null; lastSampleAt = -Infinity;
     } // Rebuilds retire the old character's motes and force a new posterior/portrait attachment.
     const burning = torch.isLit(); // Always query the authoritative 30-second flame clock before showing a belt copy.
     const stowed = burning && !torch.isHoldingTorch();
     root.visible = stowed;
-    if (!stowed) { retireFire(); return; } // Drawing, burnout and throws remove the stowed emitters; the one burn clock continues in AdventuringTools.
-    updateTexture(THREE);
+    if (!stowed) { fire?.retire(); return; } // Drawing, burnout and throws remove the stowed emitters; the one burn clock continues in AdventuringTools.
+    fire?.ensure();
     if (!display?.gripSourcePoint && global.HobunjiHandToolGrips?.authoredPrimaryGripForTool) {
       const handGrip = global.HobunjiHandToolGrips.authoredPrimaryGripForTool('torch', 'melee')?.position; // Same authorable primary grip used by the actual carried torch.
       display?.setGripItemPoint?.(handGrip); // Project item-local XYZ onto the source PNG once; do not derive a new grip from image bounds.
@@ -228,40 +140,31 @@
     display?.setIdleScale?.(idleScale); // Both ends remain equidistant from the actual stowed rotation midpoint.
     const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
     positionAtPosterior(body, timestamp, currentPortrait(body));
-    if (!fireState) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
-    let delta;
-    if (lastFireAt === null) {
-      const burn = torch.debug; // Read once on transfer, not every frame: the wick must not restart its 180ms darkening after being carried lit.
-      const alreadyBurnedMs = Math.max(0, (Number(burn?.burnDurationMs) || 30000) - (Number(burn?.burnRemainingMs) || 0));
-      const clothDarkenS = Number(global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.torch?.base?.vfx?.clothDarkenS) || .18;
-      delta = Math.min(Math.max(.01, clothDarkenS), alreadyBurnedMs / 1000); // Prime exactly the elapsed carried wick transition; bounded by the shared recipe.
-    } else {
-      delta = Math.max(0, Math.min(.05, (timestamp - lastFireAt) / 1000)); // Prevent resumed-tab particle bursts.
-    }
-    lastFireAt = timestamp;
-    root.updateWorldMatrix?.(true, true); // Refresh the complete cached art/emitter subtree once; world-rise particles read the actual posterior and 45° pose.
-    global.HobunjiLayeredWeaponEffects.stepFire(fireState, delta); // Exact held-fire behavior: recolored wick, lit darkening and world-up motes.
+    if (!fire?.active) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
+    root.updateWorldMatrix?.(true, true); // One final posterior/world-space matrix pass for the ordinary rising torch motes.
+    fire?.step(timestamp, torch); // Source recolor, elapsed wick darkening and particle timing remain in the dedicated adapter.
   }
 
   global.AdventuringTorchBelt = Object.freeze({
     sync,
     get debug() {
+      const fireDebug = fire?.debug || {}; // Read independent VFX diagnostics only when the mobile probe opens.
       return {
         visible: !!root?.visible && !!root.parent,
         attachedToPlayer: !!root && ownerBody === playerBody() && belongsToBody(root, ownerBody),
         attachedToPortrait: !!portraitMount && root?.parent === portraitMount,
-        fireVisible: !!root?.visible && !!fireState?.fireEmitters?.length,
-        fireEmitters: fireState?.fireEmitters?.length || 0,
-        fireParticles: fireState?.fireEmitters?.reduce((count, fx) => count + fx.particles.length, 0) || 0,
-        sharedFire: !!fireState,
-        fireError,
+        fireVisible: !!root?.visible && !!fireDebug.fireVisible,
+        fireEmitters: fireDebug.fireEmitters || 0,
+        fireParticles: fireDebug.fireParticles || 0,
+        sharedFire: fireDebug.sharedFire || false,
+        fireError: fireDebug.fireError || null,
         pivot: 'grip-emitter midpoint',
         emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
         gripSourcePoint: display?.gripSourcePoint || null, // Existing authored 3D torch grip projected onto original PNG coordinates.
         posteriorPosition, // Anatomical body-local anchor before the preserved-world portrait transform.
         mountedLocalPosition: root?.matrix?.elements && !root.matrixAutoUpdate ? { x:root.matrix.elements[12], y:root.matrix.elements[13], z:root.matrix.elements[14] } : root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Exact portrait-local position even under nonuniform actor scaling.
         stowAngleDeg: desiredStowAngleDeg, // Body-space authored tilt survives the portrait-relative quaternion conversion.
-        textureReady: !!art?.material?.map?.image,
+        textureReady: fireDebug.textureReady || false,
         placement,
         idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
         sourceDimensions: display?.sourceDimensions || null, // Same base PNG plane dimensions as the held torch.
