@@ -473,6 +473,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       profile: entry.avatarProfile, spine: window.HobunjiLongoranSpecies?.spineFor?.(entry.gender),
       gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(entry.gender),
       name: `${entry.group.name}_feet`, portraitSize: 200,
+      previewReverseFootDepth: true, // Rebuilt Longoran feet inherit the same preview-only forward orientation.
     }) || null; // Recreates just the comparison feet, never gameplay actors or other species.
     entry.feet?.update?.(0, 0, false, null);
   }
@@ -747,6 +748,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       name: `${group.name}_portrait`,
       userData: { source: 'full-character-scale-preview', nonInteractive: true, npcId: rep.npc.id || null },
     });
+    if (model.userData?.neckRig?.available) {
+      model.userData.neckRig.previewForwardSign = -1; // Comparison-only reversed anatomical forward, evaluated by the same real spine skinning solver.
+    }
     model.userData.proceduralHandParent = group; // Exact Rig reference-NPC contract: the normal free-hand runtime owns hand placement under this floor-relative parent.
     model.userData.rigAvatarProfile = avatar.profile;
     group.add(model);
@@ -766,6 +770,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       profile: avatar.profile,
       ...(rep.species === 'longoran' ? { spine: window.HobunjiLongoranSpecies?.spineFor?.(rep.gender), gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(rep.gender) } : {}), // Uses the identical authored gait when building the lineup.
       portraitSize: avatar.front.width || 200,
+      previewReverseFootDepth: true, // Reverse foot geometry depth in the lineup without rotating anatomical left/right or IK.
     }) || null;
     feet?.update?.(0, 0, false, null);
 
@@ -1086,6 +1091,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
         spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
+        facing: { portraitFrontZ: 1, spineForwardSign: selected?.model?.userData?.neckRig?.previewForwardSign ?? null, reverseFootVisualDepth: true }, // Mobile-visible orientation contract for Full Character Scale.
         spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible,
           nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0,
           restGapSourcePixels: spineGapSourcePixels(selected), // Verify the real sprite-height conversion yields the intended 2.5px connection.
