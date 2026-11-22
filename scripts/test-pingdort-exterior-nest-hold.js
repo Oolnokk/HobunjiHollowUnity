@@ -49,7 +49,15 @@ const document={getElementById:id=>widgets[id]||null,
   createElement:kind=>{assert.equal(kind,'canvas');return {width:128,height:128,getContext:()=>({
     clearRect(){},fillText(){},getImageData:()=>({data:canvasData}),
   })};}};
-const window={FarmAnimals:{queueItemGenotype(){window.queued++}},
+const window={LivestockItemGenotypePersistence:{acquireNestItem(itemKey, genotype, newCount, options){
+    assert.equal(itemKey,'fertilePingdortEgg');
+    assert.equal(genotype,nest.genotype);
+    assert.equal(options.areaId,nest.areaId);
+    assert.equal(options.remaining,nest.remaining-1);
+    assert.equal(newCount,window.queued+1);
+    window.queued++;
+    return true;
+  }},
   PingdortFlocks:{nestRecords:()=>[nest]},
   InventoryStacks:{MAX_TOTAL:99},
   __farmLog(){},queued:0};
@@ -66,7 +74,7 @@ const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   getNestHoldT:()=>holdSeconds,setNestHoldT:value=>{holdSeconds=value;},
   getActiveAction:()=>action,getActionHeldDown:()=>pressed,
   clampInventoryStack(){},buildInventoryGrid(){},refreshItemScroll(){},
-  refreshActionBar(){},saveMemberWorldData(){},
+  refreshActionBar(){},
   showToast:(message,ok)=>toasts.push({message,ok}),
 };
 window.DenNestSystem.init(deps);
@@ -79,7 +87,7 @@ async function run(){
   assert.equal(inventory.fertilePingdortEgg,1,'five-second hold takes one real egg');
   assert.equal(nest.remaining,2,'clutch count updates after one egg');
   assert.equal(nest.eggCollected,1,'existing save callback invoked');
-  assert.equal(window.queued,1,'the inherited genotype joins the livestock item queue');
+  assert.equal(window.queued,1,'the inherited genotype is committed atomically with the inventory unit');
   assert.equal(window.DenNestSystem.debugSnapshot().renderedContents,2);
   player.physicalFeetY=null;deps.playerMesh.position.y=0;
   assert.equal(window.DenNestSystem.currentAimedNest(),null,
