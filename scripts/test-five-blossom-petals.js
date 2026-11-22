@@ -97,7 +97,8 @@ let activeZone='map_southern_cloud_forest'; // Switching areas must unregister t
 const gameScene=new THREE.Scene(); // Scene for real world bounds, native cullables and renderer layer masks.
 const cullables=[]; // Production zone registry used by the same vegetation culler as ordinary trees.
 const blossomLayout={localeInstances:[
-  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:10,key:'blossom-tree'}]},
+  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:10,key:'blossom-tree',
+    collision:{mode:'custom',x:10,y:10,w:1,h:1}}]},
   {localeId:'locale_five_blossoms_rose',objects:[{x:16,y:10,key:'blossom-tree'}]}
 ]}; // Explicit generated locale objects; stable physical positions are also the riddle's targets.
 const layouts=new Map([[activeZone,blossomLayout]]);
@@ -116,6 +117,10 @@ const flowerCards=firstTree.getObjectByName('wilderness-blossom-sprigs');
 assert(visibleStem.layers.isEnabled(1),'the real shell-outlines helper includes volumetric bark');
 assert(!flowerCards.layers.isEnabled(1),'flat alpha-cutout blossom cards are not inked as black rectangles');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),true,'the amber blossom trunk blocks movement');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.98,10.5,0),true,
+  'the real Three.js tree uses the exported locale trunk rectangle to its edge');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,11.02,10.5,0),false,
+  'a point just beyond the authored trunk remains traversable');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,16.5,10.5,.1),true,'the rose blossom trunk blocks movement');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,11.5,10.5,.1),false,'open ground beside blossom branches remains traversable');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0,1e4),false,'projectiles above the tree remain unobstructed');
