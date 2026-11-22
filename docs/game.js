@@ -792,6 +792,7 @@
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
         if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
+        if (target.tzatzulCapturedBy) return; // Talons own displacement until a genuine prone transition detaches the captive and starts a height-aware fall.
         if (target._knockbackLedgeFall || target._cliffClimb?.phase === 'fall') {
           // Already descending: damage still lands, but another hit must not rewind the fall.
           if (target.prone) window.ImpactRagdollPlayback?.triggerTumble?.(target,
