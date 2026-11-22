@@ -488,6 +488,56 @@
   function componentAt(network, c, r) {
     return network && c >= 0 && r >= 0 && c < network.cols && r < network.rows ? network.component[r * network.cols + c] : -1;
   }
+  // Shared downhill-only shortcut for creature and NPC navigation. Input positions are in
+  // tile units (not creature pixels). Never crosses upward, jumps through a second
+  // floor, or lands in water/terrain without a valid walkable component.
+  function findIntentionalDrop(network, grid, x, z, goalX, goalZ, opts = {}) {
+    if (!network || !grid || ![x, z, goalX, goalZ].every(Number.isFinite)) return null;
+    const fromC = Math.floor(x), fromR = Math.floor(z);
+    const fromTile = grid[fromR]?.[fromC];
+    const fromComponent = componentAt(network, fromC, fromR);
+    if (!fromTile || fromTile.incline || fromComponent < 0 || opts.isBoundary?.(fromTile)) return null;
+    const goalC = Math.floor(goalX), goalR = Math.floor(goalZ);
+    const goalTile = grid[goalR]?.[goalC];
+    const goalComponent = componentAt(network, goalC, goalR);
+    const startTier = Number(fromTile.elevTier) || 0;
+    const goalTier = Number(goalTile?.elevTier) || 0;
+    const lowerGoal = !!goalTile && !goalTile.incline && goalComponent >= 0 &&
+      goalComponent !== fromComponent && goalTier < startTier;
+    if (!lowerGoal && !opts.escape) return null; // Normal travel takes a direct drop only toward a lower goal.
+    const dx = goalX - x, dz = goalZ - z, distance = Math.hypot(dx, dz);
+    if (distance < 0.5 || (Number.isFinite(opts.maxGoalDistance) && distance > opts.maxGoalDistance)) return null;
+    const directions = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }]
+      .sort((a, b) => (b.x - a.x) * dx + (b.z - a.z) * dz);
+    const isHazard = tile => /^(river|stream|trench|water|lava|void|pit|chasm|abyss)$/i.test(String(tile.type || '')) ||
+      (Number(tile.water) || 0) >= 0.003;
+    const maxFaceTiles = Math.max(1, Math.min(4, Number(opts.maxFaceTiles) || 4));
+    for (const dir of directions) {
+      if (dir.x * dx + dir.z * dz < distance * 0.55) continue; // Never dive sideways or toward a pursuer.
+      for (let step = 1; step <= maxFaceTiles; step++) {
+        const col = fromC + dir.x * step, row = fromR + dir.z * step;
+        const tile = grid[row]?.[col];
+        if (!tile || opts.isBoundary?.(tile)) break;
+        if (tile.incline) continue; // The wall face is crossed in the air, not walked through.
+        const landTier = Number(tile.elevTier) || 0;
+        if (landTier >= startTier || opts.isSolid?.(tile.type) || isHazard(tile)) break;
+        const destinationComponent = componentAt(network, col, row);
+        if (destinationComponent < 0 || destinationComponent === fromComponent ||
+            (lowerGoal && destinationComponent !== goalComponent)) break;
+        const landingX = col + 0.5, landingZ = row + 0.5;
+        if (Math.hypot(goalX - landingX, goalZ - landingZ) >= distance &&
+            !opts.escape) break; // A shortcut must actually shorten the planned trip.
+        if (Number.isFinite(opts.maxLandingDistance) &&
+            Math.hypot(goalX - landingX, goalZ - landingZ) > opts.maxLandingDistance) break;
+        if (opts.canLand && !opts.canLand(col, row, landingX, landingZ)) break;
+        return { dir: { x: dir.x, y: dir.z }, landCol: col, landRow: row,
+          startTier, landTier, wallTiles: step - 1, startTile: fromTile, landTile: tile,
+          startX: x, startZ: z, landingX, landingZ, destinationComponent };
+      }
+    }
+    return null;
+  }
+
   function crossing(network, fromCol, fromRow, toCol, toRow) {
     if (!network) return null;
     for (const route of network.routes) {
@@ -887,7 +937,7 @@
     return meshes;
   }
   return Object.freeze({
-    build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
+    build, forGrid, verifyReachability, componentAt, crossing, toward, findIntentionalDrop, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
     getRewardState, herbRewardMesh, senseTargets, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
