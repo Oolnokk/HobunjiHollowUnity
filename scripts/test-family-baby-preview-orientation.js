@@ -11,13 +11,17 @@ const portion=source.slice(start,end);
 assert.match(source,/id="carryBabyRotate">Rotate Baby<\/button>/,'baby orientation is a mobile button');
 assert.match(source,/babyPoseFrame\.add\(babyReference\)/,'baby portrait is parented to gameplay-space pose');
 assert.match(source,/babyPoseFrame\.add\(guideRoot\)/,'grip markers share the exact baby-local frame');
-assert.match(source,/el\('carryBabyRotate'\)\.onclick=\(\)=>select\('baby'\)/,'Rotate Baby is actually wired');
-assert.match(source,/if\(id==='baby'\)setTransformMode\('rotate'\)/,'direct manipulation uses rotation mode');
+assert.match(source,/el\('carryBabyRotate'\)\.onclick=\(\)=>\{babyTransformMode='rotate';select\('baby'\);\}/,
+  'Rotate Baby selects the real rotation gizmo');
+assert.match(source,/el\('carryBabyMove'\)\.onclick=\(\)=>\{babyTransformMode='translate';select\('baby'\);\}/,
+  'Move Baby selects the real translation gizmo');
+assert.match(source,/if\(id==='baby'\)setTransformMode\(babyTransformMode\)/,
+  'moving/rotating the baby share the actual movable infant gizmo');
 assert.match(source,/babyPoseFrame\.position\.copy\(babyMountWorld\)\.sub\(babyAnchorWorld\)/,'baby group follows gameplay posterior mount');
 assert.match(source,/if\(editingBaby\)q\.premultiply\(babyPoseFrame\.quaternion\)/,'preview hands rotate with child pose');
 assert.match(source,/if\(id==='baby'\)\{[\s\S]*?authorBabyRotation\(babyRotateProxy\.quaternion\)/,
   'gizmo sends rotation into existing gameplay anchors, without separate baby rotation data');
-assert.match(source,/editingBaby=true;root\.visible=false;babyReference\.visible=activeEditorMode==='carry';[\s\S]*?select\('baby'\)/,
+assert.match(source,/editingBaby=true;babyTransformMode='translate';root\.visible=false;babyReference\.visible=activeEditorMode==='carry';[\s\S]*?select\('baby'\)/,
   'opening baby editor selects the infant itself');
 assert.match(html,/carryable-objects\.js\?v=[^"']+/,'editor includes a cache-busted carryable module');
 
@@ -113,8 +117,9 @@ const make=new Function('THREE','ctx',`
   const attachmentLine={geometry:{setFromPoints:()=>{}}};
   let modelH=.9,babyPoseView='anchor';
   let editingBaby=true,transformDragging=false;
+  const updateBabyElbowGuides=()=>{}; // This test isolates the held/world pose; bone view is checked separately.
   ${portion}
-  return {syncHoldingPreview,babyOrientation,authorBabyRotation,babyPoseIsBack,heldPreview,
+  return {syncHoldingPreview,babyOrientation,authorBabyRotation,authorBabyTranslation,babyPoseIsBack,heldPreview,
     setEdit(value){editingBaby=value;},setView(value){babyPoseView=value;},setDragging(value){transformDragging=value;}};
 `)(T,{state,previewActor,babyPoseFrame,babyRotateProxy,previewPosterior,previewHands,root,window,flags,logged});
 
@@ -166,18 +171,23 @@ state.selectedId='baby';make.authorBabyRotation(new Quaternion().setFromEuler(ne
 assert.equal(JSON.stringify(state.carryable.billboardAnchor.rotation),heldSaved,'back rotation does not change held orientation');
 
 // Mobile degree inputs operate on the BABY visual quaternion, not the inverse gameplay fields.
-const inputs={carryRX:{value:'20'},carryRY:{value:'-34'},carryRZ:{value:'12'}};
+const inputs={carryRX:{value:'20'},carryRY:{value:'-34'},carryRZ:{value:'12'},
+  carryX:{value:'.22'},carryY:{value:'.47'},carryZ:{value:'.09'}};
 let fieldRefreshes=0;
 const inputBegin=source.indexOf('  function fromInputs() {'),inputEnd=source.indexOf('  function fromGizmo()',inputBegin);
 assert(inputBegin>=0&&inputEnd>inputBegin,'baby degree fields reuse the carry editor input handler');
 const fromInputs=new Function('state','babyRotateProxy','babyEulerScratch','DEG','el',
-  'authorBabyRotation','syncHoldingPreview','renderControls',
+  'authorBabyRotation','authorBabyTranslation','elbowSide','THREE','syncHoldingPreview','renderControls',
   source.slice(inputBegin,inputEnd)+';return fromInputs;')(
     state,babyRotateProxy,new Euler(),Math.PI/180,id=>inputs[id],
-    make.authorBabyRotation,make.syncHoldingPreview,()=>fieldRefreshes++);
+    make.authorBabyRotation,make.authorBabyTranslation,()=>null,T,make.syncHoldingPreview,()=>fieldRefreshes++);
 fromInputs();
 const numericTarget=new Quaternion().setFromEuler(new Euler(20*Math.PI/180,-34*Math.PI/180,12*Math.PI/180));
 sameRotation(babyPoseFrame.quaternion,numericTarget,'mobile Pitch/Yaw/Roll describe the visual baby');
+closeVec(babyRotateProxy.position,new Vector3(.22,.47,.09),
+  'baby numeric X/Y/Z translate the infant mount, not the fixed adult');
+closeVec(previewActor.position,new Vector3(),
+  'numeric baby translation does not translate the carrier');
 assert.equal(fieldRefreshes,1,'mobile numeric edit refreshes the active guide controls');
 assert.equal(JSON.stringify(state.carryable.billboardAnchor.rotation),heldSaved,
   'mobile back baby orientation does not modify held pose');
