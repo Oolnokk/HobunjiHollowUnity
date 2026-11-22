@@ -243,23 +243,19 @@
       const x0=Math.floor(sampleX),y0=Math.floor(sampleY);
       const x1=Math.min(width-1,x0+1),y1=Math.min(height-1,y0+1);
       const fx=sampleX-x0,fy=sampleY-y0;
-      const samples=[
-        [(y0*width+x0)*4,(1-fx)*(1-fy)],
-        [(y0*width+x1)*4,fx*(1-fy)],
-        [(y1*width+x0)*4,(1-fx)*fy],
-        [(y1*width+x1)*4,fx*fy],
-      ];
-      let a=0,r=0,g=0,b=0;
-      for(const [src,factor] of samples){
-        if(factor<=0)continue;
-        const opacity=original[src+3]/255,f=factor*opacity;
-        a+=f;r+=original[src]*f;g+=original[src+1]*f;b+=original[src+2]*f;
-      }
-      const dst=(y*width+x)*4;
-      data[dst]=a>0?r/a:0;
-      data[dst+1]=a>0?g/a:0;
-      data[dst+2]=a>0?b/a:0;
-      data[dst+3]=a*255;
+      const i00=(y0*width+x0)*4,i10=(y0*width+x1)*4;
+      const i01=(y1*width+x0)*4,i11=(y1*width+x1)*4;
+      // Pre-multiplied alpha avoids dark/colored halos at transparent edges.
+      // Scalar weights avoid four temporary arrays for every destination pixel.
+      const a00=original[i00+3]*(1-fx)*(1-fy);
+      const a10=original[i10+3]*fx*(1-fy);
+      const a01=original[i01+3]*(1-fx)*fy;
+      const a11=original[i11+3]*fx*fy;
+      const a=a00+a10+a01+a11,dst=(y*width+x)*4;
+      data[dst]=a>0?(original[i00]*a00+original[i10]*a10+original[i01]*a01+original[i11]*a11)/a:0;
+      data[dst+1]=a>0?(original[i00+1]*a00+original[i10+1]*a10+original[i01+1]*a01+original[i11+1]*a11)/a:0;
+      data[dst+2]=a>0?(original[i00+2]*a00+original[i10+2]*a10+original[i01+2]*a01+original[i11+2]*a11)/a:0;
+      data[dst+3]=a;
     }
   }
 
