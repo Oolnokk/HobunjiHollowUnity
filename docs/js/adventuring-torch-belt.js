@@ -210,6 +210,10 @@
     root.visible = stowed;
     if (!stowed) { retireFire(); return; } // Drawing, burnout and throws remove the stowed emitters; the one burn clock continues in AdventuringTools.
     updateTexture(THREE);
+    if (!display?.gripSourcePoint && global.HobunjiHandToolGrips?.authoredPrimaryGripForTool) {
+      const handGrip = global.HobunjiHandToolGrips.authoredPrimaryGripForTool('torch', 'melee')?.position; // Same authorable primary grip used by the actual carried torch.
+      display?.setGripItemPoint?.(handGrip); // Project item-local XYZ onto the source PNG once; do not derive a new grip from image bounds.
+    }
     const plane = equippedPlane(); // Preserve live held-tool dimensions without borrowing its already-colored texture.
     const authoredPlaneSize = plane?.geometry?.parameters; // Real game.js PlaneGeometry dimensions already incorporate PNG aspect.
     const textureImage = materialMap(plane?.material)?.image || art?.material?.map?.image; // Fallback for unloaded/rebuilt held mesh.
@@ -253,6 +257,7 @@
         fireError,
         pivot: 'grip-emitter midpoint',
         emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
+        gripSourcePoint: display?.gripSourcePoint || null, // Existing authored 3D torch grip projected onto original PNG coordinates.
         posteriorPosition, // Anatomical body-local anchor before the preserved-world portrait transform.
         mountedLocalPosition: root?.matrix?.elements && !root.matrixAutoUpdate ? { x:root.matrix.elements[12], y:root.matrix.elements[13], z:root.matrix.elements[14] } : root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Exact portrait-local position even under nonuniform actor scaling.
         stowAngleDeg: desiredStowAngleDeg, // Body-space authored tilt survives the portrait-relative quaternion conversion.
