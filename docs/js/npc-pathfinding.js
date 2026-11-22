@@ -659,7 +659,7 @@
 
     if (typeof walker._tryStartGridPath === 'function') {
       walker._tryStartGridPath = function collisionAwareNpcGridPath(target) {
-        if (!target || !this.root?.position) return false;
+        if (!target || !this.root?.position || this._npcCliffClimb) return false; // A scheduled replan must not restart a committed midair descent.
         // The scheduler retries this every frame while a target is unreachable
         // (occupied seat, walled-off tile), and a failed swept A* explores its
         // whole bounded box. Remember the failure briefly; a new target, area or
