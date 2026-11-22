@@ -25,8 +25,10 @@ for (const name of [
   'smoothstep01', 'neckBlendBand', 'neckBlendWeight', 'headOffsetWeightAt',
   'neckBlendRows', 'headScaleGateAtPixel', 'headScaleWeightAt',
 ]) vm.runInContext(extract(name), ctx);
+ctx.window = ctx; // Run the exact shared seven-node interpolation, not a fixture that puts every torso vertex on spine node 6.
+vm.runInContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), ctx);
 vm.runInContext(`const OFFSET_BONE = 7, NECK_BONE = 8, HEAD_BONE = 9;
-const spineNodeWeightsAt = (_y, _base, _height, _posterior) => ({ a: 5, b: 6, wb: 1 });`, ctx);
+const spineNodeWeightsAt = (y, base, height, posterior) => window.HobunjiCharacterSpine.nodeWeightsAt(y, base, height, posterior);`, ctx);
 vm.runInContext(extract('buildSkinnedPlaneGeometry'), ctx);
 
 class Attribute {
@@ -85,14 +87,14 @@ function verifyPixelBand(size, headBottom, segmentsY) {
       assert.ok(placement < 1e-5, 'skin between pelvis and 2.5px neck belongs entirely to seven spline bones, not a huge placement bone');
     }
     if (Math.abs(x) < 1e-5) {
-      const totalHeadPlacement = [0, 1, 2, 3].reduce((sum, j) => {
-        const bone = indices.array[i * 4 + j];
-        return sum + (bone >= 7 && bone <= 9 ? weights.array[i * 4 + j] : 0);
+      const spineReachShare = [0, 1, 2, 3].reduce((sum, j) => {
+        const bone = indices.array[i * 4 + j]; // Actual y-displacement at each spine bone k is reach * k/6; short neck bones inherit the tip's full reach.
+        return sum + weights.array[i * 4 + j] * (bone >= 7 ? 1 : bone / 6);
       }, 0);
       const key = Math.round(y * 1e7);
-      if (!samples.has(key)) samples.set(key, { y, totalHeadPlacement });
-      else assert.ok(Math.abs(samples.get(key).totalHeadPlacement - totalHeadPlacement) < 1e-5,
-        'front, back and duplicated triangle vertices use identical placement');
+      if (!samples.has(key)) samples.set(key, { y, spineReachShare });
+      else assert.ok(Math.abs(samples.get(key).spineReachShare - spineReachShare) < 1e-5,
+        'front, back and duplicated triangle vertices use identical seven-node spine stretch');
     }
   }
   const rows = [...samples.values()].sort((a, b) => b.y - a.y);
@@ -100,8 +102,8 @@ function verifyPixelBand(size, headBottom, segmentsY) {
   for (const offset of [-0.12, -0.095, -0.055, 0.12]) {
     for (let i = 1; i < rows.length; i++) {
       const above = rows[i - 1], below = rows[i];
-      const renderedAbove = above.y + offset * above.totalHeadPlacement;
-      const renderedBelow = below.y + offset * below.totalHeadPlacement;
+      const renderedAbove = above.y + offset * above.spineReachShare;
+      const renderedBelow = below.y + offset * below.spineReachShare;
       assert.ok(renderedAbove >= renderedBelow - 2e-6,
         `offset ${offset} inverted portrait rows at ${above.y.toFixed(6)} -> ${below.y.toFixed(6)}`);
     }
