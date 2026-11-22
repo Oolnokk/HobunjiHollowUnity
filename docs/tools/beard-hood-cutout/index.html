@@ -69,9 +69,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <p>Manual allow/protect painting switches to a custom permission mask based on the current cone. Automatic uses the lower inner rim without painting. Green = removable, red = protected. Whiskers (purple) override both.</p>
     <label for="brush">Brush radius <span id="brushLabel">4 px</span></label>
     <input id="brush" type="range" min=".5" max="24" step=".5" value="4">
-    <label for="alphaFloor">Minimum paintable beard opacity <span id="alphaFloorLabel">50% (128/255)</span></label>
-    <input id="alphaFloor" type="range" min="1" max="255" step="1" value="128">
-    <p>Only beard pixels at or above this alpha may be painted or marked as tuft corners. Erasing remains unrestricted.</p>
+    <label for="alphaFloor">Minimum paintable beard opacity <span id="alphaFloorLabel">95% (242/255)</span></label>
+    <input id="alphaFloor" type="range" min="1" max="255" step="1" value="242">
+    <label for="hoodAlphaFloor">Minimum paintable hood opacity <span id="hoodAlphaFloorLabel">95% (242/255)</span></label>
+    <input id="hoodAlphaFloor" type="range" min="1" max="255" step="1" value="242">
+    <p>Both checks default to 95% opacity. Beard requests, whiskers, and tuft markers use the beard threshold. Hood allow/protect brush strokes and automatic ring detection use the hood threshold.</p>
     <label for="maxStretch">Hood-ring stretch amount <span id="stretchLabel">36 px</span></label>
     <input id="maxStretch" type="range" min="0" max="64" step="0.25" value="36">
     <p>Controls how far the ring moves toward a marked tuft. From <b>0</b> (none), quarter-pixel steps progressively stretch it; the ring reaches the marker once the amount is sufficient. No sudden cutoff.</p>
@@ -145,7 +147,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let hoodPermissionMode='auto',coneSpread=0; // Hood-owned auto/painted/all rule and widening, separate from beard-authored requests.
   let automaticPermission=null,automaticKey=''; // Cache the detected lower ring and cone until hood art or a relevant setting changes.
   let negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0}; // Exposed in mobile diagnostics and preview.
-  const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,128); // Editor paint threshold, not a change to the authored beard PNG.
+  const DEFAULT_PAINT_ALPHA=242; // Approximately 95% of 8-bit alpha, shared by both brush defaults.
+  const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,DEFAULT_PAINT_ALPHA); // Beard paint/whisker/pin threshold only.
+  const selectedHoodAlphaFloor=()=>Cut.alphaFloor($('hoodAlphaFloor').value,DEFAULT_PAINT_ALPHA); // Hood allow/protect paint and automatic rim threshold.
   const selectedStretch=()=>Math.max(0,Math.min(64,Number($('maxStretch').value))); // Continuous fractional displacement budget, 0 disables.
   const selectedSubdivision=()=>Cut.normalizeSubdivision($('subdivision').value); // Smaller influence region at higher values.
   const selectedAboveInfluence=()=>Cut.normalizeVerticalInfluence($('aboveInfluence').value); // Strength on pixels above the tuft marker.
@@ -156,15 +160,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
   const draftStorageKey='hobunji-beard-hood-cutout-drafts-v3'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
   const drafts=new Map(); // Separate unsaved authoring per selected beard artwork/variant.
-  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v2'; // Hood masks have their own persistent authoring scope.
+  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v3'; // Hood masks plus opacity floor have their own persistent authoring scope.
   const hoodDrafts=new Map(); // Hood permissions are independent of whichever beard is currently selected.
   try {
     const stored=JSON.parse(localStorage.getItem(hoodDraftStorageKey)
+      ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v2')
       ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v1')||'[]');
     if(Array.isArray(stored))for(const [key,value] of stored.slice(-100))if(typeof key==='string'){
       if(value&&typeof value==='object'&&Object.hasOwn(value,'mode'))
-        hoodDrafts.set(key,{mode:value.mode,mask:Cut.normalizeMask(value.mask),spread:Cut.normalizeConeSpread(value.spread)});
-      else hoodDrafts.set(key,{mode:value==null?'all':'painted',mask:Cut.normalizeMask(value),spread:0});
+        hoodDrafts.set(key,{mode:value.mode,mask:Cut.normalizeMask(value.mask),
+          spread:Cut.normalizeConeSpread(value.spread),
+          alphaFloor:value.alphaFloor==null?null:Cut.alphaFloor(value.alphaFloor,DEFAULT_PAINT_ALPHA)});
+      else hoodDrafts.set(key,{mode:value==null?'all':'painted',mask:Cut.normalizeMask(value),spread:0,alphaFloor:null});
     }
   }catch(_){/* Private browsing may restrict local storage; JSON export remains usable. */}
   try {
@@ -198,7 +205,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function hoodScopeKey(){
     const entry=hoodDoc?.speciesVariants?.[variant]; // Honor metadata-only variants even if the hood artwork is shared.
     return entry&&(entry.parts?.head||Object.hasOwn(entry,'beardCutoutAllowedMask')
-      ||Object.hasOwn(entry,'beardCutoutPermissionMode')||Object.hasOwn(entry,'beardCutoutConeSpread'))?variant:'shared';
+      ||Object.hasOwn(entry,'beardCutoutPermissionMode')||Object.hasOwn(entry,'beardCutoutConeSpread')
+      ||Object.hasOwn(entry,'beardCutoutPaintAlphaFloor'))?variant:'shared';
   }
   function hoodDraftKey(){return (hoodEntry?.path||'hood')+'|'+hoodScopeKey();}
   function originalHoodPolicy(){
@@ -206,8 +214,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const mask=Cut.normalizeMask(source?.beardCutoutAllowedMask??hoodDoc?.beardCutoutAllowedMask);
     const mode=source?.beardCutoutPermissionMode??hoodDoc?.beardCutoutPermissionMode;
     const spread=source?.beardCutoutConeSpread??hoodDoc?.beardCutoutConeSpread;
+    const alpha=source?.beardCutoutPaintAlphaFloor??hoodDoc?.beardCutoutPaintAlphaFloor;
     return {mask,mode:['auto','painted','all'].includes(mode)?mode:(mask?'painted':'auto'),
-      spread:Cut.normalizeConeSpread(spread)}; // Unconfigured hood becomes auto; legacy painted masks remain painted.
+      spread:Cut.normalizeConeSpread(spread),alphaFloor:Cut.alphaFloor(alpha??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA)}; // Unconfigured hood becomes auto; legacy painted masks remain painted.
   }
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
@@ -219,6 +228,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
     if(hoodEntry){
       hoodDrafts.set(hoodDraftKey(),{mode:hoodPermissionMode,spread:coneSpread,
+        alphaFloor:selectedHoodAlphaFloor(), // Persist separately from beard threshold on mobile.
         mask:hoodAllowanceMask==null?null:JSON.parse(JSON.stringify(hoodAllowanceMask))});
       try{localStorage.setItem(hoodDraftStorageKey,JSON.stringify([...hoodDrafts].slice(-100)));}
       catch(_){/* Hood permissions are still exportable when storage is unavailable. */}
@@ -254,10 +264,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function originalAlphaFloor(){
     const local=beardDoc?.speciesVariants?.[variant]?.hoodPaintAlphaFloor;
-    return Cut.alphaFloor(local??beardDoc?.hoodPaintAlphaFloor,128);
+    return Cut.alphaFloor(local??beardDoc?.hoodPaintAlphaFloor??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA);
   }
   function updateLabels(){
     $('alphaFloorLabel').textContent=Math.round(selectedAlphaFloor()/255*100)+'% ('+selectedAlphaFloor()+'/255)';
+    $('hoodAlphaFloorLabel').textContent=Math.round(selectedHoodAlphaFloor()/255*100)+'% ('+selectedHoodAlphaFloor()+'/255)';
     $('stretchLabel').textContent=selectedStretch()+' px';
     $('coneSpreadLabel').textContent=Cut.normalizeConeSpread($('coneSpread').value).toFixed(3)+' px per pixel down';
     $('subdivisionLabel').textContent=selectedSubdivision()+' / 16 · '
@@ -395,6 +406,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         hoodPermissionMode=policy.mode;
         coneSpread=Cut.normalizeConeSpread(policy.spread);
         $('coneSpread').value=coneSpread;
+        $('hoodAlphaFloor').value=policy.alphaFloor??DEFAULT_PAINT_ALPHA;
         updateLabels();
         automaticKey='';
       }
@@ -561,7 +573,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }
     $('maskJson').value=JSON.stringify({
       beardRequestMask:mask,whiskerOverrideMask:whiskerMask,
-      hoodPermissionMode,hoodConeSpread:coneSpread,hoodPermissionMask:hoodAllowanceMask,
+      hoodPermissionMode,hoodConeSpread:coneSpread,hoodPaintAlphaFloor:selectedHoodAlphaFloor(),
+      hoodPermissionMask:hoodAllowanceMask,
       hoodPermissionScope:hoodScopeKey(),hoodTuftRoots:roots,
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
@@ -577,6 +590,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       +'\nHood removable area: '+permittedArea+' / '+hoodArea
       +'\nHood policy: '+hoodPermissionMode+' · cone spread: '+coneSpread
       +'\nDetected lower rim pixels: '+(automaticPermission?.bottomPoints?.length||0)
+      +'\nBeard opacity cutoff: '+Math.round(selectedAlphaFloor()/255*100)+'% · hood opacity cutoff: '+Math.round(selectedHoodAlphaFloor()/255*100)+'%'
       +'\nPaintable beard pixels: '+paintable
       +'\nDeformation subdivision: '+selectedSubdivision()
       +' · above: '+selectedAboveInfluence()+'% · below: '+selectedBelowInfluence()+'%'
@@ -622,7 +636,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const erase=mode==='erase'||mode==='hoodProtect'||mode==='whiskerErase';
     const changed=Cut.paintMask(current,hoodMode?hoodPixels:beardPixels,
       next.x,next.y,Number($('brush').value),erase,drag.last,
-      hoodMode?8:selectedAlphaFloor(),hoodMode);
+      hoodMode?selectedHoodAlphaFloor():selectedAlphaFloor(),hoodMode);
     if(JSON.stringify(current)!==JSON.stringify(changed)){
       if(!drag.changed){pushUndo();drag.changed=true;}
       if(hoodMode){
@@ -710,6 +724,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   };
   $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
   $('alphaFloor').oninput=()=>{updateLabels();remember();render();};
+  $('hoodAlphaFloor').oninput=()=>{automaticKey='';updateLabels();remember();render();};
   $('maxStretch').oninput=()=>{updateLabels();remember();render();};
   $('coneSpread').oninput=()=>{
     if(!artReady)return;
@@ -776,7 +791,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       whiskerMask=Cut.normalizeMask(source.hoodWhiskerMask??imported.hoodWhiskerMask)||empty();
       roots=Cut.normalizeRoots(source.hoodTuftRoots??imported.hoodTuftRoots);
       $('maxStretch').value=source.hoodTuftMaxStretch??imported.hoodTuftMaxStretch??36;
-      $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??128;
+      $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??DEFAULT_PAINT_ALPHA;
       $('subdivision').value=source.hoodTuftSubdivision??imported.hoodTuftSubdivision??4;
       $('aboveInfluence').value=source.hoodTuftAboveInfluence??imported.hoodTuftAboveInfluence??100;
       $('belowInfluence').value=source.hoodTuftBelowInfluence??imported.hoodTuftBelowInfluence??100;
@@ -797,7 +812,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodAllowanceMask=policy.mask;
       hoodPermissionMode=policy.mode;
       coneSpread=policy.spread;automaticKey='';
-      $('coneSpread').value=coneSpread;updateLabels();
+      $('coneSpread').value=coneSpread;
+      $('hoodAlphaFloor').value=policy.alphaFloor;
+      updateLabels();
       await prepare(false,false);
       status('Imported '+file.name+'. Automatic cone or painted permissions are ready to edit.');
     }catch(error){status('Hood import failed: '+error.message);}
@@ -828,6 +845,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       (json.speciesVariants[variant]={...(json.speciesVariants[variant]||{})});
     destination.beardCutoutPermissionMode=hoodPermissionMode; // Explicit mode overrides inherited masks in any species variant.
     destination.beardCutoutConeSpread=Cut.normalizeConeSpread(coneSpread);
+    destination.beardCutoutPaintAlphaFloor=selectedHoodAlphaFloor(); // 8-bit alpha saved on hood cosmetic, not beard.
     if(hoodPermissionMode==='painted'){
       destination.beardCutoutAllowedMask=Cut.normalizeMask(hoodAllowanceMask)||empty();
     }else{
@@ -977,7 +995,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   window.BeardHoodCutoutDebug=()=>({
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),
     maskPixels:Cut.countMask(mask),whiskerPixels:Cut.countMask(whiskerMask),
-    hoodPermissionMode,coneSpread,lowerRimPoints:automaticPermission?.bottomPoints?.length||0,
+    hoodPermissionMode,coneSpread,hoodPaintAlphaFloor:selectedHoodAlphaFloor(),
+    lowerRimPoints:automaticPermission?.bottomPoints?.length||0,
     autoAllowedPixels:automaticPermission?.allowedPixels||0,
     whiskerWins:negotiationStats?.whiskerWins||0,refusedPixels:negotiationStats?.refusedPixels||0,
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
