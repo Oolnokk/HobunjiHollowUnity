@@ -368,6 +368,21 @@ function makeElement() {
   assert.equal(recordFor('folder-rejected').folderUnsynced, false, 'touch retry acknowledges the committed primary save');
   press('Button1'); flushMicrotasks();
 
+  // A rejected Promise (not just a returned error status) must also release the per-lock reentry guard.
+  window.LocalSaveFolder.syncNow = () => Promise.reject(new Error('Folder disconnected during write'));
+  assert.equal(api.open({id:'folder-threw',tier:1,onSuccess(){}}), true);
+  press('Button4'); press('Button5');
+  for (let i=0;i<20;i++) nextFrameTick();
+  press('Button4'); // First failure queues an asynchronous folder write that will throw.
+  press('Button1'); flushMicrotasks();
+  assert.equal(api.isActive(), false);
+  await flushSavePromises();
+  assert.equal(api.snapshot().backgroundSaves, 0, 'rejected Promise clears the in-flight lock guard');
+  assert.equal(recordFor('folder-threw').folderUnsynced, true, 'folder error must not clear the unsynced penalty');
+  assert.equal(api.open({id:'folder-threw',tier:1,onSuccess(){}}), true);
+  assert.equal(api.snapshot().phase, 'save-error', 'failed asynchronous writes still require explicit retry');
+  press('Button1'); flushMicrotasks();
+
   // A verified folder baseline takes the fast route: one scoped character
   // patch instead of pinning a giant farm snapshot before the player can move.
   let fastLockWrites = 0; // Counts targeted first-failure writes without invoking the full snapshot API.
