@@ -50,7 +50,7 @@
     return Number.isFinite(n) ? Math.max(1, Math.min(255, Math.round(n))) : fallback;
   }
 
-  function paintMask(input, beardPixels, x, y, radius, erase = false, previous = null, minimumAlpha = 8) {
+  function paintMask(input, beardPixels, x, y, radius, erase = false, previous = null, minimumAlpha = 8, eraseRequiresOpaque = false) {
     const minimum = alphaFloor(minimumAlpha); // Applied only to newly painted pixels; erasing always works on saved mask pixels.
     const pixels = decodeMask(input);
     if (!beardPixels || beardPixels.length !== PIXELS * 4) return encodeMask(pixels);
@@ -72,7 +72,7 @@
       const t = distance2 ? Math.max(0, Math.min(1, (vx * dx + vy * dy) / distance2)) : 0;
       if ((vx - t * dx) ** 2 + (vy - t * dy) ** 2 > brush * brush) continue;
       const i = py * SIZE + px;
-      if (erase || beardPixels[i * 4 + 3] >= minimum) pixels[i] = erase ? 0 : 1;
+      if (beardPixels[i * 4 + 3] >= minimum || (erase && !eraseRequiresOpaque)) pixels[i] = erase ? 0 : 1;
     }
     return encodeMask(pixels);
   }
