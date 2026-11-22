@@ -39,7 +39,10 @@ const clock = { rawDay: 10, hour: 10 };
 const intervals = [];
 const timeouts = [];
 const windowListeners = {};
+const devPanels = new Map(); // Captures registered companion panels so timing/arrival status can be tested without opening a popup.
 const windowStub = {
+  DevCompanion: { registerPanel(spec) { devPanels.set(spec.id, spec); return true; } },
+  __hobunjiGameStarted: true,
   CalendarSystem: {
     timeDebugSnapshot: () => ({ rawDay: clock.rawDay, civilDay: clock.rawDay, time01: (clock.hour - 6) / 24 }),
     getHour: () => clock.hour,
@@ -151,6 +154,15 @@ W.RomanceSystem.init({
 });
 const tick = () => W.RomanceSystem._test.tick();
 const choose = (stepIndex, choiceIndex) => W.DialogueContent.handlers.romance({ op: 'choose', step: stepIndex, choice: choiceIndex });
+
+const familyPanel = devPanels.get('family-arrivals'); // Actual panel registration is exercised by RomanceSystem.init.
+assert.ok(familyPanel, 'family arrivals register in the existing Dev Companion Now panels');
+assert.equal(familyPanel.when(), true, 'the panel is shown after game start');
+assert.match(familyPanel.render().summary, /No family arrival scheduled/, 'before marriage no due date is invented');
+assert.match(read('docs/index.html'), /js\/romance-family\.js\?v=[A-Za-z0-9_-]+/, 'the game loads the family module with a versioned cache token');
+W.__hobunjiGameStarted = false;
+assert.equal(familyPanel.when(), false, 'the Dev Companion panel is not shown before the game starts');
+W.__hobunjiGameStarted = true;
 
 // ── Asking out ──────────────────────────────────────────────────────────
 relState('tooth_hatayap').favor = 40; // 1 heart: not enough
@@ -329,6 +341,21 @@ clock.hour = 12;
 W.RomanceFamily.tick();
 const plan = W.RomanceFamily.snapshot().pregnancy;
 assert.equal(plan.dueRawDay - plan.announceRawDay, 28, 'pregnancy lasts one 28-day month');
+assert.match(familyPanel.render().summary, /Birth due in 112 game days/, 'birth countdown uses the actual wedding-based due day');
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Delivery trigger')[1], /Farmhouse sleep/, 'due dates never claim an automatic birth');
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Earliest arrival')[1], /Game day/, 'the due date also has a readable fallback when the calendar formatter is unavailable');
+const actualFamilyPlan = fam.getFamily().pregnancy; // Exercise incomplete saves without changing the real pregnancy schedule after assertions.
+actualFamilyPlan.kind = 'spouse_egg';
+assert.match(familyPanel.render().summary, /Egg hatching due/, 'Kenkari egg hatchings are distinguished from live births');
+actualFamilyPlan.kind = null;
+assert.match(familyPanel.render().summary, /plan needs attention/, 'missing saved event type produces a useful diagnostic instead of throwing');
+actualFamilyPlan.kind = 'spouse_live';
+actualFamilyPlan.dueRawDay = null;
+assert.match(familyPanel.render().summary, /date unavailable/, 'missing due day does not silently become game day zero');
+actualFamilyPlan.dueRawDay = plan.dueRawDay;
+clock.rawDay = plan.dueRawDay + 3;
+assert.match(familyPanel.render().summary, /Birth due — sleep required/, 'overdue pregnancies remain due until farmhouse sleep');
+clock.rawDay = W.RomanceSystem.getSpouse().marriedRawDay;
 assert.equal(plan.dueRawDay - W.RomanceSystem.getSpouse().marriedRawDay, 112, 'first child is due four months after the wedding');
 assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').level, 2, 'spouse starts at usefulness rank two');
 assert.equal(W.RomanceFamily.usefulnessInfo('tooth_hatayap').intelligenceMultiplier, 1, 'adult intelligence grants full XP');
@@ -426,6 +453,32 @@ assert.equal(fam.postponeDream(14), true);
 assert.equal(dream.nextDreamRawDay, clock.rawDay + 14, 'two-week postponement uses fourteen game days');
 assert.equal(fam.postponeDream(28), true);
 assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement uses the 28-day calendar');
+assert.match(familyPanel.render().summary, /Adoption dream in 28 game days/, 'postponement updates the displayed arrival countdown');
+const beforeDreamCountdownCheck = clock.rawDay; // Restores the same simulated day after checking the overdue dream state.
+clock.rawDay = dream.nextDreamRawDay + 1;
+assert.match(familyPanel.render().summary, /Adoption dream eligible/, 'the panel distinguishes a ready dream from an arriving visitor');
+clock.rawDay = beforeDreamCountdownCheck;
+fam.getFamily().pendingAdoption = { spouseId: 'tooth_hatayap' }; // A finished dream queues Father Hunundi without an exact timestamp.
+assert.match(familyPanel.render().summary, /Adoption visit queued/, 'finished dream reports the queued doorstep visit');
+assert.match(familyPanel.render().note, /Exit the farmhouse/, 'the visitor depends on a farmhouse exit');
+W.DoorstepVisits = {
+  activeVisitKey: () => null,
+  debugSnapshot: () => ({ lastSpawnAttempt: { key: 'romance_adoption', reason: 'No valid farmhouse entrance was found.' } }),
+}; // The real doorstep system stores matching failed attempts so mobile tests can inspect the blocker.
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Last spawn attempt')[1], /No valid farmhouse entrance/, 'the real failure reason is visible on the family panel');
+W.DoorstepVisits.debugSnapshot = () => ({ lastSpawnAttempt: { key: 'unrelated_visit', reason: 'Other failure' } });
+assert.ok(!familyPanel.render().rows.some(([key]) => key === 'Last spawn attempt'), 'an unrelated visitor failure is not attributed to the adoption');
+W.DoorstepVisits.activeVisitKey = () => 'romance_adoption'; // Tests the already-spawned visitor separately from merely scheduled visits.
+assert.match(familyPanel.render().summary, /visitor at farmhouse/, 'a spawned visitor is visibly distinct from a pending one');
+assert.ok(!familyPanel.render().rows.some(([key]) => key === 'Last spawn attempt'), 'active doorstep visitors never display a stale spawn failure');
+delete W.DoorstepVisits;
+fam.getFamily().pendingAdoption = null;
+fam.getFamily().pendingBaby = { origin: 'adopted', bornRawDay: clock.rawDay - 2 }; // An interrupted naming prompt must outrank later plans.
+assert.match(familyPanel.render().summary, /Adopted baby arrived/, 'pending naming reports the child already arrived');
+assert.match(familyPanel.render().rows.find(([key]) => key === 'Status')[1], /Awaiting newborn naming/);
+fam.getFamily().pendingBaby.bornRawDay = null; // A malformed legacy save must not imply a child arrived on raw day zero.
+assert.equal(familyPanel.render().rows.find(([key]) => key === 'Arrival date')[1], 'Not recorded');
+fam.getFamily().pendingBaby = null;
 fam.getFamily().pregnancy = priorPlan;
 player.area = oldArea;
 
