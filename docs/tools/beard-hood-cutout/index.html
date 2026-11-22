@@ -511,7 +511,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('undo').disabled=!history.length;
   }
   function pushUndo(){
-    history.push(JSON.stringify({mask,roots:Cut.normalizeRoots(roots)})); // A single undo stack covers pixels AND tuft markers.
+    history.push(JSON.stringify({mask,roots:Cut.normalizeRoots(roots),hoodAllowanceMask})); // Unified undo for beard requests, tuft roots and hood permissions.
     if(history.length>25)history.shift();
   }
   function point(event){
@@ -530,11 +530,19 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     return best;
   }
   function updateStroke(next){
-    const changed=Cut.paintMask(mask,beardPixels,next.x,next.y,Number($('brush').value),
-      mode==='erase',drag.last,selectedAlphaFloor());
-    if(JSON.stringify(mask)!==JSON.stringify(changed)){
+    const hoodMode=mode==='hoodAllow'||mode==='hoodProtect';
+    const current=hoodMode
+      ? (hoodAllowanceMask ?? (mode==='hoodProtect'?{size:SIZE,runs:[[0,SIZE*SIZE]]}:empty()))
+      : mask;
+    const changed=Cut.paintMask(current,hoodMode?hoodPixels:beardPixels,
+      next.x,next.y,Number($('brush').value),mode==='erase'||mode==='hoodProtect',
+      drag.last,hoodMode?8:selectedAlphaFloor());
+    // Null means legacy all removable. A first hood brush stroke is a real
+    // policy transition even if no additional alpha-eligible pixel was hit.
+    if(hoodMode&&hoodAllowanceMask===null || JSON.stringify(current)!==JSON.stringify(changed)){
       if(!drag.changed){pushUndo();drag.changed=true;}
-      mask=changed;
+      if(hoodMode)hoodAllowanceMask=changed;
+      else mask=changed;
     }
     drag.last=next;
     if(drag.changed)render();
@@ -584,10 +592,17 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('paintMode').classList.toggle('active',mode==='paint');
     $('eraseMode').classList.toggle('active',mode==='erase');
     $('rootMode').classList.toggle('active',mode==='root');
+    $('hoodAllowMode').classList.toggle('active',mode==='hoodAllow');
+    $('hoodProtectMode').classList.toggle('active',mode==='hoodProtect');
+    render(); // Switch the editing surface between original beard and original hood art.
   }
   $('paintMode').onclick=()=>chooseMode('paint');
   $('eraseMode').onclick=()=>chooseMode('erase');
   $('rootMode').onclick=()=>chooseMode('root');
+  $('hoodAllowMode').onclick=()=>chooseMode('hoodAllow');
+  $('hoodProtectMode').onclick=()=>chooseMode('hoodProtect');
+  $('protectWholeHood').onclick=()=>{if(!artReady)return;pushUndo();hoodAllowanceMask=empty();remember();render();};
+  $('allowWholeHood').onclick=()=>{if(!artReady||hoodAllowanceMask===null)return;pushUndo();hoodAllowanceMask=null;remember();render();};
   $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
   $('alphaFloor').oninput=()=>{updateLabels();remember();render();};
   $('maxStretch').oninput=()=>{updateLabels();remember();render();};
@@ -598,6 +613,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(!history.length)return;
     const previous=JSON.parse(history.pop());
     mask=Cut.normalizeMask(previous.mask)||empty();roots=Cut.normalizeRoots(previous.roots);
+    hoodAllowanceMask=previous.hoodAllowanceMask==null?null:Cut.normalizeMask(previous.hoodAllowanceMask);
     remember();render();
   };
   $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();remember();render();};
