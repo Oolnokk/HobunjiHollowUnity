@@ -133,20 +133,22 @@ assert(cliffMove.handled && cliffMove.moving && cliffMoot.x < 0,
 // Only nearby, living, wild adult members of the stolen offspring species react.
 const puktuk = animal('puktuk', 80, 20, { genotype: { sizeClass: 'large' } });
 const second = animal('puktuk', 100, 10);
-const juvenile = animal('puktuk', 110, 15, { genotype: { sizeClass: 'small' } });
+const juvenile = animal('puktuk', 110, 15, { genotype: { sizeClass: 'small' }, isJuvenile: true });
+const smallAdult = animal('puktuk', 90, 25, { genotype: { sizeClass: 'small' } }); // Small-body genes are not an age marker.
+const releasedBaby = animal('puktuk', 95, 15, { festivalReleased: true, genotype: { sizeClass: 'small' } });
 const unrelated = animal('uumkaoii-wild', 70, 15);
 const far = animal('puktuk', 900, 20);
 const tamed = animal('puktuk', 70, 10, { isCompanion: true });
-for (const c of [puktuk, second, juvenile, unrelated, far, tamed]) adults.add(c);
+for (const c of [puktuk, second, juvenile, smallAdult, releasedBaby, unrelated, far, tamed]) adults.add(c);
 nestListener({ type: 'nest_stolen', speciesKind: 'puktuk', itemKey: 'puktukBaby',
   x: 70, y: 0, areaId: ctx.zoneId, liveBirth: true });
-for (const adult of [puktuk, second]) {
+for (const adult of [puktuk, second, smallAdult]) {
   assert.equal(adult.state, 'chase', 'every nearby same-species adult is alert');
   assert.equal(adult.def.hostile, true);
   assert.equal(adult.targetPlayer, player);
   assert(adult.def.attackRangePx > 0, 'passive adults gain a usable defensive combat profile');
 }
-for (const safe of [juvenile, unrelated, far, tamed]) assert.equal(safe.def.hostile, false, 'other species, babies, distant and owned pets stay peaceful');
+for (const safe of [juvenile, releasedBaby, unrelated, far, tamed]) assert.equal(safe.def.hostile, false, 'other species, genuine juveniles, distant and owned pets stay peaceful');
 clock += 5000;
 nestListener({ type: 'nest_stolen', speciesKind: 'puktuk', itemKey: 'puktukBaby',
   x: 70, y: 0, areaId: ctx.zoneId, liveBirth: true });
