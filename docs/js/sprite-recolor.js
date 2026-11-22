@@ -25,6 +25,7 @@
   const DUAL_KEY_MODE_PREFIX = 'dual-keyed:'; // Used to carry a second tint through existing spriteMode call sites.
   const MUSHROOM_CAP_KEY = [0x6B, 0x86, 0x6B]; // Actual uploaded mushroom.png cap pigment; #99BF99 highlight shares its green hue.
   const MUSHROOM_CAP_HUE_TOLERANCE = 20; // Narrow green-only key; the pale ivory stalk and dark ink must never be recolored.
+  const MUSHROOM_RUNTIME_MAX_EDGE = 128; // Shared mushroom world cards and small Pack icons need at most 128 source pixels, not the 378px uploaded master.
 
   function colorFillApi() {
     const api = window.ColorFill;
@@ -188,11 +189,20 @@
     const cached=_canvasCache.get(cacheKey);
     if(cached)return Promise.resolve(cached);
     const pending = loadImage(spritePath).then(img=>{
-      const canvas=document.createElement('canvas'); canvas.width=img.naturalWidth; canvas.height=img.naturalHeight;
-      const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0);
+      const canvas=document.createElement('canvas');
+      const sourceWidth=img.naturalWidth, sourceHeight=img.naturalHeight; // User PNG dimensions remain unchanged on disk.
+      const mushroomScale = mode === 'mushroom' ? Math.min(1, MUSHROOM_RUNTIME_MAX_EDGE / Math.max(sourceWidth, sourceHeight)) : 1; // Restricts only small mushroom renders, never other sprite families.
+      canvas.width=Math.max(1,Math.round(sourceWidth*mushroomScale));
+      canvas.height=Math.max(1,Math.round(sourceHeight*mushroomScale));
+      const ctx=canvas.getContext('2d');
+      if (mushroomScale < 1) {
+        ctx.imageSmoothingEnabled=true;
+        ctx.imageSmoothingQuality='high'; // Retain the user's antialiased outline when sampling down to an on-screen sprite.
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      } else ctx.drawImage(img,0,0);
       const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
       recolorImageData(imageData.data,targetHex,mode,opts); ctx.putImageData(imageData,0,0);
-      const fillLabel = String(mode || '').startsWith('dual-keyed') ? 'dual hue-key/value-fill' : mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'; // Used by mobile/debug logs to identify the active recolor path.
+      const fillLabel = mode === 'mushroom' ? 'mushroom-cap hue-key/value-fill' : String(mode || '').startsWith('dual-keyed') ? 'dual hue-key/value-fill' : mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'; // Used by mobile/debug logs to identify the active recolor path.
       window.__farmLog?.(`[sprite-recolor] ${fillLabel} ${spritePath} -> #${targetHex.toString(16).padStart(6,'0')}`,'items');
       _canvasCache.set(cacheKey,canvas); return canvas;
     }).catch(error=>{
