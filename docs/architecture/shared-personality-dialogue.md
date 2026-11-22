@@ -15,7 +15,7 @@ Individual dialogue history is still stored per NPC, using namespaced stable gen
 1. Queued/scripted trees, feature providers, authored non-fallback trees and Shop/Chat access retain their existing rules.
 2. Existing individual fallback text and condition-eligible, **not-yet-heard**, genuinely authored entries in its phrase pool are allowed to speak first. Writer-facing `<placeholder>` hints are not playable dialogue until replaced with actual text.
 3. After that personal content, eligible unheard character-scoped shared speech goes before eligible unheard family-scoped speech.
-4. Once the scoped lines have all been heard, the existing `ConditionRegistry.pickBestEntry` selection chooses among eligible scoped lines again. An unmet weather/relationship/location condition never promotes ineligible lines.
+4. Once both the personal and scoped lines have circulated, each new ordinary Talk conversation has a chance to use the individual's original fallback again, or a random eligible scoped line. An unmet weather/relationship/location condition never promotes ineligible lines.
 
 Every shared entry supports `id` (stable per owning character or family), `label`, `text`, `priority`, `conditions`, `excludeConditions` and `visibility`, using the same condition schema as ordinary dialogue trees. Shared text supports the existing normal dialogue tokens, e.g. `{{playerName}}`. This is ordinary one-line Talk dialogue; quest branches and scripted effects belong in the character's dialogue tree as before.
 
