@@ -42,7 +42,7 @@ const coordinator=vm.runInNewContext(
   'return {slots:_banditAttackSlots,claim:claimBanditAttackSlot,angle:banditFacingSlotAngle,' +
   'owner:banditAttackTurnOwner,acquire:claimBanditAttackTurn,release:releaseBanditAttackTurn,' +
   'chargeOwner:banditChargeOwner,prepare:beginBanditPreparedCharge,uncharge:releaseBanditCharge,' +
-  'queue:claimBanditQueueRing,queued:_banditQueueRings,' +
+  'queue:claimBanditQueueRing,queued:_banditQueueRings,releaseApproach:releaseBanditApproach,' +
   'stage:beginBanditMeleeStage,max:BANDIT_MAX_ATTACK_SLOTS};})()',context
 ); // Executes production functions unmodified, including the real Fey stage integration wrapper.
 assert.equal(coordinator.max,4,'four approaches permitted');
@@ -91,6 +91,15 @@ waiting[1].health=0;
 simulatedNow+=16;
 coordinator.queue(waiting[2],0,waitingTarget);
 assert.equal(coordinator.queued.some(q=>q.bandit===waiting[1]),false,'batched cleanup removes dead queued actors and target references');
+
+// Ranged, flask and staged-duel transitions release stale melee/queue positions without waiting for another enemy to prune them.
+coordinator.releaseApproach(waiting[2]);
+assert.equal(coordinator.queued.some(q=>q.bandit===waiting[2]),false,'switching out of close melee releases the waiting-ring reference immediately');
+coordinator.releaseApproach(waiting[2]);
+coordinator.releaseApproach(front);
+assert.equal(coordinator.slots.some(q=>q.bandit===front),false,'switching from melee to ranged gives up the occupied front direction immediately');
+const replacement=actor('replacement-front',110,0);
+assert.equal(coordinator.claim(replacement,0,target).sector,0,'another fighter can immediately occupy the newly cleared approach direction');
 
 const alternate={x:700,y:0,angle:0,health:100,areaId:'zone'};
 assert(coordinator.claim(rear,0,alternate),'other targets maintain independent approach reservations');
