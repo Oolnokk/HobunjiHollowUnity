@@ -536,6 +536,7 @@
     el('carryBabyStatus').textContent=babyPreviewStatus;
     button.disabled=true; // Avoid starting multiple expensive portrait renders on mobile.
     try{
+      window.setPortraitAssetBase?.(window.HOBUNJI_ASSET_BASE); // Reuse the editor's existing GitHub sprite asset root even if Avatar mode was never opened.
       await preview.ensurePortraitCosmetics?.({assetBase:window.HOBUNJI_ASSET_BASE,configBase:window.HOBUNJI_CONFIG_BASE});
       if(ticket!==babyRenderTicket||!editingBaby)return false;
       const candidates=availableBabyIdentities();
