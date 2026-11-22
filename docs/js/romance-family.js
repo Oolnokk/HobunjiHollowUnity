@@ -300,6 +300,12 @@
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
   }
+  function babyAmbientSound(npcId, random = Math.random) {
+    return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Voice module owns phonetics, family owns saved age.
+  }
+  function syncChildAmbientGreetings(child) {
+    return window.FamilyBabyAmbientVoice?.sync?.(child.id, phaseOf(child), cfg()); // Single narrow age-stage notification.
+  }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
   function toddlingFooting(child) {
     if (phaseOf(child) !== 'toddler') return phaseOf(child) === 'basket' ? 99 : 0;
@@ -326,7 +332,7 @@
       ...phaseScaleFields(phaseOf(child)),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
-      ambientGreetings: phaseOf(child) === 'child',
+      ambientGreetings: true, // Babies babble and toddlers have first words without a new speech loop.
       scheduleHooks: { rules: [] },
     };
   }
@@ -457,6 +463,7 @@
     ensureWalker(child);
     const walker = walkerFor(child);
     const phase = phaseOf(child);
+    syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
@@ -472,7 +479,7 @@
     if (child.vatId && !vatObject(child)) { window.DewVats?.setExternalWorker?.(child.vatId, null); child.vatId = null; H.persist(); }
     if (child.vatId && phase !== 'basket') window.DewVats?.setExternalWorker?.(child.vatId, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
     if (!walker) return; // Offscreen children still keep their vat jobs registered above.
-    if (walker.rec) walker.rec.ambientGreetings = phase === 'child';
+    if (walker.rec) walker.rec.ambientGreetings = true; // Old saved babies and toddlers can use ambient speech.
     // Proportions are baked when the avatar is built (PNGPlaneAvatar child
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
@@ -566,7 +573,7 @@
   }
   function registerChildDialogue(child) {
     window.DialogueContent?.registerTreeProvider?.(child.id, () => childTree(child));
-    window.AmbientDialogue?.setNpcGreetings?.(child.id, { player: ['Hi {{name}}!', 'Hiya!', 'Look what I found!', 'Can we play later?'] });
+    syncChildAmbientGreetings(child); // Standalone voice policy, original family Talk trees unchanged.
   }
 
   // ── Command wheel (family squeezing jobs) ─────────────────────────────
@@ -892,6 +899,7 @@
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
+    window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
@@ -923,7 +931,7 @@
 
   const api = {
     init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality,
     isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
@@ -931,7 +939,7 @@
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     isWardrobeChild: id => fam.children.some(child => child.id === id), // Fast per-frame physical wardrobe targeting avoids allocating a full family snapshot.
     wardrobeChildName: id => fam.children.find(child => child.id === id)?.name || null, // The interaction label follows a renamed child without querying the full family snapshot.
-    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, getFamily: () => fam },
+    _test: { resolveKind, mixedColors, nearColors, phaseOf, toddlingFooting, childVisitDay, childTownTarget, childTarget, childRecord, onTimePassage, postponeDream, openDreamDecision, syncChildFriendships, syncChildAmbientGreetings, getFamily: () => fam },
   };
   window.RomanceFamily = api;
 })();

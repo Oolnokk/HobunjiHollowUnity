@@ -2858,7 +2858,9 @@
   <!-- Secondary proximity dialogue: NPC chathead greetings, companion
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/name-nicknames.js?v=20261108relationship2"></script> <!-- Shared first-syllable forms for friendship, dates and marriage. -->
-  <script src="js/ambient-dialogue.js?v=20261115spouseSocialLife1"></script>
+  <script src="js/ambient-vocabulary-rules.js?v=20261122doorstepDialect1"></script> <!-- Shared semantic vocabulary rules. -->
+  <script src="js/ambient-vocabulary.js?v=20261122doorstepDialect1"></script> <!-- Floating speech only. -->
+  <script src="js/ambient-dialogue.js?v=20261122decoupledVoice1"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
@@ -2949,11 +2951,12 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261109family1"></script>
+  <script src="config/romance-config.js?v=20261122babyBabble1"></script>
   <script src="config/family-baby-carry-pose.js?v=20261122babyGrips1"></script>
   <script src="js/family-baby-burdens.js?v=20261122babyGrips1"></script>
+  <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
   <script src="js/family-baby-care.js?v=20261122familyCare2"></script>
-  <script src="js/romance-family.js?v=20261122babyPortraitDiagnostics1"></script>
+  <script src="js/romance-family.js?v=20261122decoupledVoice1"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
