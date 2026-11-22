@@ -197,6 +197,13 @@ assert.equal(windowStub.WildlifeSpawn.enterCave(cavernMapId,'Changed Name').name
 denNests.get(cavernMapId).remaining = 1;
 assert.equal(windowStub.WildlifeSpawn.updateDenClutchState(cavernMapId,denNests.get(cavernMapId)),true);
 assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).clutch.remaining,1,'remaining clutch is persisted after collection');
+const beforeInMemoryClutchSyncWrites = metadataWrites; // Atomic nest pickup has already committed the saved clutch with the inventory and genotype.
+denNests.get(cavernMapId).remaining = 0;
+assert.equal(windowStub.WildlifeSpawn.updateDenClutchState(cavernMapId, denNests.get(cavernMapId), { persist: false }), true);
+assert.equal(metadataWrites, beforeInMemoryClutchSyncWrites, 'post-commit clutch sync must not perform a second large metadata save');
+assert.equal(windowStub.WildlifeSpawn.denTurnoverStateForCavern(cavernMapId).clutch.remaining, 0, 'in-memory clutch sync still updates the live den record');
+denNests.get(cavernMapId).remaining = 1;
+assert.equal(windowStub.WildlifeSpawn.updateDenClutchState(cavernMapId, denNests.get(cavernMapId)), true, 'legacy callers still save their clutch automatically');
 currentArea=zoneId;
 windowStub.WildlifeSpawn.onZoneEntered(zoneId);
 assert.equal(den.collapsed,false,'exiting a killed den never collapses the entrance');
