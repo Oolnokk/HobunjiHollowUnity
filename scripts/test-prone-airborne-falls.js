@@ -108,4 +108,43 @@ entry(player, player.x - 100, player.y, 280);
 assert(events.some(e => e[0] === 'air impulse') && events.some(e => e[0] === 'tumble'));
 assert.equal(player._freeJump.vy, -3, 'repeat prone knockback cannot reset player fall speed');
 
+// Exercise the exact game-owned transition that hands airborne creature and
+// scripted climb motion to the existing fall owner after the prone pose begins.
+const airStart = game.indexOf('function beginProneAirFall(entity, isPlayer)');
+const airEnd = game.indexOf('// The same full breakThrow knockdown', airStart);
+assert(airStart >= 0 && airEnd > airStart);
+const airWorld = {
+  FormatUtils: { clamp: (n, a, b) => Math.max(a, Math.min(b, n)) },
+  KnockbackCollisionImpact: { cancel: () => {} },
+  PlayerJump: { knockProne: () => false },
+  ClimbSystem: { knockProneOffClimb: actor => { actor._climbFall = { dropWorld: 1.5 }; return true; } },
+};
+const beginProneAirFall = new Function('window', 'player', 'knockbackSurfaceAtPixel',
+  'KNOCKBACK_LEDGE_HEIGHT_EPSILON', 'PLATEAU_UNIT', 'TILE',
+  game.slice(airStart, airEnd) + '\nreturn beginProneAirFall;')(
+  airWorld, player, () => 1, 0.08, 2.5, 64);
+const leapingCreature = {
+  x: 100, y: 100, prone: true, health: 100, _proneAirFallStartY: 4.5,
+  proneThrowT: .34, proneThrowVX: 600, proneThrowVY: 0,
+};
+assert.equal(beginProneAirFall(leapingCreature, false), true);
+assert.equal(leapingCreature._knockbackLedgeFall.dropWorld, 3.5, 'the interrupted aerial height drives cliff impact');
+assert.equal(leapingCreature._knockbackLedgeFall.startSurfaceY, 4.5);
+assert.equal(leapingCreature._knockbackLedgeFall.endSurfaceY, 1);
+assert.equal(leapingCreature.proneThrowT, 0, 'a creature falling from its lunge cannot throw again after landing');
+const alreadyFalling = leapingCreature._knockbackLedgeFall;
+assert.equal(beginProneAirFall(leapingCreature, false), true);
+assert.strictEqual(leapingCreature._knockbackLedgeFall, alreadyFalling, 'second knockdown keeps the existing creature fall object');
+
+player._freeJump = null; player.climbing = true; player._cliffRouteSession = {};
+player.proneThrowT = .34;
+assert.equal(beginProneAirFall(player, true), true, 'prone scripted climber starts its existing fall');
+assert.equal(player.proneThrowT, 0, 'climbing fall and grounded throw cannot be queued together');
+player.climbing = false; player._cliffRouteSession = null;
+player._knockbackLedgeFall = { dropWorld: 3, elapsed: 0.2 };
+player.proneThrowT = .34;
+assert.equal(beginProneAirFall(player, true), true, 'already falling player stays in the same ledge fall');
+assert.equal(player.proneThrowT, 0);
+assert.equal(player._knockbackLedgeFall.elapsed, .2);
+
 console.log('Prone airborne gravity, cliff cost, repeated hits and throw routing: OK');
