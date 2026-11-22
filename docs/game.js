@@ -6565,6 +6565,8 @@
       const CREATURE_STUCK_THRESHOLD_S = 0.6;
       const CREATURE_PATH_REPLAN_DIST_PX = TILE * 3;
       const CREATURE_PATH_SEARCH_PADDING_TILES = 6;
+      const CREATURE_PATH_FAILURE_RETRY_MS = 1200; // Gives a repeatedly blocked ground route time to change before another A* search.
+      const CREATURE_PATH_FAILURE_MAX_RETRY_MS = 4800; // Bounds the wait if a blocker is removed while the actor stands still.
 
       // Wraps moveCreatureToward for "travel to a fixed point" behaviors —
       // returning home, patrol legs, grazing/drinking trips, a companion
@@ -6582,7 +6584,11 @@
       // real target has moved far enough to invalidate it, or it goes stale.
       function travelCreatureToward(c, tx, ty, speed, dt) {
         const dist = Math.hypot(tx - c.x, ty - c.y);
-        if (dist < TILE * 0.5) { c._travelPath = null; c._travelStuckT = 0; return moveCreatureToward(c, tx, ty, speed, dt); }
+        if (dist < TILE * 0.5) {
+          c._travelPath = null; c._travelStuckT = 0;
+          if (c._travelPathFailure) c._travelPathFailure = null;
+          return moveCreatureToward(c, tx, ty, speed, dt);
+        }
 
         if (c._travelPath && c._travelPath.length) {
           if (!c._travelPathTarget || Math.hypot(tx - c._travelPathTarget.x, ty - c._travelPathTarget.y) > CREATURE_PATH_REPLAN_DIST_PX) {
@@ -6597,16 +6603,39 @@
         }
 
         const moving = moveCreatureToward(c, tx, ty, speed, dt);
-        if (moving) { c._travelStuckT = 0; return moving; }
+        if (moving) {
+          c._travelStuckT = 0;
+          if (c._travelPathFailure) c._travelPathFailure = null;
+          return moving;
+        }
         c._travelStuckT = (c._travelStuckT || 0) + dt;
         if (c._travelStuckT < CREATURE_STUCK_THRESHOLD_S) return moving;
-        c._travelStuckT = 0;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
-          bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+        const wilderness = _isZoneArea(currentArea); // Only wilderness retries back off. Indoor collision can change at the same tile when the actor changes floors.
+        const failure = c._travelPathFailure; // Reuses a failed wilderness search only for the same start, destination and area.
+        const sameFailure = wilderness && failure?.area === currentArea &&
+          failure.startCol === startCol && failure.startRow === startRow &&
+          failure.targetCol === targetCol && failure.targetRow === targetRow;
+        if (sameFailure && performance.now() < failure.retryAt) return moving; // Uses real elapsed time even when the game limits simulation dt during a slow frame.
+        c._travelStuckT = 0;
+        const pathfinder = window.TilePathfinding; // Uses the same grid solver as the cliff entry planner.
+        if (!pathfinder) return moving;
+        const pathPerf = window.PerfProfiler?.begin('creature ground detour search'); // Visible in the in-game profiler when searches contribute to a slow frame.
+        const path = pathfinder.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
+          bounds: pathfinder.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+          cacheWalkability: true,
         });
-        if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
+        window.PerfProfiler?.end(pathPerf);
+        if (path?.length) {
+          c._travelPathFailure = null;
+          c._travelPath = path; c._travelPathTarget = { x: tx, y: ty };
+        } else if (wilderness) {
+          const delay = sameFailure ? Math.min(failure.delay * 2, CREATURE_PATH_FAILURE_MAX_RETRY_MS) : CREATURE_PATH_FAILURE_RETRY_MS; // Extends only repeat failures.
+          c._travelPathFailure = { area: currentArea, startCol, startRow, targetCol, targetRow, delay, retryAt: performance.now() + delay };
+        } else if (failure) {
+          c._travelPathFailure = null;
+        }
         return moving;
       }
 

@@ -395,6 +395,8 @@
       .filter(([name]) => name.startsWith('currentLivestock miss caller: '))
       .sort((a, b) => b[1].samples - a[1].samples);
     const wildlifeLod = root.WildernessSimulationLOD?.snapshot?.(); // Adds active/sleeping creature counts to the same mobile-visible overlay.
+    const groundDetour = perfState.subsystem.get('creature ground detour search'); // Peak search cost stays visible even if most attempts are cheap.
+    const cliffDetour = perfState.subsystem.get('creature cliff entry search'); // Separates searches for a handhold from normal ground detours.
     const frozenPortraits = root.PNGPlaneAvatar?.meshBudget?.frozenSnapshot?.(); // Expose pose reuse in the mobile performance overlay.
     const outlinePerfLine = outlineRenderPerfLine();
     const npcVisual = root.NpcViewFrustumCull?.snapshot?.() || null; // Counters for the last world-render view, independent of NPC simulation.
@@ -436,6 +438,7 @@
         return `${depthLine}\nRender reuse: ${ground} · ${geometry}`;
       })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
+      `Creature path searches: ground ${groundDetour?.samples || 0} (max ${(groundDetour?.max || 0).toFixed(2)} ms) · cliff ${cliffDetour?.samples || 0} (max ${(cliffDetour?.max || 0).toFixed(2)} ms)`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,
       `GPU refs  geom ${formatCount(perfState.geometries)}   tex ${formatCount(perfState.textures)}`,
       `Top visible geometry: ${topLine}`,
