@@ -379,6 +379,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * 10) / 10);
   }
 
+  function spineGapSourcePixels(entry) {
+    const model = entry?.model?.userData; // Only the selected model's real portrait rig supplies geometry and source image dimensions.
+    const rig = model?.neckRig; // The seven-bone gameplay skeleton is authoritative, not a drawn debug approximation.
+    const sourcePixelHeight = Number(String(model?.sourceImagePixels || '').split('x')[1]); // Source sprite pixel height used when calculating the short head connection.
+    const height = Number(model?.portraitModelHeight); // World/model units used by the spine layout solver.
+    const gap = Number(rig?.neckLocal?.y) - Number(rig?.spineBase?.y); // Rest gap from spine tip to the last painted head pixel.
+    return sourcePixelHeight > 0 && height > 0 && Number.isFinite(gap) ? Math.round(gap * sourcePixelHeight / height * 1000) / 1000 : null;
+  }
+
   function syncSpineGuides() {
     for (const entry of entries) {
       if (entry === selected || !entry.spineGuide) continue;
@@ -1077,7 +1086,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
         spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
-        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible, nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0 }, // Mobile-readable overlay and rig availability without DevTools.
+        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible,
+          nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0,
+          restGapSourcePixels: spineGapSourcePixels(selected), // Verify the real sprite-height conversion yields the intended 2.5px connection.
+          requestedSpineReach: selected?.model?.userData?.neckRig?.neckReachY ?? null,
+          appliedSpineReach: selected?.model?.userData?.neckRig?.neckReachAppliedY ?? null }, // Mobile-readable actual skinning layout without browser DevTools.
         gait: selected?.species === 'longoran' ? selected.feet?.getStandingPoseDebug?.()?.gait || null : null, // Exposes actual Maskbound gait state in the preview.
         portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
         portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
