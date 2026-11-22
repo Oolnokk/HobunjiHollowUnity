@@ -6,6 +6,7 @@
   const CONFIG_URL = '../../config/dialogue/ambient-vocabulary.json'; // Canonical editable dictionary and per-character checkbox references.
   const PROFILE_URL = '../../config/dialogue/npc-reaction-profiles.json'; // Existing reaction personality assignments are reused without modification.
   const NPC_URL = '../../config/npcs/hobunji-starter-npc-database.json'; // Canonical NPC IDs populate the character chooser and batch generator.
+  const AMBIENT_URL = '../../config/dialogue/ambient-dialogue.json'; // Authored character greeting samples; read-only and optional for the preview.
   const AXES = Object.freeze([
     ['verbosity', 'Simplicity', 'Verbosity', 'Prefers short everyday vocabulary or elaborate expressions'],
     ['color', 'Technical', 'Colorful', 'Prefers precise technical wording or evocative language'],
@@ -18,7 +19,7 @@
     ['nearMiss', 'Exact meaning', 'Almost-right', 'Invented or childlike near-miss expressions with deliberately approximate meaning'],
   ]); // Nine independent style dimensions; no one-to-one connection between simplicity and childish mistakes.
   const model = {
-    config: null, profiles: null, npcs: [], selected: 'dictionary', word: '', wordSearch: '',
+    config: null, profiles: null, npcs: [], ambient: null, sampleCursor: {}, selected: 'dictionary', word: '', wordSearch: '',
     preview: "That's a lovely tune. Good to see you, friend!", previewResult: '', loading: true, error: null,
   }; // Editor state is transient until the user explicitly exports the JSON file.
   const $ = id => document.getElementById(id);
@@ -420,6 +421,9 @@
       notify('Updated ' + pairs.length + ' phonetic rules for ' + id + ' · export to save');
     };
   }
+  function authoredGreetingSamples(id) {
+    return (model.ambient?.npcGreetings?.[id]?.player || []).filter(line => typeof line === 'string' && line.trim()); // Exactly the game's authored player-greeting lines; no invented preview content.
+  }
   function characterView(id) {
     const sliders = slidersFor(id);
     const word = activeWord();
@@ -450,6 +454,7 @@
       '<div class="muted">Every change here edits only this NPC’s checkmarks. Edit the wording itself in Master dictionary to update it for everyone.</div></section>' +
       '<section class="card"><h3>Live speech preview</h3><textarea id="previewInput" class="compactText">' + safe(model.preview) + '</textarea>' +
       '<div class="row"><button id="previewButton" type="button" class="good">Try another variation</button>' +
+      '<button id="sampleAuthoredGreeting" type="button"' + (authoredGreetingSamples(id).length ? '' : ' disabled') + '>Next authored greeting (' + authoredGreetingSamples(id).length + ')</button>' +
       '<span class="pill" id="swapChance">Swap chance: ' + sliders.frequency + '%</span></div>' +
       '<div class="preview" id="previewResult">' + safe(model.previewResult || model.preview) + '</div></section>' +
       doorstepSamplesHtml(id); // Source dialogue stays read-only; phonetic and synonym rules apply only to the separate preview.
@@ -524,6 +529,16 @@
         notify('Loaded ' + visit.title + ' into the preview; original doorstep dialogue is unchanged');
       };
     });
+    $('sampleAuthoredGreeting').onclick = () => {
+      const samples = authoredGreetingSamples(id); // Reuse actual NPC greeting JSON, with no modification of gameplay data.
+      if (!samples.length) { notify('No authored floating greeting for this character.'); return; }
+      const cursor = model.sampleCursor[id] || 0; // Per-NPC cycling preserves the last sampled line across pane switches.
+      model.sampleCursor[id] = cursor + 1;
+      model.preview = samples[cursor % samples.length];
+      $('previewInput').value = model.preview;
+      $('previewButton').onclick(); // The same renderer combines character-selected synonyms with optional phonetic respelling.
+      notify('Auditioning authored greeting ' + (cursor % samples.length + 1) + '/' + samples.length + ' for ' + npcName(id));
+    };
     $('previewInput').oninput = event => { model.preview = event.target.value; };
     $('previewButton').onclick = () => {
       model.preview = $('previewInput').value;
@@ -555,17 +570,19 @@
   }
   async function load() {
     try {
-      const [a, b, n] = await Promise.all([
+      const [a, b, n, samples] = await Promise.all([
         fetch(CONFIG_URL, { cache: 'no-store' }),
         fetch(PROFILE_URL, { cache: 'no-store' }),
         fetch(NPC_URL, { cache: 'no-store' }),
-      ]); // One-time authoring load; no background frame work or polling.
+        fetch(AMBIENT_URL, { cache: 'no-store' }).catch(() => null),
+      ]); // The supporting greeting preview is optional; it must never prevent the dictionary from loading. // One-time authoring load; no background frame work or polling.
       if (!a.ok || !b.ok || !n.ok) throw new Error('HTTP ' + a.status + '/' + b.status + '/' + n.status);
       const [config, profiles, database] = await Promise.all([a.json(), b.json(), n.json()]);
       if (!profiles?.profiles) throw new Error('NPC reaction personality config is missing.');
       model.config = ensureCanonical(config);
       model.profiles = profiles;
       model.npcs = Array.isArray(database?.npcs) ? database.npcs : (Array.isArray(database) ? database : []);
+      model.ambient = samples?.ok ? await samples.json().catch(() => null) : null; // Original floating copy is read-only, even when importing/exporting vocabulary JSON.
       model.error = null;
     } catch (error) { model.error = error?.message || String(error); }
     model.loading = false;
@@ -579,6 +596,7 @@
     installed: true,
     getDebug: () => ({ loaded: !!model.config, error: model.error, selected: model.selected, wordCount: words().length,
       characterOverrides: Object.keys(cfg()?.characters || {}).length,
+      greetingSamplesLoaded: !!model.ambient, currentSpeakerSampleCount: model.selected.startsWith('npc:') ? authoredGreetingSamples(model.selected.slice(4)).length : 0,
       checkboxCount: Object.values(cfg()?.characters || {}).reduce((sum, character) =>
         sum + Object.values(character?.selections || {}).reduce((n, ids) => n + (Array.isArray(ids) ? ids.length : 0), 0), 0),
     }),
