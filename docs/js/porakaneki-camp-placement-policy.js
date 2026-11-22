@@ -120,30 +120,24 @@
     if (!zoneId) return;
     const snapshots = (instance.removedObjectSnapshots || []).filter(snapshot => snapshot?.type === 'shrub').map(snapshot => ({ ...snapshot })); // Source clutter cells already removed by TemporaryLocales.
     const covered = new Set(snapshots.map(snapshot => `${snapshot.x},${snapshot.y}`)); // Initial locale clearing occupies this set; expanded boulder cells must not be snapshotted twice.
-    const visited = new Set(); // Prevents rescanning the same connected boulder through multiple displaced tiles.
-    for (const origin of snapshots) {
+    const visited = new Set(); // Reused across overlapping displaced origin tiles; each boulder is visited once.
+    for (const origin of snapshots.slice()) {
       if (origin.srcRockKind !== 'undiggableBoulder') continue;
-      const groupId = origin.srcBoulderId || null; // A boulder may have no ID in legacy layouts; the renderer groups those by connected component.
-      const queue = [[origin.x, origin.y]]; // Floods only physically connected boulder cells, avoiding other submaps that reuse the same generated object ID.
-      for (let i = 0; i < queue.length; i++) {
-        const [col, row] = queue[i];
-        if (col < 0 || row < 0 || col >= (zone?.cols || 0) || row >= (zone?.rows || 0)) continue;
+      const cells = window.WildernessObjectFootprints?.boulderCells(zone, origin.x, origin.y) || []; // Shared formation identity/adjacency rules keep the runtime clearing in step with generated geometry.
+      for (const [col, row] of cells) {
         const key = `${col},${row}`;
         if (visited.has(key)) continue;
-        const tile = zone?.tiles?.[row]?.[col]; // The immutable source terrain survives a TemporaryLocales stamp.
-        if (tile?.rockKind !== 'undiggableBoulder' || (tile.boulderId || null) !== groupId) continue;
         visited.add(key);
-        if (!covered.has(key)) {
-          snapshots.push({
-            x: col, y: row, srcType: tile.terrain || 'rock',
-            srcRockKind: tile.rockKind || null,
-            srcBoulderId: tile.boulderId || null,
-            srcGeneratedObjectId: tile.generatedObjectId || null,
-            srcGeneratedObjectType: tile.generatedObjectType || null,
-          }); // Preserve complete connected shell metadata for migration restoration.
-          covered.add(key);
-        }
-        queue.push([col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]);
+        if (covered.has(key)) continue;
+        const tile = zone?.tiles?.[row]?.[col]; // The immutable source terrain survives a TemporaryLocales stamp.
+        snapshots.push({
+          x: col, y: row, srcType: tile.terrain || 'rock',
+          srcRockKind: tile.rockKind || null,
+          srcBoulderId: tile.boulderId || null,
+          srcGeneratedObjectId: tile.generatedObjectId || null,
+          srcGeneratedObjectType: tile.generatedObjectType || null,
+        }); // Save every member of a displaced shell so its collider and visual return together.
+        covered.add(key);
       }
     }
     placements.set(instance.id, { zoneId, snapshots });

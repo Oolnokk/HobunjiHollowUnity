@@ -23,6 +23,9 @@
     { dx: -1, dy: 0, facing: 'west' },
   ]);
 
+  const footprintPolicy = typeof module === 'object' && module.exports
+    ? require('./wilderness-object-footprints.js')
+    : globalThis.WildernessObjectFootprints; // Shared generated-object ownership removes every plateau/root overlay together.
   const WATER_TYPES = new Set(['river', 'stream', 'waterfall']);
   const CLEARABLE_GENERATED_TYPES = new Set([
     'copse', 'tree', 'fallenLog', 'stump', 'bush', 'fruitBush', 'mushroomPatch',
@@ -326,7 +329,7 @@
   function objectBlockingReason(tile) {
     const type = tileGeneratedType(tile); // Generated object type decides whether terrain-aware placement may clear the occupant.
     if (!type) return null;
-    if (CLEARABLE_GENERATED_TYPES.has(type)) return null;
+    if (CLEARABLE_GENERATED_TYPES.has(type)) return tileGeneratedId(tile) ? null : `unidentified generated ${type}`; // Never cover part of an object whose remaining footprint cannot be removed.
     if (HARD_BLOCKING_TYPES.has(type)) return `occupied by ${type}`;
     return `occupied by generated ${type}`;
   }
@@ -616,13 +619,7 @@
 
   function clearGeneratedObject(context, objectId) {
     if (!objectId) return;
-    for (const tile of Object.values(context.root.tiles || {})) {
-      if (tileGeneratedId(tile) !== objectId) continue;
-      delete tile.generatedObjectId;
-      delete tile.generatedObjectType;
-    }
-    if (Array.isArray(context.workspace.objects)) context.workspace.objects = context.workspace.objects.filter(object => object?.id !== objectId);
-    if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(object => object?.generatedObjectId !== objectId && object?.id !== objectId);
+    footprintPolicy.clearExportedObjects(context.workspace, [objectId]); // One identity clears all root/plateau tiles, visual metadata, and exported object records.
   }
 
   function clearNativeTreeCircle(context, col, row, radius) {
@@ -641,15 +638,7 @@
         cleared++;
       }
     }
-    if (removedIds.size) {
-      for (const tile of Object.values(context.root.tiles || {})) {
-        if (!removedIds.has(tileGeneratedId(tile))) continue;
-        if ((tile.type === 'shrub' && tile.floraKind === 'copse') || ['tree', 'copse'].includes(tileGeneratedType(tile))) tile.type = 'grass';
-        delete tile.floraKind; delete tile.generatedObjectId; delete tile.generatedObjectType;
-      }
-      if (Array.isArray(context.workspace.objects)) context.workspace.objects = context.workspace.objects.filter(entry => !removedIds.has(entry?.id));
-      if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(entry => !removedIds.has(entry?.generatedObjectId) && !removedIds.has(entry?.id));
-    }
+    if (removedIds.size) footprintPolicy.clearExportedObjects(context.workspace, removedIds); // Restore every tile of each canopy, including plateau copies outside the radius.
     return cleared;
   }
 
@@ -672,11 +661,14 @@
     const center = blossomTreeCenter(compiled, selected);
     if (!center) return null;
     const targetTier = tileTier(context, Math.round(center.col), Math.round(center.row)); // The first landmark should be on the blossom's reachable elevation.
+    const ownFloor = { footprint: { x: selected.anchorC + compiled.footprint.minC, y: selected.anchorR + compiled.footprint.minR,
+      w: compiled.footprint.maxC - compiled.footprint.minC + 1, h: compiled.footprint.maxR - compiled.footprint.minR + 1 } }; // Patterned clue boulders must not appear inside their own large authored festival clearing.
     let best = null; // One bounded generation-time search replaces an existing tree when available.
     for (let r = Math.floor(center.row - 18); r <= Math.ceil(center.row + 18); r++) {
       for (let c = Math.floor(center.col - 18); c <= Math.ceil(center.col + 18); c++) {
         const distance = Math.hypot(c - center.col, r - center.row);
         if (distance < 7 || distance > 18 || context.claimed?.has(sourceKey(c, r))) continue;
+        if (footprintPolicy.localeBlocksSite(ownFloor, c, r, 1)) continue; // Only reachable ground outside the painted festival footprint can hold the permanent stone.
         const tile = tileRecord(context.root, c, r);
         if (!tile || tile.water || tile.path || tile.incline || tile.ramp || tile.mapBoundary || tile.skipFloor
             || tile.borderEscarpment || tile.distantBoundaryLandscape) continue;
@@ -684,7 +676,9 @@
         const nativeTree = kind === 'copse' || kind === 'tree' || (tile.type === 'shrub' && tile.floraKind === 'copse');
         if (!nativeTree && (!['grass', 'weeds'].includes(tile.type) || kind)) continue;
         if (Math.abs(tileTier(context, c, r) - targetTier) > 0.05) continue;
-        if ((context.workspace.localeInstances || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7)) continue;
+        if ((context.workspace.localeInstances || []).some(other =>
+          Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7
+          || footprintPolicy.localeBlocksSite(other, c, r, 1))) continue; // Other locales' full painted footprints are reserved, even far from their anchors.
         if ((context.workspace.rootTotems || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 4)) continue;
         if ((context.workspace.localeInstances || []).some(other => other.blossomStartLandmark &&
           Math.hypot(c - other.blossomStartLandmark.col, r - other.blossomStartLandmark.row) < 5)) continue; // Distinct patterned debris cannot overlap another blossom's reserved physical marker.
@@ -718,7 +712,7 @@
       const type = tileGeneratedType(tile);
       if (type && CLEARABLE_GENERATED_TYPES.has(type) && tileGeneratedId(tile)) ids.add(tileGeneratedId(tile));
     }
-    for (const id of ids) clearGeneratedObject(context, id);
+    if (ids.size) footprintPolicy.clearExportedObjects(context.workspace, ids); // Batch the root and child submap scan once per locale, not once per tree or rock.
     return [...ids];
   }
 
@@ -806,6 +800,7 @@
       row: selected.anchorR,
       fixed: false,
       terrainAware: true,
+      footprint: { x: selected.anchorC + compiled.footprint.minC, y: selected.anchorR + compiled.footprint.minR, w: compiled.footprint.maxC - compiled.footprint.minC + 1, h: compiled.footprint.maxR - compiled.footprint.minR + 1 }, // Real authored floor bounds protect the whole locale from later scenery, not just its anchor.
       shiftGeneratedSecret: locale.placement?.shiftGeneratedSecret === true || (!locale.placement?.alwaysVisibleOnMap && locale.placement?.preferSeclusion !== false
         && (locale.placement?.preferSeclusion === true || ['ruin_entrance','great_fey_shrine'].includes(locale.category))
         && locale.id !== 'locale_banubu_shrine'), // A named event locale can opt into yearly map-marker rediscovery without requiring distant or secluded placement.

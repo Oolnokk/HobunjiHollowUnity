@@ -15,6 +15,7 @@ THREE.TextureLoader.prototype.load = () => new THREE.Texture();
 global.window = { THREE, __farmLog() {} };
 global.THREE = THREE;
 require('../docs/js/foliage-generator.js'); // Use the real generator and its cached variants, not a handcrafted tree fixture.
+require('../docs/js/area-footprint-blockers.js'); // Actual shared player/NPC/projectile registry handles all authored debris fragments.
 const generator = window.FoliageGenerator;
 require('../docs/js/furniture-pattern-surfaces.js'); // Use the production face projector to verify complete engraving coverage, without needing canvas or WebGL.
 require('../docs/js/procedural-furniture.js'); // Build actual source tapered masonry with real material groups, not approximate BoxGeometry fixtures.
@@ -166,6 +167,30 @@ scenery.init({
 });
 scenery.update();
 await new Promise(resolve=>setImmediate(resolve)); // Await debrisified pillar model assembly before counting their rendered markings.
+const collisionService=window.AreaFootprintBlockers; // The same registry used by pathfinding and projectiles in production.
+assert(collisionService.providerIds().includes('wilderness-landmark-stones'),'the live scene registers one shared landmark collision provider');
+const pillarRoots=[]; // Existing authored scene roots supply the only authoritative fallen-shaft and rubble transforms.
+scene.traverse(node=>{if(node.name==='wilderness-broken-stone-pillar')pillarRoots.push(node);});
+assert(pillarRoots.length>0,'the fixture includes real Debris-ifier pillar and rubble meshes');
+let offCenterPieces=0,measuredParts=0; // Check every physical part rather than accidentally passing the old center-only box.
+for(const built of pillarRoots){
+ const meshes=[...(built.userData.meshById?.values?.()||[])];
+ assert(meshes.length>0,'an authored pillar contributes actual source meshes to collision');
+ for(const part of meshes){
+  const box=new THREE.Box3().setFromObject(part);
+  if(box.isEmpty())continue;
+  const x=(box.min.x+box.max.x)*.5,z=(box.min.z+box.max.z)*.5,y=(box.min.y+box.max.y)*.5;
+  assert(collisionService.blocksBox(zoneId,x,z,0,y),'every rotated, scaled authored shaft/cap/chip has solid collision at its measured center');
+  if(Math.abs(x-built.position.x)>.55||Math.abs(z-built.position.z)>.55)offCenterPieces++;
+  measuredParts++;
+ }
+ assert.equal(collisionService.blocksBox(zoneId,built.position.x+3,built.position.z+3,0),false,
+   'wide authored footprints do not turn empty wilderness beside the pillar into an invisible wall');
+}
+assert(offCenterPieces>0,'fallen shafts and scattered rubble actually extend past the old .36-tile center-only collider');
+const debrisDiagnostic=scenery.debugSnapshot().plan;
+assert.equal(debrisDiagnostic.authoredDebrisSites,pillarRoots.length,'all rendered pillar sites have been substituted with exact authored geometry');
+assert.equal(debrisDiagnostic.authoredDebrisParts,measuredParts,'mobile diagnostics count the exact per-part collision shapes');
 const decoratedFor = () => scenery.planForLayout(zoneId,zoneLayouts.get(zoneId),'test-world:'+cycle).filter(x=>x.marked);
 const originalMarked=decoratedFor().length; // The planned dye-bearing objects are exactly those the renderer engraves.
 const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
@@ -262,6 +287,8 @@ assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also
 assert.equal(decorations,firstCycleDecorations+secondCycleDecorations*2,
   'same-cycle regeneration uses the same surface projection count on every marked part');
 scenery.clear();
+assert.equal(collisionService.providerIds().includes('wilderness-landmark-stones'),false,
+  'Shift and zone cleanup unregister the old authored debris collision provider');
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;

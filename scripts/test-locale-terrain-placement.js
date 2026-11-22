@@ -175,4 +175,47 @@ for(const [i,site] of pairedStartSites.entries()) {
   }
 }
 
+
+// A terrain-aware locale can intersect just one part of a multi-tile boulder.
+// Its ENTIRE generated object must disappear, on both the root and plateau
+// submap, or the surviving tiles render a ghost rock with inconsistent collision.
+const boulderWorkspace = makeWorkspace(); // Uses a real cliff-backed two-map footprint.
+const boulderRoot = boulderWorkspace.maps[0]; // Source root overlay used by terrain placement.
+const boulderSub = boulderWorkspace.maps[1]; // Plateau's separate render/collision source.
+const boulderId = 'edge-crossing-boulder'; // Exact generated object identity shared by all overlay copies.
+for (const c of [7, 8]) {
+  Object.assign(boulderRoot.tiles[`${c},2`], {
+    type: 'rock', generatedObjectId: boulderId, generatedObjectType: 'undiggableBoulder'
+  });
+  Object.assign(boulderSub.tiles[`${c - 6},0`], {
+    type: 'rock', generatedObjectId: boulderId, generatedObjectType: 'undiggableBoulder'
+  });
+}
+boulderRoot.tiles['4,4'].generatedObjectType = 'structure'; // Forces the same cliff-facing locale onto row 2 instead of shifting rows.
+boulderRoot.tiles['4,4'].generatedObjectId = 'reserved-other-site';
+boulderWorkspace.objects = [{ id: boulderId, type: 'undiggableBoulder' }];
+boulderWorkspace.furniture = [{ id: 'boulder-decoration', generatedObjectId: boulderId }];
+assert.equal(Placement.evaluateCandidateForTest(boulderWorkspace, cave, 4, 2, {scale:1}).ok, true,
+  'an identified generated boulder may be completely cleared by a terrain-aware locale');
+Placement.placeTerrainAwareLocales(boulderWorkspace, [cave], { seed: 'unit', scale: 1 });
+assert.equal(boulderWorkspace.localeTerrainDiagnostics[0].status, 'placed');
+assert.equal(boulderWorkspace.localeTerrainDiagnostics[0].selected.anchorR, 2);
+assert.deepEqual(boulderWorkspace.localeTerrainDiagnostics[0].clearedObjectIds, [boulderId]);
+for (const c of [7, 8]) {
+  assert.equal(boulderRoot.tiles[`${c},2`].generatedObjectId, undefined,
+    'even boulder tiles outside the locale footprint must lose their identity');
+  assert.equal(boulderSub.tiles[`${c-6},0`]?.generatedObjectId, undefined,
+    'the plateau copy must not reintroduce a removed boulder');
+}
+assert.equal(boulderRoot.tiles['8,2'].type, 'grass', 'unpainted exterior portion must become actual ground');
+assert.equal(boulderSub.tiles['2,0'].type, 'grass', 'the unpainted plateau portion must become actual ground');
+assert.equal(boulderWorkspace.objects.length, 0, 'boulder object metadata must be removed');
+assert.equal(boulderWorkspace.furniture.length, 0, 'boulder-attached decoration must not survive the object');
+
+const anonymousBoulder = makeWorkspace(); // Malformed older data without a generated ID cannot be cleared atomically.
+anonymousBoulder.maps[0].tiles['7,2'].generatedObjectType = 'undiggableBoulder';
+const rejectedBoulder = Placement.evaluateCandidateForTest(anonymousBoulder, cave, 4, 2, {scale:1});
+assert.equal(rejectedBoulder.ok, false, 'unidentified boulders must never be partially overwritten by a locale');
+assert.match(rejectedBoulder.reason, /unidentified generated undiggableBoulder/);
+
 console.log('locale-terrain-placement tests passed');
