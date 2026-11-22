@@ -70,7 +70,7 @@
     const posteriorY = Number(rig.spinePosteriorY);
     const neck = rig.neckLocal || {}; // Raw plane-local neck pivot, BEFORE applying head scale.
     return {
-      posterior: { x: centerX + finite(rig.spineBase?.x, 0),
+      posterior: { x: centerX, // CharacterSpine.layoutFor pins node 0 (posterior) at plane-local X=0. spineBase.x is the NECK BASE, not the hip.
         y: centerY + (Number.isFinite(posteriorY) ? posteriorY : -h * .23),
         z: centerZ },
       neck: { x: centerX + finite(neck.x, 0),
