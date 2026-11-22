@@ -171,6 +171,44 @@ function world() {
     'a fast ruin rope release catches a grip even when both frame endpoints miss');
   assert(caughtAt>=3.05&&caughtAt<=3.35,'the catch happens on the swept path');
 }
+// Exercise the real shaft rider handlers with a supported launch pad and analog intent.
+{
+  const start=ruinSource.indexOf('  function canGrabShaftRope(');
+  const end=ruinSource.indexOf('  // options.externalHazard:',start);
+  const updateStart=ruinSource.indexOf('  function ropeIntent(');
+  const updateEnd=ruinSource.indexOf('  function updateIdleRope(',updateStart);
+  const core=require('../docs/js/rope-core.js');
+  const player={x:0,y:0,inputStrength:1,inputX:-1,inputY:0};
+  let feet=8,riderPoint=null; // A high launch pad above the overlapping bottom story.
+  const state={flight:null,activeRope:null};
+  const window={DevRandomRuin:{getPlayerGroundSupportY:()=>feet}};
+  const rider=new Function('state','window','deps','playerWorld','RopeCore','updateRopeVisual','holsterRopeEquipment',
+    'clonePoint','setPlayerWorld','sweptRopePoint',
+    ruinSource.slice(start,end)+ruinSource.slice(updateStart,updateEnd)+'return {attachRope,updateAttachedRope};')(
+      state,window,{player,TILE:1},()=>({x:player.x,z:player.y}),core,
+      rope=>(rope.bob=core.bobAt(rope)),()=>{},point=>({...point}),
+      point=>{riderPoint=point;},()=>({blocked:false}));
+  const rope={...core.create({anchor:{x:0,y:13,z:0},length:4.14}),
+    shaftRopeId:'shaft-test',launchPad:{x:0,z:0,w:2,d:2,y:8}};
+  rope.bob=core.bobAt(rope);
+  feet=0;
+  assert.equal(rider.attachRope(rope),false,'the same X/Z on a lower story cannot grab');
+  feet=8;
+  rope.angle=.6;rope.bob=core.bobAt(rope);
+  assert.equal(rider.attachRope(rope),false,'the invisible resting point cannot grab a swung-away rope');
+  rope.angle=0;rope.bob=core.bobAt(rope);
+  assert.equal(rider.attachRope(rope),true,'the real reachable rope tip can be grabbed');
+  assert(rope.omega<0,'opposite stick starts a backswing on a resting rope');
+  for(let i=0;i<20;i++)rider.updateAttachedRope(rope,.016);
+  assert(rope.attached&&state.activeRope===rope&&rope.angle<-.1);
+  assert.deepEqual(riderPoint,rope.bob);
+  rope.braking=true;player.inputX=0;player.inputY=1;
+  rider.updateAttachedRope(rope,.05);
+  assert.equal(rope.yaw,0,'side input cannot alter the promised swing plane while braking');
+  player.inputX=1;player.inputY=0;
+  rider.updateAttachedRope(rope,.05);
+  assert.equal(rope.length,4.14,'forward input cannot shorten a shaft rope while braking');
+}
 // Ruin ledge falls use the same entry point when directional movement is held.
 {
   const interior=read('docs/js/dev-random-ruin-interior-map.js'); // Native ruin ledge/floor owner.

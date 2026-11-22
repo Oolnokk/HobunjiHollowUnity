@@ -398,7 +398,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261119visualauthRain1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261122h525babc"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -571,7 +571,7 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261122h9db07df"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-shaft-support-pillars.js?v=20261120h4fa8451"></script> <!-- Original square furniture, vertical IKMC-style span, slim square bases. -->
   <script src="js/ruin-jump-shaft.js?v=20261122hbfb3947"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
-  <script src="js/ruin-rope-shaft.js?v=20261122ropeSwings1"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
+  <script src="js/ruin-rope-shaft.js?v=20261122h3c9a090"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261122h7fb6f80"></script>
   <script src="js/ruin-layer-plan.js?v=20261122hdf993f1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
@@ -2976,7 +2976,7 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="game.js?v=20261122h7e96092"></script>
+  <script src="game.js?v=20261122h415545c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
