@@ -407,6 +407,7 @@
       })||null;
     }
     previewSource=placeholder?'placeholder':'runtime-portrait'; // Mobile debug distinguishes instant feedback from completed loading.
+    if(editingBaby)setBabyBones(!!el('carryBabyBones').checked); // Reconnect paper bones after async GLB arrival.
     syncHoldingPreview();
     if(avatarGroup)avatarGroup.visible=!heldPreview.visible; // Hide the separate Avatar-tab reference when the Carryable preview exists.
     if(previewActive())frameHoldingPreview();
@@ -730,6 +731,16 @@
   }
   function fromInputs() {
     const id=state.selectedType==='carry'?state.selectedId:'anchor';
+    const side=elbowSide(id);
+    if(side){
+      const parts=['X','Y','Z'].map(axis=>Number(el('carry'+axis).value));
+      if(parts.every(Number.isFinite)){
+        state.carryable.elbows ||= {};
+        state.carryable.elbows[side]={x:parts[0],y:parts[1],z:parts[2]}; // Same shoulder-relative data as Attack Editor elbow keyframes.
+        updateBabyElbowGuides();syncHoldingPreview();renderControls();
+      }
+      return;
+    }
     if(id==='baby'){
       const position=['X','Y','Z'].map(axis=>Number(el('carry'+axis).value));
       const angles=['X','Y','Z'].map(axis=>Number(el('carryR'+axis).value));
@@ -773,6 +784,12 @@
   function fromGizmo() {
     if(activeEditorMode!=='carry'||state.selectedType!=='carry')return;
     const id=state.selectedId,marker=guides[id],point=positionGuide(id);
+    const side=elbowSide(id);
+    if(side){
+      if((transform.getMode?.()||'translate')!=='translate'){setTransformMode('translate');return;}
+      authorElbowFromMarker(side);
+      syncHoldingPreview();renderControls();return;
+    }
     if(id==='baby'){
       if((transform.getMode?.()||'translate')==='translate')authorBabyTranslation(babyRotateProxy.position);
       else if((transform.getMode?.()||'translate')==='rotate')authorBabyRotation(babyRotateProxy.quaternion);
@@ -799,6 +816,21 @@
     }
     renderControls();
     syncHoldingPreview();
+  }
+  el('carryBabyBones').onchange=event=>setBabyBones(event.target.checked);
+  for(const side of ['left','right']){
+    const cap=side==='left'?'Left':'Right';
+    el('carryBabyElbow'+cap).onclick=()=>select('elbow'+cap);
+    el('carryBabyMid'+cap).onclick=()=>{
+      if(!editingBaby)return;
+      if(!previewHands){el('carryBabyElbowStatus').textContent='Load the carry preview before authoring a midpoint.';return;}
+      setBabyBones(true);
+      updateBabyElbowGuides();authorElbowFromMarker(side);syncHoldingPreview();renderControls();select('elbow'+cap);
+    };
+    el('carryBabyClear'+cap).onclick=()=>{
+      if(!editingBaby)return;
+      state.carryable.elbows[side]=null;syncHoldingPreview();renderControls();
+    };
   }
   el('carryBabyMove').onclick=()=>{babyTransformMode='translate';select('baby');};
   el('carryBabyRotate').onclick=()=>{babyTransformMode='rotate';select('baby');};
@@ -945,6 +977,7 @@
     savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
     state.carryable=normalized(babyDraft||pose.forSize(babyPortraitWidth,babyPortraitHeight,babyGripAnchors)); // Use the current portrait dimensions if returning after a Random Baby roll.
     editingBaby=true;babyTransformMode='translate';root.visible=false;babyReference.visible=activeEditorMode==='carry';
+    setBabyBones(!!el('carryBabyBones').checked);
     babyRotateProxy.visible=activeEditorMode==='carry';
     babyPoseView='anchor';createGuides();select('baby');setHoldingVisibility();frameHoldingPreview();
     if(!babyPortraitModel)void randomBaby(); // Show a real randomized child immediately, not an empty blue reference.
@@ -956,6 +989,7 @@
     babyPointerId=null;babyPointerSide=null; // End any mobile grip drag when leaving baby mode.
     if(el('carryBabyCopyText'))el('carryBabyCopyText').hidden=true; // Don't leave the old infant JSON visible in furniture mode.
     babyDraft=cloneJson(state.carryable); // Keep incomplete mobile edits if the user revisits the baby tab.
+    setBabyBones(false); // Existing hand solver's paper arm guides must never leak into furniture mode.
     state.carryable=savedFurnitureCarry;savedFurnitureCarry=null;editingBaby=false;
     root.visible=true;babyReference.visible=false;babyRotateProxy.visible=false;
     babyPoseFrame.position.set(0,0,0);babyPoseFrame.quaternion.identity();babyPoseFrame.scale.setScalar(1);
@@ -1090,7 +1124,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:babyPoseIsBack(),preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,babyPortraitWidth,babyPortraitHeight,babyPortraitUV:true,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:babyPoseIsBack(),preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,babyPortraitWidth,babyPortraitHeight,babyGripAnchors,babyBoneView:!!el('carryBabyBones')?.checked,babyElbows:cloneJson(state.carryable?.elbows||{}),babyPortraitUV:false,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
