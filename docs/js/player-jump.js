@@ -472,6 +472,7 @@
     if (!cliffImpact) window.FallSystem?.land?.(player, {
       dropWorld, deliberate: state.deliberate !== false, source: state.source || 'free jump',
     });
+    if (cliffImpact?.lethal) { reset(player, 'lethal prone cliff landing'); return; }
     state.proneFall = false; // A supported roof landing must not charge the impact again on its next tick.
     if (support.kind === 'ground') {
       window.DevRandomRuin?.acceptFreeJumpLanding?.(support.y); // Prevent multi-story ruins from charging the same drop a second time.
