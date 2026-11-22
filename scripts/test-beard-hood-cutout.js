@@ -48,6 +48,30 @@ function setPixel(canvas,x,y,a){canvas.pixels.set([88,66,44,a],at(x,y)*4);}
 const beard=new Canvas(),hood=new Canvas();
 for(let y=75;y<=85;y++)for(let x=90;x<=115;x++)setPixel(beard,x,y,255);
 for(let y=70;y<=90;y++)for(let x=82;x<=122;x++)setPixel(hood,x,y,255);
+// Artwork-driven cutouts follow the actual beard alpha, and never inherit
+// the uniquely hand-painted Mao'ao Grandbeard whiskers.
+const autoSource=new Uint8ClampedArray(SIZE*SIZE*4);
+autoSource[at(100,80)*4+3]=241;autoSource[at(101,80)*4+3]=242;
+autoSource[at(102,80)*4+3]=255;
+const derived=Cut.autoBeardRequestMask(autoSource);
+assert.equal(Cut.decodeMask(derived)[at(100,80)],0,'silhouette request ignores semi-transparent fringe below 95%');
+assert.equal(Cut.decodeMask(derived)[at(101,80)],1,'silhouette request includes pixels exactly at 95%');
+assert.equal(Cut.decodeMask(derived)[at(102,80)],1,'silhouette request includes full-opacity beard pixels');
+assert.equal(Cut.countMask(derived),2,'silhouette request is art-limited without unrelated stencil pixels');
+const actualAutoBeard=new Canvas(),actualAutoHood=new Canvas();
+setPixel(actualAutoBeard,101,80,255);setPixel(actualAutoBeard,115,80,255);
+setPixel(actualAutoHood,101,80,255);setPixel(actualAutoHood,115,80,255);
+const autoNegotiation=Cut.negotiateBeardHood(actualAutoBeard,actualAutoHood,null,null,{
+  requestMode:'silhouette',permissionMode:'all'
+});
+assert.equal(autoNegotiation.approvedPixels,2,'silhouette-only mode triggers actual hood removal without authored RLE');
+assert.equal(autoNegotiation.whiskerWins,0,'silhouette beard never acquires priority whisker paint implicitly');
+assert.equal(alpha(actualAutoHood,101,80),0,'silhouette request cuts actual overlapping hood art');
+const noAutoBeard=new Canvas(),noAutoHood=new Canvas();
+setPixel(noAutoBeard,101,80,255);setPixel(noAutoHood,101,80,255);
+assert.equal(Cut.negotiateBeardHood(noAutoBeard,noAutoHood,null,null).applied,false,
+  'unconfigured cosmetic without requests remains untouched');
+
 const beardBefore=new Uint8ClampedArray(beard.pixels);
 const hoodBefore=new Uint8ClampedArray(hood.pixels);
 const source=beard.getContext().getImageData().data;
@@ -620,8 +644,9 @@ assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('r
   && portrait.includes('variantBeardCutoutConeSpread'),
   'gameplay resolves automatic, painted and permissive hood policy from cosmetic JSON');
 assert(portrait.includes('hoodWhiskerMask')&&portrait.includes('variantHoodWhiskerMasks')
-  && portrait.includes('whiskerMask});'),
-  'gameplay resolves priority whiskers independently of normal cutout requests');
+  && portrait.includes('whiskerMask,')
+  && portrait.includes('requestMode:beardAuthoring.requestMode});'),
+  'gameplay resolves priority whiskers and artwork-based requests independently');
 assert(portrait.includes('const exactSharedArt=key===keys[0]')
   && portrait.includes('option.variantHoodCutoutMasks'),
   'exact wearer-specific beard masks work even when the underlying beard sprite is shared');
