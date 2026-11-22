@@ -558,6 +558,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 
   function syncLegPortraitAlignment(entry) {
     if (!entry?.model || !entry.feet) return;
+    if (window.ProceduralLegAnimation?.alignPortraitWithLegs?.(entry.group, entry.feet)) return; // Game and editor share one idempotent torso-to-hip adjustment.
     const baseY = Number(entry.basePortraitY); // Original portrait centering, captured before any leg-length edit.
     const basePosterior = Number(entry.feet.restPosteriorY); // The foot solver's original hip anchor in the same parent-local coordinates.
     const currentPosterior = Number(entry.feet.standingPosteriorY); // True resized hip anchor; foot mesh size does not change leg length.
@@ -573,6 +574,22 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       applyAnatomyConfig(entry.profile); // The existing hand-profile subscription rebuilds the two selected-size hands from cached source GLBs.
       window.ProceduralHandFrameDriver?.syncNow?.();
     }, 140);
+  }
+
+  function refreshFromScaleChange(scale, changedField = '') {
+    if (!active || !selected) return false;
+    const hand = Number(scale?.handScale) > 0 ? Number(scale.handScale) : partScaleFor(selected, 'hand'); // Guard copies part sizes verbatim on unrelated edits.
+    const foot = Number(scale?.footScale) > 0 ? Number(scale.footScale) : partScaleFor(selected, 'foot');
+    if (changedField === 'footScale') {
+      applyAnatomyConfig(selected.profile, { skipHand: true }); // Update the shared species foot-size table before any next spawn.
+      selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
+    }
+    window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
+    syncLegPortraitAlignment(selected); // Hip and painted torso stay attached under separate Leg length and Portrait height edits.
+    if (changedField === 'handScale') scheduleHandResize(selected); // Debounced cached GLB replacement keeps mobile slider movement responsive.
+    syncSpineGuides(); // The guide follows the true resized body, not the former combined Height factor.
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    return true;
   }
 
   // Width/portrait height/leg length/head/part sizes are authored per species+gender, on the shared
@@ -836,7 +853,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     previewRoot.add(group);
     const ageFraction = rep.npc?.id ? (host()?.npcAgeFor?.(rep.npc.id) || 0) : 0;
     window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, {
-      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
+      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY,
+      legLength: rigProfile.anatomy.legLengthScale ?? initialScale.legLength, // Old Height saves initialize both new heights identically.
+      head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
     const entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile,
@@ -1145,6 +1164,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       get selectedKey() { return selected?.key || null; },
       get focusKey() { return focusedEntryKey; }, // Independent of selectedKey: choosing a different editor target must never move the camera.
       get previewCount() { return entries.length; },
+      refreshFromScaleChange, // Input guard uses one field at a time, preserving raw-PNG head size and all four new dimensions.
       debugSnapshot: () => ({
         active,
         building,
