@@ -150,8 +150,9 @@
     window.FurnitureDecalRuntime?.setGlowState?.(object, object.userData.puzzleProgress);
     releaseStandingSurface(object);
     applyMechanism(object, object.userData.puzzleProgress);
-    if (puzzle.behavior === 'pressurePlate' || puzzle.behavior === 'burdenPlate') registerPlateSurfaces(mapId, object);
-    else registerStandingSurface(mapId, object);
+    if (!registerStandingSurface(mapId, object) && (puzzle.behavior === 'pressurePlate' || puzzle.behavior === 'burdenPlate')) {
+      registerPlateSurfaces(mapId, object); // An explicitly authored standing part and progress threshold take precedence.
+    }
     return id;
   }
 
