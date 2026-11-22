@@ -5,7 +5,8 @@
   const CONFIG_PATH = 'config/dialogue/ambient-vocabulary.json'; // The Vocabulary tab exports this independent authored configuration.
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
   const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55 }); // Used for an unassigned NPC or incomplete imported settings.
-  const state = { config: null, profiles: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
+  const MAX_CACHED_SPEAKERS = 128; // Bounds memory even when many unique wildlife actor IDs produce ambient text.
+  const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
   const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
   const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
   const normalizeSliders = value => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(hasOwn(value, key) ? value[key] : DEFAULT_SLIDERS[key])])); // Every slider is bounded before selecting vocabulary.
@@ -21,10 +22,30 @@
     const sliders = normalizeSliders({ ...seeded, ...(character?.sliders || {}) }); // An explicitly generated NPC table/sliders always overrides the initial variation.
     return { sliders, familyId, character: character || null, family, characterId: id }; // Selection references stay in the central word catalog; per-NPC text copies are not retained.
   }
+  function sourceMatcher(lexicon) {
+    const words = Object.keys(lexicon || {}).filter(word => word.length > 0 && word.length <= 80 && !/[{}]/.test(word));
+    if (!words.length) return null;
+    const escape = word => word.replace(/([^\p{L}\p{N}\s])/gu, '\\$1'); // Escape editor-authored punctuation before composing a safe source-word matcher.
+    words.sort((a, b) => b.length - a.length);
+    return new RegExp('(^|[^\\p{L}\\p{N}_])(?:' + words.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'iu');
+  }
+  function cachedTable(characterId, create) {
+    if (state.tableCache.has(characterId)) {
+      const cached = state.tableCache.get(characterId);
+      state.tableCache.delete(characterId);
+      state.tableCache.set(characterId, cached); // Keep actively speaking NPCs in the LRU cache.
+      return cached;
+    }
+    const compiled = create(); // One allocation per eligible speaker, not per on-screen animal or game frame.
+    if (state.tableCache.size >= MAX_CACHED_SPEAKERS) state.tableCache.delete(state.tableCache.keys().next().value);
+    state.tableCache.set(characterId, compiled);
+    return compiled;
+  }
   function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!selected || !source) return source;
+    if (config === state.config && (!state.matchPattern || !state.matchPattern.test(source))) return source; // Most speech contains no configured vocabulary and skips all per-NPC generation.
     const rules = window.AmbientVocabularyRules; // Existing pure rules are shared by the game, standalone editor, and tests.
     if (!rules?.generateSelections || !rules?.resolveSelections) return source;
     const compile = () => {
@@ -34,11 +55,7 @@
       return rules.resolveSelections(config.lexicon, rules.mergeSelections(generated, overrides)); // Only ephemeral, cached render strings; never duplicated in config.
     };
     const table = config === state.config
-      ? (state.tableCache.get(selected.characterId) || (() => {
-          const compiled = compile();
-          state.tableCache.set(selected.characterId, compiled);
-          return compiled;
-        })())
+      ? cachedTable(selected.characterId, compile)
       : compile();
     const transformed = window.AmbientVocabularyRules?.rewriteLine?.(source, table, selected.sliders, random, selected.characterId); // Shares token-safe, one-pass rendering with the editor preview.
     if (!transformed) return source;
@@ -59,6 +76,7 @@
       if (!config || !config.lexicon || !profiles?.profiles) throw new Error('Invalid vocabulary or personality configuration');
       state.config = config;
       state.profiles = profiles;
+      state.matchPattern = sourceMatcher(config.lexicon);
       state.tableCache.clear();
       state.ready = true;
       state.error = null;
@@ -74,7 +92,7 @@
     generateTable: (lexicon, sliders, id) => window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, id) || {}, // Compatibility preview surface.
     normalizeSliders,
     reload: load,
-    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length }),
+    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length, cachedSpeakers: state.tableCache.size }),
   }); // Public surface for editor tests and the existing mobile diagnostic console.
   window.AmbientVocabulary = api;
   load();
