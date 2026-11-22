@@ -91,6 +91,8 @@ const checkPocket = (contents, expectedKind) => {
     for (const tile of placed) {
       assert(!(['10,10', '10,11'].includes(`${tile.col},${tile.row}`)), 'the original objective remains unobstructed');
       assert(blocked.has(`${tile.col},${tile.row}`), 'each added resource reserves its cave floor tile');
+      for (const other of placed) assert(Math.hypot(tile.col - other.col, tile.row - other.row) <= 10.01,
+        'second activity must form a compact local pocket, not scattered resources throughout the cave');
     }
   }
   assert(found, `some spacious ${contents} caves contain a real secondary ${expectedKind} pocket`);
@@ -98,6 +100,28 @@ const checkPocket = (contents, expectedKind) => {
 checkPocket(Cave.TYPES.ORE_MINE, 'mushrooms');
 checkPocket(Cave.TYPES.CATACOMB, 'mushrooms');
 checkPocket(Cave.TYPES.MUSHROOM_CAVE, 'ore');
+
+// Two nearby galleries separated by impassable rock cannot donate tiles to
+// the same second activity even if both are inside a five-tile radius.
+const splitFloor = [];
+for (let row = 1; row <= 12; row++) for (let col = 1; col <= 21; col++)
+  if (col <= 9 || col >= 13) splitFloor.push({ col, row });
+let splitFound = false;
+for (let index = 0; index < 20; index++) {
+  const profile = { contents: Cave.TYPES.MUSHROOM_CAVE, signature: 'split-galleries-' + index };
+  const map = { oreRocks: [] }, plan = { mushrooms: [], mineRocks: [], separator: null };
+  Cave.__test.addSecondaryPocket(map, profile, splitFloor, new Set(), plan);
+  if (!plan.secondaryPocket) continue;
+  splitFound = true;
+  const gallery = map.oreRocks[0].col <= 9 ? 'left' : 'right';
+  assert(map.oreRocks.every(tile => gallery === (tile.col <= 9 ? 'left' : 'right')),
+    'secondary pocket stays in one connected walkable gallery');
+  const againMap = { oreRocks: [] }, againPlan = { mushrooms: [], mineRocks: [], separator: null };
+  Cave.__test.addSecondaryPocket(againMap, profile, splitFloor, new Set(), againPlan);
+  assert.deepEqual(againMap.oreRocks, map.oreRocks, 'secondary room selection is deterministic for a cave signature');
+}
+assert(splitFound, 'at least one separated-gallery fixture produces a compact secondary pocket');
+
 const crampedPlan = { mushrooms: [], mineRocks: [], separator: null };
 Cave.__test.addSecondaryPocket({ oreRocks: [] }, { contents: Cave.TYPES.CATACOMB, signature: 'cramped' },
   spacious.slice(0, 5), new Set(), crampedPlan);
