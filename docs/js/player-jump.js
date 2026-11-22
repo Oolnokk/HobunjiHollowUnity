@@ -178,8 +178,14 @@
     const magnitude = Math.hypot(Number(dirX) || 0, Number(dirZ) || 0);
     const tilesPerSecond = Math.max(0, number(speedPxS, 0)) / deps.TILE;
     if (magnitude > 1e-6 && tilesPerSecond > 0) {
-      state.knockbackVX = number(state.knockbackVX, 0) + dirX / magnitude * tilesPerSecond;
-      state.knockbackVZ = number(state.knockbackVZ, 0) + dirZ / magnitude * tilesPerSecond;
+      const vx = dirX / magnitude * tilesPerSecond, vz = dirZ / magnitude * tilesPerSecond; // Shared hit impulse used by either native or ruin-owned flight integration.
+      if (state.external) {
+        state.vx = number(state.vx, 0) + vx;
+        state.vz = number(state.vz, 0) + vz; // External ruin flights integrate vx/vz directly, not native knockbackVX/Z.
+      } else {
+        state.knockbackVX = number(state.knockbackVX, 0) + vx;
+        state.knockbackVZ = number(state.knockbackVZ, 0) + vz;
+      }
     }
     return true;
   }
@@ -193,7 +199,7 @@
       state.deliberate = false;
       state.noGrab = true; // An unconscious/prone actor cannot re-grab a ladder, rope or cliff halfway down.
       state.assist = null;
-      if (!state.external && state.vy > 0) state.vy = 0; // Ascending actors start falling; descending actors keep their existing velocity.
+      if (state.vy > 0) state.vy = 0; // Both native and externally integrated ascending flights start falling; already-descending velocity remains unchanged.
       debug.lastEvent = 'knocked prone in air';
     }
     player.proneThrowT = 0; // Reuse horizontal airborne momentum instead of moving twice with the grounded throw timer.
@@ -259,7 +265,7 @@
   }
 
   function airControl(scale = 1) {
-    const direction = movementVector();
+    const direction = deps?.player?.prone ? { x: 0, z: 0, strength: 0 } : movementVector(); // Prone bodies never steer, including externally integrated ruin rope flights.
     const speed = Math.max(0, number(deps?.getBaseMoveSpeedTiles?.(), CONFIG.airTilesPerSecond))
       * direction.strength * Math.max(0, number(scale, 1));
     return { x: direction.x * speed, z: direction.z * speed, direction }; // World units/second; steering is added to inherited rope momentum.
