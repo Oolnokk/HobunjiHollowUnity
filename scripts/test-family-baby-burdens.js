@@ -160,6 +160,7 @@ assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'collide
 assert.equal(carry.snapshot().babies[0].artMode, 'posed-rig');
 assert.equal(carry.snapshot().babies[0].dimensions.height,.42, 'hand coordinate dimensions stay tied to the original infant portrait');
 assert.equal(sameBurden.group.userData.familyBabyPosedHeight,.59, 'enlarged head silhouette bounds are diagnostic, not grip position inputs');
+assert.equal(carry.snapshot().babies[0].posedDimensions.height,.59, 'mobile debug distinguishes visible head bounds from the actual portrait-coordinate grip basis');
 assert.equal(sameBurden.data.carryable.handTargets.left.x,.37*.4, 'head enlargement must not move portrait-local hand grip');
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(bakeCalls, 1, 'family ticks do not trigger per-frame skin baking');
