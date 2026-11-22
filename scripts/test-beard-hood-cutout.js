@@ -366,9 +366,9 @@ assert(html.includes('drawCosmetic(hoodDoc,overrideHood,true)')
 assert(html.includes("if(scope!=='shared'&&Cut.normalizeMask(json.beardCutoutAllowedMask))")
   && html.includes("destination.beardCutoutAllowedMask={size:SIZE,runs:[[0,SIZE*SIZE]]}"),
   'per-variant allow-all can override inherited shared hood restrictions');
-assert(html.includes("mode==='hoodProtect',")===false
-  && html.includes('drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode'),
-  'hood eraser uses opaque-only painting while the beard eraser remains unchanged');
+assert(html.includes('drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode')
+  && !html.includes('if(hoodMode&&hoodAllowanceMask===null ||'),
+  'hood eraser uses opaque-only painting without creating policy on a transparent click');
 assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
   && html.includes('id="showBeardGhost"'),
   'mobile editor supports separate hood import/export and an alignment ghost');
