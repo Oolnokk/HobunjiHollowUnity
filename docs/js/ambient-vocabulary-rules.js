@@ -33,5 +33,46 @@
     }
     return table;
   }
-  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, generateTable });
+  const expressionCache = new WeakMap(); // Each stable NPC table is compiled once and reused across its floating dialogue bubbles.
+  function expressionFor(table) {
+    if (!table || typeof table !== 'object') return null;
+    if (expressionCache.has(table)) return expressionCache.get(table);
+    const terms = Object.keys(table).filter(key => key && key.length <= 80 && !/[{}]/.test(key))
+      .sort((a, b) => b.length - a.length); // Longer authored phrases have priority over their component words.
+    const escaped = terms.map(term => term.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, generateTable });'));
+    const pattern = escaped.length ? new RegExp('(^|[^\\\\p{L}\\\\p{N}_])(' + escaped.join('|') + ')(?=$|[^\\\\p{L}\\\\p{N}_])', 'giu') : null;
+    expressionCache.set(table, pattern);
+    return pattern;
+  }
+  function caseLike(source, replacement) {
+    if (source !== source.toLocaleLowerCase() && source === source.toLocaleUpperCase()) return replacement.toLocaleUpperCase();
+    if (source[0] && source[0] === source[0].toLocaleUpperCase()) return replacement[0].toLocaleUpperCase() + replacement.slice(1);
+    return replacement;
+  }
+  function rewriteLine(source, table, sliders, random = Math.random, speakerId = '') {
+    const original = String(source ?? ''); // Never mutate the original authored sentence or its placeholders.
+    const pattern = expressionFor(table);
+    if (!pattern) return { text: original, hits: 0, swaps: 0 };
+    const settings = normalizeSliders(sliders);
+    let hits = 0, swaps = 0; // Diagnostics distinguish a missed coin flip from a missing entry.
+    const text = original.split(/(\\{\\{[^{}]*\\}\\}|\\{[A-Za-z][A-Za-z0-9_]*\\})/g).map(segment => {
+      if (segment.startsWith('{')) return segment; // Tokens such as {targetName} and {{playerName}} remain unchanged.
+      pattern.lastIndex = 0;
+      return segment.replace(pattern, (whole, prefix, raw) => {
+        const candidates = table[raw.toLocaleLowerCase()];
+        if (!Array.isArray(candidates) || !candidates.length) return whole;
+        const valid = candidates.filter(value => typeof value === 'string' && value.trim() && value.toLocaleLowerCase() !== raw.toLocaleLowerCase()); // Invalid manual entries are ignored.
+        if (!valid.length) return whole;
+        hits++;
+        if (random() >= settings.frequency / 100) return whole;
+        const pick = settings.variety < 15
+          ? hash(speakerId + ':' + raw.toLocaleLowerCase()) % valid.length
+          : Math.min(valid.length - 1, Math.floor(Math.max(0, random()) * valid.length));
+        swaps++;
+        return prefix + caseLike(raw, valid[pick]);
+      });
+    }).join('');
+    return { text, hits, swaps };
+  }
+  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, generateTable, rewriteLine });
 })();
