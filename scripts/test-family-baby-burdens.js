@@ -86,8 +86,18 @@ assert.equal(child.carryBy, 'spouse'); assert.equal(child.carryPose, 'back');
 assert.equal(carry.snapshot().babies[0].parent, portrait.name || null);
 assert.equal(carry.takeIntoArms(child, babyWalker, persist), true, 'shared physical burden hands off from spouse to player');
 assert.equal(child.carryBy, 'player'); assert.equal(registered, 1, 'handoff does not duplicate baby');
-held = null; item.carried = true; child.carryBy = 'spouse'; item.mapId = 'farm';
+held = null; item.carried = false; child.carryBy = null; item.mapId = 'farm';
+const areaTransfers = []; // Existing NPC zone mover is the only way to switch the real infant's active map.
+babyWalker.transferToArea = (area, tile) => { babyWalker.area = area; areaTransfers.push({ area, tile }); };
+item.col = 11; item.row = 12; item.group.position.set(11.5, 0, 12.5);
+item.onDrop(item);
+assert.equal(babyWalker.area, 'farm', 'an infant landed outdoors changes their actual NPC area');
+assert.equal(babyRoot.position.x, 11.5, 'landed baby NPC sits at the physical burden tile');
+assert.equal(child.carrySpot.area, 'farm', 'saved landing follows the authoritative physical map');
+item.carried = true; child.carryBy = 'spouse';
 assert.equal(carry.returnToBasket(child, { col: 6, row: 6 }), true);
+assert.equal(babyWalker.area, 'interior', 'real infant returns through the normal NPC area mover');
+assert.deepEqual(areaTransfers.map(x => x.area), ['farm', 'interior'], 'no improvised baby-only zone transfer');
 assert.equal(babyRoot.position.x, 6.5, 'returning the baby really moves their authoritative NPC to the basket');
 assert.equal(babyRoot.position.z, 6.5, 'basket return cannot leave the infant at their previous throw landing');
 assert.equal(babyRoot.visible, true); assert.equal(child.carryBy, null); assert.equal(item.mapId, 'interior',
