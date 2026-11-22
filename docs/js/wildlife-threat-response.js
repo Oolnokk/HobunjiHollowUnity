@@ -110,7 +110,7 @@
     }
   }
   function update(c, dt, actors, players, ctx) {
-    if (!c || c.health <= 0 || c.isCompanion || !ctx?.tile) return;
+    if (!c || c.health <= 0 || c.isCompanion || c.isBandit || c.banditCompanion || !ctx?.tile) return; // Never apply wild hunting/flight speed profiles to humanoids or beastmaster-owned AI.
     const kind = herdSpecies(c);
     if (!kind) {
       if (!c._nestDefense) speedUpWildMovement(c, ctx.tile); // Temporary maternal stat changes never nest under movement speed overlays.
@@ -206,7 +206,8 @@
     for (const c of combat.hostileObjects) {
       if (!c || c.health <= 0 || c.isCompanion || c.areaId !== area ||
           speciesOf(c) !== species || (c._nestDefense?.originalDef || c.def)?.hostile !== false ||
-          c.genotype?.sizeClass === 'small' || c.isBaby || c.isJuvenile ||
+          c.isBaby || c.isJuvenile || c.lifeStage === 'baby' || c.lifeStage === 'juvenile' ||
+          (c.festivalReleased && c.genotype?.sizeClass === 'small') || // Small genes alone do not make a wild adult a baby; specifically exclude released juvenile animals.
           Math.hypot(c.x - nestX, c.y - nestY) > NEST_DEFENSE_TILES * combat.TILE) continue;
       if (c._wildPursuitOriginalDef) {
         c.def = c._wildPursuitOriginalDef;
