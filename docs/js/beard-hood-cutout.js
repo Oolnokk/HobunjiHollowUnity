@@ -336,21 +336,20 @@
     const bits=new Uint8Array(PIXELS);
     if(!rim.points.length)return {mask:encodeMask(bits),bottomPoints:[],openingSeed:rim.seed,
       coneSpread:spread,allowedPixels:0};
-    let allowedPixels=0;
     for(let y=0;y<SIZE;y++){
-      let left=SIZE,right=-1;
       for(const point of rim.points){
         if(point.y>y)continue;
+        // Keep each ring column's own lower edge. Filling the span between
+        // different columns would prematurely admit pixels ABOVE the U-shaped
+        // bottom opening at the center of the face.
         const expansion=(y-point.y)*spread;
-        left=Math.min(left,Math.floor(point.x-expansion));
-        right=Math.max(right,Math.ceil(point.x+expansion));
+        const first=Math.max(0,Math.floor(point.x-expansion));
+        const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
+        if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
       }
-      if(right<left)continue;
-      const first=Math.max(0,left),last=Math.min(SIZE-1,right);
-      if(last<first)continue;
-      bits.fill(1,y*SIZE+first,y*SIZE+last+1);
-      allowedPixels+=last-first+1;
     }
+    let allowedPixels=0;
+    for(const bit of bits)allowedPixels+=bit;
     return {mask:encodeMask(bits),bottomPoints:rim.points,
       openingSeed:rim.seed,coneSpread:spread,allowedPixels};
   }
