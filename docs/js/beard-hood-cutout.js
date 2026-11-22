@@ -356,27 +356,89 @@
       openingSeed:rim.seed,coneSpread:spread,allowedPixels};
   }
 
-  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null) {
+  function upperHoodOpeningSegment(hoodRGBA, options = {}) {
+    // Mirror lowerHoodOpeningSegment: find the FIRST opaque upper inner rim
+    // along rays from the transparent face opening, never the outside silhouette.
+    const alphaLimit=alphaFloor(options.alphaLimit??242,242);
+    if(!hoodRGBA || hoodRGBA.length!==PIXELS*4)return {points:[],seed:null};
+    const seed=openingSeed(hoodRGBA,alphaLimit);
+    if(!seed)return {points:[],seed:null};
+    const top=new Int16Array(SIZE); // The highest first-hit ring pixel in each column.
+    top.fill(SIZE);
+    const samples=256,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
+    for(let ray=0;ray<samples;ray++){
+      const angle=Math.PI+Math.PI*ray/(samples-1); // Upper semicircle in canvas Y-down coordinates.
+      const stepX=Math.cos(angle),stepY=Math.sin(angle);
+      let prior=-1;
+      for(let d=.5;d<=maxRadius;d+=.5){
+        const x=Math.floor(seed.x+stepX*d),y=Math.floor(seed.y+stepY*d);
+        if(x<0||x>=SIZE||y<0||y>=SIZE)break;
+        const i=y*SIZE+x;
+        if(i===prior)continue;
+        prior=i;
+        if(hoodRGBA[i*4+3]<alphaLimit)continue;
+        if(y<=seed.y&&y<top[x])top[x]=y;
+        break;
+      }
+    }
+    const points=[];
+    for(let x=0;x<SIZE;x++)if(top[x]<SIZE)points.push({x,y:top[x]});
+    return {points,seed};
+  }
+
+  function autoHoodTopCoverMask(hoodRGBA, topSpread = 0, options = {}) {
+    // The reverse *ownership* of the lower allow cone: the upper rim claims
+    // cloth downward and wins even over whiskers. Limit it at the lowest point
+    // of the LOWER inner rim so it cannot block the entire hanging beard.
+    const spread=normalizeConeSpread(topSpread);
+    const upper=upperHoodOpeningSegment(hoodRGBA,options);
+    const lower=Array.isArray(options.bottomPoints)
+      ? options.bottomPoints : lowerHoodOpeningSegment(hoodRGBA,options).points;
+    const bits=new Uint8Array(PIXELS);
+    const lowerCap=lower.length?Math.max(...lower.map(point=>point.y)):null;
+    if(!upper.points.length||lowerCap==null)
+      return {mask:encodeMask(bits),topPoints:upper.points,openingSeed:upper.seed,
+        coneSpread:spread,coverPixels:0,lowerCap};
+    for(const point of upper.points){
+      for(let y=point.y;y<lowerCap&&y<SIZE;y++){
+        const expansion=(y-point.y)*spread; // Grows sideways as the upper hood droops down.
+        const first=Math.max(0,Math.floor(point.x-expansion));
+        const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
+        if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
+      }
+    }
+    let coverPixels=0;
+    for(const bit of bits)coverPixels+=bit;
+    return {mask:encodeMask(bits),topPoints:upper.points,openingSeed:upper.seed,
+      coneSpread:spread,coverPixels,lowerCap};
+  }
+
+  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null, topCoverMask = null) {
     // No authored hood permission mask means legacy permissive behavior.
     // An explicit EMPTY mask means no hood pixel may be removed.
     const request = decodeMask(requestMask);
     const whiskers = decodeMask(whiskerMask); // Explicit beard override defeats otherwise protected hood areas.
     const allowed = allowanceMask == null ? null : decodeMask(allowanceMask);
+    const topCover = topCoverMask == null ? null : decodeMask(topCoverMask); // Strictly higher precedence than whiskers.
     const approved = new Uint8Array(PIXELS);
     const refused = new Uint8Array(PIXELS);
     let requested = 0, approvedPixels = 0, refusedPixels = 0, whiskerWins = 0;
+    let topCoverWins=0,topCoverWhiskers=0; // Expose how many overlaps the upper hood protected.
     if (!beardRGBA || !hoodRGBA || beardRGBA.length !== PIXELS * 4 || hoodRGBA.length !== PIXELS * 4)
-      return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins};
+      return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
     for (let i = 0; i < PIXELS; i++) {
       if ((!request[i]&&!whiskers[i]) || beardRGBA[i * 4 + 3] < 8 || hoodRGBA[i * 4 + 3] < 8) continue;
       requested++;
-      if (!allowed || allowed[i] || whiskers[i]) {
+      if(topCover?.[i]){
+        refused[i]=1;refusedPixels++;topCoverWins++;
+        if(whiskers[i])topCoverWhiskers++;
+      }else if (!allowed || allowed[i] || whiskers[i]) {
         approved[i] = 1;approvedPixels++;
         if (whiskers[i] && allowed && !allowed[i]) whiskerWins++;
       }
       else {refused[i] = 1;refusedPixels++;}
     }
-    return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins};
+    return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins,topCoverWins,topCoverWhiskers};
   }
 
   function applyRefusedBeardOutline(beardRGBA, refused) {
@@ -414,7 +476,8 @@
     // Both scratch canvases have exactly 200x200 portrait coordinates. Mutate
     // only the two supplied layers; never punch holes into a full portrait.
     const empty = {applied:false,requested:0,approvedPixels:0,refusedPixels:0,
-      erasedPixels:0,outlinedPixels:0,whiskerWins:0,automaticOpeningPixels:null,bottomRingPoints:null};
+      erasedPixels:0,outlinedPixels:0,whiskerWins:0,topCoverWins:0,topCoverWhiskers:0,
+      automaticOpeningPixels:null,bottomRingPoints:null,topCoverPixels:null,topRingPoints:null};
     if (!beardCanvas || !hoodCanvas ||
         (!normalizeMask(requestMask)?.runs.length && !normalizeMask(options.whiskerMask)?.runs.length)) return empty;
     try {
@@ -428,8 +491,16 @@
         })) : null;
       const fittedAllowance=automatic?.mask ??
         (options.permissionMode==='all' ? null : deformHoodPermissionMask(allowanceMask,options.hoodMoves));
-      const partition=partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data,options.whiskerMask);
-      const {approved,refused,requested,approvedPixels,refusedPixels,whiskerWins} = partition;
+      // Absent topSpread retains legacy whisker behavior on unconfigured hoods.
+      // Once authored, even zero spread creates the narrow, reversed top cone.
+      const cover=options.topConeSpread==null?null:
+        (options.topCover || autoHoodTopCoverMask(hood.data,options.topConeSpread,{
+          alphaLimit:options.hoodAlphaFloor??242,bottomPoints:automatic?.bottomPoints
+        }));
+      const partition=partitionBeardHood(requestMask,fittedAllowance,
+        beard.data,hood.data,options.whiskerMask,cover?.mask);
+      const {approved,refused,requested,approvedPixels,refusedPixels,whiskerWins,
+        topCoverWins,topCoverWhiskers} = partition;
       // Permission applies ONLY where the transformed front hood actually has
       // pixels. No hood at that coordinate means nothing to erase from beard.
       for (let i = 0; i < PIXELS; i++) if (approved[i]) {
@@ -447,11 +518,14 @@
       }
       const stats = {applied:approvedPixels>0||refusedPixels>0,
         requested,approvedPixels,refusedPixels,erasedPixels,outlinedPixels,whiskerWins,
+        topCoverWins,topCoverWhiskers,topCoverPixels:cover?.coverPixels??null,
+        topRingPoints:cover?.topPoints?.length??null,
         automaticOpeningPixels:automatic?.allowedPixels??null,
         bottomRingPoints:automatic?.bottomPoints.length??null};
       if (options.includeMasks) {
         stats.approvedMask = encodeMask(approved);
         stats.refusedMask = encodeMask(refused);
+        stats.topCoverMask=cover?.mask??null;
       }
       return stats;
     } catch(error) {
@@ -463,6 +537,7 @@
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
     normalizeConeSpread, lowerHoodOpeningSegment, autoHoodAllowanceMask,
+    upperHoodOpeningSegment, autoHoodTopCoverMask,
     planTuftStretch, stretchHoodToRoots, applyToHood,
     partitionBeardHood, deformHoodPermissionMask, applyRefusedBeardOutline, negotiateBeardHood,
   });
