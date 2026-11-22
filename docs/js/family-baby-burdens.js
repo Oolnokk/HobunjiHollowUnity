@@ -4,8 +4,9 @@
   'use strict';
   if (window.FamilyBabyBurdens) return;
   const entries = new Map(); // child ID -> shared burden + live NPC and persistence callback.
+  const proxySources = new WeakMap(); // Proxy group -> source model/geometry, kept OUT of serializable Object3D.userData.
   const areas = new Set(['interior', 'farm', 'town']); // Baby carry is confined to the settlement.
-  const debug = { latestChange: 'Babies use one safe Burden for player and spouse carry', lastError: null }; // Mobile-facing failures.
+  const debug = { latestChange: 'Carried babies bake their live head-scaled portrait; silhouette-only backs use colored art', lastError: null }; // Mobile-facing failures.
 
   function isAllowedArea(value) {
     const area = String(value || ''); // Farmhouse and barn interior maps share the home policy.
@@ -28,51 +29,134 @@
       entry.hiddenRoot = null;
     }
   }
+  function portraitArt(walker) {
+    const model = walker?.avatarGroup, data = model?.userData;
+    const front = data?.frontTexture;
+    // The ordinary NPC can use a black silhouette for its rear face. That is
+    // useful for world occlusion, but not an acceptable visible baby in arms.
+    const back = !data?.backTextureUsesSilhouette && data?.backTexture || front;
+    return { model, data, front, back };
+  }
+  function makeFaceMaterial(THREE, texture, label) {
+    const options = { transparent: true, depthTest: true, depthWrite: true, side: THREE.FrontSide };
+    return window.HobunjiSpritePngSurface?.makeMaterial?.(THREE, texture, label, options)
+      || new THREE.MeshBasicMaterial({ ...options, name: label, map: texture, alphaTest: .35 });
+  }
+  function headPoseOf(data) {
+    const joint = data?.neckRig?.headScaleJoint; // Both the scale and position affect the one-time baked head.
+    const scale = joint?.scale, offset = joint?.position;
+    return { x: Number(scale?.x) || 1, y: Number(scale?.y) || 1, z: Number(scale?.z) || 1,
+      offsetX: Number(offset?.x) || 0, offsetY: Number(offset?.y) || 0, offsetZ: Number(offset?.z) || 0 };
+  }
   function createProxy(child, walker) {
-    const THREE = window.THREE, model = walker?.avatarGroup; // Reuse the actual rendered child sprite and baby scale.
-    const front = model?.userData?.frontTexture;
+    const THREE = window.THREE, { model, data, front, back } = portraitArt(walker);
     if (!THREE?.Group || !THREE?.Mesh || !THREE?.PlaneGeometry || !front) return null;
-    const width = Math.max(.05, Number(model.userData.portraitModelWidth) || .3);
-    const height = Math.max(.05, Number(model.userData.portraitModelHeight) || width);
+    const width = Math.max(.05, Number(data.portraitModelWidth) || .3);
+    const height = Math.max(.05, Number(data.portraitModelHeight) || width);
+    const centroidY = Number(data.visualCentroidLocalY) || 0; // Reuse the avatar's own floor-to-portrait placement.
+    const centroidZ = Number(data.visualCentroidLocalZ) || 0;
+    const skinned = data.neckRig?.skinnedPlane; // The adult/infant head-scale bone is part of this mesh, not the texture.
+    let baked = null;
+    if (skinned?.isSkinnedMesh) {
+      try { baked = window.PNGPlaneAvatar?.meshBudget?.bakeStaticPortraitForCarry?.(THREE, skinned) || null; }
+      catch (error) { debug.lastError = 'baby pose bake failed: ' + (error?.message || error); }
+    }
     const group = new THREE.Group();
     group.name = 'family_baby_' + child.id;
     group.userData.familyBabyId = child.id;
-    const geometry = new THREE.PlaneGeometry(width, height); // Shared front/back geometry, reused during arms, back and flight.
-    for (const [texture, rear] of [[front, false], [model.userData.backTexture || front, true]]) {
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: .05,
-        side: THREE.FrontSide, depthWrite: true }); // Texture is owned by the live avatar; dispose material only.
-      const plane = new THREE.Mesh(geometry, material);
-      plane.position.y = height / 2;
-      plane.position.z = rear ? -.002 : .002;
-      plane.rotation.y = rear ? Math.PI : 0;
-      plane.userData.noOutline = true;
-      group.add(plane);
+    if (baked?.geometry) {
+      // Bake the real small-body / enlarged-head skin ONCE; carry uses one rigid mesh,
+      // never a second active skeleton or another per-frame animation task.
+      const mesh = new THREE.Mesh(baked.geometry, [
+        makeFaceMaterial(THREE, front, 'baby_carry_front'),
+        makeFaceMaterial(THREE, back, 'baby_carry_back'),
+      ]);
+      mesh.name = 'baby_carried_posed_portrait';
+      mesh.position.set(Number(skinned.position?.x) || 0,
+        height / 2 + centroidY + (Number(skinned.position?.y) || 0),
+        Number(skinned.position?.z ?? centroidZ) || 0);
+      mesh.userData.noOutline = true; // Source PNG already contains its own black ink.
+      group.add(mesh);
+    } else {
+      const geometry = new THREE.PlaneGeometry(width, height); // Simple fallback for rigid or not-yet-rigged NPCs.
+      for (const [texture, rear] of [[front, false], [back, true]]) {
+        const plane = new THREE.Mesh(geometry, makeFaceMaterial(THREE, texture, rear ? 'baby_carry_back' : 'baby_carry_front'));
+        plane.position.y = height / 2 + centroidY;
+        plane.position.z = centroidZ + (rear ? -.002 : .002);
+        plane.rotation.y = rear ? Math.PI : 0;
+        plane.userData.noOutline = true;
+        group.add(plane);
+      }
     }
-    group.visible = false; // Real baby NPC alone is visible while in the basket.
-    group.userData.familyBabyWidth = width; group.userData.familyBabyHeight = height; // Detect rebuilt avatar dimensions without replacing the carry burden.
+    group.visible = false; // The real baby NPC is visible until a parent picks them up.
+    const bounds = baked?.geometry?.boundingBox;
+    const posedWidth = bounds ? Math.max(width, bounds.max.x - bounds.min.x) : width;
+    const posedHeight = bounds ? Math.max(height, bounds.max.y - bounds.min.y) : height;
+    const headPose = headPoseOf(data);
+    Object.assign(group.userData, {
+      familyBabyWidth: posedWidth, familyBabyHeight: posedHeight,
+      familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
+      familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
+    });
+    proxySources.set(group, { model, geometry: skinned?.geometry || null, headPose }); // Bone offset changes must also refresh rigid carry art. // Reference-only invalidation never pollutes save/debug serialization.
     return group;
   }
+  function disposeVisual(group) {
+    const geometries = new Set(); // One owned geometry may be shared by both fallback portrait faces.
+    group?.traverse?.(node => {
+      if (node.geometry) geometries.add(node.geometry);
+      for (const material of (Array.isArray(node.material) ? node.material : [node.material]))
+        material?.dispose?.(); // The underlying NPC still owns the shared portrait textures.
+    });
+    for (const geometry of geometries) geometry?.dispose?.();
+  }
   function refreshProxyArt(entry, walker) {
-    const data = walker?.avatarGroup?.userData, group = entry.burden?.group; // An unloaded/rebuilt NPC may have new textures while the physical burden survives.
-    const front = data?.frontTexture, back = data?.backTexture || front;
-    if (!group || !front || group.children.length < 2) return;
-    for (const [plane, texture] of [[group.children[0], front], [group.children[1], back]]) {
-      if (plane.material.map !== texture) { plane.material.map = texture; plane.material.needsUpdate = true; }
-    }
+    const { model, data, front, back } = portraitArt(walker);
+    const group = entry.burden?.group;
+    if (!group || !front) return;
     const width = Math.max(.05, Number(data.portraitModelWidth) || .3);
     const height = Math.max(.05, Number(data.portraitModelHeight) || width);
-    if (Math.abs(group.userData.familyBabyWidth - width) < .0001
-        && Math.abs(group.userData.familyBabyHeight - height) < .0001) return;
-    const previous = group.children[0].geometry, geometry = new window.THREE.PlaneGeometry(width, height); // Both live sprite faces share one resized quad.
-    for (const plane of group.children) { plane.geometry = geometry; plane.position.y = height / 2; }
-    previous?.dispose?.();
-    group.userData.familyBabyWidth = width; group.userData.familyBabyHeight = height;
-    const carryable = entry.burden.data?.carryable; // Authored player grips must track the baby's rebuilt width.
+    const head = headPoseOf(data), source = data.neckRig?.skinnedPlane?.geometry || null;
+    const original = proxySources.get(group);
+    const rebuilt = original?.model !== model || original?.geometry !== source
+      || original?.headPose.x !== head.x || original?.headPose.y !== head.y
+      || original?.headPose.z !== head.z
+      || original?.headPose.offsetX !== head.offsetX || original?.headPose.offsetY !== head.offsetY
+      || original?.headPose.offsetZ !== head.offsetZ
+      || Math.abs(width - (group.userData.familyBabyModelWidth || width)) > .0001
+      || Math.abs(height - (group.userData.familyBabyModelHeight || height)) > .0001;
+    if (rebuilt) {
+      const replacement = createProxy(entry.child, walker);
+      if (!replacement) return; // Preserve the visible old carry while the new NPC loads.
+      disposeVisual(group);
+      for (const node of [...group.children]) group.remove(node);
+      for (const node of [...replacement.children]) group.add(node);
+      Object.assign(group.userData, replacement.userData);
+      proxySources.set(group, proxySources.get(replacement));
+      entry.burden.meshColliders = group.children.filter(node => node.isMesh); // Keep shared Shattercasks hits and draw-order tracking on the NEW geometry.
+      window.Shattercasks?.refreshBurdenBounds?.(entry.burden);
+    } else {
+      // WorldPortraitLife may replace canvas textures without rebuilding the avatar.
+      const textures = [front, back];
+      if (group.userData.familyBabyArtMode === 'posed-rig') {
+        for (const [index, material] of (group.children[0]?.material || []).entries()) {
+          if (material.map !== textures[index]) { material.map = textures[index]; material.needsUpdate = true; }
+        }
+      } else {
+        group.children.slice(0, 2).forEach((plane, index) => {
+          if (plane.material.map !== textures[index]) { plane.material.map = textures[index]; plane.material.needsUpdate = true; }
+        });
+      }
+    }
+    group.userData.familyBabyModelWidth = width; group.userData.familyBabyModelHeight = height;
+    group.userData.familyBabyRearArt = data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back';
+    const carryable = entry.burden.data?.carryable;
     if (carryable) {
-      carryable.handTargets.left.x = width * .40; carryable.handTargets.left.y = height * .5;
-      carryable.handTargets.right.x = -width * .40; carryable.handTargets.right.y = height * .5;
-      carryable.billboardAnchor.position.y = height * .06; carryable.billboardAnchor.position.z = -height * .48;
-      carryable.backCarry.position.y = height * .16; carryable.backCarry.position.z = -height * .48;
+      const w = group.userData.familyBabyWidth, h = group.userData.familyBabyHeight;
+      carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
+      carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
+      carryable.billboardAnchor.position.y = h * .06; carryable.billboardAnchor.position.z = -h * .48;
+      carryable.backCarry.position.y = h * .16; carryable.backCarry.position.z = -h * .48;
     }
   }
   function moveToWalker(entry) {
@@ -114,9 +198,7 @@
     debug.lastError = null;
   }
   function disposeProxy(entry) {
-    const geometry = entry.burden?.group?.children?.[0]?.geometry; // Both planes share the same immutable baby-quad geometry.
-    entry.burden?.group?.traverse?.(node => node.material?.dispose?.()); // Sprite textures belong to the live NPC, not this carry proxy.
-    geometry?.dispose?.();
+    disposeVisual(entry.burden?.group);
     entry.burden?.group?.parent?.remove?.(entry.burden.group);
   }
   function ensure(child, walker, persist) {
@@ -159,7 +241,7 @@
           portraitAnchor: { x: 0, y: 0, z: 0 } }, // Same species-adjusted back-stow rig as other carryables.
       } },
       onPickup: () => {
-        child.carryBy = 'player'; child.carryPose = 'arms'; child.carrySpot = null;
+        entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null;
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
@@ -179,6 +261,9 @@
     });
     if (!burden) { group.parent?.remove(group); debug.lastError = 'burden registration failed'; return null; }
     entry.burden = burden;
+    group.userData.familyBabyModelWidth = infantWidth;
+    group.userData.familyBabyModelHeight = infantHeight;
+    refreshProxyArt(entry, walker); // Grip bounds include the posed head, not only the unscaled body.
     entries.set(child.id, entry);
     if (child.carryBy === 'spouse') {
       child.carryBy = null; child.carryPose = null; child.carrySpot = null;
@@ -297,6 +382,10 @@
     snapshot: () => ({ ...debug, babies: [...entries].map(([id, e]) => ({
       id, by: e.child.carryBy || 'basket', pose: e.child.carryPose || null,
       area: e.burden.mapId, parent: e.burden.group.parent?.name || null,
+      visible: e.burden.group.visible, artMode: e.burden.group.userData.familyBabyArtMode,
+      rearArt: e.burden.group.userData.familyBabyRearArt,
+      dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight },
+      meshes: e.burden.group.children.length,
     })) }),
   });
 })();

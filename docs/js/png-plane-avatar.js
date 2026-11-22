@@ -1047,6 +1047,13 @@
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
+    // One-time copy of a live skinned portrait's posed pixels for lightweight physical carryables.
+    // The caller owns the returned geometry; the NPC still owns its skeleton and textures.
+    bakeStaticPortraitForCarry(THREE, mesh) {
+      if (!THREE || !mesh?.isSkinnedMesh || !mesh.skeleton?.bones?.length
+          || !mesh.geometry?.attributes?.skinIndex || !mesh.geometry?.attributes?.skinWeight) return null;
+      return bakePortrait(THREE, mesh);
+    },
     frozenSnapshot: () => ({ enabled: frozenPortraitsEnabled, ...frozenStats }),
     setFrozenEnabled(value) { frozenPortraitsEnabled = value !== false; return frozenPortraitsEnabled; },
     wireframeEnabled: () => portraitWireframeEnabled,
