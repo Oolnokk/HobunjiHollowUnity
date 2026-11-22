@@ -1086,7 +1086,7 @@
     function setLegLengthMultiplier(multiplier) {
       if (state.disposed) return posteriorY;
       const raw = Number(multiplier); // Ratio of authored leg length to authored portrait height, in the existing character-parent frame.
-      legLengthMultiplier = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(10, raw)) : 1;
+      legLengthMultiplier = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1; // Independent 10–400% sliders can differ by up to 40×; honor their actual ratio.
       const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves hips, not shoe geometry.
       posteriorY = contact + (restPosteriorY - contact) * legLengthMultiplier;
       for (const side of ['left', 'right']) {
