@@ -100,10 +100,16 @@ assert.equal(on(pillar), false);
 const authoredPlate = node('authored-pressure-plate', mech([], {
   behavior:'pressurePlate', standingSurface:{partId:bridgePart.id, minProgress:.95},
 })); // Pressure-plate mechanisms can still author an explicit support part and progress requirement.
-authoredPlate.userData.meshById = new Map([[bridgePart.id, partMesh]]);
+const plateMesh = { ...partMesh, userData:{} };
+authoredPlate.userData.meshById = new Map([[bridgePart.id, plateMesh]]);
 assert.equal(register(authoredPlate), true);
 const authoredPlateSupportId = authoredPlate.userData.puzzleStandingSurfaceId;
-assert.equal(registeredSurfaces.get(authoredPlateSupportId)?.enabled(), false);
+const authoredPlateSupport = registeredSurfaces.get(authoredPlateSupportId);
+assert.equal(authoredPlateSupport?.enabled(), false);
+assert.equal(authoredPlateSupport.plateArea, MAP, 'grounded players can sample the authored plate in its own map');
+assert.equal(plateMesh.userData.walkableElevation, true);
+R.applyMechanism(authoredPlate, 1);
+assert.equal(authoredPlateSupport.enabled(), true, 'the explicit progress threshold remains in control');
 assert.equal(R.unregisterNode(MAP, authoredPlate.id), true);
 assert.equal(registeredSurfaces.has(authoredPlateSupportId), false);
 

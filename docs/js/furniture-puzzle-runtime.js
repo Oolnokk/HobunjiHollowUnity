@@ -60,8 +60,11 @@
       box.setFromObject(part);
       return { minX:box.min.x, maxX:box.max.x, minZ:box.min.z, maxZ:box.max.z };
     };
+    const plateArea = object.userData.furniturePuzzle.behavior === 'pressurePlate' ? String(mapId) : null; // Grounded walking also sees explicitly authored plate supports.
+    if (plateArea) (part.userData ||= {}).walkableElevation = true;
     DS.registerSurface({
       id, scope:String(mapId), priority:12,
+      ...(plateArea ? { plateArea, walkableElevation:true } : {}),
       enabled:() => object.visible !== false && part.visible !== false && Number(object.userData?.puzzleProgress) >= config.minProgress,
       bounds,
       supports:(x,z) => {
