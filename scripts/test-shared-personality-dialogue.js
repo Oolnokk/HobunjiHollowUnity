@@ -201,4 +201,56 @@ for (let index = 0; index < starter.npcs.length; index++) {
   personalGreetingsChecked++;
 }
 assert.ok(personalGreetingsChecked >= 30, 'canonical starter roster exercised individual greetings widely enough');
-console.log('Scoped personality/character shared dialogue passed (' + personalGreetingsChecked + ' real NPC first-greeting checks).');
+// Exercise actual fetch interception plus the LocalDBOverrides load path. The
+// isolated test above used the public composer directly; this catches missing
+// script URLs, caching a transient failure, and double-composition regressions.
+async function verifyDatabaseLoadPaths() {
+  const npcUrl = 'https://example.invalid/docs/config/npcs/hobunji-starter-npc-database.json'; // Same docs-relative URL requested by the game and nested editors.
+  const resources = new Map([ // Minimal mock server; these are the dependencies the production NPC loader fetches.
+    ['/docs/config/npcs/hobunji-starter-npc-database.json', database],
+    ['/docs/config/npcs/species-overrides.json', { npcs: {} }],
+    ['/docs/config/creatures/hobunji-creature-bestiary.json', { creatures: [] }],
+    ['/docs/config/dialogue/shared-dialogue.json', config],
+    ['/docs/config/dialogue/npc-reaction-profiles.json', personalities],
+    ['/docs/config/npcs/schedule-overrides.json', {}],
+    ['/docs/config/npcs/player-nickname-overrides.json', {}],
+    ['/docs/config/shops/shop-stock.json', { shops: {} }],
+  ]);
+  let simulateSharedFetchFailure = true; // Forces one optional shared-config failure, then checks successful retry without reloading the module.
+  let sharedFetches = 0; // Records whether the cache retries the failed request rather than holding null forever.
+  const nativeFetch = async url => {
+    const pathname = new URL(String(url), npcUrl).pathname;
+    if (pathname.endsWith('/shared-dialogue.json')) {
+      sharedFetches++;
+      if (simulateSharedFetchFailure) {
+        simulateSharedFetchFailure = false;
+        return new Response('{}', { status: 503 });
+      }
+    }
+    const resource = resources.get(pathname); // Known mock documents receive real Response bodies so the fetch wrapper's clone()/json() path is exercised.
+    return new Response(JSON.stringify(resource || {}), { status: resource ? 200 : 404 });
+  };
+  const browser = {
+    fetch: nativeFetch, addEventListener() {},
+    document: { currentScript: { src: 'https://example.invalid/docs/js/local-db-overrides.js' }, readyState: 'complete', querySelector: () => ({}) },
+    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  }; // One browser-global object is shared between window and the VM's fetch function.
+  const forwardedFetch = (...args) => browser.fetch(...args); // LocalDBOverrides replaces window.fetch; bare fetch() must follow that replacement.
+  vm.runInNewContext(localSource, {
+    window: browser, document: browser.document, localStorage: browser.localStorage,
+    fetch: forwardedFetch, URL, Response, Headers, console,
+    location: { href: 'https://example.invalid/docs/index.html' },
+  }, { filename: 'local-db-overrides.js' });
+  const first = await (await browser.fetch(npcUrl)).json(); // Simulated transient failure must preserve the original database.
+  assert.equal(first.npcs[0].sharedDialogueTrees, undefined, 'offline shared config leaves original NPC data available');
+  const loaded = await browser.LocalDBOverrides.loadDatabase('npcDatabase'); // Normal boot retries the shared config after one failed direct fetch.
+  assert.equal(loaded.npcs[0].dialoguePersonalityFamily, 'playful', 'normal NPC loader applies the existing family assignment');
+  assert.ok(loaded.npcs[0].sharedDialogueTrees?.length, 'normal NPC loader attaches shared lines after retry');
+  assert.equal(sharedFetches, 2, 'transient shared config failure is retried exactly once');
+  const direct = await (await browser.fetch(npcUrl)).json(); // A standalone editor's direct JSON fetch also receives the shared layer.
+  assert.deepEqual(direct.npcs[0].sharedDialogueTrees, loaded.npcs[0].sharedDialogueTrees, 'direct fetch and composed database deliver the same shared speech');
+}
+
+verifyDatabaseLoadPaths()
+  .then(() => console.log('Scoped personality/character shared dialogue passed (' + personalGreetingsChecked + ' real NPC first-greeting checks; fetch composition and retry verified).'))
+  .catch(error => { console.error(error); process.exitCode = 1; });
