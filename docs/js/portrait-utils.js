@@ -2138,7 +2138,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const clothContext = cloth.getContext('2d');
     clothContext.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
     drawBreathingLayers(hoodLayers, clothContext);
-    const stretch = cutoutApi.stretchHoodToRoots(cloth, tuftRoots);
+    const stretch = cutoutApi.stretchHoodToRoots(cloth, tuftRoots, {maxStretch:beardAuthoring.maxStretch});
     const result = cutoutApi.applyToHood(cloth, paintedBeardMask);
     ctx.drawImage(cloth, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
     canvas.hobunjiBeardHoodCutout = {applied: result.applied, maskPixels: result.cutPixels,
@@ -2388,7 +2388,7 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function resolveBeardHoodAuthoring(option, fighter) {
-  if (!option) return {mask:null,roots:[]};
+  if (!option) return {mask:null,roots:[],maxStretch:36};
   const cutout = window.PortraitBeardHoodCutout;
   if (fighter) {
     for (const key of portraitVariantKeysForFighter(fighter, option)) {
@@ -2398,10 +2398,13 @@ function resolveBeardHoodAuthoring(option, fighter) {
       return {
         mask:option.variantHoodCutoutMasks?.[key] || option.hoodCutoutMask || null,
         roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] || option.hoodTuftRoots),
+        maxStretch:Number.isFinite(option.variantHoodTuftMaxStretch?.[key])
+          ? option.variantHoodTuftMaxStretch[key] : option.hoodTuftMaxStretch,
       };
     }
   }
-  return {mask:option.hoodCutoutMask||null,roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[]};
+  return {mask:option.hoodCutoutMask||null,roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[],
+    maxStretch:option.hoodTuftMaxStretch};
 }
 
 function portraitOptionFromJson(entry, json) {
@@ -2457,6 +2460,9 @@ function portraitOptionFromJson(entry, json) {
   const maskApi = window.PortraitBeardHoodCutout;
   const hoodCutoutMask = maskApi?.normalizeMask?.(json.hoodCutoutMask) || null; // Authored in front-portrait coordinates, independent of beard art tint.
   const hoodTuftRoots = maskApi?.normalizeRoots?.(json.hoodTuftRoots) || []; // Optional inner-ring stretch targets, not extra beard geometry.
+  const hoodTuftMaxStretch = Number.isFinite(Number(json.hoodTuftMaxStretch))
+    ? Math.max(2,Math.min(64,Number(json.hoodTuftMaxStretch))) : 36; // Limit deformation without modifying hood sprites.
+  const variantHoodTuftMaxStretch = {}; // Species-specific settings, when explicitly authored.
   const variantHoodTuftRoots = {}; // Species-specific tuft positions match the same resolved beard artwork.
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
   for (const [key, value] of Object.entries(json.speciesVariants || {})) {
@@ -2464,8 +2470,10 @@ function portraitOptionFromJson(entry, json) {
     if (mask?.runs.length) variantHoodCutoutMasks[key] = mask;
     const roots = maskApi?.normalizeRoots?.(value?.hoodTuftRoots) || [];
     if (roots.length) variantHoodTuftRoots[key] = roots;
+    if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
+      variantHoodTuftMaxStretch[key] = Math.max(2,Math.min(64,Number(value.hoodTuftMaxStretch)));
   }
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots, hoodTuftMaxStretch, variantHoodTuftMaxStretch };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
