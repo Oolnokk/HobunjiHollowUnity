@@ -182,6 +182,8 @@ assert.equal(bakeCalls, 2, 'head-offset adjustment triggers exactly one replacem
 assert.equal(sameBurden.group.children[0].geometry, shiftedGeometry);
 assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'rebuild refreshes collision mesh references');
 assert.equal(bakedGeometry.disposed, true, 'old baked geometry is disposed after the art swap');
+assert.equal(oldBakedMesh.material[0].disposed, true, 'retired front material is disposed');
+assert.equal(oldBakedMesh.material[1].disposed, true, 'retired back material is disposed');
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(bakeCalls, 2, 'unchanged head offsets do not rebake on following family ticks');
 // Family restore may replace the JS child record without replacing the live burden.
