@@ -149,7 +149,7 @@ assert.equal(inventory.gold, 100, 'gold is paid only after midnight collection')
 assert.equal(livestock.some(entry => entry.id === 'baby_small'), false, 'collected baby is removed from farm livestock');
 assert.equal(pairs.length, 0, 'breeding references are cleaned at collection');
 assert.equal(livestockSaveCount, 4, 'queue, cancel, requeue and collection each save once');
-assert.equal(memberSaveCount, 1, 'wallet/member data saved once at collection');
+assert.equal(memberSaveCount, 2, 'member wallet is flushed before atomic payment and delivery receipt is saved afterward');
 assert.equal(swarmRerolls, 1, 'Nursery interior updates after collection');
 assert.equal(context.window.PendingAnimalSales.settle('left farm').earned, 0, 'repeated collection cannot pay twice');
 assert.equal(deliveries.length, 1, 'collection creates exactly one delivery receipt');
