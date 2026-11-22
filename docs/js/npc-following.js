@@ -80,7 +80,9 @@
     let selected = null; // First best destination that NPC navigation can actually reach.
     for (const candidate of scored.slice(0, 8)) {
       if (pathfinding.canNpcBeeline(area, wx, wz, candidate.c, candidate.r)
-        || pathfinding.findNpcPath(area, wx, wz, candidate.c, candidate.r, { padding: 6, maxNodes: 450 })?.length) {
+        || pathfinding.findNpcPath(area, wx, wz, candidate.c, candidate.r, { padding: 6, maxNodes: 450 })?.length
+        || pathfinding.canNpcReachByDrop?.(area, wx, wz, candidate.c, candidate.r)) {
+        // A lower shelf is valid cover when the direct jump and subsequent footpath are both proven.
         selected = candidate;
         break;
       }
