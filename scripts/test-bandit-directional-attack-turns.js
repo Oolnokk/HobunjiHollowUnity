@@ -63,6 +63,12 @@ near(coordinator.angle(retained,target),Math.PI/2,'front rotates with its oppone
 target.angle=0;
 
 const specialist=actor('specialist',-200,20,'backstabFlick');
+rear._banditAction = { phase: 'windup' }; // A fifth bandit must never interrupt an already committed rear-holder's swing.
+assert.equal(coordinator.claim(specialist,0,target),null,'active rear-slot attacks cannot be displaced');
+rear._banditAction = null;
+rear._banditPreparedCharge = { target, action: { windupS:.5 }, t:.3, duration:.5 }; // A separate visible held charge retains its slot too.
+assert.equal(coordinator.claim(specialist,0,target),null,'rear slot cannot be stolen during visible held preparation');
+rear._banditPreparedCharge = null;
 const promoted=coordinator.claim(specialist,0,target);
 assert.equal(promoted.sector,3,'a true Backstab specialist displaces a non-specialist rear holder');
 assert.equal(coordinator.slots.length,4,'rear upgrade maintains exactly four occupied directions');
