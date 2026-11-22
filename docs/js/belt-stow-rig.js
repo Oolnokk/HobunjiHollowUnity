@@ -113,11 +113,16 @@
     let idleScale = 1; // Authored Neutral multiplier shared with the held tool and projectile.
     let sourceWidth = TORCH_WIDTH; // Live held-plane width, used to size the belt without a miniature surrogate.
     let sourceHeight = TORCH_HEIGHT; // Live held-plane height, used to preserve the PNG aspect and handle-end position.
+    let emitterSourcePoint = null; // Normalized original-PNG marker centroid; gameplay supplies the exact particle emission location.
     function applyDimensions() {
       art.scale.set(sourceWidth / TORCH_WIDTH * idleScale, sourceHeight / TORCH_HEIGHT * idleScale, 1);
-      art.position.y = -.025 * idleScale; // The root is halfway from grip (0) to emitter (sourceHeight + .05), so the full torch rotates around that midpoint.
+      const gripX = 0, gripY = sourceHeight * idleScale * .5; // The original PNG's +Y handle end is the grip reference, before its 180° display flip.
+      const emitterX = emitterSourcePoint ? (emitterSourcePoint.x - .5) * sourceWidth * idleScale : 0;
+      const emitterY = emitterSourcePoint ? (.5 - emitterSourcePoint.y) * sourceHeight * idleScale
+        : -sourceHeight * idleScale * .5 - .05 * idleScale; // The preview has a conservative tip fallback until real marker pixels are available.
+      art.position.set((gripX + emitterX) / 2, (gripY + emitterY) / 2, 0); // The PI sprite flip negates both endpoints: their midpoint is now exactly root (0,0).
       if (flame) {
-        flame.position.y = (sourceHeight + .05) * idleScale * .5; // Editor-only fire preview uses the same grip-to-emitter midpoint pivot.
+        flame.position.set((gripX - emitterX) / 2, (gripY - emitterY) / 2, .035); // Preview flame is mounted at the actual emitter end of the centered lever.
         flame.scale.set(.13 * idleScale, .23 * idleScale, 1);
       }
     }
@@ -129,6 +134,14 @@
       applyDimensions(); // Scale the existing mesh, avoiding runtime geometry/texture allocation.
       return true;
     }
+    function setEmitterSourcePoint(x, y, width, height) {
+      const px = Number(x), py = Number(y), w = Number(width), h = Number(height); // Pixel centroid and original PNG dimensions from the authoritative fire emitter.
+      if (![px, py, w, h].every(Number.isFinite) || !(w > 0 && h > 0)) return false;
+      const next = { x: Math.max(0, Math.min(1, (px + .5) / w)), y: Math.max(0, Math.min(1, (py + .5) / h)) };
+      if (emitterSourcePoint && Math.abs(next.x - emitterSourcePoint.x) < 1e-6 && Math.abs(next.y - emitterSourcePoint.y) < 1e-6) return false;
+      emitterSourcePoint = next; applyDimensions(); // Applied once per source PNG; subsequent stance scaling reuses this fraction.
+      return true;
+    }
     function setIdleScale(value) {
       const numeric = Number(value); // Current authored torch Neutral scale from WeaponToolStances, including editor overrides.
       const next = Number.isFinite(numeric) && numeric > 0 ? Math.min(3, Math.max(.1, numeric)) : 1;
@@ -136,10 +149,11 @@
       idleScale = next;
       applyDimensions();
     }
-    applyDimensions(); // Game and authoring both rotate the torch around the midpoint between grip and emitter.
+    applyDimensions(); // The midpoint between the handle grip and the image-space emitter remains the root pivot.
     setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
-      root, art, flame, setIdleScale, setSourceDimensions,
+      root, art, flame, setIdleScale, setSourceDimensions, setEmitterSourcePoint,
+      get emitterSourcePoint() { return emitterSourcePoint; },
       get idleScale() { return idleScale; },
       get sourceDimensions() { return { width: sourceWidth, height: sourceHeight }; }, // On-demand author/mobile preview, never sampled by the render loop.
       setTexture(texture) {
