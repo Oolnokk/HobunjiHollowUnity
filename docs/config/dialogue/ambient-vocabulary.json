@@ -3597,6 +3597,14 @@
         {
           "from": "talking",
           "to": "talkin'"
+        },
+        {
+          "from": "isn't",
+          "to": "ain't"
+        },
+        {
+          "from": "aren't",
+          "to": "ain't"
         }
       ]
     }
