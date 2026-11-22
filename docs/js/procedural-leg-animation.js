@@ -1672,6 +1672,8 @@
         }
         state.leftContactY = nextLeftContactY;
         state.rightContactY = nextRightContactY;
+        if (Math.abs(legLengthMultiplier - 1) > 1e-9)
+          setLegLengthMultiplier(legLengthMultiplier); // A changed portrait aspect can also resize sole contact; retain independent hip-to-ankle reach from the NEW planted foot height.
       }
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
