@@ -2131,15 +2131,17 @@
     if (distToPlayer < minRange && (staged || canMeleeReach(c, targetPlayer)) && !ledgeSeparated) { c._rangedMode = false; return null; } // A staged duel skips the ledge/reach probes.
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
+    const ordinaryBandit = c.enemyLoadoutKind?.startsWith('bandit:') === true; // Special archer/caster encounter variants retain their authored ranged standoff behavior.
     if (distToPlayer > maxRange) {
-      const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt); // Out-of-range ranged fighters must close ground rather than stand outside their own shooting envelope.
+      if (!ordinaryBandit) return { aimAngle, moving: false, handled: true, holdingRange: true };
+      const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt); // Out-of-range bandits close ground rather than stand outside their shooting envelope.
       c._banditTactic = 'ranged-pursuit';
       return { aimAngle, moving, handled: true, holdingRange: !moving };
     }
 
     if (staged && staging.bothHidden(c, targetPlayer)) return abstractBanditVolley(c, targetPlayer, itemKey, def, staging);
     const closeRange = Math.max(minRange * 1.45, Math.min(maxRange * 0.65, deps.TILE * 4.75)); // Keep a firing standoff without allowing ranged troops to stand across the entire hostile aggro radius.
-    if (!staged && distToPlayer > closeRange) {
+    if (ordinaryBandit && !staged && distToPlayer > closeRange) {
       const approachSeconds = c._rangedApproachS || 0; // Capped sprint between shots; ensures they still periodically fire at a fleeing opponent.
       if (c._rangedCooldownT > 0 || approachSeconds < 1.15) {
         const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt);
