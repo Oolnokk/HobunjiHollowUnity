@@ -479,24 +479,37 @@
       el(idKey)?.classList.toggle('active',id===key);
     }
   }
+  function babyImagePoint(local) {
+    const uv=window.FamilyBabyCarryPose?.pointToPortrait?.(local,babyPortraitWidth,babyPortraitHeight);
+    return uv?{u:uv.u,v:uv.v+babyPortraitPlacementRatio-.5,depth:uv.depth}:null; // Painted pixel Y includes species placement.
+  }
+  function babyPointFromImage(uv) {
+    return window.FamilyBabyCarryPose?.pointFromPortrait?.(
+      {...uv,v:uv.v-babyPortraitPlacementRatio+.5},babyPortraitWidth,babyPortraitHeight);
+  }
   function drawBabyGripCanvas() {
-    const canvas=el('carryBabyGripCanvas'); // Touch-friendly 2D view of the painted infant portrait, independent of 3D camera rotation.
+    const canvas=el('carryBabyGripCanvas'); // Extra area below the 280px portrait for negative Y hand contact.
     if(!canvas||!editingBaby)return;
     const ctx=canvas.getContext?.('2d');
     if(!ctx)return;
     const size=canvas.width,api=window.FamilyBabyCarryPose;
-    ctx.clearRect(0,0,size,size);
-    ctx.fillStyle='#263139';ctx.fillRect(0,0,size,size);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#263139';ctx.fillRect(0,0,canvas.width,canvas.height);
     if(babyFrontCanvas)ctx.drawImage(babyFrontCanvas,0,0,size,size);
-    else{
-      ctx.fillStyle='#9fc9dc';ctx.globalAlpha=.55;
-      ctx.fillRect(size*.35,size*.15,size*.30,size*.7);
-      ctx.globalAlpha=1;
-    }
+    else{ctx.fillStyle='#9fc9dc';ctx.globalAlpha=.55;ctx.fillRect(size*.35,size*.15,size*.30,size*.7);ctx.globalAlpha=1;}
+    ctx.font='12px sans-serif';ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#c5d5dc';ctx.fillText('Below portrait · hand contact can go here',size/2,size+22);
     for(const side of ['left','right']){
-      const uv=api?.pointToPortrait?.(state.carryable.handTargets[side],babyPortraitWidth,babyPortraitHeight);
+      const origin=babyImagePoint(api?.gripAnchor?.(side,babyGripAnchors,babyPortraitWidth,babyPortraitHeight));
+      const uv=babyImagePoint(state.carryable.handTargets[side]);
       if(!uv)continue;
       const x=uv.u*size,y=uv.v*size;
+      if(origin){
+        ctx.beginPath();ctx.moveTo(origin.u*size,origin.v*size);ctx.lineTo(x,y);
+        ctx.lineWidth=1.5;ctx.strokeStyle='#f1f5f9';ctx.stroke();
+        ctx.beginPath();ctx.arc(origin.u*size,origin.v*size,5,0,Math.PI*2);
+        ctx.fillStyle=side==='left'?'#c788ff':'#f97316';ctx.fill();
+      }
       ctx.beginPath();ctx.arc(x,y,11,0,Math.PI*2);
       ctx.fillStyle=side==='left'?'#e6ca74':'#74d8ed';
       ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#111';ctx.stroke();
@@ -504,35 +517,34 @@
       ctx.fillText(side==='left'?'L':'R',x,y);
     }
   }
-  function setBabyPortraitGrip(side,uv){
+  function setBabyPortraitGrip(side,uv) {
     const api=window.FamilyBabyCarryPose,grip=state.carryable?.handTargets?.[side];
-    if(!editingBaby||!api?.pointFromPortrait||!grip)return false;
-    const prev=api.pointToPortrait(grip,babyPortraitWidth,babyPortraitHeight);
-    const next=api.pointFromPortrait({...prev,...uv},babyPortraitWidth,babyPortraitHeight);
-    Object.assign(grip,{x:next.x,y:next.y,z:next.z}); // Only local portrait X/Y/Z change; grip wrist rotation is preserved.
+    if(!editingBaby||!api?.gripOffset||!grip)return false;
+    const original=babyImagePoint(grip),next=babyPointFromImage({...original,...uv});
+    if(!next)return false;
+    Object.assign(grip,next); // Live hand coordinates; the exported profile subtracts the appropriate anatomical pivot.
     refreshGuides();syncHoldingPreview();renderControls();
     return true;
   }
   function babyPointerCoordinates(event){
     const canvas=el('carryBabyGripCanvas'),rect=canvas?.getBoundingClientRect?.();
     if(!rect?.width||!rect?.height)return null;
-    return {u:(event.clientX-rect.left)/rect.width,v:(event.clientY-rect.top)/rect.height};
+    return {u:(event.clientX-rect.left)/rect.width,
+      v:(event.clientY-rect.top)/rect.width}; // Portrait pixel units, including below-portrait v>1.
   }
-  const gripCanvas=el('carryBabyGripCanvas'); // One pointer listener set; no per-frame canvas polling or observers.
+  const gripCanvas=el('carryBabyGripCanvas');
   gripCanvas?.addEventListener('pointerdown',event=>{
     if(!editingBaby)return;
-    const uv=babyPointerCoordinates(event),api=window.FamilyBabyCarryPose;
-    if(!uv||!api?.pointToPortrait)return;
+    const uv=babyPointerCoordinates(event);
+    if(!uv)return;
     const distance=side=>{
-      const point=api.pointToPortrait(state.carryable.handTargets[side],babyPortraitWidth,babyPortraitHeight);
-      return Math.hypot((point.u-uv.u),(point.v-uv.v));
+      const point=babyImagePoint(state.carryable.handTargets[side]);
+      return point?Math.hypot(point.u-uv.u,point.v-uv.v):Infinity;
     };
     const nearest=distance('left')<=distance('right')?'left':'right';
     babyPointerSide=nearest;babyPointerId=event.pointerId;
     gripCanvas.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-    select(nearest);
-    setBabyPortraitGrip(nearest,uv);
+    event.preventDefault();select(nearest);setBabyPortraitGrip(nearest,uv);
   });
   gripCanvas?.addEventListener('pointermove',event=>{
     if(!editingBaby||babyPointerId!==event.pointerId||!babyPointerSide)return;
@@ -546,12 +558,19 @@
   };
   gripCanvas?.addEventListener('pointerup',endBabyPointer);
   gripCanvas?.addEventListener('pointercancel',endBabyPointer);
-  for(const id of ['carryBabyU','carryBabyV','carryBabyDepth'])el(id)?.addEventListener('change',()=>{
-    const side=state.selectedType==='carry'&&['left','right'].includes(state.selectedId)?state.selectedId:null;
+  for(const axis of ['X','Y','Z'])el('carryBabyOffset'+axis)?.addEventListener('change',()=>{
+    const side=['left','right'].includes(state.selectedId)?state.selectedId:null;
     if(!editingBaby||!side)return;
-    const fields=['carryBabyU','carryBabyV','carryBabyDepth'].map(key=>Number(el(key).value));
-    if(fields.some(value=>!Number.isFinite(value)))return;
-    setBabyPortraitGrip(side,{u:fields[0]/100,v:fields[1]/100,depth:fields[2]/100});
+    const api=window.FamilyBabyCarryPose,offset={};
+    for(const key of ['x','y','z']){
+      const value=Number(el('carryBabyOffset'+key.toUpperCase()).value);
+      if(!Number.isFinite(value))return;
+      offset[key]=value;
+    }
+    const next=api?.gripPosition?.(side,offset,babyGripAnchors,babyPortraitWidth,babyPortraitHeight);
+    if(!next)return;
+    Object.assign(state.carryable.handTargets[side],next);
+    refreshGuides();syncHoldingPreview();renderControls();
   });
   function createGuides() {
     for(const item of guideRoot.children.slice()){
