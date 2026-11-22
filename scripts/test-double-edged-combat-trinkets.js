@@ -94,6 +94,28 @@ close(glassHit.options.footingDamageMultiplier,1.2/1.4,'enemy Glass Fang does no
 close(R.statModifier(player,'outgoingFootingDamage'),1,'enemy configuration never alters player stats');
 assert.deepEqual(Array.from(T.configureEnemy(player,['guardiansBrooch'])),[],'enemy configuration cannot overwrite player ownership');
 
+// Execute the actual bandit hit function: NPC trinkets must work in both player and faction skirmishes.
+const banditSource=read('docs/js/combat/combat-bandit.js'); // Production actor-vs-actor hit router; no duplicate simulated combat formulas.
+const banditHitStart=banditSource.indexOf('  function damageBanditCombatTarget('); // Isolates the function from unrelated 3D avatar initialization.
+const banditHitEnd=banditSource.indexOf('  } // Bandit ability code is shared',banditHitStart); // The marked closing brace is followed by the shared faction-combat comment.
+assert(banditHitStart>=0 && banditHitEnd>banditHitStart,'bandit damage router remains available');
+const makeBanditHit=vm.runInNewContext('(function (deps, window) { '+banditSource.slice(banditHitStart,banditHitEnd+3)+'; return damageBanditCombatTarget; })');
+const banditCalls=[]; // Observes final damage and options delivered to the real damage dependencies.
+const banditHit=makeBanditHit({
+  damagePlayer:(...args)=>{banditCalls.push({kind:'player',args});return args[0];},
+  damageCreature:(...args)=>{banditCalls.push({kind:'creature',args});return args[1];},
+},w);
+banditHit(glassEnemy,{health:100},10,0,0,0,{footingDamageMultiplier:1.2});
+assert.equal(banditCalls[0].kind,'player');
+close(banditCalls[0].args[0],14,'player hit receives Glass Fang Health bonus');
+close(banditCalls[0].args[4].footingDamageMultiplier,1.2/1.4,'player Footing receives no accidental Glass Fang bonus');
+banditCalls.length=0;
+banditHit(glassEnemy,{isBandit:true,health:100},10,0,0,0,{footingDamageMultiplier:1.2});
+assert.equal(banditCalls[0].kind,'creature');
+close(banditCalls[0].args[1],14,'faction target receives same Glass Fang Health bonus');
+close(banditCalls[0].args[5].footingDamageMultiplier,1.2/1.4,'faction Footing keeps original coefficient');
+assert.equal(banditCalls[0].args[5].factionCombat,true,'faction attack attribution is preserved');
+
 const enemyTuning=JSON.parse(read('docs/config/bandits/bandit-gang-config.json')).trinketLoadout; // Real bandit equipment tuning, including tier/rank caps.
 assert.equal(T.rollEnemyLoadout(enemyTuning,'grunt',0,()=>0).length,1,'tier-zero grunt can have one rare trinket');
 assert.equal(T.rollEnemyLoadout(enemyTuning,'grunt',7,()=>0).length,1,'a grunt never rolls a full build');
