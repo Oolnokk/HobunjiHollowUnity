@@ -65,7 +65,7 @@
     '<div class="g2"><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
-    '<p class="muted">Important: the header Download JSON exports FURNITURE ONLY. Use Export baby profile JSON above to keep or share your baby pose. Apply baby grips saves a separate local gameplay override.</p>',
+    '<p class="muted">While editing a baby, the header Download JSON button becomes Download Baby JSON and exports the baby pose (not furniture). After returning to furniture, it exports furniture again. Apply baby grips saves a separate local gameplay override.</p>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
     '<p class="muted">In baby mode, Rotate Baby turns the visible infant around its posterior-relative mount, while the adult stays fixed. Pitch/Yaw/Roll then describe the baby directly. Select Held anchor or Back-carry anchor to edit their mounts. Purple marks the adult posterior; cyan is the mount. Hand grip guides follow the infant art.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
@@ -393,7 +393,7 @@
         if(node)node.disabled=id!=='left'&&id!=='right';
       }
       const metrics=el('carryBabyScaleReadout');
-      if(metrics)metrics.textContent='Actual baby model: '+babyPortraitWidth.toFixed(3)+' W × '+babyPortraitHeight.toFixed(3)+' H world units · U/V/depth are portrait percentages.';
+      if(metrics)metrics.textContent='Baby portrait plane: '+babyPortraitWidth.toFixed(3)+' W × '+babyPortraitHeight.toFixed(3)+' H carrier-local units (before carrier rig scale) · U/V/depth are portrait percentages.';
     }
     drawBabyGripCanvas();
     for(const axis of ['X','Y','Z']) {
@@ -429,6 +429,7 @@
     el('carryBabyRotate').disabled=!editingBaby;
     el('carryBabyRotate').classList.toggle('active',id==='baby');
     el('carryBabyRandom').disabled=!editingBaby;
+    syncBabyDownloadButton(); // The main export button must never silently download unrelated furniture while authoring a baby.
     if(editingBaby)el('carryBabyStatus').textContent=babyPreviewStatus||'Editing family baby hand targets and anchors. Random Baby changes only the reference appearance.';
     el('carrySummary').textContent=c.enabled
       ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
@@ -773,7 +774,7 @@
       babyPortraitModel=model;
       babyReferencePlane.visible=false;
       const label=identity.speciesId.replaceAll('-',' ')+' '+identity.gender;
-      babyPreviewStatus='Baby #'+roll+' · '+label+' · '+width.toFixed(3)+' × '+height.toFixed(3)+' world units · hand grips stay at the same portrait U/V. Grips unchanged.';
+      babyPreviewStatus='Baby #'+roll+' · '+label+' · '+width.toFixed(3)+' × '+height.toFixed(3)+' carrier-local portrait units · hand grips stay at the same U/V. Grips unchanged.';
       el('carryBabyStatus').textContent=babyPreviewStatus;
       log(babyPreviewStatus);
       refreshGuides();renderControls(); // Refresh the grip dots and Three.js markers to the real baby size.
@@ -834,6 +835,16 @@
     download('family-baby-carry-pose.json',new Blob([JSON.stringify(profile,null,2)+'\\n'],{type:'application/json'}));
     el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
   }
+  const mainJsonButton=el('downloadJsonBtn'); // Existing header export switches meaning only while the isolated infant editor is active.
+  const furnitureJsonLabel=mainJsonButton?.textContent||'Download JSON';
+  function syncBabyDownloadButton(){
+    if(mainJsonButton)mainJsonButton.textContent=editingBaby?'Download Baby JSON':furnitureJsonLabel;
+  }
+  mainJsonButton?.addEventListener('click',event=>{
+    if(!editingBaby)return; // Outside baby mode, preserve the original furniture exporter completely.
+    event.preventDefault();event.stopImmediatePropagation();
+    exportBaby(); // Prevent a second misleading furniture JSON from being downloaded at the same time.
+  },true);
   el('carryBabyEdit').onclick=editBaby;
   el('carryBabyRandom').onclick=()=>{void randomBaby();};
   el('carryBabyReturn').onclick=returnToFurniture;
