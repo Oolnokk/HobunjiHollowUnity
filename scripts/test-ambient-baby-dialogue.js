@@ -31,9 +31,9 @@ async function main() {
       isBasketBaby: id => id === 'child_babble_test' && infant,
       babyAmbientSound: id => id === 'child_babble_test' && infant && noisesAvailable ? 'Agoo!' : null,
     },
-    FamilyBabyBurdens: {
+    FamilyBabyAmbientVoice: {
       isProxyActive: id => id === 'child_babble_test' && proxyActive,
-      ambientAnchorFor: id => id === 'child_babble_test' ? carryAnchor : null,
+      anchorFor: id => id === 'child_babble_test' ? carryAnchor : null,
     },
   };
   class Group {
