@@ -203,6 +203,22 @@
     "maxTier": 7,
     "tierStatBonusPerTier": 0.06
   },
+  "combatPursuit": {
+    "_comment": "Ordinary bandits pursue faster than the starting player's run, rather than standing on distant waiting rings. Movement still passes through the existing terrain/armor/debuff and player collision systems. Mine Ghouls/special non-bandit callers retain their own stat curves.",
+    "baseChaseSpeedPxS": 290,
+    "chaseBonusPerTierPxS": 6,
+    "aggroRangeTiles": 8.5,
+    "leashRangeTiles": 16,
+    "standoffMaxTiles": 3.6,
+    "standoffTierStepTiles": 0.2
+  },
+  "quickAttackTuning": {
+    "_comment": "Only an equipped Quick Attack's own bonus condition enables it. Exhaust Cutter / Mercy Spike select more often with difficulty tier; Backstab Flick instead attempts tactical flanking and fires when behind. Flank and pursuit behavior preserves the existing two active melee slots.",
+    "baseChance": 0.2,
+    "bonusPerTier": 0.09,
+    "backstabFlankMaxSeconds": 2,
+    "backstabRetrySeconds": 2.5
+  },
   "campLifecycle": {
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
     "maxCampsPerZone": 2,
