@@ -121,6 +121,28 @@ for (const [key, { kind, genotype }] of offspring) {
 }
 assert.equal(context.LivestockItemGenotypePersistence.getDebug().queuedNow, 0, 'deployment consumes every saved lineage exactly once');
 
+// The actual persistence adapter must roll back its in-memory queue if the browser rejects a durable metadata write.
+const grehlrBabyItem = mothers.grehlr.nestItemKey; // Known legitimate Northern Cliffs nest reward used in the rollback fixture.
+const grehlrGenotype = offspring.get(grehlrBabyItem).genotype; // Exact same bearded or unbearded family lineage as the den owner.
+const originalSetItem = context.localStorage.setItem; // Restored immediately after simulating a full browser storage quota.
+context.localStorage.setItem = (key, value) => {
+  if (key === 'hobunjiSaveMeta') throw new Error('simulated storage quota exceeded');
+  return originalSetItem(key, value);
+};
+try {
+  assert.equal(context.FarmAnimals.queueItemGenotype(grehlrBabyItem, grehlrGenotype), false,
+    'a rejected saved-lineage write must report failure to the den collector');
+  assert.equal(context.LivestockItemGenotypePersistence.getDebug().queuedNow, 0,
+    'failed persisted lineage must be removed from the in-memory FIFO');
+} finally {
+  context.localStorage.setItem = originalSetItem;
+}
+assert.equal(context.CREATURE_DB.grehlr.label, 'Grehlr', 'base Grehlr species must have a valid fallback display label');
+assert.equal(context.CREATURE_DB['grehlr-den-mother'].label, 'Grehlr Den-Mother', 'Den-Mother must have an authored display label');
+assert.match(game, /creature\.name\.trim\(\)\.toLowerCase\(\) === 'undefined'/,
+  'wildlife constructor repairs literal undefined creature names even after caller overrides');
+
+
 // Execute the real hold-to-take function with a focused nest, isolating only
 // raycasting/graphics. A full bag must preserve both the baby and its lineage.
 const source = fs.readFileSync('docs/js/den-nest-system.js', 'utf8'); // Production acquisition path under test.
