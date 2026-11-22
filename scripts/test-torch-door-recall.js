@@ -41,7 +41,8 @@ const gameContext = vm.createContext({
   saveEquipmentSlots() {}, showToast() {}, cancelWeaponSwingHold() {},
 }); // Supplies only dependencies actually read by game.js's existing selector.
 const activeToolSource = sourceBetween(game, '      function setActiveTool(tool, opts = {}) {', '\n      // Weapon quick-switch icon');
-const setActiveTool = vm.runInContext(activeToolSource + '\nsetActiveTool', gameContext); // Executes production switching, including stow and selected-tool memory.
+const clothingReleaseSource = sourceBetween(game, '      function releaseManualClothingForEquipmentSwitch() {', '\n      function setManualHeldItem(item) {'); // Real helper invoked by setActiveTool when replacing a held garment.
+const setActiveTool = vm.runInContext('let manualHeldItem = null, manualHeldClothingVisual = null;\n' + clothingReleaseSource + '\n' + activeToolSource + '\nsetActiveTool', gameContext); // Extracts the production dependency with the selector rather than mocking it.
 
 const doc = {
   getElementById() { return null; },
@@ -99,6 +100,10 @@ assert.equal(gameContext.lastHeldFarmTool, 'shovel', 'explicitly changing the se
 setActiveTool('weapon', { silent: true });
 assert.equal(win._desktopSelectionArc.recallLastTool(), 'shovel');
 assert.equal(gameContext.activeTool, 'shovel');
+vm.runInContext("manualHeldItem = { kind: 'clothing', uid: 'pack-hood' }; manualHeldClothingVisual = { key: 'pack-clothing:pack-hood' };", gameContext);
+setActiveTool('shovel', { silent: true });
+assert.equal(vm.runInContext('manualHeldItem', gameContext), null, 'drawing a tool releases a manually held garment');
+assert.equal(vm.runInContext('manualHeldClothingVisual', gameContext), null, 'the tool switch also clears its visual hand slot');
 assert.match(arch, /if \(deps\.WHEEL_SLOTS\.includes\(slot\.data\)\) deps\.setLastHeldFarmTool\(slot\.data\)/, 'wheel-selected weapons cannot clobber selected tools');
 
 const doorFunction = sourceBetween(game, '      function adventuringToolActionButtons() {', '\n      function computeActionButtonsImpl(context = null)'); // The canonical action-provider function, including its reticle context.
