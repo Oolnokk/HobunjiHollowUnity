@@ -144,4 +144,35 @@ assert(!furnitureDownload.prevented&&!furnitureDownload.stopped
 assert.equal(exported.length,1,'furniture mode did not spuriously export the previous baby pose');
 assert.equal(copied.length,1,'furniture mode did not spuriously copy the previous baby pose');
 
-console.log('PASS baby portrait U/V/depth, touch grips, real-size reroll, mode exit and consistent copy/download exports');
+// Copying a baby must be possible on the Carryable tab without switching to IO.
+assert(source.includes('id="carryBabyCopy"'), 'the Carryable tab has a dedicated baby copy control');
+const profileBegin=source.indexOf('  function currentBabyProfile(){');
+const profileEnd=source.indexOf("  const mainJsonButton=el('downloadJsonBtn');",profileBegin);
+assert(profileBegin>0&&profileEnd>profileBegin,'copy and export use one shared profile function');
+const copyFallback={hidden:true,value:'',focus(){this.focused=true;},select(){this.selected=true;}};
+const mobileStatus={textContent:''};
+const downloaded=[];
+let copiedDirect=null;
+const carryCopyHarness=new Function('window','state','el','babyPortraitWidth','babyPortraitHeight',
+  'download','Blob','copyPlainTextWithFallback',
+  'let editingBaby=true;\n'+source.slice(profileBegin,profileEnd)
+  +'\nreturn {currentBabyProfile,copyBaby,exportBaby};')(
+  window,state,id=>({carryBabyCopyText:copyFallback,carryBabyStatus:mobileStatus})[id]||null,
+  .32,.32,(name,blob)=>downloaded.push({name,blob}),Blob,
+  async (text,fallback,label)=>{
+    copiedDirect={text,label};
+    fallback.value=text;fallback.focus();fallback.select();
+    return false; // Simulated mobile clipboard denial exercises visible manual fallback.
+  });
+const activeProfile=carryCopyHarness.currentBabyProfile();
+const copyPromise=carryCopyHarness.copyBaby();
+assert.equal(copyFallback.hidden,false,'baby JSON fallback is visible in the active Carryable tab');
+assert.equal(copiedDirect.text,JSON.stringify(activeProfile,null,2),'copy uses the CURRENT unsaved pose');
+carryCopyHarness.exportBaby();
+assert.equal(downloaded[0].name,'family-baby-carry-pose.json','export writes the family baby profile, not furniture');
+copyPromise.then(result=>{
+  assert.equal(result,false,'denied clipboard is reported');
+  assert(copyFallback.focused&&copyFallback.selected,'manual fallback JSON is selected for mobile copying');
+  assert.match(mobileStatus.textContent,/manual copying/,'visible status explains copying a blocked clipboard');
+  console.log('PASS baby grip portrait coordinates, touch, direct baby copy, clipboard fallback and unambiguous downloads');
+}).catch(error=>{console.error(error);process.exitCode=1;});
