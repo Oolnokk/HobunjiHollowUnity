@@ -293,8 +293,21 @@
   }
 
   function normalizeConeSpread(value) {
-    const n = Number(value); // Cone widening in horizontal pixels per pixel below the lower opening edge.
-    return value == null || !Number.isFinite(n) ? 0 : Math.max(0,Math.min(2,n));
+    // Values 0–2 retain the old pixels-per-depth widening. Values 2–3
+    // approach a flat 180-degree cone continuously; 3 is a straight line.
+    const n=Number(value);
+    return value==null||!Number.isFinite(n)?0:Math.max(0,Math.min(3,n));
+  }
+
+  function coneExpansion(distance, spread) {
+    // The width of a cone grows monotonically into a horizontal line at the
+    // endpoint. No negative/narrowing mode: wider settings can only admit
+    // additional pixels. This is shared by the lower, upper-up and upper-down
+    // masks, which all use the SAME slider geometry in editor and gameplay.
+    if(distance<=0)return 0;
+    const value=normalizeConeSpread(spread);
+    const slope=value<=2?value:value>=3?Infinity:2/(3-value);
+    return Math.min(SIZE,distance*slope); // Limit to the 200px portrait; Infinity is intentionally clamped.
   }
 
   function lowerHoodOpeningSegment(hoodRGBA, options = {}) {
@@ -344,7 +357,7 @@
         // Keep each ring column's own lower edge. Filling the span between
         // different columns would prematurely admit pixels ABOVE the U-shaped
         // bottom opening at the center of the face.
-        const expansion=(y-point.y)*spread;
+        const expansion=coneExpansion(y-point.y,spread);
         const first=Math.max(0,Math.floor(point.x-expansion));
         const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
         if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
@@ -411,14 +424,14 @@
       // Both directions include the rim pixel. At length 0, only upward
       // protection and the top boundary remain; no downward droop is added.
       for(let y=point.y;y>=0;y--){
-        const expansion=(point.y-y)*upSpread;
+        const expansion=coneExpansion(point.y-y,upSpread);
         const first=Math.max(0,Math.floor(point.x-expansion));
         const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
         if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
       }
       const lastDown=Math.min(SIZE-1,lowerCap-1,point.y+downLength);
       for(let y=point.y+1;y<=lastDown;y++){
-        const expansion=(y-point.y)*spread; // Drooping upper cloth expands outward independently from the upward cone.
+        const expansion=coneExpansion(y-point.y,spread); // Same line endpoint with an independent downward length.
         const first=Math.max(0,Math.floor(point.x-expansion));
         const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
         if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
@@ -554,7 +567,7 @@
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
-    normalizeConeSpread, normalizeCoverLength, lowerHoodOpeningSegment, autoHoodAllowanceMask,
+    normalizeConeSpread, coneExpansion, normalizeCoverLength, lowerHoodOpeningSegment, autoHoodAllowanceMask,
     upperHoodOpeningSegment, autoHoodTopCoverMask,
     planTuftStretch, stretchHoodToRoots, applyToHood,
     partitionBeardHood, deformHoodPermissionMask, applyRefusedBeardOutline, negotiateBeardHood,
