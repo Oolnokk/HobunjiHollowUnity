@@ -282,6 +282,10 @@
       const reachY = clampOffset(baseOffset) * modelHeight + scaledNeckDeltaY; // Authored head height and scale-induced chin movement now stretch the whole spine.
       applyHeadYOffset(offsetTarget, 0, modelHeight); // Restore the short 2.5px head/neck connection; never drag the pseudo-neck through the torso.
       spineApi.applyNeckReach(rig, reachY, modelHeight, composedHunch); // Rebuild rest→scaled spine→hunch in that order, idempotent on touch-slider edits.
+      if (found.node?.userData && rig.appliedSpineProfile) {
+        if (Math.abs(Number(rig.neckReachAppliedY) || 0) > 1e-9 || composedHunch > 0) found.node.userData.hobunjiSpine = rig.appliedSpineProfile; // Shoulder/weapon orbit reads the actual stretched spine, even without hunch.
+        else delete found.node.userData.hobunjiSpine; // Neutral slider reset also returns held-item shoulder projections to rest.
+      }
       rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + (Number(rig.neckReachAppliedY) || 0),
         deltaY: rig.neckReachAppliedY, relativeHeadScaleY: relativeHeadY }; // Debug reflects the physically achieved position when extreme offsets are clamped.
     } else {
