@@ -169,6 +169,11 @@ byId.sloomi.dialogueTrees = byId.sloomi.dialogueTrees.filter(tree => !tree.gener
 const spouseLine = say(byId.sloomi); // Sloomi has a heard fallback and eligible Reserved shared speech.
 assert.ok(spouseLine && !config.personalityFamilies.reserved.some(entry => entry.text === spouseLine), 'married Sloomi speaks her spouse-specific content before Reserved dialogue');
 assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('sloomi').heardTrees.some(id => id.startsWith('spouse_care_')), 'spouse provider routed the dialogue tree');
+dialogueWindow.SCRATCHBONES_CONFIG.game.socialRelationships = { relationships: [{ type: 'family', members: ['sloomi', 'pahu'] }] }; // The real in-law resolver sees Pahu as a newly connected family member while Sloomi is married.
+const inLawLine = say(byId.pahu); // Pahu has already spoken his personal and Playful copy, so in-law context must still outrank the shared candidates.
+assert.ok(inLawLine && !config.personalityFamilies.playful.some(entry => entry.text === inLawLine), 'in-law conversation replaces ordinary Playful chatter');
+assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('pahu').heardTrees.some(id => id.startsWith('marriage_family_')), 'real in-law dialogue provider retains precedence');
+delete dialogueWindow.SCRATCHBONES_CONFIG.game.socialRelationships; // Restore the default relationship fixture before further independent test cases.
 spouseOn = false;
 const authoredNormal = { ...byId.pahu, dialogueTrees: [{
   id: 'independent_story_without_priority', trigger: 'interact', priority: 0, entryNode: 'story',
