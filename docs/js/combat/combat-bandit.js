@@ -2110,16 +2110,29 @@
   // (jittering with the player's/bandit's own minor position noise).
   const BANDIT_QUEUE_RING_CAPACITY = 3;
   const BANDIT_QUEUE_RING_STEP_MUL = 0.6;
-  const _banditQueueRings = []; // [{ bandit, ringIndex, angle }]
+  const _banditQueueRings = []; // [{ bandit, ringIndex, angle }] Preserved for existing arena and queue diagnostics.
+  const _banditQueueForActor = new WeakMap(); // O(1) waiting-ring retention avoids the old every-frame full-array lookup.
+  let _banditQueuePrunedAt = -Infinity; // Shared once-per-frame dead/unloaded cleanup, not once per queued combatant.
 
   function claimBanditQueueRing(c, towardAngle, target) {
-    for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
-      const q = _banditQueueRings[i];
-      if (q.bandit.health <= 0 || q.bandit.state !== 'chase' || !q.bandit.avatarRef?.group?.parent) _banditQueueRings.splice(i, 1);
+    const now = performance.now();
+    if (now - _banditQueuePrunedAt >= BANDIT_SLOT_PRUNE_INTERVAL_MS) {
+      _banditQueuePrunedAt = now;
+      for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
+        const q = _banditQueueRings[i];
+        if (q.bandit.health <= 0 || q.bandit.state !== 'chase' || !q.bandit.avatarRef?.group?.parent) {
+          _banditQueueForActor.delete(q.bandit);
+          _banditQueueRings.splice(i, 1);
+        }
+      }
     }
-    const existing = _banditQueueRings.find(q => q.bandit === c);
+    const existing = _banditQueueForActor.get(c);
     if (existing?.target === target) return existing;
-    if (existing) _banditQueueRings.splice(_banditQueueRings.indexOf(existing), 1); // Reassign the waiting ring when a creature changes combat target.
+    if (existing) {
+      const index = _banditQueueRings.indexOf(existing);
+      if (index >= 0) _banditQueueRings.splice(index, 1); // Reassign the waiting ring when a creature changes combat target.
+      _banditQueueForActor.delete(c);
+    }
     const countByRing = [];
     for (const q of _banditQueueRings) if (q.bandit.areaId === c.areaId && q.target === target) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
     let ringIndex = 0;
@@ -2136,6 +2149,7 @@
     }
     const rec = { bandit: c, target, ringIndex, angle };
     _banditQueueRings.push(rec);
+    _banditQueueForActor.set(c, rec);
     return rec;
   }
 
