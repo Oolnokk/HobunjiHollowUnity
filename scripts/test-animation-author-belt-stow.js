@@ -47,7 +47,12 @@ vm.runInContext(ui,sandbox);
 const belt=window.HobunjiBeltStowRig;
 const editor=window.AnimationAuthorBeltStow;
 assert.equal(belt.TORCH_WIDTH, window.HobunjiBeltStowTorchDisplay.TORCH_WIDTH, 'rig retains stable old torch width API');
-assert.equal(belt.createTorchDisplay, belt.createTorchDisplay, 'rig retains existing display method');
+assert.equal(typeof belt.createTorchDisplay, 'function', 'rig retains its original display facade');
+assert.match(visual, /function createTorchDisplay/, 'torch rendering lives in its own visual module');
+assert.doesNotMatch(shared, /new THREE\\.Mesh|new THREE\\.Sprite|function createFlameTexture/,
+  'profile normalization must not include GPU artwork or preview flame logic');
+assert.doesNotMatch(visual, /HobunjiLayeredWeaponEffects|AdventuringTools/,
+  'shared artwork must not acquire gameplay clock or particle lifetime ownership');
 assert.equal(belt.defaultSnapshot(1.2).position.x,0);
 assert.equal(belt.defaultSnapshot(1.2).position.z,-.048);
 assert.equal(belt.defaultSnapshot(1.2).rotationDeg.z,-45);
