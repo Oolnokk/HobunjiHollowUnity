@@ -3,7 +3,7 @@
   // Wilderness Shift generation, bounded sightlines and terrain-aware locale placement; blocking load order matters.
   const scriptUrls = [
     "js/wilderness-seclusion.js?v=20261114tothalSecretLos1",
-    "js/wilderness-object-footprints.js?v=20261122generatedFootprints1",
+    "js/wilderness-object-footprints.js?v=20261122debrisClearance2",
     "js/wilderness-map-generator.js?v=20261122boulderFootprints1",
     "js/locale-terrain-placement.js?v=20261122generatedFootprints1"
   ]; // Version tokens for these modules are owned in their feature manifest.
