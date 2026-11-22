@@ -581,14 +581,6 @@
         "id": "hazardous"
       },
       {
-        "id": "not-safe",
-        "text": "not safe",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
-      },
-      {
         "id": "danger-full",
         "text": "danger-full",
         "verbosity": 38,
@@ -654,20 +646,6 @@
     ],
     "good to see you": [
       {
-        "text": "glad to see you",
-        "verbosity": 20,
-        "color": 30,
-        "formality": 20,
-        "id": "glad to see you"
-      },
-      {
-        "text": "happy to see you",
-        "verbosity": 25,
-        "color": 50,
-        "formality": 30,
-        "id": "happy to see you"
-      },
-      {
         "text": "a pleasure to see you",
         "verbosity": 70,
         "color": 45,
@@ -675,18 +653,27 @@
         "id": "a pleasure to see you"
       },
       {
-        "text": "what a delight to see you",
-        "verbosity": 85,
-        "color": 95,
-        "formality": 80,
-        "id": "what a delight to see you"
+        "id": "lovely-to-see-you",
+        "text": "lovely to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "standard"
       },
       {
-        "id": "mighty-glad-to-see-you",
-        "text": "mighty glad to see you",
-        "verbosity": 45,
-        "color": 58,
-        "formality": 24,
+        "id": "nice-to-see-you",
+        "text": "nice to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "standard"
+      },
+      {
+        "id": "mighty-nice-to-see-you",
+        "text": "mighty nice to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
         "kind": "regional",
         "dialect": "southeastern-us"
       }
@@ -789,13 +776,6 @@
         "color": 60,
         "formality": 35,
         "id": "absolutely"
-      },
-      {
-        "text": "without question",
-        "verbosity": 85,
-        "color": 40,
-        "formality": 85,
-        "id": "without question"
       }
     ],
     "not right now": [
@@ -807,25 +787,11 @@
         "id": "not at the moment"
       },
       {
-        "text": "maybe later",
-        "verbosity": 25,
-        "color": 40,
-        "formality": 20,
-        "id": "maybe later"
-      },
-      {
         "text": "not just now",
         "verbosity": 35,
         "color": 35,
         "formality": 50,
         "id": "not just now"
-      },
-      {
-        "text": "perhaps another time",
-        "verbosity": 80,
-        "color": 55,
-        "formality": 85,
-        "id": "perhaps another time"
       }
     ],
     "not today": [
@@ -835,13 +801,6 @@
         "color": 70,
         "formality": 70,
         "id": "not this day"
-      },
-      {
-        "text": "perhaps tomorrow",
-        "verbosity": 65,
-        "color": 55,
-        "formality": 75,
-        "id": "perhaps tomorrow"
       }
     ],
     "thank you": [
@@ -1039,29 +998,6 @@
         "color": 0,
         "formality": 90,
         "id": "precipitation"
-      },
-      {
-        "text": "showers",
-        "verbosity": 45,
-        "color": 65,
-        "formality": 50,
-        "id": "showers"
-      }
-    ],
-    "weather": [
-      {
-        "text": "conditions",
-        "verbosity": 45,
-        "color": 5,
-        "formality": 65,
-        "id": "conditions"
-      },
-      {
-        "text": "the elements",
-        "verbosity": 70,
-        "color": 85,
-        "formality": 75,
-        "id": "the elements"
       }
     ],
     "interesting": [
@@ -1136,20 +1072,6 @@
       }
     ],
     "quiet": [
-      {
-        "text": "peaceful",
-        "verbosity": 50,
-        "color": 75,
-        "formality": 55,
-        "id": "peaceful"
-      },
-      {
-        "text": "tranquil",
-        "verbosity": 75,
-        "color": 85,
-        "formality": 80,
-        "id": "tranquil"
-      },
       {
         "id": "hush-quiet",
         "text": "hush-quiet",
@@ -1613,20 +1535,20 @@
         "kind": "standard"
       },
       {
-        "id": "not-very-smart",
-        "text": "not very smart",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
-      },
-      {
         "id": "brain-sleepy",
         "text": "brain-sleepy",
         "verbosity": 38,
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "silly",
+        "text": "silly",
+        "verbosity": 18,
+        "color": 70,
+        "formality": 18,
+        "kind": "simple"
       }
     ],
     "hungry": [
@@ -1829,14 +1751,6 @@
         "color": 45,
         "formality": 48,
         "kind": "standard"
-      },
-      {
-        "id": "not-scared",
-        "text": "not scared",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
       },
       {
         "id": "courageful",
@@ -3064,17 +2978,6 @@
         "sourceVisit": "kzubug_plainssword"
       }
     ],
-    "weapon": [
-      {
-        "id": "arm",
-        "text": "arm",
-        "verbosity": 45,
-        "color": 58,
-        "formality": 24,
-        "kind": "standard",
-        "sourceVisit": "pahu_grapple_flail"
-      }
-    ],
     "ingenious": [
       {
         "id": "clever",
@@ -3106,6 +3009,17 @@
         "formality": 22,
         "kind": "regional",
         "dialect": "southeastern-us"
+      }
+    ],
+    "weapon": [
+      {
+        "id": "arm",
+        "text": "arm",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "regional",
+        "dialect": "pirate"
       }
     ]
   },
@@ -3202,7 +3116,243 @@
       }
     }
   },
-  "characters": {},
+  "characters": {
+    "pahu": {
+      "sliders": {
+        "verbosity": 34,
+        "color": 75,
+        "formality": 12,
+        "breadth": 76,
+        "variety": 60,
+        "frequency": 60,
+        "oldSlang": 84,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "look at": [],
+        "listen": [],
+        "big": [],
+        "nice": [],
+        "isn't": [],
+        "aren't": [],
+        "friends": [
+          "chums",
+          "hearties"
+        ],
+        "perhaps": [
+          "maybe"
+        ],
+        "certainly": [
+          "sure"
+        ]
+      }
+    },
+    "gorobi_ginju": {
+      "sliders": {
+        "verbosity": 40,
+        "color": 67,
+        "formality": 20,
+        "breadth": 78,
+        "variety": 56,
+        "frequency": 63,
+        "oldSlang": 78,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "certainly": [
+          "sure"
+        ],
+        "friend": [
+          "pal",
+          "chum"
+        ],
+        "good to see you": [
+          "mighty-nice-to-see-you",
+          "nice-to-see-you"
+        ]
+      }
+    },
+    "gikali_ginju": {
+      "sliders": {
+        "verbosity": 30,
+        "color": 22,
+        "formality": 48,
+        "breadth": 50,
+        "variety": 24,
+        "frequency": 33,
+        "oldSlang": 44,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "excellent": [],
+        "amazing": [],
+        "good to see you": [
+          "nice-to-see-you"
+        ],
+        "certainly": [
+          "sure"
+        ],
+        "very": [
+          "mighty"
+        ]
+      }
+    },
+    "aliri_ginju": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 62,
+        "formality": 18,
+        "breadth": 78,
+        "variety": 58,
+        "frequency": 56,
+        "oldSlang": 68,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "friend": [
+          "pal"
+        ],
+        "certainly": [
+          "sure"
+        ],
+        "nice": [],
+        "good to see you": [
+          "nice-to-see-you",
+          "mighty-nice-to-see-you"
+        ]
+      }
+    },
+    "gantami_ginju": {
+      "sliders": {
+        "verbosity": 14,
+        "color": 82,
+        "formality": 7,
+        "breadth": 68,
+        "variety": 78,
+        "frequency": 63,
+        "oldSlang": 32,
+        "simplicity": 98,
+        "nearMiss": 88
+      },
+      "selections": {
+        "friend": [
+          "pal-friend"
+        ],
+        "friends": [
+          "pal-friends"
+        ],
+        "good to see you": [],
+        "interesting": [
+          "really-curious",
+          "interestifying"
+        ],
+        "certainly": [
+          "sure"
+        ]
+      }
+    },
+    "leaf": {
+      "sliders": {
+        "verbosity": 15,
+        "color": 8,
+        "formality": 47,
+        "breadth": 27,
+        "variety": 12,
+        "frequency": 15,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "wonderful": [],
+        "amazing": [],
+        "good to see you": []
+      }
+    },
+    "hreesh": {
+      "sliders": {
+        "verbosity": 22,
+        "color": 20,
+        "formality": 38,
+        "breadth": 47,
+        "variety": 30,
+        "frequency": 34,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "certainly": [
+          "sure"
+        ],
+        "hit": [
+          "clobber"
+        ],
+        "beaten": [
+          "clobbered"
+        ],
+        "beautiful": []
+      }
+    },
+    "kzubug": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 26,
+        "formality": 66,
+        "breadth": 66,
+        "variety": 29,
+        "frequency": 36,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "certainly": [
+          "absolutely"
+        ],
+        "important": [
+          "significant"
+        ],
+        "good to see you": [
+          "nice-to-see-you",
+          "a pleasure to see you"
+        ]
+      }
+    },
+    "jubmir": {
+      "sliders": {
+        "verbosity": 49,
+        "color": 46,
+        "formality": 45,
+        "breadth": 62,
+        "variety": 40,
+        "frequency": 44,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "wonderful": [
+          "marvelous",
+          "splendid"
+        ],
+        "friend": [
+          "companion"
+        ],
+        "good to see you": [
+          "nice-to-see-you",
+          "a pleasure to see you"
+        ]
+      }
+    }
+  },
   "speakerGroups": {
     "ginju": {
       "label": "Ginju · Southeastern US",
