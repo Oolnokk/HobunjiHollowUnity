@@ -152,6 +152,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let stretchedHoodPixels=new Uint8ClampedArray(SIZE*SIZE*4),stretchSnapshot=null,stretchKey='',hoodRevision=0;
   const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
   let mask=empty(),whiskerMask=empty(),roots=[],hoodAllowanceMask=null,beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let beardRequestAutomatic=false; // A beard's own alpha supplies its request until painted manually.
   let hoodPermissionMode='auto',coneSpread=0,topConeSpread=null,topUpConeSpread=0,topDownConeLength=200; // Optional upper-rim cover has separately widened up/down cones and a downward depth cap.
   let automaticPermission=null,topCoverPermission=null,automaticKey=''; // Cache both rim masks until hood art or sliders change.
   let negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0}; // Exposed in mobile diagnostics and preview.
@@ -166,7 +167,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let artReady=false; // The brush cannot record empty strokes while the selected artwork is unavailable.
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
-  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v3'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
+  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v4'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
   const drafts=new Map(); // Separate unsaved authoring per selected beard artwork/variant.
   const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v5'; // Persist bidirectional overhang widening and droop length per hood.
   const hoodDrafts=new Map(); // Hood permissions are independent of whichever beard is currently selected.
@@ -189,12 +190,14 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }catch(_){/* Private browsing may restrict local storage; JSON export remains usable. */}
   try {
     const saved=JSON.parse(localStorage.getItem(draftStorageKey)
+      ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v3')
       ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v2')
       ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v1')||'[]');
     if(Array.isArray(saved))for(const entry of saved.slice(0,100))if(Array.isArray(entry)&&typeof entry[0]==='string'){
       const data=entry[1]||{};
       drafts.set(entry[0],{mask:Cut.normalizeMask(data.mask||data)||empty(),
         whiskers:Cut.normalizeMask(data.whiskers)||empty(),roots:Cut.normalizeRoots(data.roots),
+        autoMode:typeof data.autoMode==='boolean'?data.autoMode:null,
         maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null,
         alphaFloor:Number.isFinite(Number(data.alphaFloor))&&data.alphaFloor!=null?Number(data.alphaFloor):null,
         subdivision:data.subdivision==null?null:Cut.normalizeSubdivision(data.subdivision),
@@ -209,6 +212,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const entry=beardDoc?.speciesVariants?.[variant]; // A variant can define root points without replacing its artwork.
     return entry && (entry.parts?.head || Object.hasOwn(entry,'hoodWhiskerMask')
       || Object.hasOwn(entry,'hoodCutoutMask')
+      || Object.hasOwn(entry,'hoodCutoutRequestMode')
       || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch')
       || Object.hasOwn(entry,'hoodTuftSubdivision') || Object.hasOwn(entry,'hoodTuftAboveInfluence')
       || Object.hasOwn(entry,'hoodTuftBelowInfluence')
@@ -244,7 +248,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
     drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),
-      whiskers:JSON.parse(JSON.stringify(whiskerMask)),roots:Cut.normalizeRoots(roots),
+      autoMode:beardRequestAutomatic,whiskers:JSON.parse(JSON.stringify(whiskerMask)),roots:Cut.normalizeRoots(roots),
       maxStretch:selectedStretch(),alphaFloor:selectedAlphaFloor(),subdivision:selectedSubdivision(),
       aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence()});
     try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
@@ -258,7 +262,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       catch(_){/* Hood permissions are still exportable when storage is unavailable. */}
     }
   }
+  function originalRequestAutomatic(){
+    const scoped=scopeKey()==='shared'?beardDoc:beardDoc?.speciesVariants?.[variant]||{};
+    return (scoped?.hoodCutoutRequestMode??beardDoc?.hoodCutoutRequestMode)==='silhouette';
+  }
   function originalMask(){
+    if(originalRequestAutomatic())return Cut.autoBeardRequestMask(beardPixels,242); // Preview follows the loaded beard art rather than Mao'ao's coordinates.
     const scoped=scopeKey()==='shared'?beardDoc?.hoodCutoutMask:beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask;
     return Cut.normalizeMask(scoped)||empty();
   }
@@ -419,7 +428,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodRevision++;stretchKey='';automaticKey=''; // Invalidate stretching and automatic permission when art changes.
       if(resetMask){
         const draft=drafts.get(draftKey()); // Previous masks from v1 drafts were upgraded to {mask, roots}.
-        mask=maskForArtwork(draft?.mask||originalMask());
+        beardRequestAutomatic=draft?.autoMode??originalRequestAutomatic();
+        mask=maskForArtwork(beardRequestAutomatic
+          ? Cut.autoBeardRequestMask(beardPixels,242) : (draft?.mask||originalMask()));
         whiskerMask=maskForArtwork(draft?.whiskers||originalWhiskers());
         roots=Cut.normalizeRoots(draft?.roots||originalRoots());
         $('maxStretch').value=draft?.maxStretch??originalMaxStretch();
@@ -584,6 +595,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       negotiationStats=Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hoodAllowanceMask,{
         hoodMoves:stretchSnapshot?.moves,permissionMode:hoodPermissionMode,
         coneSpread,autoPermission:automaticPermission,
+        requestMode:beardRequestAutomatic?'silhouette':null,
         topConeSpread,topUpConeSpread,topDownConeLength,
         topCover:topCoverPermission,whiskerMask,includeMasks:true
       });
@@ -644,6 +656,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       }
     }
     $('maskJson').value=JSON.stringify({
+      beardRequestMode:beardRequestAutomatic?'silhouette':'painted',
       beardRequestMask:mask,whiskerOverrideMask:whiskerMask,
       hoodPermissionMode,hoodConeSpread:coneSpread,hoodTopConeSpread:topConeSpread,
       hoodTopUpConeSpread:topUpConeSpread,hoodTopDownConeLength:topDownConeLength,
@@ -655,7 +668,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodPaintAlphaFloor:selectedAlphaFloor()
     });
     $('status').textContent=(lastError?lastError+'\n':'')
-      +'Beard requests: '+Cut.countMask(mask)+' · priority whiskers: '+Cut.countMask(whiskerMask)
+      +'Beard requests: '+Cut.countMask(mask)+(beardRequestAutomatic?' (from art)':' (painted)')
+      +' · priority whiskers: '+Cut.countMask(whiskerMask)
       +'\nApproved overlaps (hood removed): '+negotiationStats.approvedPixels
       +'\nRefused overlaps (beard erased): '+negotiationStats.refusedPixels
       +'\nWhiskers winning protected overlap: '+(negotiationStats.whiskerWins||0)
@@ -682,7 +696,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('undo').disabled=!history.length;
   }
   function pushUndo(){
-    history.push(JSON.stringify({mask,whiskerMask,roots:Cut.normalizeRoots(roots),
+    history.push(JSON.stringify({mask,whiskerMask,autoMode:beardRequestAutomatic,roots:Cut.normalizeRoots(roots),
       hoodAllowanceMask,hoodPermissionMode,coneSpread,topConeSpread,topUpConeSpread,topDownConeLength})); // Unified undo for beard requests, tuft roots and hood permissions.
     if(history.length>25)history.shift();
   }
@@ -725,7 +739,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         hoodPermissionMode='painted';
         hoodAllowanceMask=changed;
       }else if(whiskerMode)whiskerMask=changed;
-      else mask=changed;
+      else {mask=changed;beardRequestAutomatic=false;} // Painting takes ownership of the now-explicit mask.
     }
     drag.last=next;
     if(drag.changed)render();
@@ -844,6 +858,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(!history.length)return;
     const previous=JSON.parse(history.pop());
     mask=Cut.normalizeMask(previous.mask)||empty();
+    beardRequestAutomatic=previous.autoMode??false;
     whiskerMask=Cut.normalizeMask(previous.whiskerMask)||empty();
     roots=Cut.normalizeRoots(previous.roots);
     hoodAllowanceMask=previous.hoodAllowanceMask==null?null:Cut.normalizeMask(previous.hoodAllowanceMask);
@@ -862,7 +877,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     automaticKey='';updateLabels();
     remember();render();
   };
-  $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();remember();render();};
+  $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();beardRequestAutomatic=false;remember();render();};
   $('clearWhiskers').onclick=()=>{
     if(!Cut.countMask(whiskerMask))return;
     pushUndo();whiskerMask=empty();remember();render();
