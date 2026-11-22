@@ -118,6 +118,24 @@ assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonU
 api.applyToParent(nonUniformParent, 'mao-ao', 'male', { x: 1.3, y: 1.5, head: 1 });
 assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], [1.3, 1.5, 1.3]);
 
+// Rendering Width/Head/age edits must not resample the procedural leg chain.
+// Only the leg-to-portrait ratio affects the underlying hip-to-ankle solver.
+const legSyncCalls = []; // Counts the shared procedural leg solver updates without requiring Three.js.
+context.ProceduralLegAnimation = { syncScaleForParent(_parent, ratio) { legSyncCalls.push(ratio); } };
+const separateLegParent = makeParent();
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1, y: 1, legLength: 1.5, head: 1 });
+assert.strictEqual(legSyncCalls.length, 1, 'new rig performs its initial leg synchronization');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1, legLength: 1.5, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 1, 'resizing Width or Head cannot re-solve unchanged leg IK');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1.2, legLength: 1.8, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 1, 'matching portrait and leg scaling does not alter their IK ratio');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1.2, legLength: 2.4, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 2, 'new hip-to-portrait ratio updates real IK once');
+assert.strictEqual(legSyncCalls[1], 2, 'only the leg-to-portrait multiplier reaches procedural legs');
+api.clearFromParent(separateLegParent);
+assert.strictEqual(legSyncCalls.at(-1), 1, 'clearing the rig scale restores original hip-to-foot reach');
+delete context.ProceduralLegAnimation; // Restores the test's ordinary no-leg stub before checking head and NPC poses.
+
 // Head must be compensated at the neck rig bone so a distorted body aspect ratio never
 // distorts the meticulously authored head/head-cosmetic/expression proportions: the neck
 // bone's own local scale, composed with the inherited non-uniform body scale, must land
