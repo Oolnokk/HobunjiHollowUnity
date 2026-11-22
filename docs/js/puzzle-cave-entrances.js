@@ -698,5 +698,11 @@
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,debugSnapshot});
+  function isPlayerSolvingMelody() {
+    const area=safeArea(deps?.getCurrentArea?.()); // Same live area as the player, never a hidden/unloaded challenge.
+    return (areas.get(area)?.portals||[]).some(portal=>portal.requiresSong&&!!portal.session
+      &&!portal.disposed&&!portal.solved&&portal.lastDown); // Player is physically holding an unsolved timed-score plate.
+  }
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,
+    isPlayerSolvingMelody,debugSnapshot});
 });
