@@ -128,6 +128,9 @@ const torchCave=compose({THREE,parent,room,id:'torch-fire-test',kind:'fireSconce
 });
 torchCave.tick(.016);
 assert.equal(registeredFireTargets.size,2,'a fresh cave registers two contact targets without duplicating retired cave targets');
+registeredFireTargets.clear(); // Simulates DungeonFire.clear() after exiting a Harlyao ruin with this cave scene still cached.
+torchCave.tick(.016);
+assert.equal(registeredFireTargets.size,2,'returning to a cached cave restores both torch contacts after the global fire registry was cleared');
 const [swingTarget,throwTarget]=[...registeredFireTargets.values()];
 assert.equal(swingTarget.object,torchCave.sconces[0].bracket,'melee tests the authored stone sconce, not its invisible particle emitter');
 assert.equal(throwTarget.object,torchCave.sconces[1].bracket,'projectile sweep tests that same physical contact mesh');
