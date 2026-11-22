@@ -164,7 +164,7 @@
 
   function isUndiggableBoulderTile(zGrid, c, r, terrainDeps = deps) {
     const tile = zGrid?.[r]?.[c]; // Tile inspected by component collection and perimeter tests.
-    return tile?.type === terrainDeps.TileType.ROCK && (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId);
+    return tile?.type === terrainDeps.TileType.ROCK && (globalThis.WildernessObjectFootprints?.isBoulder?.(tile) ?? (tile.rockKind === 'undiggableBoulder' || !!tile.boulderId)); // The renderer and placement adapters share boulder identity; standalone geometry previews retain the existing fallback.
   }
 
   function collectUndiggableBoulderComponents(zGrid, zcols, zrows, terrainDeps = deps) {
