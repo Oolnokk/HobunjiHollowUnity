@@ -219,7 +219,7 @@ assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.saddle), { position: { x:
 assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.shoulderGrip.position), { x: 0, y: -0.05596633162050327, z: 0.06962064405051654 }, 'Pingdort shoulder grip XYZ matches export');
 assert.deepStrictEqual(plainAnimalRig(pingdort.groundOffsets), { large: 0.14842300556586271, medium: 0.218, small: 0.07 }, 'Pingdort floor lifts are independently authored by size');
 assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScales), { large: { x: 3.5, y: 3.5 }, medium: { x: 1.75, y: 1.75 }, small: { x: 1, y: 1 } }, 'Pingdort scale table matches new export');
-assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScalePercentages), {}, 'Pingdort export intentionally leaves legacy percentage entries empty');
+assert.deepStrictEqual(plainAnimalRig(pingdort.sizeScalePercentages), { large: { x: 350, y: 350 }, medium: { x: 175, y: 175 }, small: { x: 100, y: 100 } }, 'Pingdort percentage controls mirror its authored size classes');
 assert.deepStrictEqual(plainAnimalRig(pingdort.saddleRule), {}, 'Pingdort neutral saddle rule is preserved from export');
 assert.strictEqual(pingdort.chatheadFrame, null, 'Pingdort has no authored chathead crop');
 assert.strictEqual(pingdort.shoulderGripRule.authoredFixed, true, 'Pingdort fixed shoulder metadata remains intact');
@@ -252,7 +252,8 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : kind === 'skeeri' ? domesticSkeeriSizeScales : neutralSkeeriSizeScales, kind + ' keeps native ruin sizes while scaling domestic inherited size with ground Y');
   assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' retains its empty saddle rule');
   assert.deepStrictEqual(plainAnimalRig(skeeri.shoulderGripRule), {}, kind + ' retains its empty shoulder rule');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), {}, kind + ' does not inherit redundant percentage scales');
+  const percentSizes = Object.fromEntries(Object.entries(skeeri.sizeScales).map(([size, scale]) => [size, { x: scale.x * 100, y: scale.y * 100 }])); // Mirror the uploaded size percentages from each independent Skeeri profile.
+  assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScalePercentages), percentSizes, kind + ' percent controls mirror its own size scales');
   assert.strictEqual(skeeri.creatureShoulderGripDefaultVersion, 4, kind + ' retains the exported grip-default version');
   if (kind === 'skeeri-medium') {
     assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.saddle.position), { x: 0, y: 0.12801484107971195, z: 0.02 }, 'Medium Skeeri keeps its independent saddle coordinates');
