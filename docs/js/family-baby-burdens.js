@@ -160,6 +160,11 @@
     const api = window.Shattercasks;
     const held = api?.heldBurdenInfo?.()?.id === entry.burden.id;
     const back = api?.backCarriedInfo?.()?.id === entry.burden.id;
+    if (entry.burden.flying) {
+      entry.burden.group.visible = true;
+      showWalker(entry, false); // Release-to-impact remains a SINGLE airborne baby, not a second NPC walking out of the crib.
+      return entry;
+    }
     if (held || back) {
       child.carryBy = 'player';
       child.carryPose = back ? 'back' : 'arms';
