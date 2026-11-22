@@ -447,8 +447,9 @@
   }
 
   function renderIncubationAction(actions, entry) {
-    const choices = window.BarnIncubator?.nurseryIncubationChoices?.() || []; // Recomputed only when selection or Farm state changes.
-    const signature = JSON.stringify([entry.id, hasLivestockPermission(), choices]); // Menu-event comparison keeps legacy body observers from causing a rebuild loop.
+    const queued = !!window.PendingAnimalSales?.pendingFor?.(entry); // Pending baby remains visible but cannot enter incubation.
+    const choices = queued ? [] : (window.BarnIncubator?.nurseryIncubationChoices?.() || []); // Recomputed only when selection or Farm state changes.
+    const signature = JSON.stringify([entry.id, hasLivestockPermission(), queued, choices]); // Menu-event comparison keeps legacy body observers from causing a rebuild loop.
     const previous = actions.querySelector('[data-nursery-incubation]'); // Preserve destination/focus across harmless decoration passes.
     if (previous?.dataset.incubationSignature === signature) return;
     previous?.remove();
@@ -499,10 +500,11 @@
     const capacityFull = (window.LivestockNursery?.adultCount?.() || 0) >= (window.LivestockNursery?.adultCapacity?.() || 0);
     const tonicCount = Number(window.AnimalGrowth?.growthTonicCount?.()) || 0;
     const babyValue = babyValueFor(entry);
+    const queued = window.PendingAnimalSales?.pendingFor?.(entry); // Reuses the Farm roster's persisted cancellation state.
 
     if (rename) {
       rename.dataset.nurseryLabel = 'Rename';
-      rename.disabled = !canManage;
+      rename.disabled = !canManage || !!queued;
       rename.title = canManage ? `Rename ${entry.name || 'this baby'}.` : 'Livestock permission required.';
     }
     if (grow) {
@@ -515,16 +517,16 @@
       // from being consumed by that legacy gate. The visible label comes from
       // data-nursery-label above.
       if (grow.firstChild?.nodeType === 3 && grow.firstChild.nodeValue !== 'Nursery Grow') grow.firstChild.nodeValue = 'Nursery Grow';
-      grow.disabled = !canManage || capacityFull || tonicCount < 1;
+      grow.disabled = !canManage || !!queued || capacityFull || tonicCount < 1;
       grow.title = !canManage ? 'Livestock permission required.'
         : capacityFull ? 'Build or upgrade a real barn first.'
         : tonicCount < 1 ? 'You need a Growth Tonic.'
         : `Use 1 Growth Tonic (${tonicCount} owned) and move this baby into an open barn.`;
     }
     if (sell) {
-      sell.dataset.nurseryLabel = `Sell Baby · ${babyValue.amount}g`;
+      sell.dataset.nurseryLabel = queued ? 'Cancel Sale · ' + queued.price + 'g' : `Sell Baby · ${babyValue.amount}g`;
       sell.disabled = !canManage;
-      sell.title = `${babyValue.amount}g is ${Math.round(ECONOMY.babyAdultFraction * 100)}% of this animal's ${babyValue.adultAmount}g adult value.`;
+      sell.title = queued ? 'Keep this baby. No gold has been paid yet.' : `${babyValue.amount}g is ${Math.round(ECONOMY.babyAdultFraction * 100)}% of this animal's ${babyValue.adultAmount}g adult value.`;
     }
   }
 
@@ -631,21 +633,12 @@
     return true;
   }
 
-  function cleanupBabyBreedingRefs(id) {
-    const loadPairs = animalDeps?._loadWorldBreedingPairs;
-    const savePairs = animalDeps?._saveWorldBreedingPairs;
-    if (typeof loadPairs !== 'function' || typeof savePairs !== 'function') return;
-    const pairs = loadPairs() || [];
-    const clean = pairs.filter(pair => !(pair?.parentA?.source === 'world' && String(pair.parentA.id) === String(id))
-      && !(pair?.parentB?.source === 'world' && String(pair.parentB.id) === String(id)));
-    if (clean.length !== pairs.length) savePairs(clean);
-  }
-
   function renameSelected(section) {
     const list = animalDeps?.loadWorldLivestock?.() || [];
     const entry = list.find(item => String(item.id) === String(selectedBabyId));
     if (!entry || !isBaby(entry)) return { ok: false, message: 'That Nursery baby was not found.' };
     if (!hasLivestockPermission()) return { ok: false, message: 'Livestock permission required.' };
+    if (window.PendingAnimalSales?.pendingFor?.(entry)) return { ok: false, message: 'Cancel the pending sale before renaming this baby.' };
     const value = window.prompt?.('Rename baby:', entry.name || speciesLabel(entry.kind));
     const trimmed = String(value || '').trim().slice(0, 30);
     if (!trimmed) return { ok: false, cancelled: true, message: 'Rename cancelled.' };
@@ -660,6 +653,7 @@
 
   function growSelected() {
     if (!selectedBabyId) return { ok: false, message: 'Select a Nursery baby first.' };
+    if (window.PendingAnimalSales?.pendingFor?.(currentBabies().find(entry => String(entry.id) === String(selectedBabyId)))) return { ok: false, message: 'Cancel the pending sale before growing this baby.' };
     const result = window.LivestockNursery?.growBaby?.(selectedBabyId) || { ok: false, message: 'Nursery growth is unavailable.' };
     if (result.ok) mostRecentChange = `Grew Nursery baby ${selectedBabyId}.`;
     return result;
@@ -676,17 +670,10 @@
     const entry = index >= 0 ? list[index] : null;
     if (!entry || !isBaby(entry)) return { ok: false, message: 'That Nursery baby was not found.' };
     const rawValue = babyValueFor(entry);
-    const value = { ...rawValue, amount: window.TownMine?.applySaleBonus?.(rawValue.amount) ?? rawValue.amount }; // Town Value sale bonus.
-    list.splice(index, 1);
-    cleanupBabyBreedingRefs(entry.id);
-    animalDeps?.saveWorldLivestock?.(list);
-    inventory.gold = Math.max(0, Number(inventory.gold) || 0) + value.amount;
-    deps?.saveMemberWorldData?.();
-    const amount = panelDeps?.spGold?.querySelector('#spGoldAmount'); // Preserve the HUD icon and suffix when selling a Nursery baby.
-    if (amount) amount.textContent = inventory.gold;
-    window.LivestockNursery?.rerollSwarm?.();
-    mostRecentChange = `Sold Nursery baby ${entry.id} (${entry.name || entry.kind}) for ${value.amount}g; adult value ${value.adultAmount}g.`;
-    return { ok: true, entry, amount: value.amount, adultAmount: value.adultAmount, message: `Sold ${entry.name || speciesLabel(entry.kind)} for ${value.amount}g.` };
+    const amount = window.TownMine?.applySaleBonus?.(rawValue.amount) ?? rawValue.amount; // Town Value sale bonus is quoted when queued.
+    const result = window.PendingAnimalSales?.queue?.(id, amount) || { ok: false, message: 'Animal shipping is not ready.' };
+    if (result.ok) mostRecentChange = `Queued Nursery baby ${entry.id} (${entry.name || entry.kind}) for ${amount}g; adult value ${rawValue.adultAmount}g.`;
+    return { ...result, amount, adultAmount: rawValue.adultAmount };
   }
 
   async function copyDebug() {
@@ -718,7 +705,12 @@
     let result = null;
     if (actionId === 'rename') result = renameSelected(section);
     else if (actionId === 'grow') result = growSelected();
-    else if (actionId === 'sell') result = sellBaby(selectedBabyId);
+    else if (actionId === 'sell') {
+      const baby = currentBabies().find(entry => String(entry.id) === String(selectedBabyId)); // Refresh against the persisted sale marker before acting.
+      result = window.PendingAnimalSales?.pendingFor?.(baby)
+        ? window.PendingAnimalSales.cancel(selectedBabyId)
+        : sellBaby(selectedBabyId);
+    }
     if (!result || result.cancelled) return;
     currentDeps()?.showToast?.(result.message, result.ok !== false);
     if (actionId === 'grow' || actionId === 'sell') {
