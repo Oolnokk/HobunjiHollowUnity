@@ -773,10 +773,13 @@
 
     if (fam.pendingBaby) {
       const adopted = fam.pendingBaby.origin === 'adopted'; // Distinguishes a doorstep adoption from a biological birth.
+      const arrivalDay = savedDay(fam.pendingBaby.bornRawDay); // A malformed legacy date must not be shown as an actual birthday.
       return {
         summary: adopted ? 'Adopted baby arrived' : 'Baby arrived',
-        rows: [...rows, ['Status', 'Awaiting newborn naming'], ['Arrival date', dateLabel(savedDay(fam.pendingBaby.bornRawDay))]],
-        note: 'The child has arrived. Complete the naming prompt; its original arrival date is already saved.',
+        rows: [...rows, ['Status', 'Awaiting newborn naming'], ['Arrival date', dateLabel(arrivalDay)]],
+        note: arrivalDay == null
+          ? 'A newborn is awaiting a name, but this save has no valid recorded arrival day.'
+          : 'The child has arrived. Complete the naming prompt; its original arrival date is already saved.',
       };
     }
     if (fam.pendingAdoption) {
