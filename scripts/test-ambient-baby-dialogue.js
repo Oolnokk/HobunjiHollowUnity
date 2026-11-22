@@ -19,6 +19,7 @@ async function main() {
   let proxyActive = false; // Distinguishes a baby in its cup, held by a parent, or thrown.
   let carryAnchor = null; // The visible burden returned by the existing family baby burden owner.
   let day = 10; // Test-day used for the ordinary daily greeting ledger.
+  let sceneAvailable = true; // Simulates a loading/unavailable world scene before the next greeting attempt.
   let completeConfigLoad; // Controls the asynchronous authored config load to expose registration races.
   const pendingConfig = new Promise(resolve => { completeConfigLoad = resolve; });
   const events = []; // Captures real DOM event payloads emitted by successfully rendered ambient bubbles.
@@ -55,7 +56,7 @@ async function main() {
   const walker = { rec: { id: 'child_babble_test', name: 'Pip', isChild: true, ambientGreetings: true }, root: babyRoot, area: 'interior', profile: null };
   ambient.init({
     THREE: { Group, Vector3 },
-    getActiveScene: () => ({ add() {} }),
+    getActiveScene: () => sceneAvailable ? ({ add() {} }) : null,
     getCurrentArea: () => 'interior',
     getNpcWalkers: () => [walker],
     getPlayerPosition: () => ({ x: 0, z: 0 }),
@@ -94,8 +95,13 @@ async function main() {
 
   // With the real walker far away, only the carried proxy can be close enough to trigger the player greeting.
   carryAnchor = { mapId: 'interior', group: carriedGroup };
+  sceneAvailable = false;
   ambient.update(10000); // First normal 5 Hz scan starts the existing 300 ms dwell timer.
-  ambient.update(10400); // Second scan should render a newborn greeting on the carried object.
+  ambient.update(10400); // Scene is unavailable; the baby's one daily greeting must not be spent.
+  assert.ok(!ambient.getDebug().active.some(item => item.speakerId === walker.rec.id && item.greeting),
+    'A missing scene should never count as a completed newborn greeting');
+  sceneAvailable = true;
+  ambient.update(10800); // Same calendar day: greeting retries successfully once rendering is possible.
   const greeting = ambient.getDebug().active.find(item => item.speakerId === walker.rec.id && item.greeting);
   assert.ok(greeting?.directedAtPlayer, 'The real proximity scheduler permits held babies to babble toward the player');
   assert.equal(ambient.getDebug().lastBabySpeech.root, carriedGroup.name);
@@ -108,7 +114,7 @@ async function main() {
   assert.equal(ambient.show(babyRoot, 'Hello, friend.', { speakerId: 'neighbor' }).textPart.text,
     'Hello, friend.', 'Unrelated adult NPCs never inherit babble');
 
-  console.log('Infant ambient integration passed: source renderer, carry origin, ghost suppression, real proximity, toddler transition and JSON load.');
+  console.log('Infant ambient integration passed: source renderer, carry origin, ghost suppression, real proximity, scene-retry, toddler transition and JSON load.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
