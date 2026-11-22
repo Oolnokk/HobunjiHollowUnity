@@ -97,7 +97,13 @@ for (const adult of [puktuk, second]) {
   assert(adult.def.attackRangePx > 0, 'passive adults gain a usable defensive combat profile');
 }
 for (const safe of [juvenile, unrelated, far, tamed]) assert.equal(safe.def.hostile, false, 'other species, babies, distant and owned pets stay peaceful');
-clock += 15000;
+clock += 5000;
+nestListener({ type: 'nest_stolen', speciesKind: 'puktuk', itemKey: 'puktukBaby',
+  x: 70, y: 0, areaId: ctx.zoneId, liveBirth: true });
+clock += 10000;
+R.update(puktuk, 0.3, [puktuk], [player], ctx);
+assert.equal(puktuk.def.hostile, true, 'stealing a second baby extends the existing temporary defense rather than resetting it');
+clock += 5000;
 R.update(puktuk, 0.3, [puktuk], [player], ctx);
 assert.equal(puktuk.def.hostile, false, 'maternal defense is temporary');
 assert.equal(puktuk.state, 'return', 'nonpermanent defenders return to their previous homes');
