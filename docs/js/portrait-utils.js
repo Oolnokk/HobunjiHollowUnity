@@ -2084,8 +2084,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const hoodPolicy = resolveHoodBeardPolicy(hood, resolvedFighter);
     const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
       {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
-        topConeSpread:hoodPolicy.topConeSpread,hoodAlphaFloor:hoodPolicy.alphaFloor,
-        whiskerMask}); // The upper cover cone, when authored, beats even whiskers; the lower cone permits ordinary requests.
+        topConeSpread:hoodPolicy.topConeSpread,
+        topUpConeSpread:hoodPolicy.topUpConeSpread,
+        topDownConeLength:hoodPolicy.topDownConeLength,
+        hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask}); // The upper cover cone, when authored, beats even whiskers; the lower cone permits ordinary requests.
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
@@ -2476,11 +2478,14 @@ function resolveBeardHoodAuthoring(option, fighter) {
 
 function resolveHoodBeardPolicy(option, fighter) {
   const api=window.PortraitBeardHoodCutout;
-  if (!option) return {mask:null,mode:'auto',coneSpread:0,topConeSpread:null,alphaFloor:242};
+  if (!option) return {mask:null,mode:'auto',coneSpread:0,
+    topConeSpread:null,topUpConeSpread:0,topDownConeLength:200,alphaFloor:242};
   let mask=option.beardCutoutAllowedMask??null;
   let mode=option.beardCutoutPermissionMode;
   let spread=option.beardCutoutConeSpread;
   let topSpread=option.beardCutoutTopConeSpread; // A missing value leaves existing whisker priority unchanged.
+  let topUpSpread=option.beardCutoutTopUpConeSpread; // Independent widening above the top inner rim.
+  let topDownLength=option.beardCutoutTopDownConeLength; // Per-rim vertical reach of the drooping lower cone.
   let floor=option.beardCutoutPaintAlphaFloor; // 8-bit near-opaque hood paint / automatic ring threshold.
   if (fighter) {
     for(const key of portraitVariantKeysForFighter(fighter,option)){
@@ -2488,12 +2493,16 @@ function resolveHoodBeardPolicy(option, fighter) {
       const hasMask=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutAllowedMasks||{},key);
       const hasSpread=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutConeSpread||{},key);
       const hasTopSpread=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutTopConeSpread||{},key);
+      const hasTopUpSpread=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutTopUpConeSpread||{},key);
+      const hasTopDownLength=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutTopDownConeLength||{},key);
       const hasFloor=Object.prototype.hasOwnProperty.call(option.variantBeardCutoutPaintAlphaFloor||{},key);
-      if(!hasMode&&!hasMask&&!hasSpread&&!hasTopSpread&&!hasFloor)continue;
+      if(!hasMode&&!hasMask&&!hasSpread&&!hasTopSpread&&!hasTopUpSpread&&!hasTopDownLength&&!hasFloor)continue;
       if(hasMask)mask=option.variantBeardCutoutAllowedMasks[key];
       if(hasMode)mode=option.variantBeardCutoutPermissionMode[key];
       if(hasSpread)spread=option.variantBeardCutoutConeSpread[key];
       if(hasTopSpread)topSpread=option.variantBeardCutoutTopConeSpread[key];
+      if(hasTopUpSpread)topUpSpread=option.variantBeardCutoutTopUpConeSpread[key];
+      if(hasTopDownLength)topDownLength=option.variantBeardCutoutTopDownConeLength[key];
       if(hasFloor)floor=option.variantBeardCutoutPaintAlphaFloor[key];
       break;
     }
@@ -2502,6 +2511,8 @@ function resolveHoodBeardPolicy(option, fighter) {
     ? mode : (mask?'painted':'auto'); // Existing authored masks remain painted; absent policies use a generated cone.
   return {mask,mode:resolvedMode,coneSpread:api?.normalizeConeSpread(spread)??0,
     topConeSpread:topSpread==null?null:(api?.normalizeConeSpread(topSpread)??0),
+    topUpConeSpread:api?.normalizeConeSpread(topUpSpread)??0,
+    topDownConeLength:api?.normalizeCoverLength(topDownLength)??200,
     alphaFloor:api?.alphaFloor(floor??242,242)??242};
 }
 
@@ -2576,10 +2587,14 @@ function portraitOptionFromJson(entry, json) {
   const beardCutoutConeSpread = maskApi?.normalizeConeSpread?.(json.beardCutoutConeSpread) ?? 0; // Cone expansion below detected inner ring.
   const beardCutoutTopConeSpread = json.beardCutoutTopConeSpread == null ? null
     : (maskApi?.normalizeConeSpread?.(json.beardCutoutTopConeSpread)??0); // Optional upper cover cone; legacy hoods have none.
+  const beardCutoutTopUpConeSpread = maskApi?.normalizeConeSpread?.(json.beardCutoutTopUpConeSpread)??0; // Independent cone widening ABOVE the overhang.
+  const beardCutoutTopDownConeLength = maskApi?.normalizeCoverLength?.(json.beardCutoutTopDownConeLength)??200; // Maximum downward droop before lower rim.
   const beardCutoutPaintAlphaFloor = maskApi?.alphaFloor?.(json.beardCutoutPaintAlphaFloor??242,242) ?? 242; // Hood painting and automatic ring share an 8-bit opacity floor.
   const variantBeardCutoutPermissionMode = {}; // Explicit variant choice of auto/painted/allow-all.
   const variantBeardCutoutConeSpread = {}; // Per-variant expansion rate.
-  const variantBeardCutoutTopConeSpread = {}; // Species-specific upper cover cone widening.
+  const variantBeardCutoutTopConeSpread = {}; // Species-specific downward upper-rim cone widening.
+  const variantBeardCutoutTopUpConeSpread = {}; // Species-specific upward widening.
+  const variantBeardCutoutTopDownConeLength = {}; // Species-specific downward length cap.
   const variantBeardCutoutPaintAlphaFloor = {}; // Per-species hood opacity threshold. // A hood-owned removal permission mask; null is legacy fully-removable.
   const variantBeardCutoutAllowedMasks = {}; // Explicit empty masks mean this hood variant forbids all beard penetration.
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
@@ -2597,6 +2612,10 @@ function portraitOptionFromJson(entry, json) {
     if (Object.prototype.hasOwnProperty.call(value||{},'beardCutoutTopConeSpread'))
       variantBeardCutoutTopConeSpread[key]=value.beardCutoutTopConeSpread==null
         ? null : (maskApi?.normalizeConeSpread?.(value.beardCutoutTopConeSpread)??0); // null explicitly disables shared upper cover.
+    if (value?.beardCutoutTopUpConeSpread != null)
+      variantBeardCutoutTopUpConeSpread[key]=maskApi?.normalizeConeSpread?.(value.beardCutoutTopUpConeSpread)??0;
+    if (value?.beardCutoutTopDownConeLength != null)
+      variantBeardCutoutTopDownConeLength[key]=maskApi?.normalizeCoverLength?.(value.beardCutoutTopDownConeLength)??200;
     if (value?.beardCutoutPaintAlphaFloor != null)
       variantBeardCutoutPaintAlphaFloor[key]=maskApi?.alphaFloor?.(value.beardCutoutPaintAlphaFloor,242)??242;
     if (Array.isArray(value?.hoodTuftRoots))
@@ -2617,6 +2636,8 @@ function portraitOptionFromJson(entry, json) {
     beardCutoutPermissionMode,variantBeardCutoutPermissionMode,
     beardCutoutConeSpread,variantBeardCutoutConeSpread,
     beardCutoutTopConeSpread,variantBeardCutoutTopConeSpread,
+    beardCutoutTopUpConeSpread,variantBeardCutoutTopUpConeSpread,
+    beardCutoutTopDownConeLength,variantBeardCutoutTopDownConeLength,
     beardCutoutPaintAlphaFloor,variantBeardCutoutPaintAlphaFloor,
     hoodWhiskerMask,variantHoodWhiskerMasks };
 }
