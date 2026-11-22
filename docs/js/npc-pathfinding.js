@@ -498,7 +498,7 @@
         endX: drop.landingX, endZ: drop.landingZ, endY }, elapsed: 0,
     }; // The scheduled walker tick owns the leap until its feet land.
     walker._npcCliffGoal = null;
-    walker._npcCliffApproach = null; walker._npcCliffApproachKey = null;
+    walker._npcCliffApproach = null; walker._npcCliffApproachKey = null; walker._npcCliffApproachFailure = null;
     walker._gridPath = null; walker.routePath = null; // Re-plan on the lower shelf, not toward a stale upper handhold.
     cliffDebug.started++;
     cliffDebug.intentionalDrops++;
