@@ -375,7 +375,7 @@ function hiveWorld({ night = false } = {}) {
   return { H: context.HoneyfuzzleHives, grid, state, player, context };
 }
 {
-  const { H, grid, state, context } = hiveWorld();
+  const { H, grid, state, player, context } = hiveWorld(); // Shared simulated player is used by the dusk attachment test below.
   assert.deepEqual(Array.from(H.hivesInLayout({ tiles: [{ c: 5, r: 4, floraKind: 'beehive' }, { c: 1, r: 1, floraKind: 'bush' }] }), h => `${h.col},${h.row}`), ['5,4'], 'only beehive stumps count');
   assert.equal(H.senseTargets({}).length, 1, 'a live hive stump is registered for Sense Mode even when no swarm is present');
   // A: by day, exactly one swarm comes out of the stump, near it, and it is not duplicated.
