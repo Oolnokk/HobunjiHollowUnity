@@ -117,10 +117,18 @@ The Google OAuth consent screen must allow the account being used for testing.
 Direct Drive access requires an internet connection. Saves over 5 MiB use Drive's resumable upload protocol with bounded streaming from Android's private staging cache; smaller JSON/PNG files use multipart uploads. A failed upload must not rename or replace the canonical remote save. The app keeps the browser
 save as a local fallback, but a failed Drive write must never be described as
 a completed cloud save. Remote commits are staged, compared against the version
-observed when the write began, and backed up before publication. Drive v3
-does not guarantee a documented atomic conditional media replacement: competing
-devices can create duplicates or backup versions, which the game reports rather
-than choosing a winner. **Do not run PC and Android simultaneously.**
+observed when the write began, and published only after the previous canonical
+file has been retained under a recoverable name. If publication fails, the app
+tries to restore the previous canonical name. On successful replacements, only
+the three newest game-generated prior versions per file are retained; surplus
+app-generated recovery copies are permanently removed to bound Drive usage.
+A failed publication is not automatically pruned. Selecting a different root
+first pauses autosave and waits for in-flight folder writes to finish.
+
+Drive v3 does not guarantee atomic conditional renames across different files:
+a concurrent PC write can still create duplicates or unresolved backups.
+The app refuses detected conflicts instead of silently choosing a winner.
+**Do not run PC and Android simultaneously.**
 
 Google's `drive.file` permission only covers files created or individually
 opened by the app, **not every child of a selected folder**. For existing
