@@ -868,6 +868,8 @@
       window.DungeonRopeArt.updateRopePlane(rope.mesh,rope.anchor,bob,deps?.getActiveCamera?.());
     else { rope.mesh.position.copy(ropeMidpoint);rope.mesh.quaternion.setFromUnitVectors(ropeAxis,ropeDirection);rope.mesh.scale.set(1,visibleLength,1); }
     rope.marker.position.set(bob.x,bob.y,bob.z);
+    if(rope.torchEndOffset&&rope.torch?.root)
+      rope.torch.root.position.copy(ropeDirection).multiplyScalar(rope.torchEndOffset);
     return bob;
   }
 
@@ -978,10 +980,11 @@
     marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
     marker.material.colorWrite=false;marker.material.depthWrite=false; // Invisible raycast/prompt target: the PNG brush tip is the only visible rope end.
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
-    const torch=shaftRopeId?null:(window.RuinRopeTorch?.attach?.(marker)||null); // A shaft rider sees and grabs the bare rope tip.
+    const torch=window.RuinRopeTorch?.attach?.(marker)||null; // Keep the brazier as decoration on the moving rope.
+    const torchEndOffset=shaftRopeId&&ropeMesh.ropeBrushTip?gripRadius:0; // Hang its chain contact at the brush tip's far edge, below the grip.
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
-      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,torch,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
+      roomId:room.id,mesh:ropeMesh,line:ropeMesh,marker,mount,torch,torchEndOffset,anchor:{x:anchor.x,y:anchor.y,z:anchor.z},ceilingY:anchor.y, // line alias remains for older diagnostics, but it now references the thick cylindrical mesh.
       yaw,length,maxLength:Math.max(length,maxLength),minBobY,angle,launchAngle:angle,omega:0,
       attached:false,braking:false,startPlatform,endPlatform,externalMount:!!mountObject,
       hazard:null,airOnly:!grabPoint,
@@ -2914,7 +2917,7 @@
     isRidingRope:()=>!!state?.activeRope&&inRuin(), // Ground locomotion still publishes camera-resolved stick input before yielding to the swing.
     debugShaftRide:()=>{
       const rope=state?.activeRope;
-      if(rope?.shaftRopeId)return {id:rope.shaftRopeId,bob:clonePoint(rope.bob),angle:rope.angle,
+      if(rope?.shaftRopeId)return {id:rope.shaftRopeId,bob:clonePoint(rope.bob),brazierOffset:clonePoint(rope.torch?.root?.position),angle:rope.angle,
         speed:rope.omega,braking:rope.braking,input:ropeIntent(rope),collisionStops:rope.collisionStops};
       const flight=state?.flight;
       return flight?.shaftRopeId?{id:flight.shaftRopeId,flight:clonePoint(flight),verticalSpeed:flight.vy}:null;
