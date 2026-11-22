@@ -202,6 +202,30 @@ assert.strictEqual(splitOffsetBone.position.y, headOffsetRestY,
 assert.strictEqual(splitHeadScaleJoint.position.y, unchangedHeadScaleY,
   'reset must leave the independent head-scale bone at its original rest position');
 
+// Head size changes have to calculate the scaled skull's true bottom first, then
+// move the neck attachment before a Longoran's hunch can displace the spine.
+splitParent.userData.neckRig.neckLocal = { x: 0, y: -.1, z: 0 }; // Rest bottom of the base-head sprite, in portrait-local coordinates.
+splitParent.userData.neckRig.headCentroidLocal = { x: 0, y: .2, z: 0 }; // Alpha-derived center of the head, which should stay fixed while scaling.
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1.5, offsetY: 0 });
+const largerHeadNeck = headOffsetRestY - .15; // 1.5× head: (1 - 1.5) × (.2 - -.1) moves the jaw and neck lower by .15.
+assert.ok(Math.abs(splitOffsetBone.position.y - largerHeadNeck) < 1e-9,
+  'head scaling must place the neck at the scaled head bottom, not at the unscaled sprite row');
+assert.ok(Math.abs(splitParent.userData.neckRig.scaledNeckLocal.y - (-.25)) < 1e-9,
+  'live rig diagnostics must expose the post-scale neck pixel position');
+assert.strictEqual(splitNeckJoint.position.y, splitBaselineY,
+  'the scaled head correction must use the broad nonrotating placement bone, not the two-pixel bend');
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1.5, offsetY: 0 });
+assert.ok(Math.abs(splitOffsetBone.position.y - largerHeadNeck) < 1e-9,
+  'dragging and reapplying the head slider must not accumulate neck displacement');
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: .5, offsetY: 0 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY + .15)) < 1e-9,
+  'reducing head size raises the recomputed neck attachment');
+api.clearFromParent(splitParent);
+assert.strictEqual(splitOffsetBone.position.y, headOffsetRestY,
+  'clearFromParent must restore the post-scale neck recalculation to its original base');
+assert.strictEqual(splitParent.userData.neckRig.scaledNeckLocal, undefined,
+  'reset clears the temporary scaled-head contact metadata');
+
 // Head Y offset is authored per species/gender as a fraction of the avatar's own
 // model height, and composes additively with a separate per-NPC age-hunch factor —
 // neither one is baked into shared profile data, both are supplied by the caller.
