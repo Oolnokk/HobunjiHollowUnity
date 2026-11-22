@@ -296,6 +296,10 @@
     if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
+  function isBasketBaby(npcId) {
+    const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
+    return !!child && phaseOf(child) === 'basket';
+  }
   // 99 (barely any usable Footing) → 0 over the toddling span. Hidden: children have no resource bars.
   function toddlingFooting(child) {
     if (phaseOf(child) !== 'toddler') return phaseOf(child) === 'basket' ? 99 : 0;
@@ -904,7 +908,7 @@
 
   const api = {
     init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby,
     usefulnessInfo, awardWork, rollWorkQuality,
     isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
     openDreamPicker, openNamingPrompt, createChild,

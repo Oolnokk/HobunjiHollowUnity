@@ -798,12 +798,12 @@
       disc(0, bodyH * 0.97, 0, diameter + .04, .03, diameter + .04, 1.3, { segments: 16 }),
     ];
   }
-  // Baby basket (js/romance-family.js): a low oval woven basket with a soft
-  // folded blanket, wide enough to read as a crib for a newborn.
+  // Baby basket: same compact dimensions as before, using the animal trough's OPEN cup geometry.
   CATALOG.babyBasket = [
-    cyl(0, .13, 0, .8, .26, .56, 1, { topScaleX: 1.1, topScaleZ: 1.12, bottomScaleX: .84, bottomScaleZ: .84, segments: 20 }),
-    disc(0, .255, 0, .9, .035, .64, 1.3, { segments: 20 }),
-    box(0, .215, .1, .62, .07, .3, 1, { color: '#e8c9d6' }),
+    { kind: 'cup', tint: 1, segments: 20, innerScale: .78, basinDepth: .19,
+      topScaleX: 1.1, topScaleZ: 1.12, bottomScaleX: .84, bottomScaleZ: .84,
+      transform: { x: 0, y: .13, z: 0, sx: .8, sy: .26, sz: .56 } },
+    box(0, .13, 0, .62, .045, .38, 1, { color: '#e8c9d6' }), // Soft bedding below the open rim; never a lid.
   ];
   CATALOG.nestBranch = nestRecipe(.84); // 1x1 tile footprint, same scale as the bucket.
   CATALOG.nest = nestRecipe(1.7); // 2x2 tile footprint — matches the den nest marker's existing w:2,h:2 size.
