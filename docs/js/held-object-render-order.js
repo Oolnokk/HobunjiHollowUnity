@@ -3216,13 +3216,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // Empty chunk-source parents share the chunks' materials but draw nothing.
       // An actually drawable mesh without normals still disables the filter for
       // its whole material, including any otherwise compatible meshes sharing it.
-      const inputs = groundMeshes.map(mesh => {
-        const material = mesh.material;
-        return {
-          mesh, material, slots: Array.isArray(material) ? material.slice() : null,
-          mode: groundElevationGeometryMode(mesh), road: isRoadXrayMesh(mesh),
-        };
-      });
+      const inputs = groundMeshes.map(mesh => ({
+        // Store only the material inputs. Detached chunks can be released
+        // even if this scene has no further x-ray replay to refresh the cache.
+        material: Array.isArray(mesh.material) ? mesh.material.slice() : mesh.material,
+        mode: groundElevationGeometryMode(mesh), road: isRoadXrayMesh(mesh),
+      }));
       const materialUses = new Map(); // Aggregate normal availability and road rules once per material.
       for (const { material, mode, road } of inputs) {
         if (!mode) continue;
@@ -3268,13 +3267,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function groundElevationInputsMatch(cached, groundMeshes) {
     if (!cached || cached.inputs.length !== groundMeshes.length) return false;
     for (let i = 0; i < groundMeshes.length; i++) {
-      const mesh = groundMeshes[i], input = cached.inputs[i]; // A new, hidden, or unloaded mesh changes the live list.
-      if (input.mesh !== mesh || input.material !== mesh.material || input.mode !== groundElevationGeometryMode(mesh) ||
-          input.road !== isRoadXrayMesh(mesh)) return false;
-      const slots = input.slots; // Catch in-place edits to multi-material meshes.
-      if (!slots) continue;
-      if (slots.length !== mesh.material.length) return false;
-      for (let slot = 0; slot < slots.length; slot++) if (slots[slot] !== mesh.material[slot]) return false;
+      const mesh = groundMeshes[i], input = cached.inputs[i]; // Compare live material and geometry inputs at this slot.
+      if (input.mode !== groundElevationGeometryMode(mesh) || input.road !== isRoadXrayMesh(mesh)) return false;
+      const current = mesh.material, saved = input.material; // Array snapshots detect in-place material slot edits.
+      if (current === saved) continue;
+      if (!Array.isArray(saved) || !Array.isArray(current) || saved.length !== current.length) return false;
+      for (let slot = 0; slot < saved.length; slot++) if (saved[slot] !== current[slot]) return false;
     }
     return true;
   }

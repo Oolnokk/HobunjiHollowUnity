@@ -818,6 +818,8 @@ const slots = [sharedGroundMaterial];
 const cachedGround = [{ material: slots, geometry: drawable({ normal: {} }) }];
 const firstMaterials = collect(cachedGround, cachedGroundScene);
 assert.equal(collect([...cachedGround], cachedGroundScene), firstMaterials, 'shell and color replays reuse the same material set');
+const equivalentChunk = { material: [...slots], geometry: drawable({ normal: {} }) };
+assert.equal(collect([equivalentChunk], cachedGroundScene), firstMaterials, 'an equivalent replacement chunk can reuse the cache without retaining the previous mesh');
 collect([{ material: sharedGroundMaterial, geometry: drawable() }], otherGroundScene);
 assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false);
 assert.equal(collect(cachedGround, cachedGroundScene), firstMaterials);
