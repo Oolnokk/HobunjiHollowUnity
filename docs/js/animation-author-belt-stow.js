@@ -157,7 +157,7 @@
     slot.className = 'maaSection';
     slot.innerHTML = `
       <div class="maaSectionTitle"><b>Belt-stowed equipment</b><span class="maaSmall maaMuted">Species + gender</span></div>
-      <div class="maaSmall maaMuted">Edit the shared hip attachment point for belt-stowed tools. The torch is the first preview item. This position and rotation apply in gameplay while the tool is put away; they do not move held weapons.</div>
+      <div class="maaSmall maaMuted">Edit the posterior attachment point for stowed tools. The torch is pivoted halfway between grip and emitter and defaults to a 45° angle just behind the portrait. Explicit per-species coordinates override that default; held weapons remain unchanged.</div>
       <div class="maaRow" style="margin-top:8px">
         <button type="button" id="maaBeltStowEdit" class="secondary grow">Edit belt position / rotation</button>
         <button type="button" id="maaBeltStowReset" class="secondary">Reset</button>
