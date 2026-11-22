@@ -619,19 +619,19 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       rc.fillStyle='#779cb5';rc.beginPath();rc.arc(100,94,60,0,Math.PI*2);rc.fill();
       rc.globalCompositeOperation='destination-out';rc.beginPath();rc.arc(100,94,30,0,Math.PI*2);rc.fill();
       rc.globalCompositeOperation='source-over';
+      const pristineRing=rc.getImageData(0,0,SIZE,SIZE).data; // Trace the undeformed inner edge for independent slider checks.
       const stretched=Cut.stretchHoodToRoots(ring,[{x:140.5,y:94.5}],{maxStretch:36});
       const ringAlpha=rc.getImageData(0,0,SIZE,SIZE).data;
       if(stretched.stretched!==1||ringAlpha[(94*SIZE+135)*4+3]>=64
           ||ringAlpha[(94*SIZE+140)*4+3]<64)
         throw Error('Tuft root did not pull the inner ring out to its corner');
-      const originalHood=hd.getImageData(0,0,SIZE,SIZE).data;
-      const broad=Cut.planTuftStretch(ringAlpha,[{x:140.5,y:94.5}],{subdivision:1});
-      const fine=Cut.planTuftStretch(ringAlpha,[{x:140.5,y:94.5}],{subdivision:16});
+      const broad=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{subdivision:1});
+      const fine=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{subdivision:16});
       if(!broad.moves.length||!fine.moves.length||broad.moves[0].radius<=fine.moves[0].radius)
         throw Error('Subdivision did not shrink the deformation influence region');
-      const upper=Cut.planTuftStretch(ringAlpha,[{x:140.5,y:94.5}],{
+      const upper=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{
         aboveInfluence:200,belowInfluence:0});
-      const lower=Cut.planTuftStretch(ringAlpha,[{x:140.5,y:94.5}],{
+      const lower=Cut.planTuftStretch(pristineRing,[{x:140.5,y:94.5}],{
         aboveInfluence:0,belowInfluence:200});
       if(!upper.moves.length||!lower.moves.length
           ||Cut.deformationWeight(upper.moves[0],140.5,84.5)<=Cut.deformationWeight(lower.moves[0],140.5,84.5)
