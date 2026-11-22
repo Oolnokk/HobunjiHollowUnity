@@ -315,29 +315,33 @@
     if (!window.Shattercasks?.discardBurden?.(burden)) return false;
     return breakAt(burden.mapId,scene,p.x,p.y,p.z,cause,attacker);
   }
-  const lungeColliderScratch={origin:{x:0,y:0,z:0},direction:{x:0,y:0,z:0}}; // Reused by crate lunge probes instead of allocating Three.js vectors each movement frame.
-  // The lunge probe and committed swing share the same crate collision filter.
-  // No loot, blast, or persistence mutation occurs until sweepMelee commits the hit.
+  const lungeColliderScratch={origin:{x:0,y:0,z:0},direction:{x:0,y:0,z:0}}; // Reused by the per-frame crate/lunge probe without Three.js allocations.
+  const pileProbePosition=new THREE.Vector3(); // Reused for world positions in crate cone checks and impacts.
+  const lungeProbeOptions={lungeContact:true}; // Shared read-only collision options for lunge detection.
+  // One predicate for the lunge-stop probe and the real melee strike: probing never consumes loot.
+  function pileIntersectsMelee(pile,collider,opts={}) {
+    if(!collider || !validPile(pile))return false;
+    const stamp=Number(opts.actor?.lungeOriginMs); // Suppresses the scheduled strike on a stack already broken by this lunge.
+    if(!opts.lungeContact && Number.isFinite(stamp) && stamp>0
+      && pile.lastLungeContactStamp===stamp
+      && typeof performance!=='undefined' && performance.now()-stamp<800)return false;
+    const p=pile.group.getWorldPosition?.(pileProbePosition)||pile.group.position;
+    if(!p)return false;
+    const dx=p.x-collider.origin.x,dz=p.z-collider.origin.z;
+    const radial=Math.hypot(dx,dz);
+    if(radial>collider.horizontalRangeWorld+.40)return false;
+    const angle=Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),
+      Math.cos(Math.atan2(dz,dx)-collider.yaw));
+    if(Math.abs(angle)>(collider.halfConeRad||.5)+.17)return false;
+    const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/
+      Math.max(.1,collider.horizontalRangeWorld);
+    return Math.abs(expectedY-(p.y+.35))<=collider.halfHeightWorld+.32;
+  }
   function firstMeleePile(collider,opts={}) {
-    if (!collider) return null;
+    if(!collider)return null;
     const mapId=currentArea();
     for(const pile of piles.values()) {
-      if(pile.mapId!==mapId || !validPile(pile))continue;
-      const stamp=Number(opts.actor?.lungeOriginMs); // Suppresses the later ordinary strike only for a crate already hit by this lunge.
-      if(!opts.lungeContact && Number.isFinite(stamp) && stamp>0
-        && pile.lastLungeContactStamp===stamp
-        && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
-      const p=positionOf(pile.group);
-      const dx=p.x-collider.origin.x,dz=p.z-collider.origin.z;
-      const radial=Math.hypot(dx,dz);
-      if(radial>collider.horizontalRangeWorld+.40)continue;
-      const angle=Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),
-        Math.cos(Math.atan2(dz,dx)-collider.yaw));
-      if(Math.abs(angle)>(collider.halfConeRad||.5)+.17)continue;
-      const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/
-        Math.max(.1,collider.horizontalRangeWorld);
-      if(Math.abs(expectedY-(p.y+.35))>collider.halfHeightWorld+.32)continue;
-      return pile;
+      if(pile.mapId===mapId && pileIntersectsMelee(pile,collider,opts))return pile;
     }
     return null;
   }
@@ -348,18 +352,27 @@
     for(const pile of piles.values()) {
       if(pile.mapId===mapId && validPile(pile)){present=true;break;}
     }
-    if(!present)return false; // Avoid even constructing the combat collider outside crate areas.
+    if(!present)return false; // No collider work where there are no live crate stacks.
     const collider=window.Combat?.meleeColliderVolume?.(actor,opts,null,lungeColliderScratch);
-    return !!firstMeleePile(collider,{actor,lungeContact:true});
+    return !!firstMeleePile(collider,lungeProbeOptions);
   }
   function sweepMelee(collider,opts={}) {
-    const pile=firstMeleePile(collider,opts);
-    if(!pile)return false;
-    const p=positionOf(pile.group);
-    if(!reducePile(pile))return false; // No blast or loot without actually removing a crate.
-    if(opts.lungeContact)pile.lastLungeContactStamp=Number(opts.actor?.lungeOriginMs);
-    breakAt(pile.mapId,pile.scene,p.x,p.y+.32,p.z,'melee',opts.actor||null);
-    return true;
+    if(!collider)return false;
+    let hit=false;
+    const mapId=currentArea();
+    const stamp=Number(opts.actor?.lungeOriginMs); // One strike identity shared by the initial contact and later scheduled swing.
+    for(const pile of piles.values()) {
+      if(pile.mapId!==mapId || !pileIntersectsMelee(pile,collider,opts))continue;
+      const p=pile.group.getWorldPosition?.(pileProbePosition)||pile.group.position;
+      if(!p)continue;
+      const x=p.x,y=p.y,z=p.z; // Save impact position before authored variants update the visible crate stack.
+      if(!reducePile(pile))continue;
+      if(opts.lungeContact && Number.isFinite(stamp) && stamp>0)pile.lastLungeContactStamp=stamp;
+      breakAt(mapId,pile.scene,x,y+.32,z,'melee',opts.actor||null);
+      hit=true;
+      if(!opts.lungeContact)break; // Preserve one crate per ordinary swing; a lunge AOE catches every distinct stack in its cone.
+    }
+    return hit;
   }
   function restoreAreaDrops(mapId,scene) {
     if(!mapId||!scene||restoredScenes.get(mapId)===scene)return;
