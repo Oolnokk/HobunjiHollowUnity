@@ -414,63 +414,100 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     ctx.restore();
   }
 
-  function paintMaskOverlay(){
+  function paintMaskOverlay(negotiated){
     const ctx=maskOverlay.getContext('2d');
     const image=ctx.createImageData(SIZE,SIZE),bits=Cut.decodeMask(mask);
+    const refused=Cut.decodeMask(negotiated?.refusedMask);
     for(let i=0;i<bits.length;i++)if(bits[i]){
-      image.data[i*4]=56;image.data[i*4+1]=245;image.data[i*4+2]=210;image.data[i*4+3]=186;
+      image.data[i*4]=refused[i]?252:56;
+      image.data[i*4+1]=refused[i]?65:245;
+      image.data[i*4+2]=refused[i]?145:210;
+      image.data[i*4+3]=190;
+    }
+    ctx.putImageData(image,0,0);
+  }
+  function paintHoodPermissionOverlay(){
+    const ctx=permissionOverlay.getContext('2d');
+    const image=ctx.createImageData(SIZE,SIZE);
+    if(hoodAllowanceMask!==null){
+      const allowed=Cut.decodeMask(hoodAllowanceMask);
+      for(let i=0;i<allowed.length;i++)if(hoodPixels[i*4+3]>=8){
+        image.data[i*4]=allowed[i]?45:239;
+        image.data[i*4+1]=allowed[i]?227:74;
+        image.data[i*4+2]=allowed[i]?151:110;
+        image.data[i*4+3]=96; // Low-opacity colored tint leaves the hood artwork readable.
+      }
     }
     ctx.putImageData(image,0,0);
   }
   function render(){
     ensureStretchedHood();
-    paintMaskOverlay();
-    maskedHood.getContext('2d').clearRect(0,0,SIZE,SIZE);
-    maskedHood.getContext('2d').drawImage(stretchedHood,0,0);
     const hidesBeard=hoodDoc?.tags?.includes('hides-facial-hair')===true;
-    if(!hidesBeard)Cut.applyToHood(maskedHood,mask); // Facewraps retain main's complete beard hiding policy.
+    const hoodCtx=maskedHood.getContext('2d'),beardCtx=survivingBeard.getContext('2d');
+    hoodCtx.clearRect(0,0,SIZE,SIZE);hoodCtx.drawImage(stretchedHood,0,0);
+    beardCtx.clearRect(0,0,SIZE,SIZE);beardCtx.drawImage(beardCanvas,0,0);
+    negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0};
+    if(artReady&&!hidesBeard){
+      negotiationStats=Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hoodAllowanceMask,{
+        hoodMoves:stretchSnapshot?.moves,includeMasks:true
+      });
+    }
+    paintMaskOverlay(negotiationStats);
+    paintHoodPermissionOverlay();
 
     for(const id of ['before','after']){
       const canvas=$(id),ctx=canvas.getContext('2d');ctx.clearRect(0,0,SIZE,SIZE);
       const species=variant.replace(/_(male|female)$/,'');
-      if(species==='mashtzarr'&&!hidesBeard)ctx.drawImage(beardCanvas,0,0); // Main's Mashtzarr beard is below the head.
+      const renderedBeard=id==='before'?beardCanvas:survivingBeard;
+      if(species==='mashtzarr'&&!hidesBeard)ctx.drawImage(renderedBeard,0,0); // Original Mashtzarr under-head beard order.
       if($('showHead').checked)ctx.drawImage(headCanvas,0,0);
-      if(species!=='mashtzarr'&&!hidesBeard)ctx.drawImage(beardCanvas,0,0); // Default main beard layer: above head, below front hood.
+      if(species!=='mashtzarr'&&!hidesBeard)ctx.drawImage(renderedBeard,0,0);
       ctx.drawImage(id==='before'?hoodCanvas:maskedHood,0,0);
-      if(id==='after')drawRootGuides(ctx); // Show the original ring-to-root mapping without adding it to the saved hood.
+      if(id==='after')drawRootGuides(ctx);
     }
 
-    const painter=$('paintCanvas').getContext('2d');painter.clearRect(0,0,SIZE,SIZE);
-    if($('showHead').checked){painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
-    painter.drawImage(beardCanvas,0,0);
-    if($('showHood').checked){painter.globalAlpha=.27;painter.drawImage(stretchedHood,0,0);painter.globalAlpha=1;}
-    painter.drawImage(maskOverlay,0,0);
-    drawRootGuides(painter);
+    const painter=$('paintCanvas').getContext('2d');
+    painter.clearRect(0,0,SIZE,SIZE);
+    const hoodPaint=mode==='hoodAllow'||mode==='hoodProtect';
+    if(hoodPaint){
+      if($('showHead').checked){painter.globalAlpha=.24;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
+      painter.drawImage(hoodCanvas,0,0); // Permissions authored on original hood coordinates, then warped with the hood in-game.
+      painter.drawImage(permissionOverlay,0,0);
+    }else{
+      if($('showHead').checked){painter.globalAlpha=.55;painter.drawImage(headCanvas,0,0);painter.globalAlpha=1;}
+      painter.drawImage(beardCanvas,0,0);
+      if($('showHood').checked){painter.globalAlpha=.27;painter.drawImage(stretchedHood,0,0);painter.globalAlpha=1;}
+      painter.drawImage(maskOverlay,0,0);
+      drawRootGuides(painter);
+    }
 
-    const pixels=Cut.decodeMask(mask);
-    let occupied=0,paintable=0;
-    for(let i=0;i<pixels.length;i++){
-      if(pixels[i]&&stretchedHoodPixels[i*4+3]>=8)occupied++;
+    let paintable=0,hoodArea=0,permittedArea=0;
+    const allowed=hoodAllowanceMask==null?null:Cut.decodeMask(hoodAllowanceMask);
+    for(let i=0;i<SIZE*SIZE;i++){
       if(beardPixels[i*4+3]>=selectedAlphaFloor())paintable++;
+      if(hoodPixels[i*4+3]>=8){hoodArea++;if(!allowed||allowed[i])permittedArea++;}
     }
-    $('maskJson').value=JSON.stringify({mask,hoodTuftRoots:roots,
+    $('maskJson').value=JSON.stringify({beardRequestMask:mask,hoodPermissionMask:hoodAllowanceMask,
+      hoodPermissionScope:hoodScopeKey(),hoodTuftRoots:roots,
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
       hoodPaintAlphaFloor:selectedAlphaFloor()});
     $('status').textContent=(lastError?lastError+'\n':'')
-      +'Beard-painted pixels: '+Cut.countMask(mask)
-      +'\nActual opaque hood pixels cut: '+(hidesBeard?0:occupied)
+      +'Beard requests: '+Cut.countMask(mask)
+      +'\nApproved overlaps (hood removed): '+negotiationStats.approvedPixels
+      +'\nRefused overlaps (beard erased): '+negotiationStats.refusedPixels
+      +'\nBeard pixels actually erased: '+negotiationStats.erasedPixels
+      +'\nNew black-outline pixels: '+negotiationStats.outlinedPixels
+      +'\nHood removable area: '+permittedArea+' / '+hoodArea
+      +'\nHood policy: '+(hoodAllowanceMask===null?'all removable (legacy)':'painted permission mask')
       +'\nPaintable beard pixels at opacity floor: '+paintable
       +'\nDeformation subdivision: '+selectedSubdivision()
       +' · above: '+selectedAboveInfluence()+'% · below: '+selectedBelowInfluence()+'%'
-      +'\nTuft roots: '+roots.length+' · hood ring stretched: '+(stretchSnapshot?.stretched||0)
-      +' · inside ring: '+(stretchSnapshot?.insideRing||0)
+      +'\nTuft roots: '+roots.length+' · stretched: '+(stretchSnapshot?.stretched||0)
       +' · partially stretched: '+(stretchSnapshot?.limited||0)
-      +' · ring not found: '+(stretchSnapshot?.missingRing||0)
-      +'\nMask scope: '+scopeKey()
-      +'\nBeard order: unchanged (before hood)'+(hidesBeard?'\nFacewrap hides beard: no cutout is rendered':'')
-      +'\nArtwork ready: '+artReady
-      +'\nGeometry: none · X-ray: none';
+      +'\nBeard scope: '+scopeKey()+' · hood scope: '+hoodScopeKey()
+      +'\nBeard order: unchanged'+(hidesBeard?'\nFacewrap hides beard: negotiation disabled':'')
+      +'\nArtwork ready: '+artReady+' · no 3D/X-ray';
     $('undo').disabled=!history.length;
   }
   function pushUndo(){
