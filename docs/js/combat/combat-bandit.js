@@ -1497,6 +1497,7 @@
   // here or the bandit stays drawn (and collides) in mid-air until its next lunge.
   function cancelBanditLunge(c) {
     if (!c) return;
+    if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Leaving chase or being staggered cancels a readied charge along with ordinary lunge motion.
     c._banditLunging = false;
     c._banditLungeHopCurrent = 0;
   }
@@ -2037,6 +2038,7 @@
     if (occupied >= BANDIT_MAX_ATTACK_SLOTS) {
       if (!backstabber || !rearOwner || rearOwner.bandit.def?.banditAbilityLoadout?.tap2 === 'backstabFlick') return null;
       _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an ordinary rear holder when a real Backstab specialist joins.
+      if (rearOwner.bandit._banditPreparedCharge) releaseBanditCharge(rearOwner.bandit, target); // A displaced non-specialist cannot keep a stale preparatory reservation.
       used[3] = false;
     }
     let chosen = -1, best = Infinity;
@@ -2550,7 +2552,7 @@
     }
     const committedOwner = banditDirectional(c) ? banditAttackTurnOwner(targetPlayer) : null; // O(1) per-target permission; unrelated targets have independent melee rhythms.
     const preparer = banditDirectional(c) ? banditChargeOwner(targetPlayer) : null;
-    if (slot && banditDirectional(c) && !continuingCombo && c._banditChargeDecisionCdS <= 0
+    if (slot && banditDirectional(c) && !continuingCombo && (c._banditChargeDecisionCdS || 0) <= 0
       && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0
       && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && distToPlayer <= engageRangePx
       && committedOwner && committedOwner !== c && !preparer) {
@@ -3451,6 +3453,7 @@
       // get driven and cleared.
       _banditAction: null, _banditComboIndex: 0,
       _banditFlankElapsedS: 0, _banditFlankRetryS: 0, _banditBackstabSide: 0, _banditTactic: 'idle', // Per-actor Backstab circling timeout, preferred side, and mobile decision log.
+      _banditChargeDecisionCdS: 0, _banditPreparedCharge: null, _banditChargeReleaseAction: null, // Charge roll cadence, draw-only windup pose, and the real released-stage identity.
       _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
       // Per-bandit phase offset for the idle side-to-side strafe applied
       // while queued/waiting (see BANDIT_STRAFE_* below) -- randomized so
@@ -3556,6 +3559,8 @@
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,
     GUARD_DAMAGE_ABSORB: BANDIT_GUARD_DAMAGE_ABSORB,
     MAX_ATTACK_SLOTS: BANDIT_MAX_ATTACK_SLOTS,
+    DIRECTION_SECTORS: BANDIT_DIRECTION_SECTORS,
+    attackTurnOwner: banditAttackTurnOwner, chargeOwner: banditChargeOwner, // Mobile testing tools inspect the per-target turn and preparation without mutating a reservation.
     get attackSlots() { return _banditAttackSlots; },
     get queueRings() { return _banditQueueRings; },
   };
