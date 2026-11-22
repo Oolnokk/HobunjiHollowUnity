@@ -7596,7 +7596,7 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.herdKey && herdNight) {
+          } else if (c.herdKey && herdNight && c.state !== 'herd-panic') { // A spotted predator overrides the open-air herd's nightly settle/sleep schedule.
             // Roaming herds do not use dens. At night every member returns to
             // its own small slot around the herd's shared sleep center, stays
             // visible, and opts into AnimalSleepPresentation via
