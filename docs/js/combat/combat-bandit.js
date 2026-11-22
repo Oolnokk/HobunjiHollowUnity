@@ -1086,8 +1086,8 @@
         ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
       backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
       backstabRetrySeconds: Math.max(0, Number(quickTuning?.backstabRetrySeconds) || 2.5),
-      banditStandoffMaxTiles: Math.max(1.5, Number(pursuit?.standoffMaxTiles) || 3.6),
-      banditStandoffTierStepTiles: Math.max(0, Number(pursuit?.standoffTierStepTiles) || 0.2),
+      banditStandoffMaxTiles: pursuit ? Math.max(1.5, Number(pursuit.standoffMaxTiles) || 3.6) : null, // Null preserves the original large standoff rings for special humanoid encounters.
+      banditStandoffTierStepTiles: pursuit ? Math.max(0, Number(pursuit.standoffTierStepTiles) || 0.2) : null,
       aiType: 'vigilantProtector',
       aggroRangePx: deps.TILE * ((Number(pursuit?.aggroRangeTiles) > 0 ? Number(pursuit.aggroRangeTiles) : 6.2) + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
       leashRangePx: deps.TILE * ((Number(pursuit?.leashRangeTiles) > 0 ? Number(pursuit.leashRangeTiles) : 10) + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
@@ -2383,7 +2383,8 @@
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
     const slot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
     const continuingCombo = c._banditComboIndex > 0; // Continue a successful flurry without letting the flanking behavior interrupt its next strike.
-    const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo; // Only a bandit actually equipped with this technique should spend time seeking its bonus.
+    const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo
+      && Number.isFinite(def.banditStandoffMaxTiles); // Only ordinary bandits use active flanking; special encounter AI retains its own choreography.
     const backstabReady = seekingBackstab && banditQuickAttackConditions(c, targetPlayer).behind; // Same behind predicate used by the actual Quick Attack.
     if (backstabReady) c._banditFlankElapsedS = 0;
     if (slot && seekingBackstab && !backstabReady && distToPlayer < deps.TILE * 6 && !(c._banditFlankRetryS > 0)) {
@@ -2454,9 +2455,12 @@
       const baseAngle = !slot && seekingBackstab
         ? rearAngle + ((c._banditStrafePhase || 0) < Math.PI ? -0.40 : 0.40)
         : (slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle));
-      const maxStandoff = deps.TILE * ((def.banditStandoffMaxTiles || 3.6) + (queueRing?.ringIndex || 0) * (def.banditStandoffTierStepTiles || 0.2)); // Keeps queued enemies close enough to follow a fleeing target.
+      const ordinaryPursuit = Number.isFinite(def.banditStandoffMaxTiles); // Preserve mine/special-enemy ring choreography while ordinary bandits pursue aggressively.
+      const maxStandoff = ordinaryPursuit
+        ? deps.TILE * (def.banditStandoffMaxTiles + (queueRing?.ringIndex || 0) * def.banditStandoffTierStepTiles)
+        : Infinity;
       const baseRadius = slot
-        ? Math.max(def.attackRangePx * 1.25, Math.min(engageRangePx * 0.85, deps.TILE * 2.6))
+        ? (ordinaryPursuit ? Math.max(def.attackRangePx * 1.25, Math.min(engageRangePx * 0.85, deps.TILE * 2.6)) : Math.max(def.attackRangePx * 1.5, engageRangePx * 0.85))
         : Math.max(def.attackRangePx * 1.5, Math.min(engageRangePx * BANDIT_STANDOFF_RANGE_MUL
           * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL), maxStandoff));
       const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
@@ -2478,9 +2482,10 @@
       // everything else in this state machine, and only downshifts to
       // the gentle sway speed once actually close to the target point.
       const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
-      const travelSpeed = distToTarget > deps.TILE * 0.45 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1); // Only the final small sway is slow; retreating targets trigger immediate pursuit.
+      const sprintThreshold = deps.TILE * (ordinaryPursuit ? 0.45 : 1.5); // Preserve special humanoids' earlier stance pacing, but make bandits sprint toward a retreating opponent.
+      const travelSpeed = distToTarget > sprintThreshold ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1);
       const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
-      c._banditTactic = distToTarget > deps.TILE * 0.45 ? 'pursuing' : 'standoff'; // Testing Arena exposes the actual combat movement choice on mobile.
+      c._banditTactic = distToTarget > sprintThreshold ? 'pursuing' : 'standoff'; // Testing Arena exposes the actual combat movement choice on mobile.
       return { aimAngle: towardAngle, moving };
     }
     const alignment = window.Combat?.attackAlignmentStep?.(c, targetPlayer, dt, {
