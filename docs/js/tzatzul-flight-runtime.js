@@ -609,7 +609,17 @@
       state.struck = true; stats.misses++; mark(bird, 'body missed committed dive');
     }
     state.segment = null;
-    if (state.phase === 'swoop') { if (bird._tzNestMother || state.captive) returnHome(bird); else seekFood(bird); return; }
+    if (state.phase === 'swoop') {
+      if (state.readyingReleaseArmed && state.target === deps.player) {
+        // Even if a temporary obstruction prevented the mid-dive diversion, the old attack must
+        // not turn into a surprise post-interaction hit or restart another immediate dive.
+        if (!startCombatOrbit(bird, 'readying', state.target)) returnHome(bird);
+        return;
+      }
+      if (bird._tzNestMother || state.captive) returnHome(bird);
+      else seekFood(bird);
+      return;
+    }
     if (state.phase === 'search') { seekFood(bird); return; }
     if (state.phase === 'readying') {
       const foe = state.target; // Keep circling the selected player; do not retarget to another actor during the activity.
