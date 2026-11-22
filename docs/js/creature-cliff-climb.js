@@ -370,9 +370,10 @@
     return drop ? startLedgeDrop(c, drop) : false;
   }
 
-  function tryIntentionalLedgeDrop(c, goalX, goalY, network) {
-    if (c._cliffClimbCooldownT > 0 || c._branchDefense ||
-        window.Combat?.animalAttacks?.isBusy?.(c)) return false;
+  function tryIntentionalLedgeDrop(c, goalX, goalY, network = networkForCurrentArea()) {
+    if (!c || c.health <= 0 || c.prone || c.onBranch || c.knockbackT > 0 ||
+        c._cliffClimb || c._cliffRouteTravel || c._cliffClimbCooldownT > 0 || c._branchDefense ||
+        !network || window.Combat?.animalAttacks?.isBusy?.(c)) return false;
     const drop = planLedgeDrop(c, goalX, goalY, network, { escape: ESCAPE_STATES.has(c.state) });
     return drop ? startLedgeDrop(c, drop) : false;
   }
