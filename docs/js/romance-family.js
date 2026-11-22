@@ -916,6 +916,7 @@
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
+    for (const child of fam.children) window.AmbientDialogue?.setNpcGreetings?.(child.id, null); // Remove old-world runtime child pools before replacing saved family members.
     registeredChildSpeechPhases.clear(); // Different saved world/character may reuse an old child ID with a different age.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
