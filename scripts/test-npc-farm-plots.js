@@ -374,6 +374,7 @@ class FakeSoilMesh {
   constructor(geometry, material) {
     this.geometry = geometry; this.material = material; this.userData = {}; this.rotation = { x: 0 };
     this.position = { set: (x, y, z) => { this.center = { x, y, z }; } };
+    this.scale = { set: (x, y, z) => { this.scaling = { x, y, z }; } }; // Real water planes are stretched across connected trench boundaries.
   }
   traverse(callback) { callback(this); } // Real Three Mesh traversal includes itself for geometry cleanup.
 }
@@ -408,10 +409,19 @@ assert.equal(bed.geometry.points.length, 81, 'the sculpted soil retains all 9-by
 assert.equal(bed.geometry.points.find(point => point.x === 0 && point.z === 0)?.u, 4.5, 'bed centre UV matches its world X position');
 const edge = (mesh, localX) => mesh.geometry.points.find(point =>
   Math.abs(point.x - localX) < 0.00001 && point.z === 0); // Compare matching local edge points across consecutive trench tiles.
-const leftEdge = edge(trenchLeft, 0.48), rightEdge = edge(trenchRight, -0.48);
+const leftEdge = edge(trenchLeft, 0.5), rightEdge = edge(trenchRight, -0.5);
 assert.ok(leftEdge && rightEdge, 'the two trench tiles expose both adjoining 3D edges');
-assert.ok(Math.abs((rightEdge.u - leftEdge.u) - 0.04) < 0.00001, 'trench texture coordinates continue in world space rather than restarting per tile');
+assert.ok(Math.abs(rightEdge.u - leftEdge.u) < 0.00001, 'adjacent world-space trench UVs connect exactly without grassy seams');
 assert.equal(leftEdge.v, rightEdge.v, 'adjoining trench edges use the same world-space texture V');
+assert.ok(Math.abs(leftEdge.y - 0.016) < 0.00001 && Math.abs(rightEdge.y - 0.016) < 0.00001, 'internal joined trench edges have no raised wall');
+assert.ok(edge(trenchLeft, -0.5).y > 0.08 && edge(trenchRight, 0.5).y > 0.08, 'only the exterior sides retain irrigation banks');
+
+// Rainwater must extend to the shared tile edges, not appear as disconnected
+// puddles, and must remain inside the visible soil bank at the open ends.
+api._test.rainShower();
+const waterTiles = soilScene.children[0].children.filter(mesh => mesh.material?.color === 0x3b6f9a); // Shared water material identifies the two pooled trench overlays.
+assert.equal(waterTiles.length, 2, 'rain adds water to both connected dug cells');
+assert.ok(waterTiles.every(mesh => mesh.scaling?.x > 1 && mesh.scaling.x < 1.2), 'water continues across the inner edge without spilling over the outer bank');
 const liveGeometries = [bed, trenchLeft, trenchRight].map(mesh => mesh.geometry); // Per-tile cloned buffers must be disposed when map ownership changes.
 api.registerMap('map_hobunji_town', []);
 assert.equal(soilScene.children[0].children.length, 0, 'reloaded town removes all stale plot objects');
