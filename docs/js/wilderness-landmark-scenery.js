@@ -359,7 +359,8 @@ function registerStoneCollision(zone,sites){
  }
  unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,blocksBox(x,z,half,worldY){
   if(!Number.isFinite(x)||!Number.isFinite(z))return false;
-  const radius=Math.max(0,Number(half)||0)+largestHalf; // The entire mover footprint plus the widest stone is covered.
+  const moverHalf=Number.isFinite(half)?Math.max(0,half):0; // An invalid external footprint must never create an unbounded bin scan.
+  const radius=moverHalf+largestHalf; // The entire mover footprint plus the widest stone is covered.
   const left=Math.floor((x-radius)/BUCKET_TILES),right=Math.floor((x+radius)/BUCKET_TILES);
   const top=Math.floor((z-radius)/BUCKET_TILES),bottom=Math.floor((z+radius)/BUCKET_TILES);
   for(let bx=left;bx<=right;bx++){
@@ -367,7 +368,7 @@ function registerStoneCollision(zone,sites){
    for(let bz=top;bz<=bottom;bz++){
     for(const stone of rows.get(bz)||[]){
      if(worldY!=null&&worldY>stone.y+stone.height)continue; // Shots passing above a finite stone remain clear.
-     if(Math.abs(x-stone.x)<=half+stone.half&&Math.abs(z-stone.z)<=half+stone.half)return true;
+     if(Math.abs(x-stone.x)<=moverHalf+stone.half&&Math.abs(z-stone.z)<=moverHalf+stone.half)return true;
     }
    }
   }
