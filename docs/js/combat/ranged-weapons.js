@@ -2132,10 +2132,25 @@
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
-      return { aimAngle, moving: false, handled: true, holdingRange: true }; // Keep ranged troops at their post instead of closing distance; their independent home leash still governs retreat/return behavior.
+      const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt); // Out-of-range ranged fighters must close ground rather than stand outside their own shooting envelope.
+      c._banditTactic = 'ranged-pursuit';
+      return { aimAngle, moving, handled: true, holdingRange: !moving };
     }
 
     if (staged && staging.bothHidden(c, targetPlayer)) return abstractBanditVolley(c, targetPlayer, itemKey, def, staging);
+    const closeRange = Math.max(minRange * 1.45, Math.min(maxRange * 0.65, deps.TILE * 4.75)); // Keep a firing standoff without allowing ranged troops to stand across the entire hostile aggro radius.
+    if (!staged && distToPlayer > closeRange) {
+      const approachSeconds = c._rangedApproachS || 0; // Capped sprint between shots; ensures they still periodically fire at a fleeing opponent.
+      if (c._rangedCooldownT > 0 || approachSeconds < 1.15) {
+        const moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, c.def.chaseSpeed, dt);
+        c._rangedApproachS = approachSeconds + dt;
+        if (moving) {
+          c._banditTactic = 'ranged-pursuit';
+          return { aimAngle, moving, handled: true, chasingRange: true };
+        }
+      }
+    }
+    if (c._rangedCooldownT <= 0) c._rangedApproachS = 0; // Once a shot is available, an obstructed approach falls back to ordinary sight/reload/shot logic.
 
     if (def.rangedType !== 'thrown' && !isLoaded(itemKey, c)) {
       if (c._rangedCooldownT <= 0) beginBanditAction(c, 'load', targetPlayer, staged);
