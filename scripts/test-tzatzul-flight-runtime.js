@@ -322,6 +322,29 @@ farBird._tzFlight.readyingReleaseArmed=true;
 farBird.tzatzulNestMapId=oldNestMap;delete w.TzatzulNestInterior;delete deps.enterBuilding;
 w.Fishing.state=null;
 
+// If a cave wall or unavailable line-support prevents a new orbit during a dive,
+// the previously committed body path must finish harmlessly and enter safe recovery.
+assert(supports.attach(farBird,recoveredPoint));
+farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;
+farBird._tzFlight.readyingReleaseArmed=false;farBird._tzFlight.readyingWarning=false;
+player.x=farBird.x-4*64;player.y=farBird.y;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+const beforeBlockedReady=hits;
+const unblockedAttach=supports.attach; // The flight test intentionally rejects newly planned supports, not the existing committed line.
+supports.attach=function(actor,support,t) {
+  return actor===farBird&&support?.dimension===1 ? false : unblockedAttach(actor,support,t);
+};
+w.Fishing.state={phase:'waiting'};
+for(let i=0;i<35;i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeBlockedReady,'blocked orbit cannot cause a real body hit during fishing');
+assert.equal(farBird._tzFlight.phase,'await-roost',
+  'if no safe circling or return leg exists, the interrupted swoop does not immediately renew its attack');
+supports.attach=unblockedAttach;w.Fishing.state=null;
+for(let i=0;i<8;i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeBlockedReady,'restoring a safe flight support does not retroactively hit the player');
+assert(['orbit','readying','return','await-roost'].includes(farBird._tzFlight.phase),
+  'the bird recovers through aerial locomotion rather than a surprise new attack');
+
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
 farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
 assert(supports.attach(farBird,farBird._tzFlight.roost));
