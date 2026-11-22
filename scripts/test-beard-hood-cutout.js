@@ -94,6 +94,16 @@ const erasedFringe=Cut.paintMask(lowAlpha,featherArt,95.5,82.5,1,true,null,255);
 assert.equal(Cut.decodeMask(erasedFringe)[at(95,82)],0,'eraser ignores opacity floor');
 assert.equal(Cut.alphaFloor('128'),128,'numeric slider values work');
 assert.equal(Cut.alphaFloor(-4),1,'minimum floor clamps safely');
+const hoodBrush=new Uint8ClampedArray(SIZE*SIZE*4);
+hoodBrush[at(50,50)*4+3]=255; // Only the actual hood pixel is eligible for protect-mode erasing.
+const allAllowed={size:SIZE,runs:[[0,SIZE*SIZE]]};
+const protectedBrush=Cut.paintMask(allAllowed,hoodBrush,50.5,50.5,2,true,null,8,true);
+assert.equal(Cut.decodeMask(protectedBrush)[at(50,50)],0,'protect-mode brush may deny removal on opaque hood cloth');
+assert.equal(Cut.decodeMask(protectedBrush)[at(51,50)],1,'protect-mode brush leaves transparent hood coordinates unchanged');
+assert.equal(Cut.decodeMask(Cut.paintMask(null,hoodBrush,51.5,50.5,1,false,null,8,true))[at(51,50)],0,
+  'allow-mode painting cannot mark transparent hood pixels');
+assert.equal(Cut.decodeMask(Cut.paintMask(allAllowed,hoodBrush,51.5,50.5,1,true,null,8,true))[at(51,50)],1,
+  'transparent clicks do not convert a hood into a protect-all policy');
 
 // A hollow fine-hood-like annulus: face opening at (100,94), inner ring radius 30,
 // outer cloth radius 60. Tuft corners beyond the opening pull ONLY the near ring.
@@ -269,6 +279,10 @@ assert.equal(Cut.decodeMask(fittedPermission)[at(112,100)],1,
   'painted removable zone follows the stretched hood rather than remaining at the old coordinate');
 assert.equal(Cut.deformHoodPermissionMask(null,[anchorMove]),null,
   'unconfigured hoods remain fully removable after deformation');
+assert.equal(Cut.countMask(Cut.deformHoodPermissionMask({size:SIZE,runs:[]},[anchorMove])),0,
+  'protect-all hood masks remain empty even during corner deformation');
+assert.equal(Cut.countMask(Cut.deformHoodPermissionMask(allAllowed,[anchorMove])),SIZE*SIZE,
+  'explicit full-permission masks remain fully allowed during stretching');
 
 const portrait=fs.readFileSync('docs/js/portrait-utils.js','utf8');
 const original=fs.readFileSync('docs/index.html','utf8');
@@ -293,6 +307,14 @@ assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardScratch.getCont
   'beard and hood are negotiated offscreen and composite back only at their original positions');
 assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('resolveHoodBeardAllowanceMask'),
   'hood cosmetic JSON and species variants supply independent permission masks');
+assert(portrait.includes('const exactSharedArt=key===keys[0]')
+  && portrait.includes('option.variantHoodCutoutMasks'),
+  'exact wearer-specific beard masks work even when the underlying beard sprite is shared');
+assert(portrait.includes('} else if (negotiationError) {')
+  && portrait.includes('drawBreathingLayers(hoodLayers); // Safe fallback'),
+  'failed pixel readbacks cannot silently carve protected hood fabric');
+assert(portrait.includes('maskPixels:result.approvedPixels'),
+  'older debug clients retain a maskPixels field after the two-sided transition');
 assert(portrait.includes('hoodMoves:stretch.moves'),
   'gameplay applies hood stretch to the permission mask as well');
 assert(portrait.includes('variantHoodCutoutMasks')&&portrait.includes('hoodCutoutMask = maskApi?.normalizeMask'),
@@ -338,6 +360,18 @@ assert(html.includes('Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hood
   && html.includes('destination.beardCutoutAllowedMask')
   && html.includes("mode==='hoodProtect'"),
   'mobile editor previews, persists, imports and exports hood permissions separately');
+assert(html.includes('drawCosmetic(hoodDoc,overrideHood,true)')
+  && html.includes("layerName!=='back'"),
+  'editor permission strokes never target authored rear hood layers');
+assert(html.includes("if(scope!=='shared'&&Cut.normalizeMask(json.beardCutoutAllowedMask))")
+  && html.includes("destination.beardCutoutAllowedMask={size:SIZE,runs:[[0,SIZE*SIZE]]}"),
+  'per-variant allow-all can override inherited shared hood restrictions');
+assert(html.includes("mode==='hoodProtect',")===false
+  && html.includes('drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode'),
+  'hood eraser uses opaque-only painting while the beard eraser remains unchanged');
+assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
+  && html.includes('id="showBeardGhost"'),
+  'mobile editor supports separate hood import/export and an alignment ghost');
 assert(!html.includes('three.min.js')&&!html.includes('portrait-spline-rig.js'),
   '2D experiment does not load old 3D rig or Three.js');
 assert(html.includes('const [beardArt,hoodArt]=await Promise.all')
@@ -375,5 +409,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: hood permission masks, approved cloth cutouts, refused beard erasure, black cut-edge outlines, deformed permissions, existing layer order, subpixel stretch and CORS fallback pass.');
+  console.log('Beard/hood: two-mask arbitration, opaque-only hood brushes, approved cloth cuts, refused beard erasure, inset black outlines, warped permissions, original draw order, safe fallback and CORS retry pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
