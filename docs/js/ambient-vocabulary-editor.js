@@ -28,15 +28,11 @@
   }
   function inherited(id) {
     const family = cfg()?.families?.[familyId(id)]?.sliders || {}; // NPC sliders inherit their existing personality family's default axes.
-    return rules().normalizeSliders({ ...rules().DEFAULT_SLIDERS, ...family, ...(cfg()?.characters?.[id]?.sliders || {}) });
+    const seeded = rules().seedSliders({ ...rules().DEFAULT_SLIDERS, ...family }, id); // Editor displays exactly the same initial variation used by runtime.
+    return rules().normalizeSliders({ ...seeded, ...(cfg()?.characters?.[id]?.sliders || {}) });
   }
   function mark(label = 'Vocabulary changed · export JSON to save') {
     $('status').textContent = label; // Existing mobile-visible status label reports every unsaved change.
-  }
-  function hash(text) {
-    let value = 2166136261; // Deterministic per-character variation makes batch generation repeatable and previewable.
-    for (const char of String(text)) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
-    return value >>> 0;
   }
   function ensureCharacter(id) {
     cfg().characters ||= {};
@@ -161,9 +157,7 @@
         if (!npc?.id || cfg().characters?.[npc.id]?.table) continue;
         const original = inherited(npc.id); // Manual NPC slider preferences are preserved when a table is still missing.
         const existing = cfg().characters?.[npc.id];
-        const sliders = existing?.sliders ? rules().normalizeSliders(existing.sliders) : Object.fromEntries(
-          Object.entries(original).map(([key, val]) => [key, clamp(val + (hash(npc.id + ':' + key) % 25) - 12)])
-        ); // Distinct stable characters vary mildly around family preferences, without changing the family itself.
+        const sliders = existing?.sliders ? rules().normalizeSliders(existing.sliders) : original; // Reuse the same stable per-character range already displayed in the editor and runtime.
         const record = ensureCharacter(npc.id);
         record.sliders = sliders;
         record.table = rules().generateTable(cfg().lexicon, sliders, npc.id);
