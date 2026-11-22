@@ -128,26 +128,61 @@ const begin = source.indexOf('  function updateNestInteraction(dt)'); // Keeps t
 const end = source.indexOf('  function debugSnapshot()', begin); // Excludes unrelated diagnostics rendering.
 for (const [key, { genotype }] of offspring) {
   const nest = { itemKey: key, remaining: 1, liveBirth: true, genotype }; // Focused clutch member shares its family's real genotype.
-  let held = 0, removed = 0, queued = 0; // Tracks acquisition and metadata changes separately.
+  let held = 0, removed = 0, queued = 0; // Tracks acquisition, lineage, and original nest content separately.
+  let failSave = false, failQueue = false, saveCalls = 0; // Simulates a full bag, failed save and failed genetics persistence on a real collected offspring.
+  const order = []; // Proves the durable item/lineage commit happens before the destructive nest mutation.
   const pickup = vm.createContext({
     document, _nestTakeHudEl: null, _nestTakeLabelEl: null, _nestTakeFillEl: null, _activeNestContentHoldId: null,
     _nestContentDebug: {}, NEST_TAKE_HOLD_S: 5,
     _currentAimedNestContent: () => ({ nest, record: { id: key, type: 'baby' }, state: {} }),
-    _removeContentRecord: () => removed++,
-    deps: { player: {}, inventory: { [key]: InventoryStacks.MAX_TOTAL }, ITEM_DEFS: {},
+    _removeContentRecord: () => { order.push('remove'); removed++; },
+    deps: { player: {}, inventory: { [key]: InventoryStacks.MAX_TOTAL }, ITEM_DEFS: { [key]: { cat: 'livestock', label: 'Test offspring' } },
       getActiveAction: () => 'nest_take', getActionHeldDown: () => true, getNestHoldT: () => held, setNestHoldT: value => { held = value; },
-      getCurrentArea: () => 'den', showToast() {}, clampInventoryStack() {}, buildInventoryGrid() {}, refreshItemScroll() {}, refreshActionBar() {}, saveMemberWorldData() {}, itemIconForKey: () => '' },
-    window: { InventoryStacks, FarmAnimals: { queueItemGenotype(item, genes) { assert.equal(item, key); assert.equal(genes, genotype); queued++; } } },
-  }); // Uses the same acquisition behavior for every wild baby/egg item.
+      getCurrentArea: () => 'den', showToast() {}, clampInventoryStack() {}, buildInventoryGrid() {}, refreshItemScroll() {}, refreshActionBar() {},
+      saveMemberWorldData() { order.push('save'); saveCalls++; return !failSave; }, itemIconForKey: () => '' },
+    window: { InventoryStacks, FarmAnimals: { queueItemGenotype(item, genes) {
+      assert.equal(item, key);
+      assert.equal(genes, genotype);
+      order.push('lineage');
+      if (failQueue) return false;
+      queued++;
+      return true;
+    } } },
+  }); // Executes production acquisition in a minimal save-aware VM, not a reimplemented transaction.
   vm.runInContext(source.slice(begin, end), pickup);
   pickup.updateNestInteraction(5);
   assert.equal(nest.remaining, 1, `${key}: full bag preserves clutch`);
   assert.equal(removed + queued, 0, `${key}: full bag neither removes the visual nor queues orphan genes`);
+
   pickup.deps.inventory[key] = 0;
+  failSave = true;
   pickup.updateNestInteraction(5);
-  assert.equal(nest.remaining, 0);
+  assert.equal(nest.remaining, 1, `${key}: failed save preserves clutch`);
+  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: failed save restores original bag count`);
+  assert.equal(removed + queued, 0, `${key}: failed save never removes a baby or queues a lineage`);
+
+  failSave = false;
+  failQueue = true;
+  pickup.updateNestInteraction(5);
+  assert.equal(nest.remaining, 1, `${key}: failed lineage persistence preserves clutch`);
+  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: failed lineage restores original bag count`);
+  assert.equal(removed + queued, 0, `${key}: failed lineage never removes a baby`);
+
+  failQueue = false;
+  pickup.deps.ITEM_DEFS = {}; // Malformed cave/den reward key should never create a hidden Pack stack.
+  pickup.updateNestInteraction(5);
+  assert.equal(nest.remaining, 1, `${key}: missing catalog item cannot consume a nest baby`);
+  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: unregistered item cannot become an invisible bag entry`);
+  pickup.deps.ITEM_DEFS = { [key]: { cat: 'livestock', label: 'Test offspring' } };
+
+  order.length = 0;
+  pickup.updateNestInteraction(5);
+  assert.equal(nest.remaining, 0, `${key}: committed acquisition decrements clutch`);
   assert.equal(pickup.deps.inventory[key], 1);
   assert.equal(removed, 1);
   assert.equal(queued, 1, `${key}: successful pickup queues exactly its family genotype`);
+  assert.deepEqual(order, ['save', 'lineage', 'remove'], `${key}: bag and lineage commit before removing a baby`);
+  assert.equal(pickup._nestContentDebug.lastCollectionSaveOk, true);
+
 }
 console.log('All nine wild families (including Moot) have reachable offspring, real coat/pattern/size genes, durable lineage, farm/stable deployment, and capacity-safe pickup.');
