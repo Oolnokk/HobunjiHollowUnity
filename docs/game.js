@@ -5287,6 +5287,8 @@
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
+        const speciesDisplayName = typeof def.label === 'string' && def.label.trim() && def.label.trim().toLowerCase() !== 'undefined'
+          ? def.label.trim() : String(creatureKey); // Canonical fallback for damaged runtime creature definitions and missing Den-Mother labels.
         const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
         const targetScene = optScene || window.GridTileAccessors.getActiveScene();
         const targetGrid  = optGrid  || window.GridTileAccessors.getActiveGrid();
@@ -5338,13 +5340,17 @@
           // hardcoding `player` so a future NPC-owned companion (or a second
           // remote player's companion) can point at any qualifying entity.
           master: null,
-          name: def.label,
+          name: speciesDisplayName,
           state: 'idle',
           wanderTarget: null, wanderT: 0,
           homeX: x, homeY: y,
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        if (typeof creature.name !== 'string' || !creature.name.trim() || creature.name.trim().toLowerCase() === 'undefined') {
+          window.__farmLog?.('[wildlife] recovered invalid spawned creature name for ' + creatureKey + ' (raw=' + String(creature.name) + ')', 'warn');
+          creature.name = speciesDisplayName; // Caller overrides cannot turn an otherwise valid species into an unnamed actor.
+        }
         creature.genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(creatureKey, creature.genotype) ?? creature.genotype; // Old/wizard-spawned Voorg-Asses without genes still render their coat-colored default beard; no random reroll.
         window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         window.ResourceSystem?.initEntity(creature);
