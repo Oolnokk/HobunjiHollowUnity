@@ -554,36 +554,37 @@
         && (!chatOnly || !t.generatedFromShopAccess));
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
-    const sharedEligible = (rec?.sharedDialogueTrees || []).filter(t => deps.canAccessContent(t.visibility) && _dlgEntryEligible(t, world)); // Pre-filter once using the same condition registry as authored dialogue.
-    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // Named copy has first opportunity, not an exclusive monopoly on repeated small talk.
-    const familySpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // Family copy remains available once the character's individual lines have been heard.
-    const scopedSpeech = characterSpeech.some(t => !heard.includes(t.id)) ? characterSpeech
-      : familySpeech.some(t => !heard.includes(t.id)) ? familySpeech
-      : [...characterSpeech, ...familySpeech]; // Unheard named → unheard family → repeat either; no unrelated world-wide fallback.
     let picked = _pickBestEntry(all, world, heard);
-    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // A named NPC's existing authored greeting pool is still their first voice.
-    const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Shared chatter waits until genuine, condition-eligible individual greetings have played.
-    const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Even a literal one-line character fallback speaks before generic family copy on first encounter.
-    const isHeardGeneral = picked && heard.includes(picked.id) && !picked.generatedFromShopAccess
-      && !(picked.priority > 0) && _dlgEntrySpecificity(picked) === 0; // Repeated unconditioned chatter can alternate with scoped dialogue, while story/conditioned trees keep their priority.
-    const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Once both personal and shared lines have circulated, the NPC may return to their own distinctive copy.
-    const keepAuthoredThisTime = !!picked && sharedExhausted && Math.random() < 0.5; // A repeat conversation alternates probabilistically between individual speech and scoped family/character material.
-    if (scopedSpeech.length && !keepAuthoredThisTime && (!picked || (!stillHasNamedLines && !firstAuthoredFallback && (isFallback || isHeardGeneral)))) {
-      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first selection/history remain per speaker; shared lines supplement rather than permanently replace authored greetings.
-    }
-    // Keep eligible shops accessible even after their tree was heard and general chat was not:
-    // family or named shared speech must not hide a merchant's Shop option.
-    if (!chatOnly && (picked?.id === `tree_${rec?.id}_fallback` || picked?.sharedDialogueScope)) {
-      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when fallback/shared chatter would displace a merchant's Shop menu.
+    // Shop access and event-owned dialogue are chosen against the original
+    // authored tree. A shared line must never disguise the fallback from
+    // spouse, family, festival, or other context providers.
+    if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Existing merchant fast access must remain available even once heard.
       if (shops.length) picked = _pickBestEntry(shops, world, heard);
     }
     for (const [id, context] of _contextProviders) {
       try {
-        const provided = context.treeFor?.(rec, { world, defaultTree: picked });
+        const provided = context.treeFor?.(rec, { world, defaultTree: picked }); // Authored choice, before optional personality supplementation.
         if (!provided) continue;
         if (_traceActive()) _dlgTraceSelection = { mode: 'context', source: id, reason: 'Contextual content replaced the normal fallback', world, candidates: [] };
         return provided;
       } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
+    }
+
+    const sharedEligible = (rec?.sharedDialogueTrees || []).filter(t => deps.canAccessContent(t.visibility) && _dlgEntryEligible(t, world)); // Only ordinary Talk uses inherited family or named lines.
+    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // Character-specific copy has first opportunity.
+    const familySpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // The existing reaction family is the secondary voice.
+    const scopedSpeech = characterSpeech.some(t => !heard.includes(t.id)) ? characterSpeech
+      : familySpeech.some(t => !heard.includes(t.id)) ? familySpeech
+      : [...characterSpeech, ...familySpeech]; // Unheard named → unheard family → repeat either, per speaker.
+    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // All other authored trees retain their priority, even when already heard.
+    const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Do not replace unplayed, eligible personal greetings.
+    const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Literal single-line fallback is still heard once.
+    const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Original character copy remains in the rotation on later repeats.
+    const maySupplement = scopedSpeech.length > 0 && (!picked || (isFallback && !stillHasNamedLines && !firstAuthoredFallback)); // No broad override of authored non-fallback content.
+    const keepAuthoredThisTime = maySupplement && isFallback && sharedExhausted && Math.random() < 0.5; // Randomize only when a family-versus-personal choice is actually needed.
+    if (maySupplement && !keepAuthoredThisTime) {
+      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Standard unheard-first selector; shared history stays per NPC.
     }
     if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: picked?.sharedDialogueScope ? `config/dialogue/shared-dialogue.json (${picked.sharedDialogueScope}:${picked.sharedDialogueOwner})` : _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection([...all, ...scopedSpeech], world, heard, picked) };
     return picked;
