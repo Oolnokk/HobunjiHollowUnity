@@ -205,10 +205,14 @@ materials in place once the config loads.
   Charged Breaker alongside that attack. Its charge uses the existing shared
   weapon pose, then converts to the actual staged Charged Breaker when the
   turn opens, with a timeout so blocked preparers cannot starve the gang.
-  Fey Hyped double-strikes keep the turn through their second physical hit.
-  Counter Shield ripostes obey the same attack serialization. The per-actor
-  slot lookup uses a WeakMap and prunes the debug array once per short
-  simulation window instead of scanning all actors on every combat frame.
+  A ready charge only gets priority within its actual safe strike reach.
+  Canceled charges restore authored idle weapon/hand stances, and both the
+  Light/Heavy stance adapter and dodge AI recognize the separate charging
+  phase. Fey Hyped double-strikes keep the turn through their second physical
+  hit. Counter Shield ripostes obey the same attack serialization. Both
+  close-in slots and outer waiting rings use WeakMap actor lookups with
+  frame-batched stale cleanup rather than repeated global scans; changing
+  to ranged/flask/staged combat releases stale melee assignments immediately.
   Non-bandit special humanoids still use the original two-angle slots.
   Testing Arena logs `tactic=`, `quickChance=`, `chasePxS=`, `flankT=`,
   `sector=`, `attackOwner=`, `chargeOwner=`, and `chargeT=` for mobile diagnosis.
