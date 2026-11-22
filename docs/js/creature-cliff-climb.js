@@ -308,12 +308,14 @@
         return false;
       }
       const component = window.CliffRouteNetwork.componentAt(net, startCol, startRow);
+      const pathPerf = window.PerfProfiler?.begin('creature cliff entry search'); // Attributes collision-heavy searches in the in-game profiler.
       const path = window.TilePathfinding?.findPath?.(startCol, startRow, endCol, endRow, (col, row) => {
         const tile = grid()?.[row]?.[col];
         return !!tile && !tile.incline && !isBoundary(tile) && !deps.isSolid(tile.type) &&
           window.CliffRouteNetwork.componentAt(net, col, row) === component &&
           deps.creatureCanEnterTile(c.def, (col + 0.5) * deps.TILE, (row + 0.5) * deps.TILE, NaN, NaN, c, true);
-      }, { bounds: window.TilePathfinding.boxAround(startCol, startRow, endCol, endRow, 10), maxNodes: 6500 });
+      }, { bounds: window.TilePathfinding.boxAround(startCol, startRow, endCol, endRow, 10), maxNodes: 6500, cacheWalkability: true });
+      window.PerfProfiler?.end(pathPerf);
       // The tile pathfinder correctly returns [] when already inside the
       // entrance's tile, but the creature may still be >0.36 tiles from
       // its exact sub-tile handhold coordinate. Walk to the tile center

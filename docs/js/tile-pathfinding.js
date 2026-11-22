@@ -85,6 +85,8 @@
   //   allowDiagonal (default true)
   //   maxNodes (default 4000) — search budget; bounds worst-case cost for
   //     an unreachable/far target instead of scanning the whole map.
+  //   cacheWalkability — reuse tile checks within this search when the
+  //     caller's collision predicate is stable for its duration.
   //   bounds ({minCol,maxCol,minRow,maxRow}, optional) — restricts the
   //     search to a sub-rectangle (e.g. a padded box around start/target)
   //     so a bounded local detour search can't wander off across the
@@ -101,6 +103,15 @@
 
     const startKey = _key(startCol, startRow);
     const targetKey = _key(targetCol, targetRow);
+    const walkability = opts.cacheWalkability ? new Map([[targetKey, true]]) : null; // Scoped to one actor's synchronous search.
+    function walkable(c, r, key) {
+      if (!walkability) return isWalkable(c, r);
+      const cached = walkability.get(key); // Both open and blocked tiles are revisited from several directions.
+      if (cached !== undefined) return cached;
+      const allowed = !!isWalkable(c, r); // Normalizes the predicate's existing truthy/falsy contract.
+      walkability.set(key, allowed);
+      return allowed;
+    }
     const gScore = new Map([[startKey, 0]]);
     const cameFrom = new Map();
     const closed = new Set();
@@ -121,10 +132,11 @@
         if (!inBounds(nc, nr)) continue;
         const nk = _key(nc, nr);
         if (closed.has(nk)) continue;
-        if (!isWalkable(nc, nr)) continue;
+        if (!walkable(nc, nr, nk)) continue;
         // Prevent cutting a diagonal through a blocked orthogonal corner.
         if (d.dc !== 0 && d.dr !== 0) {
-          if (!isWalkable(cur.c + d.dc, cur.r) || !isWalkable(cur.c, cur.r + d.dr)) continue;
+          if (!walkable(nc, cur.r, walkability && _key(nc, cur.r)) ||
+              !walkable(cur.c, nr, walkability && _key(cur.c, nr))) continue;
         }
         const tentativeG = (gScore.get(cur.key) ?? Infinity) + d.cost;
         if (tentativeG < (gScore.get(nk) ?? Infinity)) {
