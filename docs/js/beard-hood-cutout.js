@@ -301,7 +301,7 @@
     // Sample the FIRST opaque pixel on radial rays from the face opening.
     // Using the final lower hit in each column isolates the lower inner rim;
     // scanning the hood's bottom silhouette instead would pick outer cloth.
-    const alphaLimit=alphaFloor(options.alphaLimit,64);
+    const alphaLimit=alphaFloor(options.alphaLimit??242,242); // Near-opaque 95% hood pixels define the ring by default.
     if(!hoodRGBA || hoodRGBA.length!==PIXELS*4) return {points:[],seed:null};
     const seed=openingSeed(hoodRGBA,alphaLimit);
     if(!seed)return {points:[],seed:null};
@@ -423,7 +423,9 @@
       const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
       const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
       const automatic=options.permissionMode==='auto'
-        ? (options.autoPermission || autoHoodAllowanceMask(hood.data,options.coneSpread)) : null;
+        ? (options.autoPermission || autoHoodAllowanceMask(hood.data,options.coneSpread,{
+          alphaLimit:options.hoodAlphaFloor??242
+        })) : null;
       const fittedAllowance=automatic?.mask ??
         (options.permissionMode==='all' ? null : deformHoodPermissionMask(allowanceMask,options.hoodMoves));
       const partition=partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data,options.whiskerMask);
