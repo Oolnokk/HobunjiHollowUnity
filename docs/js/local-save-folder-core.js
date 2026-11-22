@@ -1393,9 +1393,13 @@
   // Save Now is still the explicit operation that initializes it.
   async function chooseFolder() {
     if (!isSupported()) return getStatus();
+    const previouslyArmed = _autoSyncArmed; // Cancellation re-arms the original folder only when no new root was selected.
     let pickerCompleted = false; // Distinguishes a canceled Windows picker from a later IndexedDB/inspection failure.
     let switchCommitted = false; // Determines whether a failed inspection belongs to the newly remembered directory.
+    stopAutoSync(); // Native Android Drive selection can commit the root before its picker Promise resolves.
     try {
+      while (_syncPromise) await _syncPromise; // Finish every older writer before opening the native root chooser.
+      stopAutoSync(); // A writer finishing during the drain must not re-arm the previous root.
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
@@ -1412,6 +1416,9 @@
       _lastAction = 'folder-chosen-awaiting-choice';
       notify();
     } catch (error) {
+      if (!pickerCompleted && previouslyArmed && _state === 'ready' && _handle) {
+        startAutoSync(); // Cancelled or failed before selecting a new native root; old folder is still safe.
+      }
       if (!pickerCompleted && error?.name === 'AbortError') {
         // Chromium uses AbortError for both Cancel and a restricted path denial.
         // No handle was changed and a previously armed folder remains writable.
@@ -1434,8 +1441,12 @@
     if (!isSupported()) return getStatus();
     const previousHandle = _handle; // Retained if recovery folder re-selection fails.
     const previousState = _state; // A canceled picker leaves the old primary folder state intact.
+    const previouslyArmed = _autoSyncArmed; // Keep the original folder's writer paused while changing the recovery root.
     let pickerCompleted = false; // IndexedDB failures must not look like the user canceled the native picker.
+    stopAutoSync();
     try {
+      while (_syncPromise) await _syncPromise; // Native Drive picker may replace the selected root before returning.
+      stopAutoSync();
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Same native picker invocation as normal selection.
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
@@ -1453,6 +1464,7 @@
       _handle = previousHandle;
       _state = previousState;
       _recoveryHandleFresh = false;
+      if (!pickerCompleted && previouslyArmed && _state === 'ready' && _handle) startAutoSync();
       if (!pickerCompleted && error?.name === 'AbortError') {
         _lastError = 'Recovery folder selection canceled or blocked: ' + String(error?.message || error);
         _lastAction = 'recovery-folder-reselect-cancelled';
