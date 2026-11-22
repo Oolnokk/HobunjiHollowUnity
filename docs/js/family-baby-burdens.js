@@ -292,7 +292,7 @@
     carrying: id => ['player', 'spouse'].includes(entries.get(id)?.child?.carryBy), // Dev Companion knows either parent is holding the infant.
     ambientAnchorFor: id => {
       const entry = entries.get(id); // When a parent carries the baby, the real walker is hidden at its previous spot; the existing burden is the visible speech origin.
-      return entry?.burden?.group?.visible && ['player', 'spouse'].includes(entry.child?.carryBy)
+      return entry?.burden?.group?.visible && !entry.burden.flying && ['player', 'spouse'].includes(entry.child?.carryBy)
         ? entry.burden : null; // Existing group/mapId object, no new allocations during 5 Hz ambient greeting scans.
     },
     isProxyActive: id => { // The NPC command wheel must never target the original invisible baby while a proxy is carried or flying.
