@@ -203,7 +203,22 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     // Retry if a world reset removes the fighters while the smoke is running.
     const explainStall=async(stage,error)=>{ // A bare "Timeout exceeded" says nothing about WHY the fighters never fought.
       const state=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa||{},live=window.Combat.deps.hostileObjects,T=window.Combat.deps.TILE;
-        const pick=(e,rival)=>e?{state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,hasWeaponHolder:!!e._banditToolHolder,targetsRival:e._chunkCombatTarget===rival,attackBusy:!!e._enemyAttackBusyLastFrame,stamina:e.stamina,staminaCost:e.def?.attackStaminaCost,cooldown:e.attackCooldownT,retreat:e.retreatT,comboStep:e._banditComboIndex,stagedAction:!!e._banditAction,rangeTiles:+(Number(e.def?.attackRangePx||0)/T).toFixed(2),distanceToRival:rival?+(Math.hypot(e.x-rival.x,e.y-rival.y)/T).toFixed(2):null,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2)}:null;
+        const pick=(e,rival)=>{if(!e)return null;
+          const slot=window.BanditCombat?.attackSlots?.find?.(s=>s.bandit===e);
+          const queued=window.BanditCombat?.queueRings?.find?.(s=>s.bandit===e);
+          const alignment=rival?window.Combat?.attackAlignmentStep?.(e,rival,0):null; // Read-only probe: zero dt cannot rotate the actor during a diagnostic snapshot.
+          const rivalSlots=window.BanditCombat?.attackSlots?.filter?.(s=>s.target===rival)||[];
+          return {state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,
+            hasWeaponHolder:!!e._banditToolHolder,targetsRival:e._chunkCombatTarget===rival,attackBusy:!!e._enemyAttackBusyLastFrame,
+            stamina:e.stamina,staminaCost:e.def?.attackStaminaCost,cooldown:e.attackCooldownT,retreat:e.retreatT,comboStep:e._banditComboIndex,
+            stagedAction:!!e._banditAction,rangeTiles:+(Number(e.def?.attackRangePx||0)/T).toFixed(2),
+            distanceToRival:rival?+(Math.hypot(e.x-rival.x,e.y-rival.y)/T).toFixed(2):null,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2),
+            tactic:e._banditTactic,enemyLoadoutKind:e.enemyLoadoutKind,standoffTiles:e.def?.banditStandoffMaxTiles,
+            loadout:e.def?.banditAbilityLoadout,hasMeleeSlot:!!slot,sector:slot?.sector??null,queueRing:queued?.ringIndex??null,
+            competingSlots:rivalSlots.map(s=>s.bandit?.id||s.bandit?.name||'?'),npcDuel:!!e._npcDuel,
+            facing:Number(e.facing?.toFixed?.(3)),toward:rival?Number(Math.atan2(rival.y-e.y,rival.x-e.x).toFixed(3)):null,
+            alignment:alignment?{eligible:alignment.eligible,aligned:alignment.aligned,desiredFacing:alignment.desiredFacing,deltaRad:alignment.deltaRad}:null,
+            otherCombatTarget:e.targetPlayer===rival};};
         return {omg:pick(omg,pora),pora:pick(pora,omg),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size};}).catch(()=>null);
       return new Error(`${error.message}\n[${stage}] fighter state at timeout: ${JSON.stringify(state)}`); // New Error: a mutated message would not show in the already-captured stack that console.error prints.
     };
