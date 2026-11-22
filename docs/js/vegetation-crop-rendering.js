@@ -433,24 +433,13 @@
     window.BuildingGrassSuppression?.refreshRebuiltBillboardMesh?.(farmWeedBillMesh);
   }
 
-  // Authored town farms are simulated as soil/trench overlays atop an otherwise
-  // grassy base grid. Exclude their footprints from the *source* grass matrices:
-  // building compaction, height followers, and render chunks can then never
-  // resurrect tufts through a worked Ginju bed, even after a scene rebuild.
-  function managedTownPlotKeys() {
-    const keys = new Set(); // Queried by both town grass passes; no per-instance plot scan.
-    const authored = deps.getTownZone()?.farmPlots || [];
-    const registered = window.NpcFarmPlots?.plots?.() || []; // Covers a late map registration or map-data clone.
-    for (const plot of [...authored, ...registered]) {
-      if (plot.mapId && plot.mapId !== 'map_hobunji_town') continue;
-      if (!(plot.managed ?? ['tillers', 'seeders', 'harvesters', 'diggers'].some(role => plot[role]?.length))) continue;
-      for (const tile of plot.tiles || []) {
-        const col = Array.isArray(tile) ? tile[0] : tile.c;
-        const row = Array.isArray(tile) ? tile[1] : tile.r;
-        if (Number.isInteger(col) && Number.isInteger(row)) keys.add(`${col},${row}`);
-      }
-    }
-    return keys;
+  // Town's normalized map layout deliberately contains no farmPlots array:
+  // the NPC plot registry owns the authoritative managed-tile footprint, which
+  // the town loader already uses to replace authored soil/trench ground with
+  // grass beneath the NPC work meshes. Reuse that exact predicate here, so
+  // billboard suppression cannot disagree with the floor normalization.
+  function isManagedTownPlotTile(col, row) {
+    return window.NpcFarmPlots?.isManagedTile?.('map_hobunji_town', col, row) === true;
   }
 
   // Town grass is rebuilt on entry; working NPC plots reserve their tile
@@ -461,11 +450,10 @@
     const townScene = deps.getTownScene();
     if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
     const townGrid = deps.getTownGrid();
-    const farmKeys = managedTownPlotKeys(); // Reserved beds and irrigation trenches, not adjacent lawn.
     let count = 0;
     for (let row = 0; row < trows; row++)
       for (let col = 0; col < tcols; col++)
-        if (townGrid[row]?.[col]?.type === deps.TileType.GRASS && !farmKeys.has(`${col},${row}`)) count++;
+        if (townGrid[row]?.[col]?.type === deps.TileType.GRASS && !isManagedTownPlotTile(col, row)) count++;
     if (count === 0) return;
 
     townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
@@ -478,7 +466,7 @@
     for (let row = 0; row < trows; row++) {
       for (let col = 0; col < tcols; col++) {
         const tile = townGrid[row]?.[col];
-        if (tile?.type !== deps.TileType.GRASS || farmKeys.has(`${col},${row}`)) continue;
+        if (tile?.type !== deps.TileType.GRASS || isManagedTownPlotTile(col, row)) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
         idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
       }
