@@ -3,6 +3,7 @@ package com.oolnokk.hobunjihollow;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Base64;
+import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
@@ -16,7 +17,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,6 +38,7 @@ final class AndroidDriveBackend {
     private static final String DIRECTORY = "application/vnd.google-apps.folder";
     private static final int CHUNK = 48 * 1024;
     private static final int MAX_PATH = 24;
+    private static final int MAX_PREVIOUS_VERSIONS = 3; // Bounded app-owned backup retention per canonical file.
     private final Context context; // Provides private, bounded-memory staging files and the selected root preference.
     private final SharedPreferences prefs; // Stores only selected folder ID and display name, never an OAuth token.
     private final Map<String, InputStream> readers = new HashMap<>(); // Open Drive media streams keyed by opaque native session IDs.
@@ -349,35 +354,65 @@ final class AndroidDriveBackend {
         json(BASE + "/" + encode(id) + "?fields=id,trashed", "PATCH", new JSONObject().put("trashed", true));
     }
 
+    private void deleteOldRecovery(String id) throws Exception {
+        HttpURLConnection conn = connection(BASE + "/" + encode(id), "DELETE", null);
+        try { verify(conn, 204); } finally { conn.disconnect(); }
+    }
+
+    /**
+     * Keep only three app-generated previous versions per canonical filename.
+     * Never delete canonical files, foreign files, or a recovery copy from a
+     * failed publication. Cleanup runs only after the new canonical is verified.
+     */
+    private void trimOldRecoveries(String parentId, String name) throws Exception {
+        String prefix = ".hobunji-previous-" + name + "-";
+        JSONArray entries = children(parentId, null); // Includes app-owned hidden recovery files.
+        List<JSONObject> backups = new ArrayList<>(); // Restrict deletion to our exact name prefix + UUID suffix.
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject file = entries.getJSONObject(i);
+            String candidate = file.optString("name");
+            String suffix = candidate.startsWith(prefix) ? candidate.substring(prefix.length()) : "";
+            try {
+                if (suffix.length() == 36 && UUID.fromString(suffix).toString().equals(suffix) &&
+                        !DIRECTORY.equals(file.optString("mimeType"))) backups.add(file);
+            } catch (IllegalArgumentException ignored) { /* Never delete an unknown filename. */ }
+        }
+        backups.sort(Comparator.comparing((JSONObject file) -> file.optString("modifiedTime", "")).reversed());
+        for (int i = MAX_PREVIOUS_VERSIONS; i < backups.size(); i++) {
+            deleteOldRecovery(backups.get(i).getString("id")); // Permanently prune *only* surplus app-generated versions.
+        }
+    }
+
     private JSONObject commit(JSONObject args) throws Exception {
         WriteSession write = writers.remove(args.getString("id"));
         if (write == null) throw new IOException("Unknown Drive writer.");
         try {
             write.stream.close();
-            verifyUnchanged(write);
-            JSONObject draft = upload(write);
-            String draftId = draft.getString("id");
-            try {
-                verifyUnchanged(write);
-                // A recoverable pre-write backup protects the last canonical version.
-                // Drive's v3 API does not provide a documented atomic compare-and-swap
-                // on media writes, so we refuse stale versions and keep backups.
-                if (write.previousId != null) {
-                    JSONObject copied = json(BASE + "/" + encode(write.previousId) + "/copy?fields=id", "POST",
-                            new JSONObject().put("name", ".hobunji-previous-" + write.canonicalName + "-" + UUID.randomUUID())
-                                    .put("parents", new JSONArray().put(write.parentId)));
-                    if (!validId(copied.optString("id"))) throw new IOException("Drive backup was not confirmed.");
-                    rename(write.previousId, ".hobunji-replaced-" + write.canonicalName + "-" + UUID.randomUUID());
+            verifyUnchanged(write); // Check before uploading any remote draft.
+            JSONObject uploaded = upload(write);
+            String draftId = uploaded.getString("id");
+            if (!validId(draftId)) throw new IOException("Google Drive did not confirm the staged save.");
+            boolean hasPrevious = AndroidDrivePublication.publish(
+                    write.canonicalName, draftId, write.previousId,
+                    new AndroidDrivePublication.Remote() {
+                        @Override public void verifyUnchanged() throws Exception { AndroidDriveBackend.this.verifyUnchanged(write); }
+                        @Override public void rename(String id, String name) throws Exception { AndroidDriveBackend.this.rename(id, name); }
+                        @Override public boolean canonicalExists() throws Exception {
+                            return AndroidDriveBackend.this.child(write.parentId, write.canonicalName) != null;
+                        }
+                    });
+            JSONObject committed = child(write.parentId, write.canonicalName); // Confirm canonical resolves to the staged ID.
+            if (committed == null || !draftId.equals(committed.optString("id")))
+                throw new IOException("Google Drive did not confirm the new canonical file. Inspect recovery copies before retrying.");
+            if (hasPrevious) {
+                try { trimOldRecoveries(write.parentId, write.canonicalName); }
+                catch (Exception cleanup) {
+                    Log.w("HobunjiDrive", "A save succeeded but trimming old Drive recoveries failed", cleanup);
                 }
-                rename(draftId, write.canonicalName);
-                return new JSONObject().put("saved", true);
-            } catch (Exception error) {
-                // Leave a new draft recoverable if the canonical publication failed.
-                // Never trash it when a previous canonical could have been renamed.
-                throw error;
             }
+            return new JSONObject().put("saved", true);
         } finally {
-            write.staging.delete();
+            if (!write.staging.delete()) Log.w("HobunjiDrive", "Could not discard staged local save: " + write.staging.getName());
         }
     }
 
