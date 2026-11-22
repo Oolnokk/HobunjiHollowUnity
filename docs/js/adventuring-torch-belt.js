@@ -20,6 +20,7 @@
   let portraitMount = null; // Active portrait parent; stowed gear follows the same independent portrait facing as back Burdens.
   let lastPoseKey = null; // Skip costly world-space reparenting when the authored/anatomical attachment has not changed.
   let posteriorPosition = null; // Body-local anatomical coordinate retained for mobile diagnosis after portrait reparenting.
+  let desiredStowAngleDeg = -45; // Authoritative body-space tilt, independent of the new portrait-relative quaternion.
 
   function playerBody() {
     return global.PlayerBodyTransformComposer?.getPlayerMesh?.()
@@ -53,11 +54,7 @@
     if (!avatar || !belongsToBody(avatar, body)) return body;
     const rigged = avatar.userData?.neckRig?.skinnedPlane; // Back-carried Burdens follow this active skinned portrait rather than a stale legacy mesh.
     if (rigged?.parent && belongsToBody(rigged, avatar)) return rigged;
-    let rigid = null;
-    avatar.traverse?.(mesh => {
-      if (!rigid && (mesh.name === 'player_avatar_front_plane' || mesh.name === 'npc_avatar_front_plane')) rigid = mesh;
-    });
-    return rigid || avatar; // A loading or plain rigid avatar still follows its parent group's facing.
+    return avatar; // Rigid portraits already follow their group: no per-frame mesh traversal or stale plane cache.
   }
   function sourceImageDimensions(image) {
     return { width:Number(image?.naturalWidth || image?.width) || 0,
@@ -146,6 +143,7 @@
     const key = ['position','rotationDeg','scale'].flatMap(group =>
       ['x','y','z'].map(axis => Number(pose[group]?.[axis]) || 0)).join('|');
     posteriorPosition = point;
+    desiredStowAngleDeg = pose.rotationDeg.z;
     if (root.parent === target && key === lastPoseKey) return; // No matrix bake or allocation for ordinary animation frames.
     if (root.parent !== body) body.add(root); // Compute the physical position in the authoritative posterior frame first.
     rig?.placeRoot?.(root, pose);
@@ -216,7 +214,7 @@
         emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
         posteriorPosition, // Anatomical body-local anchor before the preserved-world portrait transform.
         mountedLocalPosition: root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Real after-reparent coordinates for diagnosis.
-        stowAngleDeg: root && !portraitMount ? Math.round(root.rotation.z * 18000 / Math.PI) / 100 : null, // Local Euler is no longer a world angle after portrait reparenting.
+        stowAngleDeg: desiredStowAngleDeg, // Body-space authored tilt survives the portrait-relative quaternion conversion.
         textureReady: !!art?.material?.map?.image,
         placement,
         idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
