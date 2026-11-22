@@ -31,6 +31,7 @@
   let THREE = null;
   let persistTimer = 0;
   let handScaleTimer = 0; // Debounces hand-GLB rebuilds during touch drags; numeric profile changes still save immediately.
+  const originalPartRuntime = new Map(); // Captures each species' runtime hand/foot defaults before Full Character Scale mutates their shared lookup tables.
   let longoranFeetTimer = 0; // Rebuilds the author-only leg preview after a posture/gait slider settles.
   let longoranWalkTimer = 0; // Runs an isolated, user-requested walk preview; never a gameplay frame loop.
   let focusedEntryKey = null; // Only the explicit Focus selected action changes camera focus; selection and slider edits never reframe it.
@@ -629,6 +630,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       syncLegPortraitAlignment(entry);
       if (entry.species === 'longoran') { refreshLongoranSpine(entry); rebuildLongoranFeet(entry); }
     }
+    restorePartRuntimeDefaults(); // Reset the *actual* source tables as well: a missing hand/foot author override must not leave last-edited geometry on future characters.
+    for (const entry of entries) entry.feet?.setFootScaleMultiplier?.(partScaleFor(entry, 'foot')); // Newly restored fallback values also affect current lineup feet.
     syncSpineGuides(); // Reset visibly restores all selected vertebra positions and the real head pivot.
     window.ProceduralHandFrameDriver?.syncNow?.();
     if (selected) select(selected);
@@ -665,12 +668,60 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     status('Exported width, portrait height, independent leg length, hand/foot size, head size and offset per species/gender.');
   }
 
+  function rememberPartRuntimeDefaults(species, gender) {
+    const key = `${species}::${gender}`; // Stable species+gender snapshot for Reset all, independent of user-authored slider values.
+    if (originalPartRuntime.has(key)) return;
+    const hand = window.HobunjiHandModelProfiles?.data?.speciesScaleOverrides?.[species]; // Original hand-model scale table before slider edits.
+    const feet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale?.[species]; // Original procedural foot scale table.
+    originalPartRuntime.set(key, {
+      hand: hand != null && Object.prototype.hasOwnProperty.call(hand, gender) ? hand[gender] : null,
+      foot: feet != null && Object.prototype.hasOwnProperty.call(feet, gender) ? feet[gender] : null,
+    });
+  }
+
+  function restorePartRuntimeDefaults() {
+    const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Existing game-wide source for procedural feet; restore before spawning new previews.
+    const handApi = window.HobunjiHandModelProfiles; // One batched notification rebuilds hands instead of one rebuild per lineup member.
+    const handRestores = [];
+    for (const [key, original] of originalPartRuntime) {
+      const [species, gender] = key.split('::');
+      const feet = png?.proceduralFeet?.footScale;
+      if (feet) {
+        if (original.foot == null) {
+          if (feet[species]) {
+            delete feet[species][gender];
+            if (!Object.keys(feet[species]).length) delete feet[species];
+          }
+        } else {
+          feet[species] ||= {};
+          feet[species][gender] = original.foot;
+        }
+      }
+      const currentHand = handApi?.data?.speciesScaleOverrides?.[species]?.[gender];
+      if ((currentHand ?? null) !== original.hand) handRestores.push({ species, gender, value: original.hand });
+    }
+    if (handRestores.length && handApi?.mutate) handApi.mutate(data => {
+      data.speciesScaleOverrides ||= {};
+      for (const { species, gender, value } of handRestores) {
+        if (value == null) {
+          if (!data.speciesScaleOverrides[species]) continue;
+          delete data.speciesScaleOverrides[species][gender];
+          if (!Object.keys(data.speciesScaleOverrides[species]).length) delete data.speciesScaleOverrides[species];
+        } else {
+          data.speciesScaleOverrides[species] ||= {};
+          data.speciesScaleOverrides[species][gender] = value;
+        }
+      }
+    }, { kind: 'data' }); // Revert precisely the touched entries; do not erase unrelated Hand Model Author changes.
+  }
+
   function applyAnatomyConfig(profile) {
     const anatomy = profile?.anatomy || {};
     const species = normalizeSpecies(profile?.species);
     const gender = normalizeGender(profile?.gender);
     const pngConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
     if (!species || !gender || !pngConfig) return;
+    rememberPartRuntimeDefaults(species, gender); // Save unedited hand/foot fallback tables once before a slider changes them.
 
     const placement = Number(anatomy.portraitVerticalPlacementRatio);
     if (Number.isFinite(placement)) {
