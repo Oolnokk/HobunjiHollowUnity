@@ -164,7 +164,9 @@
 
   function planTuftStretch(hoodPixels, inputRoots, options = {}) {
     const roots = normalizeRoots(inputRoots);
-    const maxStretch = Math.max(2, Math.min(64, Number(options.maxStretch) || 36));
+    const requestedLimit = options.maxStretch == null ? 36 : Number(options.maxStretch);
+    const maxStretch = Number.isFinite(requestedLimit)
+      ? Math.max(0, Math.min(64, requestedLimit)) : 36; // Actual displacement budget, including 0 and fractional pixels.
     const subdivision = normalizeSubdivision(options.subdivision); // 1=broad, 4=previous behavior, 16=concentrated local deformation.
     const aboveInfluence = normalizeVerticalInfluence(options.aboveInfluence);
     const belowInfluence = normalizeVerticalInfluence(options.belowInfluence);
@@ -173,7 +175,7 @@
       && Number.isFinite(options.openingCenter.y)
       ? options.openingCenter : openingSeed(hoodPixels, alphaLimit);
     const moves = [];
-    const diagnostics = {requested:roots.length,stretched:0,insideRing:0,tooFar:0,
+    const diagnostics = {requested:roots.length,stretched:0,insideRing:0,tooFar:0,limited:0,
       missingRing:0,openingCenter:center,maxStretch,subdivision,
       aboveInfluence,belowInfluence,moves};
     if (!center) {diagnostics.missingRing=roots.length;return diagnostics;}
@@ -183,15 +185,26 @@
       const fromCenter = Math.hypot(root.x-center.x,root.y-center.y);
       const delta = {x:root.x-edge.x,y:root.y-edge.y};
       const length = Math.hypot(delta.x,delta.y);
-      if (fromCenter <= edge.ringDistance + .75 || length <= .75) {
-        diagnostics.insideRing++;continue; // The tuft is already in the hood's opening.
+      if (fromCenter <= edge.ringDistance + .01 || length <= .01) {
+        diagnostics.insideRing++;continue; // Corner is already in the opening, or coincides with the inner edge.
       }
-      if (length > maxStretch) {diagnostics.tooFar++;continue;} // Never create huge, implausible distortions.
-      const normalRadius = Math.min(85, Math.max(20, length * 2.5 + 12));
-      // Subdivision changes the influence region, NOT the target: even the
-      // tightest setting still reaches the marked corner exactly.
+      // The slider used to reject the ENTIRE root until maxStretch >= length,
+      // then jump directly to the target. Instead move continuously along
+      // the edge-to-root vector up to the requested displacement budget.
+      // At the maximum needed distance the fitted edge reaches the root.
+      const appliedLength = Math.min(length,maxStretch);
+      if (length > maxStretch) diagnostics.limited++;
+      if (appliedLength <= 0) continue; // Explicit zero means disabled, with no origin/canvas changes.
+      const progress = appliedLength / length;
+      const appliedDelta = {x:delta.x * progress,y:delta.y * progress};
+      const to = {x:edge.x+appliedDelta.x,y:edge.y+appliedDelta.y};
+      const normalRadius = Math.min(85, Math.max(20, appliedLength * 2.5 + 12));
+      // Subdivision changes influence locality; the displaced edge itself
+      // always reaches the current *partial* target precisely.
       const radius = Math.max(8, Math.min(100, normalRadius * Math.sqrt(4 / subdivision)));
-      moves.push({from:edge,to:root,delta,radius,aboveInfluence,belowInfluence});
+      moves.push({from:edge,to,requestedTo:root,delta:appliedDelta,
+        requestedLength:length,appliedLength,limited:progress<1,
+        radius,aboveInfluence,belowInfluence});
       diagnostics.stretched++;
     }
     return diagnostics;
@@ -212,7 +225,7 @@
 
   function warpForRoot(image, move) {
     const {data,width,height} = image;
-    const original = new Uint8ClampedArray(data); // Read-only source for this root; avoid sequential pixel feedback.
+    const original = new Uint8ClampedArray(data); // Keep each pin's source fixed so interpolation doesn't read already-moved pixels.
     const {to,delta,radius} = move;
     const minX=Math.max(0,Math.floor(to.x-radius)),maxX=Math.min(width-1,Math.ceil(to.x+radius));
     const minY=Math.max(0,Math.floor(to.y-radius)),maxY=Math.min(height-1,Math.ceil(to.y+radius));
@@ -221,18 +234,39 @@
       const dist2=(x+.5-to.x)**2+(y+.5-to.y)**2;
       if(dist2>=r2)continue;
       const weight=deformationWeight(move,x+.5,y+.5);
-      const sx=Math.max(0,Math.min(width-1,Math.round(x-delta.x*weight)));
-      const sy=Math.max(0,Math.min(height-1,Math.round(y-delta.y*weight)));
-      const src=(sy*width+sx)*4,dst=(y*width+x)*4;
-      data[dst]=original[src];data[dst+1]=original[src+1];
-      data[dst+2]=original[src+2];data[dst+3]=original[src+3];
+      if(weight<=0)continue;
+      // Nearest-neighbour rounding previously made every displacement under
+      // roughly half a pixel invisible. Subpixel, premultiplied-alpha sampling
+      // makes 0.25px adjustments visibly move the hood's inner silhouette.
+      const sampleX=Math.max(0,Math.min(width-1,x-delta.x*weight));
+      const sampleY=Math.max(0,Math.min(height-1,y-delta.y*weight));
+      const x0=Math.floor(sampleX),y0=Math.floor(sampleY);
+      const x1=Math.min(width-1,x0+1),y1=Math.min(height-1,y0+1);
+      const fx=sampleX-x0,fy=sampleY-y0;
+      const samples=[
+        [(y0*width+x0)*4,(1-fx)*(1-fy)],
+        [(y0*width+x1)*4,fx*(1-fy)],
+        [(y1*width+x0)*4,(1-fx)*fy],
+        [(y1*width+x1)*4,fx*fy],
+      ];
+      let a=0,r=0,g=0,b=0;
+      for(const [src,factor] of samples){
+        if(factor<=0)continue;
+        const opacity=original[src+3]/255,f=factor*opacity;
+        a+=f;r+=original[src]*f;g+=original[src+1]*f;b+=original[src+2]*f;
+      }
+      const dst=(y*width+x)*4;
+      data[dst]=a>0?r/a:0;
+      data[dst+1]=a>0?g/a:0;
+      data[dst+2]=a>0?b/a:0;
+      data[dst+3]=a*255;
     }
   }
 
   function stretchHoodToRoots(hoodCanvas, inputRoots, options = {}) {
     const roots=normalizeRoots(inputRoots);
     const empty={requested:roots.length,stretched:0,insideRing:0,tooFar:0,
-      missingRing:0,moves:[],applied:false};
+      missingRing:0,limited:0,moves:[],applied:false};
     if (!hoodCanvas || !roots.length) return empty;
     try {
       const ctx=hoodCanvas.getContext('2d',{willReadFrequently:true});
