@@ -26,7 +26,7 @@ async function testStandaloneEditorInteraction(rules) {
       get innerHTML() { return html; },
       set innerHTML(value) { html = String(value); lookup.clear(); },
       querySelector(selector) {
-        const match = /^\\[data-([a-z-]+)="([^"]+)"\\]$/.exec(selector);
+        const match = /^\[data-([a-z-]+)="([^"]+)"\]$/.exec(selector);
         if (match) {
           const key = match[1].replace(/-([a-z])/g, (_, char) => char.toUpperCase());
           return this.querySelectorAll('[data-' + match[1] + ']').find(node => node.dataset[key] === match[2]) || null;
