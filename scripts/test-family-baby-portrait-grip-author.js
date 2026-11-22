@@ -5,95 +5,82 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const source=fs.readFileSync('docs/tools/furniture-avatar-author/carryable-objects.js','utf8');
 const apiSource=fs.readFileSync('docs/config/family-baby-carry-pose.js','utf8');
-const start=source.indexOf('  function drawBabyGripCanvas() {');
+const start=source.indexOf('  function babyImagePoint(local) {');
 const end=source.indexOf('  function createGuides() {',start);
-assert(start>0&&end>start,'the portrait-grip canvas reuses one editor-owned handler');
-assert.match(source,/id="carryBabyGripCanvas"/,'mobile portrait canvas is present');
-assert.match(source,/id="carryBabyU"/,'portrait U input exists');
-assert.match(source,/id="carryBabyV"/,'portrait V input exists');
-assert.match(source,/id="carryBabyDepth"/,'portrait depth input exists');
-assert.match(source,/const draft=api.toProfile\(state.carryable,babyPortraitWidth,babyPortraitHeight\)/,
-  'new randomized baby uses the CURRENT editor pose to reconstruct the unsaved portrait profile');
-assert.match(source,/api.applyFrom\(state.carryable,draft,width,height\)/,
-  'new randomized baby keeps grip coordinates proportional to the actual newborn size');
-assert.doesNotMatch(source,/model\.scale\.setScalar\(BABY_REFERENCE_WIDTH/,
-  'preview must not resize species with different body scales to the same arbitrary model width');
-assert.match(source,/api.toProfile\(state.carryable,babyPortraitWidth,babyPortraitHeight\)/,
-  'baby profile export uses the current real portrait dimensions');
-
+assert(start>0&&end>start,'extract shipped real-portrait grip editor methods');
+for(const name of ['carryBabyGripCanvas','carryBabyOffsetX','carryBabyOffsetY','carryBabyOffsetZ'])
+  assert(source.includes('id="'+name+'"'),name+' authoring control is present');
+assert(source.includes('api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight,babyGripAnchors)'),
+  'reroll captures current unsaved anatomical offsets');
+assert(source.includes('api.applyFrom(state.carryable,draft,width,height,nextAnchors)'),
+  'reroll resolves saved offsets against new baby anatomy');
+assert.doesNotMatch(source,/model\.scale\.setScalar\(BABY_REFERENCE_WIDTH/,'no fixed 0.30 newborn width');
 const window={};new Function('window',apiSource)(window);const api=window.FamilyBabyCarryPose;
-const width=.216,height=.216,state={selectedType:'carry',selectedId:'left',
-  carryable:api.forSize(width,height)};
+const width=.216,height=.216,ratio=.7;
+const anchors=api.anchorsForAvatar({visualCentroidLocalY:.0432,portraitVerticalPlacementRatio:ratio,
+  neckRig:{spinePosteriorY:-.04,spineBase:{x:.02},neckLocal:{x:-.01,y:.06,z:.02}}},width,height);
+const state={selectedType:'carry',selectedId:'left',carryable:api.forSize(width,height,anchors)};
 const actions=new Map(),drawCalls=[],selected=[];
-const canvas={
-  width:280,height:280,captured:null,
-  getBoundingClientRect(){return {left:15,top:40,width:280,height:280};},
-  getContext(){return context;},
-  addEventListener(event,handler){actions.set(event,handler);},
-  setPointerCapture(id){this.captured=id;},
-  hasPointerCapture(id){return this.captured===id;},
-  releasePointerCapture(id){if(this.captured===id)this.captured=null;},
+const context={clearRect(){},fillRect(){},drawImage(...args){drawCalls.push(args)},
+  beginPath(){},arc(){},moveTo(){},lineTo(){},fill(){},stroke(){},fillText(){}};
+const canvas={width:280,height:400,captured:null,
+  getBoundingClientRect(){return {left:15,top:40,width:280,height:400}},
+  getContext(){return context},
+  addEventListener(event,fn){actions.set(event,fn)},
+  setPointerCapture(id){this.captured=id},
+  hasPointerCapture(id){return this.captured===id},
+  releasePointerCapture(id){if(this.captured===id)this.captured=null},
 };
-const context={
-  clearRect(){},fillRect(){},drawImage(...args){drawCalls.push(args);},
-  beginPath(){},arc(){},fill(){},stroke(){},fillText(){},
-};
-const inputs={
-  carryBabyGripCanvas:canvas,
-  carryBabyU:{value:'75',listeners:new Map(),addEventListener(type,cb){this.listeners.set(type,cb);}},
-  carryBabyV:{value:'20',listeners:new Map(),addEventListener(type,cb){this.listeners.set(type,cb);}},
-  carryBabyDepth:{value:'-10',listeners:new Map(),addEventListener(type,cb){this.listeners.set(type,cb);}},
-};
+const inputs=Object.fromEntries(['X','Y','Z'].map((axis,i)=>['carryBabyOffset'+axis,
+  {value:['0.07','-0.09','0.04'][i],listeners:new Map(),
+    addEventListener(type,callback){this.listeners.set(type,callback)}}]));
+inputs.carryBabyGripCanvas=canvas;
 const portrait={width:200,height:200},el=id=>inputs[id]||null;
 let syncs=0,refreshes=0,controls=0;
 const harness=new Function('window','state','el','babyPortraitWidth','babyPortraitHeight',
-  'babyFrontCanvas','refreshGuides','syncHoldingPreview','renderControls','select',`
-  let editingBaby=true,babyPointerId=null,babyPointerSide=null;
-  ${source.slice(start,end)}
-  return {drawBabyGripCanvas,setBabyPortraitGrip,
-    leave(){editingBaby=false;},enter(){editingBaby=true;}};
-`)(window,state,el,width,height,portrait,()=>refreshes++,()=>syncs++,()=>controls++,side=>{
-  selected.push(side);state.selectedId=side;
-});
+  'babyPortraitPlacementRatio','babyGripAnchors','babyFrontCanvas','refreshGuides',
+  'syncHoldingPreview','renderControls','select',
+  'let editingBaby=true,babyPointerId=null,babyPointerSide=null;\n'
+   +source.slice(start,end)
+   +'\nreturn {drawBabyGripCanvas,babyImagePoint,setBabyPortraitGrip,'
+   +'leave(){editingBaby=false},enter(){editingBaby=true}};')(
+  window,state,el,width,height,ratio,anchors,portrait,
+  ()=>refreshes++,()=>syncs++,()=>controls++,side=>{selected.push(side);state.selectedId=side});
 harness.drawBabyGripCanvas();
-assert.equal(drawCalls.length,1,'2D editor draws the actual generated NPC baby portrait');
-assert.equal(drawCalls[0][0],portrait,'portrait image is the one just rendered by Random Baby');
+assert.equal(drawCalls[0][0],portrait,'draw the actual random NPC baby portrait');
+assert.equal(canvas.height,400,'120px lower region supports below-portrait hand grips');
 const originalRotation=JSON.stringify(state.carryable.handTargets.right.rotation);
-const pointer=(u,v,extra={})=>({pointerId:7,clientX:15+u*280,clientY:40+v*280,
-  preventDefault(){this.prevented=true;},...extra});
+const pointer=(u,v)=>({pointerId:7,clientX:15+u*280,clientY:40+v*280,
+  preventDefault(){this.prevented=true}});
 const down=pointer(.12,.5);
 actions.get('pointerdown')(down);
-assert.equal(selected.at(-1),'right','touch selects the nearest hand dot on the infant portrait');
-assert.equal(canvas.captured,7,'drag captures pointer for reliable mobile authoring');
-assert.equal(down.prevented,true,'touching portrait does not scroll the mobile page');
-const drag=pointer(.25,.35);
-actions.get('pointermove')(drag);
-let uv=api.pointToPortrait(state.carryable.handTargets.right,width,height);
-assert(Math.abs(uv.u-.25)<1e-10 && Math.abs(uv.v-.35)<1e-10,
-  'dragging changes normalized image U/V, not an unrelated scene-space hand position');
-assert.equal(JSON.stringify(state.carryable.handTargets.right.rotation),originalRotation,
-  'touch editing the contact point does not change the authored wrist rotation');
-actions.get('pointerup')(pointer(.25,.35));
-assert.equal(canvas.captured,null,'pointer-up releases touch capture');
-assert(refreshes>=2&&syncs>=2&&controls>=2,'both grip visuals and runtime preview update after pointer movement');
-
-inputs.carryBabyU.listeners.get('change')();
-uv=api.pointToPortrait(state.carryable.handTargets.right,width,height);
-assert(Math.abs(uv.u-.75)<1e-10 && Math.abs(uv.v-.2)<1e-10 && Math.abs(uv.depth+.1)<1e-10,
-  'U/V/depth percentages map exactly into the existing baby-local grip coordinates');
-
-const saved=api.toProfile(state.carryable,width,height);
-api.applyFrom(state.carryable,saved,.32,.32);
-uv=api.pointToPortrait(state.carryable.handTargets.right,.32,.32);
-assert(Math.abs(uv.u-.75)<1e-10 && Math.abs(uv.v-.2)<1e-10,
-  'random new baby dimensions preserve the touch-edited portrait grip location');
-
-const originalX=state.carryable.handTargets.right.x;
-harness.leave();
-actions.get('pointerdown')(pointer(.05,.05));
-assert.equal(state.carryable.handTargets.right.x,originalX,
-  'the portrait canvas cannot mutate furniture or child positions after leaving baby authoring');
-
+assert.equal(selected.at(-1),'right','nearest hand grip selected');
+assert.equal(canvas.captured,7,'mobile pointer capture');
+assert.equal(down.prevented,true,'mobile drag prevents page scroll');
+actions.get('pointermove')(pointer(.25,1.25));
+const uv=harness.babyImagePoint(state.carryable.handTargets.right);
+assert(Math.abs(uv.u-.25)<1e-10&&Math.abs(uv.v-1.25)<1e-10,
+  'grip moves below portrait (Y pixel 350), not clamped at image edge');
+assert(state.carryable.handTargets.right.y<0,'below portrait corresponds to negative baby-local height');
+assert.equal(JSON.stringify(state.carryable.handTargets.right.rotation),originalRotation,'wrist rotation unchanged');
+actions.get('pointerup')(pointer(.25,1.25));
+assert.equal(canvas.captured,null,'pointer released');
+assert(refreshes>=2&&syncs>=2&&controls>=2,'hand movement refreshes 3D pose');
+inputs.carryBabyOffsetX.listeners.get('change')();
+let offset=api.gripOffset('right',state.carryable.handTargets.right,anchors,width,height);
+assert(Math.abs(offset.x-.07)<1e-10&&Math.abs(offset.y+.09)<1e-10&&Math.abs(offset.z-.04)<1e-10,
+  'numeric controls edit neck-relative local distances, not percentage coordinates');
+const saved=api.toProfile(state.carryable,width,height,anchors);
+assert.equal(saved.grips.right.anchor,'neck','right profile declares its anatomical anchor');
+const newAnchors=api.anchorsForAvatar({portraitVerticalPlacementRatio:.54,
+  neckRig:{spinePosteriorY:-.07,neckLocal:{x:.03,y:.06,z:-.01}}},.32,.32);
+api.applyFrom(state.carryable,saved,.32,.32,newAnchors);
+offset=api.gripOffset('right',state.carryable.handTargets.right,newAnchors,.32,.32);
+assert(Math.abs(offset.x-.07)<1e-10&&Math.abs(offset.y+.09)<1e-10&&Math.abs(offset.z-.04)<1e-10,
+  'offset survives larger child and moved neck without rescaling');
+const oldX=state.carryable.handTargets.right.x;
+harness.leave();actions.get('pointerdown')(pointer(.05,.05));
+assert.equal(state.carryable.handTargets.right.x,oldX,'no pointer edits after editor exit');
 // Copy and download must both use the exact same baby draft in baby mode.
 const headerStart=source.indexOf("  const mainJsonButton=el('downloadJsonBtn');");
 const headerEnd=source.indexOf("  el('carryBabyEdit').onclick=editBaby;",headerStart);
@@ -108,7 +95,7 @@ const makeButton=(id,title)=>({
 });
 const header=makeButton('downloadJsonBtn','Download JSON');
 const copy=makeButton('copyJsonBtn','Copy Current JSON');
-const profileDraft=()=>api.toProfile(state.carryable,.32,.32);
+const profileDraft=()=>api.toProfile(state.carryable,.32,.32,newAnchors);
 const headerHarness=new Function('el','exportBaby','currentBabyProfile','copyPlainTextWithFallback',`
   let editingBaby=false;
   ${source.slice(headerStart,headerEnd)}
@@ -154,7 +141,7 @@ const mobileStatus={textContent:''};
 const downloaded=[];
 let copiedDirect=null;
 const carryCopyHarness=new Function('window','state','el','babyPortraitWidth','babyPortraitHeight',
-  'download','Blob','copyPlainTextWithFallback',
+  'download','Blob','copyPlainTextWithFallback','babyGripAnchors',
   'let editingBaby=true;\n'+source.slice(profileBegin,profileEnd)
   +'\nreturn {currentBabyProfile,copyBaby,exportBaby};')(
   window,state,id=>({carryBabyCopyText:copyFallback,carryBabyStatus:mobileStatus})[id]||null,
@@ -163,7 +150,7 @@ const carryCopyHarness=new Function('window','state','el','babyPortraitWidth','b
     copiedDirect={text,label};
     fallback.value=text;fallback.focus();fallback.select();
     return false; // Simulated mobile clipboard denial exercises visible manual fallback.
-  });
+  },newAnchors);
 const activeProfile=carryCopyHarness.currentBabyProfile();
 const copyPromise=carryCopyHarness.copyBaby();
 assert.equal(copyFallback.hidden,false,'baby JSON fallback is visible in the active Carryable tab');
