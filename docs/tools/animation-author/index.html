@@ -8305,6 +8305,17 @@ importAnimationProjectFile = async function(file) {
   } finally { if ($('maaImportInput')) $('maaImportInput').value=''; }
 };
 
+// Every file import (including the built-in latest-authored rig snapshot,
+// which attachment-rig-latest-authored-snapshot-core.js feeds through the
+// file input on a startup timer) is tracked, so code that must not race a
+// mode switch, such as a URL scene, can wait for it to settle first.
+const untrackedImportAnimationProjectFileV1547 = importAnimationProjectFile;
+importAnimationProjectFile = function(file) {
+  const pending = Promise.resolve(untrackedImportAnimationProjectFileV1547(file));
+  animationAuthor.importInFlightV1547 = pending;
+  return pending;
+};
+
 importAnimationProjectData = async function(data, options = {}) {
   const importedRigProfiles = normalizedRigProfileLibrary(data?.attachmentRigProfiles || {});
   const result = await baseImportAnimationProjectDataV157(data, options);
@@ -14584,12 +14595,24 @@ function parseAnimationUrlSceneV1547(search) {
   return { actorIds, preset: appliedPreset, name, time };
 }
 
+// The startup rig-snapshot import switches the author into Rig mode when it
+// completes. If that lands while a URL scene is adding actors, Rig mode's
+// one-actor rule clears the first NPC (CI: the Pahu/Leaf kiss lost Pahu and
+// failed with no kiss pair). Wait for that import to be dispatched and finish.
+async function waitForStartupRigImportV1547(timeoutMs = 5000) {
+  const deadline = performance.now() + timeoutMs;
+  const snapshotPending = () => !!window.HOBUNJI_ATTACHMENT_RIG_LATEST_AUTHORED && !window.__hobunjiLatestAuthoredSnapshotImported;
+  while (snapshotPending() && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+  try { await animationAuthor.importInFlightV1547; } catch (_) { /* a failed import already reported itself */ }
+}
+
 async function installAnimationUrlSceneV1547(scene) {
   const npcs = scene.actorIds.map(id => state.npcs.find(npc =>
     String(npc.id || '').toLowerCase() === id || String(npc.name || '').toLowerCase() === id));
   const missing = scene.actorIds.filter((id, i) => !npcs[i]);
   if (missing.length) throw new Error('NPCs not found in this repository: ' + missing.join(', '));
   if (!state.three.ready || !animationAuthor.workspaceRoot) throw new Error('The animation workspace is not ready.');
+  await waitForStartupRigImportV1547(); // Never let the startup Rig-mode switch land mid-install.
   await setAnimationAuthorMode('multi');
   // Unlike "New", an explicit URL scene deliberately replaces a local scene.
   // The old autosave remains untouched if validation fails above.

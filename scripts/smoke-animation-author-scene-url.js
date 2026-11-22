@@ -22,7 +22,13 @@ async function main() {
     const authorHtml = fs.readFileSync(path.join(DOCS, 'tools/animation-author/index.html'), 'utf8');
     const authorMarker = 'window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;';
     if (!authorHtml.includes(authorMarker)) throw Error('Animation author no longer exposes the full-body diagnostics anchor');
-    const instrumentedHtml = authorHtml.replace(authorMarker, authorMarker + `
+    // Regression for a CI-only race: the startup rig-snapshot import switches the
+    // author to Rig mode when it finishes, which used to land mid URL-scene install
+    // and clear Pahu (Rig mode keeps one actor). Delay that import so the race is
+    // deterministic here; the author must wait for it before building the scene.
+    const rigImportMarker = "    if (COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.has(data?.schema)) {\n      await setAnimationAuthorMode('rig');";
+    if (!authorHtml.includes(rigImportMarker)) throw Error('Animation author rig-import anchor moved; update the startup-import race regression');
+    const instrumentedHtml = authorHtml.replace(rigImportMarker, rigImportMarker.replace("{\n", "{\n      await new Promise(resolve => setTimeout(resolve, 900)); // Test-only slow startup import.\n")).replace(authorMarker, authorMarker + `
       window.MultiAvatarAnimationAuthor.__testScaleNpcAndRebuildKiss = (npcId, fraction) => {
         const actor = animationAuthor.actors.find(entry => entry.source?.id === npcId);
         if (!actor) throw Error('NPC was not loaded: ' + npcId);
