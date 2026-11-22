@@ -79,6 +79,7 @@ function makeElement() {
     cancelAnimationFrame(id) { queuedFrames.delete(id); },
   };
   vm.runInNewContext(read('chest-lockpicking.js'), vm.createContext(context), { filename: 'chest-lockpicking.js' });
+  vm.runInNewContext(read('attack-readiness.js'), vm.createContext(context), { filename: 'attack-readiness.js' }); // Uses the real AI readiness predicate for a lock's immediate combat handoff.
   const api = window.ChestLockpicking;
   const flushMicrotasks = () => { while (microtasks.length) microtasks.shift()(); };
   const flushSavePromises = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); }; // Drain chained VM-realm folder promises before reading session state.
@@ -276,6 +277,10 @@ function makeElement() {
   assert.equal(escape.prevented && escape.stopped, true);
   assert.equal(api.isActive(), false, 'Escape dismisses a saving modal immediately');
   assert.equal(api.snapshot().backgroundSaves, 1, 'the detached save continues after closing');
+  const threatenedPlayer = {health:100}; // Real attack-readiness policy must drop the minigame protection after an emergency exit.
+  assert.equal(window.AttackReadiness.activityFor(threatenedPlayer), null, 'enemies no longer treat the player as occupied by lockpicking');
+  assert.equal(window.AttackReadiness.canStrike({}, threatenedPlayer, threatenedPlayer), true,
+    'normal combat evaluation resumes when the lock menu is dismissed');
   assert.equal(lock.acquired, lock.released, 'movement and combat return without waiting for disk');
   assert.equal(api.open({id:'folder-pending',tier:1,onSuccess(){}}), false,
     'reentry to this lock is blocked until its pending write is acknowledged');
@@ -291,6 +296,27 @@ function makeElement() {
   assert.equal(recordFor('folder-pending').folderUnsynced, false, 'the detached write clears the browser pending marker');
   assert.equal(api.open({id:'folder-pending',tier:1,onSuccess(){}}), true);
   assert.equal(api.snapshot().stage, 1, 'secured progress survives a mid-save cancel');
+  press('Button1'); flushMicrotasks();
+
+  // Back during a partially caught set starts the abandonment penalty save.
+  // It must not trap the player just because that newly-triggered folder write is pending.
+  assert.equal(api.open({id:'abandon-during-commit',tier:1,onSuccess(){}}), true);
+  press('Button4'); // Freeze one ring, so cancelling is a scored failure rather than a free retry.
+  assert.equal(api.snapshot().rings[0].frozen, true);
+  press('Button1');
+  assert.equal(api.isActive(), false, 'B closes before the abandonment penalty reaches disk');
+  assert.equal(api.snapshot().backgroundSaves, 1, 'the abandoned set is still being saved');
+  assert.equal(lock.acquired, lock.released);
+  assert.equal(api.open({id:'abandon-during-commit',tier:1,onSuccess(){}}), false,
+    'an abandoned unsynced set cannot be restarted to avoid its penalty');
+  flushMicrotasks();
+  await Promise.resolve();
+  folderResolve({state:'ready',lastAction:'autosaved-browser-to-folder',lastSyncedAt:103,lastError:null});
+  await flushSavePromises();
+  assert.equal(recordFor('abandon-during-commit').misses, 1);
+  assert.equal(recordFor('abandon-during-commit').folderUnsynced, false);
+  assert.equal(api.open({id:'abandon-during-commit',tier:1,onSuccess(){}}), true);
+  assert.equal(api.snapshot().streak, 0, 'abandonment penalty remains intact after reopening');
   press('Button1'); flushMicrotasks();
 
   // The player may switch character or world while a dismissed lock's save is still in flight.
