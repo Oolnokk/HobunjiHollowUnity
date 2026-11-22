@@ -821,7 +821,7 @@
   const AUTO_GRAB_GRACE_S = 0.15, AUTO_GRAB_RADIUS_TILES = 0.75, AUTO_GRAB_REACH_Y = 0.7;
   function tryAutoGrab(player, dt) {
     const fall = player._climbFall;
-    if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
+    if (!fall || player.prone || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false; // Prone characters cannot catch a handhold while tumbling.
     if (fall.noGrab) return false;
     const best = findAirRouteGrab({ x: player.x / deps.TILE, z: player.y / deps.TILE,
       y: player.climbSurfaceY }, null, AUTO_GRAB_RADIUS_TILES, AUTO_GRAB_REACH_Y); // Scripted falls share the free-jump handhold search.
@@ -906,13 +906,19 @@
       player._climbDropped = false;
       const fall = player._climbFall;
       player._climbFall = null;
-      if (fall) window.FallSystem?.land?.(player, fall);
+      if (fall) {
+        const impact = player.prone ? window.HobunjiCliffFallImpact?.resolve?.(player, {
+          dropWorld: fall.dropWorld, dropTiers: window.FallSystem?.dropTiers?.(fall.dropWorld) ?? fall.dropWorld / 2.5,
+          dirX: fall.dirX || 0, dirY: fall.dirY || 0,
+        }) : null; // Knocked-off prone climbers use the same cliff collision profile, not the gentle grip-slip Footing cost.
+        if (!impact) window.FallSystem?.land?.(player, fall);
+      }
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
         beginOnBranch(player, branch, 0);
       }
-      if (player._climbJumpDownAxis) {
+      if (player._climbJumpDownAxis && !player.prone) {
         // Reuses the same tumble/roll movement state an evasive combat
         // dodge uses (see game.js's performDodge), just without its
         // stamina cost, cooldown, or invulnerability window — this is a
