@@ -41,7 +41,9 @@ assert.equal(policy.planFor(baby).pose, 'back', 'farmwork selects back-stow inst
 assert.equal(policy.spouseTarget(parent.rec), null, 'working parent retains ordinary farmwork target while carrying baby');
 policy.tick();
 assert.deepEqual(holdingCalls, ['arms', 'back'], 'actual parenting path reuses spouse carry attachment in the new pose');
-working = false; hour = 23; 
+hour = 19; working = true;
+assert.equal(policy.planFor(baby).pose, 'arms', 'old farmwork requests cannot keep the baby stowed after the spouse finishes their shift');
+working = false; hour = 23;
 assert.equal(policy.planFor(baby).pose, null, 'baby rests in basket during night');
 assert.equal(policy.spouseTarget(parent.rec).area, 'interior', 'carrying spouse returns home before normal bedtime');
 policy.tick();
