@@ -117,7 +117,7 @@ async function testStandaloneEditorInteraction(rules) {
 
   chooseNpc.onclick(); // The old sidebar node is deliberately re-used to ensure selecting a different pane remains safe.
   assert.ok(panel.innerHTML.includes('canonical replacement for testing'), 'NPC checkboxes must display the updated canonical word');
-  assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().characterOverrides, 1);
+  assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().characterOverrides, Object.keys(config.characters).length, 'The workshop must preserve all pre-authored character profiles while editing Pahu');
   const harvestButton = panel.querySelectorAll('[data-harvest-word]')[0];
   assert.ok(harvestButton?.onclick, 'Doorstep candidate words must be actionable on mobile');
   const harvestedWord = harvestButton.dataset.harvestWord;
