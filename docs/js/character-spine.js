@@ -252,6 +252,12 @@
     const posteriorY = Number.isFinite(rig.spinePosteriorY) ? rig.spinePosteriorY : null;
     const layout = layoutFor(baseX, baseY, modelHeight, posteriorY, neckX, neckY);
     const curve = solveCurve(profile, layout, modelHeight);
+    // The Full Character Scale lineup uses the reverse-facing 3D anatomy convention
+    // for feet and spine. This sign belongs to its *preview rig only*, never the
+    // shared profile or gameplay defaults. Keep generated spine skin, hand/orbit
+    // projection and the visible seven-node guide on the exact same curve.
+    const previewForwardSign = rig.previewForwardSign === -1 ? -1 : 1; // Set only by the comparison lineup; controls the Z deformation below.
+    if (previewForwardSign < 0) for (let k = 1; k < SPLINE_NODES; k++) curve[k].z *= -1;
     const requestedReach = Number(rig.neckReachY) || 0; // The scaled head bottom plus authored head height, resolved before hunch.
     const restSpan = layout.nodes[SEGMENTS].y - layout.nodes[0].y; // All additional head reach belongs to the spine, never to a long neck bone.
     const hunchDrop = Math.max(0, -(Number(curve[SEGMENTS]?.y) || 0)); // The selected hunch has already consumed part of the spine's available vertical span.
@@ -272,7 +278,7 @@
         bone.updateMatrix?.();
       }
     }
-    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, neckReachY: safeReach, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
+    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, previewForwardSign, neckReachY: safeReach, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
     const shoulderY = Number.isFinite(rig.shoulderLocalY) ? rig.shoulderLocalY : baseY; // The upper spine is now near the skull, but the held-item orbit must remain at the actual shoulder line.
     profile.orbitOffset = deformAt(profile, shoulderY, {}); // Keep weapon/hands anchored to authored shoulders while the spine skins higher up.
     return true;
