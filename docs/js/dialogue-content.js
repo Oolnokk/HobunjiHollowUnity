@@ -514,6 +514,19 @@
     queuedConversationTrees.set(npcId, tree);
     return true;
   }
+  function _hasUnheardAuthoredFallbackLine(rec, tree, world, heardPoolEntries) {
+    const start = (tree?.nodes || []).find(node => node.id === tree.entryNode); // Only the spoken fallback node links to the NPC's ordinary phrase pool.
+    const poolId = /\{\{pool:([^}]+)\}\}/.exec(String(start?.text || ''))?.[1]; // Existing dialogue-token syntax remains the authority for identifying the pool.
+    if (!poolId) return false;
+    const pool = (rec?.phrasePools || []).find(item => item.id === poolId || item.name === poolId); // Reuses this NPC's genuine authored phrases, never a second greeting catalog.
+    const heard = heardPoolEntries || []; // The existing per-NPC pool history determines when family chatter becomes a supplement.
+    return (pool?.entries || []).some(entry => {
+      const line = String(entry?.text || '').trim(); // Author-facing <placeholder> hint copy does not indefinitely prevent family speech.
+      return entry?.id && line && !/^<[^<>]+>$/.test(line)
+        && !heard.includes(entry.id) && _dlgEntryEligible(entry, world);
+    });
+  }
+
   function _pickDialogueTree(rec, options = {}) {
     const chatOnly = options.chatOnly === true; // Used by Shop/Chat's Chat action to bypass generated shop menus for this conversation.
     if (queuedConversationTrees.has(rec?.id)) {
@@ -548,11 +561,13 @@
       : familySpeech.some(t => !heard.includes(t.id)) ? familySpeech
       : [...characterSpeech, ...familySpeech]; // Unheard named → unheard family → repeat either; no unrelated world-wide fallback.
     let picked = _pickBestEntry(all, world, heard);
-    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // The NPC's last-resort tree should not silence personality-specific ordinary speech.
+    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // A named NPC's existing authored greeting pool is still their first voice.
+    const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Shared chatter waits until genuine, condition-eligible individual greetings have played.
+    const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Even a literal one-line character fallback speaks before generic family copy on first encounter.
     const isHeardGeneral = picked && heard.includes(picked.id) && !picked.generatedFromShopAccess
       && !(picked.priority > 0) && _dlgEntrySpecificity(picked) === 0; // Repeated unconditioned chatter can alternate with scoped dialogue, while story/conditioned trees keep their priority.
-    if (scopedSpeech.length && (!picked || isFallback || isHeardGeneral)) {
-      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first rotation/history remain per speaker; generic fallback cannot interrupt a scoped pool.
+    if (scopedSpeech.length && (!picked || (!stillHasNamedLines && !firstAuthoredFallback && (isFallback || isHeardGeneral)))) {
+      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first selection/history remain per speaker, but never replace unplayed authored character lines.
     }
     // Keep eligible shops accessible even after their tree was heard and general chat was not:
     // family or named shared speech must not hide a merchant's Shop option.
