@@ -136,6 +136,18 @@ independent.legs.setFootScaleMultiplier(1);
 independent.legs.setLegLengthMultiplier(1);
 assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
   'restoring both independent controls returns the entire leg chain to the original bind pose');
+const independentAspect = rig(1, null, { x: 1, y: 1 }); // Independent leg slider remains meaningful when Portrait height changes during an idle preview.
+independentAspect.legs.setLegLengthMultiplier(1.8);
+independentAspect.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+independentAspect.legs.update(0, 0, false);
+const aspectPose = independentAspect.legs.getStandingPoseDebug();
+const aspectContact = aspectPose.left.contactY;
+assert(Math.abs(independentAspect.legs.standingPosteriorY - (aspectContact
+  + (independentAspect.legs.restPosteriorY - aspectContact) * 1.8)) < 1e-9,
+  'independent hip-to-ankle reach remains correct after a non-uniform portrait aspect update');
+assert(Math.abs(aspectPose.left.targetY - aspectContact) < 1e-9,
+  'changing portrait height with long legs keeps both feet planted on the same floor');
+independentAspect.legs.dispose();
 independent.legs.dispose(); // Registry cleanup prevents hidden preview legs from receiving future global scale edits.
 
 const aspectChanged = rig(); // Starts with square body scale, then changes width/height in-place while standing still.
