@@ -27,7 +27,7 @@
     { globalKey: 'FarmGlancePalette', src: 'js/farm-glance-palette.js?v=20261026hea788ca' },
     { globalKey: 'LivestockNurseryGrid', src: 'js/livestock-nursery-grid.js?v=20261122cancelAnimal1' },
     { globalKey: 'LivestockNurseryInventoryPaging', src: 'js/livestock-nursery-inventory-paging.js?v=20260916nurserypage6' },
-    { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20260916uifix1' },
+    { globalKey: 'LivestockNurseryGridUiFix', src: 'js/livestock-nursery-grid-ui-fix.js?v=20261122cancelAnimal1' },
   ];
   const STABLE_ROLE_DEP_METHODS = Object.freeze([
     'getActiveCompanionId',
