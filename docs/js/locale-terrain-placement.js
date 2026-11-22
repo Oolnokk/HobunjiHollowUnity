@@ -661,11 +661,14 @@
     const center = blossomTreeCenter(compiled, selected);
     if (!center) return null;
     const targetTier = tileTier(context, Math.round(center.col), Math.round(center.row)); // The first landmark should be on the blossom's reachable elevation.
+    const ownFloor = { footprint: { x: selected.anchorC + compiled.footprint.minC, y: selected.anchorR + compiled.footprint.minR,
+      w: compiled.footprint.maxC - compiled.footprint.minC + 1, h: compiled.footprint.maxR - compiled.footprint.minR + 1 } }; // Patterned clue boulders must not appear inside their own large authored festival clearing.
     let best = null; // One bounded generation-time search replaces an existing tree when available.
     for (let r = Math.floor(center.row - 18); r <= Math.ceil(center.row + 18); r++) {
       for (let c = Math.floor(center.col - 18); c <= Math.ceil(center.col + 18); c++) {
         const distance = Math.hypot(c - center.col, r - center.row);
         if (distance < 7 || distance > 18 || context.claimed?.has(sourceKey(c, r))) continue;
+        if (footprintPolicy.localeBlocksSite(ownFloor, c, r, 1)) continue; // Only reachable ground outside the painted festival footprint can hold the permanent stone.
         const tile = tileRecord(context.root, c, r);
         if (!tile || tile.water || tile.path || tile.incline || tile.ramp || tile.mapBoundary || tile.skipFloor
             || tile.borderEscarpment || tile.distantBoundaryLandscape) continue;
@@ -673,7 +676,9 @@
         const nativeTree = kind === 'copse' || kind === 'tree' || (tile.type === 'shrub' && tile.floraKind === 'copse');
         if (!nativeTree && (!['grass', 'weeds'].includes(tile.type) || kind)) continue;
         if (Math.abs(tileTier(context, c, r) - targetTier) > 0.05) continue;
-        if ((context.workspace.localeInstances || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7)) continue;
+        if ((context.workspace.localeInstances || []).some(other =>
+          Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 7
+          || footprintPolicy.localeBlocksSite(other, c, r, 1))) continue; // Other locales' full painted footprints are reserved, even far from their anchors.
         if ((context.workspace.rootTotems || []).some(other => Math.hypot(c - Number(other.x ?? other.col), r - Number(other.y ?? other.row)) < 4)) continue;
         if ((context.workspace.localeInstances || []).some(other => other.blossomStartLandmark &&
           Math.hypot(c - other.blossomStartLandmark.col, r - other.blossomStartLandmark.row) < 5)) continue; // Distinct patterned debris cannot overlap another blossom's reserved physical marker.
