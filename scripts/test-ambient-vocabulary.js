@@ -62,6 +62,7 @@ async function testStandaloneEditorInteraction(rules) {
   vm.runInNewContext(file('docs/config/weapon-trust-visits.js'), { window: sandboxWindow }); // Same unmodified, authored doorstep visitor config shown in the real workshop. // Same rule implementations already executed in the runtime tests.
   const fetch = async url => ({ ok: true, status: 200, json: async () => String(url).includes('ambient-vocabulary.json') ? sample
     : String(url).includes('npc-reaction-profiles.json') ? profiles
+    : String(url).includes('ambient-dialogue.json') ? JSON.parse(file('docs/config/dialogue/ambient-dialogue.json'))
     : { npcs: [{ id: 'pahu', name: 'Pahu' }, { id: 'sloomi', name: 'Sloomi' }] } });
   vm.runInNewContext(file('docs/js/ambient-vocabulary-editor.js'), { window: sandboxWindow, document, fetch });
   for (let i = 0; i < 16; i++) await Promise.resolve(); // Resolve the same three configuration requests used during real editor boot.
@@ -76,6 +77,17 @@ async function testStandaloneEditorInteraction(rules) {
     'Pahu authoring should show real source lines instead of approximate generated pirate examples');
   assert.ok(panel.innerHTML.includes('data-use-visit=') && panel.innerHTML.includes('data-harvest-word='),
     'Doorstep authoring must support original-line previews and safe candidate harvesting');
+  assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().greetingSamplesLoaded, true);
+  assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().currentSpeakerSampleCount, 6,
+    'Editor must expose Pahu\'s six actual floating greetings as voice audit samples');
+  const audition = document.getElementById('sampleAuthoredGreeting');
+  assert.ok(typeof audition?.onclick === 'function', 'Mobile users can cycle authored greeting examples without using a console');
+  audition.onclick();
+  assert.equal(document.getElementById('previewInput').value, 'Ahoy there, {targetName}!!!',
+    'Audition samples must come from authored NPC greeting JSON, not generated generic placeholder text');
+  audition.onclick();
+  assert.equal(document.getElementById('previewInput').value, 'Ahoy, {targetName}! Ye\'ve got a spring in yerr step today!',
+    'Successive auditions should cycle real authored lines without changing the dialogue configuration');
   const original = Object.keys(sample.lexicon).sort((a, b) => a.localeCompare(b))[0];
   document.getElementById('checkNone').onclick();
   assert.equal(sample.characters.pahu.selections[original].length, 0, 'Uncheck all must store an explicit empty override');
