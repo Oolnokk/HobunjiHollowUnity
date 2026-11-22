@@ -313,6 +313,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         roots=Cut.normalizeRoots(draft?.roots||originalRoots());
         $('maxStretch').value=draft?.maxStretch??originalMaxStretch();
         $('alphaFloor').value=draft?.alphaFloor??originalAlphaFloor();
+        $('subdivision').value=draft?.subdivision??originalSubdivision();
+        $('aboveInfluence').value=draft?.aboveInfluence??originalAboveInfluence();
+        $('belowInfluence').value=draft?.belowInfluence??originalBelowInfluence();
         updateLabels();
       }else mask=maskForArtwork(mask);
       await loadHead(ticket).catch(error=>{lastError='Head reference unavailable: '+error.message;});
@@ -330,13 +333,17 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function ensureStretchedHood(){
     const hidesBeard=hoodDoc?.tags?.includes('hides-facial-hair')===true;
-    const key=hoodRevision+'|'+JSON.stringify(Cut.normalizeRoots(roots))+'|'+selectedStretch()+'|'+hidesBeard;
+    const key=hoodRevision+'|'+JSON.stringify(Cut.normalizeRoots(roots))+'|'+selectedStretch()
+      +'|'+selectedSubdivision()+'|'+selectedAboveInfluence()+'|'+selectedBelowInfluence()+'|'+hidesBeard;
     if(stretchKey===key)return; // Painting pixels does NOT recompute expensive hood stretching.
     const ctx=stretchedHood.getContext('2d',{willReadFrequently:true});
     ctx.clearRect(0,0,SIZE,SIZE);
     ctx.drawImage(hoodCanvas,0,0);
     stretchSnapshot=artReady&&!hidesBeard
-      ? Cut.stretchHoodToRoots(stretchedHood,roots,{maxStretch:selectedStretch()})
+      ? Cut.stretchHoodToRoots(stretchedHood,roots,{
+          maxStretch:selectedStretch(),subdivision:selectedSubdivision(),
+          aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence()
+        })
       : {requested:roots.length,stretched:0,insideRing:0,tooFar:0,missingRing:0,moves:[],applied:false};
     stretchedHoodPixels=stretchSnapshot.applied
       ? ctx.getImageData(0,0,SIZE,SIZE).data : hoodPixels;
@@ -401,11 +408,15 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       if(beardPixels[i*4+3]>=selectedAlphaFloor())paintable++;
     }
     $('maskJson').value=JSON.stringify({mask,hoodTuftRoots:roots,
-      hoodTuftMaxStretch:selectedStretch(),hoodPaintAlphaFloor:selectedAlphaFloor()});
+      hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
+      hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
+      hoodPaintAlphaFloor:selectedAlphaFloor()});
     $('status').textContent=(lastError?lastError+'\n':'')
       +'Beard-painted pixels: '+Cut.countMask(mask)
       +'\nActual opaque hood pixels cut: '+(hidesBeard?0:occupied)
       +'\nPaintable beard pixels at opacity floor: '+paintable
+      +'\nDeformation subdivision: '+selectedSubdivision()
+      +' · above: '+selectedAboveInfluence()+'% · below: '+selectedBelowInfluence()+'%'
       +'\nTuft roots: '+roots.length+' · hood ring stretched: '+(stretchSnapshot?.stretched||0)
       +' · inside ring: '+(stretchSnapshot?.insideRing||0)
       +' · beyond limit: '+(stretchSnapshot?.tooFar||0)
@@ -497,6 +508,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
   $('alphaFloor').oninput=()=>{updateLabels();remember();render();};
   $('maxStretch').oninput=()=>{updateLabels();remember();render();};
+  $('subdivision').oninput=()=>{updateLabels();remember();render();};
+  $('aboveInfluence').oninput=()=>{updateLabels();remember();render();};
+  $('belowInfluence').oninput=()=>{updateLabels();remember();render();};
   $('undo').onclick=()=>{
     if(!history.length)return;
     const previous=JSON.parse(history.pop());
@@ -543,6 +557,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       roots=Cut.normalizeRoots(source.hoodTuftRoots);
       $('maxStretch').value=source.hoodTuftMaxStretch??imported.hoodTuftMaxStretch??36;
       $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??128;
+      $('subdivision').value=source.hoodTuftSubdivision??imported.hoodTuftSubdivision??4;
+      $('aboveInfluence').value=source.hoodTuftAboveInfluence??imported.hoodTuftAboveInfluence??100;
+      $('belowInfluence').value=source.hoodTuftBelowInfluence??imported.hoodTuftBelowInfluence??100;
       updateLabels();
       await prepare(false);status('Imported '+file.name+'. Paint, mark corners, and export the revised cosmetic.');
     }catch(error){status('Import failed: '+error.message);}
@@ -554,7 +571,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(!beardDoc)throw Error('No beard cosmetic loaded');
     const json=JSON.parse(JSON.stringify(beardDoc)),chosen=Cut.normalizeMask(mask)||empty();
     const metadata={hoodCutoutMask:chosen,hoodTuftRoots:Cut.normalizeRoots(roots),
-      hoodTuftMaxStretch:selectedStretch(),hoodPaintAlphaFloor:selectedAlphaFloor()}; // Exact authoring parameters round-trip in the cosmetic JSON.
+      hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
+      hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
+      hoodPaintAlphaFloor:selectedAlphaFloor()}; // Exact authoring parameters round-trip in the cosmetic JSON.
     if(scopeKey()==='shared')Object.assign(json,metadata);
     else {
       json.speciesVariants=json.speciesVariants||{};
@@ -569,7 +588,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       const url=URL.createObjectURL(blob),a=document.createElement('a');
       a.href=url;a.download=(beardEntry?.path.split('/').pop()||'beard.json').replace(/^\(HA\)/,'');
       document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
-      status('Exported complete cosmetic JSON with cutout pixels, tuft corners, and stretch/opacity settings.');
+      status('Exported complete cosmetic JSON with cutout, tuft corners, locality subdivision, and upper/lower influence.');
     }catch(error){status(error.message);}
   };
   $('copy').onclick=async()=>{
@@ -635,7 +654,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
     paintableAlphaFloor:selectedAlphaFloor(),paintablePixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=selectedAlphaFloor()),0),
-    tuftRoots:Cut.normalizeRoots(roots),maxStretch:selectedStretch(),ringStretch:stretchSnapshot&&{
+    tuftRoots:Cut.normalizeRoots(roots),maxStretch:selectedStretch(),subdivision:selectedSubdivision(),
+    aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence(),
+    ringStretch:stretchSnapshot&&{
       stretched:stretchSnapshot.stretched,insideRing:stretchSnapshot.insideRing,tooFar:stretchSnapshot.tooFar,
       missingRing:stretchSnapshot.missingRing,moves:stretchSnapshot.moves?.map(move=>({from:move.from,to:move.to})),
       openingCenter:stretchSnapshot.openingCenter,
