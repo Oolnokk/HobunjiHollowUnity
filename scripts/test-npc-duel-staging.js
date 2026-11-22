@@ -50,6 +50,13 @@ const b = fighter('b', far + 300, 0);
 let result = staging.update(a, 0.016, b, 300, 0, api);
 assert.ok(result, 'a duel far from the player is staged');
 assert.equal(result.moving, true, 'out of reach, the staged fighter approaches');
+const held = fighter('held',far,0,{tzatzulCapturedBy:'tzatzul:flight',state:'tzatzul-carried'}); // Real airborne actor whose previous duel target is still alive.
+const moveCountBeforeLift=calls.moves.length; // Confirms both duel participants relinquish ground movement while one is carried.
+assert.equal(staging.update(held,.016,b,300,0,api),null,'a carried bandit cannot continue its own staged duel');
+assert.equal(staging.update(b,.016,held,300,0,api),null,'the former opponent cannot stage a fresh attack on a captive');
+assert.equal(calls.moves.length,moveCountBeforeLift,'no staged move targets are emitted for either side');
+assert.equal(staging.strikeLands(b,held,80,Math.PI),false,'an already committed staged swing cannot hit a lifted bandit');
+
 assert.equal(calls.swings, 0);
 assert.equal(staging.isStaged(a), true);
 const approach = calls.moves.at(-1);

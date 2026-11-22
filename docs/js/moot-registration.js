@@ -35,8 +35,9 @@
     return true;
   }
 
-  function ensureCreatureDefs(creatureDb) {
+  function ensureCreatureDefs(creatureDb, tilePx) {
     if (!creatureDb) return false;
+    const tile = Number(tilePx) > 0 ? Number(tilePx) : 55; // World tile size scales the wild Moot's defensive charge and disengage distances.
     const baseline = creatureDb['uumkaoii-wild'] || creatureDb.uumkaoii || creatureDb.drenkirra || {}; // Existing non-hostile herbivore behavior.
     const existing = creatureDb[KIND] || {}; // Keep any future authored tuning instead of overwriting it.
     creatureDb[KIND] = {
@@ -44,6 +45,14 @@
       ...existing,
       label: 'Moot',
       hostile: false,
+      diet: 'herbivore',
+      moveSpeed: Math.max(Number(existing.moveSpeed) || 0, tile * 3.3),
+      chaseSpeed: Math.max(Number(existing.chaseSpeed) || 0, tile * 8.8), // Wild Moot charges quickly rather than stalking at ordinary grazing speed.
+      aggroRangePx: tile * 8, leashRangePx: tile * 8.5,
+      attackDamage: 18, guardChargeDamage: 18, attackTag: 'blunt',
+      attackRangePx: tile * 1.4, attackHalfConeRad: Math.PI / 3,
+      attackStaminaCost: 11, attackCooldownS: 2.0,
+      attacks: ['guardCharge'], realAttackEvery: 1, // Reuse the native cone charge; it now deals blunt Health damage for this species.
       defaultSizeClass: existing.defaultSizeClass || 'large',
       modelWidth: Number(existing.modelWidth) > 0 ? Number(existing.modelWidth) : 1.7,
       spriteAspect: SPRITE_ASPECT,
@@ -136,7 +145,7 @@
 
   function register(injectedDeps) {
     const livestockReady = configureLivestock(); // Keep the item-kind mapping present when farms are initialized.
-    const creatureReady = ensureCreatureDefs(injectedDeps?.CREATURE_DB);
+    const creatureReady = ensureCreatureDefs(injectedDeps?.CREATURE_DB, injectedDeps?.TILE);
     const rendererReady = ensureRendererSpecies();
     const population = ensureNorthernCliffsPopulation(injectedDeps);
     const babyReady = registerBabyItem(injectedDeps?.ITEM_DEFS);

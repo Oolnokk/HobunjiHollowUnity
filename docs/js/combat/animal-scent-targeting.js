@@ -66,7 +66,7 @@
       releaseWild(creature);
       return null;
     }
-    if (creature.state === 'fleeing-low-health' || creature.state === 'return' || creature._animalSleeping ||
+    if (creature.state === 'herd-panic' || creature.state === 'fleeing-low-health' || creature.state === 'return' || creature._animalSleeping ||
         creature._denHidden || creature.prone || creature.knockbackT > 0) return null;
     // Passive wildlife is allowed to finish an existing defensive/prey fight, not start attacking peaceful bystanders.
     const engaged = creature.state === 'chase' || creature.state === 'patrol-chase' || creature.state === 'searching';

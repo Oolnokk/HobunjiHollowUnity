@@ -577,7 +577,7 @@
     const awayFromMasterAngle = Math.atan2(c.y - master.y, c.x - master.x);
     const targetDistancePx = Math.hypot(ctx.target.x - c.x, ctx.target.y - c.y); // Checks whether an extended-range companion charge should commit directly toward its enemy.
     const extendingCharge = c.isCompanion && targetDistancePx > (Number(c.def.attackRangePx) || 0); // Preserves the old master-defensive blend for attacks already within melee reach.
-    state.angle = extendingCharge ? directAngle : Math.atan2(
+    state.angle = !c.isCompanion || extendingCharge ? directAngle : Math.atan2(
       Math.sin(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.sin(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
       Math.cos(directAngle) * GUARD_CHARGE_TARGET_ANGLE_WEIGHT + Math.cos(awayFromMasterAngle) * GUARD_CHARGE_AWAY_FROM_MASTER_WEIGHT,
     );
@@ -613,10 +613,12 @@
     if (!ref) return false; // Covered its distance or hit terrain.
     const dmgTag = c.def.attackTag || 'blunt';
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
+    const chargeDamage = Math.max(0, Number(c.def?.guardChargeDamage) || 0); // Wild Moot and defending nest adults can inflict blunt Health damage; existing companion Guard Charge stays knockback-only.
+    const chargeOptions = { tag: dmgTag, afflictionBonuses, attacker: c }; // Shared damage attribution for both player and creature charge contacts.
     const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
-    if (isPlayer) deps.damagePlayer(0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
-    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses }); // Scales the charge's affliction buildup for player companions.
-    else deps.damageCreature(ref, 0, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
+    if (isPlayer) deps.damagePlayer(chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions);
+    else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions); // Scales charge afflictions for player companions.
+    else deps.damageCreature(ref, chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions);
     deps.playCreatureClawHit?.(c);
     return false;
   }

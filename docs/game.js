@@ -7261,7 +7261,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
+          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'herd-panic' && c.state !== 'chase' && c.state !== 'searching' &&
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
@@ -7596,7 +7596,7 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.herdKey && herdNight) {
+          } else if (c.herdKey && herdNight && c.state !== 'herd-panic') { // A spotted predator overrides the open-air herd's nightly settle/sleep schedule.
             // Roaming herds do not use dens. At night every member returns to
             // its own small slot around the herd's shared sleep center, stays
             // visible, and opts into AnimalSleepPresentation via
@@ -7737,6 +7737,7 @@
               && !c.prone
               && !c._animalSleeping
               && c.state !== 'return'
+              && c.state !== 'herd-panic' // Predators take movement/head-look priority; don't keep glancing back at the player during escape.
               && c.state !== 'patrol-chase'
               && !window.Combat?.telegraph?.isBusy(c)
               && !window.Combat?.animalAttacks?.isBusy(c);
