@@ -18,6 +18,9 @@
   const OVERRIDE_KEY_PREFIX = 'hobunji_local_db_override_v1_';
   const NPC_SCHEDULE_OVERRIDES_PATH = 'config/npcs/schedule-overrides.json'; // Runtime-authored schedule corrections kept out of game.js and the giant NPC database.
   const NPC_PLAYER_NICKNAME_OVERRIDES_PATH = 'config/npcs/player-nickname-overrides.json'; // Small reviewed copy fixes for generated-feeling player-address entries.
+  const SHARED_DIALOGUE_PATH = 'config/dialogue/shared-dialogue.json'; // One authored home for ordinary lines shared by personality family or named character.
+  const PERSONALITY_PROFILES_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing family assignments are the only authority for shared speech ownership.
+  let sharedDialogueSourcesPromise = null; // Reuses the same two config fetches across direct NPC fetches and local database composition.
   const NPC_SPECIES_OVERRIDES_PATH = 'config/npcs/species-overrides.json'; // Reviewed named-NPC species/avatar corrections composed into every NPC database source.
   const CREATURE_BESTIARY_PATH = 'config/creatures/hobunji-creature-bestiary.json'; // Supplies selectable animal species plus runtime model metadata to the named-animal bridge.
   const NPC_SCHEDULE_WEEKDAYS = ['Anan', 'Hronu', 'Kruru', 'Muunu', 'Naru', 'Tothu', 'Uung']; // Used to expand presence-dependent schedule choices deterministically at load time.
@@ -303,10 +306,11 @@
       const response = await priorFetch.call(this, input, init); // Original network response preserved when composition is irrelevant or unavailable.
       if (!_isNpcDatabaseRequest(input) || !response?.ok || typeof Response === 'undefined') return response;
       try {
-        const overrides = await _loadNpcSpeciesOverrides(); // Reviewed species/avatar overlay applied even when Character Studio deliberately bypasses local overrides.
-        if (!overrides) return response;
+        const [overrides, speech] = await Promise.all([_loadNpcSpeciesOverrides(), _loadSharedDialogueSources()]); // Shared metadata also follows direct NPC JSON fetches, not only LocalDBOverrides.loadDatabase.
+        if (!overrides && !speech) return response;
         const data = await response.clone().json(); // Clone keeps the original response recoverable if JSON/composition fails.
-        const composed = applyNpcSpeciesOverrides(data, overrides); // Corrects named-animal species and authored avatar defaults before the editor/game ever sees the records.
+        let composed = overrides ? applyNpcSpeciesOverrides(data, overrides) : data; // Existing species/avatar behavior is retained when optional speech fails.
+        if (speech) composed = applySharedDialogue(composed, speech[0], speech[1]); // Direct game/authoring fetches receive the identical personality/character dialogue scopes.
         const headers = typeof Headers !== 'undefined' ? new Headers(response.headers) : undefined; // Carries normal response metadata without stale body length.
         headers?.delete?.('content-length');
         headers?.set?.('content-type', 'application/json');
@@ -445,6 +449,62 @@
       }
     }
     return merged;
+  }
+
+  // Ordinary shared speech uses the same entry/condition schema as an authored
+  // dialogue tree. No second conversation renderer and no hardcoded NPC switches.
+  function applySharedDialogue(npcDatabase, shared, personalities) {
+    if (!npcDatabase || !Array.isArray(npcDatabase.npcs)) return npcDatabase;
+    const families = shared?.personalityFamilies || {}; // Family-owned lines, keyed by the existing reaction profile IDs.
+    const characters = shared?.characters || {}; // Named-NPC lines that take precedence over family lines when eligible.
+    const profiles = personalities?.profiles || {}; // Valid profile IDs prevent misassigned/renamed families from leaking copy.
+    const assignments = personalities?.assignments || {}; // The one existing NPC-to-family mapping, never duplicated here.
+    const defaultFamily = profiles[personalities?.defaultProfile] ? personalities.defaultProfile : null; // Used only for NPCs without a valid explicit profile.
+    const result = JSON.parse(JSON.stringify(npcDatabase)); // Keeps imported/local NPC authoring independent of inherited speech.
+    function treesFor(entries, scope, ownerId) {
+      if (!Array.isArray(entries)) return [];
+      const seen = new Set(); // Prevents ambiguous dialogue history IDs within one authored owner.
+      return entries.flatMap(entry => {
+        const entryId = String(entry?.id || ''); // A stable authored ID scopes saved "heard" history per NPC.
+        if (!/^[a-zA-Z0-9_-]+$/.test(entryId) || seen.has(entryId) || !String(entry?.text || '').trim()) return [];
+        seen.add(entryId);
+        const id = `shared_${scope}_${ownerId}_${entryId}`; // Namespaces history and node IDs across all speakers and families.
+        const textNode = `${id}_text`; // Entry node for the standard text/continue dialogue renderer.
+        const endNode = `${id}_end`; // Standard closing node; no special action handlers needed.
+        return [{
+          id, label: entry.label || entryId, trigger: 'interact', priority: Number.isFinite(entry.priority) ? entry.priority : 0,
+          conditions: entry.conditions || {}, excludeConditions: entry.excludeConditions || {},
+          visibility: entry.visibility || 'any', sharedDialogueScope: scope, sharedDialogueOwner: ownerId,
+          entryNode: textNode, nodes: [{ id: textNode, type: 'text', text: entry.text, next: endNode }, { id: endNode, type: 'end' }],
+        }];
+      });
+    }
+    for (const npc of result.npcs) {
+      if (!npc?.id) continue;
+      const generatedChild = /^child_[a-z0-9]+$/i.test(npc.id); // Dynamic player children inherit the existing Child family just like ambient reactions.
+      const assigned = assignments[npc.id] || (generatedChild ? 'child' : ''); // Explicit per-NPC family assignments always win.
+      const familyId = profiles[assigned] ? assigned : defaultFamily; // Invalid family ids safely resolve to the existing default.
+      npc.dialoguePersonalityFamily = familyId; // Inspector/Dev Companion can show which shared-voice family this NPC received.
+      npc.sharedDialogueTrees = [
+        ...treesFor(characters[npc.id], 'character', npc.id),
+        ...(familyId ? treesFor(families[familyId], 'personality', familyId) : []),
+      ]; // The picker reads these alongside authored NPC trees without modifying the canonical dialogueTrees array.
+    }
+    return result;
+  }
+
+  async function _loadSharedDialogueSources() {
+    if (!sharedDialogueSourcesPromise) {
+      sharedDialogueSourcesPromise = Promise.all([SHARED_DIALOGUE_PATH, PERSONALITY_PROFILES_PATH].map(async path => {
+        const response = await fetch(_docsResourceUrl(path)); // Both nested editors and the running game resolve configs relative to docs/.
+        if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
+        return response.json();
+      })).catch(error => {
+        console.warn('[LocalDBOverrides] Could not load shared dialogue or personality assignments:', error);
+        return null; // Missing optional shared copy must not block the existing NPC database or its unique dialogue.
+      });
+    }
+    return sharedDialogueSourcesPromise;
   }
 
   function _scheduleTimeMinutes(value) {
@@ -704,6 +764,12 @@
       console.warn('[LocalDBOverrides] Could not compose NPC player nickname overrides:', error);
     }
     try {
+      const speech = await _loadSharedDialogueSources(); // Config-backed inherited lines remain separate from the giant NPC database and local overrides.
+      if (speech) composed = applySharedDialogue(composed, speech[0], speech[1]);
+    } catch (error) {
+      console.warn('[LocalDBOverrides] Could not compose shared NPC dialogue:', error);
+    }
+    try {
       const shopStock = await _loadRawDatabase('shopStock'); // Used to compose shopkeeper access trees into the loaded NPC database.
       composed = applyShopDialogueAccess(composed, shopStock);
     } catch (error) {
@@ -723,6 +789,7 @@
     hasOverride, getOverride, getRuntimeOverride, setOverride, clearOverride,
     listStatuses, loadDatabase,
     applyShopDialogueAccess,
+    applySharedDialogue,
     applyNpcScheduleOverrides,
     applyNpcPlayerNicknameOverrides,
     applyNpcSpeciesOverrides,
