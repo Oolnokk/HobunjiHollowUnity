@@ -267,8 +267,16 @@ farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;farBird._tzFlig
 farBird._tzFlight.readyingReleaseArmed=false;
 player.x=farBird.x-4*64;player.y=farBird.y;
 w.Fishing.state={phase:'active'};
+const oldSite=farBird.tzatzulNestMapId; // Real player hunting requires an authored cave and a native entry owner.
+farBird.tzatzulNestMapId='test-nest';
+w.TzatzulNestInterior={isNestMap:id=>id==='test-nest'};
+deps.enterBuilding=()=>{};
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(farBird),player,
+  'normal Tzatzul prey selection identifies the player when a valid nest is available');
 const hitsBeforeReady=hits;
-assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+assert(w.TzatzulFlightRuntime.__test.seekFood(farBird),
+  'the natural hunter decision starts a readying orbit rather than requiring a direct test-only swoop call');
+farBird.tzatzulNestMapId=oldSite;delete w.TzatzulNestInterior;delete deps.enterBuilding;
 assert.equal(farBird._tzFlight.phase,'readying','a Tzatzul circles above an occupied player instead of diving');
 assert(farBird._tzFlight.segment?.to.worldY>=3,'the readying chord stays high above the player');
 for(let i=0;i<60;i++) {
@@ -282,10 +290,12 @@ w.Fishing.state=null;
 let sawReleaseChord=false,sawResumeDive=false; // A short post-interaction orbit provides a visible warning before the next real attack.
 for(let i=0;i<80;i++) {
   w.TzatzulFlightRuntime.update(.1);
-  if(farBird._tzFlight.phase==='readying'&&!farBird._tzFlight.readyingReleaseArmed)sawReleaseChord=true;
+  if(farBird._tzFlight.phase==='readying'&&farBird._tzFlight.readyingWarning)sawReleaseChord=true;
   if(farBird._tzFlight.phase==='swoop'){sawResumeDive=true;break;}
 }
 assert(sawReleaseChord,'finishing an activity adds one final warning orbit');
+assert.equal(w.TzatzulFlightRuntime.debugSnapshot().birds.find(b=>b.id===farBird._tzFlight.identity.id)?.releaseChord,
+  farBird._tzFlight.readyingWarning,'mobile release status reflects the actual warning chord');
 assert(sawResumeDive,'the predator eventually resumes its genuine swept-body swoop');
 assert(supports.attach(farBird,recoveredPoint));
 farBird._tzFlight.phase='perched';farBird._tzFlight.segment=null;
