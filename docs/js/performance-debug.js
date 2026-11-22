@@ -426,9 +426,12 @@
       actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.corpseFrustumHidden + actorOcclusion.corpseOccludedHidden}/${actorOcclusion.corpseCandidates} corpse rigs culled · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
       (() => { // Whether the held/shell x-ray replays copy depth back (cheap) or redraw the whole scene (the fallback).
         const depth = root.ScissorDepthSnapshot?.snapshot?.();
-        if (!depth) return 'X-ray depth snapshot: unavailable';
         const held = root.HeldObjectRenderOrder?.snapshot?.() || {};
-        return `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}`;
+        const depthLine = depth ? `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}` : 'X-ray depth snapshot: unavailable';
+        const lod = root.GeometryAutoLOD?.snapshot?.();
+        const ground = held.groundMaterialCacheHits !== undefined ? `${held.groundMaterialCacheHits} ground cache hits · ${held.groundMaterialCacheBuilds} builds` : 'ground cache unavailable';
+        const geometry = lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off';
+        return `${depthLine}\nRender reuse: ${ground} · ${geometry}`;
       })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Draw calls ${formatCount(perfState.calls)}   tris ${formatCount(perfState.triangles)}`,

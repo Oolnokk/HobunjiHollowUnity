@@ -19,18 +19,18 @@
   const SCAN_INTERVAL_MS = 3500; // Incremental rescan discovers newly generated objects/zones.
   const SCAN_NODES_PER_SLICE = 220; // Bounded work per idle callback; no full-scene traversal in render().
   const SCAN_MS_PER_SLICE = 4;
-  const MAX_SWAPS_PER_RENDER = 3000; // Worst-case renderer wrapper bound; deferred items remain originals.
+  const MAX_SWAPS_PER_RENDER = 3000; // Worst-case draw bound; deferred items remain originals.
 
   const cache = new WeakMap(); // Procedural source geometry -> once-simplified cached geometry.
   const precomputed = new WeakMap(); // Original or cloned GLB BufferGeometry -> render-only entry.
   const precomputedBySourceUid = new Map(); // Immutable GLB source UUID -> precomputed entry, reused by runtime-owned visual clones.
-  const readyMeshes = new Map(); // Mesh -> geometry entry; sampled only during actual renderer.render().
+  const readyMeshes = new Map(); // Mesh -> geometry entry; considered only for gameplay draws.
   const knownCached = new Set(); // Track owned cache allocations for explicit GPU disposal on zone unload.
   const queue = []; // Unique pending geometries processed outside the render/physics frame.
   const counters = {
     scanned: 0, submitted: 0, processed: 0, skipped: 0, cached: 0,
     sourceTriangles: 0, optimizedTriangles: 0, prebakedRegistered: 0, lastDrawSaved: 0,
-    lastRenderMeshes: 0, renderSwaps: 0, lastSkip: '', lastError: '',
+    lastRenderMeshes: 0, renderSwaps: 0, renderGeometryChecks: 0, lastSkip: '', lastError: '',
   }; // Mobile-visible diagnostic counters, not per-frame logger output.
 
   let enabled = readEnabled(); // Persisted experimental graphics-quality preference.
@@ -38,8 +38,9 @@
   let loadingPromise = null; // Prevent duplicate optional CDN/WASM downloads.
   let optimizerFailed = false; // Avoid repeatedly loading a blocked CDN on every discovered mesh.
   let renderer = null; // Only the real __hobunjiGameRenderer, never an editor renderer.
-  let originalRender = null; // Existing renderer.render chain, preserved under the wrapper.
-  let renderDepth = 0; // Nested outline/occlusion passes cannot restore geometry prematurely.
+  let renderSequence = 0; // Marks which sources were already checked for the current draw.
+  const swapped = []; // Reused restore pairs for the current native draw.
+  const staleBakedSources = new WeakSet(); // An edited GLB clone cannot reattach to its old baked variant.
   let scan = null; // Iterative object tree cursor for the current scene.
   let lastScanAt = 0;
   let scanScheduled = false;
@@ -152,6 +153,12 @@
   }
   function retire(entry) {
     if (!entry || entry.status !== 'done' || !entry.variant) return;
+    if (entry.parentBaked) {
+      precomputed.delete(entry.source);
+      entry.variant = null;
+      entry.status = 'retired';
+      return; // The base owns the shared buffer and its accounting.
+    }
     entry.variant.dispose?.(); // This module alone owns the simplified geometry.
     activeGeometries = Math.max(0, activeGeometries - 1);
     activeSourceBudget = Math.max(0, activeSourceBudget - entry.triangles);
@@ -159,7 +166,6 @@
     counters.optimizedTriangles -= entry.optimizedTriangles;
     if (entry.fromBaked) {
       precomputed.delete(entry.source);
-      if (entry.parentBaked) { entry.variant = null; entry.status = 'retired'; return; }
       if (entry.sourceUid && precomputedBySourceUid.get(entry.sourceUid) === entry)
         precomputedBySourceUid.delete(entry.sourceUid);
       for (const derived of entry.derivedUvs?.values?.() || []) derived.dispose?.(); // Derived stretch-fit UV buffers are owned by the base GLB entry.
@@ -169,7 +175,7 @@
   }
   function geometryStamp(geo) {
     // A texture/UV/normal rewrite can make the baked source geometry obsolete
-    // without moving its POSITIONs. Include every attribute's identity/version.
+    // without moving its POSITIONs. Summarize the attributes' shapes and versions for diagnostics.
     const attributes = geo?.attributes || {};
     const parts = Object.keys(attributes).sort().map(name => {
       const a = attributes[name];
@@ -177,6 +183,59 @@
     });
     return parts.join('|') + ';indices=' + String(geo?.index?.version || 0) +
       ':' + String(geo?.index?.count || 0);
+  }
+  function captureAttribute(attribute) {
+    return {
+      attribute, array: attribute.array, version: attribute.version ?? attribute.data?.version,
+      count: attribute.count, itemSize: attribute.itemSize, normalized: attribute.normalized,
+    };
+  }
+  function attributeMatches(attribute, saved) {
+    if (!saved) return !attribute;
+    return attribute === saved.attribute && attribute.array === saved.array &&
+      (attribute.version ?? attribute.data?.version) === saved.version &&
+      attribute.count === saved.count && attribute.itemSize === saved.itemSize &&
+      attribute.normalized === saved.normalized;
+  }
+  function captureGeometry(geometry) {
+    const attributes = Object.create(null); // Lookup by attribute name without sorting keys on the draw path.
+    for (const name in geometry.attributes) attributes[name] = captureAttribute(geometry.attributes[name]);
+    return {
+      attributes, count: Object.keys(attributes).length,
+      index: geometry.index ? captureAttribute(geometry.index) : null,
+      groups: geometry.groups?.map(group => ({ ...group })) || [],
+      start: geometry.drawRange?.start, drawCount: geometry.drawRange?.count,
+    };
+  }
+  function geometryMatches(geometry, saved) {
+    if (!attributeMatches(geometry.index, saved.index) ||
+        geometry.drawRange?.start !== saved.start || geometry.drawRange?.count !== saved.drawCount ||
+        (geometry.groups?.length || 0) !== saved.groups.length) return false;
+    let count = 0; // Detect removed attributes as well as replacements and added attributes.
+    for (const name in geometry.attributes) {
+      if (!saved.attributes[name] || !attributeMatches(geometry.attributes[name], saved.attributes[name])) return false;
+      count++;
+    }
+    if (count !== saved.count) return false;
+    for (let i = 0; i < saved.groups.length; i++) {
+      const group = geometry.groups[i], old = saved.groups[i]; // Guard runtime regrouping of material slots.
+      if (group.start !== old.start || group.count !== old.count || group.materialIndex !== old.materialIndex) return false;
+    }
+    return true;
+  }
+  function sourceMatches(entry) {
+    if (geometryMatches(entry.source, entry.signature)) return true;
+    if (entry.fromBaked) staleBakedSources.add(entry.source);
+    return false;
+  }
+  function validateForDraw(entry, sequence) {
+    if (entry.checkedDraw !== sequence) {
+      entry.checkedDraw = sequence;
+      counters.renderGeometryChecks++;
+      entry.drawValid = entry.status === 'done' && sourceMatches(entry) &&
+        (!entry.parentBaked || validateForDraw(entry.parentBaked, sequence));
+    }
+    return entry.drawValid;
   }
   function supportsClonedGeometry(source, clone) {
     if (!source || !clone?.isBufferGeometry || !source.isBufferGeometry) return false;
@@ -227,17 +286,19 @@
   }
   function lookupPrebaked(mesh) {
     const geometry = mesh?.geometry;
+    if (!geometry) return null;
     const exact = precomputed.get(geometry);
-    if (exact?.status === 'done') return exact;
+    if (exact?.status === 'done') return exact; // The idle scan can still retire a stale cached entry.
+    if (staleBakedSources.has(geometry)) return null;
     const uid = geometry?.userData?.geometryQualitySourceUid;
     const base = uid && precomputedBySourceUid.get(uid);
-    if (!base || base.status !== 'done' || !supportsClonedGeometry(base.source,geometry)) return null;
+    if (!base || base.status !== 'done' || !sourceMatches(base) || !supportsClonedGeometry(base.source,geometry)) return null;
     const changedUV = !!geometry.getAttribute?.('uv') && !base.source.getAttribute?.('uv');
     const variant = changedUV ? stretchFitVariant(base,geometry) : base.variant;
     if (!variant) return null;
     const sourceCount = triangles(geometry);
     if (triangles(variant) >= sourceCount) return null;
-    const cloneEntry = { source:geometry, variant, stamp:geometryStamp(geometry),
+    const cloneEntry = { source:geometry, variant, signature:captureGeometry(geometry),
       triangles:sourceCount, optimizedTriangles:triangles(variant), status:'done',
       fromBaked:true, parentBaked:base, targets:new Set() }; // Shared derived LOD is owned by base entry, not this clone.
     precomputed.set(geometry,cloneEntry);
@@ -276,7 +337,7 @@
         activeSourceBudget + sourceCount > MAX_CACHED_SOURCE_TRIANGLES) break;
       if (precomputed.has(source)) continue;
       const entry = {
-        source, variant, stamp: geometryStamp(source), triangles: sourceCount,
+        source, variant, signature: captureGeometry(source), triangles: sourceCount,
         optimizedTriangles: targetCount, status: 'done', fromBaked: true, targets: new Set(),
       }; // The offline-baked BufferGeometry is only swapped into scene meshes while renderer.render executes.
       precomputed.set(source, entry);
@@ -315,7 +376,7 @@
         (!isStretchFitRig && materials.some(m => m?.transparent || m?.alphaTest > 0 || m?.alphaMap))) return;
       // Authored hands/feet are true 3D rigs with the game's stretch-fit PNG
       // UVs; transparent alpha-cutout CARD geometry is still never simplified.
-      if (geometryStamp(baked.source) !== baked.stamp) {
+      if (!sourceMatches(baked)) {
         // A visual mesh re-authored its UV/normal/position after load. The
         // offline GLB must not overwrite that edit or its collision geometry.
         retire(baked);
@@ -326,9 +387,9 @@
       return;
     }
     if (protectedMesh(mesh)) return;
-    const geo = mesh.geometry, stamp = geometryStamp(geo);
+    const geo = mesh.geometry;
     let entry = cache.get(geo);
-    if (entry && entry.stamp !== stamp) {
+    if (entry && !sourceMatches(entry)) {
       // Runtime has edited a once-static geometry. Never put stale triangles
       // back into the render; the previous variant is retired automatically.
       retire(entry);
@@ -343,7 +404,7 @@
         activeSourceBudget + count > MAX_CACHED_SOURCE_TRIANGLES) {
         counters.skipped++; counters.lastSkip = 'cache budget reached'; return;
       }
-      entry = { source: geo, stamp, triangles: count, optimizedTriangles: count, status: 'pending', variant: null, targets: new Set() };
+      entry = { source: geo, signature: captureGeometry(geo), triangles: count, optimizedTriangles: count, status: 'pending', variant: null, targets: new Set() };
       cache.set(geo, entry);
       queue.push(entry);
       counters.submitted++;
@@ -384,7 +445,7 @@
           counters.lastSkip = 'LOD cache budget full; retry on later scene scan';
           return;
         }
-        if (geometryStamp(geo) !== entry.stamp) {
+        if (!sourceMatches(entry)) {
           entry.status = 'stale';
           return;
         }
@@ -450,7 +511,7 @@
         const used = new Set(); // Cached geometries still referenced by a real live scene.
         for (const [mesh, entry] of readyMeshes) {
           if (!isInScene(mesh) || mesh.geometry !== entry.source ||
-            geometryStamp(entry.source) !== entry.stamp) readyMeshes.delete(mesh);
+            !sourceMatches(entry)) readyMeshes.delete(mesh);
           else used.add(entry);
         }
         // Retire only abandoned LODs; shared geometries survive as long as one live mesh references them.
@@ -462,42 +523,65 @@
       }
     });
   }
+  function beforeDraw(scene, camera) {
+    if (scene.children?.length > 3 && now() - lastScanAt > SCAN_INTERVAL_MS) {
+      startScan(scene); // Discovery remains idle-only.
+    }
+    const sequence = ++renderSequence; // Shared by every mesh using a given source on this draw.
+    let trianglesAvoided = 0; // Submitted triangle reduction, reported by the existing status UI.
+    try {
+      for (const [mesh, entry] of readyMeshes) {
+        if (swapped.length >= MAX_SWAPS_PER_RENDER * 2) break;
+        if (!mesh.visible || (camera?.layers && mesh.layers && !(camera.layers.mask & mesh.layers.mask)) ||
+            mesh.geometry !== entry.source || !entry.variant || !validateForDraw(entry, sequence)) continue;
+        swapped.push(mesh, entry);
+        mesh.geometry = entry.variant;
+        trianglesAvoided += entry.triangles - entry.optimizedTriangles;
+      }
+    } catch (error) {
+      restoreDraw();
+      throw error;
+    }
+    counters.lastRenderMeshes = swapped.length / 2;
+    counters.renderSwaps += counters.lastRenderMeshes;
+    counters.lastDrawSaved = trianglesAvoided;
+  }
+  function restoreDraw() {
+    for (let i = 0; i < swapped.length; i += 2) {
+      const mesh = swapped[i], entry = swapped[i + 1]; // Restore the exact pair applied by this draw.
+      if (mesh.geometry === entry.variant) mesh.geometry = entry.source;
+    }
+    swapped.length = 0;
+  }
   function wrapRenderer(actual) {
     if (!actual || renderer === actual || typeof actual.render !== 'function') return;
     renderer = actual;
-    originalRender = renderer.render; // Existing render wrappers remain in the chain.
-    const nativeRender = originalRender; // Per-renderer closure prevents cross-renderer chain corruption.
-    renderer.render = function geometryAutoLODRender(scene, camera) {
-      if (!enabled || renderDepth) return nativeRender.call(this, scene, camera);
-      if (scene?.isScene && scene.children?.length > 3 && now() - lastScanAt > SCAN_INTERVAL_MS) {
-        startScan(scene); // Merely SCHEDULES work; no heavy traversal within render().
-      }
-      const swapped = []; // Restored in finally before gameplay raycasts or physics can run.
-      let trianglesAvoided = 0; // Actual triangle draw savings in this rendering pass.
-      renderDepth++;
-      try {
-        for (const [mesh, entry] of readyMeshes) {
-          if (swapped.length >= MAX_SWAPS_PER_RENDER) break;
-          if (mesh.geometry !== entry.source || !entry.variant ||
-            geometryStamp(entry.source) !== entry.stamp || !mesh.visible) continue;
-          mesh.geometry = entry.variant;
-          trianglesAvoided += entry.triangles - entry.optimizedTriangles;
-          swapped.push(mesh);
+    if (!root.RenderHooks?.register) {
+      const nativeRender = actual.render; // Standalone runtime without the shared render hook dispatcher.
+      let drawing = false; // Nested standalone draws use the outer draw's geometry.
+      actual.render = function geometryAutoLODRender(scene, camera, ...rest) {
+        if (!enabled || drawing || !scene?.isScene) return nativeRender.call(this, scene, camera, ...rest);
+        drawing = true;
+        try {
+          beforeDraw(scene, camera);
+          return nativeRender.call(this, scene, camera, ...rest);
+        } finally {
+          restoreDraw();
+          drawing = false;
         }
-        counters.renderSwaps += swapped.length;
-        counters.lastRenderMeshes = swapped.length;
-        counters.lastDrawSaved = trianglesAvoided;
-        return nativeRender.call(this, scene, camera);
-      } finally {
-        for (const mesh of swapped) {
-          const entry = readyMeshes.get(mesh);
-          if (entry && mesh.geometry === entry.variant) mesh.geometry = entry.source;
-        }
-        renderDepth--;
-      }
-    };
+      };
+    }
     status('Connected to the live game renderer.');
   }
+  root.RenderHooks?.register?.({
+    id: 'geometry-auto-lod', owner: 'geometry-auto-lod.js',
+    // Keep swaps inside native draws, after presentation hooks. Between draws
+    // the replay culler and gameplay code always see original geometry.
+    appliesTo: ctx => enabled && ctx.renderer === renderer && ctx.depth === 0 &&
+      ctx.scene?.isScene && (!ctx.frame || ctx.worldScene),
+    before: ctx => beforeDraw(ctx.scene, ctx.camera),
+    after: restoreDraw,
+  });
   function attachWhenReady() {
     if (!enabled) return;
     const actual = root.__hobunjiGameRenderer;
@@ -527,7 +611,7 @@
       scan = null;
       scanScheduled = false;
       // Finished variants are retained for instant re-enable. Only the render
-      // wrapper controls what is actually submitted to the GPU.
+      // hook controls what is actually submitted to the GPU.
       status('Full-quality original meshes restored.');
     }
     return enabled;

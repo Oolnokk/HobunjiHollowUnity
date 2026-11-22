@@ -1,5 +1,24 @@
 # Performance investigation log
 
+## 21 Nov 2026: battle and sky traces, ground replay and AutoLOD bookkeeping
+
+The same spot measured a 209 ms median frame interval facing the battle and
+65 ms facing the sky in Chrome traces, after removing the profiler startup
+stall. Sampled held-object/x-ray work dropped from roughly 26 to 8 ms per
+game-frame callback. Geometry AutoLOD stayed near 2 ms. The battle capture
+also included substantially more browser style recalculation, so the frame
+intervals cannot isolate the camera change.
+
+The held and shell passes now reuse their per-scene ground material aggregate
+when the visible inputs match. They check material slots and normal
+availability on each use and retain the live compile callback checks.
+AutoLOD uses the shared render hook, validates each eligible shared geometry
+once per draw, and skips excluded layers and auxiliary scenes in the world
+frame. Version changes and attribute replacements still invalidate a variant
+before the next eligible draw. The Performance Profiler shows ground cache
+hits and builds alongside AutoLOD source checks and swaps. These counters
+verify work reuse. Fresh device traces are needed to measure the FPS effect.
+
 ## 21 Nov 2026: pants added to existing feet x-ray replay (PR #2049)
 
 Pants join the existing selectively ground-exempt feet replay, not a new pass.
