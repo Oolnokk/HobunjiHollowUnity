@@ -192,7 +192,16 @@
       angle = awayAngle + offset;
       const vx = Math.cos(angle), vy = Math.sin(angle); // One bearing drives both the nearby terrain check and the distant escape goal.
       const x = c.x + vx * tile * 3, y = c.y + vy * tile * 3;
-      if (ctx.canOccupyAt && !ctx.canOccupyAt(c.x + vx * tile * 0.7, c.y + vy * tile * 0.7, tile * 0.32)) continue; // Check the first step, not a remote tile that may be blocked beyond reachable open ground.
+      if (ctx.canOccupyAt && !ctx.canOccupyAt(c.x + vx * tile * 0.7, c.y + vy * tile * 0.7, tile * 0.32)) {
+        // Cliff faces deliberately block ground movement. If the shared downhill
+        // planner proves a real safe landing, escape by jumping instead of
+        // discarding this bearing before moveCreatureToward can navigate it.
+        if (window.CreatureCliffClimb?.tryIntentionalLedgeDrop?.(c, x, y)) {
+          moving = true;
+          break;
+        }
+        continue;
+      }
       moving = !!ctx.moveCreatureToward?.(c, x, y, Math.max(tile * PANIC_SPEED_TILES_S, Number(c.def?.chaseSpeed) || 0), dt);
       if (moving) break;
     }

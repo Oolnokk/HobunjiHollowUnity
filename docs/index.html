@@ -250,7 +250,7 @@
        (game.js) and farm livestock (farm-animals.js). -->
   <script src="js/creature-blink.js?v=20261118NineAuthoredRigs2"></script>
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
-  <script src="js/wildlife-threat-response.js?v=20261122companionPredatorRoster1"></script> <!-- Shared predator panic, close-range herd defense and alerted nest adults; consulted by WildlifeFoodWeb. -->
+  <script src="js/wildlife-threat-response.js?v=20261122panicCliffDescent1"></script> <!-- Shared predator panic, close-range herd defense and alerted nest adults; consulted by WildlifeFoodWeb. -->
   <script src="js/wildlife-food-web.js?v=20261122wildlifeThreat1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
@@ -550,13 +550,13 @@
   <script src="js/perch-support.js?v=20261105perchAudit7"></script>
   <script src="js/attack-readiness.js?v=20261121attackReadiness1"></script> <!-- Shared player-activity attack staging; other predator AIs may opt in without changing minigames. -->
   <script src="js/flying-combat-orbit.js?v=20261118circleFallback1"></script> <!-- Shared foe-centred aerial evasion geometry; flight owners still perform their own collision checks. --> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
-  <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/cliff-route-network.js?v=20261122intentionalDescent1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
   <script src="js/player-jump.js?v=20261122proneFlight1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261122proneClimb1"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261122proneCliff1"></script>
+  <script src="js/creature-cliff-climb.js?v=20261122proneIntentionalMerge1"></script>
   <script src="js/companion-follow-navigation.js?v=20261118followRecover1"></script> <!-- Single companion route decision and unseen stuck recovery; initialized by game.js. -->
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
@@ -2931,7 +2931,7 @@
   <script src="config/romance-config.js?v=20261109family1"></script>
   <script src="js/romance-family.js?v=20261122familyarrivals1"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
-  <script src="js/npc-following.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/npc-following.js?v=20261122cliffRetreat1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
   <script src="js/spouse-kiss-motion.js?v=20261119h7c67489"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
