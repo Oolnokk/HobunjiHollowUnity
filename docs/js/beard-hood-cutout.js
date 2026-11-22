@@ -197,6 +197,19 @@
     return diagnostics;
   }
 
+  function deformationWeight(move, x, y) {
+    const {to,radius} = move;
+    const dist2=(x-to.x)**2+(y-to.y)**2;
+    if(dist2>=radius*radius)return 0;
+    const t=1-dist2/(radius*radius),baseWeight=t*t;
+    const sideInfluence=((y<to.y ? move.aboveInfluence : move.belowInfluence) ?? 100)/100;
+    // Exactly at the tuft marker, subdivision and side strengths must NOT
+    // move the pin. The side adjustment rises continuously farther away.
+    const sideDistance=Math.min(1,Math.abs(y-to.y)/Math.max(4,radius*.3));
+    const smoothSide=sideDistance*sideDistance*(3-2*sideDistance);
+    return Math.max(0,Math.min(1,baseWeight*(1+(sideInfluence-1)*smoothSide)));
+  }
+
   function warpForRoot(image, move) {
     const {data,width,height} = image;
     const original = new Uint8ClampedArray(data); // Read-only source for this root; avoid sequential pixel feedback.
@@ -207,15 +220,7 @@
     for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
       const dist2=(x+.5-to.x)**2+(y+.5-to.y)**2;
       if(dist2>=r2)continue;
-      const t=1-dist2/r2;
-      const baseWeight=t*t; // Compact 2D falloff; displacement reaches the root at the center.
-      const signedY=y+.5-to.y;
-      const sideInfluence=(signedY<0 ? move.aboveInfluence : move.belowInfluence)/100;
-      // Blend vertical influence in progressively away from the pin. Exactly
-      // at the marked corner the weight stays 1, regardless of either slider.
-      const sideDistance=Math.min(1,Math.abs(signedY)/Math.max(4,radius*.3));
-      const smoothSide=sideDistance*sideDistance*(3-2*sideDistance);
-      const weight=Math.max(0,Math.min(1,baseWeight*(1+(sideInfluence-1)*smoothSide)));
+      const weight=deformationWeight(move,x+.5,y+.5);
       const sx=Math.max(0,Math.min(width-1,Math.round(x-delta.x*weight)));
       const sy=Math.max(0,Math.min(height-1,Math.round(y-delta.y*weight)));
       const src=(sy*width+sx)*4,dst=(y*width+x)*4;
@@ -243,7 +248,7 @@
 
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
-    normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence,
+    normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
     planTuftStretch, stretchHoodToRoots, applyToHood,
   });
 })();
