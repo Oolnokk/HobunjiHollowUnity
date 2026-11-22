@@ -10,32 +10,69 @@
     for (const char of String(text)) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
     return value >>> 0;
   }
-  function generateTable(lexicon, sliders, speakerId = '') {
-    const selected = normalizeSliders(sliders); // Each slider weights an independent attribute, without implying intelligence.
-    const table = {}; // Exportable original-phrase -> eligible alternatives table, editable after generation.
+  function synonymId(entry) {
+    return String(entry?.id || entry?.text || '').trim().toLocaleLowerCase(); // Immutable canonical ID; the editor keeps it when synonyms are renamed.
+  }
+  function generateSelections(lexicon, sliders, speakerId = '') {
+    const selected = normalizeSliders(sliders); // Independent axes determine which globally authored words each character is allowed to say.
+    const selections = {}; // Only canonical synonym IDs are stored, not copies of another character's word list.
     for (const [original, entries] of Object.entries(lexicon || {})) {
-      const key = String(original || '').toLocaleLowerCase().trim(); // Exact whole-word/phrase key; no transformations of unidentified vocabulary.
+      const key = String(original || '').toLocaleLowerCase().trim(); // A source phrase is checked by its actual authored words.
       if (!key || key.length > 80 || /[{}]/.test(key) || !Array.isArray(entries)) continue;
-      const coverage = 0.12 + (selected.breadth / 100) * 0.88; // Breadth controls how many different source expressions the speaker knows, not just variants per expression.
-      if ((hash(speakerId + ':known:' + key) >>> 0) / 4294967296 >= coverage) continue; // Stable per-character word knowledge, resolved only while generating.
+      const coverage = 0.12 + (selected.breadth / 100) * 0.88; // Broad characters know more words; low breadth excludes entire entries.
+      if ((hash(speakerId + ':known:' + key) >>> 0) / 4294967296 >= coverage) continue;
       const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim()).map(item => ({
-        text: item.text.trim(),
+        id: synonymId(item),
         distance: Math.abs(clamp(item.verbosity ?? 50) - selected.verbosity) * 0.9
           + Math.abs(clamp(item.color ?? 50) - selected.color)
           + Math.abs(clamp(item.formality ?? 50) - selected.formality) * 0.7,
-      })).filter(item => item.text.toLocaleLowerCase() !== key)
-        .sort((a, b) => a.distance - b.distance || a.text.localeCompare(b.text));
+        text: item.text.trim(),
+      })).filter(item => item.id && item.text.toLocaleLowerCase() !== key)
+        .sort((left, right) => left.distance - right.distance || left.text.localeCompare(right.text));
       if (!ranked.length) continue;
-      const shortlist = ranked.filter(item => item.distance <= ranked[0].distance + 42); // Always exclude replacements that contradict the chosen tone/register.
-      const capacity = Math.max(1, Math.ceil(shortlist.length * (0.2 + selected.breadth / 125))); // Breadth also controls how many alternatives are familiar.
-      const eligible = shortlist.slice(0, capacity);
-      const variantCount = Math.max(1, Math.ceil(eligible.length * Math.max(0.01, selected.variety / 100))); // Smooth variation: 20% and 100% no longer yield identical tables.
-      const variants = eligible.slice(0, variantCount).map(item => item.text);
-      table[key] = selected.variety < 15
+      const shortlisted = ranked.filter(item => item.distance <= ranked[0].distance + 42); // Keep formal and colorful axes independent.
+      const capacity = Math.max(1, Math.ceil(shortlisted.length * (0.2 + selected.breadth / 125)));
+      const eligible = shortlisted.slice(0, capacity);
+      const count = Math.max(1, Math.ceil(eligible.length * Math.max(0.01, selected.variety / 100)));
+      const variants = eligible.slice(0, count).map(item => item.id);
+      selections[key] = selected.variety < 15
         ? [variants[hash(speakerId + ':' + key) % variants.length]]
-        : variants;
+        : [...new Set(variants)];
+    }
+    return selections;
+  }
+  function mergeSelections(automatic, overrides) {
+    const selected = { ...(automatic || {}) }; // Missing override keys continue to use the character's generated family vocabulary.
+    for (const [word, ids] of Object.entries(overrides || {})) {
+      if (Object.hasOwn(selected, word) || (ids && Array.isArray(ids))) {
+        selected[word] = Array.isArray(ids) ? [...new Set(ids.filter(id => typeof id === 'string').map(id => id.trim().toLocaleLowerCase()).filter(Boolean))] : [];
+      }
+    } // Explicit empty arrays are meaningful: this character must never replace that source word.
+    return selected;
+  }
+  function resolveSelections(lexicon, selections) {
+    const table = {}; // Compiled ephemeral render table. The JSON schema stores ONLY synonym ID references.
+    for (const [word, ids] of Object.entries(selections || {})) {
+      const entries = lexicon?.[word];
+      if (!Array.isArray(entries) || !Array.isArray(ids) || !ids.length) continue;
+      const enabled = new Set(ids.filter(id => typeof id === 'string').map(id => id.toLocaleLowerCase()));
+      const words = [...new Set(entries.filter(entry => entry && enabled.has(synonymId(entry)) && typeof entry.text === 'string' && entry.text.trim())
+        .map(entry => entry.text.trim()).filter(text => text.toLocaleLowerCase() !== word))];
+      if (words.length) table[word] = words;
     }
     return table;
+  }
+  function migrateLegacyTable(lexicon, table) {
+    const selections = {}; // Imports from the first PR revision are converted to central synonym IDs without duplicate text.
+    for (const [word, alternatives] of Object.entries(table || {})) {
+      if (!Array.isArray(alternatives)) continue;
+      const desired = new Set(alternatives.map(text => String(text || '').toLocaleLowerCase()));
+      selections[word] = (lexicon?.[word] || []).filter(entry => desired.has(String(entry?.text || '').toLocaleLowerCase())).map(synonymId);
+    }
+    return selections;
+  }
+  function generateTable(lexicon, sliders, speakerId = '') {
+    return resolveSelections(lexicon, generateSelections(lexicon, sliders, speakerId)); // Compatibility helper for older read-only preview/test callers.
   }
   function seedSliders(familySliders, speakerId) {
     const values = normalizeSliders(familySliders); // Existing personality family is the center of each character's vocabulary.
@@ -72,7 +109,7 @@
         const candidates = Object.hasOwn(table, raw.toLocaleLowerCase()) ? table[raw.toLocaleLowerCase()] : null; // No inherited prototype names are legal dictionary matches.
         if (!Array.isArray(candidates) || !candidates.length) return whole;
         const preceding = segment.slice(0, offset) + prefix; // The regex includes its leading word boundary; include that boundary when inspecting grammar.
-        const article = /(?:^|[^\\p{L}\\p{N}_])(a|an)\\s+$/iu.exec(preceding)?.[1]?.toLocaleLowerCase() || null;
+        const article = /(?:^|[^\p{L}\p{N}_])(a|an)\s+$/iu.exec(preceding)?.[1]?.toLocaleLowerCase() || null;
         const valid = candidates.filter(value => {
           if (typeof value !== 'string' || !value.trim() || value.toLocaleLowerCase() === raw.toLocaleLowerCase()) return false;
           if (!article) return true;
@@ -92,5 +129,5 @@
     }).join('');
     return { text, hits, swaps };
   }
-  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, seedSliders, generateTable, rewriteLine });
+  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, seedSliders, synonymId, generateSelections, mergeSelections, resolveSelections, migrateLegacyTable, generateTable, rewriteLine });
 })();
