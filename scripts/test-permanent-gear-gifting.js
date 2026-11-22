@@ -44,13 +44,18 @@ assert.equal(window.NpcGifting.isItemGiftable(held), true, 'another copy of the 
 const gameSource = fs.readFileSync('docs/game.js', 'utf8'); // Executes the production manual-hold accessors without booting WebGL.
 const holdSource = gameSource.slice(gameSource.indexOf('      let manualHeldItem = null;'), gameSource.indexOf('      function clampInventoryStack(')); // Bounded production block containing hold state/accessors.
 const toasts = []; // Player-facing refusals from the production hold accessor.
-const context = { window, packClothing: pack, inventory: {}, ITEM_DEFS: {}, refreshActionBar() {}, showToast: message => { toasts.push(message); }, getActiveInventoryItem: () => null }; // Runtime dependencies of the accessor block.
+const context = { window, heldMode: 'item', packClothing: pack, inventory: {}, ITEM_DEFS: {}, refreshActionBar() {}, showToast: message => { toasts.push(message); }, getActiveInventoryItem: () => null }; // The real resolver also requires the drawn item mode, not merely a wheel selection.
 vm.createContext(context);
 vm.runInContext(holdSource, context);
 vm.runInContext("setManualHeldItem({ kind: 'clothing', uid: 'gear-hat' })", context);
 assert.equal(vm.runInContext('getManualHeldItem()', context), null, 'gear cannot be manually held');
 vm.runInContext("setManualHeldItem({ kind: 'clothing', uid: 'pack-hat' })", context);
 assert.equal(vm.runInContext('getHeldGiftItem().instance.uid', context), 'pack-hat');
+context.heldMode = 'tool'; // Even an explicitly selected Pack garment is not giftable while a tool/weapon is drawn.
+assert.equal(vm.runInContext('getHeldGiftItem()', context), null, 'held clothing cannot be gifted with tools out');
+context.heldMode = 'none'; // Empty hands do not offer an item even when a Hold selector remains populated.
+assert.equal(vm.runInContext('getHeldGiftItem()', context), null, 'stowed clothing cannot be gifted');
+context.heldMode = 'item'; // Restoring the item hand mode makes the valid pack article available again.
 gear.clothingItems.push(packItem);
 assert.equal(vm.runInContext('getHeldGiftItem()', context), null, 'transferred clothing cannot remain a gift');
 assert.equal(vm.runInContext('getManualHeldItem()', context), null, 'stale hold clears');
