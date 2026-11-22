@@ -39,6 +39,19 @@ assert(first.every(site => site.contents && site.contents !== Cave.TYPES.PUZZLE_
   'den conversion preserves the existing primary cave content layer');
 assert.equal(new Set(first.map(site => site.mapId)).size, 8, 'every cave retains a unique original transition target');
 
+// The den quota is zone-generic: each actual wilderness biome gets the same
+// minimum even though a random stream picks different residents and contents.
+for (const biome of ['map_northern_cliffs', 'map_southern_cloud_forest', 'map_western_slope', 'map_eastern_mire']) {
+  const firstPass = Cave.applyWorkspaceProfiles(biome, { animalDens: dens(8) });
+  assert.equal(firstPass.length, 8, biome + ' preserves all eight cave mouths');
+  assert(firstPass.filter(site => site.inhabitant === Cave.TYPES.ANIMAL_DEN).length >= 6,
+    biome + ' contains at least six animal dens under the 65% floor');
+  assert.equal(new Set(firstPass.map(site => site.mapId)).size, 8,
+    biome + ' keeps all its existing distinct cave transition IDs');
+  assert.deepEqual(summary(Cave.applyWorkspaceProfiles(biome, { animalDens: dens(8) })), summary(firstPass),
+    biome + ' rolls deterministic cave inhabitants and content on reload');
+}
+
 // Legacy profiles should keep all their original content, den identity and
 // explored bandits; only unused room and undiscovered non-den sites may change.
 const old = dens(8).map((den, index) => {
