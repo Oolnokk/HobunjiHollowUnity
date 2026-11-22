@@ -175,9 +175,7 @@
   let rescueCount = 0; // Read by mobile diagnostics to verify rescues are actually landing.
   function tryRescueSwarm(c, host, state, dt) {
     const d = deps();
-    const candidates = rescueCandidates(host).filter(ally =>
-      !window.Combat.animalAttacks?.isBusy?.(ally) &&
-      !window.Combat.telegraph?.isBusy?.(ally) && !ally._banditAction);
+    const candidates = rescueCandidates(host).filter(ally => !ally._banditAction); // An owner being swarmed outranks a companion's ordinary attack; don't permanently exclude a busy Nelk.
     const isReady = ally => !(Number(ally.attackCooldownT) > 0); // A ready rescuer must not wait for a closer pet's attack cooldown.
     const inReach = ally => Math.hypot(ally.x - host.x, ally.y - host.y) <=
       Math.max(RESCUE_CONTACT_TILES * d.TILE, Number(ally.def?.attackRangePx) || 0);
@@ -194,6 +192,12 @@
         delete state.rescuer._honeyfuzzleRescueTarget; // Rescuer changes cannot leave a stale friendly target in another pet's AI.
       }
       state.rescuer = ally;
+      if (window.Combat.animalAttacks?.isBusy?.(ally)) window.Combat.animalAttacks.cancel(ally); // Interrupt an ordinary lunge; otherwise fighting nearby honeyfuzzles can starve the owner's rescue.
+      if (window.Combat.telegraph?.isBusy?.(ally)) window.Combat.telegraph.cancel(ally);
+      if (ally.isCompanion) {
+        ally._stage = null; // Cancel the old backing-up beat when the rescuer changes to a friendly target.
+        ally._companionCombatTarget = null; // The next normal hostile scan must not retain an obsolete attack.
+      }
       ally._honeyfuzzleRescueTarget = host; // Exposes the temporary ally target for debug/AI instrumentation.
       if (dist > reach) {
         const speed = Math.max(d.TILE * 2, Number(ally.def?.moveSpeed) || 0);
