@@ -46,15 +46,16 @@ assert.equal(context.CreatureGenetics.creatureGroundOffset('unknown-kind', 'medi
 
 const skeeriWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Real ruined Skeeri native model widths used for class-proportional floor lift.
 const expectedSkeeriOffset = { small: 0.07, medium: 0.07 * (1.15 / 0.65), large: 0.07 * (2.2 / 0.65) }; // Shared Pingdort Small floor Y scales to Skeeri native widths.
+const mediumSkeeriOffsets = { small: 0.1, medium: 0.26, large: 0.375 }; // Independently authored Medium Skeeri size-class floor lifts.
 const pingdortGrip = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.pingdort.anchors.shoulderGrip.position; // Checks the live copied grip rather than a second hardcoded constant.
 for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
   const profile = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind]; // Every domestic/ruin registry entry must reach the new rig source.
   assert.deepEqual({ ...profile.anchors.shoulderGrip.position }, { ...pingdortGrip }, kind + ' runtime should copy Pingdort shoulder grip');
   for (const sizeClass of ['small', 'medium', 'large']) {
-    assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, sizeClass), expectedSkeeriOffset[sizeClass], kind + ' '+ sizeClass + ' runtime floor offset matches Skeeri width');
+    assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, sizeClass), (kind === 'skeeri-medium' ? mediumSkeeriOffsets : expectedSkeeriOffset)[sizeClass], kind + ' '+ sizeClass + ' runtime floor offset matches authored species rig');
   }
   const defaultClass = kind === 'skeeri' ? 'small' : kind.slice('skeeri-'.length); // Distinguishes native fixed-size ruin variants from the domestic species.
-  assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, null), expectedSkeeriOffset[defaultClass], kind + ' defaults to its native floor lift');
+  assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, null), (kind === 'skeeri-medium' ? mediumSkeeriOffsets : expectedSkeeriOffset)[defaultClass], kind + ' defaults to its authored native floor lift');
   const defaultSize = context.CreatureGenetics.creatureSizeScale(kind, defaultClass); // Uses the real genetics renderer's profile lookup, not just the master table.
   assert.equal(defaultSize.x, 1, kind + ' native fixed class retains 1x width');
   assert.equal(defaultSize.y, 1, kind + ' native fixed class retains 1x height');
