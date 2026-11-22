@@ -64,6 +64,8 @@
     '<div class="g2"><button type="button" id="carryBabyEdit">Edit baby grips</button><button type="button" id="carryBabyReturn">Return to furniture grips</button></div>',
     '<div class="g2"><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
+    '<button type="button" id="carryBabyCopy">Copy baby profile JSON</button>',
+    '<textarea id="carryBabyCopyText" hidden readonly aria-label="Baby profile JSON for manual copying" style="width:100%;min-height:6rem"></textarea>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
     '<p class="muted">While editing a baby, Download JSON and Copy Current JSON both export the baby pose (not furniture). Returning to furniture restores both actions. Apply baby grips saves a separate local gameplay override.</p>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
@@ -426,6 +428,7 @@
     el('carryBabyEdit').disabled=editingBaby;
     el('carryBabyReturn').disabled=!editingBaby;
     el('carryBabyApply').disabled=!editingBaby;
+    el('carryBabyCopy').disabled=!editingBaby;
     el('carryBabyRotate').disabled=!editingBaby;
     el('carryBabyRotate').classList.toggle('active',id==='baby');
     el('carryBabyRandom').disabled=!editingBaby;
@@ -811,6 +814,7 @@
     if(!editingBaby)return;
     babyRenderTicket++; // Invalidate a queued NPC render before the visual/controls are restored.
     babyPointerId=null;babyPointerSide=null; // End any mobile grip drag when leaving baby mode.
+    if(el('carryBabyCopyText'))el('carryBabyCopyText').hidden=true; // Don't leave the old infant JSON visible in furniture mode.
     babyDraft=cloneJson(state.carryable); // Keep incomplete mobile edits if the user revisits the baby tab.
     state.carryable=savedFurnitureCarry;savedFurnitureCarry=null;editingBaby=false;
     root.visible=true;babyReference.visible=false;babyRotateProxy.visible=false;
@@ -835,6 +839,17 @@
     if(!profile)return;
     download('family-baby-carry-pose.json',new Blob([JSON.stringify(profile,null,2)+'\\n'],{type:'application/json'}));
     el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
+  }
+  async function copyBaby(){
+    const profile=currentBabyProfile(); // Available directly from the Carryable pane, without switching to IO and losing the active draft.
+    if(!profile)return false;
+    const fallback=el('carryBabyCopyText');
+    if(fallback)fallback.hidden=false; // Keep a mobile-visible manual-selection fallback when clipboard permission is blocked.
+    const copied=await copyPlainTextWithFallback(JSON.stringify(profile,null,2),fallback,'Baby profile JSON');
+    el('carryBabyStatus').textContent=copied
+      ?'Current baby profile copied to clipboard.'
+      :'Baby JSON is shown below for manual copying; no furniture data was substituted.';
+    return copied;
   }
   const mainJsonButton=el('downloadJsonBtn'); // Existing header export switches meaning only while the isolated infant editor is active.
   const furnitureJsonLabel=mainJsonButton?.textContent||'Download JSON';
@@ -862,6 +877,7 @@
   el('carryBabyReturn').onclick=returnToFurniture;
   el('carryBabyApply').onclick=applyBaby;
   el('carryBabyExport').onclick=exportBaby;
+  el('carryBabyCopy').onclick=()=>{void copyBaby();};
   el('carryBabyImport').onchange=async event=>{
     const file=event.target.files?.[0];
     if(!file)return;
