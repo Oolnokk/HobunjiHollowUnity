@@ -835,6 +835,35 @@
     return true;
   }
 
+  // Called when a real hit knocks a scripted climber prone. Reuse the
+  // existing scripted descent owner; don't strand its world-space height
+  // behind the prone movement gate or add a second, competing fall timer.
+  function knockProneOffClimb(player = deps?.player) {
+    if (!player?.climbing) return false;
+    if (player._climbFall) { player._climbFall.noGrab = true; return true; } // Already falling: do not restart the interpolation.
+    if (player._cliffRouteSession) return fallFromClimb(player, 'knocked prone');
+    const currentY = Number(player.climbSurfaceY);
+    const startY = Number(player.climbSurfaceStartY), endY = Number(player.climbSurfaceEndY);
+    if (![currentY, startY, endY].every(Number.isFinite)) return false;
+    const returnToStart = startY <= endY; // Fall to the lower existing endpoint, never teleport to a higher rim.
+    const landingX = returnToStart ? player.climbStartX : player.climbEndX;
+    const landingY = returnToStart ? player.climbStartY : player.climbEndY;
+    const landingHeight = Math.min(startY, endY);
+    const dropWorld = Math.max(0, currentY - landingHeight);
+    const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
+    player.climbStartX = player.x; player.climbStartY = player.y;
+    player.climbSurfaceStartY = currentY;
+    player.climbEndX = landingX; player.climbEndY = landingY;
+    player.climbSurfaceEndY = landingHeight;
+    player.climbHopCount = 1;
+    player.climbElapsed = 0;
+    player._climbLastHopIndex = -1;
+    player._climbTargetBranch = null; player._climbJumpDownAxis = null; player._cliffLandingShelf = null;
+    resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
+    player._climbFall = { dropWorld, deliberate: false, noGrab: true, source: 'knocked prone while climbing' };
+    return true;
+  }
+
   function updateClimb(dt) {
     const player = deps.player;
     const session = player._cliffRouteSession; // Active only for exterior directional handhold climbing.
@@ -918,6 +947,7 @@
         player._climbTargetBranch = null;
         beginOnBranch(player, branch, 0);
       }
+      if (player.prone) player._climbJumpDownAxis = null; // Landing prone must not queue a free evasive roll after recovery.
       if (player._climbJumpDownAxis && !player.prone) {
         // Reuses the same tumble/roll movement state an evasive combat
         // dodge uses (see game.js's performDodge), just without its
@@ -1137,7 +1167,7 @@
   }
 
   window.ClimbSystem = {
-    cliffDodge, jumpAction, tryAirGrab,
+    cliffDodge, jumpAction, tryAirGrab, knockProneOffClimb,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,
