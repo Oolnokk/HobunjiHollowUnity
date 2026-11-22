@@ -63,7 +63,9 @@ const dialogueWindow = {
   DialogueRichText: { parse: text => [{ text }], plain: runs => runs.map(run => run.text).join(''), render: (el, runs) => { el.textContent = runs.map(run => run.text).join(''); } },
   DevCompanion: null,
 };
-const sandbox = { window: dialogueWindow, console, performance: { now: () => 0 }, setTimeout, clearTimeout, Date, Math }; // Actual condition registry and dialogue runtime share a browser-like VM.
+const testMath = Object.create(Math); // Event-time random is controllable for post-exhaustion speech rotation without changing process-wide Math.
+testMath.random = () => 0.75; // Normal fixture randomness chooses scoped copy after exhaustion until a test explicitly asks for authored copy.
+const sandbox = { window: dialogueWindow, console, performance: { now: () => 0 }, setTimeout, clearTimeout, Date, Math: testMath }; // Actual condition registry and dialogue runtime share a browser-like VM.
 vm.createContext(sandbox);
 vm.runInContext(conditionsSource, sandbox, { filename: 'condition-registry.js' });
 sandbox.document = doc;
@@ -110,6 +112,10 @@ const namedPahuLine = say(byId.pahu); // Exhausted authored greetings hand off t
 assert.ok(config.characters.pahu.some(entry => entry.text === namedPahuLine), 'Pahu can use named shared speech once his individual greetings play');
 const playfulPahuLine = say(byId.pahu); // Then the personality family supplements his exhausted unique copy.
 assert.ok(config.personalityFamilies.playful.some(entry => entry.text === playfulPahuLine), 'Pahu inherits playful speech after his named line');
+for (let round = 0; round < 5; round++) say(byId.pahu); // Exhaust the eligible scoped family entries before checking whether unique lines can return.
+testMath.random = () => 0; // A zero roll must choose the personal fallback on repeat after shared copy is exhausted.
+assert.ok(['ORIGINAL PAHU GREETING 1', 'ORIGINAL PAHU GREETING 2'].includes(say(byId.pahu)), 'personal greetings stay in rotation after shared lines are heard');
+testMath.random = () => 0.75; // Reset fixture randomness so later character tests use their normal scoped choice.
 const firstSpearheadLine = say(byId.spearhead_unumanuk); // A plain-text character fallback keeps first greeting precedence too.
 assert.equal(firstSpearheadLine, 'UNSCOPED FALLBACK', 'existing literal character greeting is not displaced on first meeting');
 const secondSpearheadLine = say(byId.spearhead_unumanuk);
