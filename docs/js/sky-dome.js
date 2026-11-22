@@ -128,9 +128,12 @@
   function currentCloudCover() {
     const calendar = deps?.calendar;
     if (!calendar) return CLEAR_CLOUD_COVER;
-    if (calendar.rainStrength >= 3 || calendar.weather === 'storm') return 1;
-    if (calendar.rainStrength >= 2) return 0.78;
-    if (calendar.rainStrength >= 1 || calendar.isRaining || calendar.weather === 'rain') return 0.62;
+    const rainStrength = calendar.isRaining ? Number(calendar.rainStrength) || 0 : 0; // Active rain intensity drives the steep darkness curve, rather than the day's forecast label.
+    if (rainStrength >= 3) return 1;
+    if (rainStrength >= 2) return 0.78;
+    if (rainStrength >= 1) return 0.62;
+    if (calendar.weather === 'storm') return 0.78; // Between storm windows, heavy cloud persists without pretending maximum lightning-storm darkness.
+    if (calendar.weather === 'rain') return 0.62; // Keep rain-day overcast even when a shower is not currently falling.
     return CLEAR_CLOUD_COVER;
   }
 
@@ -206,11 +209,12 @@
     // darkness penalty on top of the already-dark night curve.
     const daytimeInfluence = 1 - night * 0.58;
     const tintStrength = Math.pow(overcast, OVERCAST_TINT_EXPONENT) * daytimeInfluence; // Used for the gray-blue rain tint even while the darkness curve is still rising.
-    const weatherDarknessAddedAlpha = OVERCAST_MAX_DARKNESS_ALPHA * darkness * daytimeInfluence; // Added to day/night alpha and reported in mobile sky diagnostics.
+    const baseAlpha = a; // Used to report actual weather-added darkness after the night safety cap is applied.
     r = lerp(r, OVERCAST_AMBIENT_RGB[0], tintStrength);
     g = lerp(g, OVERCAST_AMBIENT_RGB[1], tintStrength);
     b = lerp(b, OVERCAST_AMBIENT_RGB[2], tintStrength);
-    a = clamp(a + weatherDarknessAddedAlpha, 0, 0.86);
+    a = clamp(a + OVERCAST_MAX_DARKNESS_ALPHA * darkness * daytimeInfluence, 0, 0.86);
+    const weatherDarknessAddedAlpha = a - baseAlpha; // Exposed in mobile sky diagnostics; capped darkness is never overstated at night.
     const lanternActivation = smoothstep(LANTERN_ACTIVATION_ALPHA, LANTERN_FULL_ALPHA, a);
     return { r, g, b, a, overcast, overcastDarkness: darkness, weatherDarknessAddedAlpha, lanternActivation };
   }
