@@ -322,109 +322,106 @@
     return Math.min(SIZE,distance*slope); // Limit to the 200px portrait; Infinity is intentionally clamped.
   }
 
-  function traceLowerRimDirections(hoodRGBA, alphaLimit, seed, maxRadius, left, right, deepest) {
-    // Clockwise right->bottom and counterclockwise left->bottom follow the
-    // actual inner-edge pixels, including small uphill runs and concave turns.
-    // Reversing independent ray order would NOT recover those hidden pixels.
-    const traced=new Int16Array(SIZE); // Each column keeps the lowest reachable inner-border pixel.
-    traced.fill(-1);
-    const result={bottom:traced,clockwiseSteps:0,counterClockwiseSteps:0};
-    if(!left||!right||!deepest)return result;
-    const {parent,seen,eligible,queue}=rimTraceScratch; // One reusable 240KB buffer for both clockwise and counterclockwise walks.
-    eligible.fill(0); // Opaque edge eligibility is specific to the current hood pixels and opacity threshold.
-    const minY=Math.max(0,Math.floor(seed.y)-Math.max(8,Math.min(20,Math.round(maxRadius/4))));
-    const radius2=(maxRadius+8)**2,goal=deepest.y*SIZE+deepest.x;
-    const edge=(x,y)=>{
-      if(x<0||y<minY||x>=SIZE||y>=SIZE)return false;
-      if((x+.5-seed.x)**2+(y+.5-seed.y)**2>radius2)return false;
-      const index=y*SIZE+x,state=eligible[index];
-      if(state)return state===1;
-      if(hoodRGBA[index*4+3]<alphaLimit){eligible[index]=2;return false;}
-      // A real boundary has transparent cloth-free space adjacent to it.
-      // Following only border pixels prevents traversing the outer hood body.
+  function traceClockwiseLowerOpening(hoodRGBA, alphaLimit, seed, maxRadius, right, left) {
+    // Follow the ENTIRE clockwise lower opening (0° -> 180°) before
+    // classifying any bottom pixels. Never join a left-side counterclockwise
+    // walk to the deepest hit: on ragged hoods that path can run up the TOP.
+    const bottom=new Int16Array(SIZE); // Only accepted if the full right-to-left path exists.
+    bottom.fill(-1);
+    const result={bottom,clockwiseSteps:0,clockwiseComplete:false};
+    if(!right||!left)return result;
+    const {parent,seen,eligible,queue}=rimTraceScratch; // Bounded, reused scratch; no recursion.
+    seen.fill(0);eligible.fill(0);
+    const minY=Math.max(0,Math.floor(seed.y)-1); // Lower arc cannot wander up through ragged upper rim.
+    const radius2=(maxRadius+8)**2;
+    const faceEdge=(x,y)=>{
+      if(x<0||x>=SIZE||y<minY||y>=SIZE)return false;
+      const rx=x+.5-seed.x,ry=y+.5-seed.y;
+      if(rx*rx+ry*ry>radius2)return false;
+      const i=y*SIZE+x;
+      if(eligible[i])return eligible[i]===1;
+      if(hoodRGBA[i*4+3]<alphaLimit){eligible[i]=2;return false;}
+      // Face-facing opaque/transparent transition, not the outside hood
+      // silhouette. Restrict adjacent transparent neighbors to the side
+      // pointing back toward the face opening.
       for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-        if(!dx&&!dy)continue;
+        if(!dx&&!dy||dx*rx+dy*ry>=0)continue;
         const nx=x+dx,ny=y+dy;
         if(nx>=0&&ny>=0&&nx<SIZE&&ny<SIZE
           &&hoodRGBA[(ny*SIZE+nx)*4+3]<alphaLimit){
-          eligible[index]=1;return true;
+          eligible[i]=1;return true;
         }
       }
-      eligible[index]=2;return false;
+      eligible[i]=2;return false;
     };
-    for(const [name,start] of [['clockwiseSteps',right],['counterClockwiseSteps',left]]){
-      if(!edge(start.x,start.y)||!edge(deepest.x,deepest.y))continue;
-      seen.fill(0);
-      let front=0,back=0,visited=0,found=false;
-      const begin=start.y*SIZE+start.x;
-      queue[back++]=begin;seen[begin]=1;parent[begin]=65535; // Uint16 sentinel, outside the 0..39999 portrait range.
-      while(front<back&&visited<4096){
-        const current=queue[front++];visited++;
-        if(current===goal){found=true;break;}
-        const x=current%SIZE,y=(current/SIZE)|0;
-        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-          if(!dx&&!dy)continue;
-          const nx=x+dx,ny=y+dy;
-          if(!edge(nx,ny))continue;
-          const next=ny*SIZE+nx;
-          if(seen[next])continue;
-          seen[next]=1;parent[next]=current;queue[back++]=next;
-        }
+    if(!faceEdge(right.x,right.y)||!faceEdge(left.x,left.y))return result;
+    const start=right.y*SIZE+right.x,goal=left.y*SIZE+left.x;
+    let front=0,back=0,visited=0,found=false;
+    queue[back++]=start;seen[start]=1;parent[start]=65535;
+    // Explore the lower face-facing edge from right to left, completing the
+    // whole arc instead of prematurely stopping when it climbs locally.
+    while(front<back&&visited<4096){
+      const current=queue[front++];visited++;
+      if(current===goal){found=true;break;}
+      const x=current%SIZE,y=(current/SIZE)|0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=x+dx,ny=y+dy;
+        if(!faceEdge(nx,ny))continue;
+        const next=ny*SIZE+nx;
+        if(seen[next])continue;
+        seen[next]=1;parent[next]=current;queue[back++]=next;
       }
-      if(!found)continue; // Leave unchanged radial fallback when art has a disconnected edge.
-      let current=goal,steps=0;
-      while(current!==65535&&steps<4096){
-        const x=current%SIZE,y=(current/SIZE)|0;
-        traced[x]=Math.max(traced[x],y);
-        current=parent[current];steps++;
-      }
-      result[name]=steps;
     }
+    if(!found)return result; // Disconnected ring: conservative radial fallback, never hallucinated connecting cloth.
+    let current=goal,steps=0;
+    // Only AFTER the entire clockwise contour was found do we decide which
+    // columns belong to the lower opening. A short climb is therefore valid.
+    while(current!==65535&&steps<4096){
+      const x=current%SIZE,y=(current/SIZE)|0;
+      bottom[x]=Math.max(bottom[x],y);
+      current=parent[current];steps++;
+    }
+    result.clockwiseSteps=steps;
+    result.clockwiseComplete=true;
     return result;
   }
 
   function lowerHoodOpeningSegment(hoodRGBA, options = {}) {
-    // Independent rays locate the FACE-facing edge, then two opposite
-    // contour walks follow that edge over local climbs before forming columns.
     const alphaLimit=alphaFloor(options.alphaLimit??242,242);
     if(!hoodRGBA || hoodRGBA.length!==PIXELS*4)
-      return {points:[],seed:null,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
+      return {points:[],seed:null,clockwiseSteps:0,clockwiseComplete:false,edgeFollowed:false};
     const seed=openingSeed(hoodRGBA,alphaLimit);
-    if(!seed)return {points:[],seed:null,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
-    const bottom=new Int16Array(SIZE);
-    bottom.fill(-1);
+    if(!seed)return {points:[],seed:null,clockwiseSteps:0,clockwiseComplete:false,edgeFollowed:false};
+    const rays=new Int16Array(SIZE); // Older ray hits are retained ONLY if the whole clockwise contour is disconnected.
+    rays.fill(-1);
     const samples=256,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
-    let left=null,right=null,deepest=null;
+    let right=null,left=null;
     for(let ray=0;ray<samples;ray++){
-      const angle=Math.PI*ray/(samples-1); // Right (0°) -> bottom (90°) -> left (180°).
-      const stepX=Math.cos(angle),stepY=Math.sin(angle);
+      const angle=Math.PI*ray/(samples-1); // Clockwise: right 0° -> bottom 90° -> left 180°.
+      const sx=Math.cos(angle),sy=Math.sin(angle);
       let prior=-1;
       for(let d=.5;d<=maxRadius;d+=.5){
-        const x=Math.floor(seed.x+stepX*d),y=Math.floor(seed.y+stepY*d);
+        const x=Math.floor(seed.x+sx*d),y=Math.floor(seed.y+sy*d);
         if(x<0||x>=SIZE||y<0||y>=SIZE)break;
         const i=y*SIZE+x;
         if(i===prior)continue;
         prior=i;
         if(hoodRGBA[i*4+3]<alphaLimit)continue;
-        if(y+1>=seed.y){
-          if(y>bottom[x])bottom[x]=y;
+        if(y>=Math.floor(seed.y)-1){
+          if(y>rays[x])rays[x]=y;
           if(ray===0)right={x,y};
           if(ray===samples-1)left={x,y};
-          if(!deepest||y>deepest.y)deepest={x,y};
         }
         break;
       }
     }
-    const walk=traceLowerRimDirections(hoodRGBA,alphaLimit,seed,maxRadius,left,right,deepest);
-    if(walk.clockwiseSteps||walk.counterClockwiseSteps){
-      for(let x=0;x<SIZE;x++)if(walk.bottom[x]>=0)
-        bottom[x]=walk.bottom[x]; // Followed contour wins over a ray's occluding first hit.
-    }
+    const trace=traceClockwiseLowerOpening(hoodRGBA,alphaLimit,seed,maxRadius,right,left);
+    const accepted=trace.clockwiseComplete?trace.bottom:rays; // Never mix upper-contaminated ray hits into a completed contour.
     const points=[];
-    for(let x=0;x<SIZE;x++)if(bottom[x]>=0)points.push({x,y:bottom[x]});
-    return {points,seed,clockwiseSteps:walk.clockwiseSteps,
-      counterClockwiseSteps:walk.counterClockwiseSteps,
-      edgeFollowed:!!(walk.clockwiseSteps||walk.counterClockwiseSteps)};
+    for(let x=0;x<SIZE;x++)if(accepted[x]>=0)points.push({x,y:accepted[x]});
+    return {points,seed,clockwiseSteps:trace.clockwiseSteps,
+      clockwiseComplete:trace.clockwiseComplete,edgeFollowed:trace.clockwiseComplete};
   }
 
   function autoHoodAllowanceMask(hoodRGBA, coneSpread = 0, options = {}) {
@@ -433,7 +430,7 @@
     const spread=normalizeConeSpread(coneSpread),rim=lowerHoodOpeningSegment(hoodRGBA,options);
     const bits=new Uint8Array(PIXELS);
     if(!rim.points.length)return {mask:encodeMask(bits),bottomPoints:[],openingSeed:rim.seed,
-      coneSpread:spread,allowedPixels:0,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
+      coneSpread:spread,allowedPixels:0,clockwiseSteps:0,clockwiseComplete:false,edgeFollowed:false};
     for(let y=0;y<SIZE;y++){
       for(const point of rim.points){
         if(point.y>y)continue;
@@ -450,7 +447,7 @@
     for(const bit of bits)allowedPixels+=bit;
     return {mask:encodeMask(bits),bottomPoints:rim.points,
       openingSeed:rim.seed,coneSpread:spread,allowedPixels,
-      clockwiseSteps:rim.clockwiseSteps,counterClockwiseSteps:rim.counterClockwiseSteps,
+      clockwiseSteps:rim.clockwiseSteps,clockwiseComplete:rim.clockwiseComplete,
       edgeFollowed:rim.edgeFollowed};
   }
 
