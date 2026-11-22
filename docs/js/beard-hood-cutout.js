@@ -386,11 +386,19 @@
     return {points,seed};
   }
 
+  function normalizeCoverLength(value) {
+    const n = value == null ? SIZE : Number(value); // Downward cover depth in portrait pixels; missing values preserve previous full-to-bottom-rim coverage.
+    return Number.isFinite(n) ? Math.max(0,Math.min(SIZE,Math.round(n))) : SIZE;
+  }
+
   function autoHoodTopCoverMask(hoodRGBA, topSpread = 0, options = {}) {
-    // The reverse *ownership* of the lower allow cone: the upper rim claims
-    // cloth downward and wins even over whiskers. Limit it at the lowest point
-    // of the LOWER inner rim so it cannot block the entire hanging beard.
+    // The top inner rim owns two independent cones. The upward one protects
+    // hood fabric ABOVE the rim; the downward one can droop over whisker roots.
+    // The downward length is capped both by the authored limit and the lower
+    // inner rim so it never protects the entire hanging beard.
     const spread=normalizeConeSpread(topSpread);
+    const upSpread=normalizeConeSpread(options.upSpread);
+    const downLength=normalizeCoverLength(options.downLength);
     const upper=upperHoodOpeningSegment(hoodRGBA,options);
     const lower=Array.isArray(options.bottomPoints)
       ? options.bottomPoints : lowerHoodOpeningSegment(hoodRGBA,options).points;
@@ -398,10 +406,19 @@
     const lowerCap=lower.length?Math.max(...lower.map(point=>point.y)):null;
     if(!upper.points.length||lowerCap==null)
       return {mask:encodeMask(bits),topPoints:upper.points,openingSeed:upper.seed,
-        coneSpread:spread,coverPixels:0,lowerCap};
+        coneSpread:spread,upSpread,downLength,coverPixels:0,lowerCap};
     for(const point of upper.points){
-      for(let y=point.y;y<lowerCap&&y<SIZE;y++){
-        const expansion=(y-point.y)*spread; // Grows sideways as the upper hood droops down.
+      // Both directions include the rim pixel. At length 0, only upward
+      // protection and the top boundary remain; no downward droop is added.
+      for(let y=point.y;y>=0;y--){
+        const expansion=(point.y-y)*upSpread;
+        const first=Math.max(0,Math.floor(point.x-expansion));
+        const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
+        if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
+      }
+      const lastDown=Math.min(SIZE-1,lowerCap-1,point.y+downLength);
+      for(let y=point.y+1;y<=lastDown;y++){
+        const expansion=(y-point.y)*spread; // Drooping upper cloth expands outward independently from the upward cone.
         const first=Math.max(0,Math.floor(point.x-expansion));
         const last=Math.min(SIZE-1,Math.ceil(point.x+expansion));
         if(last>=first)bits.fill(1,y*SIZE+first,y*SIZE+last+1);
@@ -410,7 +427,7 @@
     let coverPixels=0;
     for(const bit of bits)coverPixels+=bit;
     return {mask:encodeMask(bits),topPoints:upper.points,openingSeed:upper.seed,
-      coneSpread:spread,coverPixels,lowerCap};
+      coneSpread:spread,upSpread,downLength,coverPixels,lowerCap};
   }
 
   function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null, topCoverMask = null) {
@@ -495,7 +512,8 @@
       // Once authored, even zero spread creates the narrow, reversed top cone.
       const cover=options.topConeSpread==null?null:
         (options.topCover || autoHoodTopCoverMask(hood.data,options.topConeSpread,{
-          alphaLimit:options.hoodAlphaFloor??242,bottomPoints:automatic?.bottomPoints
+          alphaLimit:options.hoodAlphaFloor??242,bottomPoints:automatic?.bottomPoints,
+          upSpread:options.topUpConeSpread,downLength:options.topDownConeLength
         }));
       const partition=partitionBeardHood(requestMask,fittedAllowance,
         beard.data,hood.data,options.whiskerMask,cover?.mask);
@@ -536,7 +554,7 @@
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
-    normalizeConeSpread, lowerHoodOpeningSegment, autoHoodAllowanceMask,
+    normalizeConeSpread, normalizeCoverLength, lowerHoodOpeningSegment, autoHoodAllowanceMask,
     upperHoodOpeningSegment, autoHoodTopCoverMask,
     planTuftStretch, stretchHoodToRoots, applyToHood,
     partitionBeardHood, deformHoodPermissionMask, applyRefusedBeardOutline, negotiateBeardHood,
