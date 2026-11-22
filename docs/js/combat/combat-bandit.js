@@ -1968,8 +1968,9 @@
     if (!charge || charge.target !== target || charge.t < charge.duration) return false;
     const dx = preparer.x - target.x, dy = preparer.y - target.y;
     if (dx * dx + dy * dy > deps.TILE * deps.TILE * 16) return false; // A charged fighter far away cannot monopolize everybody else's melee attempts.
-    const slot = _banditAttackSlots.find(s => s.bandit === preparer && s.target === target);
-    if (!slot || slot.sector == null) return !!slot;
+    const slot = _banditSlotForActor.get(preparer); // The existing per-actor WeakMap avoids a global scan for every waiting attacker.
+    if (!slot || slot.target !== target) return false;
+    if (slot.sector == null) return true;
     const angle = Math.atan2(dy, dx);
     return Math.abs(deps.angleDiff(angle, banditFacingSlotAngle(slot, target))) <= Math.PI / 3; // A charging rear fighter needs to reach their assigned segment before cutting in.
   }
