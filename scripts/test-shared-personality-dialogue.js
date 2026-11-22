@@ -219,7 +219,7 @@ async function verifyDatabaseLoadPaths() {
   let simulateSharedFetchFailure = true; // Forces one optional shared-config failure, then checks successful retry without reloading the module.
   let sharedFetches = 0; // Records whether the cache retries the failed request rather than holding null forever.
   const nativeFetch = async url => {
-    const pathname = new URL(String(url), npcUrl).pathname;
+    const pathname = new URL(String(url), 'https://example.invalid/docs/index.html').pathname; // Browser-relative metadata requests resolve from docs/index.html, not from the NPC JSON URL.
     if (pathname.endsWith('/shared-dialogue.json')) {
       sharedFetches++;
       if (simulateSharedFetchFailure) {
