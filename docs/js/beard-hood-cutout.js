@@ -279,7 +279,11 @@
   function deformHoodPermissionMask(allowanceMask, hoodMoves) {
     if (allowanceMask == null || !Array.isArray(hoodMoves) || !hoodMoves.length)
       return allowanceMask; // Null remains the legacy fully-removable policy.
-    const bits = decodeMask(allowanceMask);
+    const canonical=normalizeMask(allowanceMask);
+    if (!canonical?.runs.length
+      || (canonical.runs.length===1&&canonical.runs[0][0]===0&&canonical.runs[0][1]===PIXELS))
+      return allowanceMask; // Both protect-all and allow-all require no extra per-frame warp.
+    const bits = decodeMask(canonical);
     const image = {width:SIZE,height:SIZE,data:new Uint8ClampedArray(PIXELS*4)}; // The same transform as visible hood cloth, never an unrelated sprite.
     for (let i=0;i<PIXELS;i++) if (bits[i]) image.data[i*4+3]=255;
     for (const move of hoodMoves) warpForRoot(image,move);
