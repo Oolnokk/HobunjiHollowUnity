@@ -54,6 +54,7 @@ globalThis.DungeonFire={
     return record.id;
   },
   unregisterTarget:id=>registeredFireTargets.delete(id),
+  hasTarget:id=>registeredFireTargets.has(id),
 };
 const torchEmitters=[]; // Stand-in for the shared authored campfire renderer; asserts both sconces reuse it and dispose it.
 const puzzleFireVisuals={attachCampfireFlame(anchor,options){
