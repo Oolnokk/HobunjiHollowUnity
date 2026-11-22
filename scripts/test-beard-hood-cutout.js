@@ -620,6 +620,57 @@ const resolvedBeard=beardResolver({layers:[{}],hoodCutoutMask:requestMask,
 assert.equal(Cut.decodeMask(resolvedBeard.whiskers)[at(104,80)],1,
   'shared beard art may author a species-only priority whisker layer');
 
+const silhouetteBeard=beardResolver({layers:[{}],hoodCutoutRequestMode:'silhouette'},null);
+assert.equal(silhouetteBeard.requestMode,'silhouette',
+  'beard renderer recognizes silhouette-based cutout requests without an RLE mask');
+const paintedOverride=beardResolver({
+  layers:[{}],hoodCutoutRequestMode:'silhouette',
+  variantHoodCutoutRequestModes:{'mao-ao_male':'painted'}
+}, {speciesId:'mao-ao',gender:'male'});
+assert.equal(paintedOverride.requestMode,'painted',
+  'manually painted variant may opt out of inherited automatic requests');
+
+const cosmeticIndex=JSON.parse(fs.readFileSync('docs/config/cosmetics/index.json','utf8')).entries;
+const beardPaths=[...new Set(cosmeticIndex.filter(e=>/beard/i.test(e.id+' '+e.path))
+  .map(e=>'docs/config/cosmetics/'+e.path.replace(/^\.\//,'')))];
+const hoodPaths=[...new Set(cosmeticIndex.filter(e=>/hood/i.test(e.id+' '+e.path))
+  .map(e=>'docs/config/cosmetics/'+e.path.replace(/^\.\//,'')))];
+assert.equal(beardPaths.length,10,'every distinct beard in the indexed cosmetics is covered');
+assert.equal(hoodPaths.length,6,'every indexed active hood uses one shared preset per cosmetic');
+const readCosmetic=path=>JSON.parse(fs.readFileSync(path,'utf8'));
+const grandPath='docs/config/cosmetics/appearance/mao-ao/grandbeard.json';
+for(const path of beardPaths){
+  const doc=readCosmetic(path);
+  assert.deepEqual(doc.hoodTuftRoots,[],'beard uses reference zero tuft roots: '+path);
+  assert.equal(doc.hoodTuftMaxStretch,36,'reference stretch budget: '+path);
+  assert.equal(doc.hoodTuftSubdivision,4,'reference subdivision: '+path);
+  assert.equal(doc.hoodTuftAboveInfluence,100,'upper influence: '+path);
+  assert.equal(doc.hoodTuftBelowInfluence,100,'lower influence: '+path);
+  if(path===grandPath){
+    assert.equal(doc.hoodCutoutMask?.runs.length,139,'Grandbeard retains the complete hand-painted request');
+    assert.equal(doc.hoodWhiskerMask?.runs.length,89,'only Grandbeard gets the painted whisker layer');
+    assert.equal(Cut.countMask(doc.hoodCutoutMask),4087,'Grandbeard request pixel count matches supplied authoring');
+    assert.equal(Cut.countMask(doc.hoodWhiskerMask),1560,'Grandbeard whisker pixel count matches supplied authoring');
+  }else{
+    assert.equal(doc.hoodCutoutRequestMode,'silhouette','other beards adapt requests to own opaque art: '+path);
+    assert(!doc.hoodWhiskerMask?.runs?.length,'non-Grandbeard never receives priority whiskers: '+path);
+    assert(!doc.hoodCutoutMask?.runs?.length,'do not copy Mao\'ao hand-painted coordinates to other species: '+path);
+  }
+}
+for(const path of hoodPaths){
+  const doc=readCosmetic(path);
+  assert.equal(doc.beardCutoutPermissionMode,'auto','hood computes actual opening: '+path);
+  assert.equal(doc.beardCutoutConeSpread,2,'reference lower cone: '+path);
+  assert.equal(doc.beardCutoutTopConeSpread,3,'reference downward cover widens to line: '+path);
+  assert.equal(doc.beardCutoutTopUpConeSpread,3,'reference upward cover widens to line: '+path);
+  assert.equal(doc.beardCutoutTopDownConeLength,0,'reference downward overhang length: '+path);
+  assert.equal(doc.beardCutoutPaintAlphaFloor,128,'reference hood alpha floor: '+path);
+  assert(!doc.beardCutoutAllowedMask,'do not freeze automatically detected hood permission: '+path);
+}
+const facewrap=readCosmetic('docs/config/cosmetics/facewrap.json');
+assert(facewrap.tags.includes('hides-facial-hair')&&!facewrap.beardCutoutTopConeSpread,
+  'facewrap keeps its deliberate hide-beard behavior');
+
 const original=fs.readFileSync('docs/index.html','utf8');
 const studio=fs.readFileSync('docs/tools/character-studio/index.html','utf8');
 const attack=fs.readFileSync('docs/tools/attack-animation-editor/index.html','utf8');
@@ -740,6 +791,12 @@ assert(portrait.includes('variantBeardCutoutTopConeSpread')
 assert(portrait.includes('variantBeardCutoutPaintAlphaFloor')
   && portrait.includes('hoodAlphaFloor:hoodPolicy.alphaFloor'),
   'game renderer passes variant-resolved hood alpha floor into automatic ring geometry');
+assert(html.includes('beardRequestAutomatic')
+  && html.includes('Cut.autoBeardRequestMask(beardPixels,242)')
+  && html.includes("requestMode:beardRequestAutomatic?'silhouette':null")
+  && html.includes("metadata.hoodCutoutRequestMode='silhouette'")
+  && html.includes("metadata.hoodCutoutRequestMode='painted'"),
+  'editor previews generated beard requests, persists them, and converts manual edits to painted masks');
 assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
   && html.includes('id="showBeardGhost"'),
   'mobile editor supports separate hood import/export and an alignment ghost');
@@ -780,5 +837,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: all three cones widen monotonically into flat lines, with capped downward reach, whisker precedence, legacy settings and draw order preserved.');
+  console.log('Beard/hood: 10 beard/6 hood presets, exact Mao Grandbeard masks, per-art auto requests, one whisker owner, bidirectional cones and portrait order pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
