@@ -6,13 +6,16 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Exercises the actual publication decision, not a source-text assertion. */
+/** Runs the production publication policy against a deterministic fake Drive. */
 public class AndroidDrivePublicationTest {
     private static final class Fake implements AndroidDrivePublication.Remote {
-        final Map<String, String> files = new LinkedHashMap<>(); // In-memory Drive ID -> canonical/backup filenames.
-        boolean concurrentChange; // A second device modifies the saved version before the first rename.
-        boolean failPublish; // Google rejects the draft's canonical rename after the old version was retained.
-        boolean failRollback; // A second failed rename should leave the old backup recoverable.
+        final Map<String, String> files = new LinkedHashMap<>(); // Google file ID to remote filename.
+        boolean concurrentChange; // Another writer changed the previous version before commit.
+        boolean failPublish; // Google's draft rename rejects without modifying the file.
+        boolean failRollback; // Google rejects restoration of the previous canonical name.
+        boolean lostOldAck; // Old rename happened but its HTTP acknowledgement vanished.
+        boolean lostNewAck; // New rename happened but its HTTP acknowledgement vanished.
+        boolean anotherWriterPublishes; // Second device creates a canonical between the two renames.
 
         Fake(boolean existing) {
             files.put("draftId", ".hobunji-pending");
@@ -27,25 +30,33 @@ public class AndroidDrivePublicationTest {
             if ("draftId".equals(id) && failPublish) throw new IOException("Publish failed");
             if ("oldId".equals(id) && "world.json".equals(name) && failRollback)
                 throw new IOException("Rollback failed");
-            if (!files.containsKey(id)) throw new IOException("Missing Google file ID");
+            if (!files.containsKey(id)) throw new IOException("Unknown remote ID");
             files.put(id, name);
+            if ("oldId".equals(id) && name.startsWith(".hobunji-previous-")) {
+                if (anotherWriterPublishes) files.put("externalId", "world.json");
+                if (lostOldAck) throw new IOException("Old rename acknowledgement lost");
+            }
+            if ("draftId".equals(id) && "world.json".equals(name) && lostNewAck)
+                throw new IOException("New rename acknowledgement lost");
         }
 
-        @Override public boolean canonicalExists() {
-            return files.containsValue("world.json");
+        @Override public String canonicalId() {
+            for (Map.Entry<String, String> entry : files.entrySet())
+                if ("world.json".equals(entry.getValue())) return entry.getKey();
+            return null;
         }
 
         String get(String id) { return files.get(id); }
     }
 
-    @Test public void firstUploadPublishesWithoutARecoveryFile() throws Exception {
+    @Test public void newSavePublishesWithoutARecoveryCopy() throws Exception {
         Fake drive = new Fake(false);
         assertFalse(AndroidDrivePublication.publish("world.json", "draftId", null, drive));
         assertEquals("world.json", drive.get("draftId"));
         assertEquals(1, drive.files.size());
     }
 
-    @Test public void overwriteLeavesOnePreviousVersionInsteadOfTwo() throws Exception {
+    @Test public void overwriteRetainsOneOldVersionRatherThanTwoCopies() throws Exception {
         Fake drive = new Fake(true);
         assertTrue(AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive));
         assertEquals("world.json", drive.get("draftId"));
@@ -53,35 +64,33 @@ public class AndroidDrivePublicationTest {
         assertEquals(2, drive.files.size());
     }
 
-    @Test public void failedPublishRestoresTheOriginalCanonical() throws Exception {
+    @Test public void failedPublishRestoresOriginalName() throws Exception {
         Fake drive = new Fake(true);
         drive.failPublish = true;
         try {
             AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive);
-            fail("Expected publication rejection");
-        } catch (IOException error) {
-            assertEquals("Publish failed", error.getMessage());
-        }
+            fail("Expected publication failure");
+        } catch (IOException error) { assertEquals("Publish failed", error.getMessage()); }
         assertEquals("world.json", drive.get("oldId"));
         assertEquals(".hobunji-pending", drive.get("draftId"));
     }
 
-    @Test public void failedRollbackRetainsThePreviousSaveUnderAnExplicitRecoveryName() throws Exception {
+    @Test public void failedRollbackRetainsARecoverablePreviousVersion() throws Exception {
         Fake drive = new Fake(true);
         drive.failPublish = true;
         drive.failRollback = true;
         try {
             AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive);
-            fail("Expected publication rejection");
+            fail("Expected publication failure");
         } catch (IOException error) {
             assertEquals(1, error.getSuppressed().length);
-            assertTrue(error.getSuppressed()[0].getMessage().contains("recovery name"));
+            assertTrue(error.getSuppressed()[0].getMessage().contains("restoration was not confirmed"));
         }
         assertTrue(drive.get("oldId").startsWith(".hobunji-previous-world.json-"));
         assertEquals(".hobunji-pending", drive.get("draftId"));
     }
 
-    @Test public void staleVersionNeverRenamesThePreviousFile() throws Exception {
+    @Test public void staleVersionIsNeverRenamed() throws Exception {
         Fake drive = new Fake(true);
         drive.concurrentChange = true;
         try {
@@ -89,6 +98,36 @@ public class AndroidDrivePublicationTest {
             fail("Expected version conflict");
         } catch (IOException ignored) {}
         assertEquals("world.json", drive.get("oldId"));
+    }
+
+    @Test public void lostAckForOldMoveRestoresOldSaveName() throws Exception {
+        Fake drive = new Fake(true);
+        drive.lostOldAck = true;
+        try {
+            AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive);
+            fail("Expected uncertain old rename failure");
+        } catch (IOException ignored) {}
+        assertEquals("world.json", drive.get("oldId"));
+        assertEquals(".hobunji-pending", drive.get("draftId"));
+    }
+
+    @Test public void lostAckForNewPublishRecognizesCompletedSave() throws Exception {
+        Fake drive = new Fake(true);
+        drive.lostNewAck = true;
+        assertTrue(AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive));
+        assertEquals("world.json", drive.get("draftId"));
+        assertTrue(drive.get("oldId").startsWith(".hobunji-previous-world.json-"));
+    }
+
+    @Test public void raceWithAnotherWriterDoesNotClobberTheirCanonical() throws Exception {
+        Fake drive = new Fake(true);
+        drive.anotherWriterPublishes = true;
+        try {
+            AndroidDrivePublication.publish("world.json", "draftId", "oldId", drive);
+            fail("Expected competing writer conflict");
+        } catch (IOException ignored) {}
+        assertEquals("world.json", drive.get("externalId"));
+        assertTrue(drive.get("oldId").startsWith(".hobunji-previous-world.json-"));
         assertEquals(".hobunji-pending", drive.get("draftId"));
     }
 }
