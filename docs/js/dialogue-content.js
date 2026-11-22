@@ -542,14 +542,17 @@
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
     const sharedEligible = (rec?.sharedDialogueTrees || []).filter(t => deps.canAccessContent(t.visibility) && _dlgEntryEligible(t, world)); // Pre-filter once using the same condition registry as authored dialogue.
-    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // An eligible named-character pool replaces the inherited family pool for this encounter.
-    const scopedSpeech = characterSpeech.length ? characterSpeech : sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // Unmatched named conditions fall through to the personality family.
+    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // Named copy has first opportunity, not an exclusive monopoly on repeated small talk.
+    const familySpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // Family copy remains available once the character's individual lines have been heard.
+    const scopedSpeech = characterSpeech.some(t => !heard.includes(t.id)) ? characterSpeech
+      : familySpeech.some(t => !heard.includes(t.id)) ? familySpeech
+      : [...characterSpeech, ...familySpeech]; // Unheard named → unheard family → repeat either; no unrelated world-wide fallback.
     let picked = _pickBestEntry(all, world, heard);
     const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // The NPC's last-resort tree should not silence personality-specific ordinary speech.
     const isHeardGeneral = picked && heard.includes(picked.id) && !picked.generatedFromShopAccess
       && !(picked.priority > 0) && _dlgEntrySpecificity(picked) === 0; // Repeated unconditioned chatter can alternate with scoped dialogue, while story/conditioned trees keep their priority.
     if (scopedSpeech.length && (!picked || isFallback || isHeardGeneral)) {
-      picked = _pickBestEntry([...scopedSpeech, ...(picked ? [picked] : [])], world, heard) || picked; // Existing unheard-first rotation and history are still per speaker.
+      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Existing unheard-first rotation/history remain per speaker; generic fallback cannot interrupt a scoped pool.
     }
     // Keep eligible shops accessible even after their tree was heard and general chat was not:
     // family or named shared speech must not hide a merchant's Shop option.
