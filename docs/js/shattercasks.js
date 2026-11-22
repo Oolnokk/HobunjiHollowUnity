@@ -340,6 +340,7 @@
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
   const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
+  const HELD_BABY_FOREGROUND_ORDER=30; // Only a held infant: later than the player portrait and 28-ranked pants; never the 1.5 weapon replay.
   const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
   const STOWED_REAR_HAT_RENDER_ORDER=2.08; // Headwear belongs to the same back-PNG occlusion side while stowed.
   const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
@@ -542,7 +543,8 @@
     // every time, including after transitions, rather than leaving stale x-ray
     // state on whichever object was last selected.
     const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
-    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,'held');
+    const babyForeground=held?.kind==='familyBaby'&&window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off'; // One lookup per carry refresh, never per mesh/frame.
+    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,babyForeground?'babyForeground':'held');
     // The render pass applies to every visible part of the back Burden,
     // including non-colliding decals and newly loaded furniture detail.
     for(const mesh of carriedVisualMeshes(backCarried))activeMeshes.set(mesh,'stowed');
@@ -562,12 +564,13 @@
       // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
       // the PNG transparent draw queue so renderOrder can place it between the
       // owner's rear and front faces, even when the furniture is normally opaque.
-      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:CARRIED_VESSEL_RENDER_ORDER;
+      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:mode==='babyForeground'?HELD_BABY_FOREGROUND_ORDER:CARRIED_VESSEL_RENDER_ORDER;
       for(const [material,original] of snapshot.materials){
-        const transparent=mode==='stowed'?true:original.transparent;
-        const depthTest=mode==='stowed'?true:original.depthTest;
-        if(material.depthWrite!==false||material.transparent!==transparent||material.depthTest!==depthTest){
-          material.depthWrite=false;
+        const transparent=mode==='stowed'||mode==='babyForeground'?true:original.transparent;
+        const depthTest=mode==='stowed'||mode==='babyForeground'?true:original.depthTest;
+        const depthWrite=mode==='babyForeground'; // Solid infant alpha writes depth: later pants x-ray cannot paint through its silhouette.
+        if(material.depthWrite!==depthWrite||material.transparent!==transparent||material.depthTest!==depthTest){
+          material.depthWrite=depthWrite;
           material.transparent=transparent;
           material.depthTest=depthTest;
           material.needsUpdate=true;
