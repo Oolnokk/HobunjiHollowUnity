@@ -93,7 +93,7 @@ assert(Math.abs(fighter.y)>40,'Backstab movement must go around the opponent rat
 assert.match(bandit,/const flank = banditBackstabFlankPoint\(c, targetPlayer, engageRangePx, movementPoint\)/,'live melee AI uses the tested orbit helper');
 assert.match(bandit,/const chance = banditQuickAttackChance\(c, loadout, cond\)/,'live attack AI uses the tested technique-specific chance');
 assert.match(bandit,/const travelSpeed = distToTarget > sprintThreshold \? def\.chaseSpeed/,'waiting enemies sprint if their assigned point drifts away');
-assert.match(bandit,/const BANDIT_MAX_ATTACK_SLOTS = 2/,'coordinated melee attack slot limit is retained');
+assert.match(bandit,/const BANDIT_MAX_ATTACK_SLOTS = 4/,'four target-relative melee approach slots are now available');
 
 const rangedDeps = {
   TILE:55,
@@ -133,7 +133,7 @@ assert.match(arenaLog,/tactic=/,'mobile arena diagnostics expose pursuit versus 
 // Run the live melee decision function through the same flank, pursuit and Quick Attack paths.
 const meleeMoves=[]; // Records real tactical movement commands and their requested speed for regression.
 let quickFires=0,comboFires=0; // Counts which of the real ability dispatch branches the enemy chose.
-let hasSlot=true; // Models the existing two-attacker slot authority without duplicating its separate implementation.
+let hasSlot=true; // Models a claimed directional approach slot; the real four-sector coordinator has independent regression coverage.
 const movingDeps={
   TILE:55,rnd:()=>0,
   angleDiff:flankDeps.angleDiff,
@@ -154,6 +154,10 @@ const meleeContext={
   banditPersonalSpaceAdjust:noSpacing,banditEngagementReachPx:()=>170,
   claimBanditAttackSlot:()=>hasSlot?{angle:0}:null,
   claimBanditQueueRing:()=>({angle:0,ringIndex:0}),
+  banditDirectional:()=>true,banditAttackTurnOwner:()=>null,banditChargeOwner:()=>null,
+  claimBanditAttackTurn:()=>true,releaseBanditAttackTurn(){},
+  releaseBanditCharge(){},beginBanditPreparedCharge:()=>false,
+  banditFacingSlotAngle:slot=>slot.angle,
   banditBehindTarget:behind,banditBackstabFlankPoint:flankPoint,
   banditQuickAttackConditions:(c,target)=>({behind:behind(c,target),exhausted:false,lowHealth:false}),
   banditQuickAttackChance:quickChance,
