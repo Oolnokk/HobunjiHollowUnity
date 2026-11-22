@@ -133,7 +133,7 @@ assert.equal(hunt.debugSnapshot().treeTrunkCollision.count,2,'mobile diagnostics
 const baseBarkMaterial=visibleStem.material; // The native bark material is cached by FoliageGenerator across all future tree instances.
 let disposedFadeMaterials=0; // Ensures the zone tree fade lifecycle releases its own temporary materials on Shift/zone unload.
 window.ZoneTreeFade.setTarget(firstTree,.3,true);
-assert.equal(window.ZoneTreeFade.hasFade(firstTree),true,'the real vegetation renderer can fade the blossom's native bark');
+assert.equal(window.ZoneTreeFade.hasFade(firstTree),true,'the real vegetation renderer can fade native blossom bark');
 assert.notEqual(visibleStem.material,baseBarkMaterial,'native fading uses an owned temporary bark material');
 visibleStem.material.addEventListener('dispose',()=>disposedFadeMaterials++);
 activeZone='map_northern_cliffs';
