@@ -86,7 +86,7 @@
           const texture = new THREE.CanvasTexture(canvas); // Real authored PNG, recolored only once per species.
           texture.minFilter = texture.magFilter = THREE.NearestFilter;
           texture.needsUpdate = true;
-          record.material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.5,
+          record.material = new THREE.MeshBasicMaterial({ map: texture, transparent: false, alphaTest: 0.5,
             depthWrite: true, side: THREE.DoubleSide, fog: true });
           record.material.userData.hobunjiWorldBakeSafe = true; // Static mushroom cards are eligible for the existing world batcher.
           mushroomPlaneGeometry ||= new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0); // Ground, not the sprite center, is y=0.
