@@ -44,10 +44,15 @@
   function closestPredator(c, actors, tile) {
     const maxD2 = (PREDATOR_SIGHT_TILES * tile) ** 2;
     let nearest = null, distanceSq = maxD2;
-    for (const other of actors || []) {
-      if (other === c || other.areaId !== c.areaId || !isPredator(other)) continue;
-      const dx = c.x - other.x, dy = c.y - other.y, d2 = dx * dx + dy * dy;
-      if (d2 < distanceSq) { nearest = other; distanceSq = d2; }
+    // The game passes hostile actors separately from player companions. Scan both
+    // existing rosters without allocating a combined array on each herd tick.
+    for (let sourceIndex = 0; sourceIndex < 2; sourceIndex++) { // 0: wild/enemy actors, 1: trained player companions.
+      const pool = sourceIndex === 0 ? actors : window.Combat?.deps?.companionObjects; // Keeps tame carnivores visible to wild herd prey.
+      for (const other of pool || []) {
+        if (other === c || other.areaId !== c.areaId || !isPredator(other)) continue;
+        const dx = c.x - other.x, dy = c.y - other.y, d2 = dx * dx + dy * dy;
+        if (d2 < distanceSq) { nearest = other; distanceSq = d2; }
+      }
     }
     return nearest;
   }

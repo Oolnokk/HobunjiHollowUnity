@@ -9,12 +9,13 @@ let clock = 1000; // Drives short-lived panic/parental aggression without real t
 let nestListener = null; // Captures the existing activity-event subscription.
 const player = { x: 70, y: 0, health: 100, areaId: 'map_northern_cliffs' }; // Nearby visitor or nest thief.
 const adults = new Set(); // The live wild-animal roster shared with Combat.
+const companionPredators = new Set(); // The separate tame-animal roster used by live herd threat scans.
 const cancellations = []; // Records interrupted attacks when herd members sight predators.
 const W = {
   __farmLog() {},
   HobunjiActivityEvents: { on(fn) { nestListener = fn; } },
   Combat: {
-    deps: { player, TILE: 40, hostileObjects: adults },
+    deps: { player, TILE: 40, hostileObjects: adults, companionObjects: companionPredators },
     animalAttacks: { cancel(c) { cancellations.push(c); } },
     telegraph: { cancel() {} },
   },
@@ -131,10 +132,12 @@ const trainedNelk = animal('nelk', 10, 0, {
   isCompanion: true, def: { hostile: false, diet: 'carnivore', chaseSpeed: 100 },
 });
 const frightenedMoot = animal('moot', 0, 0);
-R.update(frightenedMoot, 0.3, [frightenedMoot, trainedNelk], [player], ctx);
-assert.equal(frightenedMoot.state, 'herd-panic', 'prey also flee from trained animal predators');
+companionPredators.add(trainedNelk); // In gameplay, a tamed Nelk is NOT in currentHostilesFrame.
+R.update(frightenedMoot, 0.3, [frightenedMoot], [player], ctx);
+assert.equal(frightenedMoot.state, 'herd-panic', 'prey also flee from trained animal predators in the separate companion roster');
 R.update(trainedNelk, 0.3, [trainedNelk], [player], ctx);
 assert.equal(trainedNelk.def.chaseSpeed, 100, 'owner companions keep their saved movement profile');
+companionPredators.delete(trainedNelk); // Later cases have independent predator rosters.
 
 // A cliff blocked three tiles away must not prevent movement into a safe nearby step.
 const cliffMoot = animal('moot', 0, 0, { state: 'herd-panic', _herdThreat: {
