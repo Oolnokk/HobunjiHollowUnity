@@ -1053,13 +1053,21 @@
     const maxStamina = Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul), Math.ceil(attackStaminaCost * minimumAttacks)); // Do not scale a fighter's attack budget below the stamina cost of its own weapon.
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier * shapeStats.power;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
+    const pursuit = cfg?.combatPursuit; // Normal-bandit-specific awareness and sprint pacing, supplied by the existing bandit config.
+    const quickTuning = cfg?.quickAttackTuning; // Per-tier chance affects Exhaust Cutter and Mercy Spike; Backstab Flick uses positional tactics.
+    const configuredChase = Number(pursuit?.baseChaseSpeedPxS);
+    const configuredTierChase = Number(pursuit?.chaseBonusPerTierPxS);
+    const chaseBase = Number.isFinite(configuredChase) && configuredChase > 0 ? configuredChase : 165;
+    const chaseTierStep = Number.isFinite(configuredTierChase) && configuredTierChase >= 0 ? configuredTierChase : 2.5;
+    const quickBase = Number(quickTuning?.baseChance);
+    const quickStep = Number(quickTuning?.bonusPerTier);
     return {
       label: BANDIT_RANK_LABEL[rank] || 'Bandit',
       hostile: true, liveBirth: true,
       maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
       maxStamina,
       moveSpeed: 118 + tier * (cfg?._preserveMineEnemyTiers ? 4 : 2), // Existing ten-floor ghoul movement stays as before.
-      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * (cfg?._preserveMineEnemyTiers ? 5 : 2.5), // Ghoul mine movement remains on its independent floor scale.
+      chaseSpeed: (cfg?._preserveMineEnemyTiers ? 165 + tier * 5 : chaseBase + tier * chaseTierStep) + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0), // Fast direct pursuit; Ghoul mine keeps its prior chase curve.
       attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
       attackRangePx: deps.TILE * BANDIT_ATTACK_RANGE_TILES * shapeStats.range,
       attackHalfConeRad: Math.min(Math.PI, BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range),
@@ -1074,9 +1082,15 @@
       banditFlaskerTuning: flaskerTuning,
       banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+      quickAttackChance: quickTuning && Number.isFinite(quickBase) && Number.isFinite(quickStep)
+        ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
+      backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
+      backstabRetrySeconds: Math.max(0, Number(quickTuning?.backstabRetrySeconds) || 2.5),
+      banditStandoffMaxTiles: Math.max(1.5, Number(pursuit?.standoffMaxTiles) || 3.6),
+      banditStandoffTierStepTiles: Math.max(0, Number(pursuit?.standoffTierStepTiles) || 0.2),
       aiType: 'vigilantProtector',
-      aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
-      leashRangePx: deps.TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
+      aggroRangePx: deps.TILE * ((Number(pursuit?.aggroRangeTiles) > 0 ? Number(pursuit.aggroRangeTiles) : 6.2) + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
+      leashRangePx: deps.TILE * ((Number(pursuit?.leashRangeTiles) > 0 ? Number(pursuit.leashRangeTiles) : 10) + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
       canClimb: false, canSwim: false,
       modelWidth, tint: 0xffffff,
       // Quarter-turn correction for the portrait plane convention -- see
@@ -1123,7 +1137,15 @@
   const BANDIT_COMBO_CHAIN_GAP_S = 0.02;
   const BANDIT_HOLD1_COOLDOWN_S = 5;
   const BANDIT_HOLD1_CHANCE = 0.4; // chance to open a fresh engagement with Charged Breaker instead of the combo
-  const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // chance to use tap2 instead of continuing tap1 when a condition is favorable
+  const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // Fallback for callers without ordinary-bandit difficulty tuning.
+  function banditQuickAttackChance(c, loadout, conditions) {
+    const technique = loadout?.tap2; // Only the actual equipped Quick Attack can compete with the ordinary combo.
+    if (technique === 'backstabFlick') return conditions?.behind ? 1 : 0; // A successful flank deserves its own positional payoff.
+    if (technique !== 'exhaustCutter' && technique !== 'mercySpike') return 0;
+    if (!(technique === 'exhaustCutter' ? conditions?.exhausted : conditions?.lowHealth)) return 0;
+    const chance = Number(c?.def?.quickAttackChance); // Materialized from danger tier on the enemy definition.
+    return Number.isFinite(chance) ? Math.max(0, Math.min(1, chance)) : BANDIT_QUICK_ATTACK_CHANCE;
+  }
   const BANDIT_GUARD_WINDOW_S = 1.6;
   const BANDIT_GUARD_COOLDOWN_S = 6;
   const BANDIT_GUARD_DAMAGE_ABSORB = 0.7; // fraction of incoming damage blocked while a captain is guarding
@@ -1974,6 +1996,20 @@
     result.x = targetPlayer.x + Math.cos(angle) * radiusPx;
     result.y = targetPlayer.y + Math.sin(angle) * radiusPx;
     return result;
+  }
+
+  function banditBackstabFlankPoint(c, target, engageRangePx, result) {
+    const targetFacing = Number.isFinite(Number(target.angle)) ? Number(target.angle) : (Number(target.facing) || 0); // Same facing as the existing behind condition.
+    const currentAngle = Math.atan2(c.y - target.y, c.x - target.x);
+    const rearAngle = targetFacing + Math.PI;
+    let turn = deps.angleDiff(rearAngle, currentAngle); // Follow the SHORT arc around the enemy instead of walking through their center.
+    if (Math.abs(Math.abs(turn) - Math.PI) < 0.12) {
+      const side = c._banditBackstabSide || ((c._banditStrafePhase || 0) < Math.PI ? 1 : -1);
+      turn = Math.abs(turn) * side; // Perfectly frontal encounters choose a consistent side, preventing a left/right wobble.
+    } else if (Math.abs(turn) > 0.5) c._banditBackstabSide = Math.sign(turn);
+    const nextAngle = currentAngle + Math.max(-0.65, Math.min(0.65, turn)); // Incremental target: circling rather than diagonally cutting through the victim.
+    const radius = Math.max(deps.TILE * 1.25, Math.min(deps.TILE * 2.15, engageRangePx * 0.7)); // Close enough to exploit Backstab Flick after arriving.
+    return banditRingPoint(target, nextAngle, radius, result);
   }
 
   // Bandits frequently request two personal-space nudges each frame. Index the whole
@@ -3045,6 +3081,8 @@
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
+    if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
+      cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
