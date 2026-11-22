@@ -12,7 +12,8 @@
   function gameplayProfileForKind(kind) {
     const profiles = canonicalCreatures(); // Live owned profiles must win over any inherited/mirrored species profile.
     if (profiles?.[kind]) return profiles[kind];
-    const mirroredFrom = window.HobunjiRigPreviewSpecies?.baseSpecies?.(kind); // Same variant art parent used for alpha, nestmother and herd-mother animals.
+    const mirroredFrom = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.creatureTransformAliases?.[kind]
+      || window.HobunjiRigPreviewSpecies?.baseSpecies?.(kind); // Gameplay and Animation Author share the same fallback transform family.
     return mirroredFrom && mirroredFrom !== kind ? profiles?.[mirroredFrom] || null : null;
   }
 

@@ -13,12 +13,12 @@ vm.createContext(context);
 vm.runInContext(fs.readFileSync('docs/config/attachment-rig-profiles.js', 'utf8'), context);
 
 const expected = {
-  drenkirra: { large: 0.79, medium: 0.40, small: 0.17 },
-  grehlr: { large: 0.50, medium: 0.26, small: 0.13 },
-  'gar-wolf': { large: 0.50, medium: 0.33, small: 0.11 },
-  'dabinggi-hound': { large: 0.50, medium: 0.27, small: 0.09 },
-  uumkaoii: { large: 0.35, medium: 0.25, small: 0.05 },
-}; // Exact values from hobunji.attachment-rig-profiles.v10 exported 2026-08-30.
+  drenkirra: { large: 0.45, medium: 0.40, small: 0.17 },
+  grehlr: { large: 0.625, medium: 0.325, small: 0.13 },
+  'gar-wolf': { large: 0.525, medium: 0.35, small: 0.11 },
+  'dabinggi-hound': { large: 0.70, medium: 0.35, small: 0.09 },
+  uumkaoii: { large: 0.75, medium: 0.25, small: 0.05 },
+}; // Exact values from hobunji.attachment-rig-profiles.v10 exported 2026-11-22.
 for (const [kind, offsets] of Object.entries(expected)) {
   assert.deepEqual({ ...context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind].groundOffsets }, offsets, `${kind} ground offsets match authored v10 data`);
 }
@@ -39,22 +39,23 @@ context.CreatureGenetics.init({
   },
   clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
 });
-assert.equal(context.CreatureGenetics.creatureGroundOffset('drenkirra', 'large'), 0.79, 'explicit size class resolves as the authored floor-to-origin lift');
-assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.26, 'default size class resolves as the authored floor-to-origin lift');
+assert.equal(context.CreatureGenetics.creatureGroundOffset('drenkirra', 'large'), 0.45, 'explicit size class resolves as the authored floor-to-origin lift');
+assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.325, 'default size class resolves as the authored floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('gar-wolf-alpha', { sizeClass: 'small' }), 0.11, 'variant inherits base species floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('unknown-kind', 'medium'), null, 'unknown species requests automatic fallback');
 
 const skeeriWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Real ruined Skeeri native model widths used for class-proportional floor lift.
 const expectedSkeeriOffset = { small: 0.07, medium: 0.07 * (1.15 / 0.65), large: 0.07 * (2.2 / 0.65) }; // Shared Pingdort Small floor Y scales to Skeeri native widths.
+const mediumSkeeriOffsets = { small: 0.1, medium: 0.26, large: 0.375 }; // Independently authored Medium Skeeri size-class floor lifts.
 const pingdortGrip = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures.pingdort.anchors.shoulderGrip.position; // Checks the live copied grip rather than a second hardcoded constant.
 for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) {
   const profile = context.HOBUNJI_ATTACHMENT_RIG_PROFILES.creatures[kind]; // Every domestic/ruin registry entry must reach the new rig source.
   assert.deepEqual({ ...profile.anchors.shoulderGrip.position }, { ...pingdortGrip }, kind + ' runtime should copy Pingdort shoulder grip');
   for (const sizeClass of ['small', 'medium', 'large']) {
-    assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, sizeClass), expectedSkeeriOffset[sizeClass], kind + ' '+ sizeClass + ' runtime floor offset matches Skeeri width');
+    assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, sizeClass), (kind === 'skeeri-medium' ? mediumSkeeriOffsets : expectedSkeeriOffset)[sizeClass], kind + ' '+ sizeClass + ' runtime floor offset matches authored species rig');
   }
   const defaultClass = kind === 'skeeri' ? 'small' : kind.slice('skeeri-'.length); // Distinguishes native fixed-size ruin variants from the domestic species.
-  assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, null), expectedSkeeriOffset[defaultClass], kind + ' defaults to its native floor lift');
+  assert.equal(context.CreatureGenetics.creatureGroundOffset(kind, null), (kind === 'skeeri-medium' ? mediumSkeeriOffsets : expectedSkeeriOffset)[defaultClass], kind + ' defaults to its authored native floor lift');
   const defaultSize = context.CreatureGenetics.creatureSizeScale(kind, defaultClass); // Uses the real genetics renderer's profile lookup, not just the master table.
   assert.equal(defaultSize.x, 1, kind + ' native fixed class retains 1x width');
   assert.equal(defaultSize.y, 1, kind + ' native fixed class retains 1x height');
