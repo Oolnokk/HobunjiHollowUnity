@@ -224,8 +224,9 @@
       const wovenStars = wovenQuality == null ? NaN : Number(wovenQuality); // Prevents null from coercing to 0 and accidentally turning ordinary clothing into a 1★ gift.
       return { kind: 'clothing', key: held?.instance?.uid || held.key || null, stars: Number.isFinite(wovenStars) ? clamp(Math.round(wovenStars), 1, 5) : null, held };
     }
-    if (held.kind !== 'item') return { kind: held.kind || 'other', key: held.key || null, stars: null, held };
-    const trackedStars = Number(window.CookingSystem?.peekLowestQuality?.(held.key)); // Used to match the quality bucket NpcGifting is about to consume.
+    if (held.kind !== 'item' && held.kind !== 'bagItem') return { kind: held.kind || 'other', key: held.key || null, stars: null, held }; // game.js supplies ordinary inventory gifts as bagItem; normalize them to item for quality capture.
+    const rawTrackedStars = window.CookingSystem?.peekLowestQuality?.(held.key); // Used to match the exact ingredient quality bucket, when present.
+    const trackedStars = rawTrackedStars == null ? NaN : Number(rawTrackedStars); // Missing quality must not turn into a fictitious 1-star item via Number(null).
     const fallbackStars = Number(held?.def?.qualityStars ?? held?.def?.cookingDefaultStars ?? 3); // Used for items without tracked cooking quality.
     const stars = clamp(Math.round(Number.isFinite(trackedStars) ? trackedStars : fallbackStars), 1, 5); // Used by giftQualityMultiplier during this offer.
     return { kind: 'item', key: held.key, stars, held };
@@ -288,7 +289,7 @@
       }
 
       const state = rawGetNpcState(npcId); // Used to persist Favor XP directly instead of fractional-heart storage.
-      if (appliedPoints > 0 && !isSpillover) appliedPoints = roundPoint(appliedPoints * gainMultiplierForNpc(npcId)); // Rank multiplies earned Favor, not other NPCs' Favor.
+      if (appliedPoints > 0 && !isSpillover && !skipPositiveMultiplier) appliedPoints = roundPoint(appliedPoints * gainMultiplierForNpc(npcId)); // Only earned Favor receives rank multipliers; explicit unmodified payments (tribal trophies) retain exact +1 per token.
       state.favor = roundPoint(finite(state.favor, 0) + appliedPoints);
       if (isSpillover) return appliedPoints;
       changeFactionReputation(npcId, appliedPoints);
@@ -314,6 +315,7 @@
       const originalOfferGift = gifting.offerGift?.bind(gifting); // Used to keep all authored gift reaction/consumption behavior intact.
       if (originalOfferGift) {
         gifting.offerGift = function favorPointGiftOffer(walker, ...args) {
+          if (gifting.isTribalTrophyHeld?.()) return originalOfferGift(walker, ...args); // Currency menu/transactions never consume a cooking-quality unit or apply gift-star Favor scaling.
           const context = captureHeldGift(); // Used during adjustNpcFavor to scale this one gift by quality.
           activeGiftContext = context;
           let result = false; // Used to decide whether the quality bucket should actually be consumed.
@@ -355,6 +357,7 @@
       factionStandings,
       relationshipDebug,
       giftQualityMultiplierForStars: stars => clamp(finite(stars, 3), 1, 5) / 5,
+      activeGiftQualityMultiplier: () => giftQualityMultiplier(), // NpcGifting's preflight reward tier must use the same active stars as the later Favor adjustment.
       maxRapportOvernightHearts: (rapport = 100, rate = 0.10) => favorPointsToHearts(Math.round(Math.max(0, finite(rapport, 0)) * Math.max(0, finite(rate, 0)))),
       debugSnapshot: () => ({
         installedVia: installReason,
