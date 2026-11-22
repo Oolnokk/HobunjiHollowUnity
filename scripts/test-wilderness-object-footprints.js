@@ -57,6 +57,28 @@ assert.equal(policy.isSceneryReserved(ghostZone,3,3),false,
   'a regenerated zone may update its previous scenery reservations in place');
 assert.equal(browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0})?.x,3);
 
+const sourceZone = {cols:8,rows:8}; // One generated layout shared by multiple independently stamped tribal/bandit views.
+const syntheticCampView = {sourceLayout:sourceZone}; // Reproduces both factions' lightweight view-to-layout adapter.
+policy.reserveScenery(sourceZone,[{point:{col:3,row:4}}]);
+assert.equal(policy.isSceneryReserved(syntheticCampView,3,4),true,
+  'faction tile views must discover permanent stone reservations keyed to the source layout');
+policy.reserveTemporaryLocale(syntheticCampView,{id:'tribal-stamp',site:{x:1,y:2,w:3,h:4}});
+assert.equal(policy.isTemporaryLocaleReserved(sourceZone,1,3),true,
+  'the original wilderness view sees the full rectangle stamped by its synthetic camp view');
+assert.equal(policy.isTemporaryLocaleReserved(sourceZone,6,6),false);
+policy.releaseTemporaryLocale(syntheticCampView,{id:'tribal-stamp'});
+assert.equal(policy.isTemporaryLocaleReserved(sourceZone,1,3),false,
+  'camp migration or release removes the reservation rather than leaving permanent vacant exclusions');
+
+const stamped = browser.TemporaryLocales.stamp(ghostZone,locale,{rng:()=>0});
+assert(stamped, 'a previously unreserved ground cell permits a real temporary locale');
+assert.equal(policy.isTemporaryLocaleReserved(ghostZone,3,3),true,
+  'the existing stamp lifecycle registers the real instance on its source layout');
+browser.TemporaryLocales.release(ghostZone,stamped);
+assert.equal(policy.isTemporaryLocaleReserved(ghostZone,3,3),false,
+  'the existing release lifecycle removes the exact prior camp reservation');
+
+
 
 const bigLocale = {
   x: 18, y: 17,
