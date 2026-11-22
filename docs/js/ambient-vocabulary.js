@@ -9,12 +9,6 @@
   const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
   const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
   const normalizeSliders = value => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(hasOwn(value, key) ? value[key] : DEFAULT_SLIDERS[key])])); // Every slider is bounded before selecting vocabulary.
-  const normalizedWord = value => String(value || '').trim().toLocaleLowerCase();
-  function hash(text) {
-    let h = 2166136261; // Stable speaker/word hash used when the variety slider prefers recurring favorite expressions.
-    for (const ch of String(text)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-    return h >>> 0;
-  }
   function optionsFor(config, speakerId, profiles) {
     const id = String(speakerId || ''); // Only real NPC IDs qualify; status and player announcements must not be rewritten.
     if (!id || id === 'player' || id.startsWith('player-') || !config || config.enabled === false) return null;
@@ -25,22 +19,27 @@
     const familySliders = normalizeSliders({ ...DEFAULT_SLIDERS, ...(family?.sliders || {}) }); // Existing personality defines the center of the vocabulary range.
     const seeded = window.AmbientVocabularyRules?.seedSliders?.(familySliders, id) || familySliders; // Same stable per-NPC variation as the editor's slider preview.
     const sliders = normalizeSliders({ ...seeded, ...(character?.sliders || {}) }); // An explicitly generated NPC table/sliders always overrides the initial variation.
-    return { sliders, familyId, table: character?.table || family?.table || null, characterId: id };
-  }
-  function generateTable(lexicon, sliders, speakerId) {
-    return window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, speakerId) || {}; // Editor and runtime use exactly the same table generator.
+    return { sliders, familyId, character: character || null, family, characterId: id }; // Selection references stay in the central word catalog; per-NPC text copies are not retained.
   }
   function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!selected || !source) return source;
-    const table = selected.table || (config === state.config
+    const rules = window.AmbientVocabularyRules; // Existing pure rules are shared by the game, standalone editor, and tests.
+    if (!rules?.generateSelections || !rules?.resolveSelections) return source;
+    const compile = () => {
+      const generated = rules.generateSelections(config.lexicon, selected.sliders, selected.characterId); // One lazy generation per NPC, not one per frame or bubble.
+      const legacy = selected.character?.table ? rules.migrateLegacyTable(config.lexicon, selected.character.table) : null; // Old exported tables migrate into canonical references.
+      const overrides = selected.character?.selections || legacy || selected.family?.selections || null; // Explicit character checkboxes outrank inherited family choices.
+      return rules.resolveSelections(config.lexicon, rules.mergeSelections(generated, overrides)); // Only ephemeral, cached render strings; never duplicated in config.
+    };
+    const table = config === state.config
       ? (state.tableCache.get(selected.characterId) || (() => {
-          const generated = generateTable(config.lexicon, selected.sliders, selected.characterId); // Cached per character: no repeated generation on every bubble.
-          state.tableCache.set(selected.characterId, generated);
-          return generated;
+          const compiled = compile();
+          state.tableCache.set(selected.characterId, compiled);
+          return compiled;
         })())
-      : generateTable(config.lexicon, selected.sliders, selected.characterId));
+      : compile();
     const transformed = window.AmbientVocabularyRules?.rewriteLine?.(source, table, selected.sliders, random, selected.characterId); // Shares token-safe, one-pass rendering with the editor preview.
     if (!transformed) return source;
     const { text: output, hits, swaps } = transformed;
@@ -72,7 +71,7 @@
   }
   const api = Object.freeze({
     rewrite,
-    generateTable,
+    generateTable: (lexicon, sliders, id) => window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, id) || {}, // Compatibility preview surface.
     normalizeSliders,
     reload: load,
     getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length }),
