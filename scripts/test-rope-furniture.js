@@ -51,13 +51,19 @@ globalThis.HangingRopes = {
   removeRope: rope => { log.push(['removeHR', rope.id]); return true; },
 };
 globalThis.DevRandomRuinSimplePuzzles = {
-  addFurnitureRope: (spec, mount) => { log.push(['addRuin', spec.id, !!mount]); return fakeRope('rope-furniture_' + spec.id); },
+  addFurnitureRope: (spec, mount) => {
+    log.push(['addRuin', spec.id, !!mount]);
+    const rope = fakeRope('rope-furniture_' + spec.id); // The ruin builds the one player/burden rope.
+    globalThis.HangingRopes.adoptRope(rope, { mapId: RF.RUIN_MAP }); // Adoption is owned by the ruin runtime, not RopeFurniture.
+    return rope;
+  },
   removeFurnitureRope: rope => { log.push(['removeRuin', rope.id]); return true; },
 };
 const obj = piece(0, { x: 1, y: 0, z: 1 }), withRope = { rope: { length: 2.4 } };
 let rope = RF.register(RF.RUIN_MAP, 'm1', obj, withRope);
 assert.deepEqual(log.shift(), ['addRuin', 'm1', true], 'inside the ruin the ruin runtime builds the rope, with the piece as its mount');
-assert.deepEqual(log.shift(), ['adopt', 'rope-furniture_m1', 'furniture_m1', RF.RUIN_MAP], 'and HangingRopes adopts it so a burden can hang from it');
+assert.deepEqual(log.shift(), ['adopt', 'rope-furniture_m1', undefined, RF.RUIN_MAP], 'the ruin runtime adopts that SAME rope once so burdens can hang from it');
+assert.equal(log.length, 0, 'RopeFurniture must not adopt the same rope a second time');
 rope = RF.register('town', 't1', obj, withRope);
 assert.deepEqual(log.shift(), ['owned', 'furniture_t1', 'town', 'mount', 2.4], 'elsewhere it is an owned rope');
 globalThis.DevRandomRuinSimplePuzzles.addFurnitureRope = () => null; // runtime not ready
