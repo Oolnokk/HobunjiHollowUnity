@@ -2273,7 +2273,7 @@
   // Nudges a movement target away from nearby living bandits. An actor can
   // push the target into the NEXT grid cell; expand the candidate set then,
   // so downstream actors still influence it in original hostile list order.
-  function banditPersonalSpaceAdjust(c, point, result = null) {
+  function banditPersonalSpaceAdjust(c, point, result = null, combatTarget = null) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     refreshBanditSpacingBuckets(personalSpacePx);
@@ -2286,7 +2286,7 @@
     candidates.sort(compareBanditSpacingOrder);
     for (let i = 0; i < candidates.length; i++) {
       const o = candidates[i];
-      if (o === c || o.health <= 0 || o.areaId !== c.areaId) continue; // Different zones share coordinates, not physical personal space.
+      if (o === c || o === combatTarget || o.health <= 0 || o.areaId !== c.areaId) continue; // Enemy contact is handled by the real hitbox/lunge collision, not ally-spacing. Other-bandit avoidance stays unchanged.
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
       if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
@@ -2598,7 +2598,7 @@
         const direction = banditFacingSlotAngle(heldSlot, targetPlayer);
         const point = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Reuses the same movement scratch point as normal ring positioning.
         banditRingPoint(targetPlayer, direction, Math.min(deps.TILE * 2, reach * 0.7), point);
-        banditPersonalSpaceAdjust(c, point, point);
+        banditPersonalSpaceAdjust(c, point, point, targetPlayer); // Do not have allied-spacing push an attacker's approach point away from the enemy itself.
         moving = deps.moveCreatureToward(c, point.x, point.y, def.chaseSpeed, dt); // Keep circling toward the assigned quadrant even while the weapon is charged.
       } else if (distToPlayer > Math.max(deps.TILE * 1.7, reach * 0.85)) {
         moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt); // A retreating opponent cannot strand a ready charge out of range.
@@ -2624,7 +2624,7 @@
     // short of), this one only ever nudges where a bandit is walking
     // toward, never teleports it.
     const movementPoint = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Per-bandit scratch reused by both collision nudges and the queue-ring calculation.
-    const unstack = banditPersonalSpaceAdjust(c, c, movementPoint);
+    const unstack = banditPersonalSpaceAdjust(c, c, movementPoint, targetPlayer); // Only separate the bandit from other nearby allies, never its chosen opponent.
     if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) deps.moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
@@ -2638,7 +2638,7 @@
       c._banditFlankElapsedS = (c._banditFlankElapsedS || 0) + dt; // A hard time limit prevents an opponent who keeps turning from making the bandit refuse to fight.
       if (c._banditFlankElapsedS < (def.backstabFlankMaxSeconds || 2)) {
         const flank = banditBackstabFlankPoint(c, targetPlayer, engageRangePx, movementPoint); // The existing movement scratch is reused for an incremental rear-side ring target.
-        const targetPoint = banditPersonalSpaceAdjust(c, flank, movementPoint); // Real collision-aware movement and neighboring-hostile spacing still own navigation.
+        const targetPoint = banditPersonalSpaceAdjust(c, flank, movementPoint, targetPlayer); // Keep ally avoidance but don't let it forcibly turn the attacker away from the duel target.
         const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
         if (moving) {
           c._banditTactic = 'flanking';
@@ -2724,7 +2724,7 @@
         ? deps.TILE * (def.banditStandoffMaxTiles + (queueRing?.ringIndex || 0) * def.banditStandoffTierStepTiles)
         : Infinity;
       const baseRadius = slot
-        ? (ordinaryPursuit ? Math.max(def.attackRangePx * 1.25, Math.min(engageRangePx * 0.85, deps.TILE * 2.6)) : Math.max(def.attackRangePx * 1.5, engageRangePx * 0.85))
+        ? Math.max(deps.TILE * 0.25, Math.min(engageRangePx * 0.80, def.attackRangePx * (ordinaryPursuit ? 1.25 : 1.5))) // A slot holder must close INSIDE its real safe-commit reach; the old attackRange*1.25 floor could exceed reach and make striking impossible.
         : Math.max(def.attackRangePx * 1.5, Math.min(engageRangePx * BANDIT_STANDOFF_RANGE_MUL
           * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL), maxStandoff));
       const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
@@ -2734,7 +2734,7 @@
       // another bandit -- the common case is a pure ring point, so
       // "back off when waiting" and "sway side to side" both fall out
       // of this same call instead of being two separate movements.
-      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint, movementPoint);
+      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint, movementPoint, slot ? targetPlayer : null); // Directional attackers can approach within hit reach; queued fighters still respect every hostile's space.
       // BANDIT_STRAFE_SPEED_PX_S (55px/s) is deliberately slow -- right
       // for the final small-amplitude sway once already near the ring,
       // but an outer queue ring can sit 500-800px out for a big gang
