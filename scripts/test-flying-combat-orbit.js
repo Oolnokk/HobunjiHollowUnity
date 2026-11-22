@@ -41,14 +41,16 @@ assert(html.indexOf('js/flying-combat-orbit.js')<html.indexOf('js/skeeri-ruins.j
   'shared geometry loads before Skeeri and Tzatzul');
 assert(skeeri.includes("flightTo(session,state,to,'orbit'")&&skeeri.includes("lineClear(start,to)"),
   'Skeeri must still use the real ruin voxel flight collision gate');
-assert(tzatzul.includes("startLeg(bird, endpoint, 'orbit'")&&tzatzul.includes("clearAirPath?.(bird, endpoint)"),
-  'Tzatzul orbit retains the real elevated flight leg and cave obstacle check');
+assert(tzatzul.includes("startLeg(bird, endpoint, staging ? 'readying' : 'orbit'")
+  && tzatzul.includes("clearAirPath?.(bird, endpoint)"),
+  'both regular and readying Tzatzul orbits retain the elevated flight leg and cave obstacle check');
 assert(nest.includes('nearestObstacle(map, start, end, half)'),'indoor boss orbit checks the existing physical cave obstacles');
 assert(boss.includes('FlyingCombatOrbit?.tangent?.')&&boss.includes('deps?.sweptMove?.'),
   'Azgarlu curves its evasive dodge while keeping swept wall collision');
 const mobileDebug=read('docs/js/wildlife-debug-panel.js'); // This existing in-game panel is available on mobile without DevTools.
-assert(mobileDebug.includes('no-perch orbits: ')&&mobileDebug.includes('Skeeri aerial combat'),
-  'Tzatzul and Skeeri fallback phases/counters remain visible in the mobile debug panel');
+assert(mobileDebug.includes('all orbits: ')&&mobileDebug.includes('readying legs: ')
+  && mobileDebug.includes('bird.readyingActivity')&&mobileDebug.includes('Skeeri aerial combat'),
+  'Tzatzul normal/readying orbit counters and Skeeri state remain visible on mobile');
 assert(/wildlife-debug-panel[.]js[?]v=[A-Za-z0-9_-]+/.test(html),
   'the deployed mobile diagnostics use a properly versioned debug-panel asset');
 console.log('Flying combat orbital evasion geometry and collision integrations PASS');
