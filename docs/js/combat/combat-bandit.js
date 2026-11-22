@@ -1257,18 +1257,20 @@
   // "enemyStriking" has no equivalent (the player has no telegraphState)
   // and always reads false, which is exactly why opportunistJab (the
   // only technique keyed on it) is excluded from BANDIT_QUICK_ATTACK_IDS.
+  function banditBehindTarget(c, targetPlayer) {
+    const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
+    const distance = Math.max(0.001, Math.hypot(dx, dy)); // Evaluates the real behind bonus without checking expensive Health/Stamina-affliction bands during every flank frame.
+    const facing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0);
+    return (Math.cos(facing) * dx + Math.sin(facing) * dy) / distance < -0.35;
+  }
+
   function banditQuickAttackConditions(c, targetPlayer) {
-    const dxBP = c.x - targetPlayer.x, dyBP = c.y - targetPlayer.y;
-    const distBP = Math.max(0.001, Math.hypot(dxBP, dyBP));
-    const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
-    const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
-    const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
     const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'stamina') ?? targetPlayer.stamina; // Mirrors the player's Exhaust Cutter semantics for enemy ability AI.
     const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'health') ?? targetPlayer.health; // Mirrors the player's Mercy Spike semantics for enemy ability AI.
     return {
       enemyStriking: false,
       exhausted: !!targetPlayer.exhaustion?.active || staminaForCondition <= targetPlayer.maxStamina * 0.20,
-      behind: behindDot < -0.35,
+      behind: banditBehindTarget(c, targetPlayer),
       lowHealth: targetPlayer.health > 0 && healthForCondition <= targetPlayer.maxHealth * 0.30,
     };
   }
@@ -2385,7 +2387,7 @@
     const continuingCombo = c._banditComboIndex > 0; // Continue a successful flurry without letting the flanking behavior interrupt its next strike.
     const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo
       && Number.isFinite(def.banditStandoffMaxTiles); // Only ordinary bandits use active flanking; special encounter AI retains its own choreography.
-    const backstabReady = seekingBackstab && banditQuickAttackConditions(c, targetPlayer).behind; // Same behind predicate used by the actual Quick Attack.
+    const backstabReady = seekingBackstab && banditBehindTarget(c, targetPlayer); // Reuse the real bonus predicate without redundant resource-affliction scans each frame.
     if (backstabReady) c._banditFlankElapsedS = 0;
     if (slot && seekingBackstab && !backstabReady && distToPlayer < deps.TILE * 6 && !(c._banditFlankRetryS > 0)) {
       c._banditFlankElapsedS = (c._banditFlankElapsedS || 0) + dt; // A hard time limit prevents an opponent who keeps turning from making the bandit refuse to fight.
