@@ -236,7 +236,8 @@
     debug.saves++;
     debug.lastItemKey = itemKey;
     debug.lastAction = 'nest-acquire';
-    window.__farmLog?.('[genotype] committed den pickup for ' + itemKey + ', saved count=' + nextCount + ', cave=' + (isCavern ? areaId : 'other'), 'wildlife');
+    try { window.__farmLog?.('[genotype] committed den pickup for ' + itemKey + ', saved count=' + nextCount + ', cave=' + (isCavern ? areaId : 'other'), 'wildlife'); }
+    catch (_) { /* A diagnostic sink must never turn an already-committed pickup into a retry. */ }
     return true;
   }
 
