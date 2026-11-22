@@ -387,9 +387,16 @@ function hiveWorld({ night = false } = {}) {
   assert.equal(swarm.homeX, 5.5 * 40); assert.equal(swarm.homeY, 4.5 * 40);
   assert(Math.hypot(swarm.x - swarm.homeX, swarm.y - swarm.homeY) < 40 * 2);
   assert.equal(H.control(swarm, 0.1), false, 'by day the generic wildlife AI runs');
-  // Dusk: it flies home, then tucks inside the stump and is hidden.
+  // Dusk: live swarms attached to a victim are still combat-owned; a hive cannot steal their updates.
   state.night = true;
   swarm.x = swarm.homeX + 160; swarm.y = swarm.homeY;
+  swarm._attachment = { stage: 'approach', host: player }; // Attaching begins before an actual rider hits the player.
+  assert.equal(H.control(swarm, 0.1), false, 'a night hive cannot override a pending Swarm approach');
+  swarm._attachment.stage = 'attached';
+  assert.equal(H.control(swarm, 0.1), false, 'attached Swarm combat and player rescue continue even after dusk');
+  assert.equal(swarm._hiveTucked, undefined, 'an attached swarmer cannot be hidden in a stump');
+  swarm._attachment = null;
+  // Once it detaches, the ordinary overnight return resumes.
   let guard = 0;
   while (!swarm._hiveTucked && guard++ < 400) assert.equal(H.control(swarm, 0.1), true, 'hive-controlled while returning');
   assert.equal(swarm._hiveTucked, true); assert.equal(swarm.avatarRef.group.visible, false);
