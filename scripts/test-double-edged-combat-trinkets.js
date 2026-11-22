@@ -54,6 +54,54 @@ for(const [risk,clean] of discountedPairs){
 }
 const wear=id=>{const uid=T.grant(id,'dev');assert(T.equip(uid).ok);return uid;};
 const unwear=id=>assert(T.unequip(id));
+
+// All equipment percentages add against the base value, not against one another.
+const close=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-8,message+': '+actual+' vs '+expected); // Float-tolerant assertions for the shared combat multiplier channels.
+let stackA=wear('brawlersRing'), stackB=wear('unstableBalance');
+close(R.statModifier(player,'outgoingFootingDamage'),1.55,'30% + 25% Footing bonuses must equal +55%');
+close(R.statModifier(player,'incomingFootingDamage'),1.25,'the drawback must still apply');
+unwear(stackA);unwear(stackB);
+stackA=wear('falseCourage');stackB=wear('defendersBrooch');
+close(R.statModifier(player,'incomingHealthDamage'),0.48,'40% + 12% damage reduction must add to 52%');
+player.health=100;R.applyDamage(player,10);
+close(player.health,94.8,'additive defensive stacking changes real incoming damage');
+const stackC=wear('falseCourage');
+close(R.statModifier(player,'incomingHealthDamage'),0.1,'excess defensive reductions hit the nonzero safety floor');
+unwear(stackC);unwear(stackA);unwear(stackB);
+stackA=wear('engravedWhistle');stackB=wear('engravedWhistle');
+close(T.companionModifiers().damage,1.6,'two 30% companion bonuses add to 60%');
+close(T.companionModifiers().affliction,1.8,'two 40% companion bonuses add to 80%');
+unwear(stackA);unwear(stackB);
+
+// Enemy trinkets are compiled once from these same definitions and never borrow the player's build.
+const enemy={health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100}; // Representative humanoid with no player gear or perk ranks.
+R.initEntity(enemy);
+const enemySelection=T.configureEnemy(enemy,['brawlersRing','unstableBalance','guardiansBrooch','falseCourage','brawlersRing']);
+assert.deepEqual(Array.from(enemySelection),['brawlersRing','unstableBalance','guardiansBrooch','falseCourage'],'enemy duplicates are ignored');
+close(R.statModifier(enemy,'outgoingFootingDamage'),1.55,'enemy Footing bonuses add');
+close(R.statModifier(enemy,'incomingFootingDamage'),1.85,'enemy Footing drawback stacks with another drawback');
+close(R.getEffectiveMax(enemy,'health'),120,'enemy trinkets affect real Health capacity');
+close(R.statModifier(enemy,'incomingHealthDamage'),0.6,'enemy Health mitigation comes from its own trinkets');
+close(T.statMultiplier({health:100},'outgoingFootingDamage'),1,'unassigned NPCs remain unchanged');
+const enemyHit=T.scaleEnemyHit(enemy,10,{footingDamageMultiplier:1.5});
+close(enemyHit.amount,10,'Footing-only trinkets do not raise enemy Health damage');
+close(enemyHit.options.footingDamageMultiplier,2.325,'enemy hit combines authored Footing and additive trinket bonus');
+const glassEnemy={health:100,maxHealth:100};
+T.configureEnemy(glassEnemy,['glassFang']);
+const glassHit=T.scaleEnemyHit(glassEnemy,10,{footingDamageMultiplier:1.2});
+close(glassHit.amount,14,'enemy Glass Fang increases Health damage');
+close(glassHit.options.footingDamageMultiplier,1.2/1.4,'enemy Glass Fang does not accidentally raise Footing damage');
+close(R.statModifier(player,'outgoingFootingDamage'),1,'enemy configuration never alters player stats');
+assert.deepEqual(Array.from(T.configureEnemy(player,['guardiansBrooch'])),[],'enemy configuration cannot overwrite player ownership');
+
+const enemyTuning=JSON.parse(read('docs/config/bandits/bandit-gang-config.json')).trinketLoadout; // Real bandit equipment tuning, including tier/rank caps.
+assert.equal(T.rollEnemyLoadout(enemyTuning,'grunt',0,()=>0).length,1,'tier-zero grunt can have one rare trinket');
+assert.equal(T.rollEnemyLoadout(enemyTuning,'grunt',7,()=>0).length,1,'a grunt never rolls a full build');
+assert.equal(T.rollEnemyLoadout(enemyTuning,'captain',7,()=>0).length,3,'high-tier captains may roll multi-trinket builds');
+assert.equal(T.rollEnemyLoadout(enemyTuning,'grunt',0,()=>0.99).length,0,'low-tier ordinary bandits usually have none');
+assert.equal(T.rollEnemyLoadout(null,'grunt',0,()=>0).length,0,'missing config cannot roll arbitrary enemy equipment');
+for(const id of T.rollEnemyLoadout(enemyTuning,'captain',7,()=>0)) assert(enemyTuning.pool.includes(id),'enemy rolls only configured trinkets');
+
 const hit=(options={},target={health:100,prone:false},sourceX=0,sourceY=0)=>{
   calls.length=0;w.Combat.deps.damageCreature(target,10,sourceX,sourceY,0,options);assert.equal(calls.length,1);return calls[0];};
 let u=wear('unstableBalance');assert.equal(hit().options.footingDamageMultiplier,1.25);
