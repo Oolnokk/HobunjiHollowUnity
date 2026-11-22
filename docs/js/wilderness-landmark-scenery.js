@@ -124,8 +124,8 @@ function planForLayout(zoneId,layout,identity='world:shift'){
  const target=Math.max(10,Math.min(38,Math.round(cols*rows/630))),sites=[]; // Several dozen site markers per large wilderness, never a draw call per tile.
  for(let attempt=0;attempt<target*90&&sites.length<target;attempt++){
   const col=3+Math.floor(next()*(cols-6)),row=3+Math.floor(next()*(rows-6)),tile=at(col,row);
-  if(!tile||tile.type!=='grass'||tile.water||tile.path||tile.incline||tile.ramp||tile.mapBoundary||tile.skipFloor||tile.generatedObjectType)continue;
-  if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>{const n=at(col+dx,row+dz);return!n||!['grass','weeds'].includes(n.type)||n.water||n.path||n.mapBoundary||(n.elevTier||0)!==(tile.elevTier||0);}))continue;
+  if(!tile||tile.type!=='grass'||tile.water||tile.path||tile.incline||tile.ramp||tile.mapBoundary||tile.skipFloor||tile.generatedObjectType||tile.occupiedBy)continue; // Later scenery cannot overwrite even a temporarily stamped camp reservation.
+  if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>{const n=at(col+dx,row+dz);return!n||!['grass','weeds'].includes(n.type)||n.water||n.path||n.mapBoundary||n.occupiedBy||(n.elevTier||0)!==(tile.elevTier||0);}))continue;
   if((layout.localeInstances||[]).some(locale=>root.WildernessObjectFootprints?.localeBlocksSite?.(locale,col,row,1.5) ?? Math.hypot(col-Number(locale.x??locale.col),row-Number(locale.y??locale.row))<6))continue;
   if(occupied.some(p=>Number.isFinite(p.c)&&Number.isFinite(p.r)&&Math.hypot(col-p.c,row-p.r)<p.d))continue;
   if(sites.some(p=>Math.hypot(col-p.point.col,row-p.point.row)<9))continue;
@@ -176,6 +176,7 @@ function planForLayout(zoneId,layout,identity='world:shift'){
     unique:true,marked:true,blossomNear:start.id,treeReplaced:isBoulder,source:'generated-year-round-scenery'});
   }
  }
+ root.WildernessObjectFootprints?.reserveScenery?.(layout,sites); // Temporary camps consult the same planned stone sites even when generated after this scene.
  cache.set(layout,{key,sites});return sites;
 }
 function identity(){return String(deps?.tothalWorldId?.()||'world')+':'+String(deps?.currentTothalYear?.()||'shift');}
