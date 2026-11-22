@@ -283,6 +283,52 @@ assert.equal(Cut.decodeMask(autoZero.mask)[at(100,145)],1,'default cone permits 
 assert.equal(Cut.decodeMask(autoZero.mask)[at(55,170)],0,'zero cone has no lateral extension');
 assert.equal(Cut.decodeMask(autoWide.mask)[at(55,170)],1,'positive cone widening permits pixels farther to the side');
 assert(autoWide.allowedPixels>autoZero.allowedPixels,'expanding the cone increases authorized pixel area');
+// Lumpy, concave inner rim with a short UPHILL notch. The old independent
+// 0..180-degree rays never hit x=116; two opposite border walks can continue
+// across the uphill section and recover the missed lower-rim column.
+const lumpyHood=new Uint8ClampedArray(SIZE*SIZE*4);
+for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
+  const dx=x+.5-100.5,dy=y+.5-94.5,angle=Math.atan2(dy,dx);
+  const climb=12*Math.exp(-(((angle-1.10)/.13)**2));
+  const radius=Math.hypot(dx,dy);
+  if(radius>=30-climb&&radius<=62)lumpyHood[at(x,y)*4+3]=255;
+}
+const rayOnly=new Int16Array(SIZE);
+rayOnly.fill(-1);
+for(let ray=0;ray<256;ray++){
+  const angle=Math.PI*ray/255,sx=Math.cos(angle),sy=Math.sin(angle);
+  let previous=-1;
+  for(let d=.5;d<=85;d+=.5){
+    const x=Math.floor(100.5+sx*d),y=Math.floor(94.5+sy*d);
+    if(x<0||x>=SIZE||y<0||y>=SIZE)break;
+    const i=at(x,y);
+    if(i===previous)continue;
+    previous=i;
+    if(lumpyHood[i*4+3]<242)continue;
+    if(y+1>=94.5&&y>rayOnly[x])rayOnly[x]=y;
+    break;
+  }
+}
+const trackedLump=Cut.lowerHoodOpeningSegment(lumpyHood);
+const contourX=new Map(trackedLump.points.map(point=>[point.x,point.y]));
+assert.equal(rayOnly[116],-1,'old radial-only scanner misses a column beyond the upward climb');
+assert.equal(contourX.get(116),117,'bidirectional contour tracking recovers the obscured lower edge');
+assert(trackedLump.clockwiseSteps>20,'clockwise 0->180 tracing crosses the lumpy rim');
+assert(trackedLump.counterClockwiseSteps>20,'counterclockwise 360->180 tracing reaches the same lower arc');
+assert(trackedLump.edgeFollowed,'detector reports contour following, not a silent radial fallback');
+for(let x=113;x<=119;x++)
+  assert(contourX.has(x),'small climb does not prematurely terminate the bottom boundary at x='+x);
+assert(trackedLump.clockwiseSteps<=4096&&trackedLump.counterClockwiseSteps<=4096,
+  'both contours are bounded to avoid expensive wandering on noisy large hoods');
+const continued=Cut.autoHoodAllowanceMask(lumpyHood,0);
+assert.equal(Cut.decodeMask(continued.mask)[at(116,140)],1,
+  'recovered contour column actually contributes to the final removal permission');
+const brokenLump=new Uint8ClampedArray(lumpyHood);
+for(let y=95;y<SIZE;y++)for(let x=98;x<=103;x++)brokenLump[at(x,y)*4+3]=0;
+const splitTrace=Cut.lowerHoodOpeningSegment(brokenLump);
+assert(!splitTrace.points.some(p=>p.x>=98&&p.x<=103&&p.y>=95),
+  'contour walking never invents a bridge across a truly disconnected missing ring');
+
 const lowerNearLine=Cut.autoHoodAllowanceMask(ringBefore,2.5);
 const lowerLine=Cut.autoHoodAllowanceMask(ringBefore,3);
 assert(lowerLine.allowedPixels>=lowerNearLine.allowedPixels,
