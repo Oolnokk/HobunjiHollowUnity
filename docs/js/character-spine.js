@@ -247,14 +247,14 @@
         bone.updateMatrix?.();
       }
     }
-    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, blendHeight: rig.blendHeight || null });
+    Object.assign(profile, { curve, neckX, neckY, baseX, baseY, posteriorY, modelHeight, blendHeight: rig.skinnedPlane?.geometry?.userData?.blendHeight || rig.blendHeight || null }); // Shoulder/weapon projections use the same neck band as the active GPU mesh, even after density changes.
     profile.orbitOffset = deformAt(profile, baseY, {}); // The orbit centre is the shoulder line, where the spline ends.
     return true;
   }
 
   // How far a rest-pose point at plane-local height y is carried by the curve: { x, y, z } in plane-local units (all 0 for an upright
   // character). Skin blend: the two neighbouring nodes for the body share, the last node for the head share (the head bones sit on it), using
-  // the same broad head-turn falloff as the skin.
+  // the same short, base-head-anchored neck falloff as the skin.
   const weightScratch = {};
   function deformAt(profile, y, out = {}) {
     out.x = out.y = out.z = 0;
@@ -262,8 +262,8 @@
     if (!curve) return out;
     const { neckY, baseY, modelHeight, posteriorY } = profile;
     const w = nodeWeightsAt(y, baseY, modelHeight, posteriorY, weightScratch);
-    const blend = Math.max(modelHeight * 0.012, Number(profile.blendHeight) || modelHeight * 0.3);
-    const head = smoothstep01((y - (neckY - blend * 0.55)) / blend);
+    const blend = Math.max(modelHeight * 0.0001, Number(profile.blendHeight) || modelHeight * 0.012); // Mirror the portrait's short neck strip when projecting shoulders and held weapons.
+    const head = smoothstep01((y - (neckY - blend)) / blend); // Full head at the painted chin; full spine just below the short band.
     const a = curve[w.a], b = curve[w.b], last = curve[SEGMENTS];
     out.x = (1 - head) * (a.x + (b.x - a.x) * w.wb) + head * last.x;
     out.y = (1 - head) * (a.y + (b.y - a.y) * w.wb) + head * last.y;
