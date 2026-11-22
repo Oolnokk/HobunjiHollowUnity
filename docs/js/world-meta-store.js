@@ -161,6 +161,10 @@
       if (!world || !Array.isArray(world.livestock) || !world.members?.[currentCharacterId]) {
         return { ok: false, error: 'World or active farm member is unavailable.' };
       }
+      const savedCurrentGold = Number(world.members[currentCharacterId].nonGearInventory?.gold ?? 0); // Verifies the caller's member flush really persisted the live wallet.
+      if (savedCurrentGold !== currentGold) {
+        return { ok: false, error: 'Active wallet has not been saved; animal collection deferred.' };
+      }
 
       const sold = []; // Exact persisted animals collected, returned for scene/UI cleanup.
       const remaining = []; // Persisted farm roster after removing only eligible IDs.
