@@ -1877,69 +1877,131 @@
 
   // ── Multi-attacker coordination ─────────────────────────────────
   //
-  // At most BANDIT_MAX_ATTACK_SLOTS bandits are ever actively closing
-  // to melee range against a given target at once, each locked to a
-  // world angle (around the target) at least BANDIT_SLOT_MIN_ANGLE_RAD
-  // from every other slot's angle -- so two attackers flank from
-  // genuinely different sides instead of both approaching down the same
-  // line. Everyone else stays queued: it orbits at a standoff distance
-  // and keeps personal space from other nearby bandits rather than
-  // piling into melee range for free hits. Slots aren't explicitly
-  // handed back on retreat -- claimBanditAttackSlot's own prune (below)
-  // drops a slot the instant its holder dies or leaves 'chase', which
-  // covers every release case without needing a separate teardown path.
-  const BANDIT_MAX_ATTACK_SLOTS = 2;
+  // Ordinary bandits claim four stable DIRECTIONS relative to the target's
+  // facing: front, left, right and rear. Only one may commit to a melee
+  // attack at once; a DIFFERENT actor may prepare a Charged Breaker while
+  // that strike is resolving. Target-relative angles update with facing
+  // without repeatedly reallocating slots. Special humanoids keep their
+  // historical two-angle choreography.
+  const BANDIT_MAX_ATTACK_SLOTS = 4;
+  const BANDIT_SPECIAL_ATTACK_SLOTS = 2;
   const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
+  const BANDIT_DIRECTION_SECTORS = Object.freeze([
+    { name: 'front', offset: 0 },
+    { name: 'left', offset: Math.PI / 2 },
+    { name: 'right', offset: -Math.PI / 2 },
+    { name: 'rear', offset: Math.PI },
+  ]); // Static target-relative sectors; all bandits reuse this four-element definition.
   const BANDIT_STANDOFF_RANGE_MUL = 1.8;
-  // Computed lazily (not a top-level const) since deps isn't populated
-  // until init() runs, which happens well after this module's own script
-  // loads.
-  function banditPersonalSpacePx() { return deps.TILE * 0.85; }
-  // Idle sway applied to a waiting bandit's ring/standoff point (see the
-  // !readyToStrike branch below) -- a slow guard-stance shift, not a
-  // dodge, so it reads as "still in the fight, waiting its turn"
-  // instead of a dead stand while a slot/cooldown/stamina frees up.
-  // Swept as an ANGLE around the player (see banditRingPoint), not a
-  // straight-line Cartesian offset -- a linear offset from a point
-  // already at some radius moves partly toward/away from the player as
-  // well as sideways (chord vs. arc), and combined with the emergency
-  // too-close retreat that branch used to also have (a second, separate
-  // target formula it could disagree with frame to frame), that read as
-  // shivering forward/backward rather than a clean side-to-side stride.
-  // Sweeping the angle instead keeps the bandit on the ring at a
-  // constant radius by construction; there's now only ONE positioning
-  // formula for the whole waiting state (see readyToStrike below), with
-  // the personal-space nudge as the only thing allowed to pull it off
-  // the ring, and only when actually crowding another bandit.
-  // Chased with BANDIT_STRAFE_SPEED_PX_S (a dedicated slow walking
-  // speed), not def.chaseSpeed -- at full chase speed the bandit closes
-  // most of the gap to this continuously-recalculated target in a
-  // single frame and ends up snapping almost exactly onto it every
-  // frame, which (deps.moveCreatureToward never overshoots, so it can't be a
-  // bounce-back oscillation) just means any frame-timing irregularity
-  // gets reproduced directly in its position with no damping. Capping
-  // the speed well below the sway's own peak velocity forces a real lag
-  // between the bandit and its target, acting as a low-pass filter.
-  const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180;
-  const BANDIT_STRAFE_HZ = 0.14;
-  const BANDIT_STRAFE_SPEED_PX_S = 55;
-  const _banditAttackSlots = []; // [{ bandit, angle }]
-
+  const _banditAttackSlots = []; // [{ bandit, target, sector, angle }] The existing mobile arena log reads the same array.
+  const _banditTargetTurns = new WeakMap(); // O(1) per-target committed attacker/held-charge owner; targets are weak keys so unloads do not leak encounters.
+  function banditDirectional(c) { return Number.isFinite(c?.def?.banditStandoffMaxTiles); } // Only ordinary bandits opt into the four-position coordinator.
+  function banditTargetFacing(target) {
+    return Number.isFinite(Number(target?.angle)) ? Number(target.angle) : (Number(target?.facing) || 0);
+  }
+  function banditSectorAngle(target, sector) {
+    return banditTargetFacing(target) + BANDIT_DIRECTION_SECTORS[sector]?.offset;
+  }
+  function banditTurnState(target) {
+    let state = _banditTargetTurns.get(target);
+    if (!state) {
+      state = { attack: null, charge: null };
+      _banditTargetTurns.set(target, state);
+    }
+    return state;
+  }
+  function banditTurnValid(holder, target) {
+    return !!holder && holder.target === target && holder.actor?.health > 0
+      && holder.actor.state === 'chase' && !holder.actor.tzatzulCapturedBy
+      && (!target?.areaId || !holder.actor.areaId || holder.actor.areaId === target.areaId);
+  }
+  function banditAttackTurnOwner(target) {
+    const state = _banditTargetTurns.get(target);
+    if (!state) return null;
+    if (state.attack && !banditTurnValid(state.attack, target)) state.attack = null;
+    return state.attack?.actor || null;
+  }
+  function banditChargeOwner(target) {
+    const state = _banditTargetTurns.get(target);
+    if (!state) return null;
+    if (state.charge && (!banditTurnValid(state.charge, target)
+      || state.charge.actor._banditPreparedCharge?.target !== target)) state.charge = null;
+    return state.charge?.actor || null;
+  }
+  function claimBanditAttackTurn(actor, target) {
+    if (!banditDirectional(actor)) return true; // Special NPC combat uses the unchanged stage and attack pipeline.
+    const state = banditTurnState(target);
+    const owner = banditAttackTurnOwner(target);
+    if (owner && owner !== actor) return false;
+    const preparer = banditChargeOwner(target);
+    if (!owner && preparer && preparer !== actor
+      && preparer._banditPreparedCharge?.t >= preparer._banditPreparedCharge.duration) return false; // A ready held attack takes the next free turn instead of starving.
+    state.attack = { actor, target }; // Released immediately after the final resolved hit, not after cosmetic weapon recovery.
+    return true;
+  }
+  function releaseBanditAttackTurn(actor, target) {
+    const state = target && _banditTargetTurns.get(target);
+    if (state?.attack?.actor === actor) state.attack = null;
+  }
+  function releaseBanditCharge(actor, target, keepPose = false) {
+    const state = target && _banditTargetTurns.get(target);
+    if (state?.charge?.actor === actor) state.charge = null;
+    if (actor?._banditPreparedCharge?.target === target) actor._banditPreparedCharge = null;
+    if (!keepPose && actor && !actor._banditAction) {
+      actor.telegraphState = null;
+      resetBanditSwingToNatural(actor); // A canceled charge restores the true weapon stance, including the hand rig.
+    }
+  }
+  function banditFacingSlotAngle(slot, target) {
+    return slot?.sector == null ? slot?.angle : banditSectorAngle(target, slot.sector);
+  }
   function claimBanditAttackSlot(c, towardAngle, target) {
     for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
       const s = _banditAttackSlots[i];
       if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) _banditAttackSlots.splice(i, 1);
     }
     const existing = _banditAttackSlots.find(s => s.bandit === c);
-    if (existing?.target === target) return existing;
-    if (existing) _banditAttackSlots.splice(_banditAttackSlots.indexOf(existing), 1); // Switching opponents releases the previous fight's slot.
-    const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target); // Only this active target/area shares attack slots; old encounters cannot starve mine ghouls.
-    if (competing.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
-    let angle = towardAngle;
-    for (const s of competing) {
-      if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
+    if (existing?.target === target) {
+      existing.angle = banditFacingSlotAngle(existing, target); // Sector identity persists, but its world angle follows the opponent's facing.
+      return existing;
     }
-    const slot = { bandit: c, target, angle };
+    if (existing) _banditAttackSlots.splice(_banditAttackSlots.indexOf(existing), 1); // A changed opponent releases the former direction.
+    if (!banditDirectional(c)) {
+      const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target);
+      if (competing.length >= BANDIT_SPECIAL_ATTACK_SLOTS) return null;
+      let angle = towardAngle;
+      for (const s of competing) if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
+      const slot = { bandit: c, target, angle, sector: null };
+      _banditAttackSlots.push(slot);
+      return slot;
+    }
+    const used = [false, false, false, false]; // Four cheap flags, no pathfind/scene query; decide only on first slot acquisition.
+    let occupied = 0, rearOwner = null;
+    for (const s of _banditAttackSlots) {
+      if (s.bandit.areaId !== c.areaId || s.target !== target) continue;
+      occupied++;
+      if (s.sector != null) {
+        used[s.sector] = true;
+        if (s.sector === 3) rearOwner = s;
+      }
+    }
+    const backstabber = c.def?.banditAbilityLoadout?.tap2 === 'backstabFlick';
+    if (occupied >= BANDIT_MAX_ATTACK_SLOTS) {
+      if (!backstabber || !rearOwner || rearOwner.bandit.def?.banditAbilityLoadout?.tap2 === 'backstabFlick') return null;
+      _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an ordinary rear holder when a real Backstab specialist joins.
+      used[3] = false;
+    }
+    let chosen = -1, best = Infinity;
+    const fromTarget = Math.atan2(c.y - target.y, c.x - target.x);
+    for (let i = 0; i < BANDIT_DIRECTION_SECTORS.length; i++) {
+      if (used[i]) continue;
+      const distance = Math.abs(deps.angleDiff(fromTarget, banditSectorAngle(target, i)));
+      const priority = backstabber ? (i === 3 ? -4 : 0) : (i === 3 ? 1 : 0); // Backstab users prefer rear; otherwise leave it free when possible.
+      const score = distance + priority;
+      if (score < best) { best = score; chosen = i; }
+    }
+    if (chosen < 0) return null;
+    const slot = { bandit: c, target, sector: chosen, angle: banditSectorAngle(target, chosen) };
     _banditAttackSlots.push(slot);
     return slot;
   }
@@ -2456,7 +2518,7 @@
       const rearAngle = (Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0)) + Math.PI; // Backstab-equipped spares converge on rear flanks, not an unrelated queue-ring bearing.
       const baseAngle = !slot && seekingBackstab
         ? rearAngle + ((c._banditStrafePhase || 0) < Math.PI ? -0.40 : 0.40)
-        : (slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle));
+        : (slot ? banditFacingSlotAngle(slot, targetPlayer) : (queueRing ? queueRing.angle : towardAngle));
       const ordinaryPursuit = Number.isFinite(def.banditStandoffMaxTiles); // Preserve mine/special-enemy ring choreography while ordinary bandits pursue aggressively.
       const maxStandoff = ordinaryPursuit
         ? deps.TILE * (def.banditStandoffMaxTiles + (queueRing?.ringIndex || 0) * def.banditStandoffTierStepTiles)
