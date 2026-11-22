@@ -168,4 +168,74 @@ assert.match(source,/fireBanditChargedBreaker\(c, def, targetPlayer, prep\)/,'pr
 assert.match(source,/c\._banditPreparedCharge\?\.action/,'tool rendering uses the existing SharedAttackPose for a held windup');
 assert.match(logSource,/sector=\$\{directionalSlot/,'mobile combat log exposes approach sector');
 assert.match(logSource,/chargeOwner=\$\{activeCharge/,'mobile combat log exposes the extra held charge');
+
+// The production combat AI must actually start a separate held-charge preview while another bandit swings.
+const decisions=[]; // Records actions chosen by the full combat decision function, not a copied state machine.
+const simulatedCombat={
+  Combat:{...windowStub.Combat,attackAlignmentStep:()=>null},
+  ResourceSystem:{spendStamina(){}},
+};
+const simDeps={...deps,rnd:()=>.1,JUMP_BACK_SPEED:110,
+  moveCreatureToward(c,x,y,speed,dt){const dx=x-c.x,dy=y-c.y,d=Math.hypot(dx,dy),step=Math.min(speed*dt,d);
+    if(d>0){c.x+=dx/d*step;c.y+=dy/d*step;}return step>0;}}; // Flat unobstructed arena uses the real move callback signature.
+let simulation=null; // Collaborators below reference the exported coordinator only after the real module has been evaluated.
+const aiGlobals={
+  window:simulatedCombat,deps:simDeps,WeakMap,Math,Number,Object,performance:{now:()=>1000},
+  resetBanditSwingToNatural(c){c.restored=true;},
+  resolvedBanditCombatTarget:(c,t)=>t,_updateBanditLookAtTarget(){},
+  updateBanditFlaskAI:()=>null,updateBanditLunge:()=>false,enforceBanditPlayerCollision(){},
+  npcDuelStagingUpdate:()=>null,updateBanditGuardWindow(){},
+  banditPersonalSpaceAdjust:(c,point,out)=>{out.x=point.x;out.y=point.y;return out;},
+  banditEngagementReachPx:()=>170,claimBanditQueueRing:()=>({angle:0,ringIndex:0}),
+  banditRingPoint:(t,a,r,out)=>{out.x=t.x+Math.cos(a)*r;out.y=t.y+Math.sin(a)*r;return out;},
+  banditBehindTarget:()=>false,banditBackstabFlankPoint:()=>({x:0,y:0}),
+  banditQuickAttackConditions:()=>({behind:false,exhausted:false,lowHealth:false}),
+  banditQuickAttackChance:()=>0,fireBanditQuickAttack:()=>false,fireBanditChargedBreaker(c,def,t,prep){
+    decisions.push({kind:'charged-release',prep});
+    c._banditAction=simulation.stage(c,{windupS:.12,strikeS:.2,onStrike(){},onComplete(){c._banditAction=null;}},t);
+    return true;
+  },
+  fireBanditComboStep(c,def,loadout,t){
+    decisions.push({kind:'combo',actor:c.id});
+    c._banditAction=simulation.stage(c,{windupS:.2,strikeS:.2,onStrike(){},onComplete(){c._banditAction=null;}},t);
+    return true;
+  },
+  fireBanditChargedBreakerUnavailable:()=>false,
+  BANDIT_HOLD1_CHANCE:.4,BANDIT_STRAFE_HZ:.14,BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD:Math.PI/6,
+  BANDIT_STRAFE_SPEED_PX_S:55,BANDIT_QUEUE_RING_STEP_MUL:.6,BANDIT_STANDOFF_RANGE_MUL:1.8,
+}; // All other calls are existing game adapters. The full decision function is otherwise unmodified.
+simulation=vm.runInNewContext(
+  '(()=>{' +
+  section(source,'  const BANDIT_MAX_ATTACK_SLOTS =','  // Queued (non-slot-holding)') +
+  section(source,'  function beginBanditMeleeStage(', '  function resolvedBanditCombatTarget(') +
+  section(source,'  function updateBanditCombatAI(', '  // ── Bandit weapon visuals') +
+  'return {tick:updateBanditCombatAI,slot:claimBanditAttackSlot,owner:banditAttackTurnOwner,' +
+  'chargeOwner:banditChargeOwner,stage:beginBanditMeleeStage};})()',aiGlobals
+);
+const simulatedTarget={x:0,y:0,angle:0,health:100,stamina:100,maxHealth:100,maxStamina:100};
+const striker=actor('first-to-strike',125,0);
+striker.def.banditAbilityLoadout={tap1:'swingCombo',tap2:'exhaustCutter',hold1:null};
+const chargingFighter=actor('prepared-followup',0,125);
+for(const c of [striker,chargingFighter]){
+  c.def.chaseSpeed=290;c.def.moveSpeed=118;c.def.attackRangePx=55;c.def.attackStaminaCost=10;
+  c.def.backstabFlankMaxSeconds=2;c.def.banditStandoffTierStepTiles=.2;
+  c.stamina=100;c.attackCooldownT=0;c.facing=0;c._banditChargeDecisionCdS=0;
+}
+simulation.tick(striker,.1,simulatedTarget,125);
+assert.strictEqual(simulation.owner(simulatedTarget),striker,'full bandit AI claims one turn before dispatching a combo');
+simulation.tick(chargingFighter,.1,simulatedTarget,125);
+assert(chargingFighter._banditPreparedCharge,'the second fighter begins its visible charge DURING the first committed attack');
+assert.strictEqual(simulation.chargeOwner(simulatedTarget),chargingFighter);
+assert.equal(decisions.length,1,'the preparation has not fired an unauthorized second attack');
+for(let i=0;i<15;i++) simulation.tick(chargingFighter,.1,simulatedTarget,Math.hypot(chargingFighter.x,chargingFighter.y));
+assert.equal(decisions.length,1,'fully held charge cannot fire while another attacker owns the turn');
+const firstStage=striker._banditAction;
+firstStage.onStrike(firstStage);
+assert.strictEqual(simulation.owner(simulatedTarget),null,'the first combo releases at the end of hit resolution, even before recovery');
+simulation.tick(chargingFighter,.05,simulatedTarget,Math.hypot(chargingFighter.x,chargingFighter.y));
+assert.equal(decisions.length,2,'the next attack is the separately prepared charged release');
+assert.equal(decisions[1].kind,'charged-release');
+assert(decisions[1].prep.chargeT>0,'release carries the original sampled charge strength');
+assert.strictEqual(simulation.owner(simulatedTarget),chargingFighter,'the released held attack takes the single committed permission');
+
 console.log('bandit directional melee: 4 sectors, one resolved attack, parallel charge, cancellations and Fey echo passed');
