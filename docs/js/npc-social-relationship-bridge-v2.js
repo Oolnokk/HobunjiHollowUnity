@@ -218,14 +218,16 @@
     const getAction = gifting.getNpcGiftOfferAction.bind(gifting); // Existing gift eligibility remains authoritative before the daily gate.
     gifting.getNpcGiftOfferAction = (walker, ...args) => {
       const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
-      return id && id !== 'boney_shinjimi' && !canGiftToday(id) ? null : getAction(walker, ...args); // Boney's one-night milk trades ignore daily Favor limits.
+      const trophyExchange = gifting.isTribalTrophyExchange?.(walker) === true; // Currency exchanges are separate from one regular gift per day.
+      return id && id !== 'boney_shinjimi' && !trophyExchange && !canGiftToday(id) ? null : getAction(walker, ...args);
     };
     const offerGift = gifting.offerGift.bind(gifting); // Existing gift code remains authoritative for its authored permanent Favor delta and reaction.
     gifting.offerGift = function (walker, ...args) {
       const id = String(gifting.relationshipId?.(walker) || walker?.rec?.id || '');
-      if (!id || (id !== 'boney_shinjimi' && !canGiftToday(id))) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
+      const trophyExchange = gifting.isTribalTrophyExchange?.(walker) === true; // Validate again at execution, independently of the action button.
+      if (!id || (id !== 'boney_shinjimi' && !trophyExchange && !canGiftToday(id))) { window.__farmLog?.(`${walker?.rec?.name || 'They'} already received a gift today.`); return false; }
       const result = offerGift(walker, ...args);
-      if (result && id !== 'boney_shinjimi') {
+      if (result && id !== 'boney_shinjimi' && !trophyExchange) {
         markGiftedToday(id);
         touchedNpcIds.add(id);
       }
