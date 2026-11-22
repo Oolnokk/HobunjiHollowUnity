@@ -115,8 +115,8 @@ const nextTree=gameScene.getObjectByName('locale_five_blossoms_rose');
 assert(firstTree&&nextTree,'the actual festival runtime renders both authored wilderness blossoms');
 const visibleStem=firstTree.children.find(child=>child.isMesh&&!child.userData?.noOutline);
 const flowerCards=firstTree.getObjectByName('wilderness-blossom-sprigs');
-assert(visibleStem.layers.isEnabled(1),'the real shell-outlines helper includes volumetric bark');
-assert(!flowerCards.layers.isEnabled(1),'flat alpha-cutout blossom cards are not inked as black rectangles');
+assert((visibleStem.layers.mask & (1<<1)) !== 0,'the real shell-outlines helper includes volumetric bark');
+assert((flowerCards.layers.mask & (1<<1)) === 0,'flat alpha-cutout blossom cards are not inked as black rectangles');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),true,'the amber blossom trunk blocks movement');
 assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.98,10.5,0),true,
   'the real Three.js tree uses the exported locale trunk rectangle to its edge');
