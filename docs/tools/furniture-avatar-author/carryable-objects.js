@@ -60,25 +60,26 @@
     '<section class="fed-section">',
     '<h2>Carryable world objects</h2>',
     '<div class="section"><h2>Family baby grips</h2>',
-    '<p class="muted">Rotate the baby itself around its carry mount while the adult stays still. The saved grip profile and gameplay orientation use the same transform. Hand targets travel with the baby; furniture stays separate.</p>',
+    '<p class="muted">Move or rotate the baby directly; the adult stays fixed. The left hand grip is offset from the infant posterior, the right from its neck joint, independent of portrait size. Held/back positions remain separate.</p>',
     '<div class="g2"><button type="button" id="carryBabyEdit">Edit baby grips</button><button type="button" id="carryBabyReturn">Return to furniture grips</button></div>',
-    '<div class="g2"><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
+    '<div class="g3"><button type="button" id="carryBabyMove">Move Baby</button><button type="button" id="carryBabyRotate">Rotate Baby</button><button type="button" id="carryBabyRandom">Random Baby</button></div>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
     '<button type="button" id="carryBabyCopy">Copy baby profile JSON</button>',
     '<textarea id="carryBabyCopyText" hidden readonly aria-label="Baby profile JSON for manual copying" style="width:100%;min-height:6rem"></textarea>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
     '<p class="muted">While editing a baby, Download JSON and Copy Current JSON both export the baby pose (not furniture). Returning to furniture restores both actions. Apply baby grips saves a separate local gameplay override.</p>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
-    '<p class="muted">In baby mode, Rotate Baby turns the visible infant around its posterior-relative mount, while the adult stays fixed. Pitch/Yaw/Roll then describe the baby directly. Select Held anchor or Back-carry anchor to edit their mounts. Purple marks the adult posterior; cyan is the mount. Hand grip guides follow the infant art.</p>',
+    '<p class="muted">Move Baby translates the infant in all three axes while the adult stays still; Rotate Baby turns the infant about its carried mount. Select Back-carry anchor to switch poses. Purple marks the adult posterior; cyan is the mounted baby pivot.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
     '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Held anchor</button><button type="button" id="carrySelectBack">▣ Back-carry anchor</button></div>',
     '<div class="g2"><button type="button" id="carrySelectLeft">◉ Left hand grip</button><button type="button" id="carrySelectRight">◉ Right hand grip</button></div>',
     '<div id="carryBabyPortraitSection" class="section" hidden><h2>Baby portrait grips</h2>',
-    '<p class="muted">Tap or drag the L/R dots on the actual baby portrait to place its hands. U is measured from the left edge; V from the top. Coordinates are percentages of the FULL portrait, independent of species size or head deformation.</p>',
+    '<p class="muted">Drag L (yellow) relative to the infant posterior or R (cyan) relative to its neck pivot. The portrait appears above an extra drag region so either grip can go BELOW the artwork. Saved offsets are baby-local distances, NOT percentages of portrait size.</p>',
     '<canvas id="carryBabyGripCanvas" width="280" height="280" style="display:block;width:min(100%,280px);height:auto;aspect-ratio:1;touch-action:none;border:1px solid #667"></canvas>',
-    '<div class="g3"><label>Portrait U %<input id="carryBabyU" type="number" step="0.1"></label>',
-    '<label>Portrait V %<input id="carryBabyV" type="number" step="0.1"></label>',
-    '<label>Depth %<input id="carryBabyDepth" type="number" step="0.1"></label></div>',
+    '<div class="g3"><label>Anchor offset X<input id="carryBabyOffsetX" type="number" step="0.005"></label>',
+    '<label>Anchor offset Y<input id="carryBabyOffsetY" type="number" step="0.005"></label>',
+    '<label>Anchor offset Z<input id="carryBabyOffsetZ" type="number" step="0.005"></label></div>',
+    '<p class="muted" id="carryBabyGripOrigin">L = posterior · R = neck</p>',
     '<p class="muted" id="carryBabyScaleReadout">Baby portrait proportions loading…</p></div>',
     '<div class="section"><h2>Projectile / impact hitbox</h2>',
     '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
@@ -128,7 +129,8 @@
   if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
   const el=id=>document.getElementById(id);
   const BABY_REFERENCE_WIDTH=.3, BABY_REFERENCE_HEIGHT=.3; // Only a fallback until the real newborn portrait model is available.
-  let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT; // Current full PNG-plane dimensions, authoritative for normalized grip percentages.
+  let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT; // Current full PNG-plane dimensions for display only, never grip offset scaling.
+  let babyGripAnchors=window.FamilyBabyCarryPose?.anchorsForAvatar?.({},BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)||null; // Preview/game share anatomy anchor math.
   let babyFrontCanvas=null; // Random Baby's actual painted portrait, reused by the 2D touch grip author.
   let editingBaby=false, savedFurnitureCarry=null, babyDraft=null; // Preserve ordinary furniture grips while baby guides are active.
   let babyRenderTicket=0, babyPreviewRolls=0; // Async randomized child previews are invalidated on exit and rapid rerolls.
@@ -155,7 +157,8 @@
   const babyPivotAxes=new THREE.AxesHelper(.11);babyRotateProxy.add(babyPivotAxes);
   babyRotateProxy.visible=false;helperRoot.add(babyRotateProxy);
   const guides={baby:babyRotateProxy};
-  let babyPoseView='anchor'; // Whether Rotate Baby edits the held or back-carried gameplay anchor.
+  let babyPoseView='anchor'; // Which pose Move/Rotate Baby authors.
+  let babyTransformMode='rotate'; // Persist the selected direct baby gizmo mode when guides rebuild.
   babyPivotAxes.visible=false; // The pivot cross only appears when direct rotation is selected.
   // Transient reference model, kept outside root and never included in the exported furniture.
   const heldPreview=new THREE.Group();
@@ -183,6 +186,15 @@
       Number((babyPoseIsBack()?state.carryable.backCarry:state.carryable.billboardAnchor).rotation.y||0)*DEG,
       Number((babyPoseIsBack()?state.carryable.backCarry:state.carryable.billboardAnchor).rotation.z||0)*DEG,'XYZ')).invert();
     return babyRotationScratch;
+  }
+  function authorBabyTranslation(position) {
+    // The mount point is posterior + from-hip offset (+ back fine offset).
+    // Moving it translates the BABY without disturbing wrist offsets or mount orientation.
+    const a=babyPoseIsBack()?state.carryable.backCarry:state.carryable.billboardAnchor;
+    const fine=babyPoseIsBack()?a.portraitAnchor||{}:{};
+    a.posteriorOffset ||= {};
+    for(const axis of ['x','y','z'])a.posteriorOffset[axis]=Number((
+      position[axis]-previewPosterior[axis]-(Number(fine[axis])||0)).toFixed(4));
   }
   function authorBabyRotation(quaternion) {
     // Gameplay applies inverse(anchor), so turn the VISUAL baby's quaternion back into the one existing anchor schema.
@@ -255,7 +267,7 @@
         previewHands.placeHandWorld?.(side,world,q,calibration);
       }
     }
-    status((editingBaby?'Baby rotates; adult fixed · ':'')+(isBack?'Back-mounted posterior pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
+    status((editingBaby?'Baby movable/rotatable; adult fixed · ':'')+(isBack?'Back-mounted posterior pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
   }
   function frameHoldingPreview(){
     const bounds=new THREE.Box3().setFromObject(editingBaby?babyReference:root);
@@ -383,7 +395,7 @@
     const c=state.carryable,id=state.selectedType==='carry'?state.selectedId:'anchor';
     const pos=id==='baby'?babyRotateProxy.position:positionGuide(id)||c.billboardAnchor.position;
     el('carryEnabled').checked=!!c.enabled;
-    el('carryGuideLabel').textContent=id==='baby'?'Rotate baby · '+(babyPoseView==='back'?'back carry':'held'):id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
+    el('carryGuideLabel').textContent=id==='baby'?(babyTransformMode==='translate'?'Move baby':'Rotate baby')+' · '+(babyPoseView==='back'?'back carry':'held'):id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
     const portraitSection=el('carryBabyPortraitSection'); // Grip authoring uses image UV, never scene X/Y units.
     if(portraitSection)portraitSection.hidden=!editingBaby;
     if(editingBaby){
@@ -401,7 +413,7 @@
     for(const axis of ['X','Y','Z']) {
       const input=el('carry'+axis);
       if(document.activeElement!==input)input.value=Number(pos[axis.toLowerCase()]||0).toFixed(3);
-      input.disabled=id==='baby'; // The Rotate Baby gizmo edits orientation only, not a misleading local origin.
+      input.disabled=false; // Baby X/Y/Z edit the fixed-carrier mount in the same frame as the translation gizmo.
     }
     const r=id==='baby'?babyEulerScratch.setFromQuaternion(babyOrientation(),'XYZ')
       :id==='anchor'?c.billboardAnchor.rotation:id==='back'?c.backCarry.rotation:c.handTargets[id]?.rotation||{};
@@ -429,8 +441,10 @@
     el('carryBabyReturn').disabled=!editingBaby;
     el('carryBabyApply').disabled=!editingBaby;
     el('carryBabyCopy').disabled=!editingBaby;
+    el('carryBabyMove').disabled=!editingBaby;
+    el('carryBabyMove').classList.toggle('active',id==='baby'&&babyTransformMode==='translate');
     el('carryBabyRotate').disabled=!editingBaby;
-    el('carryBabyRotate').classList.toggle('active',id==='baby');
+    el('carryBabyRotate').classList.toggle('active',id==='baby'&&babyTransformMode==='rotate');
     el('carryBabyRandom').disabled=!editingBaby;
     syncBabyDownloadButton(); // The main export button must never silently download unrelated furniture while authoring a baby.
     if(editingBaby)el('carryBabyStatus').textContent=babyPreviewStatus||'Editing family baby hand targets and anchors. Random Baby changes only the reference appearance.';
@@ -587,7 +601,7 @@
     transform.enabled=true;
     transform.visible=true;
     transform.setSpace?.('local'); // Rotation gizmo follows actual calibrated hand socket orientation.
-    if(id==='baby')setTransformMode('rotate'); // The actual infant rotates around its fixed posterior mount.
+    if(id==='baby')setTransformMode(babyTransformMode); // Select direct translation OR rotation without resetting the user's tool.
     else if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
     syncHoldingPreview();
     transform.attach(guides[id]);
@@ -598,8 +612,10 @@
   function fromInputs() {
     const id=state.selectedType==='carry'?state.selectedId:'anchor';
     if(id==='baby'){
+      const position=['X','Y','Z'].map(axis=>Number(el('carry'+axis).value));
       const angles=['X','Y','Z'].map(axis=>Number(el('carryR'+axis).value));
-      if(angles.every(Number.isFinite)){
+      if(position.every(Number.isFinite)&&angles.every(Number.isFinite)){
+        authorBabyTranslation(new THREE.Vector3(...position));
         babyRotateProxy.quaternion.setFromEuler(babyEulerScratch.set(...angles.map(degrees=>degrees*DEG),'XYZ'));
         authorBabyRotation(babyRotateProxy.quaternion);
         syncHoldingPreview();renderControls();
@@ -639,8 +655,9 @@
     if(activeEditorMode!=='carry'||state.selectedType!=='carry')return;
     const id=state.selectedId,marker=guides[id],point=positionGuide(id);
     if(id==='baby'){
-      if((transform.getMode?.()||'translate')!=='rotate'){setTransformMode('rotate');syncHoldingPreview();return;}
-      authorBabyRotation(babyRotateProxy.quaternion);
+      if((transform.getMode?.()||'translate')==='translate')authorBabyTranslation(babyRotateProxy.position);
+      else if((transform.getMode?.()||'translate')==='rotate')authorBabyRotation(babyRotateProxy.quaternion);
+      else{setTransformMode(babyTransformMode);syncHoldingPreview();return;}
       syncHoldingPreview();renderControls();
       return;
     }
@@ -664,7 +681,8 @@
     renderControls();
     syncHoldingPreview();
   }
-  el('carryBabyRotate').onclick=()=>select('baby');
+  el('carryBabyMove').onclick=()=>{babyTransformMode='translate';select('baby');};
+  el('carryBabyRotate').onclick=()=>{babyTransformMode='rotate';select('baby');};
   el('carrySelectAnchor').onclick=()=>select('anchor');
   el('carrySelectBack').onclick=()=>select('back');
   el('carrySelectLeft').onclick=()=>select('left');
@@ -804,7 +822,7 @@
     if(editingBaby)return true;
     savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
     state.carryable=normalized(babyDraft||pose.forSize(babyPortraitWidth,babyPortraitHeight)); // Use the current portrait dimensions if returning after a Random Baby roll.
-    editingBaby=true;root.visible=false;babyReference.visible=activeEditorMode==='carry';
+    editingBaby=true;babyTransformMode='translate';root.visible=false;babyReference.visible=activeEditorMode==='carry';
     babyRotateProxy.visible=activeEditorMode==='carry';
     babyPoseView='anchor';createGuides();select('baby');setHoldingVisibility();frameHoldingPreview();
     if(!babyPortraitModel)void randomBaby(); // Show a real randomized child immediately, not an empty blue reference.
