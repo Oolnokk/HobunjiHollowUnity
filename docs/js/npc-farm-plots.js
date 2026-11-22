@@ -311,6 +311,9 @@
     debug.jobsDone += 1;
     debug.lastJob = { plot: plot.id, job: claim.job, c: claim.c, r: claim.r, at: Date.now() };
     refreshTile(plot, claim.c, claim.r);
+    if (claim.job === 'dig') for (const [dc, dr] of [[0,-1],[1,0],[0,1],[-1,0]]) {
+      if (plotTileAt(plot, claim.c + dc, claim.r + dr)) refreshTile(plot, claim.c + dc, claim.r + dr);
+    } // Open a newly dug trench into its neighbours without retaining an old internal bank.
     scheduleSave();
   }
 
@@ -352,11 +355,12 @@
   function onNewDay() {
     for (const plot of plotsById.values()) {
       if (!plot.managed || plot.grid) continue; // The farm's own grid grows, waters and silts itself.
+      let silted = false; // A later cell's silting can change the neighbouring tile's bank geometry.
       for (const t of plot.tiles) {
         const s = stateOf(plot, t.c, t.r);
         if (!s) continue;
         if (plot.kind === 'dig') {
-          if (s.dug && rainedToday && Math.random() < SILT_CHANCE) { s.dug = false; s.water = 0; }
+          if (s.dug && rainedToday && Math.random() < SILT_CHANCE) { s.dug = false; s.water = 0; silted = true; }
         } else if (s.tilled && s.crop) {
           const def = cropDef(s.crop);
           s.age = num(s.age, 0) + 1;
@@ -367,23 +371,74 @@
         }
         refreshTile(plot, t.c, t.r);
       }
+      if (silted) for (const t of plot.tiles) refreshTile(plot, t.c, t.r); // Re-evaluate seams after every affected tile has completed its day transition.
     }
     rainedToday = false;
     scheduleSave();
   }
 
   // ── Drawing ───────────────────────────────────────────────────────────
-  const shared = {};
+  const shared = {}; // One set of soil geometries/material fallbacks for every NPC field tile.
   function sharedAssets() {
     const THREE = window.THREE;
     if (shared.patch || !THREE) return shared;
-    shared.patch = new THREE.BoxGeometry(0.94, 0.05, 0.94);
-    shared.pit = new THREE.BoxGeometry(0.94, 0.04, 0.94);
+    const makeSoilSurface = trench => {
+      const geometry = new THREE.PlaneGeometry(1, 1, 8, 8); // Full tile coverage avoids green seams between contiguous cultivated beds.
+      geometry.rotateX(-Math.PI / 2);
+      const position = geometry.getAttribute('position');
+      for (let i = 0; i < position.count; i++) {
+        const x = position.getX(i), z = position.getZ(i);
+        const edge = Math.max(Math.abs(x), Math.abs(z));
+        // The original grass floor remains intact under an NPC trench: a
+        // raised, sloping lip makes the recessed basin visible without
+        // cutting a hole in the merged town heightfield.
+        const height = trench
+          ? 0.016 + 0.075 * Math.max(0, Math.min(1, (edge - 0.23) / 0.25))
+          : 0.043 + 0.012 * (0.5 + 0.5 * Math.cos(x * Math.PI * 6.25));
+        position.setY(i, height);
+      }
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+      return geometry;
+    };
+    shared.patch = makeSoilSurface(false); // Subtle hoe furrows on the planted beds.
+    shared.pit = makeSoilSurface(true); // Recessed-looking irrigation channel with raised banks.
     shared.water = new THREE.PlaneGeometry(0.8, 0.8);
-    shared.tilledMat = new THREE.MeshLambertMaterial({ color: 0x6b4a30 });
-    shared.pitMat = new THREE.MeshLambertMaterial({ color: 0x2d1d10 });
+    shared.tilledMat = new THREE.MeshLambertMaterial({ color: 0x6b4a30 }); // Fallback until shared terrain textures are available.
+    shared.pitMat = new THREE.MeshLambertMaterial({ color: 0x2d1d10 }); // Fallback for trench soil.
     shared.waterMat = new THREE.MeshBasicMaterial({ color: 0x3b6f9a, transparent: true, opacity: 0.85 });
     return shared;
+  }
+
+  // Cardinal connections to other *dug* cells in this plot; unfinished/silted
+  // cells have banks rather than an open water channel. North/East/South/West.
+  function connectedDigMask(plot, c, r) {
+    let mask = 0; // Shared by the trench rim, water coverage, and draw signature.
+    for (const [dc, dr, bit] of [[0,-1,1],[1,0,2],[0,1,4],[-1,0,8]]) {
+      if (plotTileAt(plot, c + dc, r + dr) && tileOf(plot, c + dc, r + dr).dug) mask |= bit;
+    }
+    return mask;
+  }
+
+  function worldUvSoilGeometry(base, c, r, trenchMask = null) {
+    const geometry = base.clone(); // Tile-owned UVs and (for trenches) border-specific banks.
+    const positions = geometry.getAttribute('position'); // Local X/Z after the ground-plane rotation.
+    const uvs = geometry.getAttribute('uv'); // Absolute world UVs preserve the game's multi-tile soil texture.
+    const bank = d => Math.max(0, Math.min(1, (d - 0.23) / 0.27)); // Outer lip reaches soil height at the tile boundary.
+    for (let i = 0; i < uvs.count; i++) {
+      const x = positions.getX(i), z = positions.getZ(i);
+      uvs.setXY(i, c + 0.5 + x, r + 0.5 + z);
+      if (trenchMask !== null) {
+        const lip = Math.max(
+          trenchMask & 1 ? 0 : bank(-z), trenchMask & 2 ? 0 : bank(x),
+          trenchMask & 4 ? 0 : bank(z), trenchMask & 8 ? 0 : bank(-x),
+        );
+        positions.setY(i, 0.016 + 0.075 * lip); // Adjacent dug cells form one continuous basin instead of separate raised rectangles.
+      }
+    }
+    uvs.needsUpdate = true;
+    if (trenchMask !== null) { positions.needsUpdate = true; geometry.computeVertexNormals(); }
+    return geometry; // disposeTile releases its position/UV buffer after a job changes state.
   }
 
   function visualFor(areaId) {
@@ -417,7 +472,8 @@
     const s = tileOf(plot, c, r);
     const growth = s.crop && cropDef(s.crop) ? Math.min(1, num(s.age, 0) / cropDef(s.crop).growDays) : 0;
     const bucket = growth < 0.15 ? 0 : growth < 0.45 ? 1 : growth < 0.8 ? 2 : 3;
-    const sig = `${s.tilled ? 1 : 0}${s.dug ? 1 : 0}${s.water ? 1 : 0}|${s.crop || ''}|${bucket}${s.ready ? 'r' : ''}`;
+    const trenchMask = s.dug ? connectedDigMask(plot, c, r) : 0; // Rebuild when a connecting trench is dug or silts in.
+    const sig = `${s.tilled ? 1 : 0}${s.dug ? 1 : 0}${s.water ? 1 : 0}|${s.crop || ''}|${bucket}${s.ready ? 'r' : ''}|${trenchMask}`;
     const existing = v.tiles.get(key);
     if (existing && existing.sig === sig) return;
     disposeTile(v, key);
@@ -426,18 +482,25 @@
     const y = num(deps.surfaceY?.(plot.area, c, r), 0);
     const objects = [];
     if (s.dug) {
-      const pit = new THREE.Mesh(assets.pit, assets.pitMat);
-      pit.position.set(c + 0.5, y + 0.02, r + 0.5);
+      const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'trench') || assets.pitMat; // Same PNG shade-fill as the player's trenches.
+      const pit = new THREE.Mesh(worldUvSoilGeometry(assets.pit, c, r, trenchMask), material);
+      pit.userData.ownGeometry = true; // disposeTile releases this tile's offset UV buffer.
+      pit.position.set(c + 0.5, y, r + 0.5);
       objects.push(pit);
       if (s.water) {
         const water = new THREE.Mesh(assets.water, assets.waterMat);
         water.rotation.x = -Math.PI / 2;
-        water.position.set(c + 0.5, y + 0.046, r + 0.5);
+        const x0 = trenchMask & 8 ? -0.5 : -0.4, x1 = trenchMask & 2 ? 0.5 : 0.4; // Extend water to any open west/east channel edge.
+        const z0 = trenchMask & 1 ? -0.5 : -0.4, z1 = trenchMask & 4 ? 0.5 : 0.4; // Extend water to any open north/south edge.
+        water.scale.set((x1 - x0) / 0.8, (z1 - z0) / 0.8, 1); // Shared 0.8 plane spans a continuous channel, not isolated puddles.
+        water.position.set(c + 0.5 + (x0 + x1) / 2, y + 0.046, r + 0.5 + (z0 + z1) / 2);
         objects.push(water);
       }
     } else {
-      const patch = new THREE.Mesh(assets.patch, assets.tilledMat);
-      patch.position.set(c + 0.5, y + 0.025, r + 0.5);
+      const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'tilled') || assets.tilledMat; // Reuse the authored canvas soil material, not a flat brown box.
+      const patch = new THREE.Mesh(worldUvSoilGeometry(assets.patch, c, r), material);
+      patch.userData.ownGeometry = true; // Always free this tile's own shifted UV geometry.
+      patch.position.set(c + 0.5, y, r + 0.5);
       objects.push(patch);
       if (s.crop) {
         const built = deps.buildCropMesh?.(s.crop, growth, !!s.ready, c, r);
