@@ -259,6 +259,8 @@ assert(!blocker.blocksAt(0,0,1,null,0,{y:gate.door.y-4}),
   'lower ground under the raised balcony is never blocked by a gate above it');
 player.onCliffBalcony=gate.shelf.id;
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
+assert.equal(Exterior.isPlayerSolvingMelody(),true,
+  'attack readiness senses the live plate immediately, before the next puzzle update tick');
 Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
@@ -307,6 +309,8 @@ assert(sounds.some(event=>event.key==='stoneBeat2'&&event.volume===.54&&event.pi
 
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
+assert.equal(Exterior.isPlayerSolvingMelody(),false,
+  'the player stepping away releases protection immediately, even before the puzzle update');
 Exterior.update(.01,area);
 assert(!gate.scoreBoard.visible,'stepping off the pressure plate hides both glyphs and their glows');
 assert.equal(Exterior.isPlayerSolvingMelody(),false,'stepping off releases the attack-readiness activity');
