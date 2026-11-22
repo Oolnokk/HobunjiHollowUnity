@@ -156,7 +156,9 @@ async function run() {
   assert.ok(backend.includes('getHeaderField("Location")'), 'Resumable sessions must use Google\'s issued upload location');
   assert.match(backend,/setRequestMethod\("POST"\)/, 'Never rely on unsupported HttpURLConnection PATCH');
   assert.match(backend,/getString\("tree"\)|optString\("tree"\)/);
-  assert.match(backend,/\.hobunji-previous-/);
+  const publisher = fs.readFileSync(path.join(root,
+    'android/app/src/main/java/com/oolnokk/hobunjihollow/AndroidDrivePublication.java'),'utf8');
+  assert.match(publisher,/\.hobunji-previous-/, 'Recovery backup names are produced by the publication policy');
   const core = fs.readFileSync(path.join(root, 'docs/js/local-save-folder-core.js'), 'utf8');
   for (const method of ['chooseFolder', 'chooseRecoveryFolder']) {
     const begin = core.indexOf('async function ' + method + '()');
