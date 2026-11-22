@@ -1979,7 +1979,7 @@
     if (!banditDirectional(actor)) return true; // Special NPC combat uses the unchanged stage and attack pipeline.
     const state = banditTurnState(target);
     const owner = banditAttackTurnOwner(target);
-    if (owner && owner !== actor) return false;
+    if (owner) return false; // An actor must not reacquire the same turn during its own Counter Shield riposte, which intentionally has no _banditAction pose owner.
     const preparer = banditChargeOwner(target);
     if (!owner && preparer && preparer !== actor && banditPreparedChargeHasPriority(preparer, target)) return false; // A ready, POSITIONED held attack takes the next free turn.
     state.attack = { actor, target }; // Released immediately after the final resolved hit, not after cosmetic weapon recovery.
@@ -2651,7 +2651,7 @@
       }
     }
     const priorityBlocked = preparer && preparer !== c && banditPreparedChargeHasPriority(preparer, targetPlayer); // Only a nearby, properly stationed readied charge gets priority.
-    const attackPermission = !banditDirectional(c) || ((!committedOwner || committedOwner === c) && !priorityBlocked);
+    const attackPermission = !banditDirectional(c) || (!committedOwner && !priorityBlocked); // Even the current owner cannot start another swing before its counter's strike resolves.
     const sectorAngle = slot && slot.sector != null ? banditFacingSlotAngle(slot, targetPlayer) : null;
     const positionAngle = Math.atan2(c.y - targetPlayer.y, c.x - targetPlayer.x);
     const inSector = sectorAngle == null || Math.abs(deps.angleDiff(positionAngle, sectorAngle)) <= Math.PI / 3; // A bandit must reach roughly its assigned quadrant before committing a strike.
