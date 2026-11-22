@@ -16,6 +16,7 @@ async function main() {
     .replace('      drawText(event, message);', '      /* canvas paint omitted in unit test */');
 
   let infant = true; // Emulates the authoritative saved family stage while verifying production age dispatch.
+  let noisesAvailable = true; // Simulates optional missing/empty infant word configuration.
   let proxyActive = false; // Distinguishes a baby in its cup, held by a parent, or thrown.
   let carryAnchor = null; // The visible burden returned by the existing family baby burden owner.
   let day = 10; // Test-day used for the ordinary daily greeting ledger.
@@ -28,7 +29,7 @@ async function main() {
     dispatchEvent(event) { events.push(event.detail); },
     RomanceFamily: {
       isBasketBaby: id => id === 'child_babble_test' && infant,
-      babyAmbientSound: id => id === 'child_babble_test' && infant ? 'Agoo!' : null,
+      babyAmbientSound: id => id === 'child_babble_test' && infant && noisesAvailable ? 'Agoo!' : null,
     },
     FamilyBabyBurdens: {
       isProxyActive: id => id === 'child_babble_test' && proxyActive,
@@ -77,6 +78,11 @@ async function main() {
   const basket = ambient.show(babyRoot, 'I want some tea.', { speakerId: walker.rec.id, vocabulary: false });
   assert.equal(basket.textPart.text, 'Agoo!', 'Even bypassed synonym text cannot make an infant say adult words');
   assert.equal(basket.root, babyRoot, 'A newborn resting in its basket uses the real visible NPC');
+
+  noisesAvailable = false;
+  assert.equal(ambient.show(babyRoot, 'I want some tea.', { speakerId: walker.rec.id }), null,
+    'If baby syllables cannot be loaded, newborns must stay silent rather than falling back to adult wording');
+  noisesAvailable = true;
 
   proxyActive = true;
   carryAnchor = { mapId: 'interior', group: carriedGroup };
