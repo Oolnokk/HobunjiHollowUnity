@@ -2061,7 +2061,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const beardAuthoring = resolveBeardHoodAuthoring(facialHair, resolvedFighter);
   const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride || beardAuthoring.mask;
   const tuftRoots = renderOptions?.beardHoodTuftRootsOverride || beardAuthoring.roots;
-  let negotiatedBeard = null, negotiatedHood = null, negotiation = null; // Prepared once before the beard's original draw stage; the hood is composited later.
+  let negotiatedBeard = null, negotiatedHood = null, negotiation = null, negotiationError = null; // Prepared before the beard's original stage; errors must not let protected hood pixels be carved.
   if (cutoutApi && facialHairLayers.length && hoodLayers.length
       && !hiddenCosmeticGroups.has(facialHair) && paintedBeardMask?.runs?.length) {
     const beardScratch = canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'); // Reused per portrait instance, not per redraw.
@@ -2085,10 +2085,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (!result.error) {
       negotiatedBeard = beardScratch;
       negotiatedHood = hoodScratch;
-      negotiation = { ...result,requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
+      negotiation = { ...result,maskPixels:result.approvedPixels,
+        requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
         limitedRoots:stretch.limited,skippedRoots:stretch.missingRing,
         deformationError:stretch.error||null }; // Counts exposed to mobile/gameplay diagnostics.
-    }
+    } else negotiationError=result.error;
   }
   const drawNegotiatedBeard = () => negotiatedBeard
     ? ctx.drawImage(negotiatedBeard,0,0,PORTRAIT_CW,PORTRAIT_CH)
@@ -2163,6 +2164,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (negotiatedHood) {
     ctx.drawImage(negotiatedHood,0,0,PORTRAIT_CW,PORTRAIT_CH);
     canvas.hobunjiBeardHoodCutout = negotiation;
+  } else if (negotiationError) {
+    drawBreathingLayers(hoodLayers); // Safe fallback: no unapproved hood cuts after failed readback.
+    canvas.hobunjiBeardHoodCutout = {applied:false,error:negotiationError};
   } else if (cutoutApi && hoodLayers.length && facialHairLayers.length
       && !hiddenCosmeticGroups.has(facialHair)
       && (paintedBeardMask?.runs?.length || tuftRoots?.length)) {
