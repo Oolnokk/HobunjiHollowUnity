@@ -84,8 +84,8 @@ for (const [kind, values] of Object.entries(expected)) {
   assert.deepEqual(plain(profiles.creatureShoulderGripDefaults[kind]), values.grip, kind + ' duplicate runtime grip defaults match canonical profile');
 }
 
-assert.equal(expected['voorg-ass'].scales.large.x, 1.1, 'Vorg-ass Large scale matches the October 25 Rig Coordinates export');
-assert.equal(expected['voorg-ass'].ground.large, 0.462, 'Vorg-ass Large ground offset matches the October 25 Rig Coordinates export');
+assert.equal(expected['voorg-ass'].scales.large.x, 1, 'Voorg-ass Large scale matches the November 22 animal rig export');
+assert.equal(expected['voorg-ass'].ground.large, 0.39, 'Voorg-ass Large ground offset matches the November 22 animal rig export');
 
 const listeners = new Map();
 windowStub.addEventListener = (type, callback) => listeners.set(type, callback);
