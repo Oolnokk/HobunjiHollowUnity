@@ -148,6 +148,38 @@ assert.equal(staminaRing.position.x, 0, 'the arc resets its position when the pu
 assert.equal(staminaRing.scale.x, 1, 'the arc resets its scale when the pulse ends');
 assert.equal(ResourceRings.debugSnapshot().dashedArcsBuilt, 2, 'unchanged ring geometry survives pulse updates');
 const oldDashGeometry = staminaRing.children.find(mesh => mesh.material?.opacity === 0.34).geometry;
+const initialHealth = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Must survive an unrelated Stamina-only rebuild.
+const initialHalo = ringHud.children[1]; // Must survive resource regeneration without a new target overlay.
+ringActor.exhaustion.blackStamina = 61;
+testNowMs = 5100;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), initialHealth, 'Stamina regeneration reuses Health meshes');
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaRing, 'Stamina regeneration updates its own arc');
+assert.equal(oldDashGeometry.disposed, true, 'superseded Stamina geometry is disposed without touching Health');
+assert.equal(ringHud.children[1], initialHalo, 'unchanged target halo is reused during regeneration');
+const staminaAfterRegen = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Checks the Stamina group survives later unrelated Health changes.
+ringActor.health = 79;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), initialHealth, 'Health change rebuilds only the Health arc');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRegen, 'Health change reuses Stamina meshes');
+const healthBeforeRisk = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Checks cross-resource orange risk dashes stay fresh.
+ringActor.afflictions.woundedStamina = 16;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeRisk, 'Wounded Stamina invalidates Health-risk dashes');
+const healthBeforeTarget = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Checks target-only updates never rebuild resource arcs.
+const staminaBeforeTarget = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Used for target-only arc identity assertions.
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: false });
+assert.equal(ringHud.children.length, 1, 'clearing a target removes only its indicator');
+assert.equal(ringHud.children[0], fighterRings, 'resource wrapper remains parented');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'target removal preserves Health geometry');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeTarget, 'target removal preserves Stamina geometry');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.equal(ringHud.children.length, 2, 'retargeting restores an independent target halo');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'retargeting preserves Health geometry');
+assert(ResourceRings.debugSnapshot().resourceArcReuses > 0, 'incremental arc reuse is observable in the existing debug snapshot');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'changing radius correctly invalidates the arc');
+assert.equal(ringHud.children[1].userData.hobunjiTargetRadius, 0.7, 'changing radius rebuilds target indicator to match');
 ResourceRings.disposeRingHud(ringActor);
 assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geometry');
 assert.equal(ringScene.children.length, 0);

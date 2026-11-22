@@ -401,20 +401,64 @@
     group.add(makeDashedArc(inner + radius * .08, outer - radius * .08, startAngle, endAngle, 0xff9b2f, .96, spec.y + .03));
   }
 
-  function buildGroundRingForFighter(entity, radius) {
-    const group = new THREE.Group();
-    // Matches the source demo's ringGroup.rotation.y = Math.PI/2 — the
-    // HEALTH_ARC/STAMINA_ARC angles above are authored against that same
-    // fixed offset, so the group needs it too or the whole ring reads 90deg
-    // off from its intended facing.
+  // Geometry keys are intentionally resource-specific. In a crowded fight,
+  // Stamina is spent and regenerated much more often than Health or Footing.
+  // Their unchanged mesh trees, material programs and target halo should survive.
+  let resourceArcRebuilds = 0; // Read by debugSnapshot to measure actual arc geometry churn.
+  let resourceArcReuses = 0; // Read by debugSnapshot to measure reuse after unrelated resource changes.
+  let targetHaloRebuilds = 0; // Read by debugSnapshot to measure target-halo allocations.
+
+  function resourceArcSignature(entity, resourceKey, radius) {
+    const q = value => Math.round(Number(value) || 0);
+    const { max, current } = resourceFields(entity, resourceKey);
+    const afflictionParts = []; // Captures only status segments belonging to this resource.
+    const RS = window.ResourceSystem;
+    for (const [id, definition] of Object.entries(RS.AFFLICTIONS)) {
+      if (definition.resource === resourceKey) afflictionParts.push(id + ":" + q(RS.getAffliction(entity, id)));
+    }
+    // The orange Health-risk dashes depend on *Stamina* afflictions as well.
+    const healthRisk = resourceKey === "health"
+      ? q(RS.getAffliction(entity, "woundedStamina")) + ":" + q(RS.getAffliction(entity, "infectedStamina")) : "";
+    const exhaustion = resourceKey === "stamina"
+      ? String(!!entity.exhaustion.active) + ":" + entity.exhaustion.blackStamina : "";
+    return [q(current), max, radius, afflictionParts.join(","), healthRisk, exhaustion].join("|");
+  }
+
+  function buildGroundRingForFighter(entity, radius, previous = null) {
+    const group = previous || new THREE.Group();
+    // Keep the same rotated, directly parented resource groups so pulses and
+    // ground projection apply to the identical mesh topology as before.
     group.rotation.y = Math.PI / 2;
-    const healthSpec = { resourceKey: "health", ...HEALTH_ARC, color: HEALTH_COLOR, innerMul: .74, outerMul: .92, y: .018 };
-    const staminaSpec = { resourceKey: "stamina", ...STAMINA_ARC, color: entity.exhaustion.active ? EXHAUSTED_COLOR : STAMINA_COLOR, innerMul: .74, outerMul: .92, y: .02 };
-    if (!isResourceHomeostatic(entity, "health")) group.add(buildGroundResourceArc(entity, healthSpec, radius));
-    if (!isResourceHomeostatic(entity, "stamina")) group.add(buildGroundResourceArc(entity, staminaSpec, radius));
-    if (Number.isFinite(entity.maxFooting) && !isResourceHomeostatic(entity, "footing")) {
-      const footingSpec = { resourceKey: "footing", ...FOOTING_ARC, color: FOOTING_COLOR, innerMul: .74, outerMul: .92, y: .022 };
-      group.add(buildGroundResourceArc(entity, footingSpec, radius));
+    const keys = group.userData.hobunjiArcSignatures || (group.userData.hobunjiArcSignatures = {});
+    const specs = [
+      { resourceKey: "health", ...HEALTH_ARC, color: HEALTH_COLOR, innerMul: .74, outerMul: .92, y: .018 },
+      { resourceKey: "stamina", ...STAMINA_ARC, color: entity.exhaustion.active ? EXHAUSTED_COLOR : STAMINA_COLOR, innerMul: .74, outerMul: .92, y: .02 },
+      { resourceKey: "footing", ...FOOTING_ARC, color: FOOTING_COLOR, innerMul: .74, outerMul: .92, y: .022 },
+    ]; // Preserves the original Health -> Stamina -> Footing draw ordering.
+    let orderChanged = false; // Sort the direct children only when an arc was inserted or removed.
+    for (const spec of specs) {
+      const id = spec.resourceKey;
+      const active = (id !== "footing" || Number.isFinite(entity.maxFooting)) && !isResourceHomeostatic(entity, id);
+      const current = group.children.find(child => child.userData.resourceKey === id);
+      const signature = active ? resourceArcSignature(entity, id, radius) : "";
+      if (active && current && keys[id] === signature) {
+        resourceArcReuses++;
+        continue;
+      }
+      if (current) {
+        group.remove(current);
+        disposeObject(current);
+        orderChanged = true;
+      }
+      keys[id] = signature;
+      if (!active) continue;
+      group.add(buildGroundResourceArc(entity, spec, radius));
+      resourceArcRebuilds++;
+      orderChanged = true;
+    }
+    if (orderChanged) {
+      const order = { health: 0, stamina: 1, footing: 2 }; // Keeps equivalent translucent draw order after partial replacements.
+      group.children.sort((a, b) => order[a.userData.resourceKey] - order[b.userData.resourceKey]);
     }
     return group;
   }
@@ -531,9 +575,25 @@
     const key = makeHudKey(entity) + "|" + radius + "|" + isTarget;
     if (key !== entity._ringHudKey) {
       entity._ringHudKey = key;
-      clearGroup(entity._ringHud);
-      entity._ringHud.add(buildGroundRingForFighter(entity, radius));
-      if (isTarget) entity._ringHud.add(buildTargetIndicatorRings(radius));
+      const previousResourceGroup = entity._ringHud.children[0];
+      if (previousResourceGroup) buildGroundRingForFighter(entity, radius, previousResourceGroup);
+      else entity._ringHud.add(buildGroundRingForFighter(entity, radius));
+
+      // Target rings have no dependency on Health/Stamina changes: preserve
+      // them until the selected target or the world's radius actually changes.
+      const halo = entity._ringHud.children[1];
+      if (!isTarget || (halo && halo.userData.hobunjiTargetRadius !== radius)) {
+        if (halo) {
+          entity._ringHud.remove(halo);
+          disposeObject(halo);
+        }
+      }
+      if (isTarget && !entity._ringHud.children[1]) {
+        const nextHalo = buildTargetIndicatorRings(radius);
+        nextHalo.userData.hobunjiTargetRadius = radius;
+        entity._ringHud.add(nextHalo);
+        targetHaloRebuilds++;
+      }
     }
     applyAfflictionPulseTransform(entity._ringHud, entity, nowMs);
     return entity._ringHud;
@@ -550,7 +610,7 @@
   window.ResourceRings = {
     updateRingHud,
     disposeRingHud,
-    debugSnapshot: () => ({ dashedArcsBuilt, dashMeshesAvoided: dashedArcsBuilt * (DASH_COUNT - 1) }),
+    debugSnapshot: () => ({ dashedArcsBuilt, dashMeshesAvoided: dashedArcsBuilt * (DASH_COUNT - 1), resourceArcRebuilds, resourceArcReuses, targetHaloRebuilds }),
     parseCssColor,
     // Exposed so other visual systems (game.js's weapon ghost-trail) can
     // reuse the exact same per-affliction color the resource bars themselves

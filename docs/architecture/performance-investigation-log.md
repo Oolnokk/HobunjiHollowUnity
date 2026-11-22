@@ -1,5 +1,24 @@
 # Performance investigation log
 
+## 22 Nov 2026: incremental NPC combat resource rings
+
+When a fighter's rounded Stamina value changes, the previous ring updater
+disposed and rebuilt **all** active Health/Stamina/Footing arc meshes and
+both target-lock halo meshes, even though only Stamina changed. The existing
+whole-point HUD key still limits update frequency; inside an actual update,
+each resource now has its own status-aware signature and reuses its existing
+mesh tree whenever unchanged. The Health signature additionally includes
+Wounded/Infected Stamina because those create orange Health-risk dashes.
+Target halo meshes survive every resource change, and rebuild only on
+target selection or ring radius changes. Full homeostasis and despawn still
+dispose the geometry. No new rendering pass or idle per-frame scene walk.
+
+`ResourceRings.debugSnapshot()` exposes `resourceArcRebuilds`,
+`resourceArcReuses` and `targetHaloRebuilds` for profiling. The existing
+source-executed `test-resource-rings.js` now checks reuse, disposal,
+cross-resource affliction invalidation, target changes and radius changes.
+Device FPS and actual allocation reductions remain to be measured.
+
 ## 22 Nov 2026: overlapping dens and a barbarian camp at night
 
 Ground detours and cliff-entry searches reuse collision results within one A*
