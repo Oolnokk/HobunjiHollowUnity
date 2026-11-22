@@ -22,7 +22,9 @@
     const family = config.families?.[familyId] || null; // Family defaults are used unless an individual generated table overrides them.
     const character = config.characters?.[id] || null; // Explicit character settings and generated table take precedence over family defaults.
     if (!family && !character) return null;
-    const sliders = normalizeSliders({ ...DEFAULT_SLIDERS, ...(family?.sliders || {}), ...(character?.sliders || {}) }); // Independent axes never derive formality from sophistication.
+    const familySliders = normalizeSliders({ ...DEFAULT_SLIDERS, ...(family?.sliders || {}) }); // Existing personality defines the center of the vocabulary range.
+    const seeded = window.AmbientVocabularyRules?.seedSliders?.(familySliders, id) || familySliders; // Same stable per-NPC variation as the editor's slider preview.
+    const sliders = normalizeSliders({ ...seeded, ...(character?.sliders || {}) }); // An explicitly generated NPC table/sliders always overrides the initial variation.
     return { sliders, familyId, table: character?.table || family?.table || null, characterId: id };
   }
   function generateTable(lexicon, sliders, speakerId) {
