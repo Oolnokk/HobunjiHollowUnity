@@ -123,6 +123,8 @@
       entry.walker = walker || entry.walker;
       entry.persist = persist;
       refreshProxyArt(entry, entry.walker);
+      if (entry.burden.mapId === currentArea() && !window.Shattercasks?.rebindRegisteredBurden?.(entry.burden))
+        debug.lastError = 'infant burden scene registry needs recovery'; // A rebuilt farmhouse scene must retain the SAME physical baby.
       return entry;
     }
     const api = window.Shattercasks, area = currentArea(); // Shared Burden owns real hands, stowing, throws and safe landing.
