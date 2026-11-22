@@ -49,6 +49,43 @@ const rawHead = guard.nextScale(original, 'head', 75, .75);
 assert.equal(rawHead.head, 1, '75% raw head with 75% authored portrait corresponds to unchanged native-size head');
 assert.equal(rawHead.legLength, original.legLength, 'raw Head edits cannot reset independently stretched legs');
 
+// The actual anatomy-config writer must decouple inherited hand size before
+// changing the foot multiplier. The older hand model inherits Foot scale by
+// default; changing Foot must never also silently resize the hands.
+function productionFunction(source, name) {
+  const start = source.indexOf('function ' + name + '('); // Extracts exactly the production function, preserving its authored math.
+  assert.ok(start >= 0, name + ' exists in the current editor');
+  const open = source.indexOf('{', source.indexOf(')', start));
+  let depth = 1, end = open + 1;
+  while (depth > 0 && end < source.length) {
+    if (source[end] === '{') depth++;
+    else if (source[end] === '}') depth--;
+    end++;
+  }
+  assert.equal(depth, 0, 'source function ends cleanly');
+  return source.slice(start, end);
+}
+let handRefreshes = 0; // Verifies the first foot edit freezes prior hand size, but further foot drags do not repeatedly reload GLBs.
+const handConfigData = { speciesScaleOverrides: {} };
+const authorWindow = {
+  SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { proceduralFeet: { footScale: { default: 1 } } } } } },
+  HobunjiHandModelProfiles: {
+    data: handConfigData,
+    mutate(change) { change(handConfigData); handRefreshes++; },
+  },
+};
+const configureAnatomy = vm.runInNewContext('(' + productionFunction(comparison, 'applyAnatomyConfig') + ')',
+  { window: authorWindow, normalizeSpecies: v => v, normalizeGender: v => v });
+const independentAnatomy = { species: 'mao-ao', gender: 'male', anatomy: { handScale: 1, footScale: 1.5 } };
+configureAnatomy(independentAnatomy);
+assert.equal(handConfigData.speciesScaleOverrides['mao-ao'].male, 1,
+  'the original 100% hand size becomes an explicit override before changing inherited foot scale');
+assert.equal(authorWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale['mao-ao'].male, 1.5);
+independentAnatomy.anatomy.footScale = 1.75;
+configureAnatomy(independentAnatomy);
+assert.equal(handRefreshes, 1, 'the hand GLB is rebuilt only once, not every time the independent Foot slider moves');
+assert.equal(handConfigData.speciesScaleOverrides['mao-ao'].male, 1, 'hands stay 100% after repeated 175% foot edits');
+
 const characters = { 'mao-ao::male': { species: 'mao-ao', gender: 'male', anatomy: {
   portraitScale: 1.1, handScale: .9, footScale: 1.05, rigScaleY: 1.12,
 } } }; // Canonical authored part sizes must be recoverable after Reset.
