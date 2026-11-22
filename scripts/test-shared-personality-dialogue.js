@@ -165,6 +165,7 @@ assert.match(festivalLine, /This was the day/, 'Gorkunash dialogue overrides sha
 assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('dzibim_khibu').heardTrees.some(id => id.startsWith('gorkunash_')), 'Gorkunash conversation routed through its original provider');
 festivalOn = false;
 spouseOn = true;
+byId.sloomi.dialogueTrees = byId.sloomi.dialogueTrees.filter(tree => !tree.generatedFromShopAccess); // Away from the shop shortcut, Talk should offer normal spouse dialogue; at the counter, Shop/Chat retains priority.
 const spouseLine = say(byId.sloomi); // Sloomi has a heard fallback and eligible Reserved shared speech.
 assert.ok(spouseLine && !config.personalityFamilies.reserved.some(entry => entry.text === spouseLine), 'married Sloomi speaks her spouse-specific content before Reserved dialogue');
 assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('sloomi').heardTrees.some(id => id.startsWith('spouse_care_')), 'spouse provider routed the dialogue tree');
