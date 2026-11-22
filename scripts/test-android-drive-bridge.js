@@ -157,6 +157,16 @@ async function run() {
   assert.match(backend,/setRequestMethod\("POST"\)/, 'Never rely on unsupported HttpURLConnection PATCH');
   assert.match(backend,/getString\("tree"\)|optString\("tree"\)/);
   assert.match(backend,/\.hobunji-previous-/);
+  const core = fs.readFileSync(path.join(root, 'docs/js/local-save-folder-core.js'), 'utf8');
+  for (const method of ['chooseFolder', 'chooseRecoveryFolder']) {
+    const begin = core.indexOf('async function ' + method + '()');
+    const picker = core.indexOf('window.showDirectoryPicker(', begin);
+    const beforePicker = core.slice(begin, picker);
+    assert.ok(begin >= 0 && picker > begin, method + ' must preserve native folder selection');
+    assert.ok(beforePicker.includes('stopAutoSync()'), method + ' must pause autosaving before the native picker');
+    assert.ok(beforePicker.includes('while (_syncPromise) await _syncPromise'),
+      method + ' must drain existing saves before changing the native Drive root');
+  }
   assert.match(activity,/PICKER_OAUTH_TRIGGER/);
   assert.match(activity,/setOptOutIncludingGrantedScopes\(true\)/);
   assert.match(activity,/getGrantedScopes\(\)/, 'Partial Google OAuth grants must not permit remote save writes');
