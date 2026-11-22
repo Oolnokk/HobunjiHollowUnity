@@ -20,7 +20,7 @@ const male = defaults.scaleFor('longoran', 'male'); // Nov 22 lanky/thick-framed
 assert.deepEqual(JSON.parse(JSON.stringify(male)), { x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 });
 const female = defaults.scaleFor('longoran', 'female');
 assert.deepEqual(JSON.parse(JSON.stringify(female)), { x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 });
-assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.675, 'Tletingan keeps its own short/stocky default, independent of Longoran');
+assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.6075, 'Tletingan keeps its own short/stocky default, independent of Longoran');
 
 // Execute the actual Full Character Scale save bridge: the old 200% cap used to turn a valid female height of 209.4% back into 200% after reload.
 function restoreScaleBridge(savedScales) {

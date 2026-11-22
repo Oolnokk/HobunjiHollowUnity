@@ -16,8 +16,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(values['mammakhbuur::female'])), { x:
 assert.deepEqual(JSON.parse(JSON.stringify(values['engh-sho::male'])), { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 });
 assert.deepEqual(JSON.parse(JSON.stringify(values['engh-sho::female'])), { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 });
 assert.deepEqual(JSON.parse(JSON.stringify(values['mao-ao::male'])), { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 });
-assert.deepEqual(JSON.parse(JSON.stringify(values['kenkari::male'])), { x: 1.225, y: 1.225, head: 1, offsetY: 0 });
-assert.deepEqual(JSON.parse(JSON.stringify(values['kenkari::female'])), { x: 1.1, y: 1.1, head: 1, offsetY: 0 });
+assert.deepEqual(JSON.parse(JSON.stringify(values['kenkari::male'])), { x: 1.1025, y: 1.1025, head: 0.9, offsetY: 0 }); // v27: -10% full body.
+assert.deepEqual(JSON.parse(JSON.stringify(values['kenkari::female'])), { x: 0.99, y: 0.99, head: 0.9, offsetY: 0 }); // v27: -10% full body.
 assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::male'])), { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 });
 assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::female'])), { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 });
 
@@ -27,10 +27,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::female'])), { x: 1
 const pass = {
   'longoran::male': { x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 },
   'longoran::female': { x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 },
-  'tletingan::male': { x: 0.675, y: 0.9, legLength: 0.75, head: 0.638, offsetY: 0 },
-  'tletingan::female': { x: 0.771, y: 0.986, legLength: 0.814, head: 0.728, offsetY: 0 },
-  'nuhongan::male': { x: 0.654, y: 0.587, legLength: 0.461, head: 0.671, offsetY: 0 },
-  'nuhongan::female': { x: 0.71, y: 0.622, legLength: 0.488, head: 0.755, offsetY: 0 },
+  'tletingan::male': { x: 0.6075, y: 0.81, legLength: 0.675, head: 0.5742, offsetY: 0 },
+  'tletingan::female': { x: 0.6939, y: 0.8874, legLength: 0.7326, head: 0.6552, offsetY: 0 },
+  'nuhongan::male': { x: 0.5886, y: 0.5283, legLength: 0.4149, head: 0.6039, offsetY: 0 },
+  'nuhongan::female': { x: 0.639, y: 0.5598, legLength: 0.4392, head: 0.6795, offsetY: 0 },
 };
 for (const [key, tuple] of Object.entries(pass)) {
   assert.deepEqual(JSON.parse(JSON.stringify(values[key])), tuple, key);
@@ -39,6 +39,6 @@ for (const [key, tuple] of Object.entries(pass)) {
 assert(values['longoran::male'].legLength > values['longoran::male'].y, 'Longorans are lanky: legs outgrow the portrait');
 assert(values['nuhongan::male'].legLength < values['tletingan::male'].legLength && values['nuhongan::male'].y < values['tletingan::male'].y,
   'Nuhongans are shorter and stubbier than Tletingans');
-assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 26, 'shipping scale revision must change when species defaults change');
+assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 27, 'shipping scale revision must change when species defaults change');
 
 console.log('Only the intended Full Character Scale edits and proportional Mammakhbuur female values are applied.');

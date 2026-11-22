@@ -249,10 +249,12 @@
       'longoran::male': [{ x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 }, { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }, { x: 1.15, y: 1.4, head: 1.1, offsetY: -0.055 }],
       'longoran::female': [{ x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 },
         { x: 1.130294117647059, y: 2.0941176470588236, head: 1.0640073529411764, offsetY: -0.055 }, { x: 1.1, y: 2.25, head: 1.05, offsetY: -0.055 }],
-      'tletingan::male': [{ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }, { x: 0.9, y: 1.2, head: 0.85, offsetY: 0 }],
-      'tletingan::female': [{ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }, { x: 0.9, y: 1.15, head: 0.85, offsetY: 0 }],
-      'nuhongan::male': [{ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }, { x: 0.78, y: 0.7, head: 0.8, offsetY: 0 }],
-      'nuhongan::female': [{ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }, { x: 0.8, y: 0.7, head: 0.85, offsetY: 0 }],
+      'tletingan::male': [{ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }, { x: 0.9, y: 1.2, head: 0.85, offsetY: 0 }, { x: 0.675, y: 0.9, head: 0.638, offsetY: 0 }],
+      'tletingan::female': [{ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }, { x: 0.9, y: 1.15, head: 0.85, offsetY: 0 }, { x: 0.771, y: 0.986, head: 0.728, offsetY: 0 }],
+      'nuhongan::male': [{ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }, { x: 0.78, y: 0.7, head: 0.8, offsetY: 0 }, { x: 0.654, y: 0.587, head: 0.671, offsetY: 0 }],
+      'nuhongan::female': [{ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }, { x: 0.8, y: 0.7, head: 0.85, offsetY: 0 }, { x: 0.71, y: 0.622, head: 0.755, offsetY: 0 }],
+      'kenkari::male': [{ x: 1.225, y: 1.225, head: 1, offsetY: 0 }],
+      'kenkari::female': [{ x: 1.1, y: 1.1, head: 1, offsetY: 0 }],
     }[key];
     const scale = normalizedRigScale(value); // Current fields are normalized once before comparing with the old shipped defaults.
     const matches = candidate => Object.keys(candidate).every(field => Math.abs(scale[field] - candidate[field]) <= 0.000051);
