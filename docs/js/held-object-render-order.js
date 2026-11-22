@@ -843,6 +843,12 @@
     return 'material.opaque';
   }
 
+  function isHeldBabyForegroundItem(item) {
+    // Fixed child/owner priority even when Dev Companion manually reorders unrelated layer classes.
+    return xrayRule('baby.carrierForeground') === 'on'
+      && item?.object?.userData?.hobunjiFamilyBabyPhysicalCarry === true
+      && Number(item.renderOrder) >= 30; // Stowed and dropped infants never receive this privileged pass rank.
+  }
   function protectedDrawPhase(item) {
     // Three's -100000 render-time pose sentinels must precede visible geometry;
     // >=900 overlay art and the 100000 cloud depth masks must retain their late
@@ -885,8 +891,8 @@
       window.XrayHierarchy.layerRank('actor.front'), window.XrayHierarchy.layerRank('actor.rear')) : 0; // Reserve one manual-rank slot for the owner/pet composite.
     const rank = item => {
       if (!rankCache.has(item)) {
-        const value = pairFace(item)
-          ? petManualRankAnchor + drawOrder(item) * 0.001
+        const value = isHeldBabyForegroundItem(item) ? 10000
+          : pairFace(item) ? petManualRankAnchor + drawOrder(item) * 0.001
           : window.XrayHierarchy.layerRank(visualLayerFor(item));
         rankCache.set(item, value);
       }
@@ -911,7 +917,7 @@
       if (!actorSortKeyCache.has(item)) {
         const actor = actorRank(item);
         const face = pairFace(item);
-        const category = window.XrayHierarchy.layerRank(visualLayerFor(item));
+        const category = isHeldBabyForegroundItem(item) ? 10000 : window.XrayHierarchy.layerRank(visualLayerFor(item));
         actorSortKeyCache.set(item, actor && Number.isFinite(actor.depth)
           ? {
               primary: petManualRankAnchor, depth: -actor.depth,
