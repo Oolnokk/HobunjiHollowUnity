@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const source = fs.readFileSync('docs/tools/furniture-avatar-author/carryable-objects.js', 'utf8');
 const html = fs.readFileSync('docs/tools/furniture-avatar-author/index.html', 'utf8');
+const profileSource = fs.readFileSync('docs/config/family-baby-carry-pose.js', 'utf8'); // Shared authoritative portrait-unit conversion.
 const start = source.indexOf('  function availableBabyIdentities() {');
 const end = source.indexOf('  function editBaby(){', start);
 assert(start >= 0 && end > start, 'random baby renderer is a separable, testable editor function');
@@ -25,7 +26,7 @@ const reference = {
   remove(model) { const index = children.indexOf(model); if (index >= 0) children.splice(index, 1); model.parent = null; },
 };
 const guide = { visible: true };
-let frames = 0, syncs = 0, artLoads = 0, backFails = false;
+let frames = 0, syncs = 0, artLoads = 0, backFails = false, modelBuilds = 0, refreshes = 0;
 let pendingRender = null; // Optional deferred render controls an exit/reroll race without timers.
 const colorSource = {};
 const window = {
@@ -52,7 +53,8 @@ const window = {
     buildSinglePlaneAvatarModel(T, front, options) {
       const model = {
         userData: {
-          portraitModelWidth: .288, portraitModelHeight: .288,
+          portraitModelWidth: ++modelBuilds % 2 ? .288 : .216,
+          portraitModelHeight: modelBuilds % 2 ? .288 : .216, // Different species sizes exercise true newborn scale.
           neckRig: { headScaleJoint: { scale: {setScalar(v) { model.headFactor = v; }} },
           },
         },
@@ -63,22 +65,28 @@ const window = {
     },
   },
 };
+new Function('window',profileSource)(window); // Load the real shared profile API, not a duplicate test-only scaler.
+const state={ carryable: window.FamilyBabyCarryPose.forSize(.3,.3) }; // Existing editor draft initially represents a .30-unit placeholder.
 const three = { Mesh: class{}, PlaneGeometry: class{}, MeshBasicMaterial: class{}, CanvasTexture: class{}, DoubleSide: 2 };
 const mockDocument = { createElement(tag) {assert.equal(tag,'canvas');return {width:0,height:0};} };
 const environment = new Function('window','document','THREE','Math','el','babyReference','babyReferencePlane',
-  'syncHoldingPreview','frameHoldingPreview','disposeObject','log', `
+  'syncHoldingPreview','frameHoldingPreview','disposeObject','log','state','refreshGuides','renderControls', `
   const BABY_REFERENCE_WIDTH=.3,BABY_REFERENCE_HEIGHT=.3;
   let editingBaby=true,babyRenderTicket=0,babyPreviewRolls=0,babyPreviewStatus='',babyPortraitModel=null;
+  let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT,babyFrontCanvas=null;
   ${source.slice(start,end)}
   return {randomBaby,availableBabyIdentities,get status(){return babyPreviewStatus;},
     exit(){editingBaby=false;babyRenderTicket++;},
     enter(){editingBaby=true;},get count(){return babyPreviewRolls;},
+    get dimensions(){return [babyPortraitWidth,babyPortraitHeight];},
+    get portrait(){return babyFrontCanvas;},
     get current(){return babyPortraitModel;}};
 `)(window,mockDocument,three,Math,id=>controls[id],reference,guide,()=>syncs++,()=>frames++,
-  object=>disposed.push(object),(message,type)=>{messages.push(message);if(type==='warn')warnings.push(message);});
+  object=>disposed.push(object),(message,type)=>{messages.push(message);if(type==='warn')warnings.push(message);},
+  state,()=>refreshes++,()=>refreshes++);
 
 (async () => {
-  const originalGrips = JSON.stringify({left:{x:.12,y:.15,z:.015},right:{x:-.12,y:.15,z:.015}});
+  const originalGrips = window.FamilyBabyCarryPose.toProfile(state.carryable,.3,.3); // Portrait U/V/depth must survive every species reroll.
   assert.equal(environment.availableBabyIdentities().length,3,'only gender-valid loaded portrait species can be rolled');
   assert.equal(await environment.randomBaby(),true);
   const first = environment.current;
@@ -88,11 +96,19 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   assert.equal(first.options.neckRig,true,'infant portrait uses the existing head scaling bone');
   assert.equal(colorSource.noOutline,true,'PNG already has author ink and must not receive generated shell');
   assert.equal(guide.visible,false,'original blue reference is hidden when generated art exists');
-  assert(Math.abs(first.scale.x-.3/.288)<1e-8,'random preview fits fixed grip-reference width');
-  assert.equal(JSON.stringify({left:{x:.12,y:.15,z:.015},right:{x:-.12,y:.15,z:.015}}),originalGrips,
-    'random baby affects only the preview, never the hand grip values');
+  assert.equal(first.scale.x,1,'a newborn already scaled by PNGPlaneAvatar must not be scaled to the arbitrary .30 reference');
+  assert.equal(first.position.y,.288/2,'newborn stays at its actual portrait-height placement');
+  assert.equal(environment.dimensions[0],.288,'initial portrait width comes from the existing PNGPlaneAvatar dimensions');
+  assert.equal(state.carryable.handTargets.left.x,.288*.4,'the grip uses the actual baby width');
+  assert.deepEqual(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288),originalGrips,
+    'baby grip U/V/depth remain unchanged while resolving a placeholder into a real baby');
   assert.equal(await environment.randomBaby(),true,'subsequent random baby replaces the current preview');
   assert(environment.current!==first,'two rolls create different preview model instances');
+  assert.equal(environment.dimensions[0],.216,'smaller species keep their physically smaller portrait width');
+  assert.equal(environment.current.scale.x,1,'randomizing a smaller species never expands it to .30 units');
+  assert.equal(state.carryable.handTargets.left.x,.216*.4,'grip tracks the new portrait size instead of staying at an arbitrary world X');
+  assert.deepEqual(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216),originalGrips,
+    'unsaved grip coordinates survive random species size changes');
   assert(disposed.includes(first),'previous preview geometry is released');
   assert.equal(children.length,1,'no accumulating portraits between random rolls');
 
