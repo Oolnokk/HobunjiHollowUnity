@@ -47,6 +47,16 @@ ghostZone.tiles[3][3] = grass();
 const recovered = browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0});
 assert.equal(recovered?.x, 3);
 assert.equal(recovered?.y, 3);
+assert.equal(policy.reserveScenery(ghostZone,[{point:{col:3,row:3}}]),4,
+  'a corner landmark reserves every in-bounds tile of its local overhang without scanning the map');
+assert.equal(policy.isSceneryReserved(ghostZone,3,3),true);
+assert.equal(browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0}),null,
+  'a camp generated after a stone cannot stamp over its reserved physical footprint');
+policy.reserveScenery(ghostZone,[]);
+assert.equal(policy.isSceneryReserved(ghostZone,3,3),false,
+  'a regenerated zone may update its previous scenery reservations in place');
+assert.equal(browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0})?.x,3);
+
 
 const bigLocale = {
   x: 18, y: 17,
@@ -84,6 +94,16 @@ const tinyLayout = {cols:7,rows:7,tiles:tinyTiles,localeInstances:[{
   footprint:{x:1,y:1,w:5,h:5},
   blossomStartLandmark:{col:3,row:3,replacedTree:true}
 }]}; // A planted story boulder provides deterministic rendered-stone collision without needing WebGL.
+const temporaryOccupiedTiles = Array.from({length:32},()=>Array.from({length:32},()=>({type:'grass',elevTier:0}))); // A bandit camp already stamped before scenery plans its stone sites.
+for(let row=12;row<=16;row++) for(let col=12;col<=16;col++) temporaryOccupiedTiles[row][col].occupiedBy='bandit_tent';
+const occupiedLayout = {cols:32,rows:32,tiles:temporaryOccupiedTiles,localeInstances:[]};
+const independentSites = sceneryBrowser.WildernessLandmarkScenery.planForLayout('map_western_slope',occupiedLayout,'temporary-first');
+assert(independentSites.length>0,'the wilderness retains ordinary scenery outside stamped temporary locales');
+assert(independentSites.every(site=>Math.abs(site.point.col-14)>3 || Math.abs(site.point.row-14)>3),
+  'new permanent scenery must stay away from an existing temporary locale footprint');
+assert(independentSites.every(site=>policy.isSceneryReserved(occupiedLayout,site.point.col,site.point.row)),
+  'the exact planned sites are shared with any temporary locales that arrive later');
+
 const deps = {_zoneLayouts:new Map([['map_northern_cliffs',tinyLayout]]),getCurrentArea:()=> 'map_northern_cliffs',
   tothalWorldId:()=> 'world', currentTothalYear:()=> 12,TILE:64};
 const scenery=sceneryBrowser.WildernessLandmarkScenery;
