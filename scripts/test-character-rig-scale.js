@@ -31,8 +31,8 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
 const authoredDefaults = {
-  'tletingan::male': { x: 0.9, y: 1.2, head: 0.85, offsetY: 0 },
-  'tletingan::female': { x: 0.9, y: 1.15, head: 0.85, offsetY: 0 },
+  'tletingan::male': { x: 0.675, y: 0.9, head: 0.638, offsetY: 0 },
+  'tletingan::female': { x: 0.771, y: 0.986, head: 0.728, offsetY: 0 },
   'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
   'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
   'mao-ao::male': { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 },
