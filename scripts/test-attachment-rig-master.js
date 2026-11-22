@@ -234,6 +234,7 @@ const expectedSkeeriGround = { // Verifies the source Small Y is scaled to Mediu
   medium: skeeriSmallGroundY * (skeeriNativeWidths.medium / skeeriNativeWidths.small),
   small: skeeriSmallGroundY,
 };
+const expectedMediumSkeeriGround = { large: 0.375, medium: 0.26, small: 0.1 }; // The Medium sprite has independent floor calibrations from the November 22 export.
 const neutralSkeeriSizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed-width ruin varieties remain unscaled.
 const domesticSkeeriSizeScales = { // A domestic Small sprite must grow into Medium/Large in step with the exact floor-lift ratio.
   large: { x: skeeriNativeWidths.large / skeeriNativeWidths.small, y: skeeriNativeWidths.large / skeeriNativeWidths.small },
@@ -246,7 +247,7 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   assert.strictEqual(skeeri.kind, kind, kind + ' retains its own species key');
   assert.deepStrictEqual(plainAnimalRig(skeeri.chatheadFrame), expectedSkeeriChathead, kind + ' shares the approved idle-frame chathead crop');
   assert.deepStrictEqual(plainAnimalRig(skeeri.anchors.shoulderGrip), plainAnimalRig(pingdort.anchors.shoulderGrip), kind + ' copies Pingdort\'s full grip, including yaw and scale');
-  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), expectedSkeeriGround, kind + ' scales the source Small ground Y by Skeeri width');
+  assert.deepStrictEqual(plainAnimalRig(skeeri.groundOffsets), kind === 'skeeri-medium' ? expectedMediumSkeeriGround : expectedSkeeriGround, kind + ' uses its own authored ground calibration');
   assert.deepStrictEqual(plainAnimalRig(profiles.creatureShoulderGripDefaults[kind]), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' runtime duplicate defaults use the new grip');
   assert.deepStrictEqual(plainAnimalRig(skeeri.sizeScales), kind === 'skeeri-medium' ? skeeriSizeScales : kind === 'skeeri' ? domesticSkeeriSizeScales : neutralSkeeriSizeScales, kind + ' keeps native ruin sizes while scaling domestic inherited size with ground Y');
   assert.deepStrictEqual(plainAnimalRig(skeeri.saddleRule), {}, kind + ' retains its empty saddle rule');
@@ -276,7 +277,7 @@ for (const kind of ['skeeri', 'skeeri-small', 'skeeri-medium', 'skeeri-large']) 
   legacy.groundOffsets = { large: 0, medium: 0, small: 0 };
   if (kind === 'skeeri-medium') legacy.anchors.shoulderGrip.position = { x: 0, y: -0.16357451915740964, z: 0 }; // Exact retired Medium Skeeri grip only.
   const migrated = guard.reconcileProfiles({ creatures: { [kind]: legacy } }).creatures[kind];
-  assert.deepStrictEqual(plainAnimalRig(migrated.groundOffsets), expectedSkeeriGround, kind + ' obsolete zero floor table migrates');
+  assert.deepStrictEqual(plainAnimalRig(migrated.groundOffsets), kind === 'skeeri-medium' ? expectedMediumSkeeriGround : expectedSkeeriGround, kind + ' obsolete zero floor table migrates');
   assert.deepStrictEqual(plainAnimalRig(migrated.anchors.shoulderGrip.position), plainAnimalRig(pingdort.anchors.shoulderGrip.position), kind + ' old grip receives approved coordinates');
   const custom = plainAnimalRig(legacy); // A later hand-authored grip or positive floor table must not be mistaken for an obsolete stock value.
   custom.groundOffsets.small = 0.123;
