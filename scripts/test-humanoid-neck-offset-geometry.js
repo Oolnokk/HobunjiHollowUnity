@@ -1,7 +1,7 @@
 'use strict';
 // Run: node scripts/run-tests.js humanoid-neck-offset-geometry
 // Real portrait-geometry builder exercised without a WebGL renderer: four rig weights,
-// both faces, UVs, short head rotation, long placement and large species head offsets.
+// both faces, UVs, a 2.5-pixel head junction, and body vertices owned by the actual spine.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -54,7 +54,7 @@ function verifyPixelBand(size, headBottom, segmentsY) {
   const neckY = 0.5 - (headBottom + 0.5) / size;
   const geometry = ctx.buildSkinnedPlaneGeometry(THREE, 1, modelHeight, { x: 0, y: neckY, z: 0 }, {
     pixelWidth: size, pixelHeight: size, segmentsX: 6, segmentsY,
-    spineBaseY: neckY - 0.08, posteriorY: neckY - 0.42,
+    spineBaseY: neckY - 2.5 / size, posteriorY: neckY - 0.42, // The upper spline node now reaches the last sprite head pixel.
     headBoundsPx: { left: size * 0.3, right: size * 0.7 },
   });
   const { top, bottom } = geometry.userData.neckBandPx;
@@ -76,8 +76,14 @@ function verifyPixelBand(size, headBottom, segmentsY) {
       const bone = indices.array[i * 4 + j];
       return sum + (bone === 8 || bone === 9 ? weights.array[i * 4 + j] : 0);
     }, 0);
-    if (y < neckY - geometry.userData.blendHeight - 1e-5)
+    if (y < neckY - geometry.userData.blendHeight - 1e-5) {
       assert.ok(turn < 1e-5, 'no neck rotation influences torso below 2-3 source pixels');
+      const placement = [0, 1, 2, 3].reduce((sum, j) => {
+        const bone = indices.array[i * 4 + j]; // No torso vertex is allowed to inherit the oversized head-offset (7) or turning head (8/9).
+        return sum + (bone >= 7 && bone <= 9 ? weights.array[i * 4 + j] : 0);
+      }, 0);
+      assert.ok(placement < 1e-5, 'skin between pelvis and 2.5px neck belongs entirely to seven spline bones, not a huge placement bone');
+    }
     if (Math.abs(x) < 1e-5) {
       const totalHeadPlacement = [0, 1, 2, 3].reduce((sum, j) => {
         const bone = indices.array[i * 4 + j];
@@ -111,6 +117,7 @@ const cases = [
 ];
 assert.match(source, /headOffsetJoint\.add\(neckJoint\)/, 'rotation lives below the placement joint in main character rig');
 assert.match(source, /headOffsetBone\.add\(neckBone\)/, 'hostile front and rear rigs share the same hierarchy');
-assert.match(fs.readFileSync('docs/js/character-rig-scale.js', 'utf8'), /applyHeadYOffset\(offsetTarget,/, 'species head-height offsets target placement rather than rotation');
+assert.match(fs.readFileSync('docs/js/character-rig-scale.js', 'utf8'), /spineApi\.applyNeckReach\(rig, reachY, modelHeight, composedHunch\)/,
+  'spine-capable characters redistribute head-height and scale changes through their real spine before hunch');
 assert.match(fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'), /avatarRef\.headOffsetJoint\?\.front/, 'hostile offsets use their separate placement bones');
 console.log('Head rotation/offset: skin weights, two faces, UVs, portrait density and offset-fold cases PASS', JSON.stringify(cases));
