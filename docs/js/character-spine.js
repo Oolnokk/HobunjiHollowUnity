@@ -398,7 +398,10 @@
   function bind(root, source) {
     const profile = resolve(source);
     if (!root?.userData) return profile;
+    const rig = root.userData.neckRig; // The portrait may have a stretched upper spine even when it has no age hunch.
+    const reachProfile = Math.abs(Number(rig?.neckReachAppliedY) || 0) > 1e-9 ? rig?.appliedSpineProfile : null; // Active head-scale/height stretch still affects held-item and hand projections.
     if (profile.hunch > 0) root.userData.hobunjiSpine = profile;
+    else if (reachProfile) root.userData.hobunjiSpine = reachProfile; // Preserve the already-solved shoulder orbit for a straight but extended spine.
     else delete root.userData.hobunjiSpine;
     return profile;
   }
