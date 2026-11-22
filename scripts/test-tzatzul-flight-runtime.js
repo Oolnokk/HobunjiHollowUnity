@@ -290,10 +290,16 @@ w.Fishing.state=null;
 let sawReleaseChord=false,sawResumeDive=false; // A short post-interaction orbit provides a visible warning before the next real attack.
 for(let i=0;i<80;i++) {
   w.TzatzulFlightRuntime.update(.1);
-  if(farBird._tzFlight.phase==='readying'&&farBird._tzFlight.readyingWarning)sawReleaseChord=true;
+  if(farBird._tzFlight.phase==='readying'&&farBird._tzFlight.readyingWarning) {
+    sawReleaseChord=true;
+    assert.equal(w.TzatzulFlightRuntime.debugSnapshot().birds
+      .find(b=>b.id===farBird._tzFlight.identity.id)?.releaseChord,true,
+      'the in-game wildlife panel identifies the final warning DURING that chord');
+  }
   if(farBird._tzFlight.phase==='swoop'){sawResumeDive=true;break;}
 }
 assert(sawReleaseChord,'finishing an activity adds one final warning orbit');
+assert.equal(farBird._tzFlight.readyingWarning,false,'the warning flag clears when the real attack resumes');
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().birds.find(b=>b.id===farBird._tzFlight.identity.id)?.releaseChord,
   farBird._tzFlight.readyingWarning,'mobile release status reflects the actual warning chord');
 assert(sawResumeDive,'the predator eventually resumes its genuine swept-body swoop');
