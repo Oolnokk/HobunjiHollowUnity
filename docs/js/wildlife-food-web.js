@@ -148,7 +148,8 @@
     window.__farmLog?.('[food-web] ' + debug.last, 'wildlife');
   }
   function updateThreats(c, dt, actors, players, walkers, ctx) {
-    if (!available(c) || !profile(c)) return;
+    window.WildlifeThreatResponse?.update?.(c, dt, actors, players, ctx); // Shared prey panic and nest defense run on the existing wildlife update cadence.
+    if (c?.state === 'herd-panic' || !available(c) || !profile(c)) return;
     const state = stateFor(c), food = profile(c);
     if (food.guardFood) {
       const guard = state.guardTarget, spot = state.spot;
@@ -212,6 +213,8 @@
   function stepPhase(state, phase, duration) { state.phase = phase; state.t = 0; state.duration = duration; }
 
   function tickForage(c, dt, ctx) {
+    const panic = window.WildlifeThreatResponse?.tickPanic?.(c, dt, ctx); // Escape shares the existing collision-aware travel branch; no second movement loop.
+    if (panic) return panic;
     const rule = profile(c);
     if (!rule?.forage || !available(c) || combatBusy(c) ||
       (c.denKey && (window.Music?.isNightTime?.() || window.HobunjiCloudForestWildlife?.isPackOffShift?.(c))) ||

@@ -135,8 +135,8 @@
         const shaftHeat=fixture('shaft-fire','source',shaftHeatAt,.58); // Regular bowl at forehand-swing height.
         if(shaftHeat){render(shaftHeat,true);ignitionSources.push(shaftHeat);}
       }
-      const jump=ruin.shaftObeliskRuntime,api=root.RuinJumpShaft;
-      if(jump?.method==='jumpPlatforms'&&jump.plan?.routes&&jump.columns&&api?.assignFixture){
+      const jump=ruin.shaftObeliskRuntime,api=jump?.method==='ropeSwings'?root.RuinRopeShaft:root.RuinJumpShaft; // Both slab shafts carry a brazier on each story's first step.
+      if((jump?.method==='jumpPlatforms'||jump?.method==='ropeSwings')&&jump.plan?.routes&&jump.columns&&api?.assignFixture){
         for(const route of jump.plan.routes){
           // First jump of each story is reachable directly from the gallery.
           // Keep its icy surface and reserve only the central prop footprint.

@@ -283,6 +283,7 @@
       || !deps.hostileObjects.has(bird) || captured.get(prey)?.bird !== bird) {
       releaseCaptive(prey, !(bird.health > 0) ? 'carrier died' : 'owner or prey unavailable'); return false;
     }
+    stabilizeCaptive(prey); // Talon attachment, not a delayed ground hit or dodge, owns movement during flight.
     if (!bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) {
       releaseCaptive(prey, 'flight support lost'); return false;
     }
@@ -310,6 +311,12 @@
       record.renderHooks.push({ mesh, previous, after });
     }
   }
+  function stabilizeCaptive(prey) {
+    prey.knockbackT = 0; prey.knockbackVX = 0; prey.knockbackVY = 0; // Clear delayed ground knockback before it can pull the actor off its flight support.
+    prey.vx = 0; prey.vy = 0; // A captive has no independently integrated horizontal velocity.
+    prey.dodging = false; prey.lunging = false;
+    if (prey.prone) prey.prone = false; // Other combat hits cannot switch a healthy captive into ground-only prone physics.
+  }
   function canCarry(prey) {
     if (prey?.avatarRef?.riderMount) return false; // The rider and a large mount are one visible load, not medium prey.
     const size = String(prey?.genotype?.sizeClass || prey?.sizeClass || prey?.def?.defaultSizeClass || 'medium').toLowerCase();
@@ -328,9 +335,21 @@
       pickupX, pickupY, state: prey.state,
       areaId: isPlayer ? bird.areaId : prey.areaId }); // Preserve original actor identity, clothing and safe exterior return position.
     bird._tzFlight.captive = prey; bird.tzatzulCarrying = true; // Select authored grip pose on real bird.
-    if (isPlayer) {
-      prey.knockbackT = 0; prey.dodging = false; prey.lunging = false;
-      window.KnockbackCollisionImpact?.cancel?.(prey); // A successful grab replaces the attack's original knockback movement.
+    stabilizeCaptive(prey); // Apply the same movement handoff to bandits and tribe hunters as to the player.
+    window.KnockbackCollisionImpact?.cancel?.(prey); // The swoop's own damage can leave a pending ground-impact trajectory.
+    if (!isPlayer) {
+      window.EnemyDodge?.cancel?.(prey); // A queued NPC duel dodge must not resume beneath the talons.
+      window.BanditCombat?.cancelLunge?.(prey);
+      if (prey._banditAction) {
+        const action = prey._banditAction; // The shared Combat staged-action registry must release this captured actor's attack.
+        if (typeof action.cancel === 'function') action.cancel(); // Clears the global action set and runs its authored onCancel cleanup.
+        else { // Standalone previews may supply only a minimal staged-action record.
+          action.cancelled = true;
+          window.BanditCombat?.finishAction?.(prey);
+        }
+        if (prey._banditAction === action) prey._banditAction = null; // Fallback for absent onCancel handlers.
+      }
+      window.RangedWeapons?.cancelBanditAction?.(prey);
     }
     prey.tzatzulCapturedBy = bird._tzFlight.identity.id; prey.state = 'tzatzul-carried';
     observeCarry(prey, captured.get(prey));
