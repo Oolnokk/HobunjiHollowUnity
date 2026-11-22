@@ -19,8 +19,14 @@
   const FIELD_SPECS = Object.freeze({
     maaFullScaleRangeX: Object.freeze({ field: 'x', pair: 'maaFullScaleNumX', min: 10, max: 400, number: false }),
     maaFullScaleNumX: Object.freeze({ field: 'x', pair: 'maaFullScaleRangeX', min: 10, max: 400, number: true }),
-    maaFullScaleRangeY: Object.freeze({ field: 'y', pair: 'maaFullScaleNumY', min: 10, max: 400, number: false }),
-    maaFullScaleNumY: Object.freeze({ field: 'y', pair: 'maaFullScaleRangeY', min: 10, max: 400, number: true }),
+    maaFullScaleRangePortraitHeight: Object.freeze({ field: 'y', pair: 'maaFullScaleNumPortraitHeight', min: 10, max: 400, number: false }),
+    maaFullScaleNumPortraitHeight: Object.freeze({ field: 'y', pair: 'maaFullScaleRangePortraitHeight', min: 10, max: 400, number: true }),
+    maaFullScaleRangeLegLength: Object.freeze({ field: 'legLength', pair: 'maaFullScaleNumLegLength', min: 10, max: 400, number: false }),
+    maaFullScaleNumLegLength: Object.freeze({ field: 'legLength', pair: 'maaFullScaleRangeLegLength', min: 10, max: 400, number: true }),
+    maaFullScaleRangeHand: Object.freeze({ field: 'handScale', pair: 'maaFullScaleNumHand', min: 10, max: 400, number: false }),
+    maaFullScaleNumHand: Object.freeze({ field: 'handScale', pair: 'maaFullScaleRangeHand', min: 10, max: 400, number: true }),
+    maaFullScaleRangeFoot: Object.freeze({ field: 'footScale', pair: 'maaFullScaleNumFoot', min: 10, max: 400, number: false }),
+    maaFullScaleNumFoot: Object.freeze({ field: 'footScale', pair: 'maaFullScaleRangeFoot', min: 10, max: 400, number: true }),
     maaFullScaleRangeHead: Object.freeze({ field: 'head', pair: 'maaFullScaleNumHead', rawHead: true, number: false }),
     maaFullScaleNumHead: Object.freeze({ field: 'head', pair: 'maaFullScaleRangeHead', rawHead: true, number: true }),
     maaFullScaleRangeOffsetY: Object.freeze({ field: 'offsetY', pair: 'maaFullScaleNumOffsetY', min: -50, max: 50, number: false }),
@@ -55,8 +61,16 @@
   }
 
   function currentScale(identity) {
-    return window.HobunjiCharacterRigScale?.scaleFor?.(identity?.species, identity?.gender, profileFor(identity))
+    const profile = profileFor(identity); // Shared profile is the durable source for hand/foot scale, independent from x/y/head.
+    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(identity?.species, identity?.gender, profile)
       || { x: 1, y: 1, head: 1, offsetY: 0 };
+    const hands = window.HobunjiHandModelProfiles;
+    const positive = (value, fallback = 1) => Number(value) > 0 ? Number(value) : (Number(fallback) > 0 ? Number(fallback) : 1);
+    return { ...scale,
+      legLength: positive(scale.legLength, scale.y),
+      handScale: positive(profile?.anatomy?.handScale, hands?.speciesScaleFor?.(identity?.species, identity?.gender)),
+      footScale: positive(profile?.anatomy?.footScale, hands?.footScaleFor?.(identity?.species, identity?.gender)),
+    };
   }
 
   function portraitScaleFor(identity) {
@@ -83,8 +97,11 @@
       y: Number(current?.y) || 1,
       head: Number(current?.head) || 1,
       offsetY: Number(current?.offsetY) || 0,
-    }; // Every untouched field, especially Head during body edits, is copied verbatim.
-    if (field === 'x' || field === 'y') next[field] = Number(percent) / 100;
+    }; // Every untouched legacy field, especially Head, is copied verbatim.
+    if (Number(current?.legLength) > 0) next.legLength = Number(current.legLength); // Preserve separate hip reach on any X/Head edit.
+    if (Number(current?.handScale) > 0) next.handScale = Number(current.handScale);
+    if (Number(current?.footScale) > 0) next.footScale = Number(current.footScale);
+    if (field === 'x' || field === 'y' || field === 'legLength' || field === 'handScale' || field === 'footScale') next[field] = Number(percent) / 100;
     else if (field === 'offsetY') next.offsetY = Number(percent) / 100;
     else if (field === 'head') next.head = clamp((Number(percent) / 100) / finitePositive(portraitScale, 1), MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
     return next;
@@ -142,7 +159,11 @@
     }
 
     const group = previewGroupFor(identity);
-    if (group) window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
+    if (comparisonApi()?.refreshFromScaleChange) {
+      comparisonApi().refreshFromScaleChange(persisted, field); // One authoritative preview applies leg IK, reanchors the torso, and resizes hand/foot GLBs.
+    } else if (group) {
+      window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
+    }
     persistProfilesSoon();
     return persisted;
   }
