@@ -120,6 +120,8 @@ assert.equal(JSON.parse(store.get('hobunjiFullCharacterRigScales.v2'))['mao-ao::
   'persisted species/gender map serializes separately authored foot sizes');
 const legacy = host.setRigScale('mao-ao', 'male', { x: 1.1, y: 1.3, head: .9, offsetY: 0 });
 assert.equal(legacy.legLength, undefined, 'old rig tuples do not invent an unwanted leg multiplier');
+assert.equal(characters['mao-ao::male'].anatomy.legLengthScale, undefined,
+  'importing an old Height-only profile clears a previously independent leg length so both heights once again agree');
 assert.equal(legacy.handScale, undefined, 'old imports cannot overwrite authored hand scale with a fake 10% default');
 host.resetToRepositoryDefaults();
 assert.equal(characters['mao-ao::male'].anatomy.legLengthScale, undefined, 'Reset removes separate authored leg reach');
