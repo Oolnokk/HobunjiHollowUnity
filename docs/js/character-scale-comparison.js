@@ -581,7 +581,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const hand = Number(scale?.handScale) > 0 ? Number(scale.handScale) : partScaleFor(selected, 'hand'); // Guard copies part sizes verbatim on unrelated edits.
     const foot = Number(scale?.footScale) > 0 ? Number(scale.footScale) : partScaleFor(selected, 'foot');
     if (changedField === 'footScale') {
-      applyAnatomyConfig(selected.profile, { skipHand: true }); // Update the shared species foot-size table before any next spawn.
+      applyAnatomyConfig(selected.profile); // Materialize the current Hand scale once before Foot scale changes its inherited fallback, keeping the two dimensions genuinely independent.
       selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
     }
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
@@ -620,7 +620,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const previousFoot = Number(selected.profile.anatomy.footScale);
     selected.profile.anatomy.handScale = hand;
     selected.profile.anatomy.footScale = foot;
-    if (previousFoot !== foot) applyAnatomyConfig(selected.profile, { skipHand: true }); // Foot runtime shares the canonical species+gender foot-scale config.
+    if (previousFoot !== foot) applyAnatomyConfig(selected.profile); // Freeze the saved hand multiplier when resizing feet so the previous inherited hand/foot coupling cannot return.
     selected.feet?.setFootScaleMultiplier?.(foot); // Real GLB/fallback foot sizes update live, with sole contact preserved.
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
     syncLegPortraitAlignment(selected); // Reanchor the portrait to the actual resized hips without stretching the hands/feet or moving the floor.
@@ -714,7 +714,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     status('Exported width, portrait height, independent leg length, hand/foot size, head size and offset per species/gender.');
   }
 
-  function applyAnatomyConfig(profile, { skipHand = false } = {}) {
+  function applyAnatomyConfig(profile) {
     const anatomy = profile?.anatomy || {};
     const species = normalizeSpecies(profile?.species);
     const gender = normalizeGender(profile?.gender);
@@ -750,7 +750,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const handScale = Number(anatomy.handScale);
     const profiles = window.HobunjiHandModelProfiles; // Existing hand-model profiles rebuild active GLBs when the species-scale value actually changes.
     const currentHand = Number(profiles?.data?.speciesScaleOverrides?.[species]?.[gender]);
-    if (!skipHand && Number.isFinite(handScale) && handScale > 0 && currentHand !== handScale && profiles?.mutate) {
+    if (Number.isFinite(handScale) && handScale > 0 && currentHand !== handScale && profiles?.mutate) {
       profiles.mutate(data => {
         data.speciesScaleOverrides ||= {};
         data.speciesScaleOverrides[species] ||= {};
