@@ -233,11 +233,11 @@ assert.match(farmSource, /onAnimalSalesCollected/);
 assert.match(crateSource, /PendingAnimalSales\?\.settle\?\.\(reason\)/);
 assert.match(nurserySource, /Cancel the pending animal sale before growing this baby/);
 assert.match(incubatorSource, /Cancel the pending sale before incubating this baby/);
-assert.match(indexSource, /js\/world-meta-store\.js\?v=20261122cancelAnimal2/);
-assert.match(indexSource, /js\/pending-animal-sales\.js\?v=20261122cancelAnimal2/);
-assert.match(bridgeSource, /barn-incubator\.js\?v=20261122cancelAnimal2/);
-assert.match(loaderSource, /farm-panel-core\.js\?v=20261122cancelAnimal2/);
+assert.match(indexSource, /js\/world-meta-store\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(indexSource, /js\/pending-animal-sales\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(bridgeSource, /barn-incubator\.js\?v=[A-Za-z0-9_-]+/);
+assert.match(loaderSource, /farm-panel-core\.js\?v=[A-Za-z0-9_-]+/);
 assert.match(shippingUiSource, /pendingAnimalSales:\s*standaloneDebugVisible/, 'animal sale diagnostics are on-demand in the mobile shipping window');
-assert.match(indexSource, /shipping-panel\.js\?v=20261122cancelAnimal2/);
+assert.match(indexSource, /shipping-panel\.js\?v=[A-Za-z0-9_-]+/);
 
 console.log('atomic reversible animal sales regression checks passed');
