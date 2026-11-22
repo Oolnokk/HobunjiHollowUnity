@@ -52,6 +52,9 @@ Bandit-only fields:
   wpnMeshOK           1 if the weapon's own toolHolder mesh actually built (makeBanditToolHolder) -- 0 means it SHOULD render unarmed even though wpn is set; report as a bug if seen. The weapon is animated (updateBanditToolMesh), not a static prop -- it reuses the player's own fourPhaseLerp/STYLE_NEUTRAL_POSE/SWEEP_POSE swing pose math against the bandit's own facing/position and its own current ability's windup/strike timing.
   atkTag/atkDmg       attackTag (sharp/blunt, from the weapon's own dmgType) and attackDamage after rank/tier/mastery/metal multipliers
   loadout             its banditAbilityLoadout as tap1/tap2/hold1/hold2 ability ids ("-" for a null hold slot) -- tap1/tap2 are on every rank, hold1 only lieutenant+/captain, hold2 only captain (see heldAbilitiesByRank)
+  tactic/quickChance/chasePxS/flankT  active melee/ranged pursuit choice, this tier's Exhaust/Mercy roll probability, authored chase speed and elapsed Backstab flank attempt (before its fallback)
+  sector/attackOwner/chargeOwner/chargeT  current front/left/right/rear approach slot, who owns the single target melee attack, who is allowed to prepare a held charge, and how far its separate windup has progressed. Attack permission releases after hit resolution, not after weapon recovery.
+  trinkets            comma-separated spawn-rolled trinket ids, or "-" when this enemy has none (stat effects come from the same player catalog, cached per enemy)
   comboIdx            which of tap1's 3 combo steps fires next (0-2); resets to 0 after the 3rd step completes and retreats
   actionBusy          1 if a staged ability (windup or strike) is currently in flight (c._banditAction) -- while 1, the bandit is standing still finishing its swing
   hold1CdT            seconds left before Charged Breaker (hold1) can be re-rolled as an opener (0 = available); lieutenant/captain only
@@ -91,6 +94,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
     if (c._banditGuardUntil > performance.now()) return `guarding (Counter Shield window open) while otherwise ${c.retreatT > 0 ? 'retreating' : c._banditAction ? 'mid-swing' : 'approaching/attacking'} -- an incoming hit right now gets reduced and answered with a riposte`;
     if (c.retreatT > 0) return `jumping back (retreatT=${c.retreatT.toFixed(2)}s) after ${c._banditComboIndex === 0 ? 'finishing its 3-step Combo (tap1) or a Quick Attack/Charged Breaker' : 'an unexpected mid-combo retreat -- flag as a possible state bug'}`;
     if (c._banditAction) return `${c.telegraphState === 'windup' ? 'winding up' : 'striking'} an ability swing (tState=${c.telegraphState}); distPlayer=${distP}px`;
+    if (c._banditPreparedCharge) return `visibly charging a held breaker while another attack can resolve (charge=${(c._banditPreparedCharge.t / c._banditPreparedCharge.duration).toFixed(2)}); waiting for the single melee attack permission`;
     // Non-mutating read of _banditAttackSlots/_banditQueueRings (does NOT
     // call claimBanditAttackSlot/claimBanditQueueRing, which would claim/
     // allocate one as a side effect just from generating a log line) --
@@ -102,8 +106,8 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
     // distance first would misreport an already-correctly-positioned
     // queued bandit as "closing distance, waiting to enter engageRangePx"
     // forever, since it's never actually trying to reach that number. Only
-    // BANDIT_MAX_ATTACK_SLOTS=2 bandits are ever allowed to close in and
-    // swing at once.
+    // Four directional slots now allow close approach, but only one committed
+    // melee strike can progress per target (plus one independent held windup).
     if (!window.BanditCombat.attackSlots.some(s => s.bandit === c)) {
       const queueRing = window.BanditCombat.queueRings.find(q => q.bandit === c);
       return queueRing
@@ -142,7 +146,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
   // differ from their rest values.
   function _combatLogBanditStance(c, def) {
     const settleT = Math.max(0, ((c._banditToolSettleUntil || 0) - performance.now()) / 1000);
-    const idle = !c._banditAction && settleT <= 0;
+    const idle = !c._banditAction && !c._banditPreparedCharge && settleT <= 0;
     const natural = window.BanditCombat.naturalSwing(def);
     const stanceAnim = c._banditSwingAnim || 'thrust';
     // c.groupRot's own rest value for the CURRENT facing (see
@@ -186,6 +190,10 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           : '-';
         const loadout = def.banditAbilityLoadout || {};
         const loadoutTxt = `${loadout.tap1 || '-'}/${loadout.tap2 || '-'}/${loadout.hold1 || '-'}/${loadout.hold2 || '-'}`;
+        const directionalSlot = window.BanditCombat.attackSlots.find(slot => slot.bandit === c); // Arena-only 1 Hz snapshot; does not mutate the coordinator.
+        const combatTarget = directionalSlot?.target || c._banditPreparedCharge?.target || c._chunkCombatTarget || player;
+        const activeAttack = window.BanditCombat.attackTurnOwner?.(combatTarget);
+        const activeCharge = window.BanditCombat.chargeOwner?.(combatTarget);
         const armor = window.EnemyDodge?.armorStats?.(c) || {}; // Spawn-profiled NPC outfit result used by defense, movement, and dodge behavior.
         lines.push([
           `ENTITY kind=${kind}`, `id=${c.id}`, `rank=${c.banditRank}`, `tier=${c.banditTier}`, `mastery=${c.banditMastery}`,
@@ -194,7 +202,7 @@ Companion-only fields (kind=COMPANION -- the player's own active whistle/stable 
           `pos=(${Math.floor(c.x / deps.TILE)},${Math.floor(c.y / deps.TILE)})`, `distPlayer=${Math.round(_combatLogDist(c, player))}`,
           `state=${c.state}`, `tState=${c.telegraphState || 'none'}`, `actionBusy=${c._banditAction ? 1 : 0}`,
           `retreatT=${(c.retreatT || 0).toFixed(2)}`, `cdT=${(c.attackCooldownT || 0).toFixed(2)}`,
-          `loadout=${loadoutTxt}`, `comboIdx=${c._banditComboIndex || 0}`, `hold1CdT=${(c._banditHold1CdT || 0).toFixed(2)}`,
+          `loadout=${loadoutTxt}`, `trinkets=${c.enemyTrinketIds?.join(',') || '-'}`, `sector=${directionalSlot?.sector == null ? '-' : window.BanditCombat.DIRECTION_SECTORS[directionalSlot.sector]?.name}`, `attackOwner=${activeAttack?.id || '-'}`, `chargeOwner=${activeCharge?.id || '-'}`, `chargeT=${c._banditPreparedCharge ? (c._banditPreparedCharge.t / c._banditPreparedCharge.duration).toFixed(2) : '-'}`, `tactic=${c._banditTactic || 'idle'}`, `quickChance=${Number(def.quickAttackChance ?? 0.45).toFixed(2)}`, `chasePxS=${Number(def.chaseSpeed || 0).toFixed(0)}`, `flankT=${Number(c._banditFlankElapsedS || 0).toFixed(2)}`, `comboIdx=${c._banditComboIndex || 0}`, `hold1CdT=${(c._banditHold1CdT || 0).toFixed(2)}`,
           `guarding=${c._banditGuardUntil > performance.now() ? 1 : 0}`, `guardCdT=${(c._banditGuardCdT || 0).toFixed(2)}`,
           `wpn=${def.weaponKey || 'none'}`, `wpnMeshOK=${c.banditWeaponMeshAttached ? 1 : 0}`, `atkTag=${def.attackTag}`, `atkDmg=${def.attackDamage}`,
           `aggroPx=${Math.round(def.aggroRangePx || 0)}`, `leashPx=${Math.round(def.leashRangePx || 0)}`, `atkRangePx=${Math.round(def.attackRangePx || 0)}`,

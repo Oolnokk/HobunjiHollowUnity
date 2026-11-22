@@ -50,7 +50,7 @@
     if (_banditConfigPromise) return _banditConfigPromise;
     _banditConfigPromise = (async () => {
       try {
-        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261116tier8power075');
+        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261122banditPursuit1');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return await r.json();
       } catch (e) {
@@ -1053,13 +1053,21 @@
     const maxStamina = Math.max(1, Math.round(BANDIT_BASE_MAX_STAMINA * statMul), Math.ceil(attackStaminaCost * minimumAttacks)); // Do not scale a fighter's attack budget below the stamina cost of its own weapon.
     const dmgMul = statMul * (1 + mastery * BANDIT_MASTERY_DAMAGE_PER_LEVEL) * weapon.dmgMultiplier * shapeStats.power;
     const held = Number(cfg?.heldAbilitiesByRank?.[rank] ?? 0);
+    const pursuit = cfg?.combatPursuit; // Normal-bandit-specific awareness and sprint pacing, supplied by the existing bandit config.
+    const quickTuning = cfg?.quickAttackTuning; // Per-tier chance affects Exhaust Cutter and Mercy Spike; Backstab Flick uses positional tactics.
+    const configuredChase = Number(pursuit?.baseChaseSpeedPxS);
+    const configuredTierChase = Number(pursuit?.chaseBonusPerTierPxS);
+    const chaseBase = Number.isFinite(configuredChase) && configuredChase > 0 ? configuredChase : 165;
+    const chaseTierStep = Number.isFinite(configuredTierChase) && configuredTierChase >= 0 ? configuredTierChase : 2.5;
+    const quickBase = Number(quickTuning?.baseChance);
+    const quickStep = Number(quickTuning?.bonusPerTier);
     return {
       label: BANDIT_RANK_LABEL[rank] || 'Bandit',
       hostile: true, liveBirth: true,
       maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
       maxStamina,
       moveSpeed: 118 + tier * (cfg?._preserveMineEnemyTiers ? 4 : 2), // Existing ten-floor ghoul movement stays as before.
-      chaseSpeed: 165 + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0) + tier * (cfg?._preserveMineEnemyTiers ? 5 : 2.5), // Ghoul mine movement remains on its independent floor scale.
+      chaseSpeed: (cfg?._preserveMineEnemyTiers ? 165 + tier * 5 : chaseBase + tier * chaseTierStep) + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0), // Fast direct pursuit; Ghoul mine keeps its prior chase curve.
       attackDamage: Math.max(1, Math.round(BANDIT_BASE_ATTACK_DAMAGE * dmgMul)),
       attackRangePx: deps.TILE * BANDIT_ATTACK_RANGE_TILES * shapeStats.range,
       attackHalfConeRad: Math.min(Math.PI, BANDIT_ATTACK_HALF_CONE_DEG * Math.PI / 180 * shapeStats.range),
@@ -1074,9 +1082,15 @@
       banditFlaskerTuning: flaskerTuning,
       banditFlaskPotencyTier: isFlasker ? (cfg?._preserveMineEnemyTiers ? Math.min(4, tier) : Math.floor(tier * 4 / (window.EnemyTierProgression?.MAX_TIER || 7))) : 0, // Eight danger tiers distribute the existing five potion potencies instead of maxing out halfway. // Used for both infinite AI throws and the matching corpse drops.
       banditAbilityLoadout: banditAbilityLoadout(weapon.shapeKey, held),
+      quickAttackChance: quickTuning && Number.isFinite(quickBase) && Number.isFinite(quickStep)
+        ? Math.max(0, Math.min(1, quickBase + tier * quickStep)) : BANDIT_QUICK_ATTACK_CHANCE, // Fixed at spawn; no tier/config lookups per attack.
+      backstabFlankMaxSeconds: Math.max(0, Number(quickTuning?.backstabFlankMaxSeconds) || 2),
+      backstabRetrySeconds: Math.max(0, Number(quickTuning?.backstabRetrySeconds) || 2.5),
+      banditStandoffMaxTiles: pursuit ? Math.max(1.5, Number(pursuit.standoffMaxTiles) || 3.6) : null, // Null preserves the original large standoff rings for special humanoid encounters.
+      banditStandoffTierStepTiles: pursuit ? Math.max(0, Number(pursuit.standoffTierStepTiles) || 0.2) : null,
       aiType: 'vigilantProtector',
-      aggroRangePx: deps.TILE * (6.2 + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
-      leashRangePx: deps.TILE * (10 + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
+      aggroRangePx: deps.TILE * ((Number(pursuit?.aggroRangeTiles) > 0 ? Number(pursuit.aggroRangeTiles) : 6.2) + (rank === 'captain' ? 1.1 : rank === 'lieutenant' ? 0.5 : 0)),
+      leashRangePx: deps.TILE * ((Number(pursuit?.leashRangeTiles) > 0 ? Number(pursuit.leashRangeTiles) : 10) + (rank === 'captain' ? 2 : rank === 'lieutenant' ? 1 : 0)),
       canClimb: false, canSwim: false,
       modelWidth, tint: 0xffffff,
       // Quarter-turn correction for the portrait plane convention -- see
@@ -1123,7 +1137,15 @@
   const BANDIT_COMBO_CHAIN_GAP_S = 0.02;
   const BANDIT_HOLD1_COOLDOWN_S = 5;
   const BANDIT_HOLD1_CHANCE = 0.4; // chance to open a fresh engagement with Charged Breaker instead of the combo
-  const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // chance to use tap2 instead of continuing tap1 when a condition is favorable
+  const BANDIT_QUICK_ATTACK_CHANCE = 0.45; // Fallback for callers without ordinary-bandit difficulty tuning.
+  function banditQuickAttackChance(c, loadout, conditions) {
+    const technique = loadout?.tap2; // Only the actual equipped Quick Attack can compete with the ordinary combo.
+    if (technique === 'backstabFlick') return conditions?.behind ? 1 : 0; // A successful flank deserves its own positional payoff.
+    if (technique !== 'exhaustCutter' && technique !== 'mercySpike') return 0;
+    if (!(technique === 'exhaustCutter' ? conditions?.exhausted : conditions?.lowHealth)) return 0;
+    const chance = Number(c?.def?.quickAttackChance); // Materialized from danger tier on the enemy definition.
+    return Number.isFinite(chance) ? Math.max(0, Math.min(1, chance)) : BANDIT_QUICK_ATTACK_CHANCE;
+  }
   const BANDIT_GUARD_WINDOW_S = 1.6;
   const BANDIT_GUARD_COOLDOWN_S = 6;
   const BANDIT_GUARD_DAMAGE_ABSORB = 0.7; // fraction of incoming damage blocked while a captain is guarding
@@ -1154,9 +1176,28 @@
 
   function beginBanditMeleeStage(c, options, target) {
     window.FeyIllusions?.setActionDuration?.(c, (Number(options.windupS) || 0) + (Number(options.strikeS) || 0) + (Number(options.recoverS) || 0)); // A Demented NPC's perception rotates over its actual two-strike lifetime, not the default 220ms fallback.
+    const originalStrike = options.onStrike, originalComplete = options.onComplete, originalCancel = options.onCancel; // The real hit-resolution callbacks stay the single source of truth for when the target can be attacked again.
+    const guardedOptions = {
+      ...options,
+      onStrike: (...args) => {
+        try { originalStrike?.(...args); }
+        finally {
+          const echo = c._feyHypedNpcSequence; // A Fey-paid strike has a second *physical* hit; keep the turn through its extra windup and release only after that resolves.
+          if (!echo || echo.echo) releaseBanditAttackTurn(c, target);
+        }
+      },
+      onComplete: (...args) => {
+        try { originalComplete?.(...args); }
+        finally { releaseBanditAttackTurn(c, target); } // Fallback for a stage that completes without a hit callback.
+      },
+      onCancel: (...args) => {
+        try { originalCancel?.(...args); }
+        finally { releaseBanditAttackTurn(c, target); } // Interrupted windups cannot strand the one-attacker token.
+      },
+    }; // Shared Combat.beginStagedAction and FeyHypedAttacks both use this same lifecycle.
     const hype = window.FeyHypedAttacks; // Shared enhanced-Stamina executor owns the two NPC stages, not a duplicate AI or render pose.
     const payment = hype?.claimNpcMelee?.(c); // Only actually spent, eligible Hyped Stamina is committed to this particular NPC melee attack.
-    if (!payment) return window.Combat.beginStagedAction(options);
+    if (!payment) return window.Combat.beginStagedAction(guardedOptions);
     c._banditSwingHoldS = Math.max(0, Number(c._banditSwingHoldS) || 0) / payment.tempo; // Existing SharedAttackPose holder follows its own doubled-speed attack clock.
     c._banditSwingReturnS = Math.max(0, Number(c._banditSwingReturnS) || 0) / payment.tempo;
     const firstLunge = c._banditLunging && (Number(c._banditLungeDistancePx) || 0) > 0
@@ -1167,7 +1208,7 @@
     }
     const firstLungeDuration = Number(c._banditLungeDur) || 0; // Used only if the second authored strike also has a legal original lunge.
     return hype.beginNpcMelee(c, {
-      ...options,
+      ...guardedOptions,
       feyHypedNpcTarget: target, // Protects the second strike from a vanished or map-transitioned enemy.
       onFeyHypedNpcEchoStart: ratio => {
         if (!firstLunge || !(ratio > 0) || !target || !(Number(target.health) > 0)) return;
@@ -1197,6 +1238,8 @@
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
     const echo = window.FeyHypedAttacks?.npcDamagePayload?.(c, target, amount, knockbackPxS, opts); // Real hit owner, including NPC→player and offscreen NPC→NPC, scales one independently tested second contact.
     if (echo) { amount = echo.damage; knockbackPxS = echo.knockback; opts = echo.opts; }
+    const trinketHit = window.TrinketSystem?.scaleEnemyHit?.(c, amount, opts); // Shared trinket authority keeps Health and Footing separate for NPC→player and NPC→NPC hits.
+    if (trinketHit) { amount = trinketHit.amount; opts = trinketHit.options; }
     const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
@@ -1233,18 +1276,20 @@
   // "enemyStriking" has no equivalent (the player has no telegraphState)
   // and always reads false, which is exactly why opportunistJab (the
   // only technique keyed on it) is excluded from BANDIT_QUICK_ATTACK_IDS.
+  function banditBehindTarget(c, targetPlayer) {
+    const dx = c.x - targetPlayer.x, dy = c.y - targetPlayer.y;
+    const distance = Math.max(0.001, Math.hypot(dx, dy)); // Evaluates the real behind bonus without checking expensive Health/Stamina-affliction bands during every flank frame.
+    const facing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0);
+    return (Math.cos(facing) * dx + Math.sin(facing) * dy) / distance < -0.35;
+  }
+
   function banditQuickAttackConditions(c, targetPlayer) {
-    const dxBP = c.x - targetPlayer.x, dyBP = c.y - targetPlayer.y;
-    const distBP = Math.max(0.001, Math.hypot(dxBP, dyBP));
-    const targetFacing = Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0); // Creatures use facing; the player uses angle.
-    const forwardX = Math.cos(targetFacing), forwardY = Math.sin(targetFacing);
-    const behindDot = forwardX * (dxBP / distBP) + forwardY * (dyBP / distBP);
     const staminaForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'stamina') ?? targetPlayer.stamina; // Mirrors the player's Exhaust Cutter semantics for enemy ability AI.
     const healthForCondition = window.ResourceSystem?.getDepletionEquivalentCurrent?.(targetPlayer, 'health') ?? targetPlayer.health; // Mirrors the player's Mercy Spike semantics for enemy ability AI.
     return {
       enemyStriking: false,
       exhausted: !!targetPlayer.exhaustion?.active || staminaForCondition <= targetPlayer.maxStamina * 0.20,
-      behind: behindDot < -0.35,
+      behind: banditBehindTarget(c, targetPlayer),
       lowHealth: targetPlayer.health > 0 && healthForCondition <= targetPlayer.maxHealth * 0.30,
     };
   }
@@ -1264,6 +1309,7 @@
   function finishBanditAction(c) {
     const action = c._banditAction;
     c._banditAction = null;
+    c._banditChargeReleaseAction = null; // A released held charge only holds its full windup pose until its own stage finishes.
     c.telegraphState = null;
     if (!c._banditLunging) c._banditLungeHopCurrent = 0;
     // The player's swing doesn't stop when its strike lands: it holds the strike pose, then eases back to
@@ -1451,6 +1497,7 @@
   // here or the bandit stays drawn (and collides) in mid-air until its next lunge.
   function cancelBanditLunge(c) {
     if (!c) return;
+    if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Leaving chase or being staggered cancels a readied charge along with ordinary lunge motion.
     c._banditLunging = false;
     c._banditLungeHopCurrent = 0;
   }
@@ -1627,11 +1674,11 @@
     return true;
   }
 
-  function fireBanditChargedBreaker(c, def, targetPlayer) {
+  function fireBanditChargedBreaker(c, def, targetPlayer, prepared = null) {
     const cb = window.Combat?.chargedBreakerData;
     if (!cb) return false;
     const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs scale charge windup and strike as one animation.
-    const chargeT = 0.5 + deps.rnd() * 0.5; // Bandit charge is expressed in the same Neutral→Windup POSE percentage as the player's.
+    const chargeT = Number.isFinite(Number(prepared?.chargeT)) ? deps.clamp(Number(prepared.chargeT), 0.5, 1) : 0.5 + deps.rnd() * 0.5; // A precharged attack retains the exact strength displayed during preparation.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
     const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
@@ -1641,7 +1688,8 @@
     const lungeTileMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
     const pitchDistanceResistance = cb.LUNGE_GRAVITY_RESIST_MIN
       + (cb.LUNGE_GRAVITY_RESIST_MAX - cb.LUNGE_GRAVITY_RESIST_MIN) * chargeT;
-    const windupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / shapeStats.speed;
+    const rawWindupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / shapeStats.speed;
+    const windupS = prepared ? Math.min(0.12, rawWindupS) : rawWindupS; // After the separate visible charge, a short committed release allows the original swept lunge to catch up before the hit.
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0;
@@ -1655,7 +1703,7 @@
     // this swing covers the first windupS of that curve, so updateBanditToolMesh replays the same shape over this
     // shorter windup. windupS is already divided by speed, so speed goes back in to find how much of the curve it covers.
     const fullChargeS = Number(cb.MAX_CHARGE_S ?? cb.WINDUP_S) || 0;
-    c._banditSwingWindupCurve = fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
+    c._banditSwingWindupCurve = !prepared && fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
       ? { slowdown: cb.WINDUP_SLOWDOWN, span: Math.min(1, windupS * shapeStats.speed / fullChargeS) }
       : null;
     c._banditSwingHoldS = (cb.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's Charged Breaker release gets.
@@ -1699,6 +1747,7 @@
       onCancel: () => finishBanditAction(c),
     }, targetPlayer);
     if (c._banditSwingWindupCurve) c._banditSwingWindupCurve.action = c._banditAction; // The curve belongs to this one windup only.
+    c._banditChargeReleaseAction = prepared ? c._banditAction : null; // The charged preparatory pose remains at full windup until the committed strike starts.
     return true;
   }
 
@@ -1716,6 +1765,7 @@
   function fireBanditCounterRiposte(c, def, targetPlayer) {
     const cs = window.Combat?.counterShieldData;
     if (!cs) return;
+    if (banditDirectional(c) && (c._banditAction || c._banditPreparedCharge || !claimBanditAttackTurn(c, targetPlayer))) return; // Reactive counters cannot bypass the one-committed-strike rule or interrupt this actor's held pose.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
     const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
@@ -1728,7 +1778,7 @@
     // the riposte's own 0.2s swing is brief enough that skipping its
     // dedicated weapon-pose animation (rather than adding a second
     // parallel progress channel just for this) is an acceptable gap.
-    window.Combat.beginStagedAction({
+    const riposteOptions = {
       windupS: 0.05 / (def.weaponShapeStats?.speed || 1), strikeS: 0.15 / (def.weaponShapeStats?.speed || 1), recoverS: 0, // NPC counterstrike duration follows its weapon shape instead of a fixed 0.2s.
       data: { isBandit: true, attacker: c, voiceCategory: 'quickAttack', voiceAbilityId: 'counterShield' }, // Counter ripostes are active NPC voice events too.
       onStrike: () => {
@@ -1742,7 +1792,15 @@
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, undefined, 'large');
         }
       },
-    });
+    };
+    const strike = riposteOptions.onStrike; // Keep the actual counter-hit and sound processing as the turn-release boundary.
+    riposteOptions.onStrike = (...args) => {
+      try { strike(...args); }
+      finally { releaseBanditAttackTurn(c, targetPlayer); }
+    };
+    riposteOptions.onComplete = () => releaseBanditAttackTurn(c, targetPlayer);
+    riposteOptions.onCancel = () => releaseBanditAttackTurn(c, targetPlayer);
+    window.Combat.beginStagedAction(riposteOptions);
   }
 
   // "Choose an attack, then judge how close to get" -- gates the
@@ -1851,70 +1909,197 @@
 
   // ── Multi-attacker coordination ─────────────────────────────────
   //
-  // At most BANDIT_MAX_ATTACK_SLOTS bandits are ever actively closing
-  // to melee range against a given target at once, each locked to a
-  // world angle (around the target) at least BANDIT_SLOT_MIN_ANGLE_RAD
-  // from every other slot's angle -- so two attackers flank from
-  // genuinely different sides instead of both approaching down the same
-  // line. Everyone else stays queued: it orbits at a standoff distance
-  // and keeps personal space from other nearby bandits rather than
-  // piling into melee range for free hits. Slots aren't explicitly
-  // handed back on retreat -- claimBanditAttackSlot's own prune (below)
-  // drops a slot the instant its holder dies or leaves 'chase', which
-  // covers every release case without needing a separate teardown path.
-  const BANDIT_MAX_ATTACK_SLOTS = 2;
+  // Ordinary bandits claim four stable DIRECTIONS relative to the target's
+  // facing: front, left, right and rear. Only one may commit to a melee
+  // attack at once; a DIFFERENT actor may prepare a Charged Breaker while
+  // that strike is resolving. Target-relative angles update with facing
+  // without repeatedly reallocating slots. Special humanoids keep their
+  // historical two-angle choreography.
+  const BANDIT_MAX_ATTACK_SLOTS = 4;
+  const BANDIT_SPECIAL_ATTACK_SLOTS = 2;
   const BANDIT_SLOT_MIN_ANGLE_RAD = 60 * Math.PI / 180;
+  const BANDIT_DIRECTION_SECTORS = Object.freeze([
+    { name: 'front', offset: 0 },
+    { name: 'left', offset: Math.PI / 2 },
+    { name: 'right', offset: -Math.PI / 2 },
+    { name: 'rear', offset: Math.PI },
+  ]); // Static target-relative sectors; all bandits reuse this four-element definition.
   const BANDIT_STANDOFF_RANGE_MUL = 1.8;
-  // Computed lazily (not a top-level const) since deps isn't populated
-  // until init() runs, which happens well after this module's own script
-  // loads.
-  function banditPersonalSpacePx() { return deps.TILE * 0.85; }
-  // Idle sway applied to a waiting bandit's ring/standoff point (see the
-  // !readyToStrike branch below) -- a slow guard-stance shift, not a
-  // dodge, so it reads as "still in the fight, waiting its turn"
-  // instead of a dead stand while a slot/cooldown/stamina frees up.
-  // Swept as an ANGLE around the player (see banditRingPoint), not a
-  // straight-line Cartesian offset -- a linear offset from a point
-  // already at some radius moves partly toward/away from the player as
-  // well as sideways (chord vs. arc), and combined with the emergency
-  // too-close retreat that branch used to also have (a second, separate
-  // target formula it could disagree with frame to frame), that read as
-  // shivering forward/backward rather than a clean side-to-side stride.
-  // Sweeping the angle instead keeps the bandit on the ring at a
-  // constant radius by construction; there's now only ONE positioning
-  // formula for the whole waiting state (see readyToStrike below), with
-  // the personal-space nudge as the only thing allowed to pull it off
-  // the ring, and only when actually crowding another bandit.
-  // Chased with BANDIT_STRAFE_SPEED_PX_S (a dedicated slow walking
-  // speed), not def.chaseSpeed -- at full chase speed the bandit closes
-  // most of the gap to this continuously-recalculated target in a
-  // single frame and ends up snapping almost exactly onto it every
-  // frame, which (deps.moveCreatureToward never overshoots, so it can't be a
-  // bounce-back oscillation) just means any frame-timing irregularity
-  // gets reproduced directly in its position with no damping. Capping
-  // the speed well below the sway's own peak velocity forces a real lag
-  // between the bandit and its target, acting as a low-pass filter.
-  const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180;
-  const BANDIT_STRAFE_HZ = 0.14;
-  const BANDIT_STRAFE_SPEED_PX_S = 55;
-  const _banditAttackSlots = []; // [{ bandit, angle }]
+  function banditPersonalSpacePx() { return deps.TILE * 0.85; } // Reuse the established world-scale body spacing; evaluated only after init supplies deps.
+  const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180; // Stable authored 30° idle sway for close-in and queued melee fighters.
+  const BANDIT_STRAFE_HZ = 0.14; // Authored slow formation breathing cadence, reused by waiting-ring decisions.
+  const BANDIT_STRAFE_SPEED_PX_S = 55; // Final positioning speed after pursuing the assigned sector; never replaces chase sprint.
+  const _banditAttackSlots = []; // [{ bandit, target, sector, angle }] The existing mobile arena log reads the same array.
+  const _banditSlotForActor = new WeakMap(); // Constant-time existing-sector lookup; the strong debug collection is still pruned of dead/unloaded actors.
+  let _banditSlotsPrunedAt = -Infinity; // Shared once-per-frame cleanup rather than scanning every combatant's peers on every AI decision.
+  const BANDIT_SLOT_PRUNE_INTERVAL_MS = 12;
+  const _banditTargetTurns = new WeakMap(); // O(1) per-target committed attacker/held-charge owner; targets are weak keys so unloads do not leak encounters.
+  function banditDirectional(c) { return Number.isFinite(c?.def?.banditStandoffMaxTiles); } // Only ordinary bandits opt into the four-position coordinator.
+  function banditTargetFacing(target) {
+    return Number.isFinite(Number(target?.angle)) ? Number(target.angle) : (Number(target?.facing) || 0);
+  }
+  function banditSectorAngle(target, sector) {
+    return banditTargetFacing(target) + BANDIT_DIRECTION_SECTORS[sector]?.offset;
+  }
+  function banditTurnState(target) {
+    let state = _banditTargetTurns.get(target);
+    if (!state) {
+      state = { attack: null, charge: null };
+      _banditTargetTurns.set(target, state);
+    }
+    return state;
+  }
+  function banditTurnValid(holder, target) {
+    return !!holder && holder.target === target && holder.actor?.health > 0
+      && holder.actor.state === 'chase' && !holder.actor.tzatzulCapturedBy
+      && (!target?.areaId || !holder.actor.areaId || holder.actor.areaId === target.areaId);
+  }
+  function banditAttackTurnOwner(target) {
+    const state = _banditTargetTurns.get(target);
+    if (!state) return null;
+    if (state.attack && !banditTurnValid(state.attack, target)) state.attack = null;
+    return state.attack?.actor || null;
+  }
+  function banditChargeOwner(target) {
+    const state = _banditTargetTurns.get(target);
+    if (!state) return null;
+    if (state.charge && (!banditTurnValid(state.charge, target)
+      || state.charge.actor._banditPreparedCharge?.target !== target)) state.charge = null;
+    return state.charge?.actor || null;
+  }
+  function banditPreparedChargeHasPriority(preparer, target) {
+    const charge = preparer?._banditPreparedCharge;
+    if (!charge || charge.target !== target || charge.t < charge.duration) return false;
+    const dx = preparer.x - target.x, dy = preparer.y - target.y;
+    const releaseRange = Number.isFinite(charge.reachPx) && charge.reachPx > 0 ? charge.reachPx : deps.TILE * 2.5; // A drawn charge has no right to block fighters who can already hit while its own lunge cannot reach.
+    if (dx * dx + dy * dy > releaseRange * releaseRange) return false;
+    const slot = _banditSlotForActor.get(preparer); // The existing per-actor WeakMap avoids a global scan for every waiting attacker.
+    if (!slot || slot.target !== target) return false;
+    if (slot.sector == null) return true;
+    const angle = Math.atan2(dy, dx);
+    return Math.abs(deps.angleDiff(angle, banditFacingSlotAngle(slot, target))) <= Math.PI / 3; // A charging rear fighter needs to reach their assigned segment before cutting in.
+  }
+  function claimBanditAttackTurn(actor, target) {
+    if (!banditDirectional(actor)) return true; // Special NPC combat uses the unchanged stage and attack pipeline.
+    const state = banditTurnState(target);
+    const owner = banditAttackTurnOwner(target);
+    if (owner) return false; // An actor must not reacquire the same turn during its own Counter Shield riposte, which intentionally has no _banditAction pose owner.
+    const preparer = banditChargeOwner(target);
+    if (!owner && preparer && preparer !== actor && banditPreparedChargeHasPriority(preparer, target)) return false; // A ready, POSITIONED held attack takes the next free turn.
+    state.attack = { actor, target }; // Released immediately after the final resolved hit, not after cosmetic weapon recovery.
+    return true;
+  }
+  function releaseBanditAttackTurn(actor, target) {
+    const state = target && _banditTargetTurns.get(target);
+    if (state?.attack?.actor === actor) state.attack = null;
+  }
+  function releaseBanditCharge(actor, target, keepPose = false) {
+    const state = target && _banditTargetTurns.get(target);
+    if (state?.charge?.actor === actor) state.charge = null;
+    if (actor?._banditPreparedCharge?.target === target) actor._banditPreparedCharge = null;
+    if (!keepPose && actor && !actor._banditAction) {
+      actor.telegraphState = null;
+      actor._banditToolTail = null;
+      actor._banditToolSettleUntil = 0; // A canceled, draw-only windup has no follow-through; restore authored idle stances immediately.
+      resetBanditSwingToNatural(actor); // A canceled charge restores the true weapon stance, including the hand rig.
+    }
+  }
+  function beginBanditPreparedCharge(c, target) {
+    if (!banditDirectional(c) || banditChargeOwner(target)) return false; // At most one preview charge exists for each opponent.
+    const cb = window.Combat?.chargedBreakerData;
+    if (!cb || c._banditPreparedCharge || c._banditAction) return false;
+    const chargeT = 0.5 + deps.rnd() * 0.5; // Once per charge, matching the existing Charged Breaker roll (not a random draw every frame).
+    const speed = c.def?.weaponShapeStats?.speed || 1;
+    const rawWindup = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
+    const duration = Math.max(0.25, Number(rawWindup) / speed || 0.5); // The visible preparatory windup runs even while a second bandit attacks.
+    const preview = { windupS: duration, strikeS: 0.01, t: 0, phase: 'windup' }; // Draw-only stage: Combat.beginStagedAction is not called until attack permission becomes free.
+    const releaseRange = banditEngagementReachPx(c, c.def, c.def.banditAbilityLoadout, target); // The same existing safe attack-commit reach used by the real Charged Breaker release.
+    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
+    banditTurnState(target).charge = { actor: c, target };
+    c._banditPreparedCharge = charge;
+    c._rangedMode = false; // The held melee weapon, not a stowed crossbow, represents the charge.
+    c._banditToolTail = null;
+    c.telegraphState = 'windup';
+    c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE || null;
+    c._banditSwingDirSign = 1; c._banditSwingPower = cb.POWER || 1.7;
+    c._banditSwingPoseScale = chargeT; // Uses the same partial-charge weapon and procedural-hand transformations as the real attack.
+    const fullChargeS = Number(cb.MAX_CHARGE_S ?? cb.WINDUP_S) || 0;
+    c._banditSwingWindupCurve = fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
+      ? { slowdown: cb.WINDUP_SLOWDOWN, span: Math.min(1, duration * speed / fullChargeS), action: preview } : null;
+    c._banditSwingHoldS = 0; c._banditSwingReturnS = 0;
+    c._banditTactic = 'charging';
+    return true;
+  }
 
+  function banditFacingSlotAngle(slot, target) {
+    return slot?.sector == null ? slot?.angle : banditSectorAngle(target, slot.sector);
+  }
   function claimBanditAttackSlot(c, towardAngle, target) {
-    for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
-      const s = _banditAttackSlots[i];
-      if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) _banditAttackSlots.splice(i, 1);
+    const now = performance.now();
+    if (now - _banditSlotsPrunedAt >= BANDIT_SLOT_PRUNE_INTERVAL_MS) {
+      _banditSlotsPrunedAt = now;
+      for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
+        const s = _banditAttackSlots[i];
+        if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) {
+          _banditSlotForActor.delete(s.bandit);
+          _banditAttackSlots.splice(i, 1);
+        }
+      }
     }
-    const existing = _banditAttackSlots.find(s => s.bandit === c);
-    if (existing?.target === target) return existing;
-    if (existing) _banditAttackSlots.splice(_banditAttackSlots.indexOf(existing), 1); // Switching opponents releases the previous fight's slot.
-    const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target); // Only this active target/area shares attack slots; old encounters cannot starve mine ghouls.
-    if (competing.length >= BANDIT_MAX_ATTACK_SLOTS) return null;
-    let angle = towardAngle;
-    for (const s of competing) {
-      if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
+    const existing = _banditSlotForActor.get(c);
+    if (existing?.target === target) {
+      existing.angle = banditFacingSlotAngle(existing, target); // Sector identity persists, but its world angle follows the opponent's facing.
+      return existing;
     }
-    const slot = { bandit: c, target, angle };
+    if (existing) {
+      const index = _banditAttackSlots.indexOf(existing);
+      if (index >= 0) _banditAttackSlots.splice(index, 1); // A changed opponent releases the former direction.
+      _banditSlotForActor.delete(c);
+    }
+    if (!banditDirectional(c)) {
+      const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target);
+      if (competing.length >= BANDIT_SPECIAL_ATTACK_SLOTS) return null;
+      let angle = towardAngle;
+      for (const s of competing) if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
+      const slot = { bandit: c, target, angle, sector: null };
+      _banditAttackSlots.push(slot);
+      _banditSlotForActor.set(c, slot);
+      releaseBanditQueueRing(c); // A promoted attacker must not also consume an outer waiting-ring place.
+      return slot;
+    }
+    const used = [false, false, false, false]; // Four cheap flags, no pathfind/scene query; decide only on first slot acquisition.
+    let occupied = 0, rearOwner = null;
+    for (const s of _banditAttackSlots) {
+      if (s.bandit.areaId !== c.areaId || s.target !== target) continue;
+      occupied++;
+      if (s.sector != null) {
+        used[s.sector] = true;
+        if (s.sector === 3) rearOwner = s;
+      }
+    }
+    const backstabber = c.def?.banditAbilityLoadout?.tap2 === 'backstabFlick';
+    if (occupied >= BANDIT_MAX_ATTACK_SLOTS) {
+      if (!backstabber || !rearOwner || rearOwner.bandit.def?.banditAbilityLoadout?.tap2 === 'backstabFlick') return null;
+      if (rearOwner.bandit._banditAction || rearOwner.bandit._banditPreparedCharge
+        || banditAttackTurnOwner(target) === rearOwner.bandit) return null; // Do not steal a slot during its visible attack or charged preparation; the backstabber can claim it once safe.
+      _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an idle rear holder when a real Backstab specialist joins.
+      _banditSlotForActor.delete(rearOwner.bandit);
+      used[3] = false;
+    }
+    let chosen = -1, best = Infinity;
+    const fromTarget = Math.atan2(c.y - target.y, c.x - target.x);
+    for (let i = 0; i < BANDIT_DIRECTION_SECTORS.length; i++) {
+      if (used[i]) continue;
+      const distance = Math.abs(deps.angleDiff(fromTarget, banditSectorAngle(target, i)));
+      const priority = backstabber ? (i === 3 ? -4 : 0) : (i === 3 ? 1 : 0); // Backstab users prefer rear; otherwise leave it free when possible.
+      const score = distance + priority;
+      if (score < best) { best = score; chosen = i; }
+    }
+    if (chosen < 0) return null;
+    const slot = { bandit: c, target, sector: chosen, angle: banditSectorAngle(target, chosen) };
     _banditAttackSlots.push(slot);
+    _banditSlotForActor.set(c, slot);
+    releaseBanditQueueRing(c); // Clear the former waiting-ring reservation immediately on promotion into one of four directions.
     return slot;
   }
 
@@ -1933,16 +2118,38 @@
   // (jittering with the player's/bandit's own minor position noise).
   const BANDIT_QUEUE_RING_CAPACITY = 3;
   const BANDIT_QUEUE_RING_STEP_MUL = 0.6;
-  const _banditQueueRings = []; // [{ bandit, ringIndex, angle }]
+  const _banditQueueRings = []; // [{ bandit, ringIndex, angle }] Preserved for existing arena and queue diagnostics.
+  const _banditQueueForActor = new WeakMap(); // O(1) waiting-ring retention avoids the old every-frame full-array lookup.
+  let _banditQueuePrunedAt = -Infinity; // Shared once-per-frame dead/unloaded cleanup, not once per queued combatant.
+
+  function releaseBanditQueueRing(c) {
+    const ring = _banditQueueForActor.get(c); // Shared with melee promotion and combat-mode cleanup; a queued fighter owns at most one ring.
+    if (!ring) return false;
+    const index = _banditQueueRings.indexOf(ring);
+    if (index >= 0) _banditQueueRings.splice(index, 1);
+    _banditQueueForActor.delete(c);
+    return true;
+  }
 
   function claimBanditQueueRing(c, towardAngle, target) {
-    for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
-      const q = _banditQueueRings[i];
-      if (q.bandit.health <= 0 || q.bandit.state !== 'chase' || !q.bandit.avatarRef?.group?.parent) _banditQueueRings.splice(i, 1);
+    const now = performance.now();
+    if (now - _banditQueuePrunedAt >= BANDIT_SLOT_PRUNE_INTERVAL_MS) {
+      _banditQueuePrunedAt = now;
+      for (let i = _banditQueueRings.length - 1; i >= 0; i--) {
+        const q = _banditQueueRings[i];
+        if (q.bandit.health <= 0 || q.bandit.state !== 'chase' || !q.bandit.avatarRef?.group?.parent) {
+          _banditQueueForActor.delete(q.bandit);
+          _banditQueueRings.splice(i, 1);
+        }
+      }
     }
-    const existing = _banditQueueRings.find(q => q.bandit === c);
+    const existing = _banditQueueForActor.get(c);
     if (existing?.target === target) return existing;
-    if (existing) _banditQueueRings.splice(_banditQueueRings.indexOf(existing), 1); // Reassign the waiting ring when a creature changes combat target.
+    if (existing) {
+      const index = _banditQueueRings.indexOf(existing);
+      if (index >= 0) _banditQueueRings.splice(index, 1); // Reassign the waiting ring when a creature changes combat target.
+      _banditQueueForActor.delete(c);
+    }
     const countByRing = [];
     for (const q of _banditQueueRings) if (q.bandit.areaId === c.areaId && q.target === target) countByRing[q.ringIndex] = (countByRing[q.ringIndex] || 0) + 1;
     let ringIndex = 0;
@@ -1959,7 +2166,18 @@
     }
     const rec = { bandit: c, target, ringIndex, angle };
     _banditQueueRings.push(rec);
+    _banditQueueForActor.set(c, rec);
     return rec;
+  }
+
+  function releaseBanditApproach(c) {
+    const slot = _banditSlotForActor.get(c); // A fighter that switches to ranged/flask/staged combat must release its previous melee sector.
+    if (slot) {
+      const index = _banditAttackSlots.indexOf(slot);
+      if (index >= 0) _banditAttackSlots.splice(index, 1);
+      _banditSlotForActor.delete(c);
+    }
+    releaseBanditQueueRing(c); // Combat-mode switches share the same one-owner queue release as slot promotion.
   }
 
   // A point on a ring of the given radius around the target, at the
@@ -1972,6 +2190,20 @@
     result.x = targetPlayer.x + Math.cos(angle) * radiusPx;
     result.y = targetPlayer.y + Math.sin(angle) * radiusPx;
     return result;
+  }
+
+  function banditBackstabFlankPoint(c, target, engageRangePx, result) {
+    const targetFacing = Number.isFinite(Number(target.angle)) ? Number(target.angle) : (Number(target.facing) || 0); // Same facing as the existing behind condition.
+    const currentAngle = Math.atan2(c.y - target.y, c.x - target.x);
+    const rearAngle = targetFacing + Math.PI;
+    let turn = deps.angleDiff(rearAngle, currentAngle); // Follow the SHORT arc around the enemy instead of walking through their center.
+    if (Math.abs(Math.abs(turn) - Math.PI) < 0.12) {
+      const side = c._banditBackstabSide || ((c._banditStrafePhase || 0) < Math.PI ? 1 : -1);
+      turn = Math.abs(turn) * side; // Perfectly frontal encounters choose a consistent side, preventing a left/right wobble.
+    } else if (Math.abs(turn) > 0.5) c._banditBackstabSide = Math.sign(turn);
+    const nextAngle = currentAngle + Math.max(-0.65, Math.min(0.65, turn)); // Incremental target: circling rather than diagonally cutting through the victim.
+    const radius = Math.max(deps.TILE * 1.25, Math.min(deps.TILE * 2.15, engageRangePx * 0.7)); // Close enough to exploit Backstab Flick after arriving.
+    return banditRingPoint(target, nextAngle, radius, result);
   }
 
   // Bandits frequently request two personal-space nudges each frame. Index the whole
@@ -2041,7 +2273,7 @@
   // Nudges a movement target away from nearby living bandits. An actor can
   // push the target into the NEXT grid cell; expand the candidate set then,
   // so downstream actors still influence it in original hostile list order.
-  function banditPersonalSpaceAdjust(c, point, result = null) {
+  function banditPersonalSpaceAdjust(c, point, result = null, combatTarget = null) {
     let px = point.x, py = point.y;
     const personalSpacePx = banditPersonalSpacePx();
     refreshBanditSpacingBuckets(personalSpacePx);
@@ -2054,7 +2286,7 @@
     candidates.sort(compareBanditSpacingOrder);
     for (let i = 0; i < candidates.length; i++) {
       const o = candidates[i];
-      if (o === c || o.health <= 0 || o.areaId !== c.areaId) continue; // Different zones share coordinates, not physical personal space.
+      if (o === c || o === combatTarget || o.health <= 0 || o.areaId !== c.areaId) continue; // Enemy contact is handled by the real hitbox/lunge collision, not ally-spacing. Other-bandit avoidance stays unchanged.
       const dx = px - o.x, dy = py - o.y;
       const dist = Math.hypot(dx, dy);
       if (!(dist > 0.001 && dist < personalSpacePx)) continue; // Preserve the old NaN/non-finite neighbor rejection.
@@ -2273,9 +2505,20 @@
   }
 
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
-    if (c?.tzatzulCapturedBy) return { aimAngle: c.facing || 0, moving: false }; // Talons own this actor until release; no melee lunge, strafe or ranged attack.
+    if (c?.tzatzulCapturedBy) {
+      if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
+      releaseBanditApproach(c);
+      return { aimAngle: c.facing || 0, moving: false };
+    }
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
-    if (!targetPlayer || Number(targetPlayer.health) <= 0 || targetPlayer.tzatzulCapturedBy) return { aimAngle: c.facing || 0, moving: false }; // The former duel opponent is no longer a ground-combat target.
+    if (!targetPlayer || Number(targetPlayer.health) <= 0 || targetPlayer.tzatzulCapturedBy) {
+      if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // The previous target is no longer a valid charge recipient.
+      releaseBanditApproach(c);
+      return { aimAngle: c.facing || 0, moving: false };
+    }
+    if (c._banditPreparedCharge && (c._banditPreparedCharge.target !== targetPlayer || c.prone || c.state !== 'chase')) {
+      releaseBanditCharge(c, c._banditPreparedCharge.target); // Target switches, knockdowns, and leash exits end a visual charge cleanly.
+    }
     distToPlayer = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
     const def = c.def, loadout = def.banditAbilityLoadout;
     _updateBanditLookAtTarget(c, dt, targetPlayer);
@@ -2291,13 +2534,15 @@
         ghoulWyrmApiByActor.set(c, witchApi);
       }
       const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
-      if (witchResult?.handled) return witchResult;
+      if (witchResult?.handled) { releaseBanditApproach(c); return witchResult; }
     }
-    const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
-    if (flaskResult?.handled) return flaskResult;
-    const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
-    if (rangedResult?.handled) return rangedResult;
+    const flaskResult = c._banditPreparedCharge || c._banditAction ? null : updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Do not let a flask throw interrupt a held or committed melee windup.
+    if (flaskResult?.handled) { releaseBanditApproach(c); return flaskResult; }
+    const rangedResult = c._banditPreparedCharge || c._banditAction ? null : window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
+    if (rangedResult?.handled) { releaseBanditApproach(c); return rangedResult; }
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
+    if (c._banditChargeDecisionCdS > 0) c._banditChargeDecisionCdS = Math.max(0, c._banditChargeDecisionCdS - dt); // One random charge decision per short interval, never every frame.
+    if (c._banditFlankRetryS > 0) c._banditFlankRetryS = Math.max(0, c._banditFlankRetryS - dt); // Backstab contenders may reattempt a flank after a short normal-combat fallback.
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
     // For player targets, unconditional now (was only called from the engaged
     // branch below, skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
@@ -2320,11 +2565,52 @@
       // The transient lock is already gone: committed windup/strike facing stays fixed.
       return { aimAngle: c.facing, moving: false };
     }
+    if (c._banditPreparedCharge) {
+      const prep = c._banditPreparedCharge; // The weapon is posed by the existing SharedAttackPose timeline, but no strike has been scheduled yet.
+      prep.t = Math.min(prep.duration, prep.t + Math.max(0, dt));
+      prep.action.t = prep.t;
+      c.facing = towardAngle;
+      prep.readyAgeS = prep.t >= prep.duration ? (prep.readyAgeS || 0) + Math.max(0, dt) : 0; // A blocked or forever-busy opponent cannot make an enemy hold one pose indefinitely.
+      if (prep.readyAgeS > 2.5) {
+        releaseBanditCharge(c, targetPlayer);
+        c._banditChargeDecisionCdS = 1.25;
+        return { aimAngle: towardAngle, moving: false };
+      }
+      const reach = banditEngagementReachPx(c, def, loadout, targetPlayer);
+      const heldSlot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
+      if (heldSlot && prep.t >= prep.duration && distToPlayer <= reach
+        && banditPreparedChargeHasPriority(c, targetPlayer) && claimBanditAttackTurn(c, targetPlayer)) {
+        releaseBanditCharge(c, targetPlayer, true); // Keep the pose when converting preparation to a real Charged Breaker.
+        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit charged release', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' });
+        const fired = fireBanditChargedBreaker(c, def, targetPlayer, prep);
+        if (!fired) {
+          releaseBanditAttackTurn(c, targetPlayer);
+          resetBanditSwingToNatural(c);
+          c.telegraphState = null;
+        } else {
+          c._banditTactic = 'charged-release';
+          updateBanditLunge(c, dt, targetPlayer); // A new attack lunge starts in the same frame as its staged windup, matching ordinary combos.
+        }
+        return { aimAngle: towardAngle, moving: !!fired };
+      }
+      let moving = false;
+      if (heldSlot && heldSlot.sector != null && !banditPreparedChargeHasPriority(c, targetPlayer)) {
+        const direction = banditFacingSlotAngle(heldSlot, targetPlayer);
+        const point = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Reuses the same movement scratch point as normal ring positioning.
+        banditRingPoint(targetPlayer, direction, Math.min(deps.TILE * 2, reach * 0.7), point);
+        banditPersonalSpaceAdjust(c, point, point, targetPlayer); // Do not have allied-spacing push an attacker's approach point away from the enemy itself.
+        moving = deps.moveCreatureToward(c, point.x, point.y, def.chaseSpeed, dt); // Keep circling toward the assigned quadrant even while the weapon is charged.
+      } else if (distToPlayer > Math.max(deps.TILE * 1.7, reach * 0.85)) {
+        moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt); // A retreating opponent cannot strand a ready charge out of range.
+      }
+      c._banditTactic = prep.t >= prep.duration ? 'charged-ready' : 'charging';
+      return { aimAngle: towardAngle, moving };
+    }
     // A fight the player is not part of only has to look like combat:
     // js/combat/npc-duel-staging.js replaces the decision step below with a
     // cheap staged duel and hands back here (null) once the player gets involved.
     const stagedDuel = npcDuelStagingUpdate(c, dt, targetPlayer, distToPlayer, towardAngle);
-    if (stagedDuel) return stagedDuel;
+    if (stagedDuel) { releaseBanditApproach(c); return stagedDuel; }
 
     // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
     // other bandits -- once a bandit is "in range" (below) it stops
@@ -2338,11 +2624,47 @@
     // short of), this one only ever nudges where a bandit is walking
     // toward, never teleports it.
     const movementPoint = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Per-bandit scratch reused by both collision nudges and the queue-ring calculation.
-    const unstack = banditPersonalSpaceAdjust(c, c, movementPoint);
+    const unstack = banditPersonalSpaceAdjust(c, c, movementPoint, targetPlayer); // Only separate the bandit from other nearby allies, never its chosen opponent.
     if (Math.hypot(unstack.x - c.x, unstack.y - c.y) > 1) deps.moveCreatureToward(c, unstack.x, unstack.y, def.moveSpeed, dt);
 
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
     const slot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
+    const continuingCombo = c._banditComboIndex > 0; // Continue a successful flurry without letting the flanking behavior interrupt its next strike.
+    const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo
+      && Number.isFinite(def.banditStandoffMaxTiles) && (!slot || slot.sector == null || slot.sector === 3); // Only a rear-slot specialist actively circles into the backstab position.
+    const backstabReady = seekingBackstab && banditBehindTarget(c, targetPlayer); // Reuse the real bonus predicate without redundant resource-affliction scans each frame.
+    if (backstabReady) c._banditFlankElapsedS = 0;
+    if (slot && seekingBackstab && !backstabReady && distToPlayer < deps.TILE * 6 && !(c._banditFlankRetryS > 0)) {
+      c._banditFlankElapsedS = (c._banditFlankElapsedS || 0) + dt; // A hard time limit prevents an opponent who keeps turning from making the bandit refuse to fight.
+      if (c._banditFlankElapsedS < (def.backstabFlankMaxSeconds || 2)) {
+        const flank = banditBackstabFlankPoint(c, targetPlayer, engageRangePx, movementPoint); // The existing movement scratch is reused for an incremental rear-side ring target.
+        const targetPoint = banditPersonalSpaceAdjust(c, flank, movementPoint, targetPlayer); // Keep ally avoidance but don't let it forcibly turn the attacker away from the duel target.
+        const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
+        if (moving) {
+          c._banditTactic = 'flanking';
+          return { aimAngle: towardAngle, moving };
+        }
+      }
+      c._banditFlankElapsedS = 0;
+      c._banditFlankRetryS = def.backstabRetrySeconds || 2.5; // Blocked flank or timeout: fight normally, then look for another opening.
+    }
+    const committedOwner = banditDirectional(c) ? banditAttackTurnOwner(targetPlayer) : null; // O(1) per-target permission; unrelated targets have independent melee rhythms.
+    const preparer = banditDirectional(c) ? banditChargeOwner(targetPlayer) : null;
+    if (slot && banditDirectional(c) && !continuingCombo && (c._banditChargeDecisionCdS || 0) <= 0
+      && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0
+      && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && distToPlayer <= engageRangePx
+      && committedOwner && committedOwner !== c && !preparer) {
+      c._banditChargeDecisionCdS = 1.25; // Do not force a charge on every frame of a busy melee queue.
+      if (deps.rnd() < BANDIT_HOLD1_CHANCE && beginBanditPreparedCharge(c, targetPlayer)) {
+        c._banditTactic = 'charging';
+        return { aimAngle: towardAngle, moving: false };
+      }
+    }
+    const priorityBlocked = preparer && preparer !== c && banditPreparedChargeHasPriority(preparer, targetPlayer); // Only a nearby, properly stationed readied charge gets priority.
+    const attackPermission = !banditDirectional(c) || (!committedOwner && !priorityBlocked); // Even the current owner cannot start another swing before its counter's strike resolves.
+    const sectorAngle = slot && slot.sector != null ? banditFacingSlotAngle(slot, targetPlayer) : null;
+    const positionAngle = Math.atan2(c.y - targetPlayer.y, c.x - targetPlayer.x);
+    const inSector = sectorAngle == null || Math.abs(deps.angleDiff(positionAngle, sectorAngle)) <= Math.PI / 3; // A bandit must reach roughly its assigned quadrant before committing a strike.
     // attackCooldownS (0.95-1.15s) runs noticeably longer than the
     // post-attack retreat step (deps.JUMP_BACK_DUR_S, 0.4s), and retreating
     // only backs up one tile -- well short of engageRangePx once lunge
@@ -2374,8 +2696,7 @@
     // hard-blocking on it first, matching how the player's own combo
     // (combat-combo.js) spends stamina unconditionally per step rather
     // than pre-checking it.
-    const continuingCombo = c._banditComboIndex > 0;
-    const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
+    const readyToStrike = distToPlayer <= engageRangePx && !!slot && inSector && attackPermission && c.attackCooldownT <= 0
       && (continuingCombo || c.stamina >= def.attackStaminaCost);
     if (!readyToStrike) {
       // One unified ring formula for the whole waiting state (slot-
@@ -2394,13 +2715,18 @@
       // crowded arena's personal-space pushes can shove the "supposed
       // to be far enough out" ring/flank point closer than intended).
       const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle, targetPlayer);
-      const baseAngle = slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle);
-      const baseRadius = Math.max(
-        def.attackRangePx * 1.5,
-        slot
-          ? engageRangePx * 0.85
-          : engageRangePx * BANDIT_STANDOFF_RANGE_MUL * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL)
-      );
+      const rearAngle = (Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0)) + Math.PI; // Backstab-equipped spares converge on rear flanks, not an unrelated queue-ring bearing.
+      const baseAngle = !slot && seekingBackstab
+        ? rearAngle + ((c._banditStrafePhase || 0) < Math.PI ? -0.40 : 0.40)
+        : (slot ? banditFacingSlotAngle(slot, targetPlayer) : (queueRing ? queueRing.angle : towardAngle));
+      const ordinaryPursuit = Number.isFinite(def.banditStandoffMaxTiles); // Preserve mine/special-enemy ring choreography while ordinary bandits pursue aggressively.
+      const maxStandoff = ordinaryPursuit
+        ? deps.TILE * (def.banditStandoffMaxTiles + (queueRing?.ringIndex || 0) * def.banditStandoffTierStepTiles)
+        : Infinity;
+      const baseRadius = slot
+        ? Math.max(deps.TILE * 0.25, Math.min(engageRangePx * 0.80, def.attackRangePx * (ordinaryPursuit ? 1.25 : 1.5))) // A slot holder must close INSIDE its real safe-commit reach; the old attackRange*1.25 floor could exceed reach and make striking impossible.
+        : Math.max(def.attackRangePx * 1.5, Math.min(engageRangePx * BANDIT_STANDOFF_RANGE_MUL
+          * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL), maxStandoff));
       const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
       const swayAngle = Math.sin(strafeT) * BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD;
       const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius, movementPoint);
@@ -2408,7 +2734,7 @@
       // another bandit -- the common case is a pure ring point, so
       // "back off when waiting" and "sway side to side" both fall out
       // of this same call instead of being two separate movements.
-      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint, movementPoint);
+      const targetPoint = banditPersonalSpaceAdjust(c, ringPoint, movementPoint, slot ? targetPlayer : null); // Directional attackers can approach within hit reach; queued fighters still respect every hostile's space.
       // BANDIT_STRAFE_SPEED_PX_S (55px/s) is deliberately slow -- right
       // for the final small-amplitude sway once already near the ring,
       // but an outer queue ring can sit 500-800px out for a big gang
@@ -2420,8 +2746,10 @@
       // everything else in this state machine, and only downshifts to
       // the gentle sway speed once actually close to the target point.
       const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
-      const travelSpeed = distToTarget > deps.TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1); // Titan guard/strafe also honors 1/3 locomotion; ordinary bandits are unchanged.
+      const sprintThreshold = deps.TILE * (ordinaryPursuit ? 0.45 : 1.5); // Preserve special humanoids' earlier stance pacing, but make bandits sprint toward a retreating opponent.
+      const travelSpeed = distToTarget > sprintThreshold ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1);
       const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
+      c._banditTactic = distToTarget > sprintThreshold ? 'pursuing' : 'standoff'; // Testing Arena exposes the actual combat movement choice on mobile.
       return { aimAngle: towardAngle, moving };
     }
     const alignment = window.Combat?.attackAlignmentStep?.(c, targetPlayer, dt, {
@@ -2439,18 +2767,26 @@
       return { aimAngle: c.facing, moving: false };
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
+    if (!claimBanditAttackTurn(c, targetPlayer)) return { aimAngle: towardAngle, moving: false }; // Another actor (or ready charge) got the turn after this frame's eligibility check.
     window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
+    let attackChoice = 'combo'; // Mobile AI diagnostics distinguish the actual selected ability, not simply whether a swing fired.
     if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < BANDIT_HOLD1_CHANCE) {
       fired = fireBanditChargedBreaker(c, def, targetPlayer);
+      if (fired) attackChoice = 'charged-breaker';
     }
     if (!fired) {
       const cond = banditQuickAttackConditions(c, targetPlayer);
-      const conditionFavorable = cond.exhausted || cond.behind || cond.lowHealth;
-      if (conditionFavorable && deps.rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+      const chance = banditQuickAttackChance(c, loadout, cond); // Tier changes the decision only when THIS equipped technique's bonus can trigger.
+      if (chance > 0 && deps.rnd() < chance) {
+        fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+        if (fired) attackChoice = loadout.tap2;
+      }
     }
     if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
+    c._banditTactic = fired ? attackChoice : 'attack-blocked';
+    if (!fired) releaseBanditAttackTurn(c, targetPlayer); // A rejected ability must not monopolize this target's one committed attack.
     if (!fired) window.FeyHypedAttacks?.clearCredit?.(c, 'npcMelee'); // No authored attack started: its enhanced points cannot leak into an unrelated future action.
     // The staged action just created above (inside whichever fire*
     // call ran) gets its own first tick later THIS SAME FRAME --
@@ -2681,6 +3017,9 @@
   }
 
   function updateBanditToolMesh(c) {
+    if (c?._banditPreparedCharge && (c.prone || c.health <= 0 || c.state !== 'chase' || c.tzatzulCapturedBy)) {
+      releaseBanditCharge(c, c._banditPreparedCharge.target); // A prone/dead/carried fighter may skip its melee AI; its visible weapon renderer must not preserve a stale held pose.
+    }
     window.GhoulSpecialVariants?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Enchanted-weapon particles for the mine's Shadowknights.
     if (c?._banditCaptainArmament) window.BanditCaptainArmaments?.tick?.(c, deps?.TOOL_ITEM_DEFS); // Only enchanted captains emit the ordinary fixed-weapon planar particles.
     const handDriverRoot = c?.avatarRef?.handRigAvatarRoot; // Final pre-render hand driver reads the live melee/ranged/flask holder selected below.
@@ -2712,7 +3051,7 @@
       if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
       if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     }
-    const action = c._banditAction;
+    const action = c._banditAction || c._banditPreparedCharge?.action || null; // Draw-only held-charge windup uses the existing SharedAttackPose clock without registering an extra combat attack.
     // The player's swing clock, shared (SharedAttackPose.swingTimeline): windup, strike travel, an ability's
     // own post-strike hold, then an eased return to neutral. Elapsed time comes from the live staged action,
     // then from the tail finishBanditAction hands over once the action completes.
@@ -2780,6 +3119,7 @@
         const curveEnd = windupCurve(curve.span, curve.slowdown);
         if (curveEnd > 1e-6) progress = wf * windupCurve((progress / wf) * curve.span, curve.slowdown) / curveEnd;
       }
+      if (c._banditChargeReleaseAction === action && progress < wf) progress = wf; // The held weapon stays fully drawn during the short release telegraph instead of snapping back to Neutral.
       if (handDriverRoot?.userData) {
         // Same timing AND weapon the player's hands get for the same swing: the tool key picks the hand mode, so a dual-wield
         // weapon swings with both hands and a thrown flask with one. poseScale is the partial-charge fraction (the player's
@@ -3043,6 +3383,8 @@
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
+    if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
+      cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
     let roster = opts.rosterOverride || await rollBanditRoster(cfg, rank, opts.nameOverride, cfg._enemyLoadoutGender);
@@ -3210,6 +3552,8 @@
       // isBandit branch/the leaving-chase reset above for where these
       // get driven and cleared.
       _banditAction: null, _banditComboIndex: 0,
+      _banditFlankElapsedS: 0, _banditFlankRetryS: 0, _banditBackstabSide: 0, _banditTactic: 'idle', // Per-actor Backstab circling timeout, preferred side, and mobile decision log.
+      _banditChargeDecisionCdS: 0, _banditPreparedCharge: null, _banditChargeReleaseAction: null, // Charge roll cadence, draw-only windup pose, and the real released-stage identity.
       _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
       // Per-bandit phase offset for the idle side-to-side strafe applied
       // while queued/waiting (see BANDIT_STRAFE_* below) -- randomized so
@@ -3220,6 +3564,16 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (!mineEnemy && cfg?.trinketLoadout) {
+      const rolled = window.TrinketSystem?.rollEnemyLoadout?.(cfg.trinketLoadout, rank, tier, deps.rnd) || []; // Rolled once for rank/tier alongside equipment, not in the hostile update loop.
+      if (rolled.length) {
+        window.TrinketSystem?.configureEnemy?.(c, rolled); // Materializes the same catalog modifiers on this particular enemy rather than editing its shared definition.
+        const resources = window.ResourceSystem; // A fresh combatant starts at its trinket-modified capacity instead of spawning partially wounded.
+        c.health = resources?.getEffectiveMax?.(c, 'health') ?? c.health;
+        c.stamina = resources?.getEffectiveMax?.(c, 'stamina') ?? c.stamina;
+        c.footing = resources?.getEffectiveMax?.(c, 'footing') ?? c.footing;
+      }
+    }
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
     const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
       || c.carriesBurdenKind === 'hronalWitchBomb'
@@ -3305,6 +3659,8 @@
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,
     GUARD_DAMAGE_ABSORB: BANDIT_GUARD_DAMAGE_ABSORB,
     MAX_ATTACK_SLOTS: BANDIT_MAX_ATTACK_SLOTS,
+    DIRECTION_SECTORS: BANDIT_DIRECTION_SECTORS,
+    attackTurnOwner: banditAttackTurnOwner, chargeOwner: banditChargeOwner, // Mobile testing tools inspect the per-target turn and preparation without mutating a reservation.
     get attackSlots() { return _banditAttackSlots; },
     get queueRings() { return _banditQueueRings; },
   };

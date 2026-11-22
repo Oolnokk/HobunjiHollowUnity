@@ -55,17 +55,18 @@ const files = [
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
   'js/combat/resource-system.js?v=20261122familyBaby4',
+  'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
   'js/combat/weapon-shape-stats.js?v=20261109grappledonor1',
   'js/combat/combat-combo.js?v=20261107combo1501a',
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
-  'js/combat/ranged-weapons.js?v=20261122hTorchAim1',
+  'js/combat/ranged-weapons.js?v=20261122banditPursuit1',
   'js/alchemy-system.js?v=20261122mushrooms1',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261122captiveCombatCombined1',
+  'js/combat/combat-bandit.js?v=20261122tribeDuelRepair1',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
-  'js/combat/enemy-weapon-stances.js?v=20261111flailPose1',
+  'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
   'js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6',
   'js/combat/combat-animal-attacks.js?v=20261117hypedCreature6', // Real animal special registry underlies the shared attachment system.
@@ -84,7 +85,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261118captainWeapon1',
   'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261119hfd4da81',
+  'tools/enemy-loadout-editor/source-data.js?v=20261122banditPursuit1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {

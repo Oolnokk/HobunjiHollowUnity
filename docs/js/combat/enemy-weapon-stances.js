@@ -79,7 +79,7 @@
       if (timeline.progress > timeline.hf) return (1 - poseScale) + poseScale * Math.max(0, Math.min(1, (timeline.progress - timeline.hf) / Math.max(0.000001, 1 - timeline.hf)));
       return 1 - poseScale;
     }
-    const action = entity?._banditAction; // Current staged action whose windup defines how quickly the neutral-plane compensation fades.
+    const action = entity?._banditAction || entity?._banditPreparedCharge?.action; // Visual-only prepared windup uses the same authored sweep twist as a registered staged action.
     if (!action) return 1;
     const totalS = Math.max(0.0001, (Number(action.windupS) || 0) + (Number(action.strikeS) || 0)); // Safe duration matching BanditCombat's own progress calculation.
     const progress = Math.max(0, Math.min(1, (Number(action.t) || 0) / totalS)); // Current normalized staged-action progress.
@@ -108,7 +108,7 @@
     const requestedSign = entity?._banditSwingDirSign === -1 ? -1 : 1; // Existing forehand/backhand direction requested by the current bandit ability.
     const powerValue = Number(entity?._banditSwingPower); // Current bandit ability power baked into windup/strike endpoints below.
     const power = Number.isFinite(powerValue) ? powerValue : 1;
-    const action = entity?._banditAction || null; // A new staged action is a new attack: rebake once so edited pose data is picked up.
+    const action = entity?._banditAction || entity?._banditPreparedCharge?.action || null; // Prepared held charges are a visible swing phase too: bake their authored Light/Heavy neutral once, then reuse it throughout the preview.
     const spacing = !!window.MeleePoseSpacing?.adjustEndpoint; // Spacing can finish loading after the first idle frame; rebake when it appears.
 
     const alternatesHeavyNeutral = stanceClassFor(entity) === 'heavy'; // Heavy swings finish ready on the opposite side (the player's rule).
@@ -151,7 +151,7 @@
 
   function shouldApply(entity, nowMs) {
     if (!entity?.isBandit || (Number(entity.health) || 0) <= 0 || entity._rangedMode) return false;
-    if (entity._banditAction || entity._banditToolTail) return true; // The strike/hold/return tail is still the swing: it keeps the stance neutral and endpoints.
+    if (entity._banditAction || entity._banditPreparedCharge || entity._banditToolTail) return true; // A draw-only held charge is also an active pose; never swap back to idle between its visual frames.
     const settleUntil = Number(entity._banditToolSettleUntil) || 0; // Externally set settle window that must finish before idle stance resumes.
     return nowMs >= settleUntil;
   }

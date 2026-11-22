@@ -243,6 +243,7 @@
     }
     const prior = entity._chunkCombatTarget;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
+    if (target) entity.targetPlayer = null; // An ecology fighter owns an NPC opponent; clear a stale player lock before game.js can override the chosen combat target in its chase tick.
     if (!target) {
       // A finished fight must not leave the actor in 'chase' with no target: that
       // reads as the player being in combat (music blip) and, past the leash,

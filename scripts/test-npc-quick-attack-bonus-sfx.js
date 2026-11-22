@@ -38,7 +38,7 @@ function sliceBetween(source, start, end) {
   return source.slice(begin, stop);
 }
 const damageSource = sliceBetween(banditSource, '  function damageBanditCombatTarget(', '  // Mirrors combat-quickattacks.js');
-const conditionSource = sliceBetween(banditSource, '  function banditQuickAttackConditions(', "  // The weapon's own natural");
+const conditionSource = sliceBetween(banditSource, '  function banditBehindTarget(', "  // The weapon's own natural"); // Includes the shared facing/behind predicate now reused by Quick Attack and tactical backstab flanking.
 const attackSource = sliceBetween(banditSource, '  function fireBanditQuickAttack(', '  function fireBanditChargedBreaker(');
 const deps = {
   TILE: 64,
