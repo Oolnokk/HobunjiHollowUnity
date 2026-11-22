@@ -156,6 +156,7 @@ async function testFamilyBabyAmbient() {
     DialogueContent: { registerTreeProvider() {} },
   }; // Tiny real-module host: only the existing family/ambient interfaces are stubbed.
   vm.runInNewContext(file('docs/config/romance-config.js'), { window: familyWindow });
+  vm.runInNewContext(file('docs/js/family-baby-ambient-voice.js'), { window: familyWindow }); // Load the extracted baby voice bridge exactly as game index does.
   vm.runInNewContext(file('docs/js/romance-family.js'), {
     window: familyWindow, console,
     setTimeout: () => 1, clearTimeout: () => {}, // Deterministic browser timers; restore() cancels legacy announcement timeouts.
@@ -196,6 +197,7 @@ async function testFamilyBabyAmbient() {
   assert.ok(ambientSource.includes('!isNewborn && options.vocabulary !== false'), 'Baby babble bypasses all adult synonym and regional dialogue');
   assert.ok(ambientSource.includes('babyAmbientSound?.(speakerId)'), 'Automatic proximity greetings take their speech from authoritative family stage');
   assert.ok(ambientSource.includes('babyAnchor?.group || walker.root'), 'Held newborn greetings use the visible carry proxy rather than the hidden walker');
+  assert.ok(ambientSource.includes('FamilyBabyAmbientVoice?.anchorFor'), 'Carried baby anchors must go through the independent voice adapter');
   assert.ok(ambientSource.includes('runtimeGreetings'), 'Dynamic family greeting pools must survive the async ambient configuration load');
   assert.ok(!file('docs/js/dialogue-content.js').includes('babyAmbientSound'), 'The ordinary Talk renderer is not replaced by ambient baby noises');
 }
