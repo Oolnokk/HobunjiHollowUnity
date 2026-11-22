@@ -225,7 +225,15 @@
     const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
     positionAtPosterior(body, timestamp, currentPortrait(body));
     if (!fireState) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
-    const delta = lastFireAt === null ? 0 : Math.max(0, Math.min(.05, (timestamp - lastFireAt) / 1000)); // Prevent resumed-tab particle bursts.
+    let delta;
+    if (lastFireAt === null) {
+      const burn = torch.debug; // Read once on transfer, not every frame: the wick must not restart its 180ms darkening after being carried lit.
+      const alreadyBurnedMs = Math.max(0, (Number(burn?.burnDurationMs) || 30000) - (Number(burn?.burnRemainingMs) || 0));
+      const clothDarkenS = Number(global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.torch?.base?.vfx?.clothDarkenS) || .18;
+      delta = Math.min(Math.max(.01, clothDarkenS), alreadyBurnedMs / 1000); // Prime exactly the elapsed carried wick transition; bounded by the shared recipe.
+    } else {
+      delta = Math.max(0, Math.min(.05, (timestamp - lastFireAt) / 1000)); // Prevent resumed-tab particle bursts.
+    }
     lastFireAt = timestamp;
     root.updateWorldMatrix?.(true, true); // Refresh the complete cached art/emitter subtree once; world-rise particles read the actual posterior and 45° pose.
     global.HobunjiLayeredWeaponEffects.stepFire(fireState, delta); // Exact held-fire behavior: recolored wick, lit darkening and world-up motes.
