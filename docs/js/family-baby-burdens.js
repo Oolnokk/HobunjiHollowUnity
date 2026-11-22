@@ -64,6 +64,7 @@
     const group = new THREE.Group();
     group.name = 'family_baby_' + child.id;
     group.userData.familyBabyId = child.id;
+    group.userData.hobunjiFamilyBabyPhysicalCarry = true; // Renderer identifies only this physical infant, not its parent portrait.
     if (baked?.geometry) {
       // Bake the real small-body / enlarged-head skin ONCE; carry uses one rigid mesh,
       // never a second active skeleton or another per-frame animation task.
@@ -153,10 +154,13 @@
     const carryable = entry.burden.data?.carryable;
     if (carryable) {
       const w = group.userData.familyBabyWidth, h = group.userData.familyBabyHeight;
-      carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
-      carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
-      carryable.billboardAnchor.position.y = h * .06; carryable.billboardAnchor.position.z = -h * .48;
-      carryable.backCarry.position.y = h * .16; carryable.backCarry.position.z = -h * .48;
+      if (window.FamilyBabyCarryPose?.applyTo) window.FamilyBabyCarryPose.applyTo(carryable, w, h);
+      else { // Missing optional profile script: preserve the original usable hand positions.
+        carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
+        carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
+        carryable.billboardAnchor.position.y = h * .06; carryable.billboardAnchor.position.z = -h * .48;
+        carryable.backCarry.position.y = h * .16; carryable.backCarry.position.z = -h * .48;
+      }
     }
   }
   function moveToWalker(entry) {
@@ -223,11 +227,12 @@
     entry = { child, walker, persist, burden: null, hiddenRoot: null, previousVisibility: true, disposing: false };
     const infantWidth = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelWidth) || .3); // Reuses the already age-scaled portrait for both hand contacts.
     const infantHeight = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelHeight) || infantWidth);
+    const defaultCarry = window.FamilyBabyCarryPose?.forSize?.(infantWidth, infantHeight); // Shared authored grips at this baby's actual scale.
     const burden = api.registerBurden({
       id: 'family_baby_' + child.id, mapId: area, // Let Shattercasks pick the canonical active world scene; an NPC sub-group would reset zone burden records.
       group, kind: 'familyBaby', displayName: child.name || 'Baby',
       hanging: false, invulnerable: true, noHang: true,
-      data: { carryable: {
+      data: { carryable: defaultCarry || {
         enabled: true,
         billboardAnchor: { coordinateSpace: 'posterior-relative',
           position: { x: 0, y: infantHeight * .06, z: -infantHeight * .48 },
