@@ -39,7 +39,7 @@ for (const path of ['docs/js/nuhongan-species-runtime.js', 'docs/js/longoran-spe
   'docs/js/skeleton-species-runtime.js', 'docs/js/harlyao-skeleton-species-runtime.js']) run(path);
 const expected = { // Constant values supplied by species installers, not derived by gameplay.
   'nuhongan': ['tletingan', 0.832466, 0.843072],
-  'longoran': ['tletingan', 1.429497, 1.772385],
+  'longoran': ['tletingan', 1.385308, 1.723369],
   'harlyao': ['engh-sho', 1.242309, 1.212502],
   'mammakhbuur': ['mashtzarr', 1.992106, 1.819542],
   'harlyao-skeleton': ['engh-sho', 1.242309, 1.212502],

@@ -25,8 +25,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(values['mashtzarr::female'])), { x: 1
 // Longorans are lanky/thick-framed at the Mammakhbuur's height, Tletingans short
 // and stocky, Nuhongans Ewok-like. legLength is authored separately from portrait height.
 const pass = {
-  'longoran::male': { x: 1.15, y: 1.4, legLength: 2.3, head: 1.1, offsetY: -0.055 },
-  'longoran::female': { x: 1.1, y: 2.25, legLength: 2.15, head: 1.05, offsetY: -0.055 },
+  'longoran::male': { x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 },
+  'longoran::female': { x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 },
   'tletingan::male': { x: 0.9, y: 1.2, legLength: 1, head: 0.85, offsetY: 0 },
   'tletingan::female': { x: 0.9, y: 1.15, legLength: 0.95, head: 0.85, offsetY: 0 },
   'nuhongan::male': { x: 0.78, y: 0.7, legLength: 0.55, head: 0.8, offsetY: 0 },
@@ -39,6 +39,6 @@ for (const [key, tuple] of Object.entries(pass)) {
 assert(values['longoran::male'].legLength > values['longoran::male'].y, 'Longorans are lanky: legs outgrow the portrait');
 assert(values['nuhongan::male'].legLength < values['tletingan::male'].legLength && values['nuhongan::male'].y < values['tletingan::male'].y,
   'Nuhongans are shorter and stubbier than Tletingans');
-assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 24, 'shipping scale revision must change when species defaults change');
+assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 25, 'shipping scale revision must change when species defaults change');
 
 console.log('Only the intended Full Character Scale edits and proportional Mammakhbuur female values are applied.');

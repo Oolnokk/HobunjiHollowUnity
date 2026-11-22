@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 24; // Optional per-species legLength; Longoran/Tletingan/Nuhongan proportion pass. Keep head/x >= ~0.94 (2px neck-band collar step). v24: thin Longoran hands/feet, smaller Nuhongan hands.
+  const VERSION = 25; // Optional per-species legLength; Longoran/Tletingan/Nuhongan proportion pass. Keep head/x >= ~0.94 (2px neck-band collar step). v24: thin Longoran hands/feet, smaller Nuhongan hands. v25: Longorans a tad less thick (width -6%) with slightly smaller heads.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
   // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
@@ -26,8 +26,8 @@
     'tletingan::female': Object.freeze({ x: 0.9, y: 1.15, legLength: 0.95, head: 0.85, offsetY: 0 }),
     'nuhongan::male': Object.freeze({ x: 0.78, y: 0.7, legLength: 0.55, head: 0.8, offsetY: 0 }), // Ewok-like: big head, round body, stubby legs.
     'nuhongan::female': Object.freeze({ x: 0.8, y: 0.7, legLength: 0.55, head: 0.85, offsetY: 0 }),
-    'longoran::male': Object.freeze({ x: 1.15, y: 1.4, legLength: 2.3, head: 1.1, offsetY: -0.055 }), // Tall, lanky but thick-framed (bugbear): Mammakhbuur height with long pants-covered legs.
-    'longoran::female': Object.freeze({ x: 1.1, y: 2.25, legLength: 2.15, head: 1.05, offsetY: -0.055 }), // Same silhouette as the male at the Mammakhbuur female's height.
+    'longoran::male': Object.freeze({ x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 }), // Tall, lanky but thick-framed (bugbear): Mammakhbuur height with long pants-covered legs.
+    'longoran::female': Object.freeze({ x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 }), // Same silhouette as the male at the Mammakhbuur female's height.
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),
