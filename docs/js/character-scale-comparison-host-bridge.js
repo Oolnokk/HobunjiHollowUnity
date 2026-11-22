@@ -102,7 +102,8 @@
       profile.anatomy.rigScaleY = value.y;
       profile.anatomy.headScale = value.head;
       profile.anatomy.headOffsetY = value.offsetY;
-      if (value.legLength != null) profile.anatomy.legLengthScale = value.legLength; // Keep independently authored leg reach on live shared profile.
+      if (value.legLength != null) profile.anatomy.legLengthScale = value.legLength; // Explicit independent leg reach.
+      else delete profile.anatomy.legLengthScale; // Importing an old Height tuple must restore its original shared portrait/leg proportion, never retain stale newer authoring.
       if (value.handScale != null) profile.anatomy.handScale = value.handScale;
       if (value.footScale != null) profile.anatomy.footScale = value.footScale;
     }
@@ -329,6 +330,7 @@
       profile.anatomy.headScale = scale.head;
       profile.anatomy.headOffsetY = scale.offsetY;
       if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
       if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
       if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
       delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
@@ -425,6 +427,7 @@
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
       if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
       if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
       if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
     }
