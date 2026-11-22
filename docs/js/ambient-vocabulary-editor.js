@@ -13,7 +13,10 @@
     ['breadth', 'Narrow', 'Broad', 'Number of source words and alternatives the character knows'],
     ['variety', 'Consistent', 'Varied', 'Number of different checked alternatives the generator prefers'],
     ['frequency', 'Rare swaps', 'Frequent swaps', 'Chance of substituting an eligible word when speaking'],
-  ]); // All six sliders are independent dimensions; none is an intelligence score.
+    ['oldSlang', 'No old slang', 'Pre-1900 slang', 'How often historical slang documented before 1900 enters generated checkbox choices'],
+    ['simplicity', 'Normal words', 'Over-simple', 'Plain childlike substitutes rather than simply low verbosity'],
+    ['nearMiss', 'Exact meaning', 'Almost-right', 'Invented or childlike near-miss expressions with deliberately approximate meaning'],
+  ]); // Nine independent style dimensions; no one-to-one connection between simplicity and childish mistakes.
   const model = {
     config: null, profiles: null, npcs: [], selected: 'dictionary', word: '', wordSearch: '',
     preview: "That's a lovely tune. Good to see you, friend!", previewResult: '', loading: true, error: null,
@@ -55,6 +58,7 @@
   function familyId(id) {
     return String(model.profiles?.assignments?.[id]
       || (/^child_[a-z0-9]+$/i.test(id) ? 'child' : '')
+      || (/^porakaneki(?:[_:-]|$)/i.test(id) ? 'porakaneki' : '')
       || model.profiles?.defaultProfile || 'neighborly'); // Follows the existing reaction system's child/personality policy.
   }
   function slidersFor(id) {
@@ -190,6 +194,10 @@
       entries.map(entry =>
         '<div class="card" style="margin:10px 0;padding:10px" data-synonym="' + safe(entry.id) + '">' +
         '<label class="field">Approved replacement<input type="text" data-edit-synonym="' + safe(entry.id) + '" value="' + safe(entry.text) + '"></label>' +
+        '<div class="grid"><label class="field">Word style<select data-edit-kind="' + safe(entry.id) + '">' +
+        [['standard','Standard'],['old-slang','Historical slang (before 1900)'],['simple','Over-simple / childlike'],['near-miss','Almost-right / coined']].map(([kind,label]) =>
+          '<option value="' + kind + '"' + ((entry.kind || 'standard') === kind ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
+        '<label class="field">First attested year (old slang only)<input data-edit-period="' + safe(entry.id) + '" type="number" min="1000" max="1899" step="1" placeholder="e.g. 1861" value="' + safe(entry.firstRecorded || '') + '"></label></div>' +
         '<div class="grid">' +
         [['verbosity', 'Simple', 'Verbose'], ['color', 'Technical', 'Colorful'], ['formality', 'Casual', 'Formal']].map(([axis, low, high]) =>
           '<label class="field">' + low + ' ↔ ' + high + '<input type="number" min="0" max="100" step="1" data-edit-rating="' + axis + '" data-synonym-id="' + safe(entry.id) + '" value="' + clamp(entry[axis]) + '"></label>'
@@ -248,6 +256,25 @@
         }
         entry.text = text; // The canonical ID does NOT change, so checked words update globally when renamed.
         notify('Master synonym edited · character checkmarks preserved');
+      };
+    });
+    $('editor').querySelectorAll('[data-edit-kind]').forEach(input => {
+      input.onchange = () => {
+        const entry = cfg().lexicon[activeWord()]?.find(item => item.id === input.dataset.editKind); // Edit only the canonical synonym; every character retains the same checkbox ID.
+        if (!entry || !rules().WORD_KINDS.includes(input.value)) return;
+        entry.kind = input.value;
+        notify('Updated synonym style. Pre-1900 slang requires a first attested year to enter automatic generation.');
+      };
+    });
+    $('editor').querySelectorAll('[data-edit-period]').forEach(input => {
+      input.onchange = () => {
+        const entry = cfg().lexicon[activeWord()]?.find(item => item.id === input.dataset.editPeriod); // Historical metadata is author-editable, never guessed at runtime.
+        if (!entry) return;
+        const year = Number(input.value);
+        if (!input.value.trim()) delete entry.firstRecorded;
+        else if (Number.isInteger(year) && year >= 1000 && year <= 1899) entry.firstRecorded = year;
+        else { input.value = String(entry.firstRecorded || ''); notify('First attested year must be before 1900.'); return; }
+        notify('Updated historical attestation year for the shared synonym.');
       };
     });
     $('editor').querySelectorAll('[data-edit-rating]').forEach(input => {
@@ -316,7 +343,9 @@
         '<input type="checkbox" data-check-synonym="' + safe(entry.id) + '"' + (checked.has(entry.id) ? ' checked' : '') +
         ' style="width:23px;height:23px;flex:none;accent-color:var(--accent)">' +
         '<span style="flex:1"><strong>' + safe(entry.text) + '</strong><span class="muted" style="display:block">Verbosity ' + clamp(entry.verbosity) +
-        ' · Color ' + clamp(entry.color) + ' · Formality ' + clamp(entry.formality) + '</span></span></label>').join('') +
+        ' · Color ' + clamp(entry.color) + ' · Formality ' + clamp(entry.formality) +
+        ' · ' + safe((entry.kind || 'standard') === 'old-slang' ? 'Pre-1900 slang' : (entry.kind === 'simple' ? 'Over-simple' : (entry.kind === 'near-miss' ? 'Almost-right' : 'Standard'))) +
+        '</span></span></label>').join('') +
       '<div class="row"><button id="checkAll" type="button">Check all</button><button id="checkNone" type="button">Uncheck all</button>' +
       '<button id="resetWord" class="subtle" type="button">Reset word to generated</button></div>' +
       '<div class="muted">Every change here edits only this NPC’s checkmarks. Edit the wording itself in Master dictionary to update it for everyone.</div></section>' +
