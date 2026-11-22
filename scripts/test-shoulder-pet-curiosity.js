@@ -204,4 +204,48 @@ assert.match(probeSource,
   /Size class:[\s\S]{0,260}expected group scale=[\s\S]{0,650}Shoulder pose:[\s\S]{0,180}inwardChance=/,
   'the mobile pixel probe reports sustained pose, hold time, and unbiased inward chance alongside genotype scale');
 
+// Exercise the actual gameplay curiosity functions: root motion must not reappear
+// when old saves contain nonzero lean values or the observation pose changes.
+const curiositySlice = source.slice(source.indexOf('function _tickShoulderPetCuriosity'), source.indexOf('function _isPlayerGenuinelyIdle'));
+assert(curiositySlice.includes('function _applyShoulderPetCuriosity'), 'head-only curiosity gameplay source was found');
+const curiosityRandom = [0.1, 0, 0, 0.5]; // Fixed inward roll, hold, yaw and pitch to make the first pose deterministic.
+const headYawSamples = []; // Records only the head-bone yaw updates from the live curiosity driver.
+const headPitchSamples = []; // Records only the head-bone pitch updates from the live curiosity driver.
+const curiosityRuntime = vm.runInNewContext('(() => { ' + curiositySlice
+  + ' return { apply: _applyShoulderPetCuriosity }; })()', {
+  window: { FormatUtils: { clamp: (value, low, high) => Math.max(low, Math.min(high, value)) },
+    ShoulderPetObservationFlip: { recordPose() {} } },
+  rnd: () => curiosityRandom.shift() ?? 0.5,
+  SHOULDER_PET_INWARD_CHANCE: 0.5,
+  SHOULDER_PET_POSE_HOLD_MIN_S: 1.5,
+  SHOULDER_PET_POSE_HOLD_MAX_S: 3,
+  SHOULDER_PET_CURIOUS_PITCH_DEG: 5,
+  SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG: 14,
+  SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG: 24,
+  SHOULDER_PET_AWAY_HEAD_YAW_SIGN: 1,
+  SHOULDER_PET_CURIOUS_TURN_SPEED_DEG: 180,
+  _companionHeadRestDeg: () => 0,
+  _updateCompanionHeadRotation: (pet, angle) => headPitchSamples.push(angle),
+}); // The real functions run with controlled game globals; no duplicated behavior logic.
+const curiosityPet = {
+  shoulderCuriosity: { phase: 'legacy', timer: 0, facingInward: false, inwardChance: 0.5,
+    currentLeanDeg: 7, targetLeanDeg: -7, currentPitchDeg: 0, targetPitchDeg: 0,
+    currentYawDeg: 0, targetYawDeg: 0 },
+  avatarRef: { updateHeadYaw: angle => headYawSamples.push(angle) },
+  group: { position: { x: 4, y: 3, z: 2 }, rotation: { x: 0, y: 0, z: 0 } },
+}; // Deliberately nonzero legacy lean and off-origin body reveal accidental root updates.
+const fixedBody = JSON.stringify(curiosityPet.group);
+curiosityRuntime.apply(curiosityPet, 0.2);
+assert.equal(curiosityPet.__hobunjiShoulderFacingInward, true, 'first authored observation pose is inward');
+assert.equal(curiosityPet.shoulderCuriosity.currentLeanDeg, 0, 'old body lean is neutralized on the first frame');
+assert.equal(curiosityPet.shoulderCuriosity.targetLeanDeg, 0, 'new lean targets are never generated');
+assert(headYawSamples[0] > 0 && headPitchSamples.length === 1, 'head yaw/pitch remain independently driven');
+assert.equal(JSON.stringify(curiosityPet.group), fixedBody, 'head curiosity cannot shift the pet body root');
+curiosityRandom.push(0.9, 0, 1, 0.5); // Force the second authored observation pose with a different head-yaw target.
+curiosityPet.shoulderCuriosity.timer = 0;
+curiosityRuntime.apply(curiosityPet, 0.2);
+assert.equal(curiosityPet.__hobunjiShoulderFacingInward, false, 'second authored observation pose is outward');
+assert(headYawSamples[1] > headYawSamples[0], 'the head turns farther without a whole-body rotation');
+assert.equal(JSON.stringify(curiosityPet.group), fixedBody, 'both observation selections leave the root for the attachment solver');
+
 console.log('Shoulder-pet curiosity regression checks passed.');
