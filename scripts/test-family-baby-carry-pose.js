@@ -23,42 +23,87 @@ const browser = { localStorage: {
 vm.runInNewContext(files.profile, { window: browser, console });
 const profile = browser.FamilyBabyCarryPose;
 assert(profile, 'baby grips have a central runtime config');
-const sized = profile.forSize(.3, .4);
-assert.equal(sized.handTargets.left.x, .3 * .4, 'left grip follows real portrait width');
-assert.equal(sized.handTargets.right.x, -.3 * .4, 'right grip follows real portrait width');
-assert.equal(sized.handTargets.left.z, .4 * .05, 'grip depth follows baby portrait height');
-assert.equal(sized.billboardAnchor.position.z, .4 * -.48, 'held anchor follows baby portrait height');
-assert.equal(sized.backCarry.rotation.y, 180, 'back stow pose retains the original orientation');
-const point = { x: -.18, y: .16, z: -.06 }; // Authoring the left/bottom grip of a rectangular 0.6×0.4 portrait.
-const uv = profile.pointToPortrait(point, .6, .4);
-assert(Math.abs(uv.u - .2) < 1e-10 && Math.abs(uv.v - .6) < 1e-10 && Math.abs(uv.depth + .15) < 1e-10,
-  'portrait coordinates are measured left-to-right / top-to-bottom, while Z is relative to portrait height');
-const world = profile.pointFromPortrait(uv, .6, .4);
-for(const axis of ['x','y','z'])assert(Math.abs(world[axis] - point[axis]) < 1e-10,
-  'portrait percentage round-trip preserves '+axis);
-const independent = profile.forSize(.6, .4);
-independent.handTargets.left.x = -.18; independent.handTargets.left.y = .16;
-const savedPercent = profile.toProfile(independent, .6, .4);
-const preservedSocket = independent.handTargets.left; // Live grip rig may hold a direct reference to this object.
-profile.applyFrom(independent, savedPercent, .3, .2);
-assert.equal(independent.handTargets.left, preservedSocket, 'resizing an unsaved draft leaves the original grip object intact');
-assert(Math.abs(independent.handTargets.left.x + .09) < 1e-10
-  && Math.abs(independent.handTargets.left.y - .08) < 1e-10,
-  'resizing unsaved baby keeps the exact U/V contact point instead of arbitrary world coordinates');
+const close = (a,b,label) => assert(Math.abs(a-b)<1e-9, label+' ('+a+' vs '+b+')');
+// Real source portrait dimensions and detected spine/neck pivots define grip origins.
+const data={
+  visualCentroidLocalY:.12,portraitVerticalPlacementRatio:.8,
+  neckRig:{spinePosteriorY:-.12,spineBase:{x:.03},neckLocal:{x:.02,y:.14,z:.015},
+    skinnedPlane:{position:{z:.02}}},
+};
+const anchors=profile.anchorsForAvatar(data,.3,.4);
+close(anchors.posterior.y,.20,'posterior uses real infant spine pivot and portrait placement');
+close(anchors.neck.y,.46,'neck uses unscaled head-turn pivot, not top of painted alpha');
+const sized=profile.forSize(.3,.4,anchors);
+close(sized.handTargets.left.x,anchors.posterior.x+.12,'left grip is relative to baby posterior');
+close(sized.handTargets.left.y,anchors.posterior.y+.075,'left grip Y is unscaled anatomy-relative distance');
+close(sized.handTargets.left.z,anchors.posterior.z+.015,'left grip depth is unscaled by baby height');
+close(sized.handTargets.right.x,anchors.neck.x-.12,'right grip is relative to baby neck');
+close(sized.handTargets.right.y,anchors.neck.y-.065,'right grip Y is relative to neck joint');
+assert.equal(sized.billboardAnchor.position.z,.4*-.48,'legacy baby mount still scales with portrait');
+assert.equal(sized.backCarry.rotation.y,180,'back stow pose retains orientation');
+assert.equal(sized.elbows.left,null,'legacy shoulder fallback remains when elbow is not explicitly authored');
 
-const exported = profile.toProfile(sized, .3, .4);
-profile.save(exported);
-assert.equal(profile.forSize(.6, .8).handTargets.left.x, .6 * .4, 'JSON round-trip remains dimension independent');
-const carried = { billboardAnchor: { position: {}, rotation: {} },
-  backCarry: { position: {}, rotation: {} },
-  handTargets: { left: { rotation: {} }, right: { rotation: {} } } };
-const originalSocket = carried.handTargets.left;
-profile.applyTo(carried, .3, .4);
-assert.equal(carried.handTargets.left, originalSocket, 'refresh does not replace a hand socket held by the grip solver');
-profile.save({ held: { position: { x: Infinity, y: -100, z: 100 } } });
-assert(Number.isFinite(profile.forSize(.3, .3).billboardAnchor.position.x), 'invalid imported grip values are sanitized');
+// Readout-only portrait coordinates are separate from saved world-local offsets.
+const point={x:-.18,y:.16,z:-.06};
+const uv=profile.pointToPortrait(point,.6,.4);
+close(uv.u,.2,'readout U');
+close(uv.v,.6,'readout V');
+close(uv.depth,-.15,'readout depth');
+const world=profile.pointFromPortrait(uv,.6,.4);
+for(const axis of ['x','y','z'])close(world[axis],point[axis],'portrait projection roundtrip '+axis);
+
+const savedProfile=profile.toProfile(sized,.3,.4,anchors);
+assert.equal(savedProfile.grips.left.anchor,'posterior','left grip declares real anatomical basis');
+assert.equal(savedProfile.grips.right.anchor,'neck','right grip declares real anatomical basis');
+close(savedProfile.grips.left.offset.y,.075,'saved left Y is direct distance from posterior');
+close(savedProfile.grips.right.offset.y,-.065,'saved right Y is direct distance from neck');
+// New randomized infant: different portrait size/pivots, SAME raw local offsets.
+const newAnchors=profile.anchorsForAvatar({
+  visualCentroidLocalY:.045,neckRig:{spinePosteriorY:-.07,neckLocal:{x:-.01,y:.055}},
+},.2,.25);
+const rerolled=profile.forSizeFrom(savedProfile,.2,.25,newAnchors);
+close(rerolled.handTargets.left.x-newAnchors.posterior.x,.12,'random baby preserves left posterior offset regardless of size');
+close(rerolled.handTargets.left.y-newAnchors.posterior.y,.075,'random baby preserves left posterior height offset');
+close(rerolled.handTargets.right.x-newAnchors.neck.x,-.12,'random baby preserves right neck offset');
+close(rerolled.handTargets.right.y-newAnchors.neck.y,-.065,'random baby preserves right neck height offset');
+
+// Compatibility: previously saved percentage-based baby grips are still accepted.
+const legacy={grips:{left:{position:{x:.4,y:.5,z:.05}},
+  right:{position:{x:-.4,y:.5,z:.05}}}};
+const migrated=profile.forSizeFrom(legacy,.3,.4,anchors);
+close(migrated.handTargets.left.x,.3*.4,'legacy left portrait-X stays in place');
+close(migrated.handTargets.left.y,.4*.5,'legacy left portrait-Y stays in place');
+close(migrated.handTargets.right.z,.4*.05,'legacy right portrait-Z stays in place');
+const migratedProfile=profile.toProfile(migrated,.3,.4,anchors);
+assert.equal(migratedProfile.grips.left.anchor,'posterior','legacy export upgrades to new explicit anchor');
+assert.equal(Object.hasOwn(migratedProfile.grips.left,'position'),false,'migrated profile no longer saves portrait percentages');
+
+const independent=profile.forSize(.6,.4);
+independent.handTargets.left.x=-.18;independent.handTargets.left.y=.16;
+independent.elbows.left={x:.075,y:-.12,z:.2};
+const oldAnchors=profile.anchorsForAvatar({},.6,.4);
+const authored=profile.toProfile(independent,.6,.4,oldAnchors);
+const preservedSocket=independent.handTargets.left; // Live GLB hand rig can retain this object reference.
+profile.applyFrom(independent,authored,.3,.2,newAnchors);
+assert.equal(independent.handTargets.left,preservedSocket,'baby grip recalibration retains live socket object identity');
+close(independent.handTargets.left.x-newAnchors.posterior.x,-.18-oldAnchors.posterior.x,
+  'resizing reuses EXACT saved posterior-local X, not a portrait fraction');
+close(independent.handTargets.left.y-newAnchors.posterior.y,.16-oldAnchors.posterior.y,
+  'resizing reuses EXACT saved posterior-local Y');
+close(independent.elbows.left.y,-.12,'authored elbow remains shoulder-relative across baby sizes');
+
+profile.save(savedProfile);
+close(profile.forSize(.6,.8,newAnchors).handTargets.left.x-newAnchors.posterior.x,.12,
+  'saved anatomy-relative grip persists independently of child portrait width');
+const carried={billboardAnchor:{position:{},rotation:{}},backCarry:{position:{},rotation:{}},
+  handTargets:{left:{rotation:{}},right:{rotation:{}}}};
+const originalSocket=carried.handTargets.left;
+profile.applyTo(carried,.3,.4,anchors);
+assert.equal(carried.handTargets.left,originalSocket,'live refresh preserves the exact hand socket');
+profile.save({held:{position:{x:Infinity,y:-100,z:100}}});
+assert(Number.isFinite(profile.forSize(.3,.3).billboardAnchor.position.x),'invalid imported numbers are sanitized');
 profile.reset();
-assert.equal(storage.size, 0, 'reset removes a device-local pose override');
+assert.equal(storage.size,0,'reset removes a device-local pose override');
 
 const scriptOrder = files.gameHtml.indexOf('config/family-baby-carry-pose.js');
 assert(scriptOrder > 0 && scriptOrder < files.gameHtml.indexOf('js/family-baby-burdens.js'),
@@ -70,8 +115,8 @@ assert(files.editor.includes("id=\"carryBabyEdit\"") && files.editor.includes('c
   'mobile furniture Carryables panel edits, applies and transfers baby grips');
 assert(files.editor.includes('editingBaby?savedFurnitureCarry:state.carryable'),
   'exporting regular furniture during baby authoring preserves the furniture profile');
-assert(files.family.includes('FamilyBabyCarryPose.applyTo(carryable, w, h)'),
-  'baby rebuilds reuse the shared pose instead of restoring hardcoded coordinates');
+assert(/FamilyBabyCarryPose\.applyTo\([\s\S]*?group\.userData\.familyBabyGripAnchors/.test(files.family),
+  'baby rebuilds feed the shared carry solver REAL infant posterior and neck anchors');
 assert(files.family.includes('hobunjiFamilyBabyPhysicalCarry'),
   'both baby portrait paths identify themselves as physical baby art');
 assert(files.hierarchy.includes("'baby.carrierForeground'") && files.compositor.includes("'baby.carrierForeground'"),
