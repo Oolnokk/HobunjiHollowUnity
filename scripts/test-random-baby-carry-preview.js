@@ -87,6 +87,7 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
 
 (async () => {
   const originalGrips = window.FamilyBabyCarryPose.toProfile(state.carryable,.3,.3); // Portrait U/V/depth must survive every species reroll.
+  const stable = value => JSON.stringify(value,(_key,item)=>typeof item==='number'?Number(item.toFixed(8)):item); // Ignore harmless IEEE-754 division/multiplication rounding.
   assert.equal(environment.availableBabyIdentities().length,3,'only gender-valid loaded portrait species can be rolled');
   assert.equal(await environment.randomBaby(),true);
   const first = environment.current;
@@ -100,14 +101,14 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   assert.equal(first.position.y,.288/2,'newborn stays at its actual portrait-height placement');
   assert.equal(environment.dimensions[0],.288,'initial portrait width comes from the existing PNGPlaneAvatar dimensions');
   assert.equal(state.carryable.handTargets.left.x,.288*.4,'the grip uses the actual baby width');
-  assert.deepEqual(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288),originalGrips,
+  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288)),stable(originalGrips),
     'baby grip U/V/depth remain unchanged while resolving a placeholder into a real baby');
   assert.equal(await environment.randomBaby(),true,'subsequent random baby replaces the current preview');
   assert(environment.current!==first,'two rolls create different preview model instances');
   assert.equal(environment.dimensions[0],.216,'smaller species keep their physically smaller portrait width');
   assert.equal(environment.current.scale.x,1,'randomizing a smaller species never expands it to .30 units');
   assert.equal(state.carryable.handTargets.left.x,.216*.4,'grip tracks the new portrait size instead of staying at an arbitrary world X');
-  assert.deepEqual(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216),originalGrips,
+  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216)),stable(originalGrips),
     'unsaved grip coordinates survive random species size changes');
   assert(disposed.includes(first),'previous preview geometry is released');
   assert.equal(children.length,1,'no accumulating portraits between random rolls');
