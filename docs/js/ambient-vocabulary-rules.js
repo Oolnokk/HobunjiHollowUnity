@@ -115,7 +115,7 @@
     if (expressionCache.has(table)) return expressionCache.get(table);
     const terms = Object.keys(table).filter(key => key && key.length <= 80 && !/[{}]/.test(key))
       .sort((a, b) => b.length - a.length); // Longer authored phrases have priority over their component words.
-    const escaped = terms.map(term => term.replace(/([^\p{L}\p{N}\s])/gu, '\\$1')); // Escape every punctuation mark while preserving Unicode words and spaces.
+    const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // Keep apostrophes literal in Unicode regexes.
     const pattern = escaped.length ? new RegExp('(^|[^\\p{L}\\p{N}_])(' + escaped.join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu') : null;
     expressionCache.set(table, pattern);
     return pattern;
@@ -131,8 +131,8 @@
     if (!pattern) return { text: original, hits: 0, swaps: 0 };
     const settings = normalizeSliders(sliders);
     let hits = 0, swaps = 0; // Diagnostics distinguish a missed coin flip from a missing entry.
-    const text = original.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})/g).map(segment => {
-      if (/^(?:\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})$/.test(segment)) return segment; // Only complete dialogue placeholders are protected; normal text starting with a brace remains eligible.
+    const text = original.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\}|<[^<>\n]{1,80}>)/g).map(segment => {
+      if (/^(?:\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\}|<[^<>\n]{1,80}>)$/.test(segment)) return segment; // Only complete dialogue placeholders are protected; normal text starting with a brace remains eligible.
       pattern.lastIndex = 0;
       return segment.replace(pattern, (whole, prefix, raw, offset) => {
         const candidates = Object.hasOwn(table, raw.toLocaleLowerCase()) ? table[raw.toLocaleLowerCase()] : null; // No inherited prototype names are legal dictionary matches.
