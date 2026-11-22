@@ -269,7 +269,9 @@
       return !!deps.getPackClothing?.()?.some(item => item?.uid === uid && !item.cursed); // A cursed garment (looted lich circlet, Maskbound mask) is never handed to an NPC to wear or stash; the curse has to be lifted first.
     }
     const def = itemDefFor(held);
-    return !!def && !def.noGift && (Number(deps.inventory?.[held.key]) || 0) > 0;
+    if (!['item', 'bagItem'].includes(held.kind) || !def || def.noGift) return false;
+    if (def.isTool || def.isWeapon || def.isBurden || def.isInstrument || ['tool', 'weapon', 'burden', 'instrument'].includes(String(def.cat || '').toLowerCase())) return false; // Pack gear remains gear even when the item arch is active.
+    return (Number(deps.inventory?.[held.key]) || 0) > 0;
   }
 
   function traitsForHeld(held) {
@@ -298,7 +300,7 @@
       npcId: rec?.id || null,
       itemKey: held?.key || held?.instance?.cosmeticId || null,
       giftable: isItemGiftable(held),
-      latestChange: 'Permanent gear cannot be held or given away; pack clothing remains giftable.',
+      latestChange: 'NPC gifts require the actual item in hand; tools, weapons, burdens, performances, vessels and stowed modes are excluded.',
       tier: evaluation.tier,
       score: evaluation.score,
       metalTier: evaluation.metalTier || null,

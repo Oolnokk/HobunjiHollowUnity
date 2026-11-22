@@ -17834,7 +17834,11 @@
       // switching the item wheel does not clear it, and it does not clear
       // itself — the player (or a successful gift) clears it back to "let
       // the wheel decide" via clearManualHeldItem.
-      let manualHeldItem = null; // { kind: 'clothing', uid } | null
+      let manualHeldItem = null; // { kind: 'clothing', uid } | { kind: 'bagItem', key } | null
+      let manualHeldClothingVisual = null; // Cached presentation for the precise Pack garment in the player's hands; avoids per-frame outfit lookup/composition.
+      function getVisibleInventoryItem() {
+        return manualHeldClothingVisual || getActiveInventoryItem(); // Both gifting and the held-item renderer use the same visual identity.
+      }
       function setManualHeldItem(item) {
         if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
           showToast('A cursed garment cannot be given away until its curse is lifted.', false);
@@ -17845,9 +17849,33 @@
           return;
         }
         manualHeldItem = item || null;
+        manualHeldClothingVisual = null; // Clearing/changing Hold must stop displaying the previous garment immediately.
+        if (item?.kind === 'clothing') {
+          const garment = packClothing.find(article => article.uid === item.uid); // Resolve once on Hold; gift ownership is still rechecked at action time.
+          if (garment) {
+            const sprite = garment.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(garment.cosmeticId) || null; // Reuse the Pack's authored article silhouette.
+            const visual = { kind: 'packClothingVisual', key: 'pack-clothing:' + garment.uid, icon: '👘', heldSpritePath: sprite, heldSpriteVersion: 0 }; // Used by the normal held-item plane, not a separate renderer.
+            manualHeldClothingVisual = visual;
+            const composite = window.ClothingWeavingSystem?.iconSpriteForCosmetic?.(garment, sprite); // The Pack compositor resolves woven/trimmed garment art asynchronously and caches it.
+            if (composite && typeof composite.then === 'function') {
+              composite.then(path => {
+                if (!path || manualHeldClothingVisual !== visual || path === visual.heldSpritePath) return; // Never repaint a newly selected/stowed garment from an old request.
+                visual.heldSpritePath = path;
+                visual.heldSpriteVersion++; // Triggers one plane rebuild, not a per-frame sprite request.
+              }).catch(error => window.__farmLog?.('[held-clothing] sprite failed: ' + String(error?.message || error), 'warn', 'inventory'));
+            }
+            window.AdventuringTools?.stow?.();
+            heldMode = 'item'; // Clicking clothing Hold must actually put an item in the hands, like the Pack item Hold button.
+          }
+        }
         refreshActionBar();
       }
-      function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
+      function clearManualHeldItem() {
+        if (!manualHeldItem) return;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null;
+        refreshActionBar();
+      }
       function getManualHeldItem() { return manualHeldItem; }
 
       // Only the actively held item can be offered. The selected wheel item
@@ -17857,20 +17885,27 @@
         if (heldMode !== 'item') return null; // Selected inventory is not held while a tool, weapon, or nothing is drawn.
         if (window.Shattercasks?.heldBurdenInfo?.()) return null; // A physical Burden occupies the hands even if the item mode was left active.
         if (window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()) return null; // Temporary festival vessels cannot become gifts.
+        if (window.MusicMinigame?.state?.instrumentItem) return null; // Performance poses have an instrument in hand, not the selected Pack item.
         if (manualHeldItem?.kind === 'clothing') {
           const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
-          if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
-          manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
+          if (item && manualHeldClothingVisual?.key === 'pack-clothing:' + item.uid && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
+          manualHeldItem = null;
+          manualHeldClothingVisual = null;
+          return null; // A stale garment must not silently turn into a gift of the remembered wheel item.
         }
         // A wheel-ineligible material/etc explicitly held via the Inventory
         // panel's "Hold" button (see selectInventoryItem) — the wheel
         // itself never contains these (see isWheelEligible), so this is
         // the only way one becomes giftable.
         if (manualHeldItem?.kind === 'bagItem') {
-          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
-          manualHeldItem = null; // Ran out since it was picked — fall through to the wheel.
+          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) {
+            if (getVisibleInventoryItem()?.key !== manualHeldItem.key) return null; // The off-arch Hold must first become the actual item in hand.
+            return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
+          }
+          manualHeldItem = null;
+          return null; // An exhausted Hold may not fall through to another selected gift.
         }
-        const active = getActiveInventoryItem();
+        const active = getVisibleInventoryItem();
         if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
         return null;
       }
@@ -24004,7 +24039,7 @@
         const geo = new THREE.PlaneGeometry(w, w);
         // Authored items start with their PNG, so a bottle never flashes or
         // remains as an emoji while the ingredient recolor resolves.
-        const spritePath = def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null;
+        const spritePath = item.heldSpritePath || (def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null); // Pack clothing uses its authored/composited garment PNG without pretending to be an ITEM_DEFS object sprite.
         // Plane is assigned below and read only from the texture loader's async callback.
         let plane = null;
         const fallbackTexture = spritePath
@@ -24407,7 +24442,7 @@
         _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
+          || (vessel || getVisibleInventoryItem()); // The displayed Pack garment, gift resolver and hand pose now agree on one actual held object.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -24460,8 +24495,9 @@
         const isKurraya = item.key === 'kurraya';
         const heldPotion = String(item.key).startsWith('alchemy_') && !!window.AlchemySystem?.parseBrewedItemKey?.(item.key); // Only alchemy stacks have batch-majority pigments.
         if (heldPotion) window.AlchemySystem?.syncPotionStack?.(item.key); // Refresh the dominant liquid before checking the held plane.
-        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode) : null; // Compared only for potion items; ordinary held objects keep their old O(1) key-only path.
-        if (item.key !== _heldItemKey || (heldPotion && appearanceSignature !== _heldItemAppearanceSignature)) {
+        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode)
+          : item.kind === 'packClothingVisual' ? String(item.heldSpriteVersion || 0) : null; // Rebuild an asynchronously composed garment once when its image resolves.
+        if (item.key !== _heldItemKey || appearanceSignature !== _heldItemAppearanceSignature) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
           // The Kurraya's real art lives at assets/toolsprites (the same
           // sprite/texture Foroji's NPC station prop uses — see
