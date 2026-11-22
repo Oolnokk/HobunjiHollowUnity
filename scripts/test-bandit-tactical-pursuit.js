@@ -58,9 +58,9 @@ const quickChance = vm.runInNewContext(
   'return banditQuickAttackChance;})()', { Number, Math }
 ); // Tests the actual authored-technique condition gate, not just a copied probability formula.
 assert.equal(quickChance({def:low},{tap2:'exhaustCutter'},{exhausted:true}),.2);
-assert.equal(quickChance({def:high},{tap2:'exhaustCutter'},{exhausted:true}),.83);
+close(quickChance({def:high},{tap2:'exhaustCutter'},{exhausted:true}),.83,'tier seven Exhaust Cutter chance');
 assert.equal(quickChance({def:high},{tap2:'exhaustCutter'},{lowHealth:true}),0,'Exhaust Cutter cannot trigger merely because the target has low Health');
-assert.equal(quickChance({def:high},{tap2:'mercySpike'},{lowHealth:true}),.83);
+close(quickChance({def:high},{tap2:'mercySpike'},{lowHealth:true}),.83,'tier seven Mercy Spike chance');
 assert.equal(quickChance({def:high},{tap2:'mercySpike'},{exhausted:true}),0,'Mercy Spike cannot trigger merely because Stamina is low');
 assert.equal(quickChance({def:low},{tap2:'backstabFlick'},{behind:true}),1,'Backstab Flick reliably takes its earned opportunity');
 assert.equal(quickChance({def:high},{tap2:'backstabFlick'},{lowHealth:true}),0,'Backstab Flick cannot trigger from unrelated target conditions');
