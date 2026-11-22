@@ -1,17 +1,17 @@
-// Shared, dimension-normalized hand/back grip profile for held family babies.
-// X is a fraction of portrait width; Y and Z are fractions of portrait height.
-// Furniture Author > Carryable > Family baby edits and exports this same schema.
+// Shared baby carry. Mount positions remain portrait-normalized for compatibility;
+// hand offsets are local distances from the baby's POSTERIOR (left) and NECK (right).
+// The live carrier still consumes world-local handTargets through the existing hand solver.
 (() => {
   'use strict';
   if (window.FamilyBabyCarryPose) return;
-  const STORAGE_KEY = 'hobunji.familyBabyCarryPose.v1'; // Optional device-local authoring override, never part of a character save.
+  const STORAGE_KEY = 'hobunji.familyBabyCarryPose.v1'; // Preserve existing device-local draft storage; legacy V1 positions migrate at resolution.
   const DEFAULT_PROFILE = {
     held: { position: { x: 0, y: .06, z: -.48 }, rotation: { x: 0, y: 0, z: 0 }, size: 1, posteriorOffset: { x: 0, y: 0, z: 0 } },
     back: { position: { x: 0, y: .16, z: -.48 }, rotation: { x: 0, y: 180, z: 0 }, size: 1,
       posteriorOffset: { x: 0, y: 0, z: 0 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
     grips: {
-      left: { position: { x: .40, y: .5, z: .05 }, rotation: { x: 180, y: 0, z: -90 } },
-      right: { position: { x: -.40, y: .5, z: .05 }, rotation: { x: 0, y: 0, z: 90 } },
+      left: { anchor: 'posterior', offset: { x: .12, y: .075, z: .015 }, rotation: { x: 180, y: 0, z: -90 } },
+      right: { anchor: 'neck', offset: { x: -.12, y: -.065, z: .015 }, rotation: { x: 0, y: 0, z: 90 } },
     },
   };
   const axes = ['x', 'y', 'z']; // Shared coordinate axes in the authoring schema and live carryable definition.
@@ -34,10 +34,16 @@
     return {
       held: pose(source.held, DEFAULT_PROFILE.held),
       back: pose(source.back, DEFAULT_PROFILE.back, true),
-      grips: Object.fromEntries(['left', 'right'].map(side => [side, {
-        position: vector(source.grips?.[side]?.position, DEFAULT_PROFILE.grips[side].position),
-        rotation: vector(source.grips?.[side]?.rotation, DEFAULT_PROFILE.grips[side].rotation, 720),
-      }])),
+      grips: Object.fromEntries(['left', 'right'].map(side => {
+        const input = source.grips?.[side] || {}, defaults = DEFAULT_PROFILE.grips[side];
+        const legacy = input.position && !input.offset; // V1 portrait fractions from earlier editor exports/localStorage.
+        return [side, {
+          anchor: defaults.anchor, // Fixed per-side anatomy policy; ignore contradictory imported anchor names.
+          ...(legacy ? { position: vector(input.position, { x: side === 'left' ? .4 : -.4, y: .5, z: .05 }) }
+            : { offset: vector(input.offset, defaults.offset) }),
+          rotation: vector(input.rotation, defaults.rotation, 720),
+        }];
+      })),
     };
   }
   let profile = normalize(DEFAULT_PROFILE); // Live device override used by new babies and refreshed carry rigs.
@@ -48,7 +54,43 @@
   const scaled = (value, width, height) => ({ x: value.x * width, y: value.y * height, z: value.z * height });
   const unscaled = (value, width, height) => ({ x: finite(value?.x, 0) / width,
     y: finite(value?.y, 0) / height, z: finite(value?.z, 0) / height });
-  function forSizeFrom(raw, width, height) {
+  function anchorsForAvatar(data, width, height) {
+    const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3));
+    const rig = data?.neckRig || {}; // Live newborn head and spine pivots, reused by the editor preview.
+    const plane = rig.skinnedPlane?.position || {};
+    const centerY = h / 2 + finite(data?.visualCentroidLocalY,
+      (finite(data?.portraitVerticalPlacementRatio, .5, 2) - .5) * h);
+    const centerX = finite(plane.x, 0), centerZ = finite(plane.z, finite(data?.visualCentroidLocalZ, 0));
+    const posteriorY = Number(rig.spinePosteriorY);
+    const neck = rig.neckLocal || {}; // Raw plane-local neck pivot, BEFORE applying head scale.
+    return {
+      posterior: { x: centerX + finite(rig.spineBase?.x, 0),
+        y: centerY + (Number.isFinite(posteriorY) ? posteriorY : -h * .23),
+        z: centerZ },
+      neck: { x: centerX + finite(neck.x, 0),
+        y: centerY + finite(neck.y, h * .22),
+        z: centerZ + finite(neck.z, 0) },
+    };
+  }
+  function resolvedAnchors(anchors, w, h) {
+    const fallback = anchorsForAvatar({}, w, h); // Safe before an asynchronous baby portrait has loaded.
+    return {
+      posterior: vector(anchors?.posterior, fallback.posterior),
+      neck: vector(anchors?.neck, fallback.neck),
+    };
+  }
+  function gripAnchor(side, anchors, w, h) {
+    return resolvedAnchors(anchors, w, h)[side === 'left' ? 'posterior' : 'neck'];
+  }
+  function gripOffset(side, position, anchors, w, h) {
+    const base = gripAnchor(side, anchors, w, h);
+    return Object.fromEntries(axes.map(axis => [axis, finite(position?.[axis], 0) - base[axis]]));
+  }
+  function gripPosition(side, offset, anchors, w, h) {
+    const base = gripAnchor(side, anchors, w, h);
+    return Object.fromEntries(axes.map(axis => [axis, base[axis] + finite(offset?.[axis], 0)]));
+  }
+  function forSizeFrom(raw, width, height, anchors = null) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Live baby portrait dimensions.
     const source = normalize(raw); // Allows the editor to resize an UNSAVED draft when Random Baby changes species.
     const held = source.held, back = source.back;
@@ -58,12 +100,15 @@
         rotation: { ...held.rotation }, size: held.size, posteriorOffset: { ...held.posteriorOffset } },
       backCarry: { position: scaled(back.position, w, h), rotation: { ...back.rotation }, size: back.size,
         posteriorOffset: { ...back.posteriorOffset }, portraitAnchor: { ...back.portraitAnchor } },
-      handTargets: Object.fromEntries(['left', 'right'].map(side => [side, {
-        ...scaled(source.grips[side].position, w, h), rotation: { ...source.grips[side].rotation },
-      }])),
+      handTargets: Object.fromEntries(['left', 'right'].map(side => {
+        const grip = source.grips[side];
+        const point = grip.position ? scaled(grip.position, w, h) // V1 portrait-fraction compatibility.
+          : gripPosition(side, grip.offset, anchors, w, h); // V2 world-local offsets from actual anatomical pivots.
+        return [side, { ...point, rotation: { ...grip.rotation } }];
+      })),
     };
   }
-  function forSize(width, height) { return forSizeFrom(profile, width, height); }
+  function forSize(width, height, anchors = null) { return forSizeFrom(profile, width, height, anchors); }
   // Portrait UV: U is fraction from the left, V is fraction down from the top.
   // Grips remain fractions of full portrait dimensions, never posed head-alpha bounds.
   function pointToPortrait(local, width, height) {
@@ -76,7 +121,7 @@
     return { x: (finite(uv?.u, .5) - .5) * w,
       y: (1 - finite(uv?.v, 1)) * h, z: finite(uv?.depth, 0) * h };
   }
-  function toProfile(carryable, width, height) {
+  function toProfile(carryable, width, height, anchors = null) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Editor preview's reference baby size.
     const held = carryable?.billboardAnchor || {}, back = carryable?.backCarry || {};
     const pose = (source, fallback, isBack) => ({
@@ -90,14 +135,15 @@
       held: pose(held, DEFAULT_PROFILE.held, false),
       back: pose(back, DEFAULT_PROFILE.back, true),
       grips: Object.fromEntries(['left', 'right'].map(side => [side, {
-        position: unscaled(carryable?.handTargets?.[side], w, h),
+        anchor: side === 'left' ? 'posterior' : 'neck',
+        offset: gripOffset(side, carryable?.handTargets?.[side], anchors, w, h),
         rotation: vector(carryable?.handTargets?.[side]?.rotation, DEFAULT_PROFILE.grips[side].rotation, 720),
       }])),
     });
   }
-  function applyFrom(carryable, sourceProfile, width, height) {
+  function applyFrom(carryable, sourceProfile, width, height, anchors = null) {
     if (!carryable) return null;
-    const pose = forSizeFrom(sourceProfile, width, height); // Editor rescales unsaved drafts; gameplay passes the saved profile.
+    const pose = forSizeFrom(sourceProfile, width, height, anchors); // Editor reanchors unsaved drafts; runtime passes actual spine/neck pivots.
     // Hand attachments can retain references to these socket objects. Update in place.
     for (const key of ['billboardAnchor', 'backCarry']) {
       const target = carryable[key] || (carryable[key] = {}), source = pose[key];
@@ -117,7 +163,7 @@
     carryable.enabled = true;
     return carryable;
   }
-  function applyTo(carryable, width, height) { return applyFrom(carryable, profile, width, height); }
+  function applyTo(carryable, width, height, anchors = null) { return applyFrom(carryable, profile, width, height, anchors); }
   function save(next) {
     profile = normalize(next);
     try { window.localStorage?.setItem(STORAGE_KEY, JSON.stringify(profile)); }
@@ -130,6 +176,7 @@
     return snapshot();
   }
   function snapshot() { return JSON.parse(JSON.stringify(profile)); }
-  window.FamilyBabyCarryPose = Object.freeze({ version: 1, defaultProfile: normalize(DEFAULT_PROFILE),
+  window.FamilyBabyCarryPose = Object.freeze({ version: 2, defaultProfile: normalize(DEFAULT_PROFILE),
+    anchorsForAvatar, gripAnchor, gripOffset, gripPosition,
     forSize, forSizeFrom, toProfile, pointToPortrait, pointFromPortrait, applyTo, applyFrom, save, reset, snapshot });
 })();
