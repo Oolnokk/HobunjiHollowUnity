@@ -581,7 +581,8 @@
     const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Do not replace unplayed, eligible personal greetings.
     const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Literal single-line fallback is still heard once.
     const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Original character copy remains in the rotation on later repeats.
-    const maySupplement = scopedSpeech.length > 0 && (!picked || (isFallback && !stillHasNamedLines && !firstAuthoredFallback)); // No broad override of authored non-fallback content.
+    const hasStandaloneLines = !picked && (rec?.dialogueLines || []).some(line => typeof line === 'string' && line.trim() && !/^<[^<>]+>$/.test(line.trim())); // An NPC's explicit standalone dialogue is authored speech, not empty space for a personality replacement.
+    const maySupplement = scopedSpeech.length > 0 && !hasStandaloneLines && (!picked || (isFallback && !stillHasNamedLines && !firstAuthoredFallback)); // No broad override of authored non-fallback or standalone character content.
     const keepAuthoredThisTime = maySupplement && isFallback && sharedExhausted && Math.random() < 0.5; // Randomize only when a family-versus-personal choice is actually needed.
     if (maySupplement && !keepAuthoredThisTime) {
       picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Standard unheard-first selector; shared history stays per NPC.
