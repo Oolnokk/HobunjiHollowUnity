@@ -668,6 +668,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (window.confirm && !window.confirm('Reset every species/gender scale, Longoran posture/gait, and every per-NPC age back to repository defaults? This discards local overrides.')) return;
     window.HobunjiLongoranSpecies?.resetAuthorTuning?.(); // Restores the same shipped defaults used by new Longoran spawns.
     clearTimeout(handScaleTimer); // A queued pre-reset hand rebuild must not restore an abandoned scale.
+    handScaleTimer = 0;
     const count = host()?.resetToRepositoryDefaults?.() || 0;
     for (const entry of entries) {
       const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 };
@@ -1148,7 +1149,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     ++generation;
     active = false;
     building = false;
-    clearTimeout(handScaleTimer); // No profile mutation may run after this editor has torn down the previews.
+    if (handScaleTimer && selected?.profile) {
+      clearTimeout(handScaleTimer);
+      handScaleTimer = 0;
+      applyAnatomyConfig(selected.profile); // Flush the last mobile Hand slider value before leaving; a pending GLB refresh must not be silently abandoned.
+    }
     persistProfiles();
     await restore(targetMode || originMode || 'multi');
     savedMulti = null;
