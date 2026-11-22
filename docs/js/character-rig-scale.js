@@ -322,10 +322,15 @@
       base = { x: current.x / divisorX, y: current.y / divisorY, z: current.z / divisorX };
     }
     const output = { x: base.x * next.x, y: base.y * next.y, z: base.z * next.x }; // Depth (z) tracks width — these are camera-facing planes with no independently authored depth.
+    const legLength = clampScale(resolved.legLength || next.y); // Independently authored hip-to-foot reach in the same canonical scale units as portrait Y.
+    const previousLegRatio = previous
+      ? (Number(previous.legLength) || clampScale(previous.factor?.y ?? previous.factor)) / clampScale(previous.factor?.y ?? previous.factor)
+      : null; // Used to avoid notifying every NPC's procedural leg handle when only Head, Width or age changed.
+    const nextLegRatio = legLength / next.y; // A 1:1 ratio leaves the old whole-body Y behavior unchanged.
     parent.scale.set(output.x, output.y, output.z);
     parent.userData.hobunjiCharacterRigScaleState = {
       factor: next,
-      legLength: clampScale(resolved.legLength || next.y), // Procedural legs use this independently authored reach.
+      legLength, // Procedural legs use this independently authored reach.
       base,
       output,
       species: transformSpecies(species),
@@ -336,7 +341,8 @@
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
     applyHeadCompensation(parent, species, gender, resolved, ageFraction);
-    window.ProceduralLegAnimation?.syncScaleForParent?.(parent, clampScale(resolved.legLength || next.y) / next.y); // Refresh already-attached legs without rebuilding their GLB or IK joints.
+    if (previousLegRatio == null || Math.abs(previousLegRatio - nextLegRatio) > EPSILON)
+      window.ProceduralLegAnimation?.syncScaleForParent?.(parent, nextLegRatio); // Leg IK changes only when its actual leg/portrait ratio changes, never on unrelated head/age redraws.
     return true;
   }
 
@@ -347,6 +353,7 @@
     delete parent.userData.hobunjiCharacterRigScaleState;
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
+    window.ProceduralLegAnimation?.syncScaleForParent?.(parent, 1); // Clearing the parent scale also clears its old leg/portrait ratio and restored hip-to-torso offset.
     const found = findNeckRig(parent);
     const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint; // Scaling stays on the head-scale bone.
     const offsetTarget = found?.rig?.headOffsetJoint || target; // Restore the separately offset parent as well when resetting a portrait.
