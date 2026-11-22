@@ -189,7 +189,7 @@ assert.deepEqual(sourceCells(townBillboard), [0, 2], 'reloaded plot registry fol
 
 // Exercise the complete real Ginju map instead of assuming a mocked field
 // shape: it has four cultivated beds and three irrigation trench groups.
-const authoredMap = JSON.parse(fs.readFileSync(path.join(root, 'config/maps/hobunji_hollow_town.map.json'), 'utf8')); // Canonical real town source for grass ownership.
+const authoredMap = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'docs/config/maps/hobunji_hollow_town.map.json'), 'utf8')); // Canonical real town source for grass ownership.
 plotOwner.registerMap(authoredMap.id, authoredMap.farmPlots);
 const plotTiles = new Set(authoredMap.farmPlots.flatMap(plot => plot.tiles.map(([c, row]) => `${c},${row}`))); // Exact ground footprints, including the north/south trench orientation.
 assert.equal(authoredMap.farmPlots.length, 7, 'Ginju has seven assigned field and irrigation groups');
