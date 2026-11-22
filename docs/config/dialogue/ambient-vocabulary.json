@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_ambient_vocabulary.v2",
-  "description": "Master synonym dictionary; each synonym has a stable canonical ID and one authored text/register. NPCs store only checked synonym IDs in characters[npcId].selections, never duplicate alternative word lists. Unset choices inherit seeded personality defaults. Applied only to character-owned floating speech; ordinary Talk and UI remain authored.",
+  "description": "A single canonical dictionary for NPC floating speech. Alternatives can be standard, historically attested pre-1900 slang, over-simple, or intentionally near-miss wording. Character-specific selections store stable synonym IDs, never duplicate word lists.",
   "enabled": true,
   "lexicon": {
     "lovely": [
@@ -61,6 +61,22 @@
         "color": 100,
         "formality": 90,
         "id": "magnificent"
+      },
+      {
+        "id": "very-very-good",
+        "text": "very very good",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wonderific",
+        "text": "wonderific",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "beautiful": [
@@ -91,6 +107,22 @@
         "color": 100,
         "formality": 85,
         "id": "resplendent"
+      },
+      {
+        "id": "nice-looking",
+        "text": "nice-looking",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "beautifical",
+        "text": "beautifical",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "pleasant": [
@@ -174,6 +206,22 @@
         "color": 90,
         "formality": 55,
         "id": "bizarre"
+      },
+      {
+        "id": "funny-odd",
+        "text": "funny-odd",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "strangish-odd",
+        "text": "strangish-odd",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "small": [
@@ -204,6 +252,22 @@
         "color": 60,
         "formality": 85,
         "id": "diminutive"
+      },
+      {
+        "id": "little-little",
+        "text": "little-little",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "smallish-tiny",
+        "text": "smallish-tiny",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "large": [
@@ -234,6 +298,22 @@
         "color": 85,
         "formality": 55,
         "id": "enormous"
+      },
+      {
+        "id": "great-big",
+        "text": "great big",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "bignormous",
+        "text": "bignormous",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "quickly": [
@@ -264,6 +344,32 @@
         "color": 85,
         "formality": 90,
         "id": "with all haste"
+      },
+      {
+        "id": "in-a-jiffy",
+        "text": "in a jiffy",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1780,
+        "source": "https://www.etymonline.com/word/jiffy"
+      },
+      {
+        "id": "real-fast",
+        "text": "real fast",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "hurry-fast",
+        "text": "hurry-fast",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "careful": [
@@ -287,6 +393,22 @@
         "color": 30,
         "formality": 85,
         "id": "vigilant"
+      },
+      {
+        "id": "extra-watchful",
+        "text": "extra watchful",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "thinky-careful",
+        "text": "thinky-careful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "tired": [
@@ -310,6 +432,22 @@
         "color": 0,
         "formality": 85,
         "id": "fatigued"
+      },
+      {
+        "id": "sleepy-tired",
+        "text": "sleepy-tired",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sleep-worn",
+        "text": "sleep-worn",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "angry": [
@@ -340,6 +478,22 @@
         "color": 40,
         "formality": 85,
         "id": "incensed"
+      },
+      {
+        "id": "real-mad",
+        "text": "real mad",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mad-sore",
+        "text": "mad-sore",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "afraid": [
@@ -370,6 +524,22 @@
         "color": 5,
         "formality": 85,
         "id": "apprehensive"
+      },
+      {
+        "id": "all-scared",
+        "text": "all scared",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "fright-full",
+        "text": "fright-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "dangerous": [
@@ -400,6 +570,22 @@
         "color": 0,
         "formality": 85,
         "id": "hazardous"
+      },
+      {
+        "id": "not-safe",
+        "text": "not safe",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "danger-full",
+        "text": "danger-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "amazing": [
@@ -430,6 +616,22 @@
         "color": 60,
         "formality": 90,
         "id": "extraordinary"
+      },
+      {
+        "id": "really-wonderful",
+        "text": "really wonderful",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "amazifying",
+        "text": "amazifying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "good to see you": [
@@ -490,6 +692,22 @@
         "color": 80,
         "formality": 80,
         "id": "i'd be delighted"
+      },
+      {
+        "id": "yes-please",
+        "text": "yes please",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "glad-i-ly",
+        "text": "glad-i-ly",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "perhaps": [
@@ -636,7 +854,10 @@
         "verbosity": 15,
         "color": 65,
         "formality": 20,
-        "id": "pal"
+        "id": "pal",
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/pal"
       },
       {
         "text": "companion",
@@ -651,6 +872,32 @@
         "color": 45,
         "formality": 65,
         "id": "comrade"
+      },
+      {
+        "id": "chum",
+        "text": "chum",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/chum"
+      },
+      {
+        "id": "best-buddy",
+        "text": "best buddy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "pal-friend",
+        "text": "pal-friend",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "friends": [
@@ -674,6 +921,32 @@
         "color": 45,
         "formality": 65,
         "id": "comrades"
+      },
+      {
+        "id": "chums",
+        "text": "chums",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/chum"
+      },
+      {
+        "id": "my-buddies",
+        "text": "my buddies",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "pal-friends",
+        "text": "pal-friends",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "song": [
@@ -782,6 +1055,22 @@
         "color": 80,
         "formality": 75,
         "id": "fascinating"
+      },
+      {
+        "id": "really-curious",
+        "text": "really curious",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "interestifying",
+        "text": "interestifying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "important": [
@@ -798,6 +1087,22 @@
         "color": 85,
         "formality": 80,
         "id": "momentous"
+      },
+      {
+        "id": "big-and-serious",
+        "text": "big and serious",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "importance-full",
+        "text": "importance-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "quiet": [
@@ -814,6 +1119,22 @@
         "color": 85,
         "formality": 80,
         "id": "tranquil"
+      },
+      {
+        "id": "hush-quiet",
+        "text": "hush-quiet",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "soundless-ish",
+        "text": "soundless-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "loud": [
@@ -837,6 +1158,22 @@
         "color": 85,
         "formality": 55,
         "id": "deafening"
+      },
+      {
+        "id": "very-noisy",
+        "text": "very noisy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "ear-hurting",
+        "text": "ear-hurting",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ],
     "terrible": [
@@ -860,6 +1197,1268 @@
         "color": 65,
         "formality": 80,
         "id": "horrendous"
+      },
+      {
+        "id": "very-bad",
+        "text": "very bad",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "terribulous",
+        "text": "terribulous",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "nonsense": [
+      {
+        "id": "bosh",
+        "text": "bosh",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1834,
+        "source": "https://www.etymonline.com/word/bosh"
+      },
+      {
+        "id": "balderdash",
+        "text": "balderdash",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1670,
+        "source": "https://www.etymonline.com/word/balderdash"
+      },
+      {
+        "id": "humbug",
+        "text": "humbug",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1750,
+        "source": "https://www.etymonline.com/word/humbug"
+      },
+      {
+        "id": "twaddle",
+        "text": "twaddle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1782,
+        "source": "https://www.etymonline.com/word/twaddle"
+      },
+      {
+        "id": "silly-talk",
+        "text": "silly talk",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "nonsensicals",
+        "text": "nonsensicals",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "food": [
+      {
+        "id": "grub",
+        "text": "grub",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1650,
+        "source": "https://www.etymonline.com/word/grub"
+      },
+      {
+        "id": "stuff-to-eat",
+        "text": "stuff to eat",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "belly-fuel",
+        "text": "belly-fuel",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "head": [
+      {
+        "id": "noggin",
+        "text": "noggin",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1866,
+        "source": "https://www.etymonline.com/word/nog"
+      },
+      {
+        "id": "nob",
+        "text": "nob",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1700,
+        "source": "https://www.etymonline.com/word/nob"
+      },
+      {
+        "id": "top-bit",
+        "text": "top bit",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "thinking-top",
+        "text": "thinking-top",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mouth": [
+      {
+        "id": "gob",
+        "text": "gob",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1540,
+        "source": "https://www.etymonline.com/word/gob"
+      },
+      {
+        "id": "talking-hole",
+        "text": "talking hole",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "word-hole",
+        "text": "word-hole",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "run away": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "run-off",
+        "text": "run off",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "leg-it-away",
+        "text": "leg-it-away",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "deceive": [
+      {
+        "id": "bamboozle",
+        "text": "bamboozle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1703,
+        "source": "https://www.etymonline.com/word/bamboozle"
+      },
+      {
+        "id": "trick",
+        "text": "trick",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "trickify",
+        "text": "trickify",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "excellent": [
+      {
+        "id": "capital",
+        "text": "capital",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1754,
+        "source": "https://www.etymonline.com/word/capital"
+      },
+      {
+        "id": "spiffing",
+        "text": "spiffing",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1872,
+        "source": "https://www.etymonline.com/word/spiffy"
+      },
+      {
+        "id": "ripping",
+        "text": "ripping",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1838,
+        "source": "https://www.etymonline.com/word/ripping"
+      },
+      {
+        "id": "first-rate",
+        "text": "first-rate",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1837,
+        "source": "https://www.etymonline.com/word/A-1"
+      },
+      {
+        "id": "really-good",
+        "text": "really good",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "excellific",
+        "text": "excellific",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "money": [
+      {
+        "id": "spondulicks",
+        "text": "spondulicks",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1856,
+        "source": "https://www.etymonline.com/word/spondulicks"
+      },
+      {
+        "id": "pay-money",
+        "text": "pay-money",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "shiny-pay",
+        "text": "shiny-pay",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "trickery": [
+      {
+        "id": "shenanigans",
+        "text": "shenanigans",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1854,
+        "source": "https://www.etymonline.com/word/shenanigans"
+      },
+      {
+        "id": "humbug",
+        "text": "humbug",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1750,
+        "source": "https://www.etymonline.com/word/humbug"
+      },
+      {
+        "id": "tricky-stuff",
+        "text": "tricky stuff",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "trickery-doings",
+        "text": "trickery-doings",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "fool": [
+      {
+        "id": "nincompoop",
+        "text": "nincompoop",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "sillyhead",
+        "text": "sillyhead",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "foolington",
+        "text": "foolington",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "foolish": [
+      {
+        "id": "daft",
+        "text": "daft",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "not-very-smart",
+        "text": "not very smart",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "brain-sleepy",
+        "text": "brain-sleepy",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "hungry": [
+      {
+        "id": "tummy-rumbly",
+        "text": "tummy-rumbly",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "food-thirsty",
+        "text": "food-thirsty",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "thirsty": [
+      {
+        "id": "drink-needy",
+        "text": "drink-needy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "drink-hungry",
+        "text": "drink-hungry",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "sleepy": [
+      {
+        "id": "drowsy",
+        "text": "drowsy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "sleepy-sleepy",
+        "text": "sleepy-sleepy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "nap-full",
+        "text": "nap-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "heavy": [
+      {
+        "id": "weighty",
+        "text": "weighty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "really-weighty",
+        "text": "really weighty",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "carry-hard",
+        "text": "carry-hard",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "cold": [
+      {
+        "id": "chilly",
+        "text": "chilly",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "brr-cold",
+        "text": "brr-cold",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "shiverful",
+        "text": "shiverful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "warm": [
+      {
+        "id": "cozy",
+        "text": "cozy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "nice-and-warm",
+        "text": "nice and warm",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sun-warmish",
+        "text": "sun-warmish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "wet": [
+      {
+        "id": "damp",
+        "text": "damp",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-wet",
+        "text": "very wet",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wetful",
+        "text": "wetful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mess": [
+      {
+        "id": "muddle",
+        "text": "muddle",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-mess",
+        "text": "big mess",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mess-astrophe",
+        "text": "mess-astrophe",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "brave": [
+      {
+        "id": "bold",
+        "text": "bold",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "not-scared",
+        "text": "not scared",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "courageful",
+        "text": "courageful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "clever": [
+      {
+        "id": "brainy",
+        "text": "brainy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "thinky",
+        "text": "thinky",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "think-smart",
+        "text": "think-smart",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "surprised": [
+      {
+        "id": "startled",
+        "text": "startled",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-surprised",
+        "text": "very surprised",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "surprisified",
+        "text": "surprisified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "excited": [
+      {
+        "id": "eager",
+        "text": "eager",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "wiggly-happy",
+        "text": "wiggly-happy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "excitified",
+        "text": "excitified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "confused": [
+      {
+        "id": "mixed-up",
+        "text": "mixed up",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "all-muddled",
+        "text": "all muddled",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "brain-tangled",
+        "text": "brain-tangled",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mysterious": [
+      {
+        "id": "puzzling",
+        "text": "puzzling",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "hard-to-figure",
+        "text": "hard-to-figure",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mystery-ish",
+        "text": "mystery-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "broken": [
+      {
+        "id": "busted",
+        "text": "busted",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "all-broken",
+        "text": "all broken",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "breaky",
+        "text": "breaky",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "forest": [
+      {
+        "id": "woods",
+        "text": "woods",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "tree-place",
+        "text": "tree-place",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "leaf-country",
+        "text": "leaf-country",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mountain": [
+      {
+        "id": "peak",
+        "text": "peak",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-hill",
+        "text": "big hill",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sky-hill",
+        "text": "sky-hill",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "river": [
+      {
+        "id": "long-water",
+        "text": "long water",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wiggle-water",
+        "text": "wiggle-water",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "blizzard": [
+      {
+        "id": "big-snowstorm",
+        "text": "big snowstorm",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "snow-fury",
+        "text": "snow-fury",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "storm": [
+      {
+        "id": "tempest",
+        "text": "tempest",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-bad-weather",
+        "text": "big bad weather",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sky-tantrum",
+        "text": "sky-tantrum",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "rain": [
+      {
+        "id": "sky-water",
+        "text": "sky-water",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "cloud-crying",
+        "text": "cloud-crying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "danger": [
+      {
+        "id": "peril",
+        "text": "peril",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-trouble",
+        "text": "big trouble",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "hurt-situation",
+        "text": "hurt-situation",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "trouble": [
+      {
+        "id": "difficulty",
+        "text": "difficulty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-problem",
+        "text": "big problem",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "worry-muddle",
+        "text": "worry-muddle",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "animal": [
+      {
+        "id": "creature",
+        "text": "creature",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "furry-thing",
+        "text": "furry thing",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "paw-beast",
+        "text": "paw-beast",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "animals": [
+      {
+        "id": "creatures",
+        "text": "creatures",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "furry-things",
+        "text": "furry things",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "paw-beasts",
+        "text": "paw-beasts",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "friendship": [
+      {
+        "id": "companionship",
+        "text": "companionship",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "being-pals",
+        "text": "being pals",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "friendful-ness",
+        "text": "friendful-ness",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "noisy": [
+      {
+        "id": "loud",
+        "text": "loud",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-noisy",
+        "text": "big-noisy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "ear-bothering",
+        "text": "ear-bothering",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "scary": [
+      {
+        "id": "frightening",
+        "text": "frightening",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-scary",
+        "text": "very scary",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "frightfullish",
+        "text": "frightfullish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "silly": [
+      {
+        "id": "foolish",
+        "text": "foolish",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "goofy",
+        "text": "goofy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sillified",
+        "text": "sillified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "delicious": [
+      {
+        "id": "tasty",
+        "text": "tasty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-tasty",
+        "text": "very tasty",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "yummificent",
+        "text": "yummificent",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "fast": [
+      {
+        "id": "quick",
+        "text": "quick",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-quick",
+        "text": "very quick",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "speedful",
+        "text": "speedful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "tiny": [
+      {
+        "id": "very-little",
+        "text": "very little",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "little-little",
+        "text": "little-little",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "miniscule-ish",
+        "text": "miniscule-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "thick fog": [
+      {
+        "id": "dense-fog",
+        "text": "dense fog",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-cloud-mist",
+        "text": "big cloud-mist",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "can-t-see-mist",
+        "text": "can't-see mist",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "nice": [
+      {
+        "id": "pleasant",
+        "text": "pleasant",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "real-nice",
+        "text": "real nice",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "niceful",
+        "text": "niceful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "happy to see you": [
+      {
+        "id": "i-m-happy-you-re-here",
+        "text": "I'm happy you're here",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "i-am-gladder-to-see-you",
+        "text": "I am gladder to see you",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
       }
     ]
   },
@@ -871,7 +2470,10 @@
         "formality": 45,
         "breadth": 65,
         "variety": 50,
-        "frequency": 35
+        "frequency": 35,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
       }
     },
     "playful": {
@@ -881,7 +2483,10 @@
         "formality": 20,
         "breadth": 80,
         "variety": 85,
-        "frequency": 65
+        "frequency": 65,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
       }
     },
     "reserved": {
@@ -891,7 +2496,10 @@
         "formality": 45,
         "breadth": 30,
         "variety": 20,
-        "frequency": 30
+        "frequency": 30,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
       }
     },
     "proper": {
@@ -901,7 +2509,10 @@
         "formality": 92,
         "breadth": 85,
         "variety": 45,
-        "frequency": 60
+        "frequency": 60,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
       }
     },
     "stern": {
@@ -911,7 +2522,10 @@
         "formality": 65,
         "breadth": 40,
         "variety": 20,
-        "frequency": 40
+        "frequency": 40,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
       }
     },
     "child": {
@@ -921,7 +2535,23 @@
         "formality": 15,
         "breadth": 50,
         "variety": 85,
-        "frequency": 45
+        "frequency": 45,
+        "oldSlang": 8,
+        "simplicity": 94,
+        "nearMiss": 82
+      }
+    },
+    "porakaneki": {
+      "sliders": {
+        "verbosity": 25,
+        "color": 80,
+        "formality": 12,
+        "breadth": 70,
+        "variety": 70,
+        "frequency": 75,
+        "oldSlang": 95,
+        "simplicity": 76,
+        "nearMiss": 65
       }
     }
   },
