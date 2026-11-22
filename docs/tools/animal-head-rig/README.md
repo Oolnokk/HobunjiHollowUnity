@@ -10,7 +10,7 @@ This tool authors the weighted animal head rig used by the runtime PNG-plane cre
 4. Use **Compressibility** or **Stretchability** only to reduce one deformation direction below Influence. Their restore tool moves that channel back **Toward Influence**.
 5. Copy/download the animal record or save the rig into browser-local game preview storage.
 
-Head Influence is the source of truth for the **pitch/nod** neck rig. Missing head compression/stretch overrides inherit it exactly. **Yaw is a separate paper-fold turn:** the side-on sprite creases along a narrow, straight **vertical** line through the authored neck pivot. Only pixels classified as head by the painted Influence map rotate. Influence determines **membership**, never a gradual yaw angle: the selected head pixels behave as one rigid paper cutout, and unpainted chest, legs, and torso pixels stay put. Compressibility and Stretchability remain exclusive to pitch. Both axes can animate simultaneously without changing either authored material map.
+Head Influence is the source of truth for the **pitch/nod** neck rig. Missing head compression/stretch overrides inherit it exactly. **Yaw is a separate paper-fold turn:** the side-on sprite creases along a narrow, straight **vertical** line through the authored neck pivot. All sprite pixels **forward of that neck pivot**, at any height, rotate as one rigid paper flap, painted or unpainted; the rear/body side stays put. This is deliberately a straight geometric cut: lower pixels forward of the neck follow it too, rather than depending on pitch paint. Influence, Compressibility, and Stretchability remain exclusive to pitch. Both axes can animate simultaneously without changing the authored material maps.
 
 ## Hats tab
 
