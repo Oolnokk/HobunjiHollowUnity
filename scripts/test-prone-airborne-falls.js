@@ -204,4 +204,12 @@ assert.equal(highPerchCreature._knockbackLedgeFall.startSurfaceY, 3.75);
 assert.equal(highPerchCreature._knockbackLedgeFall.endSurfaceY, 1);
 assert.equal(highPerchCreature._knockbackLedgeFall.dropWorld, 2.75);
 
+// A shorter normal attack hop has its own authored lift; it must not vanish
+// when the regular combat-lunge timeline is interrupted before the knockdown.
+player._freeJump = null; player._proneAirFallStartY = 4.1;
+physicalFlight = null;
+assert.equal(beginProneAirFall(player, true), true);
+assert.equal(physicalFlight.y, 4.1, 'the ordinary combat lunge snapshot is converted to physical falling height');
+assert.equal(player._proneAirFallStartY, null, 'consumed launch height cannot leak to a later hit');
+
 console.log('Prone airborne gravity, cliff cost, repeated hits and throw routing: OK');
