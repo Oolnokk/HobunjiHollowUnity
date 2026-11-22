@@ -38,7 +38,8 @@
   const OVERCAST_MAX_DARKNESS_ALPHA = 0.78; // Used by fullDayLightingState to make a daytime storm approach nighttime darkness without changing the lantern or interior passes.
   const LANTERN_ACTIVATION_ALPHA = 0.24;
   const LANTERN_FULL_ALPHA = 0.34;
-  const OVERCAST_AMBIENT_RGB = Object.freeze([48, 56, 68]); // Used by fullDayLightingState for the deep slate tint at peak rain and storm cover.
+  const OVERCAST_AMBIENT_RGB = Object.freeze([48, 56, 68]); // Used by fullDayLightingState for the deep slate tint at peak daytime rain and storm cover.
+  const OVERCAST_NIGHT_AMBIENT_RGB = Object.freeze([2, 4, 10]); // Used by fullDayLightingState to stop gray weather tint from making already-dark nights brighter.
   const OVERCAST_SKY_COLORS = Object.freeze({ top: 0xc5cbcc, mid: 0xd6d9d8, bottom: 0xe2e1dc });
   const SCREEN_SKY_UV_GLSL = `
     uniform vec2 uSkyResolution;
@@ -219,9 +220,12 @@
     const daytimeInfluence = 1 - night * 0.58;
     const tintStrength = Math.pow(overcast, OVERCAST_TINT_EXPONENT) * daytimeInfluence; // Used for the gray-blue rain tint even while the darkness curve is still rising.
     const baseAlpha = a; // Used to report actual weather-added darkness after the night safety cap is applied.
-    r = lerp(r, OVERCAST_AMBIENT_RGB[0], tintStrength);
-    g = lerp(g, OVERCAST_AMBIENT_RGB[1], tintStrength);
-    b = lerp(b, OVERCAST_AMBIENT_RGB[2], tintStrength);
+    const stormR = Math.min(r, lerp(OVERCAST_AMBIENT_RGB[0], OVERCAST_NIGHT_AMBIENT_RGB[0], night)); // Restricts tint to colors no brighter than the time-of-day baseline.
+    const stormG = Math.min(g, lerp(OVERCAST_AMBIENT_RGB[1], OVERCAST_NIGHT_AMBIENT_RGB[1], night)); // Keeps green-channel weather shading darkening from sunset through dawn.
+    const stormB = Math.min(b, lerp(OVERCAST_AMBIENT_RGB[2], OVERCAST_NIGHT_AMBIENT_RGB[2], night)); // Avoids storm cloud blue artificially brightening the night.
+    r = lerp(r, stormR, tintStrength);
+    g = lerp(g, stormG, tintStrength);
+    b = lerp(b, stormB, tintStrength);
     a = clamp(a + OVERCAST_MAX_DARKNESS_ALPHA * darkness * daytimeInfluence, 0, 0.86);
     const weatherDarknessAddedAlpha = a - baseAlpha; // Exposed in mobile sky diagnostics; capped darkness is never overstated at night.
     const lanternActivation = smoothstep(LANTERN_ACTIVATION_ALPHA, LANTERN_FULL_ALPHA, a);
