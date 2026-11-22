@@ -123,6 +123,9 @@
     try {
       new THREE.TextureLoader().load(TORCH_SOURCE, texture => {
         global.HobunjiSpritePngSurface?.configureTexture?.(THREE, texture, TORCH_SOURCE);
+        if (THREE.NearestFilter !== undefined) texture.minFilter = texture.magFilter = THREE.NearestFilter; // Match the held tool factory's pixel-sharp sampling, not the portrait pipeline's linear filtering.
+        texture.generateMipmaps = false;
+        texture.needsUpdate = true;
         rawTexture = texture;
         rawLoading = false;
         if (root?.visible) prepareFire(THREE); // Late texture load immediately enables both the recolor and the correct fire.
