@@ -43,10 +43,11 @@
       boxes.push({ x: Number(floor.x), y: Number(floor.y), w: Number(floor.w), h: Number(floor.h) });
     }
     for (const object of instance?.objects || []) {
-      if (object && [object.x, object.y, object.w, object.h].every(value => Number.isFinite(Number(value)))
-        && Number(object.w) > 0 && Number(object.h) > 0) {
-        boxes.push({ x: Number(object.x), y: Number(object.y), w: Number(object.w), h: Number(object.h) });
-      }
+      if (!object || ![object.x, object.y].every(value => value != null && Number.isFinite(Number(value)))) continue;
+      const width = Number(object.w), height = Number(object.h); // An old locale object without authored dimensions still occupies its original one-tile cell.
+      boxes.push({ x: Number(object.x), y: Number(object.y),
+        w: Number.isFinite(width) && width > 0 ? width : 1,
+        h: Number.isFinite(height) && height > 0 ? height : 1 });
     }
     return boxes;
   }
@@ -55,17 +56,19 @@
     const x = col + 0.5, z = row + 0.5; // Proposed scenery center in final wilderness tile units.
     const pad = Math.max(0, Number(margin) || 0); // Visual overhang margin shared by locale-aware landmark placement.
     let hasBox = false; // Legacy locales lacking footprint metadata retain their old anchor-radius safeguard.
-    const matches = box => {
-      if (!box || ![box.x, box.y, box.w, box.h].every(value => Number.isFinite(Number(value)))) return false;
-      const bx = Number(box.x), by = Number(box.y), w = Number(box.w), h = Number(box.h); // Rectangle dimensions are already in final world tile units.
-      if (w <= 0 || h <= 0) return false;
+    const matches = (box, defaultSize = false) => {
+      if (!box || ![box.x, box.y].every(value => value != null && Number.isFinite(Number(value)))) return false;
+      const bx = Number(box.x), by = Number(box.y); // Rectangle origin is in final wilderness tile units.
+      const w = defaultSize && !(Number(box.w) > 0) ? 1 : Number(box.w);
+      const h = defaultSize && !(Number(box.h) > 0) ? 1 : Number(box.h);
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false;
       hasBox = true;
       return x >= bx - pad && x <= bx + w + pad && z >= by - pad && z <= by + h + pad;
     };
     if (matches(instance?.footprint)) return true; // Authored painted floor, not merely the entrance or locale anchor.
     if (matches(instance?.footprint ? null : instance)) return true; // Pre-metadata saves have top-left + size.
     for (const object of instance?.objects || []) {
-      if (matches(object)) return true; // Furniture and auxiliary structures can protrude outside painted floor.
+      if (matches(object, true)) return true; // Older decorative objects default to a one-tile collider when their dimensions were omitted.
     }
     if (hasBox) return false;
     const anchorX = Number(instance?.x ?? instance?.col), anchorY = Number(instance?.y ?? instance?.row); // Older locale instances may have only an anchor.
