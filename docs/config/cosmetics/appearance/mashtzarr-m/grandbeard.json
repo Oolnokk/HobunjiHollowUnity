@@ -27,5 +27,11 @@
         }
       }
     }
-  }
+  },
+  "hoodCutoutRequestMode": "silhouette",
+  "hoodTuftRoots": [],
+  "hoodTuftMaxStretch": 36,
+  "hoodTuftSubdivision": 4,
+  "hoodTuftAboveInfluence": 100,
+  "hoodTuftBelowInfluence": 100
 }
