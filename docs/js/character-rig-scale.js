@@ -275,7 +275,9 @@
       ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Explicit character spine overrides still win over the subspecies default.
     const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction;
     const spineApi = window.HobunjiCharacterSpine; // Shared seven-bone spline owns the upper torso, not a large head-offset weighting zone.
-    const distributeToSpine = !!rig.splineNodes && typeof spineApi?.applyNeckReach === 'function'; // Legacy editor/monster rigs without a spline keep their original independent head placement.
+    const distributeToSpine = !!rig.headOffsetJoint && !!rig.headScaleJoint
+      && Array.isArray(rig.splineNodes) && rig.splineNodes.length === spineApi?.splineNodes
+      && typeof spineApi?.applyNeckReach === 'function'; // Only complete seven-node, separately placed game rigs can spread head offsets through the spine; mock/legacy partial rigs keep their prior behavior.
     if (distributeToSpine) {
       const reachY = clampOffset(baseOffset) * modelHeight + scaledNeckDeltaY; // Authored head height and scale-induced chin movement now stretch the whole spine.
       applyHeadYOffset(offsetTarget, 0, modelHeight); // Restore the short 2.5px head/neck connection; never drag the pseudo-neck through the torso.
@@ -339,7 +341,7 @@
       target.updateMatrix?.();
     }
     if (found?.rig?.scaledNeckLocal) delete found.rig.scaledNeckLocal; // Resetting an authored scale also clears derived scaled-head contact diagnostics.
-    if (found?.rig?.splineNodes && typeof window.HobunjiCharacterSpine?.applyNeckReach === 'function') {
+    if (found?.rig?.neckReachAppliedY != null && typeof window.HobunjiCharacterSpine?.applyNeckReach === 'function') {
       window.HobunjiCharacterSpine.applyNeckReach(found.rig, 0, Number(found.modelHeight) || 1, 0); // Clear all scale-induced spine stretch and hunch when resetting a scale preview.
     }
     if (offsetTarget) {
