@@ -69,7 +69,7 @@ assert.equal(animal.headRig.yawMode, 'paper-fold', 'yaw mode is visible to the m
 for (const face of [animal.frontPlane, animal.backPlane]) {
   assert.equal(face.skeleton.bones.length, 4, 'each card has separate pitch, yaw and combined transforms');
   assert.equal(face.geometry.userData.hobunjiAnimalYawFold, true, 'material response can preserve independent yaw weights');
-  assert.equal(face.geometry.userData.hobunjiAnimalYawMask, 'binary-head', 'rigid yaw excludes non-head anatomy');
+  assert.equal(face.geometry.userData.hobunjiAnimalYawMask, 'neck-bounded-head', 'rigid yaw ignores irregular head paint');
   const weights = face.geometry.getAttribute('skinWeight').array;
   const width = face.geometry.userData.segmentsX + 1;
   const faceCol = face === animal.frontPlane ? 0 : width - 1;
@@ -85,7 +85,9 @@ for (const face of [animal.frontPlane, animal.backPlane]) {
     const yaw = weights[i + 2] + weights[i + 3];
     const head = weights[i + 1] + weights[i + 3];
     assert(yaw === 0 || yaw === 1, 'each head vertex turns like one rigid paper card');
-    assert.equal(yaw, +(head >= .5), 'yaw is a binary cutout classification, not graded Influence');
+    const uv=face.geometry.getAttribute('uv'); // Geometric head membership is independent of sampled pitch Influence.
+    const vertex=i/4, sourceU=face===animal.backPlane?1-uv.getX(vertex):uv.getX(vertex), topV=1-uv.getY(vertex); // Mirrored face uses the same source-space neck cut.
+    assert.equal(yaw, +(sourceU<headRig.pivot.x&&topV<headRig.pivot.y+.035), 'yaw membership comes from the neck geometry, not painted Influence');
   }
   for (let i = 0; i < weights.length; i += 4) {
     assert(Math.abs(weights[i] + weights[i + 1] + weights[i + 2] + weights[i + 3] - 1) < 1e-5,
