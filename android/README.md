@@ -77,7 +77,76 @@ this limitation from Check for Updates. Subsequent signed releases can replace
 that stable installation without uninstalling or erasing app data, subject to
 Android's installation confirmation and matching certificate.
 
-## Automatically synchronize with the same Google Drive saves as your PC
+## Direct Google Drive saves (Android, no third-party sync app)
+
+The Android **Local Save Folder** chooser now offers `Google Drive (direct connection)`
+as well as an ordinary on-device folder. Google authorization uses the native
+Google Identity picker, never the embedded game WebView. It first asks for
+`drive.file` so you can select a folder; **separate consent for the restricted
+`drive` scope is then required** to read existing PC-authored files inside it.
+The native backend enforces the selected folder as its storage root and never
+exposes Google access tokens to JavaScript. Google may require restricted-scope
+app verification before wide public distribution.
+
+Before testing, enable **Google Drive API** and **Google Picker API** in a Google
+Cloud project and register an **Android OAuth client** for package
+`com.oolnokk.hobunjihollow` with the APK's correct signing-certificate
+SHA-1. The debug APK and stable release signer require **separately registered
+Android OAuth clients** if signed by different keys. The Windows/desktop
+credentials are not interchangeable. For a PR debug build, open its Android
+GitHub Actions run and find the "Print debug APK SHA-1" step: its fingerprint
+corresponds to **that exact APK only** because PR test signing can change on
+the next run. Prefer configuring the permanent signed release APK for normal
+use.
+The Google OAuth consent screen must allow the account being used for testing.
+
+1. From Hobunji Hollow's Local Save Folder controls choose **Change/Choose
+   Folder**, then **Google Drive (direct connection)** in the Android dialog.
+2. Complete the Google account authorization and select your actual Hobunji
+   Hollow save directory in Google Picker. Do **not** select the Drive root or
+   a single JSON file. The game remembers only the chosen folder ID.
+3. Choose **Load from Folder** first to import a PC save. Verify your world,
+   character, farm and inventory before enabling new uploads. The canonical
+   folder-save safety checks remain intact; selecting the folder never uploads.
+4. Save normally. The game's ordinary save timer uploads canonical file changes
+   directly to that Drive folder. On restart, **Reconnect** may reauthorize via
+   the native Google UI; a revoked account or expired grant fails closed.
+5. On the PC, use **Google Drive for Desktop** to mirror that same Drive folder
+   to a local directory, then select it in Hobunji Hollow on the PC.
+
+Direct Drive access requires an internet connection. Saves over 5 MiB use Drive's resumable upload protocol with bounded streaming from Android's private staging cache; smaller JSON/PNG files use multipart uploads. A failed upload must not rename or replace the canonical remote save. The app keeps the browser
+save as a local fallback, but a failed Drive write must never be described as
+a completed cloud save. Remote commits are staged, compared against the version
+observed when the write began, and published only after the previous canonical
+file has been retained under a recoverable name. If publication fails, the app
+tries to restore the previous canonical name. On successful replacements, only
+the three newest game-generated prior versions per file are retained; surplus
+app-generated recovery copies are permanently removed to bound Drive usage.
+A failed publication is not automatically pruned. Selecting a different root
+first pauses autosave and waits for in-flight folder writes to finish.
+
+Drive v3 does not guarantee atomic conditional renames across different files:
+a concurrent PC write can still create duplicates or unresolved backups.
+The app refuses detected conflicts instead of silently choosing a winner.
+**Do not run PC and Android simultaneously.**
+
+Google's `drive.file` permission only covers files created or individually
+opened by the app, **not every child of a selected folder**. For existing
+PC-authored files, the app therefore asks for the restricted `drive` scope
+in a separate native consent screen; without that consent it will not claim to
+have loaded the folder or start uploading. Full Drive access is required at
+Google's OAuth layer, while native file operations remain confined to the
+specific user-selected directory. Keep the OAuth client private/test-only
+until Google Cloud restricted-scope consent requirements are satisfied.
+
+The old Netlify cloud-save login is disabled **inside Android only**. Web-hosted
+legacy Netlify save accounts are not deleted and the browser edition still has
+its legacy interface pending a separate web/desktop authorization migration.
+
+### Legacy local-folder synchronization (optional fallback)
+
+If the Google Cloud project is not configured yet, you can still use a local
+Android folder and a third-party sync app:
 
 1. Use an Android folder sync app such as FolderSync or Autosync for Google
    Drive. Pair a local Android folder (e.g. Documents/HobunjiSaves) with the

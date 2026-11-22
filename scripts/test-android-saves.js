@@ -140,16 +140,25 @@ async function run() {
 
   let autosaves = 0;
   window.LocalSaveFolder = { getStatus:()=>({state:'ready',autoSyncArmed:true,folderName:'Hobunji Saves'}),
-    syncNow:async()=>{ autosaves++; return {state:'ready',lastAction:'saved'}; } };
+    syncNow:async()=>{ autosaves++; return {state:'ready',lastAction:'saved-browser-to-folder'}; } };
   assert.equal((await window.HobunjiAndroidFiles.saveBeforeExit()).mode, 'folder');
   await window.HobunjiAndroidFiles.syncOnPause();
   assert.equal(autosaves, 2);
+  // Drive and SAF must fail closed if a live world isn't serializable.
+  window.__hobunjiGameStarted = true;
+  window.HobunjiRuntimeSave = { isReady:() => false, captureSnapshot:() => null,
+    flushNow:() => ({ok:true,captured:false}) };
+  const stale = await window.HobunjiAndroidFiles.saveBeforeExit();
+  assert.equal(stale.ok, false);
+  assert.match(stale.error, /capture is not ready/);
+  assert.equal(autosaves, 2, 'No stale browser data is sent to the folder backend');
+  window.__hobunjiGameStarted = false;
   window.LocalSaveFolder.getStatus = () => ({state:'needs-permission',autoSyncArmed:false,folderName:'Hobunji Saves'});
   window.__hobunjiGameStarted = true;
-  window.HobunjiRuntimeSave = {flushNow:()=>({ok:true})};
+  window.HobunjiRuntimeSave = {flushNow:()=>({ok:true,captured:true})};
   assert.equal((await window.HobunjiAndroidFiles.saveBeforeExit()).ok, false);
   let browserFlushes = 0; // Confirms backgrounding also saves unsynchronized browser-only gameplay.
-  window.HobunjiRuntimeSave.flushNow = async () => { browserFlushes++; return { ok:true }; };
+  window.HobunjiRuntimeSave.flushNow = async () => { browserFlushes++; return { ok:true, captured:true }; };
   const background = await window.HobunjiAndroidFiles.syncOnPause();
   assert.equal(background.mode, 'browser');
   assert.equal(background.ok, true);

@@ -54,6 +54,7 @@ dependencies {
     implementation 'androidx.webkit:webkit:1.18.0'
     implementation 'androidx.documentfile:documentfile:1.1.0'
     implementation 'androidx.core:core:1.17.0' // FileProvider serves only the verified update APK.
+    implementation 'com.google.android.gms:play-services-auth:22.0.0' // Native Google Picker OAuth; tokens never enter the WebView.
     testImplementation 'junit:junit:4.13.2' // Tests release ordering and hostile asset metadata.
 }
 

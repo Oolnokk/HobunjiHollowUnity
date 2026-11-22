@@ -63,11 +63,11 @@
     const opened = await request('openRead', { tree, path });
     try {
       return await consume(async () => {
-        const next = await request('readChunk', { id: opened.id });
+        const next = await request('readChunk', { tree, id: opened.id });
         return { bytes: bytesFromBase64(next.base64 || ''), eof: !!next.eof };
       });
     } finally {
-      await request('closeRead', { id: opened.id }).catch(() => {});
+      await request('closeRead', { tree, id: opened.id }).catch(() => {});
     }
   }
   async function readAllBytes(tree, path) {
@@ -120,6 +120,7 @@
       const opened = await request('openWrite', { tree: this.tree, path: this.path });
       let done = false; // A failed chunk aborts its staging file instead of committing a partial save.
       let failed = false; // Once a write fails, close() must never commit.
+      const tree = this.tree; // Closures below run with the writer object as this, not the file handle.
       return {
         async write(input) {
           if (done || failed) throw new Error('This save file writer is closed.');
@@ -133,23 +134,23 @@
           try {
             for (let start = 0; start < payload.length; start += CHUNK_SIZE) {
               const part = payload.subarray(start, Math.min(start + CHUNK_SIZE, payload.length));
-              await request('writeChunk', { id: opened.id, base64: base64FromBytes(part) });
+              await request('writeChunk', { tree, id: opened.id, base64: base64FromBytes(part) });
             }
           } catch (error) {
             failed = true;
-            await request('abortWrite', { id: opened.id }).catch(() => {});
+            await request('abortWrite', { tree, id: opened.id }).catch(() => {});
             throw error;
           }
         },
         async close() {
           if (done || failed) throw new Error('Cannot commit a failed or closed save.');
           done = true;
-          return request('commitWrite', { id: opened.id });
+          return request('commitWrite', { tree, id: opened.id });
         },
         async abort() {
           if (done) return;
           done = true;
-          await request('abortWrite', { id: opened.id });
+          await request('abortWrite', { tree, id: opened.id });
         },
       };
     }
@@ -164,7 +165,10 @@
       this.__hobunjiNativeHandle = { tree, name }; // Stored as a structured-cloneable token by LocalSaveFolder.
     }
     async queryPermission() { return permissionState(await request('permission', { tree: this.tree })); }
-    async requestPermission() { return this.queryPermission(); }
+    async requestPermission() {
+      if (!this.tree.startsWith('drive:')) return this.queryPermission();
+      return permissionState(await request('driveAuthorize', { tree: this.tree })); // Native Google authorization, never a WebView login.
+    }
     async getDirectoryHandle(name, options = {}) {
       const path = [...this.path, validateName(name)];
       await request('directory', { tree: this.tree, path, create: options.create === true });
@@ -251,16 +255,21 @@
       }
       const status = save?.getStatus?.();
       if (status?.state === 'ready' && status.autoSyncArmed) {
+        const runtime = window.HobunjiRuntimeSave; // Live serializer must be ready before any cloud overwrite.
+        if (window.__hobunjiGameStarted === true &&
+            (runtime?.isReady?.() !== true || typeof runtime.captureSnapshot !== 'function')) {
+          return { ok: false, error: 'Live save capture is not ready; Google Drive was not overwritten.' };
+        }
         const result = await save.syncNow({ reason: 'android-quit' });
-        if (!result || result.state !== 'ready' || result.dataLossRisk ||
-            /error|blocked|risk/i.test(result.lastAction || '')) {
+        const committed = /^(?:saved-browser-to-folder|saved-primary-recovery-error|autosaved-browser-to-folder|autosaved-primary-recovery-error|autosync-skipped-unchanged)$/.test(String(result?.lastAction || '')); // Only canonical commits or verified no-op are success.
+        if (!result || result.state !== 'ready' || result.dataLossRisk || !committed) {
           return { ok: false, error: result?.lastError || result?.dataLossRisk || 'Folder save was not completed.' };
         }
         return { ok: true, mode: 'folder' };
       }
       if (window.__hobunjiGameStarted) {
         const result = await window.HobunjiRuntimeSave?.flushNow?.({ reason: 'android-quit' }); // Await the actual browser write before permitting an update or quit.
-        if (result?.ok !== true) return { ok: false, error: result?.error || 'Could not save the live game.' };
+        if (result?.ok !== true || result.captured !== true) return { ok: false, error: result?.error || 'Live gameplay was not captured; refusing to close with a stale save.' };
         if (status?.folderName) return { ok: false, error: 'Save folder disconnected or not armed. Only browser storage was saved.' };
       }
       return { ok: true, mode: 'browser' };
@@ -268,7 +277,7 @@
   });
   window.HobunjiAndroidFiles = api;
   window.showDirectoryPicker = async () => {
-    const result = await request('choose');
+    const result = await request('choose'); // Native picker now offers Phone Folder or Google Drive.
     if (!result?.tree) throw errorFromNative({ name: 'AbortError', message: 'No folder chosen.' });
     return new AndroidDirectoryHandle(result.tree, [], result.name || 'Hobunji Saves');
   };
