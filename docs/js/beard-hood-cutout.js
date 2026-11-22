@@ -140,7 +140,7 @@
     const stepX = dx / distance, stepY = dy / distance;
     // The FIRST transition from central transparency to opaque hood is the
     // inner edge. Searching outside-in would mistakenly stretch the outer rim.
-    for (let d = .5; d < Math.min(SIZE, distance + 1); d += .5) {
+    for (let d = .5; d < SIZE; d += .5) { // Check beyond an interior tuft too: the inner ring can lie farther out than the mark.
       const x = Math.floor(center.x + stepX * d), y = Math.floor(center.y + stepY * d);
       if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) break;
       if (alpha[(y * SIZE + x) * 4 + 3] >= alphaLimit)
