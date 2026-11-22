@@ -211,6 +211,7 @@
   function clear() { for (const id of [...entries.keys()]) discard(id); }
   window.FamilyBabyBurdens = Object.freeze({
     isAllowedArea, sync, takeIntoArms, spouseCarry, returnToBasket, discard, clear,
+    carrying: id => ['player', 'spouse'].includes(entries.get(id)?.child?.carryBy), // Dev Companion knows either parent is holding the infant.
     snapshot: () => ({ ...debug, babies: [...entries].map(([id, e]) => ({
       id, by: e.child.carryBy || 'basket', pose: e.child.carryPose || null,
       area: e.burden.mapId, parent: e.burden.group.parent?.name || null,
