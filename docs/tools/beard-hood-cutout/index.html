@@ -56,16 +56,16 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <label>Hood permission — automatic from its lower opening ring, or manually painted</label>
     <div class="row"><button id="hoodAutoMode" type="button">Automatic lower-ring cone</button></div>
     <label for="coneSpread">Cone outward widening <span id="coneSpreadLabel">0 px per pixel down</span></label>
-    <input id="coneSpread" type="range" min="0" max="2" step=".025" value="0">
-    <p>At zero, every column directly below the detected bottom hood opening is removable. Increasing this widens the removable area like a cone; everything outside it rejects ordinary beard cutouts.</p>
+    <input id="coneSpread" type="range" min="0" max="3" step=".025" value="0">
+    <p>At zero, the allowed area extends straight down from the bottom opening. Widening opens the cone; the far-right <b>Line</b> setting makes its edge horizontal across the portrait. Everything outside still refuses ordinary cutouts.</p>
     <label><input id="topConeEnabled" type="checkbox"> Enable upper-rim cover (beats whiskers)</label>
     <label for="topConeUpSpread">Overhang upward cone widening <span id="topConeUpSpreadLabel">0 px per pixel up</span></label>
-    <input id="topConeUpSpread" type="range" min="0" max="2" step=".025" value="0" disabled>
+    <input id="topConeUpSpread" type="range" min="0" max="3" step=".025" value="0" disabled>
     <label for="topConeSpread">Overhang downward cone widening <span id="topConeSpreadLabel">0 px per pixel down</span></label>
-    <input id="topConeSpread" type="range" min="0" max="2" step=".025" value="0" disabled>
+    <input id="topConeSpread" type="range" min="0" max="3" step=".025" value="0" disabled>
     <label for="topConeDownLength">Downward cone length <span id="topConeDownLengthLabel">200 px (until lower rim)</span></label>
     <input id="topConeDownLength" type="range" min="0" max="200" step="1" value="200" disabled>
-    <p>The orange upper rim projects two separately widened cones: one upward into the hood, and one downward across whisker roots. Downward length limits the droop in pixels, and the lower opening remains a hard stop. Both cones beat whiskers; disable the overhang to retain the original behavior.</p>
+    <p>The orange rim has separate upward and downward cones, each widening all the way to a <b>horizontal line</b> at the far right. The downward length limits how far protection reaches; the lower opening remains a hard stop. Both cones beat whiskers. No narrowing mode is introduced.</p>
     <div class="row">
       <button id="hoodAllowMode" type="button">Allow hood removal</button>
       <button id="hoodProtectMode" type="button">Protect hood from beard</button>
@@ -290,13 +290,18 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const local=beardDoc?.speciesVariants?.[variant]?.hoodPaintAlphaFloor;
     return Cut.alphaFloor(local??beardDoc?.hoodPaintAlphaFloor??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA);
   }
+  function formatConeSpread(value, direction) {
+    // All three sliders share the same horizontal-line endpoint.
+    const spread=Cut.normalizeConeSpread(value);
+    return spread>=3?'Line (180°)':spread.toFixed(3)+' px per pixel '+direction;
+  }
   function updateLabels(){
     $('alphaFloorLabel').textContent=Math.round(selectedAlphaFloor()/255*100)+'% ('+selectedAlphaFloor()+'/255)';
     $('hoodAlphaFloorLabel').textContent=Math.round(selectedHoodAlphaFloor()/255*100)+'% ('+selectedHoodAlphaFloor()+'/255)';
     $('stretchLabel').textContent=selectedStretch()+' px';
-    $('coneSpreadLabel').textContent=Cut.normalizeConeSpread($('coneSpread').value).toFixed(3)+' px per pixel down';
-    $('topConeSpreadLabel').textContent=Cut.normalizeConeSpread($('topConeSpread').value).toFixed(3)+' px per pixel down';
-    $('topConeUpSpreadLabel').textContent=Cut.normalizeConeSpread($('topConeUpSpread').value).toFixed(3)+' px per pixel up';
+    $('coneSpreadLabel').textContent=formatConeSpread($('coneSpread').value,'down');
+    $('topConeSpreadLabel').textContent=formatConeSpread($('topConeSpread').value,'down');
+    $('topConeUpSpreadLabel').textContent=formatConeSpread($('topConeUpSpread').value,'up');
     $('topConeDownLengthLabel').textContent=Cut.normalizeCoverLength($('topConeDownLength').value)+' px (capped by lower rim)';
     $('subdivisionLabel').textContent=selectedSubdivision()+' / 16 · '
       +(selectedSubdivision()<=2?'Broad':selectedSubdivision()<=5?'Medium':selectedSubdivision()<=10?'Local':'Very local');
