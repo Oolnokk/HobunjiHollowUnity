@@ -33,6 +33,12 @@ const data={
 const anchors=profile.anchorsForAvatar(data,.3,.4);
 close(anchors.posterior.y,.20,'posterior uses real infant spine pivot and portrait placement');
 close(anchors.posterior.x,0,'posterior starts at pinned spline node 0, not the offset neck base');
+const pinned=profile.anchorsForAvatar({visualCentroidLocalY:.12,neckRig:{
+  spinePosteriorY:-.19,spineBase:{x:.08},splineNodes:[{position:{x:0,y:-.12,z:0}}],
+  neckLocal:{x:.02,y:.14,z:0},
+}},.3,.4);
+close(pinned.posterior.y,.20,'actual spine root bone wins over a stale posterior height hint');
+close(pinned.posterior.x,0,'posterior root remains centered even when shoulder/neck base shifts laterally');
 close(anchors.neck.x,.02,'right grip uses head-turn pivot X rather than shoulder midpoint');
 close(anchors.neck.y,.46,'neck uses unscaled head-turn pivot, not top of painted alpha');
 const sized=profile.forSize(.3,.4,anchors);
