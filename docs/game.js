@@ -17850,11 +17850,13 @@
       function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
       function getManualHeldItem() { return manualHeldItem; }
 
-      // The one accessor gifting (and anything else that wants "whatever
-      // the player is currently offering up") should call — resolves the
-      // manual hold first, falling back to the ordinary wheel selection.
+      // Only the actively held item can be offered. The selected wheel item
+      // remains remembered when tools/weapons are drawn or hands are stowed;
+      // both Gift prompts and the transfer itself re-check this accessor.
       function getHeldGiftItem() {
-        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
+        if (heldMode !== 'item') return null; // Selected inventory is not held while a tool, weapon, or nothing is drawn.
+        if (window.Shattercasks?.heldBurdenInfo?.()) return null; // A physical Burden occupies the hands even if the item mode was left active.
+        if (window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()) return null; // Temporary festival vessels cannot become gifts.
         if (manualHeldItem?.kind === 'clothing') {
           const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
           if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
