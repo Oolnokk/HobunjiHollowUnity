@@ -149,7 +149,7 @@
       || root.userData?.creatureKind || root.userData?.creatureId || ''; // Selects the authored chathead crop for named and ordinary animals.
   }
   function portraitSide() {
-    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === false ? -1 : 1; // Keep the right-hand anchor with the game's default flipped humanoid portrait.
+    return window.PNGPlaneAvatar?.getPortraitsFlipped?.() === false ? 1 : -1; // UV-flipped humanoid portraits face screen-left; keep the reaction on the head's outer side.
   }
   function animalAnchorFor(root, options, height, size, creatureKind, avatarRef) {
     const authoredHeight = Number(options.height) || Number(root.userData?.portraitModelHeight); // Full centered animal-plane height, not its bounding-box top above the root.
@@ -222,7 +222,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
-      latestChange: 'Character emojis follow the portrait flip, and animal emojis are twice as large and switch sides as the animal turns.' };
+      latestChange: 'NPC reactions sit outside the mirrored portrait face; animal reactions sit outside the visible muzzle and follow both facing directions.' };
   }
   function debugControls() {
     if (typeof document === 'undefined' || typeof location === 'undefined' || !new URLSearchParams(location.search).has('emojiDebug')) return;
