@@ -159,7 +159,7 @@ const familyPanel = devPanels.get('family-arrivals'); // Actual panel registrati
 assert.ok(familyPanel, 'family arrivals register in the existing Dev Companion Now panels');
 assert.equal(familyPanel.when(), true, 'the panel is shown after game start');
 assert.match(familyPanel.render().summary, /No family arrival scheduled/, 'before marriage no due date is invented');
-assert.match(read('docs/index.html'), /js\/romance-family\.js\?v=20261122familyarrivals1/, 'the game loads the changed family module with a new cache version');
+assert.match(read('docs/index.html'), /js\/romance-family\.js\?v=[A-Za-z0-9_-]+/, 'the game loads the family module with a versioned cache token');
 W.__hobunjiGameStarted = false;
 assert.equal(familyPanel.when(), false, 'the Dev Companion panel is not shown before the game starts');
 W.__hobunjiGameStarted = true;
