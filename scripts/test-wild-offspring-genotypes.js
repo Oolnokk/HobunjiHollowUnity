@@ -137,6 +137,56 @@ try {
 } finally {
   context.localStorage.setItem = originalSetItem;
 }
+// Test the real atomic cave pickup writer, including four bearded Grehlr babies and a page reload.
+const atomicDenId = 'map_i_den_map_northern_cliffs_atomicGrehlr'; // A real-format cave identity tying inventory, lineage and clutch to one saved world.
+const beardedGrehlr = JSON.parse(JSON.stringify(grehlrGenotype)); // A forced bearded family shared across four baby acquisitions.
+beardedGrehlr.beard = { ...(beardedGrehlr.beard || {}), color: beardedGrehlr.base.color, copies: 1, enabled: true };
+const metaBeforeAtomic = JSON.parse(storage.get('hobunjiSaveMeta')); // Seed exactly one living cave before simulating a collector's hold completion.
+const atomicMember = metaBeforeAtomic.worlds[0].members.character;
+atomicMember.nonGearInventory.grehlrBaby = 0;
+metaBeforeAtomic.worlds[0].denTurnover = { version: 2, year: 1, records: [{
+  denKey: 'map_northern_cliffs|atomicGrehlr', zoneId: 'map_northern_cliffs', denId: 'atomicGrehlr', cavernMapId: atomicDenId,
+  clutch: { remaining: 4, itemKey: grehlrBabyItem, liveBirth: true, genotype: beardedGrehlr },
+}] };
+storage.set('hobunjiSaveMeta', JSON.stringify(metaBeforeAtomic));
+assert.equal(context.LivestockItemGenotypePersistence.acquireNestItem(grehlrBabyItem, beardedGrehlr, 1,
+  { areaId: 'map_i_den_unknown_mismatched', remaining: 3, liveBirth: true }), false,
+'unknown cavern record cannot convert a nest baby into an untracked inventory grant');
+const beforeFailedAtomic = storage.get('hobunjiSaveMeta');
+context.localStorage.setItem = (key, value) => {
+  if (key === 'hobunjiSaveMeta') throw new Error('simulated atomic write failure');
+  return originalSetItem(key, value);
+};
+try {
+  assert.equal(context.LivestockItemGenotypePersistence.acquireNestItem(grehlrBabyItem, beardedGrehlr, 1,
+    { areaId: atomicDenId, remaining: 3, liveBirth: true }), false,
+  'one failing atomic write must reject the entire baby/lineage/clutch transaction');
+  assert.equal(storage.get('hobunjiSaveMeta'), beforeFailedAtomic, 'failed write preserves all three saved records unchanged');
+  assert.equal(context.LivestockItemGenotypePersistence.getDebug().queuedNow, 0, 'failed atomic write adds no live lineage');
+} finally {
+  context.localStorage.setItem = originalSetItem;
+}
+for (let i = 0; i < 4; i++) {
+  assert.equal(context.LivestockItemGenotypePersistence.acquireNestItem(grehlrBabyItem, beardedGrehlr, i + 1,
+    { areaId: atomicDenId, remaining: 3 - i, liveBirth: true }), true,
+  `Grehlr baby ${i + 1} commits exactly once`);
+  const world = JSON.parse(storage.get('hobunjiSaveMeta')).worlds[0]; // Each pickup separately validates the written character and world-owned cave state.
+  assert.equal(world.members.character.nonGearInventory[grehlrBabyItem], i + 1);
+  assert.equal(world.members.character.livestockItemGenotypes[grehlrBabyItem].length, i + 1);
+  assert.equal(world.denTurnover.records[0].clutch.remaining, 3 - i, 'saved den clutch never regenerates a stolen baby');
+}
+assert.equal(context.LivestockItemGenotypePersistence.acquireNestItem(grehlrBabyItem, beardedGrehlr, 4,
+  { areaId: atomicDenId, remaining: 0, liveBirth: true }), false,
+'duplicate count cannot mint extra hidden genetics');
+assert.equal(context.LivestockItemGenotypePersistence.acquireNestItem(grehlrBabyItem, beardedGrehlr, 5,
+  { areaId: atomicDenId, remaining: 2, liveBirth: true }), false,
+'stale cavern clutch count cannot mint a fifth baby');
+context.LivestockItemGenotypePersistence.reload();
+assert.equal(context.LivestockItemGenotypePersistence.getDebug().queuedNow, 4,
+  'all four bearded bloodlines survive a page-style reload');
+assert.equal(context.LivestockItemGenotypePersistence.groupsFor(grehlrBabyItem, 4)[0].count, 4,
+  'the saved Pack can display all four identically bearded Grehlr babies');
+
 assert.equal(context.CREATURE_DB.grehlr.label, 'Grehlr', 'base Grehlr species must have a valid fallback display label');
 assert.equal(context.CREATURE_DB['grehlr-den-mother'].label, 'Grehlr Den-Mother', 'Den-Mother must have an authored display label');
 assert.match(game, /creature\.name\.trim\(\)\.toLowerCase\(\) === 'undefined'/,
@@ -150,9 +200,9 @@ const begin = source.indexOf('  function updateNestInteraction(dt)'); // Keeps t
 const end = source.indexOf('  function debugSnapshot()', begin); // Excludes unrelated diagnostics rendering.
 for (const [key, { genotype }] of offspring) {
   const nest = { itemKey: key, remaining: 1, liveBirth: true, genotype }; // Focused clutch member shares its family's real genotype.
-  let held = 0, removed = 0, queued = 0; // Tracks acquisition, lineage, and original nest content separately.
-  let failSave = false, failQueue = false, saveCalls = 0; // Simulates a full bag, failed save and failed genetics persistence on a real collected offspring.
-  const order = []; // Proves the durable item/lineage commit happens before the destructive nest mutation.
+  let held = 0, removed = 0, committed = 0; // Tests hold completion, atomic persistence and visual removal independently.
+  let rejectCommit = false; // Simulates a quota error or failed lineage/clutch validation before any durable write.
+  const order = []; // Ensures committed bag+genes+clutch precede the removal of the rendered baby.
   const pickup = vm.createContext({
     document, _nestTakeHudEl: null, _nestTakeLabelEl: null, _nestTakeFillEl: null, _activeNestContentHoldId: null,
     _nestContentDebug: {}, NEST_TAKE_HOLD_S: 5,
@@ -161,40 +211,36 @@ for (const [key, { genotype }] of offspring) {
     deps: { player: {}, inventory: { [key]: InventoryStacks.MAX_TOTAL }, ITEM_DEFS: { [key]: { cat: 'livestock', label: 'Test offspring' } },
       getActiveAction: () => 'nest_take', getActionHeldDown: () => true, getNestHoldT: () => held, setNestHoldT: value => { held = value; },
       getCurrentArea: () => 'den', showToast() {}, clampInventoryStack() {}, buildInventoryGrid() {}, refreshItemScroll() {}, refreshActionBar() {},
-      saveMemberWorldData() { order.push('save'); saveCalls++; return !failSave; }, itemIconForKey: () => '' },
-    window: { InventoryStacks, FarmAnimals: { queueItemGenotype(item, genes) {
-      assert.equal(item, key);
-      assert.equal(genes, genotype);
-      order.push('lineage');
-      if (failQueue) return false;
-      queued++;
+      itemIconForKey: () => '' },
+    window: { InventoryStacks, LivestockItemGenotypePersistence: { acquireNestItem(item, genes, count, options) {
+      assert.equal(item, key); assert.equal(genes, genotype); assert.equal(count, 1); assert.equal(options.remaining, 0);
+      order.push('atomic');
+      if (rejectCommit) return false;
+      committed++;
+      return true;
+    } }, WildlifeSpawn: { updateDenClutchState: (_areaId, _nest, options) => {
+      assert.equal(options.persist, false, 'cave state is already committed: no second giant save');
+      order.push('sync');
       return true;
     } } },
-  }); // Executes production acquisition in a minimal save-aware VM, not a reimplemented transaction.
+  }); // Executes the real den interaction with its one-write persistence interface.
   vm.runInContext(source.slice(begin, end), pickup);
   pickup.updateNestInteraction(5);
   assert.equal(nest.remaining, 1, `${key}: full bag preserves clutch`);
-  assert.equal(removed + queued, 0, `${key}: full bag neither removes the visual nor queues orphan genes`);
+  assert.equal(removed + committed, 0, `${key}: full bag neither removes the visual nor calls persistence`);
 
   pickup.deps.inventory[key] = 0;
-  failSave = true;
+  rejectCommit = true;
   pickup.updateNestInteraction(5);
-  assert.equal(nest.remaining, 1, `${key}: failed save preserves clutch`);
-  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: failed save restores original bag count`);
-  assert.equal(removed + queued, 0, `${key}: failed save never removes a baby or queues a lineage`);
+  assert.equal(nest.remaining, 1, `${key}: a failed atomic save preserves clutch`);
+  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: a failed atomic save restores the original bag count`);
+  assert.equal(removed + committed, 0, `${key}: a failed atomic save never removes a baby`);
 
-  failSave = false;
-  failQueue = true;
+  rejectCommit = false;
+  pickup.deps.ITEM_DEFS = {}; // An invalid cave reward must not create a hidden Pack stack.
   pickup.updateNestInteraction(5);
-  assert.equal(nest.remaining, 1, `${key}: failed lineage persistence preserves clutch`);
-  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: failed lineage restores original bag count`);
-  assert.equal(removed + queued, 0, `${key}: failed lineage never removes a baby`);
-
-  failQueue = false;
-  pickup.deps.ITEM_DEFS = {}; // Malformed cave/den reward key should never create a hidden Pack stack.
-  pickup.updateNestInteraction(5);
-  assert.equal(nest.remaining, 1, `${key}: missing catalog item cannot consume a nest baby`);
-  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: unregistered item cannot become an invisible bag entry`);
+  assert.equal(nest.remaining, 1, `${key}: unregistered reward cannot consume a nest baby`);
+  assert.equal(pickup.deps.inventory[key] || 0, 0, `${key}: unregistered item cannot become an invisible inventory entry`);
   pickup.deps.ITEM_DEFS = { [key]: { cat: 'livestock', label: 'Test offspring' } };
 
   order.length = 0;
@@ -202,8 +248,9 @@ for (const [key, { genotype }] of offspring) {
   assert.equal(nest.remaining, 0, `${key}: committed acquisition decrements clutch`);
   assert.equal(pickup.deps.inventory[key], 1);
   assert.equal(removed, 1);
-  assert.equal(queued, 1, `${key}: successful pickup queues exactly its family genotype`);
-  assert.deepEqual(order, ['save', 'lineage', 'remove'], `${key}: bag and lineage commit before removing a baby`);
+  assert.equal(committed, 1, `${key}: successful pickup commits exactly once`);
+  assert.deepEqual(order, ['atomic', 'remove', 'sync'], `${key}: the entire bag/lineage/clutch commits before removing the baby`);
+
   assert.equal(pickup._nestContentDebug.lastCollectionSaveOk, true);
 
 }
