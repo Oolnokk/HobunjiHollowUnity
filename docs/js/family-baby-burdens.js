@@ -54,7 +54,12 @@
   function moveToWalker(entry) {
     const root = entry.walker?.root, burden = entry.burden;
     if (!root?.parent || burden.carried || burden.flying) return;
-    root.parent.add(burden.group);
+    if (burden.mapId !== entry.walker.area && entry.walker.area === currentArea()) {
+      burden.carried = true; // The common Burden mover requires a temporary carry claim for cross-map relocation.
+      window.Shattercasks?.transferCarriedBurdenToArea?.(entry.walker.area, burden);
+      burden.carried = false; // Real baby now follows the authoritative NPC/basket again.
+    }
+    if (burden.group.parent !== root.parent) root.parent.add(burden.group); // Do not reorder scene nodes every family tick.
     burden.group.position.copy(root.position);
     burden.group.rotation.set(0, 0, 0);
     burden.group.scale.set(1, 1, 1);
