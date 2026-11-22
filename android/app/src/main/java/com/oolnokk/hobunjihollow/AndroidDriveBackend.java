@@ -397,8 +397,9 @@ final class AndroidDriveBackend {
                     new AndroidDrivePublication.Remote() {
                         @Override public void verifyUnchanged() throws Exception { AndroidDriveBackend.this.verifyUnchanged(write); }
                         @Override public void rename(String id, String name) throws Exception { AndroidDriveBackend.this.rename(id, name); }
-                        @Override public boolean canonicalExists() throws Exception {
-                            return AndroidDriveBackend.this.child(write.parentId, write.canonicalName) != null;
+                        @Override public String canonicalId() throws Exception {
+                            JSONObject canonical = AndroidDriveBackend.this.child(write.parentId, write.canonicalName);
+                            return canonical == null ? null : canonical.getString("id");
                         }
                     });
             JSONObject committed = child(write.parentId, write.canonicalName); // Confirm canonical resolves to the staged ID.
