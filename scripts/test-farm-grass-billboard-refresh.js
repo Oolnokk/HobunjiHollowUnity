@@ -89,6 +89,13 @@ const grid = [[
   { type: TileType.GRASS, crop: '' },
   { type: TileType.WEEDS, crop: '' },
 ]]; // Real terrain and crop state, not merely the family plot designation.
+const townGrid = [[0, 1, 2].map(() => ({ type: TileType.GRASS, elevTier: 0 }))]; // All town cells are grass after map normalization.
+const townZone = { farmPlots: [
+  { id: 'bed', tiles: [[0, 0]], tillers: ['gorobi_ginju'] },
+  { id: 'trench', kind: 'dig', tiles: [[1, 0]], diggers: ['gikali_ginju'] },
+  { id: 'unassigned', tiles: [[2, 0]], tillers: [] },
+] }; // Only actively managed plot cells suppress town billboard grass.
+const townScene = { children: [], add(mesh) { this.children.push(mesh); }, remove(mesh) { const i = this.children.indexOf(mesh); if (i >= 0) this.children.splice(i, 1); } }; // Test scene for rebuilding town grass.
 const scene = {
   children: [], add(mesh) { this.children.push(mesh); },
   remove(mesh) { const index = this.children.indexOf(mesh); if (index >= 0) this.children.splice(index, 1); },
@@ -96,7 +103,7 @@ const scene = {
 renderer.init({
   COLS: 4, ROWS: 1, PLATEAU_UNIT: 2.5, TileType, scene,
   getGrid: () => grid, getGrassEnabled: () => true, getWeed3D: () => false,
-  getTownSceneBuilt: () => false, applySeasonalGrassAppearance() {},
+  getTownSceneBuilt: () => false, getTownZone: () => townZone, getTownGrid: () => townGrid, getTownScene: () => townScene, applySeasonalGrassAppearance() {},
   combatConfig: () => ({ cuttableTargetGlow: {} }), tileSurfaceY: () => 0,
   tileYCenter: () => 0, resolveTileMat: () => ({}), markTerrainEdgeId() {},
   terrainCategoryFor: type => type, NORMAL_TOP: 0,
@@ -159,4 +166,22 @@ renderer.refreshTileMesh(3, 0);
 assert.deepEqual(visibleCells(weedMesh), [3], 'weeds return to weed ground when a crop is removed');
 
 assert.equal(filter.refreshRebuiltBillboardMesh({}), null, 'non-billboard scene objects are ignored');
+
+// The town floor is grass beneath simulated beds; no instance of that grass
+// may survive in either the renderer's source or its compacted scene buffer.
+renderer.buildTownGrassBillboards(3, 1);
+let townBillboard = townScene.children.find(mesh => mesh.isInstancedMesh);
+assert.ok(townBillboard, 'town grass has a source mesh');
+assert.deepEqual(sourceCells(townBillboard), [2], 'tillers and trench diggers suppress both kinds of Ginju plot');
+assert.deepEqual(visibleCells(townBillboard), [2], 'only the unassigned grassy lawn gets billboards');
+filter.filterBillboardMesh(townBillboard, new Set(), 'hobunjiTownBuildingGrass');
+assert.deepEqual(visibleCells(townBillboard), [2], 'building-footprint refresh does not resurrect plot grass');
+
+// A freshly loaded town may have registered runtime plots but no map plot array.
+townZone.farmPlots = [];
+window.NpcFarmPlots = { plots: () => [{ id: 'runtime-bed', mapId: 'map_hobunji_town', managed: true, tiles: [{ c: 1, r: 0 }] }] };
+renderer.buildTownGrassBillboards(3, 1);
+townBillboard = townScene.children.find(mesh => mesh.isInstancedMesh);
+assert.deepEqual(sourceCells(townBillboard), [0, 2], 'live plot registry suppresses grass after map-data clones');
+console.log('ok - Ginju fields suppress source town billboards without hiding nearby lawn');
 console.log('ok - production farm grass/weed renderer and footprint-source cache stay synchronized');
