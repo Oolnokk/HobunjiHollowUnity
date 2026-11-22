@@ -58,6 +58,22 @@ const handMap = { image: { width:450, height:1204 } }; // Real torch PNG dimensi
 const sourcePlane = { geometry:{ parameters:{ width:.5, height:realTorchHeight } }, material:{ map:handMap } }; // The actual equipment-plane dimensions supplied by game.js.
 const toolMeshMap = { adventuring: { userData: { toolPlane: sourcePlane } } };
 const subscribers = new Map(); // Captures the real shared frame-scheduler registration.
+const markerPoint = { x:300, y:1150, width:450, height:1204 }; // Deliberately off-center source-pixel emitter tests true pivot math in both axes.
+const midpointPosition = (width, height, scale) => ({ // Expected mesh offset after the 180° art flip; its parent remains the attachment pivot.
+  x: ((markerPoint.x + .5) / markerPoint.width - .5) * width * scale / 2,
+  y: (height * scale / 2 + (.5 - (markerPoint.y + .5) / markerPoint.height) * height * scale) / 2,
+});
+function assertEmitterMidpoint(art, width, height, scale) {
+  const expected = midpointPosition(width, height, scale);
+  assert(Math.abs(art.position.x - expected.x) < 1e-8 && Math.abs(art.position.y - expected.y) < 1e-8,
+    'the sprite is offset by the actual emission-pixel midpoint');
+  const gripX = art.position.x, gripY = art.position.y - height * scale / 2;
+  const imageEmitterX = ((markerPoint.x + .5) / markerPoint.width - .5) * width * scale;
+  const imageEmitterY = (.5 - (markerPoint.y + .5) / markerPoint.height) * height * scale;
+  const flameX = art.position.x - imageEmitterX, flameY = art.position.y - imageEmitterY;
+  assert(Math.abs(gripX + flameX) < 1e-8 && Math.abs(gripY + flameY) < 1e-8,
+    'actual grip and emitted fire lie at opposite vectors from the posterior rotation pivot');
+}
 const world = {
   THREE,
   RuntimeFrameScheduler: { register(id, callback, options) {
@@ -91,7 +107,7 @@ const world = {
       assert.equal(unit, .5 / 450);
       const group = new Group();
       state.plane.add(group);
-      state.fireEmitters = [{ group, particles:[] }];
+      state.fireEmitters = [{ group, particles:[], image:{width:markerPoint.width,height:markerPoint.height}, sources:[markerPoint.y*markerPoint.width+markerPoint.x] }];
       fireStarts++;
     },
     stepFire(state, dt) {
@@ -142,28 +158,23 @@ assert.equal(belt.children[0].material.map.source, loadedMap, 'belt recolors a c
 assert.equal(belt.children.length, 1, 'no extra decorative flame; real particles are children of the PNG plane');
 assert.equal(fireStarts, 1, 'one regular layer-effects fire is attached on stow');
 assert.equal(torch.debug.belt.fireEmitters, 1, 'Pixel Probe reports the actual reused particle emitter');
+assert.equal(world.AdventuringTorchBelt.debug.pivot, 'grip-emitter midpoint', 'mobile debug names the geometry pivot');
 assert.equal(belt.children[0].rotation.z, Math.PI, 'authored -Y torch tip is upright on the belt');
 assert.equal(belt.children[0].scale.x, .68, 'belt torch reads the authored idle scale, not its raw size');
 assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .5 * .68) < 1e-8, 'belt width matches the held tool width multiplied by Neutral scale');
 assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - realTorchHeight * .68) < 1e-8, 'belt height follows the real torch PNG aspect and Neutral scale');
-assert(Math.abs(belt.children[0].position.y + .025 * .68) < 1e-8, 'the sprite is centered around the grip-to-emitter midpoint');
-const originScale = .68; // Checks equal-magnitude distances from the pivot to grip and particle emitter.
-const midpoint = (realTorchHeight + .05) * originScale / 2;
-const gripY = belt.children[0].position.y - realTorchHeight * originScale / 2;
-const emitterY = belt.children[0].position.y + realTorchHeight * originScale / 2 + .05 * originScale;
-assert(Math.abs(gripY + midpoint) < 1e-8 && Math.abs(emitterY - midpoint) < 1e-8,
-  'grip and emitter lie on opposite sides of the same origin');
+assertEmitterMidpoint(belt.children[0], .5, realTorchHeight, .68);
 assert.equal(torch.debug.belt.idleScale, .68, 'Pixel Probe exposes the actual belt multiplier');
 assert(Math.abs(torch.debug.belt.visibleDimensions.height - realTorchHeight * .68) < 1e-8, 'mobile debug reports the full sized visible art');
 assert.equal(torch.debug.onBelt, true, 'only a lit, stowed torch is reported on the belt');
 world.WeaponToolStances.poses.torchHold.scale = .81; sync({timestamp:now});
 assert.equal(belt.children[0].scale.x, .81, 'editing Neutral scale changes the stowed sprite without rebuilding it');
-assert(Math.abs(belt.children[0].position.y + .025 * .81) < 1e-8, 'neutral scale preserves the torch midpoint pivot');
+assertEmitterMidpoint(belt.children[0], .5, realTorchHeight, .81);
 sourcePlane.geometry.parameters.width = .44; sourcePlane.geometry.parameters.height = .99; // Live species/tool geometry can update after the PNG has already loaded.
 sync({timestamp:now});
 assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .44 * .81) < 1e-8, 'live held plane width changes without mesh rebuild');
 assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - .99 * .81) < 1e-8, 'live held plane aspect changes without mesh rebuild');
-assert(Math.abs(belt.children[0].position.y + .025 * .81) < 1e-8, 'updated geometry still rotates around the grip/emitter midpoint');
+assertEmitterMidpoint(belt.children[0], .44, .99, .81);
 sourcePlane.geometry.parameters.width = .5; sourcePlane.geometry.parameters.height = realTorchHeight; // Restore the authored shape for the burn/respawn checks.
 world.WeaponToolStances.poses.torchHold.scale = .68; sync({timestamp:now});
 assert.equal(torch.debug.belt.fireVisible, true, 'real torch emitter remains active after stow');
