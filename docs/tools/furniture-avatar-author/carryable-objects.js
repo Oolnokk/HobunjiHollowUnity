@@ -559,18 +559,24 @@
       const head=Number(phase.head)>0?Number(phase.head):.58;
       const npcRecord={role:'child',tags:['child','family'],isChild:true,
         childBodyScale:body,childHeadScale:head}; // Same infant proportions as RomanceFamily.childRecord.
-      let model;
+      let model=null;
       if(window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel){
-        model=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{
-          backCanvas,profile,speciesId:identity.speciesId,gender:identity.gender,
-          appearance:{speciesId:identity.speciesId,gender:identity.gender},
-          npcRecord,name:'furniture_random_baby_reference',modelWidth:.9,modelHeight:.9,neckRig:true,
-        });
-        model.userData?.neckRig?.headScaleJoint?.scale?.setScalar?.(head/body);
-      }else{
+        try{
+          model=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{
+            backCanvas,profile,speciesId:identity.speciesId,gender:identity.gender,
+            appearance:{speciesId:identity.speciesId,gender:identity.gender},
+            npcRecord,name:'furniture_random_baby_reference',modelWidth:.9,modelHeight:.9,neckRig:true,
+          });
+          model?.userData?.neckRig?.headScaleJoint?.scale?.setScalar?.(head/body);
+        }catch(error){
+          log('Baby neck-rig preview failed; using its colored PNG plane instead: '+(error?.message||error),'warn');
+        }
+      }
+      if(!model){ // Colored authored-PNG fallback, never an invented primitive infant silhouette.
         model=new THREE.Mesh(new THREE.PlaneGeometry(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT),
           new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(front),transparent:true,alphaTest:.35,side:THREE.DoubleSide,depthWrite:false}));
       }
+      model.traverse?.(child=>{if(child.isMesh){child.userData=child.userData||{};child.userData.noOutline=true;}}); // Baby portraits already contain ink; no generated shell.
       if(ticket!==babyRenderTicket||!editingBaby){disposeObject(model);return false;}
       const width=Number(model.userData?.portraitModelWidth)||BABY_REFERENCE_WIDTH;
       const height=Number(model.userData?.portraitModelHeight)||BABY_REFERENCE_HEIGHT;
