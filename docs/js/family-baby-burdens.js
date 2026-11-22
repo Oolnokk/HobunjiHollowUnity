@@ -77,6 +77,7 @@
         height / 2 + centroidY + (Number(skinned.position?.y) || 0),
         Number(skinned.position?.z ?? centroidZ) || 0);
       mesh.userData.noOutline = true; // Source PNG already contains its own black ink.
+      mesh.userData.hobunjiFamilyBabyPhysicalCarry = true; // Protect the infant from the legacy held-weapon replay.
       group.add(mesh);
     } else {
       const geometry = new THREE.PlaneGeometry(width, height); // Simple fallback for rigid or not-yet-rigged NPCs.
@@ -86,6 +87,7 @@
         plane.position.z = centroidZ + (rear ? -.002 : .002);
         plane.rotation.y = rear ? Math.PI : 0;
         plane.userData.noOutline = true;
+        plane.userData.hobunjiFamilyBabyPhysicalCarry = true; // Fallback faces obey the same physical baby rule.
         group.add(plane);
       }
     }
