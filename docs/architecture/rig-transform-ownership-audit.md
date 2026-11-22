@@ -31,7 +31,7 @@ switch, including interrupted actions, seated/mounted states and scene rebuilds.
 | `docs/js/drunk-prone-composition-bridge.js` | **Existing mitigation** | Temporarily draws hostile low-Footing/run lean; uses an undo closure for render-only rotation. Verify exception paths and overlapping hostile visual owners. |
 | `docs/js/combat/impact-ragdoll-playback.js` + `impact-blend-library.js` | **Review: low–medium** | Interpolated blend-space body and IK samples use absolute `copy`/assignment, not unbounded accumulation. Watch for pivot reparenting and cleanup on repeated prone/stand transitions. |
 | `docs/js/player-crawl.js` | **Review: low** | Uses named player-composer channels for blending in/out. Exercise rapid crawl/stand, impact and capture interrupts. |
-| `docs/js/tzatzul-flight-runtime.js` + `tzatzul-live-visuals.js` | **Review: medium** | Captive pose is snapshotted and restored, including quaternion/scale; a post-release two-frame reset may conflict with the immediately resumed locomotion/impact writer. Needs ownership-aware release handoff, not blind extra reset. |
+| `docs/js/tzatzul-flight-runtime.js` + `tzatzul-live-visuals.js` | **Draw-only placement** | The flight record owns the capture and physical movement. The talon transform lasts for one world frame. Native yaw, IK and fall state never sample it between frames. |
 | `docs/js/animal-sleep-presentation.js` | **Existing mitigation** | Captures render-only Y/scale and restores after the frame; guarded for game-loop and external render contexts. Test early return and rebuild. |
 | `docs/js/weapon-tool-stances.js` + `tool-world-upright.js` | **Existing mitigation** | Tool offset and world-up correction are temporary during the holder's matrix update; `finally` restores holder position/quaternion and child twist. Do not strip this without understanding its matrix-bake handoff. |
 | `docs/js/furniture-piece-animation-runtime.js` | **Existing mitigation** | Hinge/spin/bob are appended after `basePivotFrame()` restores the authored pivot each update. |
@@ -71,12 +71,6 @@ was updated too. This prevents editor-only untracked thigh offsets.
 
 ## Follow-up: pose handoff coverage
 
-- Tzatzul release now records the exact talon-authored quaternion and restores the
-  captured baseline only while that rotation is still present. A fall/impact or
-  locomotion writer that took over before release retains its own rotation.
-  The two-frame safety check corrects only a verified replay of the *old talon*
-  quaternion, never the ordinary new native pose; a new scene clears the check.
-  Its last-aligned quaternion is reused per animation frame without allocations.
 - NPC dance hand cleanup now occurs during the existing periodic walker poll
   as well as before rendering. A canceled, replaced or departed social action
   releases owned socket poses even when that NPC has no further render passes;
@@ -85,7 +79,7 @@ was updated too. This prevents editor-only untracked thigh offsets.
   resumed combat on the first post-capture frame, stale talon reapplication,
   fall takeover before release, offscreen dance cancel and walking away.
 
-These two handoffs are specifically addressed, **not proof that all animation
+These handoffs are specifically addressed, **not proof that all animation
 paths use the ledger**. The player render composer, quaternion-based impact
 animation, and authored IK retain their existing independent owners.
 
@@ -158,16 +152,6 @@ test runs with the real compositor and includes root/neck interruption cases.
 The live Three.js spouse-kiss test now exercises a new root and head owner.
 Browser-level render-boundary and full-suite CI are still required before
 claiming production stability.
-
-Tzatzul talon carry has also been migrated in `tzatzul-live-visuals.js`:
-each captive's quaternion and scale are claimed through the shared absolute
-session, stamped after each talon alignment and conditionally restored on
-release. World position is never claimed or rolled back (the captive stays
-where the bird dropped them); a replacement avatar releases the outgoing
-generation's claims; a new native fall/impact writer or a second scoped
-owner blocks late talon replay. `scripts/test-tzatzul-captive-pose-ownership.js`
-covers successor fall rotation, position preservation, rejected competing
-owner, avatar replacement, duplicate release and claim cleanup.
 
 ## Additional compositor integration: procedural IK and ragdoll (17 November 2026)
 
@@ -250,3 +234,36 @@ handoff, newer native takeover, concurrent explicit baselines, and effects
 added or removed below a hand overlay. The real NPC-dance and creature-impact
 fixture tests also exercise overlapping old/new rig generations. These checks
 complement, but do not replace, real game/browser interruption soak testing.
+
+## Draw-only actor placement and Tzatzul carry
+
+Talon alignment previously wrote a full position and quaternion into the live
+actor root during simulation. The next player frame rewrote yaw only, leaving
+talon pitch and roll in the root. The release session saw a different quaternion
+and treated the whole transform as a native takeover. A subsequent grab could
+then use the contaminated pose as its baseline.
+
+The flight runtime owns the capture record, logical position and fall handoff.
+The visual runtime resolves the authored talon socket against the current actor
+root and decomposes it into scratch space. The player body composer applies the
+placement before drawing the player's rig and its scene-sibling attachments.
+Captured wildlife uses the same placement primitive in a world-frame hook.
+Acceptance of a draw pose leaves existing simulation claims intact. Placement
+preserves scale and skips roots with existing absolute position or rotation
+claims.
+
+For other whole-actor presentation effects, use
+`ActorRigCompositor.applyRenderPose(root, owner, position, quaternion, undo)`
+inside an existing render-frame transaction. Put the rollback in the frame's
+finally path and keep joint solvers that publish persistent baselines outside
+the placed pose. Draw-time descendants can query `renderPoseOwner(node)`;
+the hand and forearm solvers use it to keep their pre-render IK during the
+carry. The actor's original root transform and world matrices are restored at
+frame end, including after a draw error. Release removes the capture record
+and needs no pose cleanup or delayed correction.
+
+The Wildlife panel reports applied carry poses, unavailable rigs and root
+conflicts. The full rig dump includes the count of active draw placements.
+`scripts/test-tzatzul-captive-pose-ownership.js` covers repeated yaw-only
+solver updates during capture, base pose retention on release, competing
+absolute owners, rig promotion, depth replay, and rollback after a failed draw.

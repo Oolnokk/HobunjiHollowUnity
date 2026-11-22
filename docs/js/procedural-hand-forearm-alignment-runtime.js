@@ -155,7 +155,9 @@
     // Normal hand sync: -100000. Dance translation: -99990. Forearm orientation
     // must happen after both and before the visible hand is drawn.
     sentinel.renderOrder = cfgNumber('freeHandForearmAlignmentRenderOrder', -99980, -99989, -1000);
-    sentinel.onBeforeRender = (_renderer, renderScene) => alignFree(record, renderScene);
+    sentinel.onBeforeRender = (_renderer, renderScene) => {
+      if (!global.ActorRigCompositor?.renderPoseOwner?.(sentinel)) alignFree(record, renderScene);
+    };
     parent.add(sentinel);
     record.sentinel = sentinel;
   }

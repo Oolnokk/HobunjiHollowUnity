@@ -1,76 +1,186 @@
-// Tzatzul carry release must never drag a dropped player/creature back to its
-// pickup position or restore old orientation over a new fall/impact pose.
+// Regress the old talon tilt surviving a normal yaw-only solver update.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-class Vector3 {
+class Vector {
   constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
-  set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
-  clone() { return new Vector3(this.x, this.y, this.z); }
-  copy(v) { return this.set(v.x, v.y, v.z); }
+  set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
+  clone() { return new this.constructor().copy(this); }
+  copy(value) { return this.set(value.x, value.y, value.z); }
 }
-class Quaternion {
-  constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); this.isQuaternion = true; }
-  set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
-  clone() { return new Quaternion(this.x, this.y, this.z, this.w); }
-  copy(q) { return this.set(q.x, q.y, q.z, q.w); }
-  dot(q) { return this.x * q.x + this.y * q.y + this.z * q.z + this.w * q.w; }
-  multiply(q) {
-    const a = this.clone(); // Preserve both operands while composing native-style local rotations.
-    return this.set(a.x*q.w+a.w*q.x+a.y*q.z-a.z*q.y,
-      a.y*q.w+a.w*q.y+a.z*q.x-a.x*q.z,
-      a.z*q.w+a.w*q.z+a.x*q.y-a.y*q.x,
-      a.w*q.w-a.x*q.x-a.y*q.y-a.z*q.z);
+class Quaternion extends Vector {
+  set(x, y, z, w = 1) { super.set(x, y, z); this.w = w; return this; }
+  copy(value) { return this.set(value.x, value.y, value.z, value.w); }
+  normalize() { return this; }
+}
+class Object3D {
+  constructor() {
+    this.isObject3D = true;
+    this.position = new Vector();
+    this.rotation = new Vector();
+    this.quaternion = new Quaternion();
+    // Simulate Three's coupled Euler/quaternion fields. This fixture tests
+    // ownership and rollback, while authored talon math has its own tests.
+    const copyRotation = this.rotation.copy.bind(this.rotation);
+    const copyQuaternion = this.quaternion.copy.bind(this.quaternion);
+    this.rotation.copy = value => { copyQuaternion(value); return copyRotation(value); };
+    this.quaternion.copy = value => { copyRotation(value); return copyQuaternion(value); };
+    this.scale = new Vector(1, 1, 1);
+    this.matrixWorld = {};
+    this.children = [];
+  }
+  add(child) { child.parent = this; this.children.push(child); }
+  updateWorldMatrix() { this.worldZ = this.rotation.z; }
+  getWorldScale(out) { return out.copy(this.scale); }
+  rotateY() {}
+}
+class Matrix4 {
+  copy() { return this; }
+  invert() { return this; }
+  multiplyMatrices(_parent, payload) { this.payload = payload; return this; }
+  decompose(position, quaternion, scale) {
+    position.set(4, 9, 3);
+    quaternion.copy(this.payload.talonRotation);
+    scale.set(2, 2, 2);
   }
 }
-const poseWorld = { window: {}, console, performance: { now: () => 1000 } };
-vm.runInNewContext(fs.readFileSync('docs/js/rig-transform-layers.js', 'utf8'), poseWorld);
-vm.runInNewContext(fs.readFileSync('docs/js/tzatzul-live-visuals.js', 'utf8'), poseWorld);
-const composer = poseWorld.window.ActorRigCompositor;
-const visuals = poseWorld.window.TzatzulLiveVisuals;
-const player = {}; // The independent creature fixture below must not accidentally resolve the local player's root.
-visuals.init({ player, hostileObjects: new Set(), companionObjects: new Set(), getCurrentArea: () => 'wilderness' });
-function creature() {
-  const group = { name: 'captured-creature-rig', parent: {}, quaternion: new Quaternion(),
-    scale: new Vector3(1, 1, 1), position: new Vector3(0, 2, 0) };
-  return { health: 25, avatarRef: { group } };
+class WebGLRenderer {
+  render() { this.draw(); }
 }
-{
-  const prey = creature(), group = prey.avatarRef.group;
-  assert(visuals.rememberCaptive(prey));
-  assert.equal(composer.getDebug().activeAbsoluteClaims, 2, 'talons claim only orientation and scale');
-  assert.equal(composer.absoluteOwner(group, 'quaternion'), 'tzatzul-captive');
-  assert.equal(composer.absoluteOwner(group, 'position'), null, 'world travel must remain owned by the fall/flight solver');
-  const competing = composer.createAbsoluteSession('impact-ragdoll');
-  assert.equal(competing.capture(group, ['quaternion']), false, 'an active talon owns its rotation until a safe handoff');
-  group.quaternion.copy(new Quaternion(.2, 0, 0, Math.sqrt(.96))); // A distinct fall/impact writer displaced the talon.
-  group.position.set(4, 9, 3); // Released prey must remain at the actual new drop position.
-  const falling = group.quaternion.clone();
-  assert(visuals.restoreCaptive(prey), 'the original capture session can release after a fall takeover');
-  assert(Math.abs(group.quaternion.dot(falling) - 1) < 1e-10, 'fall orientation survives talon cleanup');
-  assert.equal(group.position.x, 4);
+
+const scene = new Object3D(); // Both the carrier and the original prey share the active gameplay scene.
+const preview = new Object3D(); // An unrelated scene drawn with the same renderer must stay isolated.
+const carrierGroup = new Object3D();
+const rig = { root: new Object3D(), talonCarry: {}, update() {}, dispose() {} };
+const bird = { creatureKey: 'tzatzul', areaId: 'wilderness', health: 40,
+  avatarRef: { group: carrierGroup }, _tzFlight: { captive: null } };
+scene.add(carrierGroup);
+const player = { health: 20, avatarRef: { group: new Object3D() } };
+const captures = new Map(); // The flight runtime's real capture registry interface, tested separately through its gameplay entry points.
+const world = { window: {
+  THREE: { Object3D, Vector3: Vector, Quaternion, Matrix4, WebGLRenderer },
+  FlyingAnimalRig: { placeTalonPayload(_talon, payload) {
+    payload.matrixWorld.talonRotation = new Quaternion(.5, .6, .7); // Distinct pitch, yaw and roll for the render pose.
+  } },
+  TzatzulRegistration: { KIND: 'tzatzul', HATCHLING_KIND: 'tzatzul-hatchling',
+    identityFor: () => ({}), createRig: () => rig },
+  TzatzulFlightRuntime: {
+    hasCaptives: () => captures.size > 0,
+    carrierOf: prey => captures.get(prey),
+    forEachCaptive: visit => captures.forEach((carrier, prey) => visit(prey, carrier)),
+  },
+}, console, performance: { now: () => 1000 } };
+for (const name of ['render-hooks', 'rig-transform-layers', 'tzatzul-live-visuals']) {
+  vm.runInNewContext(fs.readFileSync('docs/js/' + name + '.js', 'utf8'), world);
+}
+const { ActorRigCompositor: composer, RenderHooks: hooks, TzatzulLiveVisuals: visuals } = world.window;
+const renderer = new WebGLRenderer();
+const root = new Object3D(); // The actual player root differs from the portrait child.
+const foot = new Object3D(); // Descendant solver must see the render placement owner.
+scene.add(root);
+root.add(foot);
+root.position.set(2, 1, 3);
+root.scale.set(1.2, .9, 1.7); // Preserve individual actor size even if the bird matrix has scale.
+
+function hold(prey) {
+  bird._tzFlight.captive = prey;
+  prey.tzatzulCapturedBy = 'bird';
+  captures.set(prey, bird);
+}
+function release(prey) {
+  bird._tzFlight.captive = null;
+  prey.tzatzulCapturedBy = null;
+  captures.delete(prey);
+}
+function frame(draw) {
+  hooks.beginWorldFrame({ renderer, scene });
+  try { draw(); }
+  finally { hooks.endWorldFrame(); }
+}
+function assertCarryPose(group) {
+  assert.equal(group.rotation.z, .7, 'authored tilt is visible during every relevant draw');
   assert.equal(group.position.y, 9);
-  assert.equal(group.position.z, 3);
-  assert.equal(composer.getDebug().activeAbsoluteClaims, 0);
-  assert.equal(visuals.snapshot().captiveHandoffs, 1);
-  assert(competing.capture(group, ['quaternion']), 'the falling action acquires the released orientation');
-  competing.release();
+  assert.equal(composer.renderPoseOwner(group), 'tzatzul-carry');
 }
-{
-  const prey = creature(), oldGroup = prey.avatarRef.group;
-  assert(visuals.rememberCaptive(prey));
-  assert.equal(composer.getDebug().activeAbsoluteClaims, 2);
-  const replacement = { ...oldGroup, quaternion: new Quaternion(), scale: new Vector3(1,1,1),
-    position: new Vector3(6, 0, 4) }; // Portrait promotion replaces the actor's rig without changing gameplay coordinates.
-  prey.avatarRef.group = replacement;
-  assert(visuals.rememberCaptive(prey), 'new captive rig supersedes stale old avatar');
-  assert.equal(composer.getDebug().activeAbsoluteClaims, 2, 'old rig claims release before newly promoted rig is captured');
-  assert.equal(composer.absoluteOwner(oldGroup, 'quaternion'), null, 'outgoing rig no longer owns talon rotation');
-  assert(visuals.restoreCaptive(prey));
-  assert.equal(composer.getDebug().activeAbsoluteClaims, 0);
-  assert.equal(replacement.position.x, 6, 'releasing a new visual root never teleports its world position');
-  assert.equal(visuals.restoreCaptive(prey), false, 'duplicate delayed releases are idempotent');
+function assertNativePose(group, yaw, pitch = 0) {
+  assert.equal(group.rotation.x, pitch);
+  assert.equal(group.rotation.y, yaw);
+  assert.equal(group.rotation.z, 0, 'carry roll cannot feed back into the next yaw-only update');
+  assert.equal(group.worldZ, 0, 'cached world matrices return to the native pose too');
+  assert.equal(composer.renderPoseOwner(group), null);
+  assert.equal(composer.getDebug().activeRenderPoses, 0);
 }
-console.log('Tzatzul scoped captive pose release: successor fall, no teleport, rig rebuild, and owner cleanup PASS');
+
+(async () => {
+  visuals.init({ player, hostileObjects: new Set([bird]) });
+  visuals.tick(.01, 'wilderness');
+  await new Promise(setImmediate); // Let the ordinary visual tick install the asynchronous flying rig.
+
+  for (let grab = 0; grab < 4; grab++) {
+    hold(player);
+    for (let step = 1; step <= 3; step++) {
+      const yaw = grab + step / 10; // Gait updates just yaw between render frames.
+      root.rotation.y = yaw;
+      root.position.x = grab + step;
+      const undo = []; // Same player placement and shared unwind API used by the body composer.
+      const placement = visuals.getPlayerCarryPlacement(root, scene);
+      assert(placement, 'the normal mounted bird rig resolves a carry placement');
+      assert.equal(root.rotation.z, 0, 'resolving a placement has no side effects on the player');
+      assert.equal(visuals.getPlayerCarryPlacement(root, preview), null);
+      assert(visuals.applyPlayerCarryPlacement(root, placement, undo));
+      assertCarryPose(root);
+      assert.equal(composer.renderPoseOwner(foot), 'tzatzul-carry');
+      assert.equal(composer.absoluteOwner(root, 'quaternion'), null);
+      assert.equal(root.scale.x, 1.2);
+      assert.equal(player.avatarRef.group.rotation.z, 0);
+      assert.equal(visuals.applyPlayerCarryPlacement(root, placement, undo), false, 'reentrant draw cannot replace the native snapshot');
+      while (undo.length) undo.pop()();
+      assertNativePose(root, yaw);
+      assert.equal(root.position.x, grab + step, 'current physics position survives the frame');
+    }
+    release(player);
+    root.rotation.copy(new Vector(.2, grab, 0)); // A different native fall/impact pose follows release immediately.
+    assert.equal(visuals.getPlayerCarryPlacement(root, scene), null);
+    assertNativePose(root, grab, .2);
+    root.rotation.copy(new Vector());
+  }
+
+  const animal = { health: 20, avatarRef: { group: new Object3D() } };
+  const animalRoot = animal.avatarRef.group;
+  scene.add(animalRoot);
+  hold(animal);
+  const successor = composer.createAbsoluteSession('impact');
+  assert(successor.capture(animalRoot, ['quaternion']));
+  frame(() => {
+    renderer.draw = () => assert.equal(animalRoot.rotation.z, 0, 'an active absolute solver keeps its own root');
+    renderer.render(scene);
+  });
+  successor.release();
+
+  frame(() => {
+    renderer.draw = () => assert.equal(animalRoot.rotation.z, 0);
+    renderer.render(preview); // Unrelated previews cannot activate a world hook.
+    renderer.draw = () => assertCarryPose(animalRoot);
+    renderer.render(scene);
+    renderer.render(scene); // Replay sees the same pose through the end of the frame.
+  });
+  assertNativePose(animalRoot, 0);
+
+  const nextRoot = new Object3D(); // A promoted avatar is resolved on the next draw.
+  scene.add(nextRoot);
+  animal.avatarRef.group = nextRoot;
+  assert.throws(() => frame(() => {
+    renderer.draw = () => {
+      assert.equal(animalRoot.rotation.z, 0, 'old rig stays untouched');
+      assertCarryPose(nextRoot);
+      throw new Error('draw failed');
+    };
+    renderer.render(scene);
+  }), /draw failed/);
+  assertNativePose(nextRoot, 0);
+  release(animal);
+
+  console.log('Tzatzul draw-only carry: repeated grabs, yaw/impact isolation, depth replay and failed draw rollback PASS');
+})().catch(error => { console.error(error); process.exitCode = 1; });

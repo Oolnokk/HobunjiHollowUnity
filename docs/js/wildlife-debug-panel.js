@@ -160,12 +160,10 @@
       + ' · nest stays: ' + (flight.nestStays || 0) + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
       + (flight.nestExitProtected ? '<div>Tzatzul nest exit protection active</div>' : '')
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
-      + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
-      + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
-      + ' · last: ' + fmt(wings?.lastCaptiveRestore) + '</div>'
-      + '<div>Portrait offset repairs: ' + (wings?.captivePositionRestores ?? 0)
-      + ' · newer pose retained: ' + (wings?.captivePositionHandoffs ?? 0)
-      + ' · late replay fixed: ' + (wings?.staleCarryPositionCorrections ?? 0) + '</div>'
+      + '<div>Carry poses drawn: ' + (wings?.captivePoseFrames ?? 0)
+      + ' · waiting for rig: ' + (wings?.captivePoseUnavailable ?? 0)
+      + ' · root conflicts: ' + (wings?.captivePoseConflicts ?? 0)
+      + ' · last: ' + fmt(wings?.lastCaptivePose) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'

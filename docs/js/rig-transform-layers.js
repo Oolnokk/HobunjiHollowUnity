@@ -11,6 +11,8 @@
   const axisDeltaScratch = new WeakMap(); // Reused local axis-angle quaternions avoid per-frame allocations.
   const leased = new Set(); // Only active leased slots are held for interruption recovery.
   const channelStores = new Map(); // Shared named stores used by body-root compositor adapters.
+  const renderPoses = new WeakMap(); // Reusable snapshots for draw-only root placement.
+  let activeRenderPoses = 0; // Cheap early exit for render-time solvers on ordinary frames.
   const absoluteClaims = new WeakMap(); // Node -> named absolute position/quaternion/scale owner; action sessions hold their own references.
   const overlayClaims = new WeakMap(); // Per-node hand overlay records share the absolute claim registry instead of maintaining private dance baselines.
   const overlayStats = { overlayWrites: 0, overlayBaseRefreshes: 0, overlayBaseReuses: 0, overlayReleases: 0, overlayConflicts: 0, overlayPostWrites: 0, solverPublications: 0, solverConflicts: 0 }; // Inspect render-pass ownership without DevTools.
@@ -788,9 +790,47 @@
     return true;
   }
 
+  // A draw-only root placement belongs to the render frame's rollback stack.
+  // It never takes a simulation claim or changes a solver/layer baseline.
+  function applyRenderPose(node, owner, position, quaternion, undo) {
+    if (!owner || !node?.isObject3D || node.matrixAutoUpdate === false
+      || hasAbsolutePoseOwner(node, 'position') || hasAbsolutePoseOwner(node, 'quaternion')) return false;
+    let pose = renderPoses.get(node); // Reuse the same snapshot and rollback through repeated carry frames.
+    if (pose?.owner) return false;
+    if (!pose) {
+      pose = { owner: null, position: node.position.clone(), rotation: node.rotation.clone(), restore() {
+        try {
+          node.position.copy(pose.position);
+          node.rotation.copy(pose.rotation);
+          node.updateWorldMatrix(true, true);
+        } finally {
+          pose.owner = null;
+          activeRenderPoses--;
+        }
+      } };
+      renderPoses.set(node, pose);
+    }
+    pose.position.copy(node.position);
+    pose.rotation.copy(node.rotation);
+    undo.push(pose.restore);
+    pose.owner = owner;
+    activeRenderPoses++;
+    node.position.copy(position);
+    node.quaternion.copy(quaternion);
+    node.updateWorldMatrix(true, true);
+    return true;
+  }
+
+  function renderPoseOwner(node) {
+    if (!activeRenderPoses) return null;
+    for (let root = node; root; root = root.parent) {
+      const owner = renderPoses.get(root)?.owner; // A joint inherits its root's presentation placement.
+      if (owner) return owner;
+    }
+    return null;
+  }
+
   function absoluteOwner(node, property) {
-    // Read-only ownership query used by late render guards (such as talon
-    // carry release) to avoid replaying an obsolete pose over a newer action.
     return absoluteClaims.get(node)?.get(property)?.session?.owner || null;
   }
 
@@ -802,10 +842,11 @@
   }
 
   const compositor = Object.freeze({
+    applyRenderPose, renderPoseOwner,
     setAxis, setPosition, setQuaternion, setAbsoluteBase,
     clear, clearAll, expireStale, channelStore, createAbsoluteSession, absoluteOwner, setSolvedBase, restoreSolvedBase, applyPoseOverlay, stampPoseOverlay, releasePoseOverlay,
     getDebug() {
-      return { ...stats, ...absoluteStats, ...overlayStats, activeAbsoluteClaims,
+      return { ...stats, ...absoluteStats, ...overlayStats, activeAbsoluteClaims, activeRenderPoses,
         absoluteOwners: Array.from(absoluteOwnerCounts, ([owner, claims]) => ({ owner, claims })), // Only enumerated on explicit mobile diagnostics.
         leasedSlots: leased.size };
     },

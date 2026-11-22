@@ -7122,7 +7122,6 @@
             updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // The carrier owns position; ground AI and attacks must not overwrite it.
           }
           // Beastmaster pets stay in hostileObjects so player targeting and
@@ -8653,7 +8652,6 @@
           if (c.tzatzulCapturedBy) {
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // Captured companions share the carrier's flight path instead of following their master.
           }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
@@ -25610,7 +25608,6 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
-        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
