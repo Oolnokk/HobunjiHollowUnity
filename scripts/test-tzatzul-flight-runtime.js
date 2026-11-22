@@ -258,6 +258,8 @@ assert(loaderHtml.indexOf('attack-readiness.js')>0&&loaderHtml.indexOf('attack-r
   'readiness policy is loaded before the flight consumer');
 assert.match(file('docs/js/puzzle-cave-entrances.js'),/isPlayerSolvingMelody/,
   'the live exterior plate has a dedicated narrow activity predicate');
+assert.match(file('docs/js/wildlife-debug-panel.js'),/bird\.readyingActivity/,
+  'the mobile wildlife census exposes the actual reason a bird is circling');
 
 // Perched outdoor hunters start a real sky orbit, never a damaging strike, until the player finishes.
 assert(supports.attach(farBird,recoveredPoint));
@@ -293,6 +295,15 @@ w.Fishing.state={phase:'bite'};
 w.TzatzulFlightRuntime.update(.1);
 assert.equal(farBird._tzFlight.phase,'readying','a minigame starting mid-dive reroutes the still-airborne bird');
 assert.equal(hits,hitsBeforeReady,'aborted committed dive never collides during the activity');
+const oldNestMap=farBird.tzatzulNestMapId; // A playable nest validates the capture boundary instead of relying on a missing transition.
+farBird.tzatzulNestMapId='test-nest';
+w.TzatzulNestInterior={isNestMap:id=>id==='test-nest'};
+deps.enterBuilding=()=>{};
+farBird._tzFlight.readyingReleaseArmed=false; // Exercise the live activity guard independently of the warning-chord grace.
+assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,player),false,
+  'even a direct late talon capture is rejected during protected player activity');
+farBird._tzFlight.readyingReleaseArmed=true;
+farBird.tzatzulNestMapId=oldNestMap;delete w.TzatzulNestInterior;delete deps.enterBuilding;
 w.Fishing.state=null;
 
 const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
