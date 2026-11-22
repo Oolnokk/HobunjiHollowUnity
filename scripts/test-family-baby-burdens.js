@@ -167,6 +167,23 @@ carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(sameBurden.group.children[0].material[0].map, newestFront, 'live front-art updates propagate');
 assert.equal(sameBurden.group.children[0].material[1].map, newestFront, 'rear fallback tracks front art');
 assert.equal(bakeCalls, 1, 'texture refresh does not re-bake');
+// Head compensation can move the head bone without changing its scale.
+// The rigid carry portrait must update for that offset, not for ordinary ticks.
+const oldBakedMesh = sameBurden.group.children[0];
+const shiftedGeometry = new PlaneGeometry(.48, .59);
+shiftedGeometry.boundingBox = bakedGeometry.boundingBox;
+window.PNGPlaneAvatar.meshBudget.bakeStaticPortraitForCarry = () => {
+  bakeCalls++;
+  return { geometry: shiftedGeometry, flat: false };
+};
+rebuiltWalker.avatarGroup.userData.neckRig.headScaleJoint.position = new Vector(0, .06, 0);
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 2, 'head-offset adjustment triggers exactly one replacement bake');
+assert.equal(sameBurden.group.children[0].geometry, shiftedGeometry);
+assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'rebuild refreshes collision mesh references');
+assert.equal(bakedGeometry.disposed, true, 'old baked geometry is disposed after the art swap');
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 2, 'unchanged head offsets do not rebake on following family ticks');
 // Family restore may replace the JS child record without replacing the live burden.
 // OnPickup must update the current authoritative child, not its original closure value.
 const restoredRecord = { ...child, carryBy: null, carryPose: null };
