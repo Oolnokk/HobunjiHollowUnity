@@ -146,6 +146,11 @@
     wall.name='ruin-room-entry-partition-'+room.id;
     wall.userData.ruinRoomId=room.id;
     parent.add(wall);
+    if(Faces.buildEdgeCapQuads&&runs.length){ // The partition's ends are its doorway jambs: cap them so they are not open slits.
+      const ends=new THREE.Mesh(Faces.toGeometry(THREE,Faces.buildEdgeCapQuads(runs,{y0:room.y,y1:room.y+WALL_HEIGHT,thickness:.14})),material);
+      ends.name='ruin-room-partition-jambs-'+room.id;ends.userData.ruinRoomId=room.id;
+      wall.add(ends); // Child of the partition: shares its material, visibility and disposal.
+    }
     if(grid?.set&&CG?.KIND){
       for(const [x,z] of room.blocked){
         const c=grid.xToCol(x+.5),r=grid.zToRow(z+.5);

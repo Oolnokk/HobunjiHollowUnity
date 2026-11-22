@@ -8,13 +8,13 @@
   'use strict';
   const SIDES={north:{dx:0,dz:-1,hub:'S'},east:{dx:1,dz:0,hub:'W'},
     south:{dx:0,dz:1,hub:'N'},west:{dx:-1,dz:0,hub:'E'}};
-  function compose({meta,seed,LayerPlan,ShaftHub,Connector,tileScale=2,anchor=256,gap=6,plinthTrial=false,tier=null,theme=null}={}){
+  function compose({meta,seed,LayerPlan,ShaftHub,Connector,tileScale=2,anchor=256,gap=6,plinthTrial=false,tier=null,theme=null,shaftTraversal=null}={}){
     const orientation=SIDES[meta?.entrance?.side];
     if(!orientation||!LayerPlan?.compose||!ShaftHub?.compose||!Connector?.entranceOutside)
       throw new Error('V50 entrance cannot be oriented toward a physical shaft.');
     const plan=LayerPlan.compose({seed,spacing:64,anchorX:anchor,anchorZ:anchor,
       shaftSize:45,floorHeight:16,nativeV50:true,plinthTrial,theme,groundEntranceSide:orientation.hub,
-      ...(LayerPlan.tierOptions?.(tier)||{})}); // A rarity tier overrides floors, shaft size, wing counts and traversal (js/ruin-layer-plan.js TIERS).
+      ...(LayerPlan.tierOptions?.(tier)||{}),...(shaftTraversal?{shaftTraversal}:{})}); // A rarity tier overrides floors, shaft size, wing counts and traversal (js/ruin-layer-plan.js TIERS); a developer may force the shaft puzzle.
     if(!plan.ok)throw new Error('V50 vestibule shaft plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(','));
     const portals=plan.floors.flatMap(f=>[
       ...f.wings.map(w=>({floor:f.floor,side:w.side})),
