@@ -201,9 +201,10 @@
         '<div class="card" style="margin:10px 0;padding:10px" data-synonym="' + safe(entry.id) + '">' +
         '<label class="field">Approved replacement<input type="text" data-edit-synonym="' + safe(entry.id) + '" value="' + safe(entry.text) + '"></label>' +
         '<div class="grid"><label class="field">Word style<select data-edit-kind="' + safe(entry.id) + '">' +
-        [['standard','Standard'],['old-slang','Historical slang (before 1900)'],['simple','Over-simple / childlike'],['near-miss','Almost-right / coined']].map(([kind,label]) =>
+        [['standard','Standard'],['regional','Regional dialect'],['old-slang','Historical slang (before 1900)'],['simple','Over-simple / childlike'],['near-miss','Almost-right / coined']].map(([kind,label]) =>
           '<option value="' + kind + '"' + ((entry.kind || 'standard') === kind ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
-        '<label class="field">First attested year (old slang only)<input data-edit-period="' + safe(entry.id) + '" type="number" min="1000" max="1899" step="1" placeholder="e.g. 1861" value="' + safe(entry.firstRecorded || '') + '"></label></div>' +
+        '<label class="field">First attested year (old slang only)<input data-edit-period="' + safe(entry.id) + '" type="number" min="1000" max="1899" step="1" placeholder="e.g. 1861" value="' + safe(entry.firstRecorded || '') + '"></label>' +
+        '<label class="field">Regional dialect tag<input data-edit-dialect="' + safe(entry.id) + '" placeholder="e.g. southeastern-us" value="' + safe(entry.dialect || '') + '"></label></div>' +
         '<div class="grid">' +
         [['verbosity', 'Simple', 'Verbose'], ['color', 'Technical', 'Colorful'], ['formality', 'Casual', 'Formal']].map(([axis, low, high]) =>
           '<label class="field">' + low + ' ↔ ' + high + '<input type="number" min="0" max="100" step="1" data-edit-rating="' + axis + '" data-synonym-id="' + safe(entry.id) + '" value="' + clamp(entry[axis]) + '"></label>'
@@ -270,6 +271,17 @@
         if (!entry || !rules().WORD_KINDS.includes(input.value)) return;
         entry.kind = input.value;
         notify('Updated synonym style. Pre-1900 slang requires a first attested year to enter automatic generation.');
+      };
+    });
+    $('editor').querySelectorAll('[data-edit-dialect]').forEach(input => {
+      input.onchange = () => {
+        const entry = cfg().lexicon[activeWord()]?.find(item => item.id === input.dataset.editDialect); // One shared entry is the sole owner of its region tag.
+        if (!entry) return;
+        const tag = String(input.value || '').trim().toLowerCase();
+        if (tag && !/^[a-z][a-z0-9-]{1,49}$/.test(tag)) { input.value = entry.dialect || ''; notify('Use a lower-case dialect tag such as southeastern-us'); return; }
+        if (tag) entry.dialect = tag;
+        else delete entry.dialect;
+        notify('Updated shared dialect tag · unassigned NPCs will not inherit this region');
       };
     });
     $('editor').querySelectorAll('[data-edit-period]').forEach(input => {
@@ -411,7 +423,8 @@
         ' style="width:23px;height:23px;flex:none;accent-color:var(--accent)">' +
         '<span style="flex:1"><strong>' + safe(entry.text) + '</strong><span class="muted" style="display:block">Verbosity ' + clamp(entry.verbosity) +
         ' · Color ' + clamp(entry.color) + ' · Formality ' + clamp(entry.formality) +
-        ' · ' + safe((entry.kind || 'standard') === 'old-slang' ? 'Pre-1900 slang' : (entry.kind === 'simple' ? 'Over-simple' : (entry.kind === 'near-miss' ? 'Almost-right' : 'Standard'))) +
+        ' · ' + safe((entry.kind || 'standard') === 'old-slang' ? 'Pre-1900 slang' : (entry.kind === 'simple' ? 'Over-simple' : (entry.kind === 'near-miss' ? 'Almost-right' : (entry.kind === 'regional' ? 'Regional' : 'Standard')))) +
+        (entry.dialect ? ' · ' + safe(entry.dialect) : '') +
         '</span></span></label>').join('') +
       '<div class="row"><button id="checkAll" type="button">Check all</button><button id="checkNone" type="button">Uncheck all</button>' +
       '<button id="resetWord" class="subtle" type="button">Reset word to generated</button></div>' +
@@ -419,7 +432,8 @@
       '<section class="card"><h3>Live speech preview</h3><textarea id="previewInput" class="compactText">' + safe(model.preview) + '</textarea>' +
       '<div class="row"><button id="previewButton" type="button" class="good">Try another variation</button>' +
       '<span class="pill" id="swapChance">Swap chance: ' + sliders.frequency + '%</span></div>' +
-      '<div class="preview" id="previewResult">' + safe(model.previewResult || model.preview) + '</div></section>';
+      '<div class="preview" id="previewResult">' + safe(model.previewResult || model.preview) + '</div></section>' +
+      doorstepSamplesHtml(id); // Source dialogue stays read-only; phonetic and synonym rules apply only to the separate preview.
   }
   function wireCharacter(id) {
     wireSliders((key, value) => {
@@ -469,6 +483,16 @@
       model.previewResult = '';
       render(); notify('Reset selected word to generated checkmarks');
     };
+    $('editor').querySelectorAll('[data-use-visit]').forEach(button => {
+      button.onclick = () => {
+        const [giftId, indexText] = String(button.dataset.useVisit).split(':');
+        const visit = doorstepSpeech(id).find(item => item.id === giftId), line = visit?.lines?.[Number(indexText)];
+        if (!line) return;
+        model.preview = line; model.previewResult = '';
+        render(); // The full original authored line becomes an editable sample, never a modification to the actual doorstep dialogue.
+        notify('Loaded ' + visit.title + ' into the preview; original doorstep dialogue is unchanged');
+      };
+    });
     $('previewInput').oninput = event => { model.preview = event.target.value; };
     $('previewButton').onclick = () => {
       model.preview = $('previewInput').value;
