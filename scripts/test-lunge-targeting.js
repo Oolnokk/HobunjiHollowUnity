@@ -83,6 +83,17 @@ player.lungeOriginMs = 1006;
 assert.equal(LT.hasTargetInCone(cone), false);
 assert.equal(impacts.length, 4, 'empty cones cannot generate object impacts');
 
+// A frozen camera aim must be shared by the stop probe AND the object strike.
+const cameraAim = {x:0,y:.6,z:.8}; // This off-axis aim is used by the following hostile probe and AOE.
+globalThis.Combat.deps = {getPlayerMeleeAimDirection:()=>cameraAim};
+hostiles = [{id:'aim-target',health:5,areaId:'mapA',hit:true}];
+player.lungeOriginMs = 1007;
+reset();
+assert.equal(LT.hasTargetInCone(cone),true);
+assert.equal(probes[0].opts.direction,cameraAim,'the hostile probe gets committed camera aim');
+assert.equal(impacts[4].direction,cameraAim,'the crate/burden AOE uses precisely the same aim direction');
+delete globalThis.Combat.deps;
+
 // uninitialised use is safe
 delete require.cache[require.resolve('../docs/js/lunge-targeting.js')];
 const fresh = require('../docs/js/lunge-targeting.js');
