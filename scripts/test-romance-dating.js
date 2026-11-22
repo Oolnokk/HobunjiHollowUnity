@@ -440,9 +440,10 @@ assert.equal(dream.nextDreamRawDay, clock.rawDay + 14, 'two-week postponement us
 assert.equal(fam.postponeDream(28), true);
 assert.equal(dream.nextDreamRawDay, clock.rawDay + 28, 'one-month postponement uses the 28-day calendar');
 assert.match(familyPanel.render().summary, /Adoption dream in 28 game days/, 'postponement updates the displayed arrival countdown');
+const beforeDreamCountdownCheck = clock.rawDay; // Restores the same simulated day after checking the overdue dream state.
 clock.rawDay = dream.nextDreamRawDay + 1;
 assert.match(familyPanel.render().summary, /Adoption dream eligible/, 'the panel distinguishes a ready dream from an arriving visitor');
-clock.rawDay = dream.nextDreamRawDay - 28;
+clock.rawDay = beforeDreamCountdownCheck;
 fam.getFamily().pendingAdoption = { spouseId: 'tooth_hatayap' }; // A finished dream queues Father Hunundi without an exact timestamp.
 assert.match(familyPanel.render().summary, /Adoption visit queued/, 'finished dream reports the queued doorstep visit');
 assert.match(familyPanel.render().note, /Exit the farmhouse/, 'the visitor depends on a farmhouse exit');
