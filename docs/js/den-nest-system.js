@@ -245,7 +245,9 @@
   }
 
   function isPlayerNearDenNest(nest) {
-    const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
+    const exactExterior = nest?.exteriorCliffNest === true && Number.isFinite(nest.x) && Number.isFinite(nest.y); // Only displaced Pingdort cups use fractional pixel-space centres.
+    const cx = exactExterior ? nest.x : (nest.col + nest.w / 2) * deps.TILE;
+    const cy = exactExterior ? nest.y : (nest.row + nest.h / 2) * deps.TILE;
     return Math.hypot(deps.player.x - cx, deps.player.y - cy) <= deps.TILE * 1.6;
   }
 
@@ -769,6 +771,21 @@
         break;
       }
     }
+    if (!best && state.mode === 'exterior' && raycaster.ray) {
+      // Small Pingdort egg pixels can miss the reticle even while the player aims at the nest cup.
+      // Only extend exterior egg aiming; nearby/same-elevation checks still run before this method.
+      const origin=raycaster.ray.origin,direction=raycaster.ray.direction;
+      for (const record of state.records) {
+        if (record.type !== 'egg' || !record.root || record.disposed || !record.alphaReady) continue;
+        const center=record.root.position;
+        const dx=center.x-origin.x,dy=center.y-origin.y,dz=center.z-origin.z;
+        const distance=dx*direction.x+dy*direction.y+dz*direction.z;
+        if (distance<.5 || distance>NEST_CONTENT_MAX_RAY_DISTANCE) continue;
+        const missSq=dx*dx+dy*dy+dz*dz-distance*distance;
+        if (missSq>.42*.42) continue;
+        if (!best || distance<best.hit.distance) best={record,hit:{distance,point:center},alpha:255,assisted:true};
+      }
+    }
     if (!best) return null;
     const hostile = window.RangedWeapons?.focusedHostile?.(NEST_CONTENT_MAX_RAY_DISTANCE);
     if (hostile && hostile.distanceWorld <= best.hit.distance + 0.05) return null;
@@ -789,6 +806,7 @@
     _nestContentDebug.lastFocusedId = record.id;
     _nestContentDebug.lastFocusedType = record.type;
     _nestContentDebug.lastFocusedAlpha = alpha;
+    _nestContentDebug.lastFocusedAssisted = !!opaque.assisted; // Existing mobile debug snapshot exposes fallback selections.
     return _lastFocusedNestContent;
   }
 
@@ -798,6 +816,7 @@
     _nestContentDebug.lastFocusedId = null;
     _nestContentDebug.lastFocusedType = null;
     _nestContentDebug.lastFocusedAlpha = null;
+    _nestContentDebug.lastFocusedAssisted = false;
 
     const branch = deps.player?.onBranch;
     const branchNest = branch?.nest;
