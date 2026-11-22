@@ -72,7 +72,7 @@
       mesh.name = 'baby_carried_posed_portrait';
       mesh.position.set(Number(skinned.position?.x) || 0,
         height / 2 + centroidY + (Number(skinned.position?.y) || 0),
-        centroidZ + (Number(skinned.position?.z) || 0));
+        Number(skinned.position?.z ?? centroidZ) || 0);
       mesh.userData.noOutline = true; // Source PNG already contains its own black ink.
       group.add(mesh);
     } else {
@@ -237,7 +237,7 @@
           portraitAnchor: { x: 0, y: 0, z: 0 } }, // Same species-adjusted back-stow rig as other carryables.
       } },
       onPickup: () => {
-        child.carryBy = 'player'; child.carryPose = 'arms'; child.carrySpot = null;
+        entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null;
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
