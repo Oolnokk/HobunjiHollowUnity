@@ -1183,6 +1183,7 @@
         const placement=singleVestibule&&!singleRoomTrial?window.RuinV50Vestibule?.compose?.({
           meta,seed:candidateSeed,LayerPlan:window.RuinLayerPlan,ShaftHub:window.ShaftHub,
           Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,theme,
+          shaftTraversal:devModeEnabled()&&!opts.site?(opts.shaftTraversal||null):null, // Developer-only: force a central-shaft puzzle (e.g. 'ropeSwings').
         }):null; // Derived from the V50 entrance face, not a post-hoc exterior corridor.
         if(singleVestibule&&!singleRoomTrial&&!placement)throw new Error('Ruin V50 vestibule placement module missing.');
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
@@ -1886,13 +1887,15 @@
     const currentPillar=[...obelisks.columns.values()].find(p=>
       ruin.supportId==='shaft-obelisks-'+p.id); // Scoped moving-platform ID is stable across support updates.
     if(currentPillar && !ruin.obeliskFall){
-      const prior=Number(ruin.obeliskAttachedY);
+      // Carry only with the SAME column's movement. After a landing, teleport or rope ride the stored height is
+      // null (Number(null) is 0: the column's whole height was added) or another column's (a fake hop up/down).
+      const prior=ruin.obeliskAttachedId===currentPillar.id?ruin.obeliskAttachedY:null;
       if(Number.isFinite(prior)){
         ruin.supportY+=currentPillar.y-prior; // Carry the player exactly with the top's world Y; never apply a fake climb hop.
         syncRuinPresentationHeight(ruin.supportY);
       }
-      ruin.obeliskAttachedY=currentPillar.y;
-    }else ruin.obeliskAttachedY=null;
+      ruin.obeliskAttachedY=currentPillar.y;ruin.obeliskAttachedId=currentPillar.id;
+    }else{ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;}
     if(!ruin.obeliskFall){
       const levelY=Number(ruin.supportY)||0;
       // A horizontal approach cannot phase through the solid side of a raised
@@ -1914,7 +1917,7 @@
         return true;
       }
       ruin.obeliskFall={y:levelY,v:0,lastMs:now,startedY:levelY}; // Gravity takes over instead of the instantaneous downward support sampler.
-      ruin.supportId=null;ruin.obeliskAttachedY=null;
+      ruin.supportId=null;ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;
     }
     const fall=ruin.obeliskFall;
     const dt=clamp((now-fall.lastMs)/1000,0,.05);

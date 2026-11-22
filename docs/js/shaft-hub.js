@@ -19,10 +19,11 @@
 (function (root, factory) {
   const isCjs = typeof module === 'object' && module.exports;
   const api = factory(isCjs ? require('./cell-grid-3d.js') : root.CellGrid3D, isCjs ? require('./ruin-wall-faces.js') : root.RuinWallFaces,
-    isCjs ? require('./ruin-reaching-obelisks.js') : root.RuinReachingObelisks, isCjs ? require('./ruin-jump-shaft.js') : root.RuinJumpShaft);
+    isCjs ? require('./ruin-reaching-obelisks.js') : root.RuinReachingObelisks, isCjs ? require('./ruin-jump-shaft.js') : root.RuinJumpShaft,
+    isCjs ? require('./ruin-rope-shaft.js') : root.RuinRopeShaft);
   if (isCjs) module.exports = api;
   else root.ShaftHub = api;
-})(typeof self !== 'undefined' ? self : globalThis, function (G, Faces, Obelisks, JumpShaft) {
+})(typeof self !== 'undefined' ? self : globalThis, function (G, Faces, Obelisks, JumpShaft, RopeShaft) {
   'use strict';
   const { KIND, DIR } = G;
   const PATCH = 6; // Largest stretch-to-fit patch of shaft stone, in world units (the V50 stone mapping uses the same 6).
@@ -87,12 +88,13 @@
     o.shaft = Math.max(o.octagon ? 17 : 5, o.shaft | 0 | 1); // Octagons need room for large platforms.
     o.length = Math.min(o.shaft - 2, Math.max(1, o.length | 0 | 1)); // odd and leaving open corners
     o.floors = Math.max(2, Math.min(5, o.floors | 0)); // Cave ruins have two stories.
-    const floorOnlyTraversal = o.traversal === 'reachingObelisks' || o.traversal === 'jumpPlatforms'; // No full-height climbing buttresses: balcony floors and galleries only.
+    const platformTraversal = o.traversal === 'jumpPlatforms' || o.traversal === 'ropeSwings'; // Slab shafts over a death pit (staircase or rope swings).
+    const floorOnlyTraversal = o.traversal === 'reachingObelisks' || platformTraversal; // No full-height climbing buttresses: balcony floors and galleries only.
     o.balconies = o.octagon ? o.floors - 1 : Math.max(1, Math.min(3, o.balconies | 0));
     o.spacing = Math.max(3, o.spacing | 0);
     o.depth = Math.max(1, Math.min(o.depth | 0, (o.shaft - 1) / 2 - Math.floor(o.length / 2))); // buttresses on neighbouring sides must not run into each other
     const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies;
-    const headroom = o.traversal === 'jumpPlatforms' ? o.spacing : 0; // One extra story of open height above the top gallery, with no balcony: where the bomber Skeeri nest.
+    const headroom = platformTraversal ? o.spacing : 0; // One extra story of open height above the top gallery, with no balcony: where the bomber Skeeri nest.
     const levels = topStand + 3 + headroom;
     const grid = G.create({ cols, rows, levels, originX: o.originX, originZ: o.originZ, baseY: o.baseY });
     const random = rng(o.seed), turn = Math.floor(random() * 4);
@@ -213,11 +215,12 @@
       originX:o.originX,originZ:o.originZ,baseY:o.baseY,balconySides}):null;
     if(o.traversal==='reachingObelisks'&&!obelisks?.ok)
       throw new Error('The selected reaching-obelisk traversal is missing or unsolvable.');
-    const jumpShaft=o.traversal==='jumpPlatforms'?JumpShaft?.compose?.({
+    const slabShaft=o.traversal==='ropeSwings'?RopeShaft:JumpShaft; // Both lay slabs over the same death pit; the rope one spaces them out and adds swing ropes.
+    const jumpShaft=platformTraversal?slabShaft?.compose?.({
       shaft:o.shaft,wall:o.wall,spacing:o.spacing,floors:o.floors,seed:o.seed,
       originX:o.originX,originZ:o.originZ,baseY:o.baseY,theme:o.theme,entranceSide}):null;
-    if(o.traversal==='jumpPlatforms'&&!jumpShaft?.ok)
-      throw new Error('The jump-platform shaft is missing or unsolvable'+(jumpShaft?': '+jumpShaft.checks.filter(c=>!c.ok).map(c=>c.name).join(','):'.'));
+    if(platformTraversal&&!jumpShaft?.ok)
+      throw new Error('The '+o.traversal+' shaft is missing or unsolvable'+(jumpShaft?': '+jumpShaft.checks.filter(c=>!c.ok).map(c=>c.name+(c.detail?' ('+c.detail+')':'')).join(','):'.'));
     const surfaces = grid.collectClimbSurfaces();
     const result = { ok: false, headroom, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, jumpShaft, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.

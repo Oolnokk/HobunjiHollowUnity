@@ -292,9 +292,9 @@
         tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange:onMechanismStateChange,
       });
     }
-    if(placed.jumpShaft){ // Free-jump platform staircase: same runtime surface as the obelisks, so the ruin's airborne/fall reconciler drives it unchanged.
-      const jump=root.RuinJumpShaft;
-      if(!jump?.mount)throw new Error('Selected jump-platform shaft module is not loaded.');
+    if(placed.jumpShaft){ // Slab shafts (jump staircase or rope swings): same runtime surface as the obelisks, so the ruin's airborne/fall reconciler drives them unchanged.
+      const jump=placed.jumpShaft.method==='ropeSwings'?root.RuinRopeShaft:root.RuinJumpShaft;
+      if(!jump?.mount)throw new Error('Selected '+placed.jumpShaft.method+' shaft module is not loaded.');
       obeliskRuntime=jump.mount(placed.jumpShaft,{scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,tradition:ruin.theme,getPlayerY});
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.

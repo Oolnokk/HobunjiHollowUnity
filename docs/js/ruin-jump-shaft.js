@@ -443,6 +443,7 @@
   const mountTracked = (plan, deps) => { active?.dispose?.(); const runtime = mount(plan, deps); const dispose = runtime.dispose; active = runtime; runtime.dispose = () => { if (active === runtime) active = null; dispose(); }; return runtime; };
   return Object.freeze({
     TRAVERSAL, RISE, GALLERY, PILLAR_RADIUS, reach, compose, verify, assignFixture, mount: mountTracked, plasmTiles, platformSlabBlocksAt, // Pure helper is also used by platform regression tests.
+    THICKNESS, EDGE, FIXTURE_MARGIN, SAFE_GAP_FRACTION, DEATH_DEPTH, perimeterPoint, edgeGap, // Shared layout primitives for js/ruin-rope-shaft.js (same slabs, other layout).
     isIceAt: (x, z, y) => !!active?.isIceAt?.(x, z, y),
     flightBlockedAt:(x,z,radius,y)=>!!active&&platformSlabBlocksAt(active.plan.platforms,x,z,radius,y,radius), // Skeeri hit the same real slab volume as other flying projectiles.
     senseTargets: () => [],

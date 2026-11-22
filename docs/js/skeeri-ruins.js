@@ -418,7 +418,7 @@
     const shaftRadius=Math.max(8,shaftSize/2+3);
     // Jump-platform shafts have an extra story of open height above the top gallery (no balcony):
     // the nest is a basket balcony bolted to the north wall in that space, where the bombers roost in view.
-    const headroomShaft=plan.options?.shaftTraversal==='jumpPlatforms';
+    const headroomShaft=plan.options?.shaftTraversal==='jumpPlatforms'||plan.options?.shaftTraversal==='ropeSwings'; // Both slab shafts keep the open story above the top gallery.
     const nestSetback=headroomShaft?Math.max(4,shaftSize/2-1.7):Math.max(6,Math.min(20,shaftRadius*1.05));
     const nestRise=headroomShaft?floorHeight*.55:clamp(floorHeight*.7,6,11);
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,

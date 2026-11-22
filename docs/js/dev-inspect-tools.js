@@ -18,7 +18,9 @@
 //                stay where they are and still take damage.
 //   Random dungeon  Settings button / randomDungeon(): enters a generated ruin
 //                with a random size tier (cave/hole/lich) and tradition, the
-//                same generator real ruin sites use.
+//                same generator real ruin sites use. The selector next to it
+//                (or randomDungeon({traversal})) forces the central-shaft
+//                puzzle: jumpPlatforms or ropeSwings.
 //
 // Headless drivers can call lookFrom(x, y, z, lookX, lookY, lookZ, fov) and
 // getPose() directly. Nothing here runs for players without developer mode.
@@ -29,7 +31,8 @@
   const SCHEDULER_ID = 'dev-inspect-fly-camera';
   const FLY_KEY = 'F8', ENEMY_KEY = 'F9';
   const LOOK_DEG_PER_PX = 0.22, PITCH_LIMIT = Math.PI / 2 - 0.01;
-  const TIERS = ['cave', 'hole', 'lich'], THEMES = ['tothal', 'hronal', 'kanthic'];
+  const TIERS = ['cave', 'hole', 'lich'], THEMES = ['tothal', 'hronal', 'kanthic'], TRAVERSALS = ['jumpPlatforms', 'ropeSwings'];
+  const shaftChoice = () => document.getElementById('devRandomDungeonShaft')?.value || '';
   const MOVE_CODES = Object.freeze({
     KeyW: 'fwd', ArrowUp: 'fwd', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right',
     Space: 'up', KeyE: 'up', KeyQ: 'down', KeyC: 'down', ShiftLeft: 'fast', ShiftRight: 'fast',
@@ -137,10 +140,11 @@
     const seed = Number.isFinite(Number(options.seed)) ? Number(options.seed) >>> 0 : Math.floor(Math.random() * 2147483647);
     const wasFlying = active;
     if (wasFlying) setFlying(false); // Arrival places the follow camera; flying resumes from there.
-    const ok = await ruin.generate(seed, { tier, theme });
-    if (ok) toast('Dungeon: ' + tier + ' / ' + theme + ' #' + seed);
+    const traversal = TRAVERSALS.includes(options.traversal) ? options.traversal : (TRAVERSALS.includes(shaftChoice()) ? shaftChoice() : null); // null: the ruin rolls its own shaft puzzle.
+    const ok = await ruin.generate(seed, { tier, theme, shaftTraversal: traversal });
+    if (ok) toast('Dungeon: ' + tier + ' / ' + theme + (traversal ? ' / ' + traversal : '') + ' #' + seed);
     if (ok && wasFlying) setFlying(true);
-    return ok ? { tier, theme, seed } : false;
+    return ok ? { tier, theme, seed, traversal } : false;
   }
 
   // ── Input ────────────────────────────────────────────────────────────
@@ -249,6 +253,10 @@
     add('devFlyCameraBtn', 'Fly', () => setFlying(!active));
     add('devEnemiesOffBtn', 'Enemies: on', () => setEnemiesFrozen(!frozen));
     add('devRandomDungeonBtn', 'Random dungeon', () => randomDungeon());
+    const shaft = document.createElement('select'); // Central-shaft puzzle for the next random dungeon.
+    shaft.id = 'devRandomDungeonShaft'; shaft.className = 'settings-small-btn'; shaft.setAttribute('aria-label', 'Dungeon shaft puzzle');
+    shaft.innerHTML = '<option value="">Any shaft</option><option value="jumpPlatforms">Jump platforms</option><option value="ropeSwings">Rope swings</option>';
+    row.appendChild(shaft);
     anchor.insertAdjacentElement('afterend', row);
     refreshButtons();
   }

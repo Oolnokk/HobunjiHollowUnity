@@ -1,4 +1,4 @@
-# Ruin tiers, the jump-platform shaft and tradition witch-bombs
+# Ruin tiers, the jump-platform and rope-swing shafts and tradition witch-bombs
 
 ## Tiers (`RuinLayerPlan.TIERS`)
 
@@ -60,6 +60,33 @@ reach (`compose().checks`, also run by `scripts/test-ruin-tiers-jump-shaft.js`).
   Hopping mid-air over plasm neither sinks nor pulls you.
 * Large bomber Skeeri (`js/skeeri-ruins.js`) are created once the ruin is the active area (creating them during generation clamped them into the previous area's grid) and nest in the headroom story; the nest and attack
   range scale with the shaft, and they drop the ruin's own tradition of witch-bomb.
+
+## Rope-swing shaft (`js/ruin-rope-shaft.js`) — alternate central-shaft puzzle
+
+Tier ruins roll their central-shaft puzzle per seed from `RuinLayerPlan.SHAFT_PUZZLES`
+(`jumpPlatforms`, `ropeSwings`); an explicit `shaftTraversal` wins (developers: the "Random dungeon" shaft
+selector in Settings, or `DevRandomRuin.generate(seed, {tier, theme, shaftTraversal})`). The untiered dev ruin
+keeps `TRAVERSAL_METHODS` (reaching obelisks).
+
+* The staircase loops the whole ring every story, so upper slabs sit over lower ones and their support pillars
+  pass through them. The rope shaft gives each story its own stretch of the ring: no slab overlaps another in
+  plan (`noOverlap`), so no pillar runs through a platform.
+* A story is: a few jump steps -> launch pad -> **swing rope** -> landing -> jump steps -> next gallery (up to
+  two ropes per story; the first slab may be a launch pad anywhere along the gallery). Step slabs are the widest
+  of 2.6–1.6 that fit; landings are 3 wide (smaller in caves).
+* The rope hangs from a carved stone bracket flush under the balcony above, over the launch pad's forward edge.
+  It is the ruin's own rider rope (`DevRandomRuinSimplePuzzles.addFurnitureRope`, hung once the rope runtime is
+  live): grab, pump, let go on the forward upswing — no climbing needed (the brake still shortens it).
+* The swing runs along the climb direction, so the backswing passes over the lower steps just climbed; it must
+  stay on one straight side of the ring. Every rope's whole arc, up to RopeCore's swing limit, misses every slab.
+* Proof (`compose().checks`, re-checked independently by `scripts/test-ruin-rope-shaft.js`): jump hops against
+  PlayerJump's reach as for the staircase; each rope against RopeCore's own swing and release flight
+  (`ropeProof`, a stricter `reachAmplitude`): a swing of at most 1.1 rad must land from a whole 0.15 rad window
+  of release moments.
+* Runtime: `RuinJumpShaft.mount` (slabs, pillars, death pit, tradition hazards — Tothal ice, Hronal exploding
+  pillar slabs when they fit, Kanthic plasm pit) plus brackets and ropes; `method` is `ropeSwings`, so
+  checkpoint braziers (`RuinRopeShaft.assignFixture`), the Skeeri headroom nest and the hub's headroom story
+  treat it like the staircase.
 
 ## Witch-bomb variants (`js/hronal-witch-bombs.js`, global `HronalWitchBombs`)
 

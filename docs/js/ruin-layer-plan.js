@@ -13,6 +13,9 @@
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
   const TRAVERSAL_METHODS=Object.freeze(['reachingObelisks']); // Expand this list as distinct complete shaft methods are authored.
+  // Central-shaft puzzles a tiered (site) ruin rolls between, per seed: the jump-platform staircase
+  // (js/ruin-jump-shaft.js) or the spaced-out platforms with swing ropes (js/ruin-rope-shaft.js).
+  const SHAFT_PUZZLES=Object.freeze(['jumpPlatforms','ropeSwings']);
   // Ruin size by rarity. `centralScale` shrinks only the empty central chamber
   // (the 35-cell space inside the 5-cell balcony galleries); the galleries keep
   // their thickness, so shaftSize = central + 2 * GALLERY_WIDTH. `wings` is the
@@ -43,7 +46,7 @@
       wingsPerFloor:distributeWings(t.wings,t.floors),
       minChallenges:t.wingRooms-1,maxChallenges:t.wingRooms-1,
       nativeV50:false, // Native V50 upper floors would add unaccounted rooms and braziers; tiers specify exact counts.
-      shaftTraversal:'jumpPlatforms',
+      shaftTraversal:null,shaftPuzzles:SHAFT_PUZZLES, // Rolled per seed in compose(); an explicit shaftTraversal still wins.
       tier,
     };
   }
@@ -64,7 +67,8 @@
     seed:1,
     nativeV50:false, // When enabled, upper stories reserve one EAST shaft portal for an independently generated V50 room graph.
     groundEntranceSide:null, // The one-room V50 vestibule claims this shaft wall; no puzzle wing may occupy the same portal.
-    shaftTraversal:null, // Seed-selected from TRAVERSAL_METHODS unless explicitly supplied for testing.
+    shaftTraversal:null, // Seed-selected from shaftPuzzles (else TRAVERSAL_METHODS) unless explicitly supplied for testing.
+    shaftPuzzles:null, // Tier ruins: the pool of central-shaft puzzles to roll from (SHAFT_PUZZLES).
   });
   function random(seed){
     let a=(Number(seed)>>>0)||1;
@@ -108,8 +112,10 @@
     o.portalOffset=Math.max(1,Math.min(8,Math.round(Number(o.portalOffset)||8)));
     o.floorHeight=Math.max(o.tier?6:12,Math.min(32,Math.round(Number(o.floorHeight)||DEFAULTS.floorHeight)));
     o.portalOffset=Math.max(1,Math.min(o.portalOffset,Math.floor((o.shaftSize-1)/2)-Math.floor(o.shaftSize*.19)-2)); // Must match ShaftHub's own wing-door offset on a small shaft.
-    if(o.shaftTraversal!=='buttress'&&o.shaftTraversal!=='jumpPlatforms'&&!TRAVERSAL_METHODS.includes(o.shaftTraversal))
-      o.shaftTraversal=TRAVERSAL_METHODS[Math.floor(random((o.seed^0x85bd7ca1)>>>0)()*TRAVERSAL_METHODS.length)]; // Does not perturb wing layout RNG.
+    if(o.shaftTraversal!=='buttress'&&!SHAFT_PUZZLES.includes(o.shaftTraversal)&&!TRAVERSAL_METHODS.includes(o.shaftTraversal)){
+      const pool=Array.isArray(o.shaftPuzzles)&&o.shaftPuzzles.length?o.shaftPuzzles:TRAVERSAL_METHODS;
+      o.shaftTraversal=pool[Math.floor(random((o.seed^0x85bd7ca1)>>>0)()*pool.length)]; // Does not perturb wing layout RNG.
+    }
     const rng=random(o.seed);
     const floorCount=integer(rng,o.minFloors,o.maxFloors); // Used to bound both the shared shaft and independent 2D floor maps.
     // A shaft reserves the same snapped invisible-grid slot on ALL floor layers.
@@ -297,5 +303,5 @@
     add('braziersMatchWings',plan.totalBraziers===plan.totalWings);
     return checks;
   }
-  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,TIERS,tierOptions,distributeWings,compose,verify,snap,intersects});
+  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,SHAFT_PUZZLES,TIERS,tierOptions,distributeWings,compose,verify,snap,intersects});
 });
