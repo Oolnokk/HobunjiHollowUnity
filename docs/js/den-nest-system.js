@@ -765,6 +765,21 @@
         break;
       }
     }
+    if (!best && state.mode === 'exterior' && raycaster.ray) {
+      // The egg sprite is tiny; a near miss within the cup should beat a large cliff handhold prompt.
+      // Exterior scope plus the caller's proximity and height checks prevent remote/through-cliff harvesting.
+      const origin=raycaster.ray.origin,direction=raycaster.ray.direction;
+      for (const record of state.records) {
+        if (record.type !== 'egg' || !record.root || record.disposed || !record.alphaReady) continue;
+        const center=record.root.position;
+        const dx=center.x-origin.x,dy=center.y-origin.y,dz=center.z-origin.z;
+        const distance=dx*direction.x+dy*direction.y+dz*direction.z;
+        if (distance<.5 || distance>NEST_CONTENT_MAX_RAY_DISTANCE) continue;
+        const missSq=dx*dx+dy*dy+dz*dz-distance*distance;
+        if (missSq>.42*.42 || (best && distance>=best.hit.distance)) continue;
+        best={record,hit:{distance,point:center},alpha:255,assisted:true};
+      }
+    }
     if (!best) return null;
     const hostile = window.RangedWeapons?.focusedHostile?.(NEST_CONTENT_MAX_RAY_DISTANCE);
     if (hostile && hostile.distanceWorld <= best.hit.distance + 0.05) return null;
@@ -785,6 +800,7 @@
     _nestContentDebug.lastFocusedId = record.id;
     _nestContentDebug.lastFocusedType = record.type;
     _nestContentDebug.lastFocusedAlpha = alpha;
+    _nestContentDebug.lastFocusedAssisted = !!opaque.assisted; // Expose assisted aiming in the existing mobile debug snapshot.
     return _lastFocusedNestContent;
   }
 
@@ -794,6 +810,7 @@
     _nestContentDebug.lastFocusedId = null;
     _nestContentDebug.lastFocusedType = null;
     _nestContentDebug.lastFocusedAlpha = null;
+    _nestContentDebug.lastFocusedAssisted = false;
 
     const branch = deps.player?.onBranch;
     const branchNest = branch?.nest;
