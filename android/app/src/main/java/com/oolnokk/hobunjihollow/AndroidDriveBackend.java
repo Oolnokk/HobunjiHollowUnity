@@ -228,11 +228,53 @@ final class AndroidDriveBackend {
 
     private String sessionId() { return UUID.randomUUID().toString(); }
 
+    /**
+     * Drive may return a signed Google media URL rather than binary content.
+     * Never forward the OAuth token to redirected hosts and reject all non-Google,
+     * non-HTTPS and non-default-port redirects before opening their connections.
+     */
+    private HttpURLConnection openMedia(String id) throws Exception {
+        URL next = new URL(BASE + "/" + encode(id) + "?alt=media"); // Only an API-confirmed file ID enters this method.
+        for (int hop = 0; hop < 4; hop++) {
+            if (!AndroidDriveMediaPolicy.canDownload(next))
+                throw new SecurityException("Unsafe Google Drive media redirect was blocked.");
+            HttpURLConnection conn;
+            if (AndroidDriveMediaPolicy.needsBearer(next)) {
+                conn = connection(next.toString(), "GET", null);
+            } else {
+                conn = (HttpURLConnection) next.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(90000);
+                conn.setInstanceFollowRedirects(false); // The signed URL has no OAuth bearer credentials.
+            }
+            try {
+                int response = conn.getResponseCode();
+                if (response == 301 || response == 302 || response == 303 ||
+                        response == 307 || response == 308) {
+                    String location = conn.getHeaderField("Location");
+                    if (location == null || location.isEmpty()) throw new IOException("Drive media redirect lacked a location.");
+                    URL redirected = new URL(next, location);
+                    if (!AndroidDriveMediaPolicy.canDownload(redirected))
+                        throw new SecurityException("Google Drive attempted an unsafe media redirect.");
+                    next = redirected;
+                    conn.disconnect();
+                    continue;
+                }
+                verify(conn, 200);
+                return conn; // Caller owns the live binary stream and the HTTP connection.
+            } catch (Exception error) {
+                conn.disconnect();
+                throw error;
+            }
+        }
+        throw new IOException("Too many redirects while downloading a Google Drive save.");
+    }
+
     private JSONObject startRead(JSONObject args) throws Exception {
         JSONObject file = item(args, false, false);
-        HttpURLConnection conn = connection(BASE + "/" + encode(file.getString("id")) + "?alt=media", "GET", null);
+        HttpURLConnection conn = openMedia(file.getString("id"));
         try {
-            verify(conn, 200);
             String id = sessionId();
             readers.put(id, new java.io.FilterInputStream(conn.getInputStream()) {
                 @Override public void close() throws IOException { super.close(); conn.disconnect(); }
