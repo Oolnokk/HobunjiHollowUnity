@@ -7122,7 +7122,6 @@
             updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // The carrier owns position; ground AI and attacks must not overwrite it.
           }
           // Beastmaster pets stay in hostileObjects so player targeting and
@@ -8653,7 +8652,6 @@
           if (c.tzatzulCapturedBy) {
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // Captured companions share the carrier's flight path instead of following their master.
           }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
@@ -17860,17 +17858,12 @@
         if (item?.kind === 'clothing') {
           const garment = packClothing.find(article => article.uid === item.uid); // Resolve once on Hold; gift ownership is still rechecked at action time.
           if (garment) {
-            const sprite = garment.sprite || window.EquipmentPanel?.clothingSpriteForCosmetic?.(garment.cosmeticId) || null; // Reuse the Pack's authored article silhouette.
-            const visual = { kind: 'packClothingVisual', key: 'pack-clothing:' + garment.uid, icon: '👘', heldSpritePath: sprite, heldSpriteVersion: 0 }; // Used by the normal held-item plane, not a separate renderer.
-            manualHeldClothingVisual = visual;
-            const composite = window.ClothingWeavingSystem?.iconSpriteForCosmetic?.(garment, sprite); // The Pack compositor resolves woven/trimmed garment art asynchronously and caches it.
-            if (composite && typeof composite.then === 'function') {
-              composite.then(path => {
-                if (!path || manualHeldClothingVisual !== visual || path === visual.heldSpritePath) return; // Never repaint a newly selected/stowed garment from an old request.
-                visual.heldSpritePath = path;
-                visual.heldSpriteVersion++; // Triggers one plane rebuild, not a per-frame sprite request.
-              }).catch(error => window.__farmLog?.('[held-clothing] sprite failed: ' + String(error?.message || error), 'warn', 'inventory'));
-            }
+            manualHeldClothingVisual = window.HeldGiftPolicy.createClothingVisual(garment, {
+              getSprite: cosmeticId => window.EquipmentPanel?.clothingSpriteForCosmetic?.(cosmeticId), // Reuse Pack artwork.
+              compose: (article, sprite) => window.ClothingWeavingSystem?.iconSpriteForCosmetic?.(article, sprite), // The existing compositor creates final colors/patterns on Hold.
+              isCurrent: visual => visual === manualHeldClothingVisual, // Discard stale async results after item switches.
+              onError: error => window.__farmLog?.('[held-clothing] sprite failed: ' + String(error?.message || error), 'warn', 'inventory'),
+            });
             window.AdventuringTools?.stow?.();
             heldMode = 'item'; // Clicking clothing Hold must actually put an item in the hands, like the Pack item Hold button.
           }
@@ -17889,35 +17882,29 @@
       // remains remembered when tools/weapons are drawn or hands are stowed;
       // both Gift prompts and the transfer itself re-check this accessor.
       function getHeldGiftItem() {
-        if (heldMode !== 'item') return null; // Selected inventory is not held while a tool, weapon, or nothing is drawn.
-        if (window.Shattercasks?.heldBurdenInfo?.()) return null; // A physical Burden occupies the hands even if the item mode was left active.
-        if (window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()) return null; // Temporary festival vessels cannot become gifts.
-        if (window.MusicMinigame?.state?.instrumentItem) return null; // Performance poses have an instrument in hand, not the selected Pack item.
-        if (manualHeldItem?.kind === 'clothing') {
-          const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
-          if (item && manualHeldClothingVisual?.key === 'pack-clothing:' + item.uid && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
+        if (heldMode !== 'item') return null; // Remembered wheel items cannot be given while a tool or empty hands are active.
+        const result = window.HeldGiftPolicy.resolve({
+          heldMode,
+          burdenHeld: !!window.Shattercasks?.heldBurdenInfo?.(),
+          festivalHeld: !!(window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()),
+          instrumentHeld: !!window.MusicMinigame?.state?.instrumentItem,
+          manualHeldItem,
+          clothingVisual: manualHeldClothingVisual,
+          visibleItem: getVisibleInventoryItem(),
+          packClothing,
+          inventory,
+          itemDefs: ITEM_DEFS,
+          isClothingGiftable: held => window.NpcGifting?.isItemGiftable?.(held),
+        }); // The extracted policy decides eligibility while this owner retains mutable equipment state.
+        if (result === window.HeldGiftPolicy.STALE_HOLD) {
           manualHeldItem = null;
-          manualHeldClothingVisual = null;
-          return null; // A stale garment must not silently turn into a gift of the remembered wheel item.
+          manualHeldClothingVisual = null; // A stale manual Hold may never fall back to the remembered wheel item.
+          return null;
         }
-        // A wheel-ineligible material/etc explicitly held via the Inventory
-        // panel's "Hold" button (see selectInventoryItem) — the wheel
-        // itself never contains these (see isWheelEligible), so this is
-        // the only way one becomes giftable.
-        if (manualHeldItem?.kind === 'bagItem') {
-          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) {
-            if (getVisibleInventoryItem()?.key !== manualHeldItem.key) return null; // The off-arch Hold must first become the actual item in hand.
-            return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
-          }
-          manualHeldItem = null;
-          return null; // An exhausted Hold may not fall through to another selected gift.
-        }
-        const active = getVisibleInventoryItem();
-        if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
-        return null;
+        return result;
       }
 
-      function clampInventoryStack(key) {
+            function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
         if (key) window.AlchemySystem?.syncPotionStack?.(key); // Consuming or transferring a potion can change the stack's most common recipe.
@@ -25656,7 +25643,6 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
-        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────

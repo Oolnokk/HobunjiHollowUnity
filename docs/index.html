@@ -21,7 +21,7 @@
        prototype render() base every presentation hook runs through.
        See docs/architecture/visual-render-pipeline.md. -->
   <script src="js/render-layers.js?v=20261119visualCore1"></script>
-  <script src="js/render-hooks.js?v=20261119visualCore1"></script>
+  <script src="js/render-hooks.js?v=20261122h000df8a"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -193,14 +193,14 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261119he2d7cd6"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261120h976a64e"></script>
+  <script src="js/held-action-animations.js?v=20261122hab4961b"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
-  <script src="js/rig-transform-layers.js?v=20261118pairedRig1"></script>
+  <script src="js/rig-transform-layers.js?v=20261122hc3370fb"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261120grehlrBaseBeard1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261122h4041b6f"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -546,6 +546,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/perch-support.js?v=20261105perchAudit7"></script>
+  <script src="js/attack-readiness.js?v=20261121attackReadiness1"></script> <!-- Shared player-activity attack staging; other predator AIs may opt in without changing minigames. -->
   <script src="js/flying-combat-orbit.js?v=20261118circleFallback1"></script> <!-- Shared foe-centred aerial evasion geometry; flight owners still perform their own collision checks. --> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
@@ -592,9 +593,9 @@
   <script src="js/flying-animal-rig.js?v=20261117animalDensity40"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261118combatOrbit1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261118hTzPortrait4"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261122hd98e58b"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261118combatOrbit1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261122h9cbc941"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
@@ -756,7 +757,7 @@
   <script src="js/tasks-panel.js?v=20261118fiveBlossomsHunt2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261118flightOrbitUI1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261122h4f96547"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -2943,7 +2944,8 @@
   <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
-  <script src="game.js?v=20261122giftHeldAudit4"></script>
+  <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
+  <script src="game.js?v=20261122heldGiftMerge1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

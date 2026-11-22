@@ -36,6 +36,7 @@ const context = vm.createContext({
   refreshActionBar() {},
   showToast: msg => { toasts.push(msg); },
 });
+vm.runInContext(fs.readFileSync('docs/js/held-gift-policy.js', 'utf8'), context, { filename: 'held-gift-policy.js' });
 vm.runInContext(source.slice(from, to), context, { filename: 'game-held-gift-accessor.js' });
 vm.runInContext(fs.readFileSync('docs/js/npc-gifting.js', 'utf8'), context, { filename: 'npc-gifting.js' });
 const heldGift = () => vm.runInContext('getHeldGiftItem()', context);

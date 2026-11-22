@@ -19,7 +19,7 @@
   const captured = new Map(); // Actual captured players/creatures, preserving original actor objects and movement state.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
-  const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0, orbits: 0,
+  const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0, orbits: 0, readiedLegs: 0,
     retreats: 0, captures: 0, releases: 0, scouts: 0, nestStays: 0, fleeDrops: 0, nestEntries: 0, failedNestEntries: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
@@ -29,6 +29,7 @@
   const tile = () => Math.max(1, n(deps?.TILE, 64));
   const surface = (x, y) => n(deps?.worldSurfaceY?.(x, y));
   const distance = (a, b) => Math.hypot(n(a.x) - n(b.x), n(a.y) - n(b.y));
+  const playerNeedsTime = (bird, prey) => window.AttackReadiness?.shouldReady?.(bird, prey, deps?.player) === true; // Only opted-in attacks defer; other combat remains live.
   function clockHours() {
     const clock = deps?.calendar; // The authoritative saved calendar survives area changes and skipped time.
     return Number.isFinite(Number(clock?.day)) && Number.isFinite(Number(clock?.time01))
@@ -116,7 +117,8 @@
         phase: 'perched', elapsed: 0, rest: REST_SECONDS + slot, target: null,
         segment: null, struck: false, captive: null, scoutIndex: slot * 3,
         delivered: false, nestUntil: null, retreating: false, orbitDirection: slot % 2 ? -1 : 1,
-        orbitLegs: 0, roostUnavailable: false, fallbackFoe: null }; // Persistent hunt/cave phases per parent. // Independent phase per animal.
+        orbitLegs: 0, roostUnavailable: false, fallbackFoe: null,
+         readyingReleaseArmed: false, readyingWarning: false, readyingActivity: null }; // Tracks whether the bird owes a visible post-interaction warning chord. // Persistent hunt/cave phases per parent. // Independent phase per animal.
       deps.hostileObjects.add(bird);
       actors.add(bird);
       spawnedThisDay.add(roost.id);
@@ -239,7 +241,6 @@
     if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
-    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Repair rotation AFTER the fall can mutate native actor pose.
     if (prey.health > 0) prey.state = record.state; // Death already owns the dying/corpse state; releasing cannot revive its AI.
     if (record.player) {
       prey.vx = 0; prey.vy = 0; // Native cave entry needs a grounded, stationary exterior exit record.
@@ -317,10 +318,10 @@
     if (!prey || (!isPlayer && prey.isPlayer) || !(prey.health > 0)
       || (isPlayer ? !canAbductPlayer(bird) || window.PlayerDowned?.isDowned?.() : !canCarry(prey))
       || prey.tzatzulCapturedBy || captured.has(prey) || !bird?._tzFlight
-      || bird._tzFlight.captive || !bird.onPerch) return false;
+      || bird._tzFlight.captive || !bird.onPerch
+      || (isPlayer && (playerNeedsTime(bird, prey) || bird._tzFlight.readyingReleaseArmed))) return false; // Never grab from a previously committed dive while an activity is protected.
     const pickupX = n(prey.x), pickupY = n(prey.y); // Capture the original ground position BEFORE native perch attachment moves the prey.
     if (!window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
-    window.TzatzulLiveVisuals?.rememberCaptive?.(prey); // Snapshot the real player/NPC/animal rotation before the first talon alignment.
     captured.set(prey, { bird, player: isPlayer, nestMapId: bird.tzatzulNestMapId,
       pickupX, pickupY, state: prey.state,
       areaId: isPlayer ? bird.areaId : prey.areaId }); // Preserve original actor identity, clothing and safe exterior return position.
@@ -432,11 +433,12 @@
     bird.state = 'idle'; // Avoid an additional ground-pathfinding owner for aerial movement.
     bird.facing = Math.atan2(end.y - start.y, end.x - start.x);
     stats.flights++;
-    mark(bird, phase);
+    if (phase !== 'readying') mark(bird, phase); // Long minigames must not flood the mobile log every short circling leg.
     return true;
   }
   function swoop(bird, target) {
     if (!target || !(target.health > 0)) return false;
+    if (playerNeedsTime(bird, target)) return startCombatOrbit(bird, 'readying', target); // Stalk above the activity, then attack with a visible approach.
     const box = targetBox(target); // Aim once at the prey's BODY, including its real elevation and size.
     const half = hitboxSize(bird);
     const aim = Math.max(box.min.y, (box.min.y + box.max.y) / 2 - half.y);
@@ -461,11 +463,19 @@
       }
     }
     const ok = startLeg(bird, endpoint, 'swoop', target);
-    if (ok) stats.swoops++;
+    if (ok) {
+      bird._tzFlight.readyingReleaseArmed = false;
+      bird._tzFlight.readyingWarning = false;
+      bird._tzFlight.readyingActivity = null; // A newly committed dive is never blocked by a stale completed interaction.
+      stats.swoops++;
+    }
     return ok;
   }
   function returnHome(bird) {
     const state = bird?._tzFlight;
+    if (state) {
+      state.readyingReleaseArmed = false; state.readyingWarning = false; state.readyingActivity = null; // Returning to a real perch abandons the old readying session.
+    }
     if (state?.roost && startLeg(bird, state.roost, 'return')) return true;
     if (state?.captive) releaseCaptive(state.captive, 'roost lost'); // Never leave live prey trapped on a nonexistent return path.
     if (startCombatOrbit(bird)) return true;
@@ -483,10 +493,17 @@
     return bird._tzNestMother ? (deps?.player?.health > 0 ? deps.player : null)
       : choosePrey(bird, TERRITORY_TILES);
   }
-  function startCombatOrbit(bird) {
+  function startCombatOrbit(bird, purpose = 'orbit', selectedFoe = null) {
     const state = bird?._tzFlight, orbit = window.FlyingCombatOrbit;
-    const foe = orbitCombatFoe(bird);
+    const foe = selectedFoe || orbitCombatFoe(bird);
     if (!state || !orbit?.waypoint || !foe || !bird.onPerch || bird.prone) return false;
+    const busy = playerNeedsTime(bird, foe); // Shared activity registry, independent of the kind of flying enemy.
+    const staging = busy || purpose === 'readying'; // A final release chord also uses the non-attacking readying path.
+    if (busy) {
+      state.readyingWarning = false;
+      state.readyingReleaseArmed = true; // One visible extra orbit chord after an interaction ends, not an instantaneous grab.
+      state.readyingActivity = window.AttackReadiness?.activityFor?.(deps.player) || 'interaction'; // Exposed in mobile wildlife diagnostics.
+    }
     const direction = state.orbitDirection === -1 ? -1 : 1;
     const target = { x: n(foe.x), y: n(foe.y) }; // Existing target coordinates use world pixels.
     const location = { x: n(bird.x), y: n(bird.y) };
@@ -500,9 +517,14 @@
           n(bird.branchSurfaceY), n(targetBox(foe).max.y) + 1.5); // Keep a flying body above the foe and terrain.
         const endpoint = { x: candidate.x, y: candidate.y, worldY };
         if (bird._tzNestMother && !window.TzatzulNestEncounter?.clearAirPath?.(bird, endpoint)) continue;
-        if (!startLeg(bird, endpoint, 'orbit', foe)) continue;
+        if (!startLeg(bird, endpoint, staging ? 'readying' : 'orbit', foe)) continue;
         state.orbitDirection = side; state.orbitLegs = (state.orbitLegs || 0) + 1;
-        stats.orbits++; return true; // Next short flight leg curves around a LIVE foe, without a separate ticking loop.
+        stats.orbits++;
+        if (staging) {
+          stats.readiedLegs++; // Existing flight support, no second update loop or extra collision owner.
+          state.readyingWarning = !busy; // Only a completed activity's final chord is a release warning.
+        }
+        return true; // Next short flight leg curves around a LIVE foe, without a separate ticking loop.
       }
     }
     return false; // Never tunnel through cave rock when no circular chord is clear.
@@ -524,6 +546,7 @@
       || target.creatureKey === 'tzatzul' || target.creatureKey === 'tzatzul-hatchling'
       || target._denHidden || target.state === 'dying') return false;
     if (!bird._tzNestMother && target === deps.player && nestExit?.area === bird.areaId) return false; // Also reject dives already committed before the player went inside.
+    if (target === deps.player && (playerNeedsTime(bird, target) || state.readyingReleaseArmed)) return false; // Late-started minigames suppress both hit and talon capture, even on committed swept dives.
     const entry = sweptBodyHit(previous, current, state.segment.half, targetBox(target));
     if (entry === null) return false; // No pre-timed hit: only actual 3D torso/body overlap can deal damage.
     state.struck = true; // One collision/attack per committed swoop, even across long frames.
@@ -549,7 +572,11 @@
   }
   function advance(bird, dt) {
     const state = bird._tzFlight;
-    if (!state.segment) { retryCombatOrbit(bird, dt); return; } // An indoor mother must also recover after all orbit chords are blocked.
+    if (!state.segment) { retryCombatOrbit(bird, dt); return; } // An indoor mother must also recover after blocked orbit chords.
+    if (state.phase === 'swoop' && playerNeedsTime(bird, state.target)) {
+      state.readyingReleaseArmed = true; // The interaction can begin after the dive was committed.
+      if (startCombatOrbit(bird, 'readying', state.target)) return; // Redirect smoothly from the current airborne position before contact.
+    }
     state.elapsed = Math.min(state.segment.duration, state.elapsed + dt);
     const limit = state.segment.travelFraction; // Indoor dive ends at the cave rim, with its original speed and distance commitment.
     const t = Math.max(0, Math.min(limit, state.elapsed / state.segment.duration));
@@ -580,10 +607,42 @@
       state.struck = true; stats.misses++; mark(bird, 'body missed committed dive');
     }
     state.segment = null;
-    if (state.phase === 'swoop') { if (bird._tzNestMother || state.captive) returnHome(bird); else seekFood(bird); return; }
+    if (state.phase === 'swoop') {
+      if (state.readyingReleaseArmed && state.target === deps.player) {
+        // Even if a temporary obstruction prevented the mid-dive diversion, the old attack must
+        // not turn into a surprise post-interaction hit or restart another immediate dive.
+        if (!startCombatOrbit(bird, 'readying', state.target)) returnHome(bird);
+        return;
+      }
+      if (bird._tzNestMother || state.captive) returnHome(bird);
+      else seekFood(bird);
+      return;
+    }
     if (state.phase === 'search') { seekFood(bird); return; }
+    if (state.phase === 'readying') {
+      const foe = state.target; // Keep circling the selected player; do not retarget to another actor during the activity.
+      if (!foe || !(foe.health > 0) || (foe.areaId && foe.areaId !== bird.areaId) || foe._denHidden) {
+        state.readyingActivity = null; state.readyingReleaseArmed = false; state.readyingWarning = false;
+        returnHome(bird); return;
+      }
+      if (playerNeedsTime(bird, foe)) {
+        if (!startCombatOrbit(bird, 'readying', foe)) returnHome(bird);
+        return; // The activity owns the hold duration; no invented timeout or repeated attack attempt.
+      }
+      state.readyingActivity = null;
+      if (state.readyingReleaseArmed) {
+        state.readyingReleaseArmed = false;
+        if (startCombatOrbit(bird, 'readying', foe)) return; // One extra visible circling leg warns that the predator is about to dive.
+      }
+      if (!swoop(bird, foe) && !startCombatOrbit(bird)) returnHome(bird);
+      return;
+    }
     if (state.phase === 'orbit') {
       const foe = orbitCombatFoe(bird); // Aerial evasion replaces only the resting perch, never the enemy's attack cycle.
+      if (playerNeedsTime(bird, foe)) {
+        if (!startCombatOrbit(bird, 'readying', foe)) returnHome(bird);
+        return; // The existing missing-perch orbit becomes a telegraphed waiting orbit when the player is busy.
+      }
       if (foe && !state.retreating && !state.captive && (state.orbitLegs || 0) % 3 === 0
         && swoop(bird, foe)) {
         if (bird._tzNestMother) window.TzatzulNestEncounter?.recordOrbitDive?.(bird);
@@ -676,6 +735,7 @@
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
+        readyingActivity: c._tzFlight?.readyingActivity || null, releaseChord: !!c._tzFlight?.readyingWarning,
         nestMinutesLeft: c._tzFlight?.phase === 'in-nest' && now !== null
           && Number.isFinite(c._tzFlight.nestUntil) ? Math.max(0, Math.ceil((c._tzFlight.nestUntil - now) * 60)) : null,
         target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null,
@@ -683,6 +743,9 @@
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
+    hasCaptives: () => captured.size > 0, // Gate the wildlife draw hook without scanning the roster.
+    carrierOf: prey => captured.get(prey)?.bird || null, // Direct lookup for player draw placement.
+    forEachCaptive: visit => { for (const [prey, record] of captured) visit(prey, record.bird); },
     owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
     resistsCarryKnockback: bird => !!bird?._tzFlight?.captive && bird.health > n(bird.maxHealth, 1) * .3 && !bird.prone, // Small hits do not drop a carried victim until the bird flees.
     sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.

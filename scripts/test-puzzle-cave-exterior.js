@@ -259,9 +259,13 @@ assert(!blocker.blocksAt(0,0,1,null,0,{y:gate.door.y-4}),
   'lower ground under the raised balcony is never blocked by a gate above it');
 player.onCliffBalcony=gate.shelf.id;
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
+assert.equal(Exterior.isPlayerSolvingMelody(),true,
+  'attack readiness senses the live plate immediately, before the next puzzle update tick');
 Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
+assert.equal(Exterior.isPlayerSolvingMelody(),true,
+  'the actual unsolved exterior melody plate registers player focus without requiring a hosted instrument');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
 assert.equal([...Exterior.activeScoreMeshes(area,scene)].length,gate.glyphs.length*3,
   'the direct world pass collects active note ink and both halos from its own scene');
@@ -305,8 +309,11 @@ assert(sounds.some(event=>event.key==='stoneBeat2'&&event.volume===.54&&event.pi
 
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
+assert.equal(Exterior.isPlayerSolvingMelody(),false,
+  'the player stepping away releases protection immediately, even before the puzzle update');
 Exterior.update(.01,area);
 assert(!gate.scoreBoard.visible,'stepping off the pressure plate hides both glyphs and their glows');
+assert.equal(Exterior.isPlayerSolvingMelody(),false,'stepping off releases the attack-readiness activity');
 assert.equal([...Exterior.activeScoreMeshes(area,scene)].length,0,'an inactive plate adds no direct overlay work');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,2,
   'releasing the exterior plate plays one more edge-triggered stone cue');
@@ -339,6 +346,7 @@ for(const note of song.notes){
     handler({detail:{area,noteIndex:note.index}});
 }
 assert(gate.solved,'the procedural one/two-measure outdoor score opens the gate');
+assert.equal(Exterior.isPlayerSolvingMelody(),false,'solving the melody releases attack-readiness immediately');
 assert(gate.glyphs.every((glyph,i)=>glyph.geometry===immutableInkGeometry[i]&&glyph.scale.x===1&&glyph.scale.y===1),
   'ink plane geometry and scale stay constant across every musical note, success and failure');
 assert(gate.glyphOuterGlows.every((glow,i)=>glow.geometry===immutableHaloGeometry[i]&&glow.scale.x===1&&glow.scale.y===1),

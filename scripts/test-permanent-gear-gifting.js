@@ -46,6 +46,7 @@ const holdSource = gameSource.slice(gameSource.indexOf('      let manualHeldItem
 const toasts = []; // Player-facing refusals from the production hold accessor.
 const context = { window, heldMode: 'item', packClothing: pack, inventory: {}, ITEM_DEFS: {}, refreshActionBar() {}, showToast: message => { toasts.push(message); }, getActiveInventoryItem: () => null }; // The real resolver also requires the drawn item mode, not merely a wheel selection.
 vm.createContext(context);
+vm.runInContext(fs.readFileSync('docs/js/held-gift-policy.js', 'utf8'), context);
 vm.runInContext(holdSource, context);
 vm.runInContext("setManualHeldItem({ kind: 'clothing', uid: 'gear-hat' })", context);
 assert.equal(vm.runInContext('getManualHeldItem()', context), null, 'gear cannot be manually held');
