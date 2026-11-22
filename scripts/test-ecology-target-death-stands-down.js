@@ -41,4 +41,26 @@ const ordinary = { areaId: 'z', state: 'chase', _chunkCombatTarget: null };
 assert.equal(ctx.resolvedBanditCombatTarget(ordinary, player), player);
 assert.equal(ordinary.state, 'chase', 'a hostile with no ecology target keeps chasing the player normally');
 
+
+// A later player-aggro assignment must not override an explicitly commissioned
+// rival-tribe ecology target inside game.js's chase-target reconciliation.
+const ecology = fs.readFileSync('docs/js/porakaneki-camps-runtime.js', 'utf8'); // Real tribe planner is the sole owner of ecology target handoffs.
+const ecologyStart = ecology.indexOf('  function setHumanoidEcologyTarget(');
+const ecologyEnd = ecology.indexOf('  function setPredatorEcologyTarget(', ecologyStart);
+assert(ecologyStart > 0 && ecologyEnd > ecologyStart, 'tribe planner target assignment remains extractable');
+const tribeCtx = { tribeOf: () => 'porakaneki', isSharedEnemyOf: () => false, nowMs: () => 1000 };
+vm.createContext(tribeCtx);
+vm.runInContext(ecology.slice(ecologyStart, ecologyEnd), tribeCtx);
+const retainedPlayer = { health: 100, id: 'player' };
+const rival = { health: 18, areaId: 'z', id: 'omgurku-rival' };
+const tribeHunter = { areaId: 'z', state: 'chase', health: 18, def: { aggroRangePx: 500 }, targetPlayer: retainedPlayer };
+tribeCtx.setHumanoidEcologyTarget(tribeHunter, rival);
+assert.equal(tribeHunter._chunkCombatTarget, rival, 'tribal ecology target stays authoritative');
+assert.equal(tribeHunter.targetPlayer, null, 'stale player lock cannot override an active rival fight');
+assert.equal(tribeHunter._porakanekiPlannerControlled, true, 'neutral tribe still uses the existing planner control');
+assert.equal(tribeHunter.def.aggroRangePx, 0, 'neutral tribe remains non-hostile to the player');
+assert.equal(tribeHunter.state, 'chase', 'rival-combat chase continues without an intermediate return');
+tribeCtx.setHumanoidEcologyTarget(tribeHunter, null);
+assert.equal(tribeHunter.state, 'return', 'an ended rival engagement stands down through the original cleanup path');
+
 console.log('Ecology target death stand-down regression passed.');
