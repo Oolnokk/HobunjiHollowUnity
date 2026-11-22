@@ -71,7 +71,7 @@ const ids = cap => Array.from(Targetables.query(area, cap), e => e.id).sort(); /
 assert.deepEqual(ids('burden'), ['bomb1', 'cask1', 'fruit1'], 'every live burden is a targetable');
 assert.deepEqual(ids('explosive'), ['bomb1', 'cask1'], 'explosive is derived from the burden kind; soursap bursts but is not explosive');
 assert.deepEqual(ids('hangable'), ['bomb1'], 'hangable follows the live hanging state');
-assert.deepEqual(ids('lungeStop'), [], 'nothing stops a lunge by default: existing gameplay is unchanged');
+assert.deepEqual(ids('lungeStop'), ['bomb1'], 'a hanging non-fruit burden stops the lunge so its melee strike can connect');
 assert.equal(Targetables.query('some_other_map', 'burden').length, 0, 'targetables are scoped to their map');
 
 const entry = Targetables.query(area, 'burden').find(e => e.id === 'bomb1');
@@ -80,6 +80,7 @@ assert.equal(entry.owner, bomb); assert.equal(entry.hitbox(), null, 'no authored
 assert.equal(entry.toActor().__targetable, entry);
 
 bomb.hanging = false; assert.deepEqual(ids('hangable'), [], 'a released burden stops being hangable');
+assert.deepEqual(ids('lungeStop'), [], 'a detached ceiling burden stops blocking lunges without explicit rope opt-in');
 bomb.lungeStop = true; assert.deepEqual(ids('lungeStop'), ['bomb1'], 'a system opts a burden in by setting lungeStop');
 bomb.carried = true; assert.deepEqual(ids('lungeStop'), [], 'a carried burden is not a target');
 bomb.carried = false;
