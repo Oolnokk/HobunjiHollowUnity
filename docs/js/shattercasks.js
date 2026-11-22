@@ -2379,31 +2379,44 @@
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
     window.CratePiles?.sweepMelee?.(collider,opts);
+    const stamp=Number(opts.actor?.lungeOriginMs); // Shared attack identity for suppressing a repeated lunge/strike on the same burden.
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
-      if(vase.exploded||vase.carried||vase.hanging)continue;
+      if(vase.exploded||vase.carried||(vase.hanging&&vase.kind==='soursap'))continue; // Rope and ceiling burdens are strikeable; hanging Soursap still requires a fall.
+      if(Number.isFinite(stamp) && stamp>0
+        && vase.lastLungeContactStamp===stamp
+        && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
+      const directLungeContact=!!(opts.lungeContact && opts.targetBurden===vase); // Exact Targetables collision takes precedence over the older radius approximation.
       const box=worldHitbox(vase);
       const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
       const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
       const centerY=box?(box.min.y+box.max.y)/2:baseHeight(vase.col,vase.row)+.35;
-      const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
-      const height=box?(box.max.y-box.min.y)/2:.40;
-      const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
-      const radial=Math.hypot(dx,dz);
-      if(radial>collider.horizontalRangeWorld+radius)continue;
-      const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
-      if(delta>(collider.halfConeRad||.5)+.10)continue;
-      const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
-      if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      if(!directLungeContact && opts.lungeContact && typeof window.Combat?.meleeHit==='function'
+        && typeof window.Targetables?.makeActor==='function') {
+        const candidate=targetableFor(vase).toActor(); // Cached actor uses the same Box3 melee test as the lunge-stop probe.
+        if(!window.Combat.meleeHit(opts.actor,candidate,{...opts,debug:false}))continue;
+      } else if(!directLungeContact) {
+        const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
+        const height=box?(box.max.y-box.min.y)/2:.40;
+        const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
+        const radial=Math.hypot(dx,dz);
+        if(radial>collider.horizontalRangeWorld+radius)continue;
+        const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
+        if(delta>(collider.halfConeRad||.5)+.10)continue;
+        const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
+        if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      }
+      if(opts.lungeContact && Number.isFinite(stamp) && stamp>0)vase.lastLungeContactStamp=stamp;
       window.WorldEvents?.emit('struck',{scope:vase.mapId,targetId:vase.id,targetKind:'burden',burdenKind:vase.kind,source:'melee',attackerId:opts.actor?.id||null,x:cx,y:centerY,z:cz});
       if(typeof vase.strikeHandler==='function') { // A burden that handles its own strikes (hanging on a rope: it swings) is not detonated by them.
         let handled=false;
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
-        if(handled)break;
+        if(handled){if(!opts.lungeContact)break;continue;} // One lunge AOE can swing more than one rope burden.
       }
       const source=opts.actor===deps()?.player?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:vase.id,origin:'player-melee'}:opts.actor; // Existing non-player strike ownership is passed through without equipment bonuses.
-      detonate(vase,'melee',source);break;
+      detonate(vase,'melee',source);
+      if(!opts.lungeContact)break; // Ordinary melee still strikes one burden; lunge contact is a multi-target AOE.
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
@@ -2686,7 +2699,7 @@
   // dispatcher and accidentally recall equipment after pickup.
   // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
   // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
-  // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
+  // (burden.lungeStop === true) or applies to hanging non-fruit burdens, so a ceiling burden cannot be overshot.
   const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb','tothalWitchBomb','kanthicWitchBomb']);
   const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
   function targetableFor(burden) {
@@ -2695,7 +2708,7 @@
     entry={
       id:burden.id,scope:burden.mapId,owner:burden,_actor:null,
       position:()=>({x:burden.col+.5,z:burden.row+.5}),
-      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
+      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&(burden.lungeStop===true||(burden.hanging&&burden.kind!=='soursap'))),
       hitbox:()=>{
         if(burden===backCarried)return null; // Invalidate even previously cached Targetables wrappers while stowed.
         const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
