@@ -6612,12 +6612,12 @@
         if (c._travelStuckT < CREATURE_STUCK_THRESHOLD_S) return moving;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const failure = c._travelPathFailure; // Reuses a failed search only for the same start, destination and area.
-        const sameFailure = failure?.area === currentArea &&
+        const wilderness = _isZoneArea(currentArea); // Only wilderness retries back off. Indoor collision can change at the same tile when the actor changes floors.
+        const failure = c._travelPathFailure; // Reuses a failed wilderness search only for the same start, destination and area.
+        const sameFailure = wilderness && failure?.area === currentArea &&
           failure.startCol === startCol && failure.startRow === startRow &&
           failure.targetCol === targetCol && failure.targetRow === targetRow;
-        const now = performance.now(); // Uses real elapsed time even when the game limits simulation dt during a slow frame.
-        if (sameFailure && now < failure.retryAt) return moving;
+        if (sameFailure && performance.now() < failure.retryAt) return moving; // Uses real elapsed time even when the game limits simulation dt during a slow frame.
         c._travelStuckT = 0;
         const pathfinder = window.TilePathfinding; // Uses the same grid solver as the cliff entry planner.
         if (!pathfinder) return moving;
@@ -6630,9 +6630,11 @@
         if (path?.length) {
           c._travelPathFailure = null;
           c._travelPath = path; c._travelPathTarget = { x: tx, y: ty };
-        } else {
+        } else if (wilderness) {
           const delay = sameFailure ? Math.min(failure.delay * 2, CREATURE_PATH_FAILURE_MAX_RETRY_MS) : CREATURE_PATH_FAILURE_RETRY_MS; // Extends only repeat failures.
           c._travelPathFailure = { area: currentArea, startCol, startRow, targetCol, targetRow, delay, retryAt: performance.now() + delay };
+        } else if (failure) {
+          c._travelPathFailure = null;
         }
         return moving;
       }

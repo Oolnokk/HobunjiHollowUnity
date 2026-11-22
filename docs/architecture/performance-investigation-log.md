@@ -7,10 +7,13 @@ search. Diagonal probes used to repeat the full terrain, building, locale and
 den checks for the same tile. The blocked 32×32 fixture makes 545 collision calls,
 down from 3,861, and reachable fixtures produce identical waypoints.
 
-An unchanged failed ground detour retries after 1.2 seconds, then 2.4 and 4.8
-seconds. A new start tile, goal tile, area, or successful direct step bypasses the
-old failure. A newly available side route can wait for the next retry if the
-direct step stays blocked. The in-game Performance Profiler reports ground and
+In wilderness zones, an unchanged failed ground detour retries after 1.2
+seconds, then 2.4 and 4.8 seconds. A new start tile, goal tile, area, or
+successful direct step bypasses the old failure. A newly available side route
+can wait for the next retry if the direct step stays blocked. A 24-actor blocked
+fixture performs 72 searches over 4.8 seconds, down from 216. Indoor detours
+keep their prior retry cadence because walkability can change at the same map
+tile when an actor changes floors. The in-game Performance Profiler reports ground and
 cliff search counts and peak times. These measurements cover routing work.
 The reported nighttime scene still needs an on-device frame capture to compare
 simulation and rendering costs.

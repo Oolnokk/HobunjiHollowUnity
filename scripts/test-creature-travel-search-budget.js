@@ -53,6 +53,7 @@ window.TilePathfinding = {
 window.PerfProfiler = { begin: name => name, end: name => timed.push(name) };
 const context = {
   window, performance: { now: () => now }, TILE: 1, currentArea: 'wilderness',
+  _isZoneArea: area => area === 'wilderness' || area === 'other-wilderness',
   moveCreatureToward(c) { if (movementClear) c.x += 0.1; return movementClear; },
   creatureTileWalkable: (col, row) => routeClear || col < 6 || col > 6,
 };
@@ -98,5 +99,25 @@ assert.equal(searches, 8);
 movementClear = true;
 assert.equal(tick(11500), true, 'an unblocked direct step can always move, even during backoff');
 assert.equal(actor._travelPathFailure, null);
+
+context.currentArea = 'ruin';
+movementClear = false;
+actor._travelPathFailure = { area: 'other-wilderness', retryAt: 16000 }; // A companion carries its bookkeeping across the entrance.
+tick(12000);
+assert.equal(searches, 9, 'an indoor blocked route still searches');
+assert.equal(actor._travelPathFailure, null, 'indoor failures do not retain a wilderness retry deadline');
+routeClear = true;
+tick(12600);
+assert.equal(searches, 10, 'the same indoor start and goal retry on the old cadence after a floor change');
+assert(actor._travelPath?.length, 'the actor can plan through the newly available indoor route');
+
+context.currentArea = 'wilderness';
+routeClear = false;
+const pack = Array.from({ length: 24 }, () => ({ x: 2.5, y: 5.5, def: {} })); // Reproduces a whole crowd reaching the stuck threshold together.
+const beforePack = searches; // Isolates the synchronized searches from the single-actor tests above.
+for (now = 13000; now <= 17800; now += 600) {
+  for (const member of pack) travel(member, 9.5, 5.5, 2, 0.6);
+}
+assert.equal(searches - beforePack, 24 * 3, '24 blocked actors each search three times instead of nine');
 assert.deepEqual(timed, Array(searches).fill('creature ground detour search'));
 console.log('Creature travel retry timing, route parity and profiler wiring passed');
