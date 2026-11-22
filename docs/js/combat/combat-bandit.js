@@ -1926,6 +1926,9 @@
   ]); // Static target-relative sectors; all bandits reuse this four-element definition.
   const BANDIT_STANDOFF_RANGE_MUL = 1.8;
   const _banditAttackSlots = []; // [{ bandit, target, sector, angle }] The existing mobile arena log reads the same array.
+  const _banditSlotForActor = new WeakMap(); // Constant-time existing-sector lookup; the strong debug collection is still pruned of dead/unloaded actors.
+  let _banditSlotsPrunedAt = -Infinity; // Shared once-per-frame cleanup rather than scanning every combatant's peers on every AI decision.
+  const BANDIT_SLOT_PRUNE_INTERVAL_MS = 12;
   const _banditTargetTurns = new WeakMap(); // O(1) per-target committed attacker/held-charge owner; targets are weak keys so unloads do not leak encounters.
   function banditDirectional(c) { return Number.isFinite(c?.def?.banditStandoffMaxTiles); } // Only ordinary bandits opt into the four-position coordinator.
   function banditTargetFacing(target) {
@@ -2023,16 +2026,27 @@
     return slot?.sector == null ? slot?.angle : banditSectorAngle(target, slot.sector);
   }
   function claimBanditAttackSlot(c, towardAngle, target) {
-    for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
-      const s = _banditAttackSlots[i];
-      if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) _banditAttackSlots.splice(i, 1);
+    const now = performance.now();
+    if (now - _banditSlotsPrunedAt >= BANDIT_SLOT_PRUNE_INTERVAL_MS) {
+      _banditSlotsPrunedAt = now;
+      for (let i = _banditAttackSlots.length - 1; i >= 0; i--) {
+        const s = _banditAttackSlots[i];
+        if (s.bandit.health <= 0 || s.bandit.state !== 'chase' || !s.bandit.avatarRef?.group?.parent) {
+          _banditSlotForActor.delete(s.bandit);
+          _banditAttackSlots.splice(i, 1);
+        }
+      }
     }
-    const existing = _banditAttackSlots.find(s => s.bandit === c);
+    const existing = _banditSlotForActor.get(c);
     if (existing?.target === target) {
       existing.angle = banditFacingSlotAngle(existing, target); // Sector identity persists, but its world angle follows the opponent's facing.
       return existing;
     }
-    if (existing) _banditAttackSlots.splice(_banditAttackSlots.indexOf(existing), 1); // A changed opponent releases the former direction.
+    if (existing) {
+      const index = _banditAttackSlots.indexOf(existing);
+      if (index >= 0) _banditAttackSlots.splice(index, 1); // A changed opponent releases the former direction.
+      _banditSlotForActor.delete(c);
+    }
     if (!banditDirectional(c)) {
       const competing = _banditAttackSlots.filter(s => s.bandit.areaId === c.areaId && s.target === target);
       if (competing.length >= BANDIT_SPECIAL_ATTACK_SLOTS) return null;
@@ -2040,6 +2054,7 @@
       for (const s of competing) if (Math.abs(deps.angleDiff(angle, s.angle)) < BANDIT_SLOT_MIN_ANGLE_RAD) angle = s.angle + Math.PI;
       const slot = { bandit: c, target, angle, sector: null };
       _banditAttackSlots.push(slot);
+      _banditSlotForActor.set(c, slot);
       return slot;
     }
     const used = [false, false, false, false]; // Four cheap flags, no pathfind/scene query; decide only on first slot acquisition.
@@ -2056,6 +2071,7 @@
     if (occupied >= BANDIT_MAX_ATTACK_SLOTS) {
       if (!backstabber || !rearOwner || rearOwner.bandit.def?.banditAbilityLoadout?.tap2 === 'backstabFlick') return null;
       _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an ordinary rear holder when a real Backstab specialist joins.
+      _banditSlotForActor.delete(rearOwner.bandit);
       if (rearOwner.bandit._banditPreparedCharge) releaseBanditCharge(rearOwner.bandit, target); // A displaced non-specialist cannot keep a stale preparatory reservation.
       used[3] = false;
     }
@@ -2071,6 +2087,7 @@
     if (chosen < 0) return null;
     const slot = { bandit: c, target, sector: chosen, angle: banditSectorAngle(target, chosen) };
     _banditAttackSlots.push(slot);
+    _banditSlotForActor.set(c, slot);
     return slot;
   }
 
