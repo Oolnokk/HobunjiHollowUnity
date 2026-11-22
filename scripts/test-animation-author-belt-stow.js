@@ -38,12 +38,14 @@ vm.runInContext(shared,sandbox);
 vm.runInContext(ui,sandbox);
 const belt=window.HobunjiBeltStowRig;
 const editor=window.AnimationAuthorBeltStow;
-assert.equal(belt.defaultSnapshot(1.2).position.x,.264);
+assert.equal(belt.defaultSnapshot(1.2).position.x,0);
+assert.equal(belt.defaultSnapshot(1.2).position.z,-.048);
+assert.equal(belt.defaultSnapshot(1.2).rotationDeg.z,-45);
 assert.equal(belt.defaultSnapshot(1.2).position.y,.6);
 assert.equal(belt.normalizedSnapshot({ position:{x:Infinity}, scale:{x:-2} }).scale.x,1,
   'invalid imported scales cannot corrupt rendering');
 assert.equal(belt.configuredSnapshot({characters:{'mao-ao::male':{anchors:{beltStow:{position:{x:.3,y:.5,z:.1}}}}}},'mao-ao','male').position.x,.3);
-assert.equal(belt.configuredSnapshot({},'mao-ao','female'),null,'untuned runtime profiles retain the pants spline fallback');
+assert.equal(belt.configuredSnapshot({},'mao-ao','female'),null,'untuned runtime profiles retain the anatomical posterior fallback');
 assert.equal(editor.anchorNames(['posterior','shoulderPerch'], {source:{type:'creature'}}).includes('beltStow'),false);
 const actor = {
   id:'test-player', source:{type:'npc',species:'mao-ao',gender:'male'},
@@ -63,7 +65,8 @@ const normalized=editor.preserveNormalized({characters:{'mao-ao::male':{anchors:
 assert.equal(normalized.characters['mao-ao::male'].anchors.beltStow.position.x,-.27,
   'importing a rig must preserve the stow position despite old normalizer passes');
 editor.resetProfile(profile,actor);
-assert.equal(profile.anchors.beltStow.position.x,.264,'native reset returns to this species default');
+assert.equal(profile.anchors.beltStow.position.x,0,'native reset returns to the posterior-centered default');
+assert.equal(profile.anchors.beltStow.rotationDeg.z,-45,'native reset restores 45-degree carrying angle');
 
 // Run the exact late bridge that preserves all earlier V15.xx rig hooks and installs
 // one additional authoring anchor, including the existing JSON autosave path.
