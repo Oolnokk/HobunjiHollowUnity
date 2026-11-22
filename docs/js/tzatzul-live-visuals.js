@@ -148,7 +148,7 @@
         }
       }
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
-      rig.root.position.y = nativeGroundPlaneY(actor, state); // Initial mount uses the native foot anchor even before the first wing/pose update.
+      if (rig.root.position) rig.root.position.y = nativeGroundPlaneY(actor, state); // Production Three.Group always has position; tolerate lightweight corpse/rig test stubs.
       group.add(rig.root);
       group.userData ||= {};
       group.userData[isSkeeriActor(actor) ? 'skeeriFlyingRig' : kind(actor)==='pingdort' ? 'pingdortFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
