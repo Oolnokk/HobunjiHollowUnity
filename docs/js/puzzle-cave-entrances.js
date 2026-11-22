@@ -611,6 +611,10 @@
     }
     return portals;
   }
+  function playerOnPlate(portal,player,px,pz){
+    return !!player&&player.onCliffBalcony===portal.shelf.id&&!player.climbing
+      &&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // Shared live plate boundary for the rhythm and attacker-readiness signals.
+  }
   function update(dt,activeArea=null){
     const area=safeArea(activeArea||deps?.getCurrentArea?.());
     const state=areas.get(area);
@@ -628,7 +632,7 @@
       if(portal.disposed)continue;
       ensureIndependentTransitions(area,portal); // Late scene copies still get their own player-only portal.
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
-      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // A separate activation circle leaves room to step up to the gate after the final note.
+      const down=playerOnPlate(portal,player,px,pz); // Live geometry also drives readying attacks, so no one-frame protected-activity lag.
       root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Both kinds use the same physical stone plate and entry sound.
       if(portal.session){
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
@@ -700,8 +704,11 @@
   }
   function isPlayerSolvingMelody() {
     const area=safeArea(deps?.getCurrentArea?.()); // Same live area as the player, never a hidden/unloaded challenge.
+    const player=deps?.player,tile=Number(deps?.TILE)||64;
+    if(!player||!Number.isFinite(Number(player.x))||!Number.isFinite(Number(player.y)))return false;
+    const px=Number(player.x)/tile,pz=Number(player.y)/tile; // Shared tile-space coordinates, evaluated when AI needs to know before the puzzle tick.
     return (areas.get(area)?.portals||[]).some(portal=>portal.requiresSong&&!!portal.session
-      &&!portal.disposed&&!portal.solved&&portal.lastDown); // Player is physically holding an unsolved timed-score plate.
+      &&!portal.disposed&&!portal.solved&&playerOnPlate(portal,player,px,pz)); // No stale lastDown bit can permit a one-frame surprise grab.
   }
   return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,
     isPlayerSolvingMelody,debugSnapshot});
