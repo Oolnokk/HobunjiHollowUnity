@@ -56,6 +56,29 @@
     return Number.isFinite(anchorX) && Number.isFinite(anchorY) && Math.hypot(col - anchorX, row - anchorY) < 6; // Preserve the original seed's anchor-only compatibility policy.
   }
 
+  function sourceLayout(zone) {
+    return zone?.sourceLayout || zone; // Bandit and tribal systems use synthetic tile views of the same generator-owned layout.
+  }
+
+  const temporaryLocaleSites = new WeakMap(); // Source layout -> active temporary instance rectangles, removed on release or collected with that layout.
+  function reserveTemporaryLocale(zone, instance) {
+    const layout = sourceLayout(zone); // Both source scenery and per-faction campsite views resolve to one reservation authority.
+    if (!layout || typeof layout !== 'object' || !instance?.id || !instance.site) return;
+    let sites = temporaryLocaleSites.get(layout); // Reuse the existing per-map registry across multiple camp types.
+    if (!sites) { sites = new Map(); temporaryLocaleSites.set(layout, sites); }
+    sites.set(instance.id, instance.site);
+  }
+  function releaseTemporaryLocale(zone, instance) {
+    temporaryLocaleSites.get(sourceLayout(zone))?.delete(instance?.id); // Migrated, destroyed and rerolled camps stop excluding new scenery.
+  }
+  function isTemporaryLocaleReserved(zone, col, row, margin = 1) {
+    const sites = temporaryLocaleSites.get(sourceLayout(zone)); // O(number of camps), not an entire world tile scan.
+    if (!sites) return false;
+    for (const site of sites.values()) if (col >= site.x - margin && col < site.x + site.w + margin
+      && row >= site.y - margin && row < site.y + site.h + margin) return true;
+    return false;
+  }
+
   const sceneryReservationCells = new WeakMap(); // One already-indexed set per live zone layout; unrelated maps never share rock reservations.
 
   function reserveScenery(zone, sites) {
@@ -74,7 +97,7 @@
   }
 
   function isSceneryReserved(zone, col, row) {
-    return !!sceneryReservationCells.get(zone)?.has(col + ',' + row); // Queried once per tile while TemporaryLocales builds its existing summed-area blockers.
+    return !!sceneryReservationCells.get(sourceLayout(zone))?.has(col + ',' + row); // Lightweight camp views use the source layout's precomputed permanent rock reservations.
   }
 
   function clearExportedObjects(workspace, objectIds) {
@@ -101,5 +124,5 @@
     return { objects: ids.size, tiles };
   }
 
-  return { isBoulder, boulderCells, localeBlocksSite, reserveScenery, isSceneryReserved, clearExportedObjects };
+  return { isBoulder, boulderCells, localeBlocksSite, reserveScenery, isSceneryReserved, reserveTemporaryLocale, releaseTemporaryLocale, isTemporaryLocaleReserved, clearExportedObjects };
 });
