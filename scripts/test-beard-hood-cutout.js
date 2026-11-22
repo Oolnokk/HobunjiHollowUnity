@@ -109,6 +109,39 @@ const plan=Cut.planTuftStretch(ringHood.pixels,roots,{maxStretch:36});
 assert.equal(plan.stretched,2,'outside tuft roots pull the first inner hood edge');
 assert(plan.moves.every(move=>Math.hypot(move.delta.x,move.delta.y)<15),
   'ring stretch uses nearby INNER edge, not distant outer rim');
+// Subdivision changes the geometric extent of the influence, not tessellation.
+const broad=Cut.planTuftStretch(ringBefore,[{x:140.5,y:94.5}],{subdivision:1});
+const local=Cut.planTuftStretch(ringBefore,[{x:140.5,y:94.5}],{subdivision:16});
+assert.equal(Cut.normalizeSubdivision(undefined),4,'old cosmetics preserve the original medium-locality setting');
+assert.equal(Cut.normalizeSubdivision(99),16,'invalidly high subdivision is clamped');
+assert.equal(Cut.normalizeSubdivision(0),1,'lowest subdivision remains broad');
+assert(broad.moves[0].radius>local.moves[0].radius,
+  'high subdivision reduces the affected neighborhood instead of adding polygons');
+const outside={x:140.5,y:114.5};
+assert(Cut.deformationWeight(broad.moves[0],outside.x,outside.y)>Cut.deformationWeight(local.moves[0],outside.x,outside.y),
+  'broad subdivision moves pixels farther from the tuft root');
+for(const plan of [broad,local])
+  assert.equal(Cut.deformationWeight(plan.moves[0],140.5,94.5),1,
+    'subdivision never changes the target root position');
+
+// Upper and lower influence are independent. The marked pin is always held.
+const upperPlan=Cut.planTuftStretch(ringBefore,[{x:140.5,y:94.5}],{
+  subdivision:4,aboveInfluence:200,belowInfluence:0
+});
+const lowerPlan=Cut.planTuftStretch(ringBefore,[{x:140.5,y:94.5}],{
+  subdivision:4,aboveInfluence:0,belowInfluence:200
+});
+const top={x:140.5,y:84.5},bottom={x:140.5,y:104.5};
+const upper=upperPlan.moves[0],lower=lowerPlan.moves[0];
+assert(Cut.deformationWeight(upper,top.x,top.y)>Cut.deformationWeight(lower,top.x,top.y),
+  'higher upper influence moves more cloth ABOVE the tuft');
+assert(Cut.deformationWeight(upper,bottom.x,bottom.y)<Cut.deformationWeight(lower,bottom.x,bottom.y),
+  'higher lower influence moves more cloth BELOW the tuft independently');
+assert.equal(Cut.deformationWeight(upper,140.5,94.5),1,'upper/lower sliders never loosen marked corner');
+assert.equal(Cut.deformationWeight(lower,140.5,94.5),1,'even zero on one side still fixes corner');
+assert.equal(Cut.normalizeVerticalInfluence(undefined),100,'old cosmetics retain symmetric 100% strength');
+assert.equal(Cut.normalizeVerticalInfluence(300),200,'upper/lower strength is bounded at 200%');
+assert.equal(Cut.normalizeVerticalInfluence(-3),0,'upper/lower strength may be turned off');
 const ringResult=Cut.stretchHoodToRoots(ringHood,roots,{maxStretch:36});
 assert.equal(ringResult.stretched,2,'left and right tuft roots both deform the same front hood');
 assert.equal(alpha(ringHood,135,94),0,'left/right displacement expands the inner opening');
@@ -152,13 +185,29 @@ assert(portrait.includes('cutoutApi.stretchHoodToRoots(cloth, tuftRoots') &&
   'runtime stretches hood inner ring before the independent beard cutout mask');
 assert(portrait.includes('variantHoodTuftRoots') && portrait.includes('hoodTuftMaxStretch'),
   'species-specific tuft anchors and stretch limits are loaded as optional cosmetic metadata');
+assert(portrait.includes('subdivision:beardAuthoring.subdivision')
+  && portrait.includes('aboveInfluence:beardAuthoring.aboveInfluence')
+  && portrait.includes('belowInfluence:beardAuthoring.belowInfluence'),
+  'game renderer supplies all three deformation controls to the same 2D hood stretching');
+assert(portrait.includes('variantHoodTuftSubdivision')
+  && portrait.includes('variantHoodTuftAboveInfluence')
+  && portrait.includes('variantHoodTuftBelowInfluence'),
+  'option parser retains shared and species-variant deformation settings');
 for(const text of [original,studio,attack])
   assert(text.indexOf('beard-hood-cutout.js')<text.indexOf('portrait-utils.js') && text.includes('beard-hood-cutout.js'),
     'every portrait entrypoint loads the cutout core before portrait-utils');
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
-  'alphaFloor','maxStretch','removeRoot','clearRoots','download','maskJson'])
+  'alphaFloor','maxStretch','subdivision','aboveInfluence','belowInfluence',
+  'removeRoot','clearRoots','download','maskJson'])
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
+assert(html.includes('subdivision:selectedSubdivision()')
+  && html.includes('aboveInfluence:selectedAboveInfluence()')
+  && html.includes('belowInfluence:selectedBelowInfluence()')
+  && html.includes('hoodTuftSubdivision:selectedSubdivision()')
+  && html.includes('hoodTuftAboveInfluence:selectedAboveInfluence()')
+  && html.includes('hoodTuftBelowInfluence:selectedBelowInfluence()'),
+  'editor uses locality and upper/lower values in preview, persistence and exported cosmetic JSON');
 assert(!html.includes('three.min.js')&&!html.includes('portrait-spline-rig.js'),
   '2D experiment does not load old 3D rig or Three.js');
 assert(html.includes('const [beardArt,hoodArt]=await Promise.all')
@@ -196,5 +245,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood cutout: alpha floor, brush/erase, RLE, inner-ring tuft stretch, no-op inside ring, capped overreach, main layering and CORS fallback pass.');
+  console.log('Beard/hood cutout: alpha floor, RLE, inner-ring stretch, broad/local subdivision, independently weighted above/below influence, pinned root, draw-order and CORS fallback pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
