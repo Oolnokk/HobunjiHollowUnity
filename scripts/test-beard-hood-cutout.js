@@ -164,7 +164,7 @@ assert(!html.includes('three.min.js')&&!html.includes('portrait-spline-rig.js'),
 assert(html.includes('const [beardArt,hoodArt]=await Promise.all')
   && html.indexOf("beardArt.getContext('2d').getImageData") < html.indexOf("beardCanvas.getContext('2d').drawImage(beardArt"),
   'loaders must validate a disposable canvas before committing origin-clean art into the editor');
-assert(html.includes("if(!artReady){status('Brush disabled:")
+assert(html.includes("if(!artReady){status('Artwork is unavailable;")
   && html.includes('beardCanvas.width=hoodCanvas.width=SIZE'),
   'failed art cannot create empty brush history and previously tainted canvases are fully reset');
 assert(html.includes('let hoodPixels=new Uint8ClampedArray')
