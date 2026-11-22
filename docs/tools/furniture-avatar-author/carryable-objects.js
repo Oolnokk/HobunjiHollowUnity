@@ -419,15 +419,18 @@
     const portraitSection=el('carryBabyPortraitSection'); // Grip authoring uses image UV, never scene X/Y units.
     if(portraitSection)portraitSection.hidden=!editingBaby;
     if(editingBaby){
-      const point=state.carryable.handTargets[id==='right'?'right':'left'];
-      const uv=window.FamilyBabyCarryPose?.pointToPortrait?.(point,babyPortraitWidth,babyPortraitHeight);
-      for(const [field,value] of [['carryBabyU',uv?.u],['carryBabyV',uv?.v],['carryBabyDepth',uv?.depth]]){
-        const node=el(field);
-        if(node&&document.activeElement!==node)node.value=Number.isFinite(value)?(value*100).toFixed(1):'';
-        if(node)node.disabled=id!=='left'&&id!=='right';
+      const side=['left','right'].includes(id)?id:'left';
+      const api=window.FamilyBabyCarryPose;
+      const off=api?.gripOffset?.(side,state.carryable.handTargets[side],babyGripAnchors,babyPortraitWidth,babyPortraitHeight);
+      for(const axis of ['X','Y','Z']){
+        const node=el('carryBabyOffset'+axis);
+        if(node&&document.activeElement!==node)node.value=Number(off?.[axis.toLowerCase()]||0).toFixed(4);
+        if(node)node.disabled=!['left','right'].includes(id);
       }
+      const origin=el('carryBabyGripOrigin');
+      if(origin)origin.textContent=(side==='left'?'L · baby posterior':'R · baby neck joint')+' → grip offset (baby-local X/Y/Z)';
       const metrics=el('carryBabyScaleReadout');
-      if(metrics)metrics.textContent='Baby portrait plane: '+babyPortraitWidth.toFixed(3)+' W × '+babyPortraitHeight.toFixed(3)+' H carrier-local units (before carrier rig scale) · U/V/depth are portrait percentages.';
+      if(metrics)metrics.textContent='Baby portrait: '+babyPortraitWidth.toFixed(3)+' × '+babyPortraitHeight.toFixed(3)+' carrier-local units · grip offsets are real distances, not size fractions.';
     }
     drawBabyGripCanvas();
     for(const axis of ['X','Y','Z']) {
@@ -803,11 +806,14 @@
       const height=Math.max(.05,Number(model.userData?.portraitModelHeight)||BABY_REFERENCE_HEIGHT);
       // Never inflate a Kenkari or other smaller newborn to .30 units: the PNGPlaneAvatar has ALREADY scaled the baby.
       const api=window.FamilyBabyCarryPose;
+      const nextAnchors=api?.anchorsForAvatar?.(model.userData,width,height)||null; // Resolve the new baby's real neck/spine origins.
       if(api?.toProfile&&api?.applyFrom){
-        const draft=api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight);
-        api.applyFrom(state.carryable,draft,width,height); // Preserve the current UNSAVED authoring grip positions as portrait percentages.
+        const draft=api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight,babyGripAnchors);
+        api.applyFrom(state.carryable,draft,width,height,nextAnchors); // Keep grip-to-anatomy offsets, not painted pixel locations.
       }
       babyPortraitWidth=width;babyPortraitHeight=height;
+      babyGripAnchors=nextAnchors;
+      babyPortraitPlacementRatio=Number(model.userData?.portraitVerticalPlacementRatio)||.5;
       babyFrontCanvas=front; // Full painted source canvas for the direct 2D grip controls.
       model.position.y=height/2; // Match the original game avatar floor-origin placement, without a second scale pass.
       babyReference.add(model);
@@ -841,7 +847,7 @@
     }
     if(editingBaby)return true;
     savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
-    state.carryable=normalized(babyDraft||pose.forSize(babyPortraitWidth,babyPortraitHeight)); // Use the current portrait dimensions if returning after a Random Baby roll.
+    state.carryable=normalized(babyDraft||pose.forSize(babyPortraitWidth,babyPortraitHeight,babyGripAnchors)); // Use the current portrait dimensions if returning after a Random Baby roll.
     editingBaby=true;babyTransformMode='translate';root.visible=false;babyReference.visible=activeEditorMode==='carry';
     babyRotateProxy.visible=activeEditorMode==='carry';
     babyPoseView='anchor';createGuides();select('baby');setHoldingVisibility();frameHoldingPreview();
@@ -863,7 +869,7 @@
   function currentBabyProfile(){
     const api=window.FamilyBabyCarryPose; // All copy/download/apply actions use the same current unsaved baby draft.
     if(!api?.toProfile||!api?.snapshot)return null;
-    return editingBaby?api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight):api.snapshot();
+    return editingBaby?api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight,babyGripAnchors):api.snapshot();
   }
   function applyBaby(){
     if(!editingBaby)return;
@@ -925,7 +931,7 @@
       if(!api?.save)throw Error('Shared baby pose module unavailable');
       api.save(JSON.parse(await file.text())); // Import is an explicit action; validate and persist on this device.
       babyDraft=null;
-      if(editingBaby){state.carryable=normalized(api.forSize(babyPortraitWidth,babyPortraitHeight));createGuides();renderControls();syncHoldingPreview();}
+      if(editingBaby){state.carryable=normalized(api.forSize(babyPortraitWidth,babyPortraitHeight,babyGripAnchors));createGuides();renderControls();syncHoldingPreview();}
       el('carryBabyStatus').textContent='Imported and applied baby profile. Reload gameplay to see the new grips.';
     }catch(error){
       el('carryBabyStatus').textContent='Baby profile import failed: '+(error?.message||error);
