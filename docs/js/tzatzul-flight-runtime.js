@@ -465,11 +465,18 @@
       }
     }
     const ok = startLeg(bird, endpoint, 'swoop', target);
-    if (ok) stats.swoops++;
+    if (ok) {
+      bird._tzFlight.readyingReleaseArmed = false;
+      bird._tzFlight.readyingActivity = null; // A newly committed dive is never blocked by a stale completed interaction.
+      stats.swoops++;
+    }
     return ok;
   }
   function returnHome(bird) {
     const state = bird?._tzFlight;
+    if (state) {
+      state.readyingReleaseArmed = false; state.readyingActivity = null; // Returning to a real perch abandons the old readying session.
+    }
     if (state?.roost && startLeg(bird, state.roost, 'return')) return true;
     if (state?.captive) releaseCaptive(state.captive, 'roost lost'); // Never leave live prey trapped on a nonexistent return path.
     if (startCombatOrbit(bird)) return true;
