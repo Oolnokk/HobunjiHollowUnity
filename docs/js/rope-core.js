@@ -103,6 +103,20 @@
     return { x: bob.x, y: bob.y, z: bob.z, vx: dirX * tangentSpeed, vz: dirZ * tangentSpeed, vy: verticalSpeed + kick };
   }
 
+  // One geometric airborne catch rule shared by ruins and outdoor ropes. Shaft routes
+  // restrict catching to their visible end so their fixed-length launch geometry remains intact.
+  function catchesAirborne(rope, point, { endOnly = false } = {}) {
+    if (!rope?.anchor || !point) return false;
+    const bob = rope.bob || bobAt(rope);
+    if (endOnly) return Math.hypot(point.x - bob.x, point.y - bob.y, point.z - bob.z) <= C.AIR_CATCH_RADIUS;
+    const a = rope.anchor, dx = bob.x - a.x, dy = bob.y - a.y, dz = bob.z - a.z;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 < 1e-6) return false;
+    const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy + (point.z - a.z) * dz) / len2, 0, 1);
+    if (t * Math.sqrt(len2) < C.MIN_LENGTH - 0.05) return false;
+    return Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t, point.z - a.z - dz * t) <= C.AIR_CATCH_RADIUS;
+  }
+
   // A flyer at f ({x,y,z,vx,vy,vz}) takes hold of the rope where they are, their velocity turned into swing.
   function catchFromFlight(rope, f) {
     const dirX = Math.cos(rope.yaw), dirZ = Math.sin(rope.yaw);
@@ -138,5 +152,5 @@
       angle: Number(angle) || 0, omega: 0, braking: false, bob: null, lastSafeBob: null, collisionStops: 0 };
   }
 
-  return Object.freeze({ C, ...C, bobAt, intent, stepIdle, stepAttached, releaseFlight, catchFromFlight, reachAmplitude, create, clonePoint });
+  return Object.freeze({ C, ...C, bobAt, catchesAirborne, intent, stepIdle, stepAttached, releaseFlight, catchFromFlight, reachAmplitude, create, clonePoint });
 });
