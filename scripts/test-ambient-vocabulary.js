@@ -7,6 +7,7 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..'); // Repo root used for fixtures and production script evaluation.
 const file = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const plain = value => JSON.parse(JSON.stringify(value)); // Compare cross-VM arrays/objects as authored JSON, without false prototype failures.
 const config = JSON.parse(file('docs/config/dialogue/ambient-vocabulary.json'));
 const profiles = JSON.parse(file('docs/config/dialogue/npc-reaction-profiles.json'));
 const window = {};
@@ -73,18 +74,18 @@ async function main() {
   assert.ok(Object.keys(generated).length >= 15);
   const fullySelected = { lovely: config.lexicon.lovely.map(entry => entry.id) };
   const edited = rules.mergeSelections(suggestions, fullySelected);
-  assert.deepEqual(edited.lovely, fullySelected.lovely);
+  assert.deepEqual(plain(edited.lovely), fullySelected.lovely);
   const disabled = rules.mergeSelections(edited, { lovely: [] });
-  assert.deepEqual(disabled.lovely, []);
+  assert.deepEqual(plain(disabled.lovely), []);
   assert.equal(rules.resolveSelections(config.lexicon, disabled).lovely, undefined, 'Explicit empty list disables substitutions');
   const canonical = { lovely: [{ id: 'one', text: 'pretty', verbosity: 20, color: 50, formality: 40 },
     { id: 'two', text: 'splendid', verbosity: 80, color: 70, formality: 85 }] };
   const refs = { lovely: ['two'] };
-  assert.deepEqual(rules.resolveSelections(canonical, refs).lovely, ['splendid']);
+  assert.deepEqual(plain(rules.resolveSelections(canonical, refs).lovely), ['splendid']);
   canonical.lovely[1].text = 'magnificent';
-  assert.deepEqual(rules.resolveSelections(canonical, refs).lovely, ['magnificent']); // Editing the master list updates all checked characters without copying alternatives.
-  assert.deepEqual(rules.resolveSelections(canonical, { lovely: ['unknown'] }), {}); // Deleted synonyms cannot become ghost replacements.
-  assert.deepEqual(rules.migrateLegacyTable(canonical, { lovely: ['magnificent'] }), { lovely: ['two'] });
+  assert.deepEqual(plain(rules.resolveSelections(canonical, refs).lovely), ['magnificent']); // Editing the master list updates all checked characters without copying alternatives.
+  assert.deepEqual(plain(rules.resolveSelections(canonical, { lovely: ['unknown'] })), {}); // Deleted synonyms cannot become ghost replacements.
+  assert.deepEqual(plain(rules.migrateLegacyTable(canonical, { lovely: ['magnificent'] })), { lovely: ['two'] });
   assert.equal(rules.rewriteLine('a lovely tune', { lovely: ['amazing','wonderful'] },
     { frequency: 100, variety: 100 }, () => 0, 'pahu').text, 'a wonderful tune'); // a/an agreement.
   assert.equal(rules.rewriteLine('an lovely tune', { lovely: ['amazing','wonderful'] },
