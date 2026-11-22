@@ -307,9 +307,11 @@
     if(!seed)return {points:[],seed:null};
     const bottom=new Int16Array(SIZE);
     bottom.fill(-1);
-    const samples=512,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
+    const samples=256,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
     for(let ray=0;ray<samples;ray++){
-      const angle=2*Math.PI*ray/samples;
+      // Only the lower half is relevant to a downward permission cone. Avoid
+      // expensive upper-ring ray casts during frequently redrawn portraits.
+      const angle=Math.PI*ray/(samples-1);
       const stepX=Math.cos(angle),stepY=Math.sin(angle);
       let prior=-1;
       for(let d=.5;d<=maxRadius;d+=.5){
