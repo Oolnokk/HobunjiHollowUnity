@@ -2396,8 +2396,8 @@ function resolveBeardHoodAuthoring(option, fighter) {
       // chosen beard. A neighbour's anchors cannot deform a different head.
       if (!option.variantLayers?.[key]?.length) continue;
       return {
-        mask:option.variantHoodCutoutMasks?.[key] || option.hoodCutoutMask || null,
-        roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] || option.hoodTuftRoots),
+        mask:option.variantHoodCutoutMasks?.[key] ?? option.hoodCutoutMask ?? null,
+        roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] ?? option.hoodTuftRoots),
         maxStretch:Number.isFinite(option.variantHoodTuftMaxStretch?.[key])
           ? option.variantHoodTuftMaxStretch[key] : option.hoodTuftMaxStretch,
       };
@@ -2467,9 +2467,9 @@ function portraitOptionFromJson(entry, json) {
   const variantHoodCutoutMasks = {}; // Stored per species/gender when the cosmetic supplies variant artwork.
   for (const [key, value] of Object.entries(json.speciesVariants || {})) {
     const mask = maskApi?.normalizeMask?.(value?.hoodCutoutMask);
-    if (mask?.runs.length) variantHoodCutoutMasks[key] = mask;
-    const roots = maskApi?.normalizeRoots?.(value?.hoodTuftRoots) || [];
-    if (roots.length) variantHoodTuftRoots[key] = roots;
+    if (mask) variantHoodCutoutMasks[key] = mask; // An explicitly empty variant mask clears the shared cutout.
+    if (Array.isArray(value?.hoodTuftRoots))
+      variantHoodTuftRoots[key] = maskApi?.normalizeRoots?.(value.hoodTuftRoots) || []; // [] explicitly disables inherited shared corners.
     if (Number.isFinite(Number(value?.hoodTuftMaxStretch)) && value?.hoodTuftMaxStretch != null)
       variantHoodTuftMaxStretch[key] = Math.max(2,Math.min(64,Number(value.hoodTuftMaxStretch)));
   }
