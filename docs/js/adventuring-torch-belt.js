@@ -20,7 +20,8 @@
   let portraitMount = null; // Active portrait parent; stowed gear follows the same independent portrait facing as back Burdens.
   let lastPoseKey = null; // Skip costly world-space reparenting when the authored/anatomical attachment has not changed.
   let posteriorPosition = null; // Body-local anatomical coordinate retained for mobile diagnosis after portrait reparenting.
-  let desiredStowAngleDeg = -45; // Authoritative body-space tilt, independent of the new portrait-relative quaternion.
+  let desiredStowAngleDeg = -45; // Authoritative body-space tilt, independent of the portrait-relative affine transform.
+  let reparentMatrix = null; // Reused 4x4 scratch transform for exact posterior-to-portrait attachment; no per-frame allocations.
 
   function playerBody() {
     return global.PlayerBodyTransformComposer?.getPlayerMesh?.()
@@ -145,12 +146,25 @@
     posteriorPosition = point;
     desiredStowAngleDeg = pose.rotationDeg.z;
     if (root.parent === target && key === lastPoseKey) return; // No matrix bake or allocation for ordinary animation frames.
-    if (root.parent !== body) body.add(root); // Compute the physical position in the authoritative posterior frame first.
+    if (root.parent !== body) body.add(root); // First express the stowed torch in the anatomical player's body space.
+    root.matrixAutoUpdate = true; // A previous portrait mount may have used an exact affine matrix rather than local TRS.
     rig?.placeRoot?.(root, pose);
     placement = configured ? 'authored beltStow override' : 'anatomical posterior, behind portrait';
     portraitMount = null;
-    if (target && target !== body && typeof target.attach === 'function') {
-      target.attach(root); // Preserve body-space world pose once, then inherit the portrait's independent yaw like back Burdens.
+    if (target && target !== body && typeof target.matrixWorld?.copy === 'function' && global.THREE?.Matrix4
+      && typeof root.updateMatrix === 'function' && typeof target.add === 'function') {
+      body.updateWorldMatrix?.(true, false);
+      target.updateWorldMatrix?.(true, false);
+      root.updateMatrix();
+      reparentMatrix ||= new global.THREE.Matrix4();
+      reparentMatrix.copy(target.matrixWorld).invert().multiply(body.matrixWorld).multiply(root.matrix); // Exact affine inverse preserves nonuniform rig scale and portrait yaw without an approximate quaternion decomposition.
+      target.add(root);
+      root.matrix.copy(reparentMatrix);
+      root.matrixAutoUpdate = false; // Keep the full relative matrix, including shear caused by scaled/rotated ancestors.
+      root.matrixWorldNeedsUpdate = true;
+      portraitMount = target;
+    } else if (target && target !== body && typeof target.attach === 'function') {
+      target.attach(root); // Standalone author/legacy adapters without matrices retain the normal parent-preserving route.
       portraitMount = target;
     }
     lastPoseKey = key;
@@ -213,7 +227,7 @@
         pivot: 'grip-emitter midpoint',
         emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
         posteriorPosition, // Anatomical body-local anchor before the preserved-world portrait transform.
-        mountedLocalPosition: root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Real after-reparent coordinates for diagnosis.
+        mountedLocalPosition: root?.matrix?.elements && !root.matrixAutoUpdate ? { x:root.matrix.elements[12], y:root.matrix.elements[13], z:root.matrix.elements[14] } : root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Exact portrait-local position even under nonuniform actor scaling.
         stowAngleDeg: desiredStowAngleDeg, // Body-space authored tilt survives the portrait-relative quaternion conversion.
         textureReady: !!art?.material?.map?.image,
         placement,
