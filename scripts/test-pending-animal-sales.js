@@ -92,6 +92,59 @@ assert.equal(swarmRefreshes, 1, 'Nursery refreshes after collection');
 assert.equal(farmRenders, 1, 'Farm roster refreshes after collection');
 assert.equal(sales.settle('left farm').earned, 0, 'repeated collection never credits gold twice');
 
+// Exercise FarmCrates' real cutoff pulse, not just an approximation of it.
+const shippingConfigSource = fs.readFileSync('docs/js/shipping-box-config.js', 'utf8');
+let farmArea = 'farm'; // Switching this from farm to wilderness triggers the shipping collection path.
+let shippingDay = 21; // Animal quoted on day 21 should not be eligible until day 22.
+let shippingPulse = null; // Captures the actual FarmCrates interval callback without running a browser timer.
+let shippingRoster = [{ id: 'shipping_animal', name: 'Nelk', kind: 'nelk' }];
+const shippingWallet = { gold: 5 }; // Payout target for the real lifecycle integration test.
+let shippingWalletSaves = 0;
+const shippingWindow = {
+  FarmPanel: {
+    init() {},
+    removeLivestockAndCleanup(id) {
+      const index = shippingRoster.findIndex(entry => entry.id === id);
+      return index < 0 ? null : shippingRoster.splice(index, 1)[0];
+    },
+    render() {},
+  },
+  LivestockNursery: { rerollSwarm() {} },
+  addEventListener() {},
+  setInterval(callback) { shippingPulse = callback; return 1; },
+};
+const shippingContext = {
+  window: shippingWindow,
+  document: { getElementById: () => null },
+};
+vm.runInNewContext(shippingConfigSource, shippingContext);
+vm.runInNewContext(crateSource, shippingContext);
+vm.runInNewContext(source, shippingContext);
+const shippingDeps = {
+  calendar: { get day() { return shippingDay; } }, inventory: shippingWallet,
+  _loadWorldLivestock: () => structuredClone(shippingRoster),
+  _saveWorldLivestock(next) { shippingRoster = next; return true; },
+  hasFarmPermission: () => true,
+  saveMemberWorldData() { shippingWalletSaves++; },
+  getDeliveryLog: () => [], showToast() {},
+};
+shippingWindow.FarmCrates.init(shippingDeps);
+shippingWindow.FarmPanel.init({ getCurrentArea: () => farmArea });
+shippingWindow.PendingAnimalSales.init(shippingDeps);
+assert.equal(shippingWindow.PendingAnimalSales.queue('shipping_animal', 44).ok, true);
+assert.equal(typeof shippingPulse, 'function', 'Shipping Box installed its existing lifecycle callback');
+shippingPulse();
+shippingDay = 22;
+shippingPulse();
+assert.equal(shippingRoster.length, 1, 'midnight on farm still permits cancellation');
+farmArea = 'map_northern_cliffs';
+shippingPulse();
+assert.equal(shippingRoster.length, 0, 'departing after midnight collects the actual queued animal');
+assert.equal(shippingWallet.gold, 49, 'shipping collection pays the animal sale quote once');
+assert.equal(shippingWalletSaves, 1, 'shipping integration saves wallet exactly once');
+shippingPulse();
+assert.equal(shippingWallet.gold, 49, 'additional Shipping Box polls do not sell the animal twice');
+
 assert.match(farmSource, /PendingAnimalSales\?\.init\?\.\(injectedDeps\)/, 'FarmPanel injects the authoritative farm save dependencies');
 assert.match(farmSource, /removeLivestockAndCleanup:\s*id\s*=>/, 'settlement shares the existing livestock removal and pair/mesh cleanup');
 assert.match(farmSource, /Cancel Sale/, 'Farm roster presents an undo control');
