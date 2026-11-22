@@ -258,4 +258,52 @@ assert.equal(nativeTrunk.layers.mask&2,2,'the actual dead-tree trunk mesh appear
 scenery.clear();
 assert.equal(rendererProps.size,0,'dead-tree colliders also unregister on world regeneration');
 
+// Run the shipping festival scene builder and the game's *actual* outline and
+// footprint registries in Node, even when optional three.js is not installed.
+const festivalBrowser={}; // VM isolating event state from the separate scenery renderer.
+vm.runInNewContext(fs.readFileSync('docs/js/area-footprint-blockers.js','utf8'),
+  {window:festivalBrowser},{filename:'area-footprint-blockers.js'});
+vm.runInNewContext(fs.readFileSync('docs/js/world-render-pipeline.js','utf8'),
+  {window:festivalBrowser},{filename:'world-render-pipeline.js'});
+const festivalScene=new TestGroup(); // A lightweight active scene with real zone/Shift lifetime.
+let festivalArea='map_southern_cloud_forest'; // Mutable active area exercises the existing zone teardown behavior.
+const festivalLayouts=new Map([[festivalArea,{localeInstances:[
+  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:12}]},
+  {localeId:'locale_five_blossoms_rose',objects:[{x:16,y:12}]}
+]}]]);
+festivalBrowser.GridTileAccessors={getActiveScene:()=>festivalScene};
+festivalBrowser.LocaleRiddleGenerator={positionOf:instance=>({col:instance.objects[0].x,row:instance.objects[0].y})};
+festivalBrowser.FestivalBlossomPetals={attach(){},detach(){},setContext(){}}; // Keep the existing particles out of collision/outline testing.
+festivalBrowser.FoliageGenerator={buildWildernessBlossomTreeMesh(){
+  const tree=new TestGroup();tree.isGroup=true;tree.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
+  const trunk=new TestMesh({},{});trunk.name='native-bark';
+  const flowers=new TestMesh({},{});flowers.name='wilderness-blossom-sprigs';flowers.userData.noOutline=true;
+  tree.add(trunk);tree.add(flowers);return tree;
+}}; // Actual event code chooses species and calls the native FoliageGenerator entry, not a new visual renderer.
+vm.runInNewContext(fs.readFileSync('docs/js/festival-blossom-hunt.js','utf8'),
+  {window:festivalBrowser},{filename:'festival-blossom-hunt.js'});
+const hunt=festivalBrowser.FestivalBlossomHunt;
+hunt.init({_zoneLayouts:festivalLayouts,getCurrentArea:()=>festivalArea,TILE:64});
+hunt.update();
+const block=festivalBrowser.AreaFootprintBlockers;
+assert(block.providerIds().includes('five-blossoms-trunks'),'live blossom meshes share the existing AreaFootprintBlockers registry');
+assert(block.blocksPoint(festivalArea,10.5,12.5),'the amber blossom trunk has actual movement collision');
+assert(block.blocksPoint(festivalArea,16.5,12.5),'the rose blossom trunk has actual movement collision');
+assert.equal(block.blocksBox(festivalArea,11.5,12.5,.1),false,'movement beside the canopy remains free');
+assert.equal(block.blocksBox(festivalArea,10.5,12.5,0,20),false,'shots above the flower crown do not hit the trunk');
+const visibleBlossom=festivalScene.children.find(tree=>tree.name==='locale_five_blossoms_amber');
+assert(visibleBlossom,'festival code renders a native tree instead of a test-only collision proxy');
+assert.equal(visibleBlossom.children[0].layers.mask&2,2,'native tree bark uses the real global shell outline registrar');
+assert.equal(visibleBlossom.children[1].layers.mask&2,0,'the global outline registrar excludes flat petal cards');
+hunt.update();
+assert.equal(block.providerIds().filter(id=>id==='five-blossoms-trunks').length,1,'event ticks never duplicate a collision provider');
+festivalArea='map_northern_cliffs';
+festivalLayouts.set(festivalArea,{localeInstances:[{localeId:'locale_five_blossoms_cyan',objects:[{x:4,y:7}]}]});
+hunt.update();
+assert(block.blocksPoint(festivalArea,4.5,7.5),'a newly loaded zone receives its one native blossom trunk');
+assert.equal(block.blocksPoint(festivalArea,10.5,12.5),false,'the previous region\'s collision rectangles are discarded');
+festivalArea='map_farm';hunt.update();
+assert.equal(block.providerIds().includes('five-blossoms-trunks'),false,'leaving wilderness removes collision and does not leave a ghost trunk');
+assert.equal(hunt.debugSnapshot().treeTrunkCollision.registered,false,'mobile debug reports cleaned-up blossom collisions');
+
 console.log('wilderness generated-object footprint and collision-preservation tests passed');
