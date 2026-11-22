@@ -340,7 +340,7 @@
     if (!data || data.schema !== 'hobunji.attachment-rig-profiles.v10') return data;
     data.profiles = mergeRigScalesIntoProfiles(data.profiles || data.attachmentRigProfiles || {});
     data.anatomySemantics ||= {};
-    data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio; headOffsetY additionally repositions the head (fraction of model height), composed at runtime with a per-NPC age-hunch factor that is instance data and not part of this export.';
+    data.anatomySemantics.rigScale = 'Full Character Scale authors per-species/gender width rigScaleX and portrait height rigScaleY (the legacy Y field). legLengthScale controls independent hip-to-foot reach, while handScale and footScale control procedural extremity sizes. Missing legLengthScale inherits the old Y scale for backward compatibility. headScale is independently compensated at the neck, and headOffsetY composes with the instance-only age hunch. The floor-relative root retains the original axis/coordinate conventions.';
     data.fullCharacterScaleRoundTripVersion = 4; // Includes independent leg/portrait height and both existing extremity multipliers.
     return data;
   }
