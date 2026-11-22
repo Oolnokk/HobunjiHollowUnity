@@ -1113,7 +1113,11 @@
         if (entity.prone) return false;
         entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
-        beginProneAirFall(entity, isPlayer); // Existing falls continue; fresh midair knockdowns inherit real height.
+        if (beginProneAirFall(entity, isPlayer)) {
+          entity.knockbackT = 0; entity.knockbackVX = 0; entity.knockbackVY = 0;
+          entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+          window.KnockbackCollisionImpact?.cancel?.(entity); // Airborne gravity owns motion; a stale ground impulse must never resume after landing.
+        }
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
           return true;
@@ -1182,6 +1186,9 @@
       window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
 
       function proneRecoveryReady(entity) {
+        if (entity._knockbackLedgeAir || entity._knockbackLedgeFall ||
+            entity._cliffClimb?.phase === 'fall' || entity._climbFall ||
+            entity._freeJump?.phase === 'air') return false; // No human or animal can regain its feet before the fall owner lands.
         if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
         return entity._temporaryKnockdownProne === true
           ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
@@ -9021,7 +9028,11 @@
             if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
             if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           }
-          if (c._knockbackLedgeFall) {
+          if (c._cliffClimb?.phase === 'fall') {
+            _clearCompanionTreasureCue(c, dt, 'falling');
+            _clearCompanionWatchIdle(c, 'falling');
+            window.CreatureCliffClimb?.update?.(c, dt, target); // Companions are outside updateHostiles; they still need their own fall tick.
+          } else if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
             advanceKnockbackLedgeFall(c, dt);
@@ -19216,6 +19227,14 @@
           input.x = 0; input.y = 0;
           player.vx = 0; player.vy = 0;
           player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
+        if (player.prone && (player._freeJump?.phase === 'air' || (player.climbing && player._climbFall))) {
+          // Gravity outranks dialogue, fishing, music, movement locks and mounted-control gates.
+          // Those modes may have been active when the airborne hit arrived.
+          if (player._freeJump?.phase === 'air') window.PlayerJump?.tick?.(dt);
+          else window.ClimbSystem?.updateClimb?.(dt);
+          updateProneState(dt);
           return;
         }
         syncMobileAutoTargetCombatState();
