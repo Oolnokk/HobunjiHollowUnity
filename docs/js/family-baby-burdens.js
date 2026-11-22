@@ -42,9 +42,11 @@
     return window.HobunjiSpritePngSurface?.makeMaterial?.(THREE, texture, label, options)
       || new THREE.MeshBasicMaterial({ ...options, name: label, map: texture, alphaTest: .35 });
   }
-  function headScaleOf(data) {
-    const scale = data?.neckRig?.headScaleJoint?.scale;
-    return { x: Number(scale?.x) || 1, y: Number(scale?.y) || 1, z: Number(scale?.z) || 1 };
+  function headPoseOf(data) {
+    const joint = data?.neckRig?.headScaleJoint; // Both the scale and position affect the one-time baked head.
+    const scale = joint?.scale, offset = joint?.position;
+    return { x: Number(scale?.x) || 1, y: Number(scale?.y) || 1, z: Number(scale?.z) || 1,
+      offsetX: Number(offset?.x) || 0, offsetY: Number(offset?.y) || 0, offsetZ: Number(offset?.z) || 0 };
   }
   function createProxy(child, walker) {
     const THREE = window.THREE, { model, data, front, back } = portraitArt(walker);
@@ -90,13 +92,13 @@
     const bounds = baked?.geometry?.boundingBox;
     const posedWidth = bounds ? Math.max(width, bounds.max.x - bounds.min.x) : width;
     const posedHeight = bounds ? Math.max(height, bounds.max.y - bounds.min.y) : height;
-    const headScale = headScaleOf(data);
+    const headPose = headPoseOf(data);
     Object.assign(group.userData, {
       familyBabyWidth: posedWidth, familyBabyHeight: posedHeight,
       familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
       familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
     });
-    proxySources.set(group, { model, geometry: skinned?.geometry || null, headScale }); // Reference-only invalidation never pollutes save/debug serialization.
+    proxySources.set(group, { model, geometry: skinned?.geometry || null, headPose }); // Bone offset changes must also refresh rigid carry art. // Reference-only invalidation never pollutes save/debug serialization.
     return group;
   }
   function disposeVisual(group) {
@@ -114,11 +116,13 @@
     if (!group || !front) return;
     const width = Math.max(.05, Number(data.portraitModelWidth) || .3);
     const height = Math.max(.05, Number(data.portraitModelHeight) || width);
-    const head = headScaleOf(data), source = data.neckRig?.skinnedPlane?.geometry || null;
+    const head = headPoseOf(data), source = data.neckRig?.skinnedPlane?.geometry || null;
     const original = proxySources.get(group);
     const rebuilt = original?.model !== model || original?.geometry !== source
-      || original?.headScale.x !== head.x || original?.headScale.y !== head.y
-      || original?.headScale.z !== head.z
+      || original?.headPose.x !== head.x || original?.headPose.y !== head.y
+      || original?.headPose.z !== head.z
+      || original?.headPose.offsetX !== head.offsetX || original?.headPose.offsetY !== head.offsetY
+      || original?.headPose.offsetZ !== head.offsetZ
       || Math.abs(width - (group.userData.familyBabyModelWidth || width)) > .0001
       || Math.abs(height - (group.userData.familyBabyModelHeight || height)) > .0001;
     if (rebuilt) {
