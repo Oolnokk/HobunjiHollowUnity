@@ -205,6 +205,7 @@
         for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group,wallMaterial);
       }
       add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions),activeRoot,wallMaterial);
+      if(Faces.buildEdgeCapQuads)add(wingName+'-wall-ends',Faces.buildEdgeCapQuads(runs,wallOptions),activeRoot,wallMaterial); // Closes the void slit at every doorway jamb.
       if(rec.occlusionMeshes&&runs.length){
         const boundary=Faces.buildEdgeWallQuads(runs,{...wallOptions,y0:y+WALL_HEIGHT,y1:y+plan.options.floorHeight});
         const wall=new THREE.Mesh(Faces.toGeometry(THREE,boundary),cameraWallMaterial);
@@ -299,7 +300,7 @@
           const shell=RoomSystem.makeShell({room,THREE,Faces:root.RuinWallFaces,parent:activeRoot,
             material,supportedCells:supportedSet,grid,CG}); // Draws each room's downward-facing ceiling and sealed entrance flanks.
           if(shell.meshes.length!==2&&root.RuinWallFaces)throw new Error('Ruin room '+room.id+' has no complete ceiling/partition meshes');
-          if(shell.meshes[1]){shell.meshes[1].material=wallMaterial;owner.wallMeshCount++;} // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
+          if(shell.meshes[1]){shell.meshes[1].material=wallMaterial;for(const ends of shell.meshes[1].children||[])if(ends.isMesh)ends.material=wallMaterial;owner.wallMeshCount++;} // The entrance flanks are vertical walls; the separate room roof retains its inward-only material.
           owner.geometryCount+=shell.meshes.length;
           const walls=RoomSystem.wallAudit(room,tiles,wallsX,wallsZ,room.kind==='shaft-antechamber'?portalMouth:null); // Verify actual exposed wall faces before accepting the generated room.
           if(!walls.ok)throw new Error('Ruin room '+room.id+' has '+walls.missingWallEdges+' missing wall faces');

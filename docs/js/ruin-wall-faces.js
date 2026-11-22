@@ -166,6 +166,38 @@
     return { positions:new Float32Array(positions), normals:new Float32Array(normals), uvs:new Float32Array(uvs), indices:positions.length / 3 > 65535 ? new Uint32Array(indices) : new Uint16Array(indices) };
   }
 
+  // End faces for thin walls. buildEdgeWallQuads sets each face thickness/2 off its line and leaves the run's ends
+  // open, so every free end — a doorway jamb, a partition's end — was a full-height slit straight into the void.
+  // One cap per distinct run end, across the full thickness, facing away along the run (at a corner it sits
+  // behind the perpendicular wall's face). Kept separate from the wall quads so engraved feature walls keep one
+  // broad face per mesh for the pattern decorator.
+  function buildEdgeCapQuads(runs, { y0, y1, thickness = .14 }) {
+    const positions = [], normals = [], uvs = [], indices = [], seen = new Set(), h = thickness / 2;
+    for (const run of runs) for (const [at, dir] of [[run.from, -1], [run.to, 1]]) {
+      const id = run.along + ':' + Math.round(run.line * 1000) + ':' + Math.round(at * 1000) + ':' + dir;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const point = (offset, y) => run.along === 'x' ? [at, y, run.line + offset] : [run.line + offset, y, at];
+      const normal = run.along === 'x' ? [dir, 0, 0] : [0, 0, dir];
+      let corners = [[-h, y0, 0, 0], [h, y0, 1, 0], [h, y1, 1, 1], [-h, y1, 0, 1]].map(([o, y, u, v]) => ({ p:point(o, y), u, v }));
+      if (dot(cross(sub(corners[1].p, corners[0].p), sub(corners[3].p, corners[0].p)), normal) < 0) corners = [corners[0], corners[3], corners[2], corners[1]];
+      const base = positions.length / 3;
+      for (const corner of corners) { positions.push(...corner.p); normals.push(...normal); uvs.push(corner.u, corner.v); }
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    return { positions:new Float32Array(positions), normals:new Float32Array(normals), uvs:new Float32Array(uvs), indices:positions.length / 3 > 65535 ? new Uint32Array(indices) : new Uint16Array(indices) };
+  }
+
+  // The four inward-facing sides of an open rectangular basin (a shaft's death pit, a rope chamber's abyss):
+  // world-space footprint { minX, minZ, sizeX, sizeZ } (or a square `size`), from `bottom` up to `top`. Same patch
+  // stretch as every other wall, so the pit reads as the surrounding stone.
+  function pitWallQuads({ minX, minZ, size, sizeX = size, sizeZ = size, bottom, top, patch = { h:6, v:6 } }) {
+    const cols = Math.max(1, Math.round(sizeX)), rows = Math.max(1, Math.round(sizeZ)), rise = Math.max(1, Math.round(top - bottom));
+    const frame = { origin:{ x:minX, y:bottom, z:minZ }, size:{ x:sizeX / cols, y:(top - bottom) / rise, z:sizeZ / rows }, patch };
+    const side = (axis, dir, plane, along) => ({ axis, side:dir, plane, a0:0, a1:along, b0:0, b1:rise }); // x faces run along z (rows), z faces along x (cols).
+    return buildQuads([side('x', 1, 0, rows), side('x', -1, cols, rows), side('z', 1, 0, cols), side('z', -1, rows, cols)], frame);
+  }
+
   function toGeometry(THREE, data) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
@@ -183,5 +215,5 @@
     return material;
   }
 
-  return Object.freeze({ mergeMask, voxelFaces, buildQuads, mergeEdges, buildEdgeWallQuads, toGeometry, visibleWallMaterial, TANGENTS });
+  return Object.freeze({ mergeMask, voxelFaces, buildQuads, mergeEdges, buildEdgeWallQuads, buildEdgeCapQuads, pitWallQuads, toGeometry, visibleWallMaterial, TANGENTS });
 });

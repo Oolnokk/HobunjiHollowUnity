@@ -160,6 +160,13 @@ zones generated synchronously) and then spawns ~25 NPCs one at a time; in this
 sandbox that takes ~2 minutes before the farm reaches a real steady state.
 Wait that long before taking steady-state performance measurements.
 
+**Flying around / dungeons:** in developer mode (`localStorage.hobunjiDevMode = '1'` before load),
+`window.DevInspectTools` (js/dev-inspect-tools.js) gives a free fly camera (`lookFrom(x, y, z, lx, ly, lz, fov)`,
+`setFlying(false)` to hand back), `setEnemiesFrozen(true)` to stop every enemy, and
+`await randomDungeon({tier:'cave'|'hole'|'lich', theme:'tothal'|'hronal'|'kanthic', seed})` to enter a generated
+ruin. Hole-hunting recipe (magenta background render): see "Inspecting a ruin" in
+docs/architecture/ruin-tiers-and-jump-shaft.md.
+
 To jump to another area: `await window.__hobunjiFurnitureDebug.enterZoneDebug('map_western_slope')`
 (any id from `WildernessMapGenerator.zoneMapIds()`, or `'map_hobunji_town'`).
 The live renderer is `window.__hobunjiGameRenderer`.

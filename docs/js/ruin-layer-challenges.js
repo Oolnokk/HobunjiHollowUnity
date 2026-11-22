@@ -328,6 +328,14 @@
         new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
         basic(0x08090b),centerX,y-.15,centerZ);
       fog.rotation.x=-Math.PI/2;fog.userData.devRuinBottomlessFog=true;
+      // Stone sides from the floor edge down past the hazard sheet: without them the 0.15 drop to the abyss plane
+      // left a slit of black void under every wall and along both banks.
+      const Faces=root.RuinWallFaces;
+      if(Faces?.pitWallQuads&&THREE.BufferGeometry){
+        const sides=body('ruin-abyss-walls-'+id,Faces.toGeometry(THREE,Faces.pitWallQuads({minX:pit.minX,minZ:pit.minZ,
+          sizeX:pit.maxX-pit.minX,sizeZ:pit.maxZ-pit.minZ,bottom:y-2.45,top:y})),stone,0,0,0);
+        sides.layers?.disable?.(1); // Stretched carved-stone patches carry their own ink: no generated outline.
+      }
       // The abyss shows the ruin's own hazard: lava (Hronal), ice (Tothal) or plasm-dark oil (Kanthic) far below the ropes.
       const hazardColor={hronal:0xff4215,tothal:0xb7ecfa,kanthic:0x2a1a4a}[options.theme];
       if(hazardColor){
