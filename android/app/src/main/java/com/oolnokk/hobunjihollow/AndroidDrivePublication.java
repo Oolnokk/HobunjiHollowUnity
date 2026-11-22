@@ -18,6 +18,17 @@ final class AndroidDrivePublication {
 
     private AndroidDrivePublication() {}
 
+    /** Only backups produced by this publisher are eligible for retention cleanup. */
+    static boolean isOwnedBackup(String candidate, String canonical) {
+        if (candidate == null || canonical == null) return false;
+        String prefix = ".hobunji-previous-" + canonical + "-";
+        if (!candidate.startsWith(prefix)) return false;
+        String suffix = candidate.substring(prefix.length());
+        if (suffix.length() != 36) return false;
+        try { return UUID.fromString(suffix).toString().equals(suffix); }
+        catch (IllegalArgumentException ignored) { return false; }
+    }
+
     /** True if an old canonical file was successfully preserved as a backup. */
     static boolean publish(String name, String pendingId, String previousId, Remote remote) throws Exception {
         remote.verifyUnchanged();
