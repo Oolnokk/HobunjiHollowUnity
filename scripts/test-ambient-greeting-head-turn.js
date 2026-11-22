@@ -27,8 +27,8 @@ assert.match(
 );
 assert.match(
   ambient,
-  /applyGreetingHeadTurn\(walker, target\); \/\/ Every ambient greeting preserves locomotion\/seat heading/,
-  'player and NPC-friend greetings must both start with head-only facing',
+  /if \(newborn\) \{[\s\S]{0,750}return true;\s*\}[\s\S]{0,220}applyGreetingHeadTurn\(walker, target\);/,
+  'newborn babbling returns before the head-turn owner, while player/NPC/toddler greetings retain head-only facing',
 );
 assert.match(
   ambient,
