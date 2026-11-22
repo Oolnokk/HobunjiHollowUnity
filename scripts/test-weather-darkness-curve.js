@@ -49,7 +49,17 @@ assert(storm.lanternActivation >= light.lanternActivation, 'higher rain darkness
 assert(storm.a <= 0.86, 'the outdoor overlay remains within its original alpha safety ceiling');
 
 const rainyForecast = sample('rain', 0, false); // Cloudy gaps in the daily rain forecast retain the same sky policy.
+const stormForecast = sample('storm', 0, false); // A storm forecast should be gloomy but cannot simulate peak precipitation all day.
+const stormAfterDownpour = sample('storm', 2, true); // The scheduled second storm window is heavy rain, not a lightning-intensity downpour.
+const staleDryStrength = sample('clear', 3, false); // Saved rainStrength data must not darken a sky while precipitation is inactive.
 assert(rainyForecast.weatherDarknessAddedAlpha > 0, 'rain forecast cloud cover remains overcast between showers');
+assert(stormForecast.a > rainyForecast.a && stormForecast.a < storm.a,
+  'a dry interval on a storm day is heavily overcast but not full-storm dark');
+assert(Math.abs(stormForecast.a - heavy.a) < 1e-12,
+  'storm forecast without active rainfall uses heavy-cloud rather than maximum darkness');
+assert(Math.abs(stormAfterDownpour.a - heavy.a) < 1e-12,
+  'the storm forecast must not override its actual rain strength of two');
+assert.equal(staleDryStrength.a, clear.a, 'a dry clear-weather frame must ignore stale precipitation strength');
 
 testHour = 2;
 const nightClear = sample('clear', 0); // Full-night baseline must still be dark with no rain.
@@ -57,6 +67,8 @@ const nightStorm = sample('storm', 3); // Storms at night must retain the existi
 assert(nightStorm.a >= nightClear.a && nightStorm.a <= 0.86, 'night weather stays capped instead of stacking unlimited darkness');
 assert(nightStorm.weatherDarknessAddedAlpha < storm.weatherDarknessAddedAlpha * 0.5,
   'the existing nighttime reduction still prevents full daytime storm darkness stacking at night');
+assert(Math.abs(nightStorm.weatherDarknessAddedAlpha - (nightStorm.a - nightClear.a)) < 1e-12,
+  'mobile weather diagnostics must report the applied darkness after nighttime clamping');
 
 testHour = 12;
 const mutableCalendar = { weather: 'clear', rainStrength: 0, isRaining: false }; // Reused during the transition test to mimic live weather changes.
@@ -69,8 +81,16 @@ const midTransition = sky.sample().a;
 assert(midTransition > initial && midTransition < storm.a, 'storm darkening must ease rather than snap');
 sky.advance(60);
 assert(Math.abs(sky.sample().a - storm.a) < 0.001, 'the overcast transition must settle on its full storm value');
+Object.assign(mutableCalendar, { weather: 'storm', rainStrength: 0, isRaining: false });
+sky.advance(1.5);
+assert(sky.sample().a < storm.a && sky.sample().a > stormForecast.a,
+  'a storm stopping should brighten smoothly toward its heavy-cloud forecast, not jump to clear');
+sky.advance(60);
+assert(Math.abs(sky.sample().a - stormForecast.a) < 0.001,
+  'dry intervals on a storm day settle on the heavy-cloud brightness');
 Object.assign(mutableCalendar, { weather: 'clear', rainStrength: 0, isRaining: false });
 sky.advance(1.5);
-assert(sky.sample().a < storm.a && sky.sample().a > clear.a, 'clear weather must restore light smoothly');
+assert(sky.sample().a < stormForecast.a && sky.sample().a > clear.a,
+  'clearing storm clouds restore normal daylight smoothly');
 
 console.log('Rain and storm ambient darkness curve regression passed.');
