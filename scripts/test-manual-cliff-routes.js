@@ -161,6 +161,24 @@ const vm = require('node:vm');
   assert.equal(panic._cliffClimb, null, 'panic cliff jump completes on the lower shelf');
   assert.equal(landings, 2, 'both deliberate creature falls invoke the common landing policy once each');
 
+  let proneImpacts = 0; // Verifies main's newer midair-prone fall owner wins over deliberate-landing Footing.
+  actorWin.HobunjiCliffFallImpact = { resolve(_actor, fall) {
+    proneImpacts++;
+    assert(fall.dropWorld > 0, 'knockdown impact uses the real remaining fall height');
+    return { lethal: false };
+  } };
+  const interrupted = { ...fleeing, x: 7.5 * 55, y: 10.5 * 55, prone: false,
+    _cliffClimb: null, _cliffClimbCooldownT: 0 }; // Second deliberate jumper, knocked prone before reaching the landing.
+  assert(actorWin.CreatureCliffClimb.navigate(interrupted, 2.5 * 55, 10.5 * 55, 110, .03));
+  actorWin.CreatureCliffClimb.update(interrupted, .12, null);
+  interrupted.prone = true;
+  assert(actorWin.CreatureCliffClimb.knockOff(interrupted, 'knocked prone while descending'),
+    'a midair knockdown interrupts the voluntary downhill hop');
+  for (let i = 0; i < 30; i++) if (interrupted._cliffClimb) actorWin.CreatureCliffClimb.update(interrupted, .03, null);
+  assert.equal(interrupted._cliffClimb, null, 'the interrupted descent lands and clears movement ownership');
+  assert.equal(proneImpacts, 1, 'only one height-scaled cliff impact is applied');
+  assert.equal(landings, 2, 'the prone impact does not also charge a deliberate landing');
+
   vm.runInNewContext(npcPath, { window: actorWin, Date });
   actorWin.NpcPathfinding.init(fixture);
   const walker = { area: 'slope', state: 'moving',
