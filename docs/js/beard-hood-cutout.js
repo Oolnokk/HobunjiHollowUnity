@@ -149,16 +149,24 @@
     return null;
   }
 
+  function normalizeSubdivision(value) {
+    // Affects only the LOCALITY of each tuft's 2D deformation, not mesh tessellation.
+    // More subdivisions split the hood's visual influence into smaller neighborhoods.
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(1, Math.min(16, Math.round(n))) : 4;
+  }
+
   function planTuftStretch(hoodPixels, inputRoots, options = {}) {
     const roots = normalizeRoots(inputRoots);
     const maxStretch = Math.max(2, Math.min(64, Number(options.maxStretch) || 36));
+    const subdivision = normalizeSubdivision(options.subdivision); // 1=broad, 4=previous behavior, 16=concentrated local deformation.
     const alphaLimit = alphaFloor(options.hoodAlphaLimit, 64);
     const center = options.openingCenter && Number.isFinite(options.openingCenter.x)
       && Number.isFinite(options.openingCenter.y)
       ? options.openingCenter : openingSeed(hoodPixels, alphaLimit);
     const moves = [];
     const diagnostics = {requested:roots.length,stretched:0,insideRing:0,tooFar:0,
-      missingRing:0,openingCenter:center,maxStretch,moves};
+      missingRing:0,openingCenter:center,maxStretch,subdivision,moves};
     if (!center) {diagnostics.missingRing=roots.length;return diagnostics;}
     for (const root of roots) {
       const edge = ringEdgeOnRay(hoodPixels, center, root, alphaLimit);
@@ -170,7 +178,10 @@
         diagnostics.insideRing++;continue; // The tuft is already in the hood's opening.
       }
       if (length > maxStretch) {diagnostics.tooFar++;continue;} // Never create huge, implausible distortions.
-      const radius = Math.min(85, Math.max(20, length * 2.5 + 12));
+      const normalRadius = Math.min(85, Math.max(20, length * 2.5 + 12));
+      // Subdivision changes the influence region, NOT the target: even the
+      // tightest setting still reaches the marked corner exactly.
+      const radius = Math.max(8, Math.min(100, normalRadius * Math.sqrt(4 / subdivision)));
       moves.push({from:edge,to:root,delta,radius});
       diagnostics.stretched++;
     }
@@ -216,6 +227,6 @@
 
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
-    normalizeRoots, planTuftStretch, stretchHoodToRoots, applyToHood,
+    normalizeRoots, normalizeSubdivision, planTuftStretch, stretchHoodToRoots, applyToHood,
   });
 })();
