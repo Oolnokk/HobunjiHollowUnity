@@ -19488,6 +19488,8 @@
           return;
         }
 
+        const ridingRuinRope = window.DevRandomRuinSimplePuzzles?.isRidingRope?.() === true; // Swing input uses the usual camera transform, with only the pendulum writing position.
+        if (ridingRuinRope) playerAutoWalk = null;
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -19527,7 +19529,7 @@
         // out). If so, snap straight to the nearest genuinely clear tile
         // instead, so getting stuck never requires guessing which
         // direction happens to be open.
-        if (inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+        if (!ridingRuinRope && inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
           const rescue = findNearestWalkableTileCenter(player.x, player.y);
           if (rescue) { player.x = rescue.x; player.y = rescue.y; player.vx = 0; player.vy = 0; }
         }
@@ -19588,6 +19590,11 @@
         player.inputX = ix;
         player.inputY = iy;
         player.inputStrength = inputStrength;
+        if (ridingRuinRope) {
+          player.vx = 0; player.vy = 0;
+          return;
+        }
+
 
         // ── Tile-speed lookup ─────────────────────────────────
         const rawSpeed = tileSpeedAt(player.x, player.y);

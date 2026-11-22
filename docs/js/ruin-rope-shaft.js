@@ -11,8 +11,8 @@
 //
 // The rope hangs from a stone bracket under the balcony above, over the launch pad's forward edge. It is
 // the ruin's ordinary rider rope (DevRandomRuinSimplePuzzles.addFurnitureRope): grab, pump the swing back
-// and forth, and let go on the forward upswing to fly up onto the landing. No climbing is needed (the
-// brake still lets a rider shorten it). The swing runs along the climb direction, so everything behind
+// and forth, and let go on the forward upswing to fly up onto the landing. The rope stays in its
+// proven swing plane and at its fixed length. Everything behind
 // the rider is lower: the backswing passes over the steps just climbed.
 //
 //   compose()  pure layout + proof: jump hops against PlayerJump's reach (as the staircase), every rope
@@ -326,6 +326,7 @@
       group.add(beam);
       brackets.set(rope.id, beam);
     }
+    const platformsById = new Map(plan.platforms.map(platform => [platform.id, platform])); // Each ground grab belongs to its own launch pad.
     const riders = new Map();
     let disposed = false, ropesAttached = false;
     const bus = () => root.DevRandomRuinSimplePuzzles;
@@ -334,9 +335,12 @@
       if (ropesAttached || !b?.addFurnitureRope || b.hasActiveRuinState?.() !== true) return;
       for (const rope of plan.ropes) {
         if (riders.has(rope.id)) continue;
-        const rider = b.addFurnitureRope({ id: 'shaft-' + rope.id, anchor: rope.anchor, yaw: rope.yaw, length: rope.length, maxLength: rope.length, angle: 0 }, brackets.get(rope.id));
+        const rider = b.addFurnitureRope({
+          id: 'shaft-' + rope.id, anchor: rope.anchor, yaw: rope.yaw,
+          length: rope.length, maxLength: rope.length, shaftRopeId: rope.id,
+          launchPad: platformsById.get(rope.from),
+        }, brackets.get(rope.id));
         if (!rider) return;
-        rider.shaftRopeId = rope.id;
         riders.set(rope.id, rider);
       }
       ropesAttached = true;

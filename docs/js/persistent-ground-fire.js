@@ -5,6 +5,7 @@
   if (window.PersistentGroundFire) return;
   const MAX_ZONES=14; // Strict scene cap keeps simultaneous fire cheap on mobile.
   const DEFAULT_DURATION=11; // Seconds a thrown flask leaves a live patch after shattering.
+  const FLOOR_TOLERANCE=.45; // Ground patches at different heights must stay separate in stacked rooms.
   const DAMAGE_INTERVAL=.35; // Periodic player/enemy Burn application, not a per-frame entity sweep.
   let deps=null; // AlchemyFlasks.init supplies the established combat/terrain entity adapters.
   const zones=[]; // One scene-owned patch per recent impact; removed on expiry or area transition.
@@ -92,17 +93,18 @@
       seconds:Math.max(.5,Math.min(25,Number(seconds)||DEFAULT_DURATION)),age:0,damageTimer:0,
       source:String(source)};
     // Neighboring splashes extend the fire but never grow unbounded or multiply damage on one tile.
-    const old=zones.find(z=>z.area===patch.area&&Math.hypot(z.x-px,z.z-pz)<.5);
+    const old=zones.find(z=>z.area===patch.area&&Math.abs(z.y-floorY)<=FLOOR_TOLERANCE&&Math.hypot(z.x-px,z.z-pz)<.5);
     if(old){old.seconds=Math.max(old.seconds,old.age+patch.seconds);return true;}
     if(zones.length>=MAX_ZONES)dispose(zones.shift());
     zones.push(patch);buildVisual(patch);
     lastIgnition={area:patch.area,x:px,z:pz,radius:patch.radius,source:patch.source};
     return true;
   }
-  function intersects(area,x,z,distance=0) {
+  function intersects(area,x,z,distance=0,floorY=null) {
     const px=Number(x),pz=Number(z);
     if(!Number.isFinite(px)||!Number.isFinite(pz))return false;
     return zones.some(patch=>patch.area===String(area)&&patch.age<patch.seconds
+      &&(!Number.isFinite(floorY)||Math.abs(patch.y-floorY)<=FLOOR_TOLERANCE)
       &&Math.hypot(px-patch.x,pz-patch.z)<=patch.radius+Math.max(0,Number(distance)||0));
   }
   function update(dt) {
@@ -110,6 +112,8 @@
     if(!zones.length||!elapsed)return; // Idle worlds skip even the area/scene getters and entity scans.
     const area=String(deps?.getCurrentArea?.()||''),scene=deps?.getActiveScene?.();
     const tile=Number(deps?.TILE)||64;
+    const ruin=area==='map_i_dev_random_ruin'?window.DevRandomRuin:null; // Only ruins stack multiple floors at the same coordinates.
+    const player=ruin?deps?.getPlayer?.():null; // Used for the player's separate ruin support height.
     for(let index=zones.length-1;index>=0;index--){
       const patch=zones[index];
       if(patch.area!==area||(patch.scene&&patch.scene!==scene)||patch.age>=patch.seconds){
@@ -126,6 +130,11 @@
         for(const actor of nearby){
           if(!actor||Number(actor.health)<=0)continue;
           if(Math.hypot(Number(actor.x)/tile-patch.x,Number(actor.y)/tile-patch.z)>patch.radius)continue;
+          if(ruin){
+            const feetY=actor.physicalFeetY??(actor===player?ruin.getPlayerSupportY?.()
+              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.avatarRef?.group?.position?.y); // Known feet height keeps fire damage on its own floor.
+            if(Number.isFinite(feetY)&&Math.abs(feetY-patch.y)>.9)continue;
+          }
           window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5); // Uses ordinary water/roll extinguish behavior.
         }
       }
@@ -139,7 +148,7 @@
   window.PersistentGroundFire=Object.freeze({
     init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,
     debugSnapshot:()=>({count:zones.length,campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
-      area:z.area,x:z.x,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
+      area:z.area,x:z.x,y:z.y,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
     }))}),
   });
 })();

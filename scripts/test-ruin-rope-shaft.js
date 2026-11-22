@@ -120,6 +120,8 @@ for (const tier of ['cave', 'hole', 'lich']) {
     for (const rope of added) {
       const planned = plan.ropes.find(r => 'shaft-' + r.id === rope.spec.id);
       assert(planned && rope.spec.length === planned.length && rope.spec.maxLength === planned.length && rope.mount?.name === 'rope-shaft-bracket-' + planned.id);
+      assert.equal(rope.spec.shaftRopeId, planned.id);
+      assert.equal(rope.spec.launchPad, plan.platforms.find(platform => platform.id === planned.from));
     }
     runtime.tick(.016);
     assert.equal(added.length, plan.ropes.length, 'ropes are hung once');
