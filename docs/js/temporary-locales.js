@@ -72,6 +72,7 @@
     if (!t) return true;
     if (t.water || t.path || t.ramp || t.waterfall || t.invisiblePath) return true;
     if (t.borderEscarpment || t.mapBoundary) return true; // Map-boundary escarpment: nothing is ever placed on top of it.
+    if (root.WildernessObjectFootprints?.isSceneryReserved?.(zone, x, y)) return true; // Shared generated-scenery reservation stops a later camp from occupying a permanent stone.
     if (!t.occupiedBy) {
       // A generated solid with missing occupancy metadata is not empty space.
       // Otherwise a temporary locale can stamp on an unregistered boulder/ore
