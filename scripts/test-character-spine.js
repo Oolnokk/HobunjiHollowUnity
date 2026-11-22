@@ -186,8 +186,9 @@ const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs $
   const shoulderProfile = shoulderRig.appliedSpineProfile;
   const projected = spine.deformAt(shoulderProfile, shoulderRig.shoulderLocalY, {});
   near(shoulderProfile.orbitOffset.y, projected.y, 'held weapons project from the authored shoulder, never from the skull-high spine endpoint');
-  assert.ok(shoulderProfile.orbitOffset.y > shoulderProfile.curve[6].y,
-    'shoulder orbit does not inherit the full head-scale reach and hunch reserved for the spine tip');
+  assert.ok(Math.abs(shoulderProfile.orbitOffset.y - shoulderProfile.curve[6].y) > 1e-6
+      && shoulderProfile.orbitOffset.z < shoulderProfile.curve[6].z,
+    'shoulder orbit follows its own position along the curved spine, not the skull endpoint');
 
   spine.applyNeckReach(reachRig, 0.12 * H, H, 0.6);
   near(chain(reachRig.splineNodes)[6].y, extended[6].y, 'repeated Head slider updates never accumulate spine reach');
