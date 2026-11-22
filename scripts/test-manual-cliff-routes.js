@@ -53,6 +53,25 @@ const sideways = { x: Math.sign((branch.x - at.x) * route.tangent.x + (branch.z 
   z: Math.sign((branch.x - at.x) * route.tangent.x + (branch.z - at.z) * route.tangent.z) * route.tangent.z };
 assert.equal(routes.nextHop(route, at.id, sideways)?.id, branch.id, 'sideways input selects branch, not automatic vertical motion');
 
+// Normal routing may take a nearby safe downhill shortcut; climbs and hazard crossings may not.
+const dropOptions = { isSolid: type => type === 'rock', isBoundary: tile => !!tile.mapBoundary };
+const findDrop = (x, z, gx, gz, options = {}) =>
+  routes.findIntentionalDrop(network, baseGrid, x, z, gx, gz, { ...dropOptions, ...options });
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5)?.landCol, 5, 'a lower connected shelf is a valid intentional landing');
+assert.equal(findDrop(2.5, 10.5, 8.5, 10.5), null, 'drop shortcuts cannot climb uphill');
+assert.equal(findDrop(7.5, 10.5, 9.5, 10.5), null, 'normal same-tier movement does not step off a cliff');
+assert.equal(findDrop(9.5, 10.5, 2.5, 10.5), null, 'a jump cannot launch across several intact upper tiles');
+assert.equal(findDrop(7.5, 10.5, 6.5, 10.5), null, 'ordinary movement toward the cliff face is not enough to jump');
+assert(findDrop(7.5, 10.5, 6.5, 10.5, { escape: true }), 'fleeing may jump in its escape direction without a lower target');
+assert.equal(findDrop(7.5, 10.5, 9.5, 10.5, { escape: true }), null, 'escape cannot jump in the opposite direction');
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5, { canLand: () => false }), null, 'a blocked actor-sized landing is rejected');
+baseGrid[10][5].type = 'river';
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5), null, 'a flooded landing is unsafe');
+baseGrid[10][5].type = 'grass';
+baseGrid[10][5].mapBoundary = true;
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5), null, 'map-boundary escarpments cannot be used as shortcuts');
+delete baseGrid[10][5].mapBoundary;
+
 const balconies = network.balconies;
 assert(balconies.length, 'intermediate miniature cliffs generate on tall walls');
 const shelf = balconies[0];
@@ -94,6 +113,50 @@ assert.notEqual(routes.forGrid(baseGrid, { area: 'western-slope', rebuild: true 
 // Run the live mesa builder, including its displaced stone triangles,
 // cave exclusions and actual decal geometry, without a WebGL dependency.
 const vm = require('node:vm');
+
+{
+  const actorWin = { CliffRouteNetwork: routes, MapBoundaryGuard: { isBoundaryTile: tile => !!tile.mapBoundary } };
+  let landings = 0; // The creature descent calls the same fall policy used by player ledge jumps.
+  actorWin.FallSystem = { land(_actor, landing) { landings++; assert(landing.deliberate); assert(landing.dropWorld > 0); } };
+  const fixture = {
+    TILE: 55, getActiveGrid: () => baseGrid, getActiveCols: () => 14, getActiveRows: () => 28,
+    getCurrentArea: () => 'slope', isZoneArea: area => area === 'slope',
+    isSolid: type => type === 'rock', tileSurfaceYInArea: tile => (tile.elevTier || 0) * 9,
+    creatureCanEnterTile: () => true, npcGridForArea: () => baseGrid,
+    isBuildingArea: () => false, isTownBuildingCollisionTile: () => false,
+    TileType: { RIVER: 'river', STREAM: 'stream', TRENCH: 'trench', RAMP: 'ramp' },
+    npcMovementConfig: () => ({}), furnitureOnlyBlocksMovementAt: () => false,
+  }; // Minimal adapters to exercise actual production wrappers without game.js/WebGL.
+  vm.runInNewContext(wildlife, { window: actorWin, performance: { now: () => 1000 } });
+  actorWin.CreatureCliffClimb.init(fixture);
+  const fleeing = { x: 7.5 * 55, y: 10.5 * 55, areaId: 'slope', health: 10,
+    def: { moveSpeed: 110 }, state: 'fleeing-low-health' }; // Reuses the established retreat state.
+  assert(actorWin.CreatureCliffClimb.navigate(fleeing, 2.5 * 55, 10.5 * 55, 110, .03));
+  assert(fleeing._cliffClimb, 'fleeing wildlife begins an airborne descent');
+  assert.equal(fleeing.state, 'fleeing-low-health', 'jumping does not turn a fleeing animal hostile');
+  for (let i = 0; i < 30; i++) if (fleeing._cliffClimb) actorWin.CreatureCliffClimb.update(fleeing, .03, null);
+  assert.equal(fleeing._cliffClimb, null, 'the jump lands without leaving movement ownership behind');
+  assert(Math.abs(fleeing.x / 55 - 5.5) < 0.01, 'the creature lands on the lower real tile');
+  assert.equal(landings, 1, 'the deliberate fall costs Footing exactly once');
+  assert.equal(actorWin.CreatureCliffClimb.debug.intentionalDrops, 1);
+
+  vm.runInNewContext(npcPath, { window: actorWin, Date });
+  actorWin.NpcPathfinding.init(fixture);
+  const walker = { area: 'slope', state: 'moving',
+    root: { position: { x: 7.5, z: 10.5, y: 9, set(x,y,z) { this.x=x; this.y=y; this.z=z; } } },
+    moveToward(x,z) { this.root.position.x=x; this.root.position.z=z; return true; },
+  }; // Actual collision decorator keeps a committed jump separate from ordinary path movement.
+  actorWin.NpcPathfinding.decorateWalkerCollision(walker);
+  walker.moveToward(2.5, 10.5, .03);
+  assert(walker._npcCliffClimb?.drop, 'NPC chooses the same safe descent rather than walking into the wall');
+  for (let i = 0; i < 30; i++) if (walker._npcCliffClimb) actorWin.NpcPathfinding.updateCliffClimb(walker, .03);
+  assert.equal(walker._npcCliffClimb, null, 'NPC jump has released path ownership on landing');
+  assert(Math.abs(walker.root.position.x - 5.5) < 0.01, 'NPC lands on a real lower-shelf tile');
+  assert.equal(actorWin.NpcPathfinding.debugSnapshot().cliffRoutes.intentionalDrops, 1);
+  assert(actorWin.NpcPathfinding.canNpcReachByDrop('slope', 7.5, 10.5, 4, 10),
+    'retreat selectors can prove a landing and a footpath to lower-shelf cover');
+}
+
 
 // Drive both production movement entry points with a deterministic clock and
 // a goal tile that becomes walkable after the first failed approach.
