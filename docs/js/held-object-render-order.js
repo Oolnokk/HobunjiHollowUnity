@@ -139,7 +139,8 @@
   let terrainCount = 0;
   let topFaceGroundCount = 0; // Meshes registered via markTopFaceGroundMesh.
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
-  let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
+  let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm feet and pants registered for water occlusion.
+  let pantsXrayRegistrations = 0; // Counts once per pants mesh; surfaced to mobile diagnostics without extra per-frame scanning.
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
@@ -1059,7 +1060,15 @@
   }
 
   function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {
-    if (xrayRule('layers.manualOrder') !== 'on' || !portraitOrder?.ranks?.size) return null;
+    if (!portraitOrder?.ranks?.size) return null;
+    // Pant garments moved from the world draw into the foot overlay. Preserve their
+    // owner's cross-actor transparent sort even with the default manual sorter OFF.
+    // Do not apply that sort to unrelated tools or feet outside explicit manual mode.
+    if (xrayRule('layers.manualOrder') !== 'on') {
+      if (xrayRule('pants.sortWithActor') === 'off') return null;
+      return meshes.some(mesh => mesh.userData?.hobunjiPantsGarment === true && portraitOrder.extras?.has(mesh))
+        ? portraitOrder : null;
+    }
     const byOwner = new Map(); // Reuses the base portrait's actor-depth ranks for gear/hand draw entries.
     for (const rank of portraitOrder.ranks.values()) if (rank?.owner) byOwner.set(rank.owner, rank);
     const extras = new Map(portraitOrder.extras || []); // Existing pants continue to share their own actor's priority.
@@ -1128,7 +1137,9 @@
     // inverted shell and their independent ground/water depth treatment.
     if (mesh?.userData?.hobunjiProceduralHand === true || mesh?.userData?.hobunjiProceduralFoot === true) return false;
     const data = mesh?.userData || {}; // Mesh-authored art classification; never infer from a material shared with 3D props.
-    return data.noOutline === true || data.isPngPlane === true
+    // Pants are a deformable PNG-textured GRID (BufferGeometry), not PlaneGeometry;
+    // their opaque art already includes ink and must never acquire shell outlines.
+    return data.hobunjiPantsGarment === true || data.noOutline === true || data.isPngPlane === true
       || data.hobunjiWeaponAssemblyPart === true || data.isBillboard === true
       || data.isWildernessGrassChunk === true || data.isRichFoliageBillboard === true
       || mesh?.geometry?.type === 'PlaneGeometry';
@@ -1197,13 +1208,16 @@
   function markWaterOccludedMesh(mesh) {
     if (!mesh?.isMesh) return false;
     mesh.userData = mesh.userData || {};
-    const already = waterOccludedMeshes.has(mesh) || mesh.userData.hobunjiWaterOccludedBySurface === true;
+    const already = waterOccludedMeshes.has(mesh); // A preloaded semantic tag is not registration; count it on the first real compositor adoption.
     mesh.userData.hobunjiWaterOccludedBySurface = true;
     waterOccludedMeshes.add(mesh);
     waterOccludedRegistry.add(mesh);
     if (!hasLayer(mesh, FOOT_WATER_MASK_LAYER)) mesh.layers.enable(FOOT_WATER_MASK_LAYER); // Retain compatibility for diagnostic/older foot consumers.
     if (!hasLayer(mesh, HELD_OVERLAY_LAYER)) mesh.layers.enable(HELD_OVERLAY_LAYER); // Feet x-ray through grass/paths, but never through water/snow/props.
-    if (!already) waterOccludedMeshCount++;
+    if (!already) {
+      waterOccludedMeshCount++;
+      if (mesh.userData.hobunjiPantsGarment === true) pantsXrayRegistrations++;
+    }
     return !already;
   }
 
@@ -2405,6 +2419,8 @@
       scissorBox.copy(localBox).applyMatrix4(matrix);
       const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
       if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+      const garmentPadding = Number(mesh.userData?.hobunjiXrayDeformPadding) || 0; // CPU rest bounds miss GPU-skinned leg displacement; a conservative world-space margin prevents scissor clipping.
+      if (garmentPadding > 0) scissorBox.expandByScalar(garmentPadding * matrix.getMaxScaleOnAxis());
       const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
       if (dungeonRise > 0) {
         const lateral = .55;
@@ -2844,7 +2860,17 @@
     const parity = mesh.__hobunjiXrayBoundParity; // Only trusted rig adapters can bound a per-draw pose change.
     const unknownHook = mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
       && parity?.hook !== mesh.onBeforeRender;
-    if (!isReplayCullable(mesh) || unknownHook
+    const garmentPad = Number(mesh.userData?.hobunjiXrayDeformPadding); // Used only for the authored pants mesh's projection, never for generic GPU-deformed props.
+    const boundedPants = mesh.userData?.hobunjiPantsGarment === true
+      && mesh.userData?.hobunjiPantsGpuBoundsSafe === true && Number.isFinite(garmentPad) && garmentPad > 0
+      && mesh.frustumCulled === false && !!mesh.geometry && !mesh.children?.length
+      && !mesh.isSkinnedMesh && !mesh.isInstancedMesh && !mesh.geometry.morphAttributes?.position?.length;
+    // GPU-skinned pants disable Three's ordinary frustum cull, but their rest geometry
+    // plus the explicit deformation padding is usable for the *local x-ray replay* scissor.
+    // CPU fallback meshes are never batched on stale rest bounds: the renderer invalidates
+    // their live bounding box on each changed pose and the scissor recomputes it lazily.
+    // Other uncullable/unknown-shader meshes remain conservative independent groups.
+    if (!(isReplayCullable(mesh) || boundedPants) || unknownHook
         || mesh.userData?.hobunjiReplayNeverCull === true
         || Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(mesh.userData?.hobunjiDungeonFireVfxPadding) > 0) return false;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Custom vertex deformation needs an isolated replay.
@@ -2900,7 +2926,8 @@
       const { elevation, x, z } = region;
       if (region.meshes.every(canBoundXrayMesh)
           && replayScissorRect(renderer, camera, region.meshes, xrayGearRect, null, shellPadding ?? 0)) {
-        if (shellPadding === null && camera.isPerspectiveCamera && cameraY > elevation + band
+        if (shellPadding === null && !region.meshes.some(mesh => mesh.userData?.hobunjiPantsGarment === true)
+            && camera.isPerspectiveCamera && cameraY > elevation + band
             && scissorMinimumWorldY > elevation + band) {
           ordinary.push(...region.meshes);
           continue;
@@ -4339,6 +4366,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       waterReplayMeshes: waterMeshCount,
       translucentCoverMeshes: tintCoverRegistry.all.size,
       waterOccludedMeshes: waterOccludedMeshCount,
+      pantsXrayRegistrations,
       waterReplays: waterReplayCount,
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
@@ -4412,7 +4440,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }

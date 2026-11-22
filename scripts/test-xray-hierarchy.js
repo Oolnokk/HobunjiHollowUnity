@@ -399,6 +399,30 @@ assert.strictEqual(heldSort.extras.get(farEquipment).owner, farOwner,
 assert.strictEqual(heldSort.extras.get(nearEquipment).owner, nearOwner,
   'the near actor hands inherit the near portrait depth rank');
 assert.strictEqual(rankedHeld(null, [farEquipment], {}), null, 'single actor worlds keep the original simple sort');
+// The default manual-sort setting is OFF; moving pants into the foot replay must not lose the existing
+// actor-aware layering that prevents a distant NPC's pants from painting over a nearer actor.
+X.set('layers.manualOrder', 'off');
+const farPants = { owner: farOwner, userData: { hobunjiPantsGarment: true } };
+const nearPants = { owner: nearOwner, userData: { hobunjiPantsGarment: true } };
+const pantsOrder = { ranks: actorOrder.ranks, extras: new Map([
+  [farPants, { owner: farOwner, depth: 0.8 }],
+  [nearPants, { owner: nearOwner, depth: 0.2 }],
+]) };
+assert.strictEqual(rankedHeld(pantsOrder, [farPants, nearPants], {}), pantsOrder,
+  'pants retain their wearer-based ordering in the replay without enabling manual layer sorting');
+assert.strictEqual(rankedHeld(pantsOrder, [farEquipment], {}), null,
+  'the default tool/hand replay does not gain an unnecessary actor sorter');
+visualSort.withVisualSort(rendererMock, rankedHeld(pantsOrder, [farPants, nearPants], {}), () => {
+  const farDraw = { ...weaponItem, object: farPants, renderOrder: 28 };
+  const nearDraw = { ...handItem, object: nearPants, renderOrder: 28 };
+  assert.ok(rendererMock.transparent(farDraw, nearDraw) < 0,
+    'nearby NPC pants overlay with their owner instead of over a nearer character');
+});
+X.set('pants.sortWithActor', 'off');
+assert.strictEqual(rankedHeld(pantsOrder, [farPants], {}), null,
+  'disabling pants owner sort also disables its special replay ordering');
+X.set('pants.sortWithActor', 'on');
+X.set('layers.manualOrder', 'on');
 visualSort.withVisualSort(rendererMock, heldSort, () => {
   const farDraw = { ...weaponItem, object: farEquipment }, nearDraw = { ...handItem, object: nearEquipment };
   assert.ok(rendererMock.transparent(farDraw, nearDraw) < 0,

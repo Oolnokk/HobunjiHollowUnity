@@ -1023,15 +1023,45 @@ const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(
 const footRegistrarEnd = heldRender.indexOf('  function enforceGroundMesh(', footRegistrarStart);
 assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
 const footLayerSet = new Set([0]);
+const garmentLayerSet = new Set([0]); // Tracks the same registration layers for a pants garment.
 const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
-const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount',
+const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount', 'pantsXrayRegistrations',
   heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
     new WeakSet(), { add() {} }, 26, 29,
-    (mesh, layer) => footLayerSet.has(layer), 0);
+    (mesh, layer) => (mesh === mockFoot ? footLayerSet : garmentLayerSet).has(layer), 0, 0);
 assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
 assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
 assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
 assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
+const mockPants = { isMesh: true, userData: { hobunjiPantsGarment: true },
+  layers: { enable(layer) { garmentLayerSet.add(layer); } } };
+assert.equal(markFoot(mockPants), true, 'production registrar accepts a garment like a procedural foot');
+assert.equal(garmentLayerSet.has(29) && garmentLayerSet.has(26), true,
+  'pants enter the selective color and water-mask layers');
+assert.equal(mockPants.userData.hobunjiWaterOccludedBySurface, true,
+  'semantic tag preserves scene-scan registration of pants');
+assert.equal(markFoot(mockPants), false, 'pants registration is idempotent');
+const oldTaggedPants = { isMesh: true, userData: {
+  hobunjiPantsGarment: true, hobunjiWaterOccludedBySurface: true },
+  layers: { enable(layer) { garmentLayerSet.add(layer); } } }; // Simulates garments attached before the composer exists.
+assert.equal(markFoot(oldTaggedPants), true,
+  'semantic fallback tags still receive their first real registry entry and counted registration');
+assert.equal(markFoot(oldTaggedPants), false, 'late-adopted pants stay idempotent');
+
+
+const participantStart = heldRender.indexOf('  function isReplayParticipant(');
+const participantEnd = heldRender.indexOf('  function splitReplayParticipants(', participantStart);
+assert(participantStart > 0 && participantEnd > participantStart, 'production actor-distance x-ray rule is available');
+const makeParticipantRule = (owner, withinDistance) => new Function('participantOwner', 'withinFeetXrayDistance',
+  "const replayParticipantPolicy = 'rule'; " + heldRender.slice(participantStart, participantEnd)
+    + '\nreturn isReplayParticipant;')(() => owner, () => withinDistance);
+assert.equal(makeParticipantRule('player', true)(mockPants, null, true), true,
+  'player pants use the same ground exemption as player feet');
+assert.equal(makeParticipantRule('other', true)(mockPants, null, true), false,
+  'ordinary NPC pants outside the eligible species retain normal depth');
+assert.equal(makeParticipantRule('player', false)(mockPants, null, true), false,
+  'pants still obey the short-distance rule that limits foot replay cost');
+
 
 
 // Execute production cover-material mutations against mocked materials to

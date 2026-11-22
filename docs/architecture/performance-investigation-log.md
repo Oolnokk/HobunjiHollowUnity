@@ -1,5 +1,31 @@
 # Performance investigation log
 
+## 21 Nov 2026: pants added to existing feet x-ray replay (PR #2049)
+
+Pants join the existing selectively ground-exempt feet replay, not a new pass.
+Their GPU-leg animation disables Three.js's ordinary frustum culling, which initially
+also made the actor-tile x-ray grouper treat them as unbounded: separated regions
+could not take the screen-space batching path when pants were present.
+The grouper now recognizes *only* tagged authored pants with finite positive
+deformation padding, unmodified draw hooks, and non-ShaderMaterial geometry,
+using the same padded projected bounds as the existing replay scissor.
+Only its actively GPU-skinned mode may use that shortcut: ghost/lit/CPU
+fallbacks move actual CPU vertices, so their bounding boxes become stale and
+are invalidated on each changed pose for lazy exact scissor recomputation.
+Other deformed/unsafe meshes remain conservative independent groups.
+GPU rest vertices do not prove the live cuff's minimum Y, so pants also do
+not trigger the floor-height-only early skip; the scissor/group checks still run.
+
+This does not add per-frame skinning, new render passes, or road geometry. One
+extra eligible pants mesh still participates in the feet replay and adds some
+marginal draw work. Source-executed bounds tests prove the isolated 24-region
+batching fixture (24 separate regions -> 3 non-overlapping groups), **not**
+on-device frame times. Compare `WorldRenderPipeline.captureFrame()` and
+`HeldObjectRenderOrder.snapshot()` on the same save before/after PR #2049,
+especially `elevationReplayGroups`, `scissoredReplays`, `fullscreenReplays`,
+`lastReplayScissorCoverage`, and `pantsXrayRegistrations`.
+
+
 ## 21 Nov 2026: x-ray depth snapshot kept alive on more GPUs
 
 In the user's town trace, not one sample landed in any function that only runs while the x-ray
