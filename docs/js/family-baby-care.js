@@ -39,14 +39,14 @@
       if (plan.pose) {
         if (!baby?.root) continue; // Unloaded infants retain their family record; don't summon an off-map clone.
         if (child.carryBy !== 'spouse') {
-          if (parent.area !== 'interior' || baby.area !== 'interior') continue;
+          if (parent.area !== baby.area) continue; // Retrieve an infant from their saved safe landing spot, not only from the farmhouse.
           const dx = parent.root.position.x - baby.root.position.x;
           const dz = parent.root.position.z - baby.root.position.z;
           if (Math.hypot(dx, dz) > 2.4) continue; // The parent walks up to the basket before picking up.
         }
         window.FamilyBabyBurdens?.spouseCarry?.(child, baby, parent, plan.pose, ctx.persist);
       } else if (child.carryBy === 'spouse' && parent.area === 'interior') {
-        window.FamilyBabyBurdens?.returnToBasket?.(child); // Child rests in the crib during breaks/night.
+        window.FamilyBabyBurdens?.returnToBasket?.(child, ctx.basketObject(child)); // Pass the actual furniture coordinates so the real infant is seated in the cup.
       }
     }
   }
@@ -61,8 +61,11 @@
     const needPickup = !!plan.pose && child.carryBy !== 'spouse';
     const needReturnHome = plan.sleeping && child.carryBy === 'spouse';
     if (!plan.stayHome && !needPickup && !needReturnHome) return null; // Farmwork and authored shifts keep their normal destinations.
+    const landing = needPickup && child.carrySpot && window.FamilyBabyBurdens?.isAllowedArea?.(child.carrySpot.area)
+      ? child.carrySpot : null; // A put-down infant may be resting in the farm or town, not in the empty cup.
     const basket = ctx.basketObject(child);
-    const anchor = basket ? { area: 'interior', c: basket.col, r: basket.row }
+    const anchor = landing ? { area: landing.area, c: landing.c, r: landing.r }
+      : basket ? { area: 'interior', c: basket.col, r: basket.row }
       : (extras.bedSpot || ctx.helpers.bedSpot)?.();
     if (!anchor) return null;
     return { ...anchor, stationId: 'spouse_newborn_care',
