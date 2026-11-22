@@ -158,7 +158,9 @@ assert.equal(sameBurden.group.children[0].position.z, .13,
 assert.equal(sameBurden.group.children[0].material[1].map, newerFront, 'posed rear face remains colored');
 assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'colliders use current geometry');
 assert.equal(carry.snapshot().babies[0].artMode, 'posed-rig');
-assert(carry.snapshot().babies[0].dimensions.height > .42, 'the baby retains its enlarged head silhouette');
+assert.equal(carry.snapshot().babies[0].dimensions.height,.42, 'hand coordinate dimensions stay tied to the original infant portrait');
+assert.equal(sameBurden.group.userData.familyBabyPosedHeight,.59, 'enlarged head silhouette bounds are diagnostic, not grip position inputs');
+assert.equal(sameBurden.data.carryable.handTargets.left.x,.37*.4, 'head enlargement must not move portrait-local hand grip');
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(bakeCalls, 1, 'family ticks do not trigger per-frame skin baking');
 const newestFront = { source: 'recolored' };
