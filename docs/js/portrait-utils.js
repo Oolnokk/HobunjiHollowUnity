@@ -2139,7 +2139,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     clothContext.clearRect(0, 0, PORTRAIT_CW, PORTRAIT_CH);
     drawBreathingLayers(hoodLayers, clothContext);
     const stretch = cutoutApi.stretchHoodToRoots(cloth, tuftRoots, {
-      maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision
+      maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
+      aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
     });
     const result = cutoutApi.applyToHood(cloth, paintedBeardMask);
     ctx.drawImage(cloth, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
@@ -2390,7 +2391,7 @@ function resolveOptionLayers(option, fighter) {
 }
 
 function resolveBeardHoodAuthoring(option, fighter) {
-  if (!option) return {mask:null,roots:[],maxStretch:36,subdivision:4};
+  if (!option) return {mask:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
   const cutout = window.PortraitBeardHoodCutout;
   if (fighter) {
     for (const key of portraitVariantKeysForFighter(fighter, option)) {
@@ -2404,12 +2405,18 @@ function resolveBeardHoodAuthoring(option, fighter) {
           ? option.variantHoodTuftMaxStretch[key] : option.hoodTuftMaxStretch,
         subdivision:cutout?.normalizeSubdivision(
           option.variantHoodTuftSubdivision?.[key] ?? option.hoodTuftSubdivision),
+        aboveInfluence:cutout?.normalizeVerticalInfluence(
+          option.variantHoodTuftAboveInfluence?.[key] ?? option.hoodTuftAboveInfluence),
+        belowInfluence:cutout?.normalizeVerticalInfluence(
+          option.variantHoodTuftBelowInfluence?.[key] ?? option.hoodTuftBelowInfluence),
       };
     }
   }
   return {mask:option.hoodCutoutMask||null,roots:cutout?.normalizeRoots(option.hoodTuftRoots)||[],
     maxStretch:option.hoodTuftMaxStretch,
-    subdivision:cutout?.normalizeSubdivision(option.hoodTuftSubdivision)};
+    subdivision:cutout?.normalizeSubdivision(option.hoodTuftSubdivision),
+    aboveInfluence:cutout?.normalizeVerticalInfluence(option.hoodTuftAboveInfluence),
+    belowInfluence:cutout?.normalizeVerticalInfluence(option.hoodTuftBelowInfluence)};
 }
 
 function portraitOptionFromJson(entry, json) {
@@ -2468,6 +2475,10 @@ function portraitOptionFromJson(entry, json) {
   const hoodTuftMaxStretch = Number.isFinite(Number(json.hoodTuftMaxStretch))
     ? Math.max(2,Math.min(64,Number(json.hoodTuftMaxStretch))) : 36; // Limit deformation without modifying hood sprites.
   const hoodTuftSubdivision = maskApi?.normalizeSubdivision?.(json.hoodTuftSubdivision) ?? 4; // 1 broad to 16 local; 4 matches earlier deformation.
+  const hoodTuftAboveInfluence = maskApi?.normalizeVerticalInfluence?.(json.hoodTuftAboveInfluence) ?? 100; // Above the marker; defaults to full legacy deformation.
+  const hoodTuftBelowInfluence = maskApi?.normalizeVerticalInfluence?.(json.hoodTuftBelowInfluence) ?? 100; // Below the marker; independently controlled.
+  const variantHoodTuftAboveInfluence = {}; // Optional per-variant upper falloff strength.
+  const variantHoodTuftBelowInfluence = {}; // Optional per-variant lower falloff strength.
   const variantHoodTuftSubdivision = {}; // Individual variant beard art can set its own influence locality.
   const variantHoodTuftMaxStretch = {}; // Species-specific settings, when explicitly authored.
   const variantHoodTuftRoots = {}; // Species-specific tuft positions match the same resolved beard artwork.
@@ -2481,8 +2492,14 @@ function portraitOptionFromJson(entry, json) {
       variantHoodTuftMaxStretch[key] = Math.max(2,Math.min(64,Number(value.hoodTuftMaxStretch)));
     if (value?.hoodTuftSubdivision != null)
       variantHoodTuftSubdivision[key] = maskApi?.normalizeSubdivision?.(value.hoodTuftSubdivision) ?? 4;
+    if (value?.hoodTuftAboveInfluence != null)
+      variantHoodTuftAboveInfluence[key] = maskApi?.normalizeVerticalInfluence?.(value.hoodTuftAboveInfluence) ?? 100;
+    if (value?.hoodTuftBelowInfluence != null)
+      variantHoodTuftBelowInfluence[key] = maskApi?.normalizeVerticalInfluence?.(value.hoodTuftBelowInfluence) ?? 100;
   }
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots, hoodTuftMaxStretch, variantHoodTuftMaxStretch, hoodTuftSubdivision, variantHoodTuftSubdivision };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly, hoodCutoutMask, variantHoodCutoutMasks, hoodTuftRoots, variantHoodTuftRoots, hoodTuftMaxStretch, variantHoodTuftMaxStretch, hoodTuftSubdivision, variantHoodTuftSubdivision,
+    hoodTuftAboveInfluence, hoodTuftBelowInfluence,
+    variantHoodTuftAboveInfluence, variantHoodTuftBelowInfluence };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
