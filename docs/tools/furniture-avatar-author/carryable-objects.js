@@ -914,7 +914,17 @@
             appearance:{speciesId:identity.speciesId,gender:identity.gender},
             npcRecord,name:'furniture_random_baby_reference',modelWidth:.9,modelHeight:.9,neckRig:true,
           });
-          model?.userData?.neckRig?.headScaleJoint?.scale?.setScalar?.(head/body);
+          const anatomy=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[identity.speciesId+'::'+identity.gender]?.anatomy||{}; // Live authored full-rig overrides beat defaults.
+          const defaults=window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(identity.speciesId,identity.gender)||{x:1,y:1,head:1,offsetY:0};
+          const valid=(value,fallback)=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):fallback;
+          const bx=valid(anatomy.rigScaleX,valid(anatomy.rigScale,valid(defaults.x,1)));
+          const by=valid(anatomy.rigScaleY,valid(anatomy.rigScale,valid(defaults.y,1)));
+          const hs=valid(anatomy.headScale,valid(anatomy.rigScale,valid(defaults.head,1)));
+          const headJoint=model?.userData?.neckRig?.headScaleJoint;
+          headJoint?.scale?.set?.(hs/bx*head/body,hs/by*head/body,1); // Same x/y head compensation as HobunjiCharacterRigScale.applyHeadCompensation.
+          const offset=Number(anatomy.headOffsetY??defaults.offsetY);
+          if(headJoint?.position && Number.isFinite(offset))
+            headJoint.position.y+=Math.max(-.5,Math.min(.5,offset))*Number(model.userData?.portraitModelHeight||0); // Same authored head Y nudge as gameplay.
         }catch(error){
           log('Baby neck-rig preview failed; using its colored PNG plane instead: '+(error?.message||error),'warn');
         }
