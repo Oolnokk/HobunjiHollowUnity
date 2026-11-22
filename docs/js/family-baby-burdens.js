@@ -97,7 +97,8 @@
     const posedHeight = bounds ? Math.max(height, bounds.max.y - bounds.min.y) : height;
     const headPose = headPoseOf(data);
     Object.assign(group.userData, {
-      familyBabyWidth: width, familyBabyHeight: height, // Hand and mount points use ORIGINAL full portrait coordinates, not head-expanded mesh AABB.
+      familyBabyWidth: width, familyBabyHeight: height, // Full original portrait size; anatomy anchors are resolved separately.
+      familyBabyGripAnchors: window.FamilyBabyCarryPose?.anchorsForAvatar?.(data, width, height) || null, // Baby-local posterior and neck pivot; no head-bounds scaling.
       familyBabyPosedWidth: posedWidth, familyBabyPosedHeight: posedHeight, // For diagnostics only: head deformation may expand the visible silhouette.
       familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
       familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
@@ -157,7 +158,8 @@
     const carryable = entry.burden.data?.carryable;
     if (carryable) {
       const w = width, h = height; // Stay in portrait-plane coordinates even when a newborn's head animation changes the posed bounds.
-      if (window.FamilyBabyCarryPose?.applyTo) window.FamilyBabyCarryPose.applyTo(carryable, w, h);
+      if (window.FamilyBabyCarryPose?.applyTo) window.FamilyBabyCarryPose.applyTo(
+        carryable, w, h, group.userData.familyBabyGripAnchors); // Stable baby-local grip anchors; preserve hand socket object identities.
       else { // Missing optional profile script: preserve the original usable hand positions.
         carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
         carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
@@ -230,7 +232,8 @@
     entry = { child, walker, persist, burden: null, hiddenRoot: null, previousVisibility: true, disposing: false };
     const infantWidth = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelWidth) || .3); // Reuses the already age-scaled portrait for both hand contacts.
     const infantHeight = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelHeight) || infantWidth);
-    const defaultCarry = window.FamilyBabyCarryPose?.forSize?.(infantWidth, infantHeight); // Shared authored grips at this baby's actual scale.
+    const defaultCarry = window.FamilyBabyCarryPose?.forSize?.(
+      infantWidth, infantHeight, group.userData.familyBabyGripAnchors); // Same real newborn posterior/neck pivots used after a proxy rebuild.
     const burden = api.registerBurden({
       id: 'family_baby_' + child.id, mapId: area, // Let Shattercasks pick the canonical active world scene; an NPC sub-group would reset zone burden records.
       group, kind: 'familyBaby', displayName: child.name || 'Baby',
@@ -394,6 +397,7 @@
       rearArt: e.burden.group.userData.familyBabyRearArt,
       dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight }, // Source-portrait coordinate basis used for hand grips.
       posedDimensions: { width: e.burden.group.userData.familyBabyPosedWidth, height: e.burden.group.userData.familyBabyPosedHeight }, // Expanded head is visual only.
+      gripAnchors: e.burden.group.userData.familyBabyGripAnchors, // Mobile diagnostic for left/posterior and right/neck grip origins.
       meshes: e.burden.group.children.length,
     })) }),
   });
