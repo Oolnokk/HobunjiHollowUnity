@@ -235,7 +235,8 @@
     const curve = solveCurve(profile, layout, modelHeight);
     const requestedReach = Number(rig.neckReachY) || 0; // The scaled head bottom plus authored head height, resolved before hunch.
     const restSpan = layout.nodes[SEGMENTS].y - layout.nodes[0].y; // All additional head reach belongs to the spine, never to a long neck bone.
-    const safeReach = restSpan > 0 ? Math.max(-restSpan * .8, requestedReach) : requestedReach; // Extreme negative offsets cannot turn the upper spine inside out.
+    const hunchDrop = Math.max(0, -(Number(curve[SEGMENTS]?.y) || 0)); // The selected hunch has already consumed part of the spine's available vertical span.
+    const safeReach = restSpan > 0 ? Math.max(-Math.max(0, restSpan * .8 - hunchDrop), requestedReach) : requestedReach; // Even maximum age hunch plus negative head offset cannot invert the rest spline.
     for (let k = 1; k < SPLINE_NODES; k++) curve[k].y += safeReach * (k / SEGMENTS); // Skin the entire intervening column through the real spine nodes.
     rig.neckReachAppliedY = safeReach; // Mobile diagnostic distinguishes requested scale/offset from the physically possible compression.
     rig.appliedSpineProfile = profile; // Later head-scale slider edits retain the current hunch, sway and kyphosis rather than resetting it.
