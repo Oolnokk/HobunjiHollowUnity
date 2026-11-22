@@ -70,6 +70,13 @@
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
     '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Held anchor</button><button type="button" id="carrySelectBack">▣ Back-carry anchor</button></div>',
     '<div class="g2"><button type="button" id="carrySelectLeft">◉ Left hand grip</button><button type="button" id="carrySelectRight">◉ Right hand grip</button></div>',
+    '<div id="carryBabyPortraitSection" class="section" hidden><h2>Baby portrait grips</h2>',
+    '<p class="muted">Tap or drag the L/R dots on the actual baby portrait to place its hands. U is measured from the left edge; V from the top. Coordinates are percentages of the FULL portrait, independent of species size or head deformation.</p>',
+    '<canvas id="carryBabyGripCanvas" width="280" height="280" style="display:block;width:min(100%,280px);height:auto;aspect-ratio:1;touch-action:none;border:1px solid #667"></canvas>',
+    '<div class="g3"><label>Portrait U %<input id="carryBabyU" type="number" step="0.1"></label>',
+    '<label>Portrait V %<input id="carryBabyV" type="number" step="0.1"></label>',
+    '<label>Depth %<input id="carryBabyDepth" type="number" step="0.1"></label></div>',
+    '<p class="muted" id="carryBabyScaleReadout">Baby portrait proportions loading…</p></div>',
     '<div class="section"><h2>Projectile / impact hitbox</h2>',
     '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
     '<button type="button" id="carrySelectHitbox">▧ Edit hitbox in viewport</button>',
@@ -117,10 +124,13 @@
   if(bootStatus)pane.prepend(bootStatus); // Module errors after constructing controls must still be visible in the Carryable tab.
   if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
   const el=id=>document.getElementById(id);
-  const BABY_REFERENCE_WIDTH=.3, BABY_REFERENCE_HEIGHT=.3; // Authoring preview size for dimension-scaled infant grips.
+  const BABY_REFERENCE_WIDTH=.3, BABY_REFERENCE_HEIGHT=.3; // Only a fallback until the real newborn portrait model is available.
+  let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT; // Current full PNG-plane dimensions, authoritative for normalized grip percentages.
+  let babyFrontCanvas=null; // Random Baby's actual painted portrait, reused by the 2D touch grip author.
   let editingBaby=false, savedFurnitureCarry=null, babyDraft=null; // Preserve ordinary furniture grips while baby guides are active.
   let babyRenderTicket=0, babyPreviewRolls=0; // Async randomized child previews are invalidated on exit and rapid rerolls.
   let babyPreviewStatus=''; // Mobile-visible result/error for the active randomized infant, never serialized into furniture.
+  let babyPointerId=null,babyPointerSide=null; // Single active touch/pointer drag on the portrait's L/R hand dots.
   const babyPoseFrame=new THREE.Group(); // Infant-local frame uses the EXACT inverse-of-anchor pose from the gameplay carry solver.
   babyPoseFrame.name='baby_carry_gameplay_transform_preview';helperRoot.add(babyPoseFrame);
   const babyReference=new THREE.Group(); // Non-exported infant art, never part of the furniture JSON.
@@ -371,6 +381,20 @@
     const pos=id==='baby'?babyRotateProxy.position:positionGuide(id)||c.billboardAnchor.position;
     el('carryEnabled').checked=!!c.enabled;
     el('carryGuideLabel').textContent=id==='baby'?'Rotate baby · '+(babyPoseView==='back'?'back carry':'held'):id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
+    const portraitSection=el('carryBabyPortraitSection'); // Grip authoring uses image UV, never scene X/Y units.
+    if(portraitSection)portraitSection.hidden=!editingBaby;
+    if(editingBaby){
+      const point=state.carryable.handTargets[id==='right'?'right':'left'];
+      const uv=window.FamilyBabyCarryPose?.pointToPortrait?.(point,babyPortraitWidth,babyPortraitHeight);
+      for(const [field,value] of [['carryBabyU',uv?.u],['carryBabyV',uv?.v],['carryBabyDepth',uv?.depth]]){
+        const node=el(field);
+        if(node&&document.activeElement!==node)node.value=Number.isFinite(value)?(value*100).toFixed(1):'';
+        if(node)node.disabled=id!=='left'&&id!=='right';
+      }
+      const metrics=el('carryBabyScaleReadout');
+      if(metrics)metrics.textContent='Actual baby model: '+babyPortraitWidth.toFixed(3)+' W × '+babyPortraitHeight.toFixed(3)+' H world units · U/V/depth are portrait percentages.';
+    }
+    drawBabyGripCanvas();
     for(const axis of ['X','Y','Z']) {
       const input=el('carry'+axis);
       if(document.activeElement!==input)input.value=Number(pos[axis.toLowerCase()]||0).toFixed(3);
@@ -647,24 +671,37 @@
           log('Baby neck-rig preview failed; using its colored PNG plane instead: '+(error?.message||error),'warn');
         }
       }
-      if(!model){ // Colored authored-PNG fallback, never an invented primitive infant silhouette.
-        model=new THREE.Mesh(new THREE.PlaneGeometry(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT),
+      if(!model){ // The fallback uses the SAME newborn world width as the game, never a hardcoded .30 unit baby.
+        const config=effectiveAvatarConfig(),speciesSize=config.portraitScaleBySpecies?.[identity.speciesId];
+        const scale=Number(speciesSize&&typeof speciesSize==='object'
+          ?speciesSize[identity.gender]??speciesSize.default:speciesSize);
+        const fullWidth=(Number(config.worldModelWidth)||.9)*body*(Number.isFinite(scale)&&scale>0?scale:1);
+        model=new THREE.Mesh(new THREE.PlaneGeometry(fullWidth,fullWidth),
           new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(front),transparent:true,alphaTest:.35,side:THREE.DoubleSide,depthWrite:false}));
+        model.userData.portraitModelWidth=fullWidth;model.userData.portraitModelHeight=fullWidth;
       }
       model.traverse?.(child=>{if(child.isMesh){child.userData=child.userData||{};child.userData.noOutline=true;}}); // Baby portraits already contain ink; no generated shell.
       if(ticket!==babyRenderTicket||!editingBaby){disposeObject(model);return false;}
-      const width=Number(model.userData?.portraitModelWidth)||BABY_REFERENCE_WIDTH;
-      const height=Number(model.userData?.portraitModelHeight)||BABY_REFERENCE_HEIGHT;
-      model.scale.setScalar(BABY_REFERENCE_WIDTH/Math.max(.05,width));
-      model.position.y=height/2*model.scale.y; // Match NPC floor-origin positioning and the original infant reference.
+      const width=Math.max(.05,Number(model.userData?.portraitModelWidth)||BABY_REFERENCE_WIDTH);
+      const height=Math.max(.05,Number(model.userData?.portraitModelHeight)||BABY_REFERENCE_HEIGHT);
+      // Never inflate a Kenkari or other smaller newborn to .30 units: the PNGPlaneAvatar has ALREADY scaled the baby.
+      const api=window.FamilyBabyCarryPose;
+      if(api?.toProfile&&api?.applyFrom){
+        const draft=api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight);
+        api.applyFrom(state.carryable,draft,width,height); // Preserve the current UNSAVED authoring grip positions as portrait percentages.
+      }
+      babyPortraitWidth=width;babyPortraitHeight=height;
+      babyFrontCanvas=front; // Full painted source canvas for the direct 2D grip controls.
+      model.position.y=height/2; // Match the original game avatar floor-origin placement, without a second scale pass.
       babyReference.add(model);
       if(babyPortraitModel){babyReference.remove(babyPortraitModel);disposeObject(babyPortraitModel);}
       babyPortraitModel=model;
       babyReferencePlane.visible=false;
       const label=identity.speciesId.replaceAll('-',' ')+' '+identity.gender;
-      babyPreviewStatus='Baby #'+roll+' · '+label+' · actual generated portrait (baby head/body proportions). Grips unchanged.';
+      babyPreviewStatus='Baby #'+roll+' · '+label+' · '+width.toFixed(3)+' × '+height.toFixed(3)+' world units · hand grips stay at the same portrait U/V. Grips unchanged.';
       el('carryBabyStatus').textContent=babyPreviewStatus;
       log(babyPreviewStatus);
+      refreshGuides();renderControls(); // Refresh the grip dots and Three.js markers to the real baby size.
       syncHoldingPreview();
       frameHoldingPreview();
       return true;
@@ -687,7 +724,7 @@
     }
     if(editingBaby)return true;
     savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
-    state.carryable=normalized(babyDraft||pose.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)); // Supply the existing editor's hitbox and guide defaults.
+    state.carryable=normalized(babyDraft||pose.forSize(babyPortraitWidth,babyPortraitHeight)); // Use the current portrait dimensions if returning after a Random Baby roll.
     editingBaby=true;root.visible=false;babyReference.visible=activeEditorMode==='carry';
     babyRotateProxy.visible=activeEditorMode==='carry';
     babyPoseView='anchor';createGuides();select('baby');setHoldingVisibility();frameHoldingPreview();
@@ -708,7 +745,7 @@
     if(!editingBaby)return;
     const api=window.FamilyBabyCarryPose;
     if(!api?.toProfile)return;
-    const profile=api.toProfile(state.carryable,BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);
+    const profile=api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight);
     api.save(profile); // Device-local authoring override; world save data stays unchanged.
     el('carryBabyStatus').textContent='Baby grips applied on this device. Reload gameplay to load this pose; export JSON to ship it.';
   }
@@ -716,7 +753,7 @@
     const api=window.FamilyBabyCarryPose;
     if(!api?.snapshot)return;
     const profile=editingBaby
-      ?api.toProfile(state.carryable,BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)
+      ?api.toProfile(state.carryable,babyPortraitWidth,babyPortraitHeight)
       :api.snapshot();
     download('family-baby-carry-pose.json',new Blob([JSON.stringify(profile,null,2)+'\\n'],{type:'application/json'}));
     el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
@@ -735,7 +772,7 @@
       if(!api?.save)throw Error('Shared baby pose module unavailable');
       api.save(JSON.parse(await file.text())); // Import is an explicit action; validate and persist on this device.
       babyDraft=null;
-      if(editingBaby){state.carryable=normalized(api.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT));createGuides();renderControls();syncHoldingPreview();}
+      if(editingBaby){state.carryable=normalized(api.forSize(babyPortraitWidth,babyPortraitHeight));createGuides();renderControls();syncHoldingPreview();}
       el('carryBabyStatus').textContent='Imported and applied baby profile. Reload gameplay to see the new grips.';
     }catch(error){
       el('carryBabyStatus').textContent='Baby profile import failed: '+(error?.message||error);
