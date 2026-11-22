@@ -44,9 +44,12 @@ const coordinator=vm.runInNewContext(
   'owner:banditAttackTurnOwner,acquire:claimBanditAttackTurn,release:releaseBanditAttackTurn,' +
   'chargeOwner:banditChargeOwner,prepare:beginBanditPreparedCharge,uncharge:releaseBanditCharge,' +
   'queue:claimBanditQueueRing,queued:_banditQueueRings,releaseApproach:releaseBanditApproach,' +
-  'stage:beginBanditMeleeStage,max:BANDIT_MAX_ATTACK_SLOTS};})()',context
+  'stage:beginBanditMeleeStage,max:BANDIT_MAX_ATTACK_SLOTS,' +
+  'spacePx:banditPersonalSpacePx,strafe:[BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD,BANDIT_STRAFE_HZ,BANDIT_STRAFE_SPEED_PX_S]};})()',context
 ); // Executes production functions unmodified, including the real Fey stage integration wrapper.
 assert.equal(coordinator.max,4,'four approaches permitted');
+assert.equal(coordinator.spacePx(),55*.85,'real personal-space helper must exist in the game module; no injected test stand-in');
+assert.deepEqual(Array.from(coordinator.strafe),[Math.PI/6,.14,55],'three existing combat sway/speed constants must be declared by production code');
 const target={x:0,y:0,angle:0,health:100,areaId:'zone'};
 function actor(id,x,y,tap2='exhaustCutter'){
   return {id,x,y,health:100,state:'chase',areaId:'zone',
@@ -210,6 +213,22 @@ assert(coordinator.acquire(left,target),'after the reactive hit resolves, the sa
 coordinator.release(left,target);
 
 
+// Production personal-space adjustment must not push a duelist away from its opposing fighter.
+// Earlier tests stubbed this call, masking a real runtime exception and preventing Omgurku/Porakaneki duels.
+const spaceA={id:'duelist',x:0,y:0,isBandit:true,health:100,areaId:'zone'};
+const spaceB={id:'opponent',x:30,y:0,isBandit:true,health:100,areaId:'zone'};
+const spacingDeps={...deps,hostileObjects:new Set([spaceA,spaceB])}; // A minimal live hostile collection drives the real cached-neighbor code.
+const adjustSpace=vm.runInNewContext('(()=>{' +
+  section(source,'  function banditPersonalSpacePx()', '  const _banditAttackSlots =') +
+  section(source,'  const banditSpacingBuckets =','  // A bandit\'s own rough body radius') +
+  'return banditPersonalSpaceAdjust;})()', {deps:spacingDeps,Math,Number,Map,Set,WeakMap,WeakRef,performance:{now:()=>1000}});
+const closePoint={x:spaceB.x+4,y:spaceB.y};
+const adjusted=adjustSpace(spaceA,closePoint,null,spaceB);
+near(adjusted.x,closePoint.x,'approach toward a hostile target remains close enough for an actual strike');
+near(adjusted.y,closePoint.y,'hostile target avoidance preserves approach bearing');
+const ordinarySpacing=adjustSpace(spaceA,closePoint);
+assert(ordinarySpacing.x>adjusted.x+1,'without a combat-target exception, ordinary ally spacing still pushes apart nearby actors');
+
 // Older mine/special humanoids must still have their original two-angle capacity.
 const specialTarget={x:500,y:500,angle:0,health:100,areaId:'zone'}; // Independent enemy target with its own two-slot legacy choreography.
 const oldSpecials=[actor('s1',600,500),actor('s2',400,500),actor('s3',500,600)];
@@ -260,8 +279,7 @@ const aiGlobals={
     return true;
   },
   fireBanditChargedBreakerUnavailable:()=>false,
-  BANDIT_HOLD1_CHANCE:.4,BANDIT_STRAFE_HZ:.14,BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD:Math.PI/6,
-  BANDIT_STRAFE_SPEED_PX_S:55,BANDIT_QUEUE_RING_STEP_MUL:.6,BANDIT_STANDOFF_RANGE_MUL:1.8,
+  BANDIT_HOLD1_CHANCE:.4, // Only the authored attack selection chance is injected; formation constants come straight from the production slice.
 }; // All other calls are existing game adapters. The full decision function is otherwise unmodified.
 simulation=vm.runInNewContext(
   '(()=>{' +
