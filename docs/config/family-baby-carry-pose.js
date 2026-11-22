@@ -48,9 +48,10 @@
   const scaled = (value, width, height) => ({ x: value.x * width, y: value.y * height, z: value.z * height });
   const unscaled = (value, width, height) => ({ x: finite(value?.x, 0) / width,
     y: finite(value?.y, 0) / height, z: finite(value?.z, 0) / height });
-  function forSize(width, height) {
+  function forSizeFrom(raw, width, height) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Live baby portrait dimensions.
-    const held = profile.held, back = profile.back;
+    const source = normalize(raw); // Allows the editor to resize an UNSAVED draft when Random Baby changes species.
+    const held = source.held, back = source.back;
     return {
       enabled: true,
       billboardAnchor: { coordinateSpace: 'posterior-relative', position: scaled(held.position, w, h),
@@ -58,9 +59,22 @@
       backCarry: { position: scaled(back.position, w, h), rotation: { ...back.rotation }, size: back.size,
         posteriorOffset: { ...back.posteriorOffset }, portraitAnchor: { ...back.portraitAnchor } },
       handTargets: Object.fromEntries(['left', 'right'].map(side => [side, {
-        ...scaled(profile.grips[side].position, w, h), rotation: { ...profile.grips[side].rotation },
+        ...scaled(source.grips[side].position, w, h), rotation: { ...source.grips[side].rotation },
       }])),
     };
+  }
+  function forSize(width, height) { return forSizeFrom(profile, width, height); }
+  // Portrait UV: U is fraction from the left, V is fraction down from the top.
+  // Grips remain fractions of full portrait dimensions, never posed head-alpha bounds.
+  function pointToPortrait(local, width, height) {
+    const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3));
+    return { u: .5 + finite(local?.x, 0) / w,
+      v: 1 - finite(local?.y, 0) / h, depth: finite(local?.z, 0) / h };
+  }
+  function pointFromPortrait(uv, width, height) {
+    const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3));
+    return { x: (finite(uv?.u, .5) - .5) * w,
+      y: (1 - finite(uv?.v, 1)) * h, z: finite(uv?.depth, 0) * h };
   }
   function toProfile(carryable, width, height) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Editor preview's reference baby size.
@@ -116,5 +130,5 @@
   }
   function snapshot() { return JSON.parse(JSON.stringify(profile)); }
   window.FamilyBabyCarryPose = Object.freeze({ version: 1, defaultProfile: normalize(DEFAULT_PROFILE),
-    forSize, toProfile, applyTo, save, reset, snapshot });
+    forSize, forSizeFrom, toProfile, pointToPortrait, pointFromPortrait, applyTo, save, reset, snapshot });
 })();
