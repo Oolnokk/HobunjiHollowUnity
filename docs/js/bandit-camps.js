@@ -95,7 +95,7 @@
     const entry = layout.toTownExit
       ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
       : (Number.isFinite(zdef?.entryCol) ? { x: zdef.entryCol, y: zdef.entryRow } : null);
-    const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey };
+    const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey, sourceLayout: layout }; // Shared scenery/camp reservation ownership uses the original wilderness layout, not this synthetic tile view.
     _banditZoneViews.set(zoneId, view);
     return view;
   }
