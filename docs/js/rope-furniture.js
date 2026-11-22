@@ -11,7 +11,7 @@
 // The piece is the ceiling mount (a plain box part is enough). The swinging rope, grip and behavior come
 // from the shared rope model (js/rope-core.js):
 //   * inside the Random Test Ruin the rope is built by the ruin runtime itself (addFurnitureRope), so a
-//     player rides it exactly like a generated rope: the same 'Grab Rope' prompt, pumping, brake, collision
+//     player catches it like any generated rope in mid-air: the same pumping, brake, collision
 //     and release flight; HangingRopes adopts it so a burden can hang from it too;
 //   * anywhere else it is an owned HangingRopes rope: burdens swing from it with the same behavior.
 //
@@ -72,7 +72,7 @@
     let rope = null, kind = 'owned';
     if (area === RUIN_MAP && ruin?.addFurnitureRope) {
       rope = ruin.addFurnitureRope(spec, object); // the ruin runtime owns, steps, draws and lets players ride it
-      if (rope) { kind = 'ruin'; HR?.adoptRope?.(rope, { id: 'furniture_' + id, mapId: area, scene: sceneOf(object) }); }
+      if (rope) kind = 'ruin'; // addFurnitureRope already registers the exact same instance with HangingRopes.
     }
     if (!rope && HR) rope = HR.registerRope({ id: 'furniture_' + id, mapId: area, scene: sceneOf(object), mount: object, x: spec.anchor.x, y: spec.anchor.y, z: spec.anchor.z, yaw: spec.yaw, length: spec.length, maxLength: spec.maxLength, angle: spec.angle });
     if (!rope) return null;
