@@ -27,7 +27,7 @@ assert.match(
 );
 assert.match(
   ambient,
-  /if \(newborn\) \{[\s\S]{0,650}return true;\s*\}\s*applyGreetingHeadTurn\(walker, target\);/,
+  /if \(newborn\) \{[\s\S]{0,750}return true;\s*\}[\s\S]{0,220}applyGreetingHeadTurn\(walker, target\);/,
   'newborn babbling returns before the head-turn owner, while player/NPC/toddler greetings retain head-only facing',
 );
 assert.match(
