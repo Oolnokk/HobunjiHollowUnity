@@ -63,6 +63,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <h2>Optional local art</h2>
     <label for="beardPng">Override beard PNG (already aligned to 200 × 200 portrait)</label><input id="beardPng" type="file" accept="image/png,image/webp">
     <label for="hoodPng">Override hood PNG (same coordinate space)</label><input id="hoodPng" type="file" accept="image/png,image/webp">
+    <label for="beardJson">Import an exported beard cosmetic JSON to continue editing</label><input id="beardJson" type="file" accept=".json,application/json">
     <p>Local PNG overrides affect only this editor's preview, not the cosmetic's authored game sprite paths.</p>
     <button id="clearOverrides" type="button">Restore repository sprites</button>
   </section>
@@ -103,14 +104,25 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let mask=empty(),beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
+  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v1'; // Persist mobile brush sessions without ever overwriting repository files.
   const drafts=new Map(); // Separate unsaved brush work per selected beard artwork/variant.
+  try {
+    const saved=JSON.parse(localStorage.getItem(draftStorageKey)||'[]');
+    if(Array.isArray(saved))for(const item of saved.slice(0,100))if(Array.isArray(item)&&typeof item[0]==='string')
+      drafts.set(item[0],Cut.normalizeMask(item[1])||empty());
+  }catch(_){/* Private-browsing storage can be unavailable; normal JSON downloads still work. */}
   const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
   const clamp=(x,lo,hi)=>Math.min(hi,Math.max(lo,x));
   function status(message){lastError=message||'';render();}
   function scopeKey(){return beardDoc?.speciesVariants?.[variant]?.parts?.head||beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask
     ? variant : 'shared';}
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
-  function remember(){if(beardEntry)drafts.set(draftKey(),JSON.parse(JSON.stringify(mask)));}
+  function remember(){
+    if(!beardEntry)return;
+    drafts.set(draftKey(),JSON.parse(JSON.stringify(mask)));
+    try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
+    catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
+  }
   function originalMask(){
     const scoped=scopeKey()==='shared'?beardDoc?.hoodCutoutMask:beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask;
     return Cut.normalizeMask(scoped)||empty();
@@ -279,6 +291,19 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   $('beardPng').onchange=()=>fileImage($('beardPng'),'beard');
   $('hoodPng').onchange=()=>fileImage($('hoodPng'),'hood');
+  $('beardJson').onchange=async()=>{
+    const file=$('beardJson').files?.[0];if(!file)return;
+    try {
+      const imported=JSON.parse(await file.text());
+      if(!imported||typeof imported!=='object'||Array.isArray(imported)||!imported.parts&&!imported.speciesVariants)
+        throw Error('Expected a complete beard cosmetic JSON with parts or speciesVariants');
+      remember();beardDoc=imported;drafts.delete(draftKey());
+      const importedScope=scopeKey();
+      mask=Cut.normalizeMask(importedScope==='shared'?imported.hoodCutoutMask:imported.speciesVariants?.[variant]?.hoodCutoutMask)||empty();
+      await prepare(false);status('Imported '+file.name+'. Paint and export to save the updated mask.');
+    }catch(error){status('Import failed: '+error.message);}
+    $('beardJson').value='';
+  };
   $('clearOverrides').onclick=()=>{overrideBeard=null;overrideHood=null;$('beardPng').value='';$('hoodPng').value='';prepare(true);};
   $('reload').onclick=()=>loadCatalog().catch(e=>status('Catalog failed: '+e.message));
   function exportedJson(){
