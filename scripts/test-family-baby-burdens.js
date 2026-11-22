@@ -19,7 +19,7 @@ class Group {
 class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
 class PlaneGeometry { constructor(w, h) { this.width = w; this.height = h; } dispose() { this.disposed = true; } }
 class MeshBasicMaterial { constructor(options) { Object.assign(this, options); } dispose() { this.disposed = true; } }
-const THREE = { Group, Mesh, PlaneGeometry, MeshBasicMaterial, FrontSide: 0 }; // Small structural stand-in for actual THREE objects.
+const THREE = { Group, Mesh, Vector3: Vector, PlaneGeometry, MeshBasicMaterial, FrontSide: 0 }; // Small structural stand-in for actual THREE objects.
 const scene = new Group(), babyRoot = new Group(), spouseRoot = new Group(), portrait = new Group();
 babyRoot.position.set(6.5, 0, 6.5); spouseRoot.position.set(6.7, 0, 6.5);
 scene.add(babyRoot); scene.add(spouseRoot); spouseRoot.add(portrait);
