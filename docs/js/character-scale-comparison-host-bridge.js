@@ -44,6 +44,7 @@
   }
 
   function normalizedRigScaleNumber(value) {
+    if (value == null || value === '') return null; // Missing optional leg/hand/foot fields must not silently become 10% via Number(null).
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0.1, Math.min(4, number)) : null; // Same [10%, 400%] envelope as HobunjiCharacterRigScale; female Longoran's 209.4% height must survive save/reload.
   }
