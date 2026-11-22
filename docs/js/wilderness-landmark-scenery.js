@@ -127,6 +127,7 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   if(!tile||tile.type!=='grass'||tile.water||tile.path||tile.incline||tile.ramp||tile.mapBoundary||tile.skipFloor||tile.generatedObjectType||tile.occupiedBy)continue; // Later scenery cannot overwrite even a temporarily stamped camp reservation.
   if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>{const n=at(col+dx,row+dz);return!n||!['grass','weeds'].includes(n.type)||n.water||n.path||n.mapBoundary||n.occupiedBy||(n.elevTier||0)!==(tile.elevTier||0);}))continue;
   if([[1,1],[-1,-1],[1,-1],[-1,1]].some(([dx,dz])=>at(col+dx,row+dz)?.occupiedBy))continue; // A diagonal camp corner still intersects the visible stone's small overhang.
+  if(root.WildernessObjectFootprints?.isTemporaryLocaleReserved?.(layout,col,row,1))continue; // Tribal and bandit tile views reserve their entire footprint on this source layout.
   if((layout.localeInstances||[]).some(locale=>root.WildernessObjectFootprints?.localeBlocksSite?.(locale,col,row,1.5) ?? Math.hypot(col-Number(locale.x??locale.col),row-Number(locale.y??locale.row))<6))continue;
   if(occupied.some(p=>Number.isFinite(p.c)&&Number.isFinite(p.r)&&Math.hypot(col-p.c,row-p.r)<p.d))continue;
   if(sites.some(p=>Math.hypot(col-p.point.col,row-p.point.row)<9))continue;
