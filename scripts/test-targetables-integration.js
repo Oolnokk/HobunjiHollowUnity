@@ -72,6 +72,8 @@ assert.deepEqual(ids('burden'), ['bomb1', 'cask1', 'fruit1'], 'every live burden
 assert.deepEqual(ids('explosive'), ['bomb1', 'cask1'], 'explosive is derived from the burden kind; soursap bursts but is not explosive');
 assert.deepEqual(ids('hangable'), ['bomb1'], 'hangable follows the live hanging state');
 assert.deepEqual(ids('lungeStop'), ['bomb1'], 'a hanging non-fruit burden stops the lunge so its melee strike can connect');
+fruit.hanging = true; assert.deepEqual(ids('lungeStop'), ['bomb1'], 'a hanging Soursap still requires its fall interaction rather than a lunge');
+fruit.hanging = false;
 assert.equal(Targetables.query('some_other_map', 'burden').length, 0, 'targetables are scoped to their map');
 
 const entry = Targetables.query(area, 'burden').find(e => e.id === 'bomb1');
