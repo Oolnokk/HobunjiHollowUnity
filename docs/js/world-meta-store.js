@@ -145,6 +145,74 @@
     } catch { return false; }
   }
 
+  // Collect livestock and credit the correct seller in one world-metadata
+  // write. Separate roster/gold saves could lose an animal without payment
+  // after a crash (or credit a second time after a partial retry).
+  function completeAnimalSales(worldId, currentCharacterId, currentGold, day, candidateIds) {
+    if (!worldId || !currentCharacterId || !Array.isArray(candidateIds)
+        || !Number.isSafeInteger(day) || day < 1
+        || !Number.isSafeInteger(currentGold) || currentGold < 0) {
+      return { ok: false, error: 'Invalid animal collection context.' };
+    }
+    const wanted = new Set(candidateIds.map(id => String(id))); // Used only within this single collection transaction.
+    if (!wanted.size) return { ok: true, sold: [], earned: 0, currentGold };
+    try {
+      const { meta, world } = readWorld(worldId);
+      if (!world || !Array.isArray(world.livestock) || !world.members?.[currentCharacterId]) {
+        return { ok: false, error: 'World or active farm member is unavailable.' };
+      }
+
+      const sold = []; // Exact persisted animals collected, returned for scene/UI cleanup.
+      const remaining = []; // Persisted farm roster after removing only eligible IDs.
+      const earnedBySeller = new Map(); // Individual wallets receive their own queued sales, even after character switching.
+      for (const animal of world.livestock) {
+        const sale = animal?.pendingAnimalSale;
+        const price = sale?.price;
+        const eligibleDay = sale?.eligibleDay;
+        if (!wanted.has(String(animal?.id)) || !Number.isSafeInteger(price) || price < 1
+            || !Number.isSafeInteger(eligibleDay) || eligibleDay > day) {
+          remaining.push(animal);
+          continue;
+        }
+        const sellerId = String(sale.sellerCharacterId || currentCharacterId); // Older pending records are attributed to the active member.
+        if (!world.members[sellerId]) return { ok: false, error: 'Animal seller no longer exists in this world.' };
+        const subtotal = (earnedBySeller.get(sellerId) || 0) + price;
+        if (!Number.isSafeInteger(subtotal)) return { ok: false, error: 'Animal sale total exceeds safe gold limits.' };
+        earnedBySeller.set(sellerId, subtotal);
+        sold.push(animal);
+      }
+      if (!sold.length) return { ok: true, sold: [], earned: 0, currentGold };
+
+      let earned = 0;
+      for (const [sellerId, subtotal] of earnedBySeller) {
+        const member = world.members[sellerId];
+        const savedGold = Number(member.nonGearInventory?.gold ?? 0);
+        const base = sellerId === currentCharacterId ? currentGold : savedGold;
+        if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(base + subtotal)) {
+          return { ok: false, error: 'A seller wallet cannot accept the sale proceeds.' };
+        }
+        member.nonGearInventory ||= {};
+        member.nonGearInventory.gold = base + subtotal;
+        earned += subtotal;
+      }
+      if (!Number.isSafeInteger(earned)) return { ok: false, error: 'Animal sale total exceeds safe gold limits.' };
+
+      const removedIds = new Set(sold.map(animal => String(animal.id))); // Also drops pair references in this same atomic commit.
+      world.livestock = remaining;
+      if (Array.isArray(world.breedingPairs)) {
+        world.breedingPairs = world.breedingPairs.filter(pair =>
+          ![pair?.parentA, pair?.parentB].some(ref => ref?.source === 'world' && removedIds.has(String(ref.id))));
+      }
+      localStorage.setItem(META_KEY, JSON.stringify(meta)); // Animal removal and seller payment commit together.
+      return {
+        ok: true, sold: cloneValue(sold), earned,
+        currentGold: world.members[currentCharacterId].nonGearInventory.gold,
+      };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
+    }
+  }
+
   function fiveBlossomsFinder(worldId, civilYear) {
     const yearKey = String(civilYear); // Normalizes the festival year shared by all farmhands of one world.
     if (!worldId || !Number.isSafeInteger(Number(civilYear))) return null;
@@ -220,5 +288,6 @@
     saveStorage: (worldId, store) => writeField(worldId, 'storage', store),
     loadPendingSupplyOrders,
     completeSeedSupplyOrder,
+    completeAnimalSales, // Single-write settlement; preserve both the livestock and the credited wallet on interruption.
   });
 })();
