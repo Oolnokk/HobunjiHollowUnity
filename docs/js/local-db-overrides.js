@@ -459,7 +459,6 @@
     const characters = shared?.characters || {}; // Named-NPC lines that take precedence over family lines when eligible.
     const profiles = personalities?.profiles || {}; // Valid profile IDs prevent misassigned/renamed families from leaking copy.
     const assignments = personalities?.assignments || {}; // The one existing NPC-to-family mapping, never duplicated here.
-    const defaultFamily = profiles[personalities?.defaultProfile] ? personalities.defaultProfile : null; // Used only for NPCs without a valid explicit profile.
     const result = JSON.parse(JSON.stringify(npcDatabase)); // Keeps imported/local NPC authoring independent of inherited speech.
     function treesFor(entries, scope, ownerId) {
       if (!Array.isArray(entries)) return [];
@@ -483,7 +482,7 @@
       if (!npc?.id) continue;
       const generatedChild = /^child_[a-z0-9]+$/i.test(npc.id); // Dynamic player children inherit the existing Child family just like ambient reactions.
       const assigned = assignments[npc.id] || (generatedChild ? 'child' : ''); // Explicit per-NPC family assignments always win.
-      const familyId = profiles[assigned] ? assigned : defaultFamily; // Invalid family ids safely resolve to the existing default.
+      const familyId = profiles[assigned] ? assigned : null; // Unassigned special/story NPCs keep only their authored voice; do not silently give them generic Neighborly dialogue.
       npc.dialoguePersonalityFamily = familyId; // Inspector/Dev Companion can show which shared-voice family this NPC received.
       npc.sharedDialogueTrees = [
         ...treesFor(characters[npc.id], 'character', npc.id),
