@@ -1994,6 +1994,8 @@
     if (actor?._banditPreparedCharge?.target === target) actor._banditPreparedCharge = null;
     if (!keepPose && actor && !actor._banditAction) {
       actor.telegraphState = null;
+      actor._banditToolTail = null;
+      actor._banditToolSettleUntil = 0; // A canceled, draw-only windup has no follow-through; restore authored idle stances immediately.
       resetBanditSwingToNatural(actor); // A canceled charge restores the true weapon stance, including the hand rig.
     }
   }
