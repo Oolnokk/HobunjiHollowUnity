@@ -186,8 +186,10 @@ const world = {
 };
 const context = vm.createContext({ window:world, performance:{now:() => now}, document, Date });
 vm.runInContext(fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('docs/js/belt-stow-torch-display.js', 'utf8'), context); // Art and preview API loads first.
 vm.runInContext(fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/adventuring-tools.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('docs/js/stowed-torch-fire.js', 'utf8'), context); // Layer-effect lifetime lives separately from the posterior attachment.
 vm.runInContext(fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8'), context);
 const torch = world.AdventuringTools;
 torch.init({
@@ -197,6 +199,9 @@ torch.init({
 });
 const sync = subscribers.get('adventuring-torch-belt');
 assert.equal(typeof sync, 'function', 'presenter registers on the existing scheduler, not its own RAF');
+assert.equal(typeof world.HobunjiStowedTorchFire.create, 'function', 'independent fire adapter is available');
+assert.equal(typeof world.HobunjiBeltStowTorchDisplay.createTorchDisplay, 'function', 'independent art factory is available');
+assert.equal(world.HobunjiBeltStowRig.TORCH_WIDTH, world.HobunjiBeltStowTorchDisplay.TORCH_WIDTH, 'shared profile API still exposes canonical art dimensions');
 sync({timestamp:now});
 const unlitBelt = player.children.find(node => node.name === 'adventuring_torch_belt'); // Hidden cached art before a flame is lit.
 assert.equal(unlitBelt.visible, false, 'unlit torch is not placed visibly on the belt');
@@ -314,5 +319,8 @@ assert.equal(fireStarts, 2, 'a portrait-only replacement reuses the existing fir
 assert(fireTicks > 100, 'real shared fire updates throughout stowed rendering without spawning duplicate sources');
 
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
+assert.match(manifest, /js\/stowed-torch-fire\.js\?v=/, 'gameplay parser loads the independent VFX adapter');
 assert.match(manifest, /js\/adventuring-torch-belt\.js/, 'gameplay parser loads this presenter before game.js');
+assert(manifest.indexOf('js/stowed-torch-fire.js') < manifest.indexOf('js/adventuring-torch-belt.js'),
+  'the fire adapter executes before the stowed torch presenter in the parser-time manifest');
 console.log('torch stow: independent recolored PNG, shared torch fire, posterior midpoint, 45 degrees, 30s expiry, draw/respawn and debug PASS');
