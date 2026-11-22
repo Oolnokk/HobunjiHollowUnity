@@ -158,8 +158,8 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.headOffsetY, undefined);
   assert(Number.isFinite(profile.anatomy.handScale), `${gender} Nuhongan must retain Tletingan handScale`);
   assert(Number.isFinite(profile.anatomy.footScale), `${gender} Nuhongan must retain Tletingan footScale`);
-  assert.equal(JSON.stringify(profile.anatomy.handScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
-  assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify(profile.anatomy.handScaleAxes));
+  assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
+  for (const axis of ['x', 'y', 'z']) assert(Math.abs(profile.anatomy.handScaleAxes[axis] - 31 / 24 * 0.88) < 1e-12, 'Nuhongan hands are 88% of the shared extremity size');
 }
 const runtimeDebug = runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot();
 assert.equal(runtimeDebug.rigHeightMultiplier, 0.75);

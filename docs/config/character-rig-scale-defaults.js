@@ -14,8 +14,13 @@
 (() => {
   'use strict';
 
-  const VERSION = 23; // Optional per-species legLength; Longoran/Tletingan/Nuhongan proportion pass. Keep head/x >= ~0.94: the 2px neck band shows a collar step when the head is much narrower than the body.
+  const VERSION = 24; // Optional per-species legLength; Longoran/Tletingan/Nuhongan proportion pass. Keep head/x >= ~0.94 (2px neck-band collar step). v24: thin Longoran hands/feet, smaller Nuhongan hands.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
+  const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
+  // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
+  // character floor frame: hands hang along y (length), feet point along z (length).
+  const LONGORAN_HAND_SCALE_AXES = Object.freeze({ x: 0.72, y: 1, z: 0.8 });
+  const LONGORAN_FOOT_SCALE_AXES = Object.freeze({ x: 0.7, y: 0.85, z: 1 });
   const VALUES = Object.freeze({
     'tletingan::male': Object.freeze({ x: 0.9, y: 1.2, legLength: 1, head: 0.85, offsetY: 0 }), // Really short, stocky folk: deeper torso and wider body than the big-headed Nuhongan (Nov 22 visual pass).
     'tletingan::female': Object.freeze({ x: 0.9, y: 1.15, legLength: 0.95, head: 0.85, offsetY: 0 }),
@@ -66,6 +71,9 @@
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
+    nuhonganHandScaleAxes: NUHONGAN_HAND_SCALE_AXES,
+    longoranHandScaleAxes: LONGORAN_HAND_SCALE_AXES,
+    longoranFootScaleAxes: LONGORAN_FOOT_SCALE_AXES,
     aliases: ALIASES,
     maoaoFootScale: MAOAO_FOOT_SCALE,
     applyMaoaoFootScaleTuning,

@@ -39,6 +39,6 @@ for (const [key, tuple] of Object.entries(pass)) {
 assert(values['longoran::male'].legLength > values['longoran::male'].y, 'Longorans are lanky: legs outgrow the portrait');
 assert(values['nuhongan::male'].legLength < values['tletingan::male'].legLength && values['nuhongan::male'].y < values['tletingan::male'].y,
   'Nuhongans are shorter and stubbier than Tletingans');
-assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 23, 'shipping scale revision must change when species defaults change');
+assert.equal(window.HobunjiCharacterRigScaleDefaults.version, 24, 'shipping scale revision must change when species defaults change');
 
 console.log('Only the intended Full Character Scale edits and proportional Mammakhbuur female values are applied.');
