@@ -259,7 +259,9 @@ finally path and keep joint solvers that publish persistent baselines outside
 the placed pose. Draw-time descendants can query `renderPoseOwner(node)`;
 the hand and forearm solvers use it to keep their pre-render IK during the
 carry. The actor's original root transform and world matrices are restored at
-frame end, including after a draw error. Release removes the capture record
+frame end, including after a draw error. Retain the native quaternion as well
+as the authored Euler angles, since a near-singular Euler conversion can lose
+rotation on rollback. Release removes the capture record
 and needs no pose cleanup or delayed correction.
 
 The Wildlife panel reports applied carry poses, unavailable rigs and root

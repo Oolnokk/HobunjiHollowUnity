@@ -798,10 +798,14 @@
     let pose = renderPoses.get(node); // Reuse the same snapshot and rollback through repeated carry frames.
     if (pose?.owner) return false;
     if (!pose) {
-      pose = { owner: null, position: node.position.clone(), rotation: node.rotation.clone(), restore() {
+      pose = { owner: null, position: node.position.clone(), rotation: node.rotation.clone(),
+        quaternion: node.quaternion.clone(), restore() {
         try {
           node.position.copy(pose.position);
           node.rotation.copy(pose.rotation);
+          // Euler recovery near gimbal lock can lose a small part of a quaternion.
+          // Keep authored Euler values when exact, otherwise restore the native quaternion.
+          if (!node.quaternion.equals(pose.quaternion)) node.quaternion.copy(pose.quaternion);
           node.updateWorldMatrix(true, true);
         } finally {
           pose.owner = null;
@@ -812,6 +816,7 @@
     }
     pose.position.copy(node.position);
     pose.rotation.copy(node.rotation);
+    pose.quaternion.copy(node.quaternion);
     undo.push(pose.restore);
     pose.owner = owner;
     activeRenderPoses++;

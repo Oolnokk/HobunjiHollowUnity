@@ -13,6 +13,7 @@ class Vector {
 class Quaternion extends Vector {
   set(x, y, z, w = 1) { super.set(x, y, z); this.w = w; return this; }
   copy(value) { return this.set(value.x, value.y, value.z, value.w); }
+  equals(value) { return this.x === value.x && this.y === value.y && this.z === value.z && this.w === value.w; }
   normalize() { return this; }
 }
 class Object3D {
@@ -122,7 +123,7 @@ function assertNativePose(group, yaw, pitch = 0) {
     hold(player);
     for (let step = 1; step <= 3; step++) {
       const yaw = grab + step / 10; // Gait updates just yaw between render frames.
-      root.rotation.y = yaw;
+      root.rotation.copy(new Vector(root.rotation.x, yaw, root.rotation.z));
       root.position.x = grab + step;
       const undo = []; // Same player placement and shared unwind API used by the body composer.
       const placement = visuals.getPlayerCarryPlacement(root, scene);
@@ -146,6 +147,19 @@ function assertNativePose(group, yaw, pitch = 0) {
     assertNativePose(root, grab, .2);
     root.rotation.copy(new Vector());
   }
+
+  // Three can derive a lossy Euler representation from a nearly singular
+  // quaternion. Our fixture's Euler conversion drops w in the same way.
+  const nativeQuaternion = new Quaternion(0, .25, 0, .97);
+  root.quaternion.copy(nativeQuaternion);
+  hold(player);
+  const nearSingularUndo = []; // Use the same draw transaction as the player renderer.
+  const nearSingularPlacement = visuals.getPlayerCarryPlacement(root, scene);
+  assert(visuals.applyPlayerCarryPlacement(root, nearSingularPlacement, nearSingularUndo));
+  nearSingularUndo.pop()();
+  assert(root.quaternion.equals(nativeQuaternion), 'rollback preserves the exact native quaternion even if the Euler loses information');
+  assertNativePose(root, .25);
+  release(player);
 
   const animal = { health: 20, avatarRef: { group: new Object3D() } };
   const animalRoot = animal.avatarRef.group;
