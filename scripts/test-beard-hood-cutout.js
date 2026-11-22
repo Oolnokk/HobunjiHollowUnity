@@ -353,6 +353,7 @@ for(const y of [50,80])bothWhiskers[at(100,y)]=1;
 const split=Cut.negotiateBeardHood(shortBeard,shortHood,null,{size:SIZE,runs:[]},{
   permissionMode:'painted',whiskerMask:Cut.encodeMask(bothWhiskers),
   topConeSpread:0,topUpConeSpread:0,topDownConeLength:8,
+  topCover:downShort, // Freeze the real opening before the synthetic conflict pixel is added inside its transparent center.
   includeMasks:true
 });
 assert.equal(split.topCoverWhiskers,1,
