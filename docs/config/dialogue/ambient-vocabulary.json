@@ -2797,17 +2797,6 @@
         "dialect": "southeastern-us"
       }
     ],
-    "a little": [
-      {
-        "id": "a-mite",
-        "text": "a mite",
-        "verbosity": 45,
-        "color": 58,
-        "formality": 24,
-        "kind": "regional",
-        "dialect": "southeastern-us"
-      }
-    ],
     "children": [
       {
         "id": "young-uns",
@@ -3106,6 +3095,17 @@
         "formality": 24,
         "kind": "standard",
         "sourceVisit": "jubmir_bshuakauitl"
+      }
+    ],
+    "a little bit": [
+      {
+        "id": "a-mite",
+        "text": "a mite",
+        "verbosity": 30,
+        "color": 55,
+        "formality": 22,
+        "kind": "regional",
+        "dialect": "southeastern-us"
       }
     ]
   },
