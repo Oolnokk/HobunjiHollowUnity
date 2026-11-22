@@ -49,9 +49,15 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <div class="row">
       <button id="paintMode" class="active" type="button">Paint cutout</button>
       <button id="eraseMode" type="button">Erase</button>
+      <button id="whiskerMode" type="button">Paint whiskers (wins)</button>
+      <button id="whiskerEraseMode" type="button">Erase whiskers</button>
       <button id="rootMode" type="button">Mark tuft corner</button>
     </div>
-    <label>Hood removal permissions (paint the hood, independently from the beard)</label>
+    <label>Hood permission — automatic from its lower opening ring, or manually painted</label>
+    <div class="row"><button id="hoodAutoMode" class="active" type="button">Automatic lower-ring cone</button></div>
+    <label for="coneSpread">Cone outward widening <span id="coneSpreadLabel">0 px per pixel down</span></label>
+    <input id="coneSpread" type="range" min="0" max="2" step=".025" value="0">
+    <p>At zero, every column directly below the detected bottom hood opening is removable. Increasing this widens the removable area like a cone; everything outside it rejects ordinary beard cutouts.</p>
     <div class="row">
       <button id="hoodAllowMode" type="button">Allow hood removal</button>
       <button id="hoodProtectMode" type="button">Protect hood from beard</button>
@@ -60,7 +66,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       <button id="protectWholeHood" type="button">Protect all hood</button>
       <button id="allowWholeHood" type="button">Allow all (legacy)</button>
     </div>
-    <p>Allow mode starts with a protected hood and paints removable zones. Protect mode starts with a removable hood and paints forbidden zones. Green = removable; red = protected. Painting is restricted to opaque hood pixels.</p>
+    <p>Manual allow/protect painting switches to a custom permission mask based on the current cone. Automatic uses the lower inner rim without painting. Green = removable, red = protected. Whiskers (purple) override both.</p>
     <label for="brush">Brush radius <span id="brushLabel">4 px</span></label>
     <input id="brush" type="range" min=".5" max="24" step=".5" value="4">
     <label for="alphaFloor">Minimum paintable beard opacity <span id="alphaFloorLabel">50% (128/255)</span></label>
@@ -80,7 +86,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <p>In corner mode, tap the beard to place a tuft root, or drag a marker to move it. The nearest inner hood ring stretches to that root if it lies outside. The stretch limit prevents extreme warping.</p>
     <div class="row" style="margin-top:10px">
       <button id="undo" type="button">Undo</button>
-      <button id="clear" type="button">Clear mask</button>
+      <button id="clear" type="button">Clear cutout</button>
+      <button id="clearWhiskers" type="button">Clear whiskers</button>
       <button id="removeRoot" type="button">Remove last corner</button>
       <button id="clearRoots" type="button">Clear corners</button>
     </div>
@@ -101,14 +108,14 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <h2>Export</h2>
     <div class="row"><button id="download" class="primary" type="button">Download beard JSON</button><button id="downloadHood" class="primary" type="button">Download hood JSON</button><button id="copy" type="button">Copy both mask settings</button></div>
     <label for="maskJson">Current beard request and hood permission masks</label><textarea id="maskJson" readonly></textarea>
-    <p>Beard export preserves existing fields and adds <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code>, <code>hoodTuftSubdivision</code>, and separate upper/lower influence values in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata. Hood export separately saves the <code>beardCutoutAllowedMask</code> (null / absent means all removable; an empty mask means all protected). Both exports preserve the other cosmetic fields.</p>
+    <p>Beard export preserves existing fields and adds independent <code>hoodWhiskerMask</code> and <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code>, <code>hoodTuftSubdivision</code>, and separate upper/lower influence values in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata. Hood export saves <code>beardCutoutPermissionMode</code> (auto, painted, or all), <code>beardCutoutConeSpread</code>, and optional manual <code>beardCutoutAllowedMask</code>. Missing policy defaults to the generated cone; painted permissions remain editable. Both exports preserve other cosmetic fields.</p>
   </section>
 </div>
 <div>
   <section>
     <h2>Paint on the beard or hood</h2>
     <canvas id="paintCanvas" class="paint" width="200" height="200" aria-label="Beard request or hood permission paint surface; drag with touch or mouse"></canvas>
-    <div class="caption">Beard mode: teal requests and pink tuft roots. Hood mode: green removable, red protected. Yellow guides show stretching. After preview displays refused beard pixels removed and freshly outlined.</div>
+    <div class="caption">Teal = ordinary beard request; purple = priority whiskers (hood loses); green = allowed cone/cloth; red = protected cloth. Yellow pixels mark detected bottom inner-ring points. Pink pins move the rim.</div>
     <h2>Comparison — unaltered beard layer order</h2>
     <div class="pair">
       <div><canvas id="before" width="200" height="200" aria-label="Original hood preview"></canvas><div class="caption">Original hood</div></div>
@@ -134,7 +141,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const stretchedHood=blank(); // Only recalculate the hood deformation when the roots, hood art, or stretch limit changes.
   let stretchedHoodPixels=new Uint8ClampedArray(SIZE*SIZE*4),stretchSnapshot=null,stretchKey='',hoodRevision=0;
   const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
-  let mask=empty(),roots=[],hoodAllowanceMask=null,beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let mask=empty(),whiskerMask=empty(),roots=[],hoodAllowanceMask=null,beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let hoodPermissionMode='auto',coneSpread=0; // Hood-owned auto/painted/all rule and widening, separate from beard-authored requests.
+  let automaticPermission=null,automaticKey=''; // Cache the detected lower ring and cone until hood art or a relevant setting changes.
   let negotiationStats={requested:0,approvedPixels:0,refusedPixels:0,erasedPixels:0,outlinedPixels:0}; // Exposed in mobile diagnostics and preview.
   const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,128); // Editor paint threshold, not a change to the authored beard PNG.
   const selectedStretch=()=>Math.max(0,Math.min(64,Number($('maxStretch').value))); // Continuous fractional displacement budget, 0 disables.
@@ -145,22 +154,27 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   let artReady=false; // The brush cannot record empty strokes while the selected artwork is unavailable.
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
-  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v2'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
+  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v3'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
   const drafts=new Map(); // Separate unsaved authoring per selected beard artwork/variant.
-  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v1'; // Hood masks have their own persistent authoring scope.
+  const hoodDraftStorageKey='hobunji-hood-beard-allowance-drafts-v2'; // Hood masks have their own persistent authoring scope.
   const hoodDrafts=new Map(); // Hood permissions are independent of whichever beard is currently selected.
   try {
-    const stored=JSON.parse(localStorage.getItem(hoodDraftStorageKey)||'[]');
-    if(Array.isArray(stored))for(const [key,value] of stored.slice(-100))
-      if(typeof key==='string')hoodDrafts.set(key,value==null?null:Cut.normalizeMask(value));
+    const stored=JSON.parse(localStorage.getItem(hoodDraftStorageKey)
+      ||localStorage.getItem('hobunji-hood-beard-allowance-drafts-v1')||'[]');
+    if(Array.isArray(stored))for(const [key,value] of stored.slice(-100))if(typeof key==='string'){
+      if(value&&typeof value==='object'&&Object.hasOwn(value,'mode'))
+        hoodDrafts.set(key,{mode:value.mode,mask:Cut.normalizeMask(value.mask),spread:Cut.normalizeConeSpread(value.spread)});
+      else hoodDrafts.set(key,{mode:value==null?'all':'painted',mask:Cut.normalizeMask(value),spread:0});
+    }
   }catch(_){/* Private browsing may restrict local storage; JSON export remains usable. */}
   try {
     const saved=JSON.parse(localStorage.getItem(draftStorageKey)
+      ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v2')
       ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v1')||'[]');
     if(Array.isArray(saved))for(const entry of saved.slice(0,100))if(Array.isArray(entry)&&typeof entry[0]==='string'){
       const data=entry[1]||{};
       drafts.set(entry[0],{mask:Cut.normalizeMask(data.mask||data)||empty(),
-        roots:Cut.normalizeRoots(data.roots),
+        whiskers:Cut.normalizeMask(data.whiskers)||empty(),roots:Cut.normalizeRoots(data.roots),
         maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null,
         alphaFloor:Number.isFinite(Number(data.alphaFloor))&&data.alphaFloor!=null?Number(data.alphaFloor):null,
         subdivision:data.subdivision==null?null:Cut.normalizeSubdivision(data.subdivision),
@@ -181,24 +195,30 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
   function hoodScopeKey(){
-    const entry=hoodDoc?.speciesVariants?.[variant]; // Variant hood artwork or an explicit permission override selects a variant scope.
-    return entry&&(entry.parts?.head||Object.hasOwn(entry,'beardCutoutAllowedMask'))?variant:'shared';
+    const entry=hoodDoc?.speciesVariants?.[variant]; // Honor metadata-only variants even if the hood artwork is shared.
+    return entry&&(entry.parts?.head||Object.hasOwn(entry,'beardCutoutAllowedMask')
+      ||Object.hasOwn(entry,'beardCutoutPermissionMode')||Object.hasOwn(entry,'beardCutoutConeSpread'))?variant:'shared';
   }
   function hoodDraftKey(){return (hoodEntry?.path||'hood')+'|'+hoodScopeKey();}
-  function originalHoodPermission(){
-    const scoped=hoodScopeKey()==='shared'?hoodDoc?.beardCutoutAllowedMask
-      :hoodDoc?.speciesVariants?.[variant]?.beardCutoutAllowedMask??hoodDoc?.beardCutoutAllowedMask;
-    return Cut.normalizeMask(scoped); // Missing is fully removable; explicit empty RLE blocks removal.
+  function originalHoodPolicy(){
+    const source=hoodScopeKey()==='shared'?hoodDoc:hoodDoc?.speciesVariants?.[variant]||{};
+    const mask=Cut.normalizeMask(source?.beardCutoutAllowedMask??hoodDoc?.beardCutoutAllowedMask);
+    const mode=source?.beardCutoutPermissionMode??hoodDoc?.beardCutoutPermissionMode;
+    const spread=source?.beardCutoutConeSpread??hoodDoc?.beardCutoutConeSpread;
+    return {mask,mode:['auto','painted','all'].includes(mode)?mode:(mask?'painted':'auto'),
+      spread:Cut.normalizeConeSpread(spread)}; // Unconfigured hood becomes auto; legacy painted masks remain painted.
   }
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
-    drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),roots:Cut.normalizeRoots(roots),
+    drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),
+      whiskers:JSON.parse(JSON.stringify(whiskerMask)),roots:Cut.normalizeRoots(roots),
       maxStretch:selectedStretch(),alphaFloor:selectedAlphaFloor(),subdivision:selectedSubdivision(),
       aboveInfluence:selectedAboveInfluence(),belowInfluence:selectedBelowInfluence()});
     try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
     if(hoodEntry){
-      hoodDrafts.set(hoodDraftKey(),hoodAllowanceMask==null?null:JSON.parse(JSON.stringify(hoodAllowanceMask)));
+      hoodDrafts.set(hoodDraftKey(),{mode:hoodPermissionMode,spread:coneSpread,
+        mask:hoodAllowanceMask==null?null:JSON.parse(JSON.stringify(hoodAllowanceMask))});
       try{localStorage.setItem(hoodDraftStorageKey,JSON.stringify([...hoodDrafts].slice(-100)));}
       catch(_){/* Hood permissions are still exportable when storage is unavailable. */}
     }
@@ -206,6 +226,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function originalMask(){
     const scoped=scopeKey()==='shared'?beardDoc?.hoodCutoutMask:beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask;
     return Cut.normalizeMask(scoped)||empty();
+  }
+  function originalWhiskers(){
+    const source=scopeKey()==='shared'?beardDoc:beardDoc?.speciesVariants?.[variant]||{};
+    return Cut.normalizeMask(source?.hoodWhiskerMask??beardDoc?.hoodWhiskerMask)||empty();
   }
   function originalRoots(){
     return Cut.normalizeRoots(scopeKey()==='shared'?beardDoc?.hoodTuftRoots
@@ -234,6 +258,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function updateLabels(){
     $('alphaFloorLabel').textContent=Math.round(selectedAlphaFloor()/255*100)+'% ('+selectedAlphaFloor()+'/255)';
     $('stretchLabel').textContent=selectedStretch()+' px';
+    $('coneSpreadLabel').textContent=Cut.normalizeConeSpread($('coneSpread').value).toFixed(3)+' px per pixel down';
     $('subdivisionLabel').textContent=selectedSubdivision()+' / 16 · '
       +(selectedSubdivision()<=2?'Broad':selectedSubdivision()<=5?'Medium':selectedSubdivision()<=10?'Local':'Very local');
     $('aboveInfluenceLabel').textContent=selectedAboveInfluence()+'%';
