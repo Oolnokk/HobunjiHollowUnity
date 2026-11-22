@@ -413,7 +413,7 @@
     // Both scratch canvases have exactly 200x200 portrait coordinates. Mutate
     // only the two supplied layers; never punch holes into a full portrait.
     const empty = {applied:false,requested:0,approvedPixels:0,refusedPixels:0,
-      erasedPixels:0,outlinedPixels:0};
+      erasedPixels:0,outlinedPixels:0,whiskerWins:0,automaticOpeningPixels:null,bottomRingPoints:null};
     if (!beardCanvas || !hoodCanvas ||
         (!normalizeMask(requestMask)?.runs.length && !normalizeMask(options.whiskerMask)?.runs.length)) return empty;
     try {
@@ -422,7 +422,7 @@
       const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
       const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
       const automatic=options.permissionMode==='auto'
-        ? autoHoodAllowanceMask(hood.data,options.coneSpread) : null;
+        ? (options.autoPermission || autoHoodAllowanceMask(hood.data,options.coneSpread)) : null;
       const fittedAllowance=automatic?.mask ??
         (options.permissionMode==='all' ? null : deformHoodPermissionMask(allowanceMask,options.hoodMoves));
       const partition=partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data,options.whiskerMask);
