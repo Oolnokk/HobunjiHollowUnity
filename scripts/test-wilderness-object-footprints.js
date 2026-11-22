@@ -47,4 +47,56 @@ ghostZone.tiles[3][3] = grass();
 const recovered = browser.TemporaryLocales.findSite(ghostZone, locale, {rng:()=>0});
 assert.equal(recovered?.x, 3);
 assert.equal(recovered?.y, 3);
+
+const bigLocale = {
+  x: 18, y: 17,
+  footprint: { x: 7, y: 8, w: 35, h: 24 }, // Irregular locale anchor is nowhere near the edge of its painted footprint.
+  objects: [{x:45,y:11,w:4,h:3}]
+}; // Authored floor and protruding furniture are both protected from unrelated stone generation.
+assert.equal(policy.localeBlocksSite(bigLocale, 9, 29), true, 'large locale floors cannot receive boulders even far from their anchor');
+assert.equal(policy.localeBlocksSite(bigLocale, 46, 12), true, 'outlying locale furniture remains free of unmineable stones');
+assert.equal(policy.localeBlocksSite(bigLocale, 1, 1), false, 'distant wilderness remains available for scenery');
+assert.equal(policy.localeBlocksSite({x:12,y:13}, 12, 13), true, 'pre-metadata locales keep a safe anchor radius');
+
+const sceneryBrowser = {}; // VM browser isolates the renderer's globals from other headless test files.
+const rendererProps = new Map(); // Captures registered stone colliders through the real AreaFootprintBlockers-compatible API.
+class TestGroup {
+  constructor(){this.children=[];this.userData={};this.parent=null;}
+  add(child){this.children.push(child);child.parent=this;}
+  remove(child){this.children=this.children.filter(entry=>entry!==child);child.parent=null;}
+  traverse(fn){fn(this);for(const child of this.children)fn(child);}
+}
+class TestMesh {
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.userData={};
+    this.children=[];this.position={set(){}};this.rotation={y:0};}
+}
+sceneryBrowser.WildernessObjectFootprints = policy;
+sceneryBrowser.THREE = { Group:TestGroup, Mesh:TestMesh, InstancedMesh:class {} };
+sceneryBrowser.OreRockTextures = {smallStoneArt:()=>({geometry:{},material:{}})};
+sceneryBrowser.AreaFootprintBlockers = {register(id,provider){rendererProps.set(id,provider);return()=>rendererProps.delete(id);}};
+const activeScene = new TestGroup(); // Fake scene only needs the real module's add/remove and parent semantics.
+sceneryBrowser.GridTileAccessors = {getActiveScene:()=>activeScene};
+vm.runInNewContext(fs.readFileSync('docs/js/wilderness-landmark-scenery.js','utf8'),
+  {window:sceneryBrowser,globalThis:sceneryBrowser},{filename:'wilderness-landmark-scenery.js'});
+const tinyTiles = Array.from({length:7},()=>Array.from({length:7},()=>({type:'grass',elevTier:0}))); // Four-square buffer excludes additional random cairns.
+const tinyLayout = {cols:7,rows:7,tiles:tinyTiles,localeInstances:[{
+  localeId:'locale_five_blossoms_test',x:2,y:2,
+  footprint:{x:1,y:1,w:5,h:5},
+  blossomStartLandmark:{col:3,row:3,replacedTree:true}
+}]}; // A planted story boulder provides deterministic rendered-stone collision without needing WebGL.
+const deps = {_zoneLayouts:new Map([['map_northern_cliffs',tinyLayout]]),getCurrentArea:()=> 'map_northern_cliffs',
+  tothalWorldId:()=> 'world', currentTothalYear:()=> 12,TILE:64};
+const scenery=sceneryBrowser.WildernessLandmarkScenery;
+scenery.init(deps);
+scenery.update();
+const collider=rendererProps.get('wilderness-landmark-stones'); // The real scene update must register its site's physical obstacle.
+assert(collider,'visible landmark stones must be registered with the common collision service');
+assert.equal(collider.area,'map_northern_cliffs');
+assert.equal(collider.blocksBox(3.5,3.5,.1,null),true,'the previously non-colliding boulder must block the player');
+assert.equal(collider.blocksBox(3.5,3.5,.1,10),false,'a projectile passing above the boulder remains clear');
+assert.equal(collider.blocksBox(6.5,6.5,.1,null),false,'unrelated floor remains walkable');
+assert.equal(scenery.debugSnapshot().stoneCollision.siteCount,1,'mobile diagnostics expose the physical stone count');
+scenery.clear();
+assert.equal(rendererProps.size,0,'changing zone or shift unregisters stale physical stones');
+
 console.log('wilderness generated-object footprint and collision-preservation tests passed');
