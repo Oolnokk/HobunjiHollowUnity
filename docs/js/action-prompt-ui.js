@@ -196,7 +196,12 @@
       panicWrap: document.getElementById('apPanicWrap'),
       panicFill: document.getElementById('apPanicFill'),
     };
-    actionPromptEls.btn.onpointerup = event => { event.stopPropagation(); pressAction?.(); };
+    actionPromptEls.btn.onpointerup = event => {
+      event.stopPropagation();
+      if (!pressAction) return;
+      window.BandageSystem?.cancel?.('world-interaction', { action:'action-prompt' }); // Touch world prompts use the same interrupt-before-action behavior.
+      pressAction();
+    };
     actionPromptEls.cancel.onpointerup = event => { event.stopPropagation(); cancelAction?.(); };
   }
 
