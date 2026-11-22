@@ -94,31 +94,54 @@ actions.get('pointerdown')(pointer(.05,.05));
 assert.equal(state.carryable.handTargets.right.x,originalX,
   'the portrait canvas cannot mutate furniture or child positions after leaving baby authoring');
 
-// Header Download JSON must not silently export unrelated furniture while authoring a child.
+// Copy and download must both use the exact same baby draft in baby mode.
 const headerStart=source.indexOf("  const mainJsonButton=el('downloadJsonBtn');");
 const headerEnd=source.indexOf("  el('carryBabyEdit').onclick=editBaby;",headerStart);
-assert(headerStart>0&&headerEnd>headerStart,'the main JSON download is intercepted only in baby editing mode');
-let headerClick=null,babyDownloads=0;
-const header={textContent:'Download JSON',addEventListener(type,fn,capture){
-  assert.equal(type,'click');assert.equal(capture,true,'baby export must capture the click before the furniture export handler');
-  headerClick=fn;
-}};
-const headerHarness=new Function('el','exportBaby',`
+assert(headerStart>0&&headerEnd>headerStart,'both JSON buttons are intercepted only in baby editing mode');
+const handlers=new Map(),exported=[],copied=[],babyStatus={textContent:''};
+const makeButton=(id,title)=>({
+  textContent:title,
+  addEventListener(type,fn,capture){
+    assert.equal(type,'click');assert.equal(capture,true,'baby export must capture the click before the original furniture handler');
+    handlers.set(id,fn);
+  },
+});
+const header=makeButton('downloadJsonBtn','Download JSON');
+const copy=makeButton('copyJsonBtn','Copy Current JSON');
+const profileDraft=()=>api.toProfile(state.carryable,.32,.32);
+const headerHarness=new Function('el','exportBaby','currentBabyProfile','copyPlainTextWithFallback',`
   let editingBaby=false;
   ${source.slice(headerStart,headerEnd)}
   return {setMode(value){editingBaby=value;syncBabyDownloadButton();}};
-`)(id=>id==='downloadJsonBtn'?header:null,()=>babyDownloads++);
+`)(id=>({
+  downloadJsonBtn:header,copyJsonBtn:copy,carryBabyStatus:babyStatus,jsonText:{value:''},
+})[id]||null,()=>exported.push(profileDraft()),profileDraft,(text,area,label)=>copied.push({text,area,label}));
+const event=()=>({prevented:false,stopped:false,preventDefault(){this.prevented=true;},
+  stopImmediatePropagation(){this.stopped=true;}});
 headerHarness.setMode(true);
 assert.equal(header.textContent,'Download Baby JSON','mobile header explicitly labels the actual exported profile');
-let prevented=false,stopped=false;
-headerClick({preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;}});
-assert(prevented&&stopped&&babyDownloads===1,
-  'while editing baby, main JSON button downloads the baby profile rather than an unrelated furniture item');
+assert.equal(copy.textContent,'Copy Baby JSON','IO clipboard button must be labeled as baby content');
+const downloadEvent=event();handlers.get('downloadJsonBtn')(downloadEvent);
+assert(downloadEvent.prevented&&downloadEvent.stopped&&exported.length===1,
+  'baby mode exports its current unsaved profile and blocks unrelated furniture downloads');
+const copyEvent=event();handlers.get('copyJsonBtn')(copyEvent);
+assert(copyEvent.prevented&&copyEvent.stopped&&copied.length===1,
+  'baby mode intercepts the original furniture clipboard action');
+assert.equal(copied[0].text,JSON.stringify(exported[0],null,2),
+  'Copy Baby JSON and Download Baby JSON contain the IDENTICAL current normalized grip profile');
+assert.equal(copied[0].label,'Baby profile JSON','the on-screen clipboard result identifies the payload');
+assert.match(babyStatus.textContent,/Baby JSON copied/,'touch-capable result is readable in the page');
+
 headerHarness.setMode(false);
 assert.equal(header.textContent,'Download JSON','leaving baby mode restores the original furniture export label');
-prevented=false;stopped=false;
-headerClick({preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;}});
-assert(!prevented&&!stopped&&babyDownloads===1,
-  'ordinary furniture export remains untouched outside baby mode');
+assert.equal(copy.textContent,'Copy Current JSON','leaving baby mode restores the original furniture copy label');
+const furnitureDownload=event(),furnitureCopy=event();
+handlers.get('downloadJsonBtn')(furnitureDownload);
+handlers.get('copyJsonBtn')(furnitureCopy);
+assert(!furnitureDownload.prevented&&!furnitureDownload.stopped
+  &&!furnitureCopy.prevented&&!furnitureCopy.stopped,
+  'the existing furniture copy/download handlers remain authoritative outside baby authoring');
+assert.equal(exported.length,1,'furniture mode did not spuriously export the previous baby pose');
+assert.equal(copied.length,1,'furniture mode did not spuriously copy the previous baby pose');
 
-console.log('PASS baby portrait U/V/depth, touch grips, real-size reroll, mode exit and unambiguous export');
+console.log('PASS baby portrait U/V/depth, touch grips, real-size reroll, mode exit and consistent copy/download exports');
