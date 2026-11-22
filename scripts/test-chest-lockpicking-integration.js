@@ -360,6 +360,7 @@ function makeElement() {
   assert.equal(api.open({id:'folder-fast',tier:1,onSuccess(){}}), true);
   assert.equal(api.snapshot().stage, 1, 'a cancelled modal retains its saved secured stage');
   assert.equal(api.snapshot().phase, 'playing');
+  for (let i=0;i<20;i++) nextFrameTick(); // Move the resumed set outside the catch window before the intentional failure.
   press('Button4');
   assert.equal(api.snapshot().phase, 'saving');
   await flushSavePromises();
