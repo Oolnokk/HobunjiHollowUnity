@@ -3019,7 +3019,8 @@
         "color": 44,
         "formality": 45,
         "kind": "regional",
-        "dialect": "pirate"
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
       }
     ]
   },
