@@ -2336,6 +2336,7 @@
     const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
     if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
+    if (c._banditFlankRetryS > 0) c._banditFlankRetryS = Math.max(0, c._banditFlankRetryS - dt); // Backstab contenders may reattempt a flank after a short normal-combat fallback.
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
     // For player targets, unconditional now (was only called from the engaged
     // branch below, skipped while lunging/mid-swing) -- see BANDIT_PLAYER_COLLISION_RADIUS_PX.
@@ -2381,6 +2382,24 @@
 
     const engageRangePx = banditEngagementReachPx(c, def, loadout, targetPlayer);
     const slot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
+    const continuingCombo = c._banditComboIndex > 0; // Continue a successful flurry without letting the flanking behavior interrupt its next strike.
+    const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo; // Only a bandit actually equipped with this technique should spend time seeking its bonus.
+    const backstabReady = seekingBackstab && banditQuickAttackConditions(c, targetPlayer).behind; // Same behind predicate used by the actual Quick Attack.
+    if (backstabReady) c._banditFlankElapsedS = 0;
+    if (slot && seekingBackstab && !backstabReady && distToPlayer < deps.TILE * 6 && !(c._banditFlankRetryS > 0)) {
+      c._banditFlankElapsedS = (c._banditFlankElapsedS || 0) + dt; // A hard time limit prevents an opponent who keeps turning from making the bandit refuse to fight.
+      if (c._banditFlankElapsedS < (def.backstabFlankMaxSeconds || 2)) {
+        const flank = banditBackstabFlankPoint(c, targetPlayer, engageRangePx, movementPoint); // The existing movement scratch is reused for an incremental rear-side ring target.
+        const targetPoint = banditPersonalSpaceAdjust(c, flank, movementPoint); // Real collision-aware movement and neighboring-hostile spacing still own navigation.
+        const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, def.chaseSpeed, dt);
+        if (moving) {
+          c._banditTactic = 'flanking';
+          return { aimAngle: towardAngle, moving };
+        }
+      }
+      c._banditFlankElapsedS = 0;
+      c._banditFlankRetryS = def.backstabRetrySeconds || 2.5; // Blocked flank or timeout: fight normally, then look for another opening.
+    }
     // attackCooldownS (0.95-1.15s) runs noticeably longer than the
     // post-attack retreat step (deps.JUMP_BACK_DUR_S, 0.4s), and retreating
     // only backs up one tile -- well short of engageRangePx once lunge
@@ -2412,7 +2431,6 @@
     // hard-blocking on it first, matching how the player's own combo
     // (combat-combo.js) spends stamina unconditionally per step rather
     // than pre-checking it.
-    const continuingCombo = c._banditComboIndex > 0;
     const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
       && (continuingCombo || c.stamina >= def.attackStaminaCost);
     if (!readyToStrike) {
@@ -2432,13 +2450,15 @@
       // crowded arena's personal-space pushes can shove the "supposed
       // to be far enough out" ring/flank point closer than intended).
       const queueRing = slot ? null : claimBanditQueueRing(c, towardAngle, targetPlayer);
-      const baseAngle = slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle);
-      const baseRadius = Math.max(
-        def.attackRangePx * 1.5,
-        slot
-          ? engageRangePx * 0.85
-          : engageRangePx * BANDIT_STANDOFF_RANGE_MUL * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL)
-      );
+      const rearAngle = (Number.isFinite(Number(targetPlayer.angle)) ? Number(targetPlayer.angle) : (Number(targetPlayer.facing) || 0)) + Math.PI; // Backstab-equipped spares converge on rear flanks, not an unrelated queue-ring bearing.
+      const baseAngle = !slot && seekingBackstab
+        ? rearAngle + ((c._banditStrafePhase || 0) < Math.PI ? -0.40 : 0.40)
+        : (slot ? slot.angle : (queueRing ? queueRing.angle : towardAngle));
+      const maxStandoff = deps.TILE * ((def.banditStandoffMaxTiles || 3.6) + (queueRing?.ringIndex || 0) * (def.banditStandoffTierStepTiles || 0.2)); // Keeps queued enemies close enough to follow a fleeing target.
+      const baseRadius = slot
+        ? Math.max(def.attackRangePx * 1.25, Math.min(engageRangePx * 0.85, deps.TILE * 2.6))
+        : Math.max(def.attackRangePx * 1.5, Math.min(engageRangePx * BANDIT_STANDOFF_RANGE_MUL
+          * (1 + (queueRing?.ringIndex || 0) * BANDIT_QUEUE_RING_STEP_MUL), maxStandoff));
       const strafeT = performance.now() / 1000 * BANDIT_STRAFE_HZ * Math.PI * 2 + (c._banditStrafePhase || 0);
       const swayAngle = Math.sin(strafeT) * BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD;
       const ringPoint = banditRingPoint(targetPlayer, baseAngle + swayAngle, baseRadius, movementPoint);
@@ -2458,8 +2478,9 @@
       // everything else in this state machine, and only downshifts to
       // the gentle sway speed once actually close to the target point.
       const distToTarget = Math.hypot(targetPoint.x - c.x, targetPoint.y - c.y);
-      const travelSpeed = distToTarget > deps.TILE * 1.5 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1); // Titan guard/strafe also honors 1/3 locomotion; ordinary bandits are unchanged.
+      const travelSpeed = distToTarget > deps.TILE * 0.45 ? def.chaseSpeed : BANDIT_STRAFE_SPEED_PX_S * (c.hachutuTitanTuning?.speed || 1); // Only the final small sway is slow; retreating targets trigger immediate pursuit.
       const moving = deps.moveCreatureToward(c, targetPoint.x, targetPoint.y, travelSpeed, dt);
+      c._banditTactic = distToTarget > deps.TILE * 0.45 ? 'pursuing' : 'standoff'; // Testing Arena exposes the actual combat movement choice on mobile.
       return { aimAngle: towardAngle, moving };
     }
     const alignment = window.Combat?.attackAlignmentStep?.(c, targetPlayer, dt, {
@@ -2485,9 +2506,10 @@
     }
     if (!fired) {
       const cond = banditQuickAttackConditions(c, targetPlayer);
-      const conditionFavorable = cond.exhausted || cond.behind || cond.lowHealth;
-      if (conditionFavorable && deps.rnd() < BANDIT_QUICK_ATTACK_CHANCE) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+      const chance = banditQuickAttackChance(c, loadout, cond); // Tier changes the decision only when THIS equipped technique's bonus can trigger.
+      if (chance > 0 && deps.rnd() < chance) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
     }
+    c._banditTactic = fired ? 'quick-or-heavy' : 'combo'; // A compact decision trace is available without opening the browser console.
     if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
     if (!fired) window.FeyHypedAttacks?.clearCredit?.(c, 'npcMelee'); // No authored attack started: its enhanced points cannot leak into an unrelated future action.
     // The staged action just created above (inside whichever fire*
@@ -3250,6 +3272,7 @@
       // isBandit branch/the leaving-chase reset above for where these
       // get driven and cleared.
       _banditAction: null, _banditComboIndex: 0,
+      _banditFlankElapsedS: 0, _banditFlankRetryS: 0, _banditBackstabSide: 0, _banditTactic: 'idle', // Per-actor Backstab circling timeout, preferred side, and mobile decision log.
       _banditHold1CdT: 0, _banditGuardUntil: 0, _banditGuardCdT: 0, _banditLastCounterAt: -99,
       // Per-bandit phase offset for the idle side-to-side strafe applied
       // while queued/waiting (see BANDIT_STRAFE_* below) -- randomized so
