@@ -100,7 +100,11 @@ coordinator.releaseApproach(waiting[2]);
 coordinator.releaseApproach(front);
 assert.equal(coordinator.slots.some(q=>q.bandit===front),false,'switching from melee to ranged gives up the occupied front direction immediately');
 const replacement=actor('replacement-front',110,0);
+const oldWaitingPlace=coordinator.queue(replacement,0,target); // A fifth attacker starts in the existing waiting ring before a frontline place opens.
+assert(coordinator.queued.includes(oldWaitingPlace),'queued fighter originally consumes one waiting-ring place');
 assert.equal(coordinator.claim(replacement,0,target).sector,0,'another fighter can immediately occupy the newly cleared approach direction');
+assert.equal(coordinator.queued.some(q=>q.bandit===replacement),false,'promotion frees the old waiting-ring record rather than making the fighter occupy both');
+assert.strictEqual(coordinator.claim(replacement,0,target).sector,0,'stable front ownership does not re-add a waiting record');
 
 const alternate={x:700,y:0,angle:0,health:100,areaId:'zone'};
 assert(coordinator.claim(rear,0,alternate),'other targets maintain independent approach reservations');
