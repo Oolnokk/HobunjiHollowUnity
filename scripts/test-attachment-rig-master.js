@@ -56,10 +56,10 @@ assert.strictEqual(profiles.characters['engh-sho::male'].anchors.shoulderPerch.p
 // Shoulder-pet scales are fixed values based ONLY on the final adult world-space
 // portrait-plane dimensions. They must not inherit the unrelated attack-orbit scale.
 const authoredPerchScales = { // Fixed canonical per-gender scales from the Mao-ao male world-portrait reference.
-  'tletingan::male': 0.957612, 'tletingan::female': 1.016661,
+  'tletingan::male': 0.790289, 'tletingan::female': 0.884054,
   'engh-sho::male': 1.035258, 'engh-sho::female': 1.010418,
   'mao-ao::male': 1, 'mao-ao::female': 0.972561,
-  'kenkari::male': 1.217724, 'kenkari::female': 1.093466,
+  'kenkari::male': 1.095952, 'kenkari::female': 0.98412,
   'mashtzarr::male': 1.71221, 'mashtzarr::female': 1.56391,
 };
 const snapshotSource = fs.readFileSync(path.join(root, 'docs/js/attachment-rig-latest-authored-snapshot-core.js'), 'utf8'); // Latest authored portraitScale values override the older master.

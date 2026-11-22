@@ -22,7 +22,13 @@ async function main() {
     const authorHtml = fs.readFileSync(path.join(DOCS, 'tools/animation-author/index.html'), 'utf8');
     const authorMarker = 'window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;';
     if (!authorHtml.includes(authorMarker)) throw Error('Animation author no longer exposes the full-body diagnostics anchor');
-    const instrumentedHtml = authorHtml.replace(authorMarker, authorMarker + `
+    // Regression for a CI-only race: the startup rig-snapshot import switches the
+    // author to Rig mode when it finishes, which used to land mid URL-scene install
+    // and clear Pahu (Rig mode keeps one actor). Delay that import so the race is
+    // deterministic here; the author must wait for it before building the scene.
+    const rigImportMarker = "    if (COMPATIBLE_ATTACHMENT_RIG_SCHEMAS.has(data?.schema)) {\n      await setAnimationAuthorMode('rig');";
+    if (!authorHtml.includes(rigImportMarker)) throw Error('Animation author rig-import anchor moved; update the startup-import race regression');
+    const instrumentedHtml = authorHtml.replace(rigImportMarker, rigImportMarker.replace("{\n", "{\n      await new Promise(resolve => setTimeout(resolve, 900)); // Test-only slow startup import.\n")).replace(authorMarker, authorMarker + `
       window.MultiAvatarAnimationAuthor.__testScaleNpcAndRebuildKiss = (npcId, fraction) => {
         const actor = animationAuthor.actors.find(entry => entry.source?.id === npcId);
         if (!actor) throw Error('NPC was not loaded: ' + npcId);
@@ -30,6 +36,12 @@ async function main() {
         const initiator = actorById(animationAuthor.kissInitiatorActorIdV1550);
         if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
         return applyKissPresetV1546();
+      };
+      window.MultiAvatarAnimationAuthor.__testKissInputs = () => { // Failure diagnostics only: the exact height-solver inputs CI saw.
+        const pair = kissPairHeightV1546();
+        return { solution: pair.solution, actors: animationAuthor.actors.map(actor => ({ name: actor.label,
+          height: kissActorHeightV1546(actor), mouth: kissNeutralMouthHeightV1552(actor), visualScaleY: actor.visualOffset?.scale?.y,
+          legLengths: (actor.rigFeetPreview?.motionAnatomy?.() || []).map(record => record?.length), hipY: actor.rigFeetPreview?.standingPosteriorY ?? null })) };
       };
       window.MultiAvatarAnimationAuthor.__testRealMouths = () => {
         const THREE = state.three.THREE; // Probe actual species-specific B'shuakauitl mouth coordinates.
@@ -460,6 +472,8 @@ async function main() {
     } catch (_) { snapshot = { pageNotReadable: true }; }
     console.error('Animation URL smoke FAILED:', error.stack || error);
     console.error('Author diagnostics:', JSON.stringify(snapshot));
+    try { console.error('Kiss solver inputs:', JSON.stringify(await page.evaluate(() => window.MultiAvatarAnimationAuthor?.__testKissInputs?.() || null))); }
+    catch (kissError) { console.error('Kiss solver inputs unavailable:', kissError.message); }
     console.error('JS errors:', errors.slice(0, 15).join('\n\n'));
     console.error('Request failures:', failures.slice(-15).join('\n'));
     process.exitCode = 1;
