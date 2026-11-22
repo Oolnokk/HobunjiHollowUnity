@@ -760,6 +760,67 @@
     setTimeout(() => input.focus(), 50);
   }
 
+
+  // One read-only source for Dev Companion family timing; game events still own scheduling/delivery.
+  function devArrivalPanel() {
+    const spouse = R?.getSpouse?.(); // Identifies the current marriage, not a plan from a previous spouse.
+    const plan = fam.pregnancy?.spouseId === spouse?.npcId ? fam.pregnancy : null; // Only the current spouse's plan can be upcoming.
+    const today = H.rawDay(); // Same raw in-game day used by the actual sleep and birth gates.
+    const daysLeft = target => Math.max(0, Math.ceil(num(target, today) - today)); // Countdown shown on each companion state poll.
+    const dateLabel = target => window.CalendarSystem?.formatCalendarDateFull?.(target) || `Game day ${target}`; // Civil date when the calendar formatter is available.
+    const rows = [['Spouse', spouse?.npcId ? H.npcName(spouse.npcId) : 'None']]; // Shared first row across every arrival state.
+
+    if (fam.pendingBaby) {
+      const adopted = fam.pendingBaby.origin === 'adopted'; // Distinguishes a doorstep adoption from a biological birth.
+      return {
+        summary: adopted ? 'Adopted baby arrived' : 'Baby arrived',
+        rows: [...rows, ['Status', 'Awaiting newborn naming'], ['Arrival date', dateLabel(num(fam.pendingBaby.bornRawDay, today))]],
+        note: 'The child has arrived. Complete the naming prompt; its original arrival date is already saved.',
+      };
+    }
+    if (fam.pendingAdoption) {
+      const atDoor = window.DoorstepVisits?.activeVisitKey?.() === 'romance_adoption'; // Detects a visitor who actually spawned, not merely a queued provider.
+      return {
+        summary: atDoor ? 'Adoption visitor at farmhouse' : 'Adoption visit queued',
+        rows: [...rows, ['Visitor', 'Father Hunundi'], ['Arrival', atDoor ? 'Waiting outside the farmhouse' : 'Next eligible farmhouse exit']],
+        note: atDoor
+          ? 'Speak to Father Hunundi and complete the conversation. Leaving early keeps the visit pending.'
+          : 'Exit the farmhouse into the farm to trigger this visit. There is no fixed arrival time; unavailable NPC or doorway placement can delay it.',
+      };
+    }
+    if (!spouse) return { summary: 'No family arrival scheduled', rows, note: 'Family arrivals are planned after marriage.' };
+    if (!plan || plan.born) return { summary: 'No family arrival currently scheduled', rows, note: 'No birth, adoption dream, or visitor is pending. The family system schedules the next eligible plan during its normal tick.' };
+
+    if (plan.kind === 'adoption') {
+      const earliest = Math.max(num(plan.dueRawDay, today), num(plan.nextDreamRawDay, plan.dueRawDay)); // Postponements affect dreams, not wedding or birth dates.
+      const remaining = daysLeft(earliest); // Zero means eligible for a farmhouse sleep, not that the visitor has appeared.
+      return {
+        summary: remaining ? `Adoption dream in ${remaining} game day${remaining === 1 ? '' : 's'}` : 'Adoption dream eligible',
+        rows: [...rows, ['Earliest dream', dateLabel(earliest)], ['Time remaining', remaining ? `${remaining} game day${remaining === 1 ? '' : 's'}` : 'Ready for farmhouse sleep'], ['Visit', 'After accepting the dream and creating the child']],
+        note: 'Sleep in the farmhouse on or after the eligible day to receive the dream. Accept it and finish the child creator; Father Hunundi then visits on a farmhouse exit.',
+      };
+    }
+
+    const due = num(plan.dueRawDay, today); // The actual dueRawDay compared by onTimePassage.
+    const remaining = daysLeft(due); // Overdue deliveries remain due until the required sleep.
+    const event = plan.kind.endsWith('_egg') ? 'Egg hatching' : 'Birth'; // Same types resolved by ensurePlan.
+    const announcement = plan.announced ? 'Announced' : today >= num(plan.announceRawDay, today) ? 'Eligible; announcement pending' : dateLabel(num(plan.announceRawDay, today)); // NPC proximity can delay announcements.
+    return {
+      summary: remaining ? `${event} due in ${remaining} game day${remaining === 1 ? '' : 's'}` : `${event} due — sleep required`,
+      rows: [...rows, ['Event', event], ['Announcement', announcement], ['Earliest arrival', dateLabel(due)], ['Time remaining', remaining ? `${remaining} game day${remaining === 1 ? '' : 's'}` : 'Due now'], ['Delivery trigger', 'Farmhouse sleep on or after the due date']],
+      note: 'Births and hatching happen on the first qualifying farmhouse sleep, not automatically when the clock reaches the due date.',
+    };
+  }
+  function registerDevCompanionPanel() {
+    window.DevCompanion?.registerPanel?.({
+      id: 'family-arrivals',
+      title: '👶 Family arrivals',
+      order: 25,
+      when: () => window.__hobunjiGameStarted === true && !!R && !!H,
+      render: devArrivalPanel,
+    });
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────
   function tick() {
     if (!R || !H) return;
@@ -787,6 +848,7 @@
     window.NpcScheduling?.registerTargetOverride?.('romance-family', scheduleOverride);
     window.addEventListener('hobunji-time-passage', onTimePassage);
     registerDoorstep();
+    registerDevCompanionPanel();
     return api;
   }
   function serialize() { return JSON.parse(JSON.stringify(fam)); }
