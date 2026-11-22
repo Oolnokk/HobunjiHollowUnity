@@ -236,7 +236,9 @@
       c.homeX = nestX; c.homeY = nestY;
       c._animalSleeping = false; c._denHidden = false; c.scaleY = 1;
       if (c.avatarRef?.group) c.avatarRef.group.visible = true;
-      c.state = 'chase'; c.targetPlayer = target; c.targetCreature = null; c.attackCooldownT = 0;
+      if (c.state !== 'herd-panic') { // A new theft must not override an adult already escaping a predator.
+        c.state = 'chase'; c.targetPlayer = target; c.targetCreature = null; c.attackCooldownT = 0;
+      }
       awakened++;
     }
     if (awakened) {
