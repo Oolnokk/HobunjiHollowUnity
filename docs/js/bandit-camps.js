@@ -64,12 +64,16 @@
       };
       tiles[t.r][t.c] = view;
       srcByKey.set(`${t.c},${t.r}`, t);
-      if (t.type === deps.TileType.SHRUB || t.type === deps.TileType.ROCK) {
-        const id = `zclutter_${t.c}_${t.r}`;
+      if (t.type === deps.TileType.SHRUB) {
+        const id = `zclutter_${t.c}_${t.r}`; // Only flora is safely removable without rewriting a rock formation's full collider.
         objects.push({
           id, type: 'shrub', x: t.c, y: t.r, w: 1, h: 1,
           srcType: t.type, floraKind: t.floraKind || null,
         });
+        view.occupiedBy = id;
+      } else if (t.type === deps.TileType.ROCK) {
+        const id = `zsolidrock_${t.c}_${t.r}`; // Includes undiggable boulders, ore rocks, and natural cliff faces; no camp may leave an orphaned rock.
+        objects.push({ id, type: 'unique', x: t.c, y: t.r, w: 1, h: 1, localeMeta: true });
         view.occupiedBy = id;
       }
     }
@@ -89,7 +93,8 @@
     for (const tr of (layout.transitions || [])) blockRect(tr.col, tr.row, 1, 1);
     for (const t of (layout.rootTotems || [])) blockRect(t.x ?? t.col, t.y ?? t.row, t.w || 1, t.h || 1);
     for (const inst of (layout.localeInstances || [])) {
-      for (const o of (inst.objects || [])) blockRect(o.x, o.y, o.w || 1, o.h || 1);
+      const boxes = window.WildernessObjectFootprints?.localePlacementBoxes?.(inst) || (inst.objects || []); // Reserve painted locale ground, not merely the furnished interior.
+      for (const box of boxes) blockRect(box.x, box.y, box.w || 1, box.h || 1);
     }
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const entry = layout.toTownExit
