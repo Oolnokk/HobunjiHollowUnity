@@ -33,6 +33,12 @@
     }
     return table;
   }
+  function seedSliders(familySliders, speakerId) {
+    const values = normalizeSliders(familySliders); // Existing personality family is the center of each character's vocabulary.
+    return Object.fromEntries(Object.entries(values).map(([key, value]) => [
+      key, clamp(value + hash(String(speakerId) + ':' + key) % 25 - 12),
+    ])); // Stable ±12-point individual variation; no random changes every time a character speaks.
+  }
   const expressionCache = new WeakMap(); // Each stable NPC table is compiled once and reused across its floating dialogue bubbles.
   function expressionFor(table) {
     if (!table || typeof table !== 'object') return null;
@@ -74,5 +80,5 @@
     }).join('');
     return { text, hits, swaps };
   }
-  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, generateTable, rewriteLine });
+  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, normalizeSliders, seedSliders, generateTable, rewriteLine });
 })();
