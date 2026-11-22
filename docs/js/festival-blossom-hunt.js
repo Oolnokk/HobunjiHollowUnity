@@ -19,6 +19,7 @@
   let visibleLayout = null; // A same-scene Tothal rebuild must move its blossom foliage to the newly stamped locale.
   const visibleCullRegistries = new Map(); // Tracks each added tree's original cullables owner across scene/zone replacements.
   let visibleTrees = new Map(); // Per-locale Three.js roots attached to the currently active scene.
+  let unregisterTreeCollision = null; // Retires the active blossom trunks from the existing movement blocker when their zone or Shift changes.
   let calendarKey = ''; // Day/year/Shift change gate; ordinary animation frames do not touch quest saves.
   let retrySaveAfter = 0; // A failed member write retries on a later calendar tick, rather than disabling the quest for the whole festival.
   let lastStatus = ''; // Visible on mobile to explain absent locales, failed saves, or withheld clues.
@@ -187,6 +188,7 @@
     visibleCullRegistries.delete(node);
   }
   function clearTrees() {
+    unregisterTreeCollision?.(); unregisterTreeCollision = null; // The active layout owns this provider, not the shared foliage geometry.
     for (const node of visibleTrees.values()) releaseVisibleTree(node);
     visibleCullRegistries.clear();
     visibleTrees.clear();
@@ -202,11 +204,12 @@
     const layout = zoneLayout(area); // O(1) identity test catches forced Shift regeneration without recreating the Three.js scene.
     if (visibleScene !== scene || visibleZone !== area || visibleLayout !== layout) clearTrees();
     visibleScene = scene; visibleZone = area; visibleLayout = layout;
+    let changed = false; // A rebuild (not an animation frame) is the only reason to refresh the two trunk rectangles.
     for (const blossom of BLOSSOMS) {
       if (blossom.zoneId !== area) continue;
       const previous = visibleTrees.get(blossom.localeId); // A live temple swatch change rebuilds only this blossom, not every tree.
       if (previous?.parent === scene && previous.userData?.festivalBlossomHunt?.color === blossomColor(blossom)) continue; // A rebuilt zone may detach an old tree without changing its scene/layout references.
-      if (previous) { releaseVisibleTree(previous); visibleTrees.delete(blossom.localeId); }
+      if (previous) { releaseVisibleTree(previous); visibleTrees.delete(blossom.localeId); changed = true; }
       const instance = localeFor(blossom);
       const foliage = window.FoliageGenerator?.buildWildernessBlossomTreeMesh; // The region's own native tree shape, with tiny colored leaf bunches among its branches.
       if (!instance || !foliage) { lastStatus = 'Blossom scene missing ' + blossom.localeId; continue; }
@@ -219,6 +222,7 @@
       tree.traverse?.(child => { if (child.geometry) child.userData.festivalSharedFoliage = true; }); // Zone teardown must not dispose the foliage generator's globally shared GPU buffers.
       tree.name = blossom.localeId;
       tree.userData.festivalBlossomHunt = { id: blossom.id, zoneId: area, color, localeId: blossom.localeId };
+      window.HobunjiOutlines?.markShellOutline?.(tree); // Existing renderer outlines native volumetric bark; alpha-cutout leaf/sprig cards retain noOutline.
       const tilePixels = Number(mapDeps?.TILE) || 64; // ClimbSystem's worldSurfaceY sampler takes movement/pixel units, not map tiles.
       const rawHeight = window.ClimbSystem?.groundYAt?.((p.col + .5) * tilePixels, (p.row + .5) * tilePixels); // Sample the actual highland/mire floor beneath the blossom.
       const height = Number(rawHeight); // Surface height includes the generated plateau when available.
@@ -227,8 +231,10 @@
       scene.add(tree);
       const THREE = window.THREE; // Same Box3→cullSphere registration used for ordinary and Dev Arena vegetation.
       const zoneInfo = window.GridTileAccessors?.getZoneSceneInfo?.(area);
-      if (THREE?.Box3 && THREE?.Sphere && zoneInfo?.scene === scene) {
-        const box = new THREE.Box3().setFromObject(tree); // Computed once per scene creation, never inside the vegetation frame loop.
+      const box = THREE?.Box3 ? new THREE.Box3().setFromObject(tree) : null; // The original culling bounds also determine the permanent trunk's vertical projectile extent.
+      tree.userData.blossomTrunkCollider = { x: p.col + .5, z: p.row + .5, half: .33,
+        topY: box && !box.isEmpty() ? box.max.y : tree.position.y + 5 }; // Only the narrow trunk blocks movement; canopy leaves stay traversable.
+      if (box && THREE?.Sphere && zoneInfo?.scene === scene) {
         if (!box.isEmpty()) {
           const sphere = box.getBoundingSphere(new THREE.Sphere());
           tree.userData.cullSphere = {x:sphere.center.x,z:sphere.center.z,radius:sphere.radius,
@@ -238,8 +244,19 @@
           visibleCullRegistries.set(tree, zoneInfo.cullables); // The original registry must be cleaned even after scene replacement.
         }
       }
-      visibleTrees.set(blossom.localeId, tree);
+      visibleTrees.set(blossom.localeId, tree); changed = true;
       window.FestivalBlossomPetals?.attach?.(tree); // Adds one small Points child after the tree's static culling sphere was measured.
+    }
+    if (changed && window.AreaFootprintBlockers?.register) {
+      unregisterTreeCollision?.(); unregisterTreeCollision = null;
+      const trunks = [...visibleTrees.values()].map(tree => tree.userData.blossomTrunkCollider).filter(Boolean); // The active wilderness has at most two, so no per-movement scene traversal is needed.
+      if (trunks.length) unregisterTreeCollision = window.AreaFootprintBlockers.register('five-blossoms-trunks', {
+        area, blocksBox(x, z, half, worldY) {
+          return trunks.some(trunk => (worldY == null || worldY <= trunk.topY)
+            && Math.abs(x - trunk.x) <= half + trunk.half
+            && Math.abs(z - trunk.z) <= half + trunk.half);
+        }
+      }); // Existing player/NPC/projectile footprint API, not an event-specific collision system.
     }
   }
   function syncPetalContext() {
@@ -392,7 +409,8 @@
       activeFestival: active(), questId: key(), status: live?.status || 'not_started', found: live?.progress?.found || [],
       target: live?.progress?.target || null, currentZone: mapDeps?.getCurrentArea?.(),
       present: BLOSSOMS.map(item => ({ id: item.id, zoneId: item.zoneId, stamped: !!localeFor(item) })),
-      displayedTrees: [...visibleTrees.keys()], lastStatus, retrySaveAfter,
+      displayedTrees: [...visibleTrees.keys()], treeTrunkCollision: { registered: !!unregisterTreeCollision,
+        count: [...visibleTrees.values()].filter(tree => tree.userData?.blossomTrunkCollider).length }, lastStatus, retrySaveAfter,
       savedClueSynced: clueSynced && (!clueTarget || zoneLayout(clueTarget.zoneId) === clueLayout), savedClueTarget: clueTarget?.id || null,
       nearbyPick:nearbyTree()?.id || null,advertisedPick,usesNativeArch:true,registeredYear,turnInRunning,lastTurnIn,
       clueEvidence: lastGenerated?.evidence || null, clueValid: lastGenerated?.ok || false,
