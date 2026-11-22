@@ -58,7 +58,8 @@ async function testStandaloneEditorInteraction(rules) {
     },
   }; // Provides only the IDs and event handlers used by the standalone editor.
   const sample = JSON.parse(JSON.stringify(config)); // UI smoke edits an isolated document, never the fixture shared by other tests.
-  const sandboxWindow = { AmbientVocabularyRules: rules }; // Same rule implementations already executed in the runtime tests.
+  const sandboxWindow = { AmbientVocabularyRules: rules };
+  vm.runInNewContext(file('docs/config/weapon-trust-visits.js'), { window: sandboxWindow }); // Same unmodified, authored doorstep visitor config shown in the real workshop. // Same rule implementations already executed in the runtime tests.
   const fetch = async url => ({ ok: true, status: 200, json: async () => String(url).includes('ambient-vocabulary.json') ? sample
     : String(url).includes('npc-reaction-profiles.json') ? profiles
     : { npcs: [{ id: 'pahu', name: 'Pahu' }, { id: 'sloomi', name: 'Sloomi' }] } });
@@ -71,6 +72,10 @@ async function testStandaloneEditorInteraction(rules) {
   assert.ok(typeof chooseNpc?.onclick === 'function', 'NPC chooser must be interactive');
   chooseNpc.onclick();
   assert.ok(panel.innerHTML.includes('data-check-synonym='), 'The NPC editor must expose shared synonym checkboxes');
+  assert.ok(panel.innerHTML.includes('Authoritative doorstep speech') && panel.innerHTML.includes('moy moind'),
+    'Pahu authoring should show real source lines instead of approximate generated pirate examples');
+  assert.ok(panel.innerHTML.includes('data-use-visit=') && panel.innerHTML.includes('data-harvest-word='),
+    'Doorstep authoring must support original-line previews and safe candidate harvesting');
   const original = Object.keys(sample.lexicon).sort((a, b) => a.localeCompare(b))[0];
   document.getElementById('checkNone').onclick();
   assert.equal(sample.characters.pahu.selections[original].length, 0, 'Uncheck all must store an explicit empty override');
@@ -210,8 +215,8 @@ async function main() {
   assert.ok(chiefSpeech.startsWith('Skedaddle.'), 'Real Porakaneki warning text must use its pre-1900 slang in the RUNTIME, not only the generator');
   const childSpeech = engine.rewrite("I'm hungry.", 'child_test123', () => 0);
   assert.equal(childSpeech, "I'm tummy-rumbly.", 'Real child speech must use the generated simplicity/near-miss axes in the RUNTIME');
-  const everydaySpeech = engine.rewrite('Nonsense!', 'pahu', () => 0);
-  assert.equal(everydaySpeech, 'Nonsense!', 'Ordinary playful NPCs do not acquire historical slang by default');
+  const everydaySpeech = engine.rewrite('Nonsense!', 'ordinary_neighbor', () => 0);
+  assert.equal(everydaySpeech, 'Nonsense!', 'Unassigned villagers must not receive Pahu or Ginju historical slang');
   engine.rewrite('Friend!', 'porakaneki_chief', () => 0);
   assert.equal(engine.getDebug().last.familyId, 'porakaneki', 'The named chief uses the tribal vocabulary family');
   engine.rewrite('Friend!', 'porakaneki_small_map_test_0:resident:0', () => 0);
@@ -250,6 +255,45 @@ async function main() {
   const narrow = rules.generateSelections(config.lexicon,
     { verbosity: 10, color: 10, formality: 10, breadth: 0, variety: 0 }, 'pahu');
   assert.ok(Object.keys(narrow).every(key => narrow[key].length <= 1)); // Consistent speakers choose one synonym per word.
+  // The source of each regional style stays the one canonical doorway speech, not an AI-generated accent.
+  const visitContext = { window: {} };
+  vm.runInNewContext(file('docs/config/weapon-trust-visits.js'), visitContext);
+  const visits = visitContext.window.WEAPON_TRUST_VISIT_CONFIG.gifts;
+  const pahuVisit = visits.find(gift => gift.npcId === 'pahu');
+  assert.ok(pahuVisit?.dialogueLines?.some(line => line.includes('moy moind') && line.includes('Ahoy')),
+    'Pahu phonetics must trace to the actual, fully authored Grapple-Flail doorstep visit');
+  assert.ok(visits.some(gift => gift.npcId === 'hreesh' && gift.dialogueLines.length >= 10), 'Hreesh authored visit supplies vocabulary too');
+  assert.ok(visits.some(gift => gift.npcId === 'kzubug' && gift.dialogueTree.nodes.length >= 8), 'Kzubug branches must be harvestable');
+  for (const [source, word] of [['hreesh_kylie','clobber'],['kzubug_plainssword','folk'],['pahu_grapple_flail','arm']]) {
+    assert.ok(Object.values(config.lexicon).flat().some(entry => entry.sourceVisit === source && entry.text === word),
+      'The master dictionary should seed this authored doorstep vocabulary: ' + source + ':' + word);
+  }
+  assert.ok(config.speakerGroups.ginju.speakerIds.every(id => profiles.assignments[id]),
+    'Ginju group must reuse existing NPC identities and personalities');
+  assert.equal(config.speakerGroups.pahu.phoneticPreset, 'pahu_grapple_flail');
+  assert.ok(config.phoneticPresets.pahu_grapple_flail.rules.length >= 30);
+  assert.deepEqual(plain(rules.speakerTraits(config, 'pahu').dialects), ['west-country','pirate']);
+  assert.deepEqual(plain(rules.speakerTraits(config, 'gikali_ginju').dialects), ['southeastern-us']);
+  assert.equal(rules.speakerTraits(config, 'sloomi').groupId, null, 'Unrelated villagers must never get a regional dialect');
+  for (const id of config.speakerGroups.ginju.speakerIds) {
+    const southern = engine.rewrite("I'm not sure you all are ready.", id, () => 0);
+    assert.ok(southern.includes("I ain't") && southern.includes("y'all"), id + ' should use Southern contractions');
+    assert.equal(engine.getDebug().last.dialectGroup, 'ginju', id + ' retains family voice group');
+    assert.equal(engine.getDebug().last.familyId, profiles.assignments[id], 'Ginju regional voice cannot replace their individual personality');
+  }
+  const pahusHello = engine.rewrite('Hello, my friend.', 'pahu', () => 0);
+  assert.equal(pahusHello, 'Ahoy, moy matey.', 'Pahu should combine nautical words with authored first-person spelling');
+  const pahusEveryday = engine.rewrite('I am getting my things together.', 'pahu', () => 0);
+  assert.equal(pahusEveryday, "Oym gettin' moy things together.", 'Pahu phonetic pass runs even when the semantic dictionary matches nothing');
+  assert.equal(engine.rewrite('I am getting my things together.', 'sloomi', () => 0),
+    'I am getting my things together.', 'Pahu phonetics never touch ordinary NPCs');
+  assert.equal(engine.rewrite('I will tell {targetName} and <lad/lass> that you are here.', 'pahu', () => 0)
+    .includes('<lad/lass>'), true, 'Phonetic changes must preserve both NPC placeholders and angled doorstep tokens');
+  assert.equal(rules.rewriteLine("I'm fine.", { "i'm": ['I am'] }, { frequency: 100 }, () => 0, 'pahu').text,
+    'I am fine.', 'Unicode phrase matching supports apostrophe contractions');
+  assert.ok(!rules.generateSelections({ hello: [{ id: 'howdy', text: 'howdy', kind: 'regional', dialect: 'southeastern-us' }] },
+    { breadth: 100, variety: 100 }, 'pahu', ['west-country','pirate']).hello,
+    'West Country generators must not select Southeastern forms');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
