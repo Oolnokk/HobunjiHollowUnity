@@ -22,7 +22,7 @@ for (const [family, entries] of Object.entries(config.personalityFamilies)) {
   assert.equal(new Set(entries.map(entry => entry.id)).size, entries.length, family + ' line IDs are unique');
 }
 
-const npcIds = ['pahu', 'spearhead_unumanuk', 'garanki_gabu', 'sloomi', 'dzibim_khibu', 'child_ab12', 'unassigned_wanderer']; // Fixture covers named, family, dynamic child, and default assignment.
+const npcIds = ['pahu', 'spearhead_unumanuk', 'garanki_gabu', 'sloomi', 'dzibim_khibu', 'child_ab12', 'unassigned_wanderer']; // Fixture covers named, family, dynamic child, and unassigned story NPCs.
 const database = { schema: 'hobunji_npc_database.v2', npcs: npcIds.map(id => ({ id, name: id, dialogueTrees: [] })) }; // Minimal dialogue records for composition.
 const fetchMock = async () => ({ ok: true, json: async () => ({}) }); // Species/creature registry bootstrap has no network dependency in this test.
 const windowMock = { fetch: fetchMock, addEventListener() {} }; // Browser-like host for the actual LocalDBOverrides initializer.
@@ -43,7 +43,8 @@ assert.equal(byId.pahu.dialoguePersonalityFamily, 'playful');
 assert.equal(byId.sloomi.dialoguePersonalityFamily, 'reserved');
 assert.equal(byId.spearhead_unumanuk.dialoguePersonalityFamily, 'stern');
 assert.equal(byId.child_ab12.dialoguePersonalityFamily, 'child');
-assert.equal(byId.unassigned_wanderer.dialoguePersonalityFamily, personalities.defaultProfile);
+assert.equal(byId.unassigned_wanderer.dialoguePersonalityFamily, null, 'unassigned special NPC is not given a generic personality');
+assert.equal(byId.unassigned_wanderer.sharedDialogueTrees.length, 0, 'unassigned special NPC keeps only their own authored conversation');
 assert.equal(byId.pahu.sharedDialogueTrees[0].sharedDialogueScope, 'character', 'named lines precede inherited family lines');
 assert.equal(byId.pahu.sharedDialogueTrees[0].sharedDialogueOwner, 'pahu');
 assert.ok(byId.pahu.sharedDialogueTrees.some(t => t.sharedDialogueOwner === 'playful'), 'named NPC retains family lines when no named line qualifies');
@@ -87,30 +88,57 @@ function fallback(id) { // The canonical last-resort NPC tree used to test share
   const treeId = 'tree_' + id + '_fallback';
   return { id: treeId, label: 'Fallback', trigger: 'interact', priority: 0, entryNode: 'speak', nodes: [{ id: 'speak', type: 'text', text: 'UNSCOPED FALLBACK' }] };
 }
-for (const npc of Object.values(byId)) npc.dialogueTrees = [fallback(npc.id)];
-const firstPahuLine = say(byId.pahu); // Conversation starts exactly once; .some() must not consume extra unheard entries while asserting.
-assert.ok(config.characters.pahu.some(entry => entry.text === firstPahuLine), 'Pahu speaks his named dialogue instead of an unrelated personality line');
-const firstSpearheadLine = say(byId.spearhead_unumanuk); // Named-only dialogue precedes the stern family.
-assert.ok(config.characters.spearhead_unumanuk.some(entry => entry.text === firstSpearheadLine), 'Spearhead selects his own character dialogue');
-const firstSloomiLine = say(byId.sloomi); // Reserved family should speak without accessing other families.
-assert.ok(config.personalityFamilies.reserved.some(entry => entry.text === firstSloomiLine), 'Sloomi draws from Reserved, not general/shared world copy');
-const firstChildLine = say(byId.child_ab12); // Generated children have no per-save authored NPC record.
+for (const npc of Object.values(byId)) npc.dialogueTrees = [fallback(npc.id)]; // Named starter NPCs begin with their own authored fallback.
+byId.child_ab12.dialogueTrees = []; // Generated children without a canonical NPC record can use their family straight away.
+byId.pahu.dialogueTrees[0].nodes[0].text = '{{pool:Pahu Greetings}}'; // A canonical NPC fallback references an individual phrase pool by this token.
+byId.pahu.phrasePools = [{
+  id: 'pool_pahu_greetings', name: 'Pahu Greetings',
+  entries: [
+    { id: 'pahu_personal_1', text: 'ORIGINAL PAHU GREETING 1' },
+    { id: 'pahu_personal_2', text: 'ORIGINAL PAHU GREETING 2', conditions: { timesOfDay: ['day'] } },
+    { id: 'pahu_hint_placeholder', text: '<Write a gift hint here.>' },
+  ],
+}]; // Two genuine authored lines and an unfilled hint should keep family dialogue from taking over early, but the hint must not block it forever.
+byId.sloomi.dialogueTrees[0].nodes[0].text = '{{pool:Sloomi Greetings}}';
+byId.sloomi.phrasePools = [{ name: 'Sloomi Greetings', entries: [{ id: 'sloomi_personal', text: 'ORIGINAL SLOOMI GREETING' }] }]; // A single individual line also takes first turn.
+const firstPahuLine = say(byId.pahu); // First Talk must preserve an authored personal greeting rather than use shared text.
+const secondPahuLine = say(byId.pahu); // The next unheard individual greeting still wins.
+assert.ok(['ORIGINAL PAHU GREETING 1', 'ORIGINAL PAHU GREETING 2'].includes(firstPahuLine));
+assert.ok(['ORIGINAL PAHU GREETING 1', 'ORIGINAL PAHU GREETING 2'].includes(secondPahuLine));
+assert.notEqual(firstPahuLine, secondPahuLine, 'both eligible personal greetings play before inherited material');
+const namedPahuLine = say(byId.pahu); // Exhausted authored greetings hand off to named character shared lines.
+assert.ok(config.characters.pahu.some(entry => entry.text === namedPahuLine), 'Pahu can use named shared speech once his individual greetings play');
+const playfulPahuLine = say(byId.pahu); // Then the personality family supplements his exhausted unique copy.
+assert.ok(config.personalityFamilies.playful.some(entry => entry.text === playfulPahuLine), 'Pahu inherits playful speech after his named line');
+const firstSpearheadLine = say(byId.spearhead_unumanuk); // A plain-text character fallback keeps first greeting precedence too.
+assert.equal(firstSpearheadLine, 'UNSCOPED FALLBACK', 'existing literal character greeting is not displaced on first meeting');
+const secondSpearheadLine = say(byId.spearhead_unumanuk);
+assert.ok(config.characters.spearhead_unumanuk.some(entry => entry.text === secondSpearheadLine), 'Spearhead then selects his character shared dialogue');
+const firstSloomiLine = say(byId.sloomi); // Reserved family waits until her unique greeting has been heard.
+assert.equal(firstSloomiLine, 'ORIGINAL SLOOMI GREETING');
+const secondSloomiLine = say(byId.sloomi);
+assert.ok(config.personalityFamilies.reserved.some(entry => entry.text === secondSloomiLine), 'Sloomi then draws from Reserved, not other personality speech');
+const firstChildLine = say(byId.child_ab12); // Generated children have no default individual records.
 assert.ok(config.personalityFamilies.child.some(entry => entry.text === firstChildLine), 'generated children receive child-appropriate dialogue');
-const firstUnassignedLine = say(byId.unassigned_wanderer); // Missing assignment uses the existing default family.
-assert.ok(config.personalityFamilies.neighborly.some(entry => entry.text === firstUnassignedLine), 'unassigned NPCs use the existing default family');
+const firstUnassignedLine = say(byId.unassigned_wanderer); // No explicit family assignment means no generic invented voice.
+assert.equal(firstUnassignedLine, 'UNSCOPED FALLBACK', 'unassigned story NPC preserves their original fallback');
 weather = 'rain';
-const rainyPlayfulLine = say(byId.dzibim_khibu); // Rain condition is read at conversation time, not while iterating test assertions.
+const dzibimFirst = say(byId.dzibim_khibu);
+assert.equal(dzibimFirst, 'UNSCOPED FALLBACK', 'ordinary personally authored dialogue gets first turn even in rain');
+const rainyPlayfulLine = say(byId.dzibim_khibu); // Rain condition is read at the next conversation time.
 assert.ok(config.personalityFamilies.playful.some(entry => entry.text === rainyPlayfulLine), 'weather-conditioned family dialogue is eligible');
 const scripted = { id: 'story_first', label: 'Story', trigger: 'interact', priority: 12, conditions: { encounter: ['first'] },
   entryNode: 'story', nodes: [{ id: 'story', type: 'text', text: 'SCRIPTED CHARACTER SCENE' }] }; // A specific authored tree should outrank ordinary family chatter.
 byId.garanki_gabu.dialogueTrees.unshift(scripted);
 assert.equal(say(byId.garanki_gabu), 'SCRIPTED CHARACTER SCENE', 'important NPC-specific story dialogue remains first');
-const garankiChatter = say(byId.garanki_gabu); // The prior scripted tree advanced Garanki's per-NPC encounter history once.
-assert.ok(config.characters.garanki_gabu.some(entry => entry.text === garankiChatter), 'named chatter becomes available after the scripted first encounter');
+assert.equal(say(byId.garanki_gabu), 'UNSCOPED FALLBACK', 'unique fallback still plays after the story scene');
+const garankiChatter = say(byId.garanki_gabu);
+assert.ok(config.characters.garanki_gabu.some(entry => entry.text === garankiChatter), 'named chatter becomes available after the scripted and ordinary individual dialogue');
 const shop = { id: 'shop_access', trigger: 'interact', generatedFromShopAccess: true, priority: 0, entryNode: 'shop',
   nodes: [{ id: 'shop', type: 'text', text: 'SHOP ACCESS' }] }; // Existing shop access stays reachable even when shared chatter is eligible.
-byId.unassigned_wanderer.dialogueTrees.push(shop);
-assert.equal(say(byId.unassigned_wanderer), 'SHOP ACCESS', 'shared chatter cannot displace generated shop access');
-assert.notEqual(say(byId.sloomi), 'UNSCOPED FALLBACK', 'heard family dialogue still participates in normal cycling');
+byId.sloomi.dialogueTrees.push(shop);
+assert.equal(say(byId.sloomi), 'SHOP ACCESS', 'shared chatter cannot displace generated shop access');
+const anotherSloomiLine = say(byId.sloomi);
+assert.ok(anotherSloomiLine === 'SHOP ACCESS' || config.personalityFamilies.reserved.some(entry => entry.text === anotherSloomiLine), 'repeated dialogue cannot leak unrelated personality speech');
 
 console.log('Scoped personality/character shared dialogue passed.');
