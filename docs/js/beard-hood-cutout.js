@@ -318,21 +318,83 @@
     return Math.min(SIZE,distance*slope); // Limit to the 200px portrait; Infinity is intentionally clamped.
   }
 
+  function traceLowerRimDirections(hoodRGBA, alphaLimit, seed, maxRadius, left, right, deepest) {
+    // Clockwise right->bottom and counterclockwise left->bottom follow the
+    // actual inner-edge pixels, including small uphill runs and concave turns.
+    // Reversing independent ray order would NOT recover those hidden pixels.
+    const traced=new Int16Array(SIZE); // Each column keeps the lowest reachable inner-border pixel.
+    traced.fill(-1);
+    const result={bottom:traced,clockwiseSteps:0,counterClockwiseSteps:0};
+    if(!left||!right||!deepest)return result;
+    const parent=new Int32Array(PIXELS); // Reused by both directed BFS walks.
+    const seen=new Uint8Array(PIXELS); // 1 marks a visited edge pixel, never an opaque interior fill.
+    const eligible=new Uint8Array(PIXELS); // 0 unknown, 1 edge, 2 not an edge.
+    const queue=new Int32Array(PIXELS); // Bounded 200×200 work buffer; no recursive call stack.
+    const minY=Math.max(0,Math.floor(seed.y)-Math.max(8,Math.min(20,Math.round(maxRadius/4))));
+    const radius2=(maxRadius+8)**2,goal=deepest.y*SIZE+deepest.x;
+    const edge=(x,y)=>{
+      if(x<0||y<minY||x>=SIZE||y>=SIZE)return false;
+      if((x+.5-seed.x)**2+(y+.5-seed.y)**2>radius2)return false;
+      const index=y*SIZE+x,state=eligible[index];
+      if(state)return state===1;
+      if(hoodRGBA[index*4+3]<alphaLimit){eligible[index]=2;return false;}
+      // A real boundary has transparent cloth-free space adjacent to it.
+      // Following only border pixels prevents traversing the outer hood body.
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=x+dx,ny=y+dy;
+        if(nx>=0&&ny>=0&&nx<SIZE&&ny<SIZE
+          &&hoodRGBA[(ny*SIZE+nx)*4+3]<alphaLimit){
+          eligible[index]=1;return true;
+        }
+      }
+      eligible[index]=2;return false;
+    };
+    for(const [name,start] of [['clockwiseSteps',right],['counterClockwiseSteps',left]]){
+      if(!edge(start.x,start.y)||!edge(deepest.x,deepest.y))continue;
+      seen.fill(0);
+      let front=0,back=0,visited=0,found=false;
+      const begin=start.y*SIZE+start.x;
+      queue[back++]=begin;seen[begin]=1;parent[begin]=-1;
+      while(front<back&&visited<4096){
+        const current=queue[front++];visited++;
+        if(current===goal){found=true;break;}
+        const x=current%SIZE,y=(current/SIZE)|0;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+          if(!dx&&!dy)continue;
+          const nx=x+dx,ny=y+dy;
+          if(!edge(nx,ny))continue;
+          const next=ny*SIZE+nx;
+          if(seen[next])continue;
+          seen[next]=1;parent[next]=current;queue[back++]=next;
+        }
+      }
+      if(!found)continue; // Leave unchanged radial fallback when art has a disconnected edge.
+      let current=goal,steps=0;
+      while(current>=0&&steps<4096){
+        const x=current%SIZE,y=(current/SIZE)|0;
+        traced[x]=Math.max(traced[x],y);
+        current=parent[current];steps++;
+      }
+      result[name]=steps;
+    }
+    return result;
+  }
+
   function lowerHoodOpeningSegment(hoodRGBA, options = {}) {
-    // Sample the FIRST opaque pixel on radial rays from the face opening.
-    // Using the final lower hit in each column isolates the lower inner rim;
-    // scanning the hood's bottom silhouette instead would pick outer cloth.
-    const alphaLimit=alphaFloor(options.alphaLimit??242,242); // Near-opaque 95% hood pixels define the ring by default.
-    if(!hoodRGBA || hoodRGBA.length!==PIXELS*4) return {points:[],seed:null};
+    // Independent rays locate the FACE-facing edge, then two opposite
+    // contour walks follow that edge over local climbs before forming columns.
+    const alphaLimit=alphaFloor(options.alphaLimit??242,242);
+    if(!hoodRGBA || hoodRGBA.length!==PIXELS*4)
+      return {points:[],seed:null,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
     const seed=openingSeed(hoodRGBA,alphaLimit);
-    if(!seed)return {points:[],seed:null};
+    if(!seed)return {points:[],seed:null,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
     const bottom=new Int16Array(SIZE);
     bottom.fill(-1);
     const samples=256,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
+    let left=null,right=null,deepest=null;
     for(let ray=0;ray<samples;ray++){
-      // Only the lower half is relevant to a downward permission cone. Avoid
-      // expensive upper-ring ray casts during frequently redrawn portraits.
-      const angle=Math.PI*ray/(samples-1);
+      const angle=Math.PI*ray/(samples-1); // Right (0°) -> bottom (90°) -> left (180°).
       const stepX=Math.cos(angle),stepY=Math.sin(angle);
       let prior=-1;
       for(let d=.5;d<=maxRadius;d+=.5){
@@ -342,14 +404,25 @@
         if(i===prior)continue;
         prior=i;
         if(hoodRGBA[i*4+3]<alphaLimit)continue;
-        // Ignore the upper ring arc; permission starts on the lower opening.
-        if(y+1>=seed.y && y>bottom[x])bottom[x]=y;
+        if(y+1>=seed.y){
+          if(y>bottom[x])bottom[x]=y;
+          if(ray===0)right={x,y};
+          if(ray===samples-1)left={x,y};
+          if(!deepest||y>deepest.y)deepest={x,y};
+        }
         break;
       }
     }
+    const walk=traceLowerRimDirections(hoodRGBA,alphaLimit,seed,maxRadius,left,right,deepest);
+    if(walk.clockwiseSteps||walk.counterClockwiseSteps){
+      for(let x=0;x<SIZE;x++)if(walk.bottom[x]>=0)
+        bottom[x]=walk.bottom[x]; // Followed contour wins over a ray's occluding first hit.
+    }
     const points=[];
     for(let x=0;x<SIZE;x++)if(bottom[x]>=0)points.push({x,y:bottom[x]});
-    return {points,seed};
+    return {points,seed,clockwiseSteps:walk.clockwiseSteps,
+      counterClockwiseSteps:walk.counterClockwiseSteps,
+      edgeFollowed:!!(walk.clockwiseSteps||walk.counterClockwiseSteps)};
   }
 
   function autoHoodAllowanceMask(hoodRGBA, coneSpread = 0, options = {}) {
