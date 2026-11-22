@@ -547,20 +547,6 @@
         "formality": 70
       }
     ],
-    "welcome": [
-      {
-        "text": "greetings",
-        "verbosity": 50,
-        "color": 30,
-        "formality": 75
-      },
-      {
-        "text": "well met",
-        "verbosity": 65,
-        "color": 80,
-        "formality": 85
-      }
-    ],
     "friend": [
       {
         "text": "pal",
@@ -641,20 +627,6 @@
         "formality": 85
       }
     ],
-    "music": [
-      {
-        "text": "melodies",
-        "verbosity": 50,
-        "color": 75,
-        "formality": 50
-      },
-      {
-        "text": "musical performance",
-        "verbosity": 85,
-        "color": 0,
-        "formality": 90
-      }
-    ],
     "rainfall": [
       {
         "text": "rain",
@@ -711,12 +683,6 @@
     ],
     "important": [
       {
-        "text": "big",
-        "verbosity": 20,
-        "color": 45,
-        "formality": 15
-      },
-      {
         "text": "significant",
         "verbosity": 65,
         "color": 0,
@@ -730,12 +696,6 @@
       }
     ],
     "quiet": [
-      {
-        "text": "still",
-        "verbosity": 20,
-        "color": 60,
-        "formality": 30
-      },
       {
         "text": "peaceful",
         "verbosity": 50,
