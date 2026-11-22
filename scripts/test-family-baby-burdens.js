@@ -13,6 +13,8 @@ class Group {
   add(node) { node.parent?.remove(node); node.parent = this; this.children.push(node); }
   remove(node) { this.children = this.children.filter(child => child !== node); if (node.parent === this) node.parent = null; }
   traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
+  updateWorldMatrix() {}
+  getWorldPosition(out) { return out.copy(this.position); }
 }
 class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
 class PlaneGeometry { constructor(w, h) { this.width = w; this.height = h; } dispose() { this.disposed = true; } }
@@ -113,4 +115,26 @@ assert.equal(child.carryBy, null, 'reloading cannot teleport baby into spouse ar
 assert.equal(carry.snapshot().babies.length, 1);
 carry.clear(); assert.equal(carry.snapshot().babies.length, 0);
 assert(persistCount > 0);
-console.log('Single infant Burden, player/spouse handoff, back stow, zone transfer and cleanup: PASS');
+
+// Execute the REAL Shattercasks registry as well. A rebuilt farmhouse scene previously orphaned
+// the live child Burden even though it still existed in family state.
+let activeArea = 'interior', activeScene = new Group();
+const realWindow = { THREE, Combat: { deps: { getCurrentArea: () => activeArea } },
+  GridTileAccessors: { getCurrentArea: () => activeArea, getActiveScene: () => activeScene } };
+vm.runInNewContext(fs.readFileSync('docs/js/shattercasks.js', 'utf8'),
+  { window: realWindow, performance: { now: () => 123 }, console });
+const physical = realWindow.Shattercasks;
+assert(physical?.rebindRegisteredBurden, 'scene registry exposes generic same-object rebind');
+const realProxy = new Group(); realProxy.position.set(4.5, 0, 5.5); activeScene.add(realProxy);
+const realBaby = physical.registerBurden({ id: 'family_baby_scene', mapId: 'interior',
+  kind: 'familyBaby', group: realProxy, hanging: false, invulnerable: true, noHang: true });
+assert(realBaby && physical.getBurden(realBaby.id) === realBaby, 'infant initially owns one scene registry slot');
+physical.releaseZone('interior'); activeScene = new Group();
+assert.equal(physical.getBurden(realBaby.id), null, 'zone unload evicts its previous registry');
+assert.equal(physical.rebindRegisteredBurden(realBaby), true, 'scene rebuild reclaims the same child');
+assert.equal(physical.getBurden(realBaby.id), realBaby, 'rebind does not clone its mesh, carry handle or identity');
+assert.equal(physical.rebindRegisteredBurden(realBaby), true, 'repeated scene repair is idempotent');
+activeArea = 'farm'; activeScene = new Group(); realBaby.carried = true;
+assert.equal(physical.transferCarriedBurdenToArea('farm', realBaby), true, 'shared Burden migration survives a zone rebuild');
+assert.equal(physical.getBurden(realBaby.id, 'farm'), realBaby, 'destination registry owns the original child');
+console.log('Single infant Burden, player/spouse handoff, scene rebuild, zone transfer and cleanup: PASS');
