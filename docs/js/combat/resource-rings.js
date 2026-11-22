@@ -407,6 +407,8 @@
   let resourceArcRebuilds = 0; // Read by debugSnapshot to measure actual arc geometry churn.
   let resourceArcReuses = 0; // Read by debugSnapshot to measure reuse after unrelated resource changes.
   let targetHaloRebuilds = 0; // Read by debugSnapshot to measure target-halo allocations.
+  let capacityChecks = 0; // Debug snapshot shows how many low-frequency stat-provider checks ran.
+  let capacityInvalidations = 0; // Debug snapshot shows detected live capacity changes without a resource event.
 
   function resourceArcSignature(entity, resourceKey, radius) {
     const q = value => Math.round(Number(value) || 0);
@@ -538,6 +540,25 @@
     return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${q(entity.footing ?? 0)}|${entity.maxFooting ?? 0}|${entity.exhaustion.active}|${blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
   }
 
+  // Equipment and trinket providers read mutable state, so registration-time
+  // events alone cannot detect each change. Visible ring HUDs check their
+  // effective capacities twice per second, never on every rendered frame.
+  const CAPACITY_CHECK_INTERVAL_MS = 500; // Bounds stat-provider calls while still responding to stand-alone equipment changes.
+  function capacityChangedSinceLastCheck(entity, nowMs) {
+    const nextAt = entity._ringHudNextCapacityCheckAt;
+    if (Number.isFinite(nextAt) && nowMs >= nextAt - CAPACITY_CHECK_INTERVAL_MS && nowMs < nextAt) return false;
+    const RS = window.ResourceSystem;
+    const capacityKey = [RS.getEffectiveMax(entity, "health"),
+      RS.getEffectiveMax(entity, "stamina"),
+      RS.getEffectiveMax(entity, "footing")].join("|"); // Samples the live existing equipment, perks and temporary-stat providers.
+    const changed = entity._ringHudCapacityKey !== undefined && entity._ringHudCapacityKey !== capacityKey;
+    entity._ringHudCapacityKey = capacityKey;
+    entity._ringHudNextCapacityCheckAt = nowMs + CAPACITY_CHECK_INTERVAL_MS;
+    capacityChecks++;
+    if (changed) capacityInvalidations++;
+    return changed;
+  }
+
   const HOMEOSTASIS_KEY = "homeostasis";
 
   // Creates (once) and updates the ring group parented directly on `scene`
@@ -574,8 +595,9 @@
     }
 
     entity._ringHud.visible = true;
+    const capacityChanged = capacityChangedSinceLastCheck(entity, nowMs); // Stand-alone equipment changes invalidate only visible ring arcs, not the whole scene.
     const key = makeHudKey(entity) + "|" + radius + "|" + isTarget;
-    if (key !== entity._ringHudKey) {
+    if (key !== entity._ringHudKey || capacityChanged) {
       entity._ringHudKey = key;
       const previousResourceGroup = entity._ringHud.children[0];
       if (previousResourceGroup) buildGroundRingForFighter(entity, radius, previousResourceGroup);
@@ -607,12 +629,14 @@
     clearGroup(entity._ringHud);
     entity._ringHud = null;
     entity._ringHudKey = "";
+    delete entity._ringHudCapacityKey;
+    delete entity._ringHudNextCapacityCheckAt;
   }
 
   window.ResourceRings = {
     updateRingHud,
     disposeRingHud,
-    debugSnapshot: () => ({ dashedArcsBuilt, dashMeshesAvoided: dashedArcsBuilt * (DASH_COUNT - 1), resourceArcRebuilds, resourceArcReuses, targetHaloRebuilds }),
+    debugSnapshot: () => ({ dashedArcsBuilt, dashMeshesAvoided: dashedArcsBuilt * (DASH_COUNT - 1), resourceArcRebuilds, resourceArcReuses, targetHaloRebuilds, capacityChecks, capacityInvalidations }),
     parseCssColor,
     // Exposed so other visual systems (game.js's weapon ghost-trail) can
     // reuse the exact same per-affliction color the resource bars themselves

@@ -208,6 +208,31 @@ assert.equal(ringActor._ringHud, priorRoot, 'scene transfer reuses the existing 
 assert.equal(ringScene.children.length, 0, 'scene transfer removes the old parent');
 assert.equal(alternateScene.children[0], priorRoot, 'scene transfer attaches to the destination');
 ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+testNowMs += 500;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true }); // Establishes the next capacity poll's baseline after the previous equipment test.
+const healthBeforeStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Reference to the pre-equipment Health mesh.
+const staminaBeforeStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Must remain unchanged across Health-only modifier updates.
+let standaloneHealthMultiplier = 1; // Simulates a stat provider whose mutable equipment value changes without a resource event.
+const stopStandaloneHealthModifier = ResourceSystem.registerStatModifierProvider((actor, key) => actor === ringActor && key === 'maxHealth' ? standaloneHealthMultiplier : 1);
+const checksBeforeQuietFrame = ResourceRings.debugSnapshot().capacityChecks; // Used to prove a quiet frame performs no new provider lookups.
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(ResourceRings.debugSnapshot().capacityChecks, checksBeforeQuietFrame, 'quiet-frame resource updates do not poll the equipment providers');
+standaloneHealthMultiplier = 0.7;
+testNowMs += 499;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeStandaloneEquip, 'stand-alone stat changes are throttled for 500 ms');
+testNowMs += 1;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+const healthAfterStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Confirms the reduced capacity redraws when the interval elapses.
+assert.notEqual(healthAfterStandaloneEquip, healthBeforeStandaloneEquip, 'equipment-only capacity change refreshes Health arc with no Stamina/Health update');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeStandaloneEquip, 'unchanged Stamina geometry is reused across a Health-only equipment change');
+assert.ok(ResourceRings.debugSnapshot().capacityInvalidations > 0, 'equipment changes are observable in the Pixel Probe counters');
+standaloneHealthMultiplier = 1;
+testNowMs += 500;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthAfterStandaloneEquip, 'removing a modifier with no resource event restores the uncapped Health arc');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeStandaloneEquip, 'removing a Health modifier does not invalidate Stamina geometry');
+stopStandaloneHealthModifier();
 ResourceRings.disposeRingHud(ringActor);
 assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geometry');
 assert.equal(ringScene.children.length, 0);

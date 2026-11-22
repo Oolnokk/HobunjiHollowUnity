@@ -22,7 +22,12 @@ dispose the geometry. No new rendering pass or idle per-frame scene walk.
 `resourceArcReuses` and `targetHaloRebuilds` for profiling; the mobile Pixel Probe also shows these counts. The existing
 source-executed `test-resource-rings.js` now checks reuse, disposal,
 cross-resource affliction invalidation, target changes and radius changes.
-Device FPS and actual allocation reductions remain to be measured.
+Visible resource rings also sample equipment/perk-driven effective capacity at a
+bounded 500-ms interval to catch a modifier changing without a Health/Stamina
+event. The scan is skipped for hidden, fully homeostatic fighters and never
+runs every frame. Mobile Pixel Probe now includes `capacityChecks` and
+`capacityInvalidations` to verify the budget on device. Device FPS and
+actual allocation reductions remain to be measured.
 
 ## 22 Nov 2026: overlapping dens and a barbarian camp at night
 
