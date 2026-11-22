@@ -791,6 +791,7 @@
       function applyKnockback(target, fromX, fromY, speedPxS) {
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
+        if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
         if (target._knockbackLedgeFall || target._cliffClimb?.phase === 'fall') {
           // Already descending: damage still lands, but another hit must not rewind the fall.
           if (target.prone) window.ImpactRagdollPlayback?.triggerTumble?.(target,
@@ -1039,10 +1040,16 @@
         }
         const snapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null; // Captured before a bandit attack's lunge cancellation.
         entity._proneAirFallStartY = null;
-        if (entity._knockbackLedgeFall || entity._knockbackLedgeAir) return true;
+        if (entity._knockbackLedgeFall || entity._knockbackLedgeAir) {
+          entity.proneThrowT = 0; // The existing fall stays in charge; no deferred throw after its landing.
+          return true;
+        }
         if (entity._cliffClimb) {
-          if (entity._cliffClimb.phase === 'fall') return true;
-          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) return true;
+          if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+            entity.proneThrowT = 0;
+            return true;
+          }
         }
         const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
         const airborneY = snapshotY ?? (Number.isFinite(entity._climbLeap?.surfaceY) ? entity._climbLeap.surfaceY
@@ -1058,6 +1065,7 @@
         }; // Same animation and collision-cost pipeline as a shove off an actual ledge.
         entity._banditLungeHopCurrent = 0;
         entity._climbLeap = null;
+        entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0; // Falling replaces, never queues, the ground throw.
         window.KnockbackCollisionImpact?.cancel?.(entity);
         return true;
       }
