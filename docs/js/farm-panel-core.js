@@ -1106,6 +1106,7 @@
   function _buildStablePickRow(entry, ref, pairs, canManage, onRename, onSell) {
     const hasGenotype = !!(entry.genotype?.fur || entry.genotype?.base);
     const value = hasGenotype ? window.CreatureGenetics.sellValueFor(entry.genotype, entry.kind) : null;
+    const babyPrice = entry.lifeStage === 'baby' ? window.LivestockNurseryGrid?.babyValueFor?.(entry)?.amount : null; // Farm roster quotes the same baby price as the Nursery.
     const pending = pairs.some(p => window.FarmAnimals.refsEqual(p.parentA, ref) || window.FarmAnimals.refsEqual(p.parentB, ref));
     const pickKey = `${ref.source}:${ref.id}`;
     const row = document.createElement('div');
@@ -1118,7 +1119,7 @@
       (onRename
         ? `<input class="farm-row-name" value="${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}" ${canManage ? '' : 'disabled'} maxlength="30">`
         : `<span class="farm-row-name" style="padding:2px 4px">${deps.esc(entry.name || window.CreatureGenetics.defaultLivestockName(entry.kind))}</span>`) +
-      `<span class="farm-row-value${value ? ' tier-' + deps.esc(value.tier) : ''}">${value ? `${value.amount}g · ${deps.esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
+      `<span class="farm-row-value${value ? ' tier-' + deps.esc(value.tier) : ''}">${value ? `${babyPrice ?? value.amount}g · ${deps.esc(value.tier)}` : 'Companion'}${pending ? ' · breeding…' : ''}</span>` +
       (onSell ? `<button class="settings-small-btn farm-sell-btn">Sell</button>` : '') +
       _livestockTraitsHtml(entry.genotype, entry.kind);
     window.InventoryStacks?.applyHeadIcon?.(row.querySelector('.farm-row-icon'), entry.kind, entry.genotype); // Reuses Nursery's cached genotype portrait.
@@ -1329,14 +1330,14 @@
     livestock.forEach(entry => {
       const queued = window.PendingAnimalSales?.pendingFor?.(entry); // Used by the roster's reversible shipping action.
       const row = _buildStablePickRow(
-        entry, { source: 'world', id: entry.id }, pairs, canManage,
+        entry, { source: 'world', id: entry.id }, pairs, queued ? false : canManage,
         queued ? null : name => renameLivestock(entry.id, name),
         queued ? null : () => sellLivestock(entry.id)
       );
       if (queued) {
         const status = document.createElement('span');
         status.className = 'farm-note';
-        status.textContent = '📦 Awaiting animal collection · ' + queued.price + 'g (after midnight)';
+        status.textContent = '📦 Queued for shipping pickup · ' + queued.price + 'g (no payment yet)';
         row.appendChild(status);
         if (canManage) {
           const cancelBtn = document.createElement('button');
