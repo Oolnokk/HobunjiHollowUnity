@@ -61,6 +61,14 @@ assert.strictEqual(profile.anatomy.rigScaleY, 1.089, 'live shared rig profiles m
 assert.strictEqual(profile.anatomy.headScale, 0.726, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
 assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), authoredDefaults['mao-ao::male']);
+assert.strictEqual(api.scaleFor('mao-ao', 'male').portraitHeight, 1.089, 'the legacy Height slider migrates to explicit portrait height');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.089, 'the old Height value also initializes leg length, preserving older saved silhouettes');
+profile.anatomy.legLengthScale = 1.45; // Independent leg length is stored on the real shared species/gender anatomy profile.
+assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.45, 'new leg length can diverge from portrait height');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').y, 1.089, 'leg edits must not modify the original portrait height');
+assert(Math.abs(api.legLengthRatioFor('mao-ao', 'male') - 1.45 / 1.089) < 1e-9,
+  'the leg solver receives hip-to-foot reach divided by portrait height, without double-applying global Y scale');
+delete profile.anatomy.legLengthScale; // Restore default profile before existing game-wide scale regression fixtures.
 
 function makeBone() {
   return {
@@ -335,7 +343,7 @@ assert.match(scaleHostSource, /RigScaleAwareBlob/,
   'native attachment-rig downloads must be patched without replacing their metadata payload');
 assert.match(scaleHostSource, /maaImportInput/,
   'native Rig imports must recover rigScale from the selected JSON');
-assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 3/,
+assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 4/,
   'patched v10 exports must identify the x/y/head/offsetY round-trip extension');
 assert.match(scaleHostSource, /profile\.anatomy\.headOffsetY = value\.offsetY/,
   'shared species profiles must receive restored/imported headOffsetY values');
@@ -382,11 +390,8 @@ assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js
   'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
 assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=[A-Za-z0-9_.-]+/,
   'bootstrap must cache-bust the isolated Full Character Scale comparison');
-// The five slider rows are rendered through one small scaleRow(axis, ...) template
-// helper (id="maaFullScaleRange${axis}"/"maaFullScaleNum${axis}") rather than five
-// near-identical literal blocks, so these check the call sites, not the interpolated
-// ids — still fails if any of the five controls is dropped or renamed.
-for (const axis of ['X', 'Y', 'Head', 'OffsetY', 'Age']) {
+// Eight independent dimensions use the same responsive range+exact-number row.
+for (const axis of ['X', 'PortraitHeight', 'LegLength', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
   assert.match(scaleComparisonSource, new RegExp(`scaleRow\\('${axis}'`),
     `the comparison tab must expose a ${axis} slider row`);
 }
