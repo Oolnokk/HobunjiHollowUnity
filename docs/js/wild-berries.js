@@ -138,19 +138,32 @@
       },
       onAction(action) {
         if (action !== 'obj_pick_berry') return { ok: false, message: 'Unknown action.' };
-        deps.inventory[berryKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[berryKey] || 0) + 1);
+        const persisted = deps._zoneBerryPersist.get(mapId); // Live berry locations, separate from herb scatter and animal consumption.
+        const objs = deps._zoneBerryObjects.get(mapId); // The same current object/mesh that the world interaction originally targeted.
+        const groups = deps._zoneBerryMeshGroups.get(mapId); // Old berry prompts cannot re-pick a removed or replaced bush.
+        const tileKey = col + ',' + row; // Canonical berry world-object lookup key, already used by the existing forage owner.
+        if (deps.getCurrentArea?.() !== mapId || persisted?.day !== deps.calendar.day
+          || !persisted.placements.some(p => p.col === col && p.row === row && p.key === berryKey)
+          || objs?.get(tileKey)?.mesh !== mesh || !groups?.includes(mesh)) {
+          return { ok: false, message: 'This berry bush is no longer ready to pick.' };
+        }
+        const stackMax = window.InventoryStacks?.MAX_TOTAL ?? 999; // Shared world inventory cap, not a separate berry-specific limit.
+        const berriesHeld = Math.max(0, Number(deps.inventory[berryKey]) || 0); // Full fruit stacks should not waste a wild bush or report a false pick.
+        if (berriesHeld >= stackMax) return { ok: false, message: 'Cannot carry more ' + (fruitDef?.label || berryKey) + '.' };
+        deps.inventory[berryKey] = berriesHeld + 1;
+        persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row)); // Consume once, before optional seed rolls or events.
         let seedMsg = '';
         if (Math.random() < WILD_BERRY_SEED_CHANCE) {
-          deps.inventory[data.seedKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[data.seedKey] || 0) + 1);
-          seedMsg = ' and found a seed!';
+          const seedsHeld = Math.max(0, Number(deps.inventory[data.seedKey]) || 0); // Optional seed may be capped without blocking the fruit.
+          if (seedsHeld < stackMax) {
+            deps.inventory[data.seedKey] = seedsHeld + 1;
+            seedMsg = ' and found a seed!';
+          }
         }
-        deps._zoneScenes.get(mapId)?.scene.remove(mesh);
-        const objs = deps._zoneBerryObjects.get(mapId);
-        objs?.delete(col + ',' + row);
-        const groups = deps._zoneBerryMeshGroups.get(mapId);
-        if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-        const persisted = deps._zoneBerryPersist.get(mapId);
-        if (persisted) persisted.placements = persisted.placements.filter(p => !(p.col === col && p.row === row));
+        deps._zoneScenes.get(mapId)?.scene?.remove(mesh);
+        objs.delete(tileKey);
+        const i = groups.indexOf(mesh);
+        if (i >= 0) groups.splice(i, 1);
         deps.refreshItemScroll();
         window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
           window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,mapId)); // The berry bush's actual tile is the sound emitter.
