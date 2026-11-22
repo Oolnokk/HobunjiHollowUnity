@@ -2434,10 +2434,18 @@ function resolveBeardHoodAuthoring(option, fighter) {
   if (!option) return {mask:null,roots:[],maxStretch:36,subdivision:4,aboveInfluence:100,belowInfluence:100};
   const cutout = window.PortraitBeardHoodCutout;
   if (fighter) {
-    for (const key of portraitVariantKeysForFighter(fighter, option)) {
-      // Resolve roots and cutouts against the SAME source art as the actual
-      // chosen beard. A neighbour's anchors cannot deform a different head.
-      if (!option.variantLayers?.[key]?.length) continue;
+    const keys=portraitVariantKeysForFighter(fighter, option);
+    for (const key of keys) {
+      // Prefer variant artwork, but an EXACT species/gender may also author
+      // only cutout metadata while reusing a shared beard PNG. Never inherit
+      // another species' metadata from a fallback without matching artwork.
+      const exactSharedArt=key===keys[0]&&option.layers?.length&&(
+        Object.prototype.hasOwnProperty.call(option.variantHoodCutoutMasks||{},key)
+        ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftRoots||{},key)
+        ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftMaxStretch||{},key)
+        ||Object.prototype.hasOwnProperty.call(option.variantHoodTuftSubdivision||{},key)
+      );
+      if (!option.variantLayers?.[key]?.length && !exactSharedArt) continue;
       return {
         mask:option.variantHoodCutoutMasks?.[key] ?? option.hoodCutoutMask ?? null,
         roots:cutout?.normalizeRoots(option.variantHoodTuftRoots?.[key] ?? option.hoodTuftRoots),
