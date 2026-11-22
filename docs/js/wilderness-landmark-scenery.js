@@ -344,13 +344,32 @@ function registerStoneCollision(zone,sites){
  const stoneSites=sites.filter(site=>SOLID_STONE_KINDS.has(site.kind)).map(site=>({
   x:site.point.col+.5,z:site.point.row+.5,y:elevation(site),
   half:.36*Math.max(.6,Number(site.size)||1),height:1.25*Math.max(.6,Number(site.size)||1)
- })); // Cached extents avoid any geometry or scene lookup during frequent movement/pathing checks.
+ })); // Cached extents avoid geometry or scene lookup during movement/pathing checks.
  const blockers=root.AreaFootprintBlockers; // Shared player/NPC/projectile collision service; render meshes stay raycast-inert for interactables.
  if(!stoneSites.length||!blockers?.register)return stoneSites.length;
+ const BUCKET_TILES=8; // One small spatial bin spans eight world tiles; movement near one stone never loops through every wilderness landmark.
+ const columns=new Map(); // x-bin -> z-bin -> stone extents; built once per scene, queried by the shared collision registry.
+ let largestHalf=0; // Conservative maximum stone radius expands queries to adjacent bins when a footprint crosses a bin boundary.
+ for(const stone of stoneSites){
+  largestHalf=Math.max(largestHalf,stone.half);
+  const bx=Math.floor(stone.x/BUCKET_TILES),bz=Math.floor(stone.z/BUCKET_TILES);
+  let rows=columns.get(bx);if(!rows){rows=new Map();columns.set(bx,rows);}
+  let bucket=rows.get(bz);if(!bucket){bucket=[];rows.set(bz,bucket);}
+  bucket.push(stone);
+ }
  unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,blocksBox(x,z,half,worldY){
-  for(const stone of stoneSites){
-   if(worldY!=null && worldY>stone.y+stone.height)continue; // Shots passing above a finite stone remain clear.
-   if(Math.abs(x-stone.x)<=half+stone.half && Math.abs(z-stone.z)<=half+stone.half)return true;
+  if(!Number.isFinite(x)||!Number.isFinite(z))return false;
+  const radius=Math.max(0,Number(half)||0)+largestHalf; // The entire mover footprint plus the widest stone is covered.
+  const left=Math.floor((x-radius)/BUCKET_TILES),right=Math.floor((x+radius)/BUCKET_TILES);
+  const top=Math.floor((z-radius)/BUCKET_TILES),bottom=Math.floor((z+radius)/BUCKET_TILES);
+  for(let bx=left;bx<=right;bx++){
+   const rows=columns.get(bx);if(!rows)continue;
+   for(let bz=top;bz<=bottom;bz++){
+    for(const stone of rows.get(bz)||[]){
+     if(worldY!=null&&worldY>stone.y+stone.height)continue; // Shots passing above a finite stone remain clear.
+     if(Math.abs(x-stone.x)<=half+stone.half&&Math.abs(z-stone.z)<=half+stone.half)return true;
+    }
+   }
   }
   return false;
  }});
