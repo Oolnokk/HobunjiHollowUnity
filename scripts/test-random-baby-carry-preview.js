@@ -36,6 +36,7 @@ const window = {
     'engh-sho': { genders: ['female'] },
   } } } },
   HobunjiRomanceConfig: { family: { phaseScales: { basket: { body: .32, head: .58 } } } },
+  HobunjiCharacterRigScaleDefaults: { scaleFor: () => ({x:.8,y:1.2,head:.7,offsetY:-.03}) }, // Match authored body/head compensation, not just head/body.
   getPortraitFighters() { return [
     {speciesId:'mao-ao',gender:'male'}, {speciesId:'mao-ao',gender:'female'},
     {speciesId:'engh-sho',gender:'female'}, {speciesId:'unlisted',gender:'male'},
@@ -55,7 +56,14 @@ const window = {
         userData: {
           portraitModelWidth: ++modelBuilds % 2 ? .288 : .216,
           portraitModelHeight: modelBuilds % 2 ? .288 : .216, // Different species sizes exercise true newborn scale.
-          neckRig: { headScaleJoint: { scale: {setScalar(v) { model.headFactor = v; }} },
+          portraitVerticalPlacementRatio:.7,
+          neckRig: {
+            spinePosteriorY:-.085,spineBase:{x:.03},
+            neckLocal:{x:.02,y:.08,z:0},
+            skinnedPlane:{position:{z:.01}},
+            headScaleJoint: { scale: {
+              set(x,y,z) { model.headFactors={x,y,z}; },
+            }, position:{y:0}},
           },
         },
         scale: {x:1,y:1,setScalar(v) {this.x=v;this.y=v;}}, position: {y:0},
@@ -74,11 +82,15 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   const BABY_REFERENCE_WIDTH=.3,BABY_REFERENCE_HEIGHT=.3;
   let editingBaby=true,babyRenderTicket=0,babyPreviewRolls=0,babyPreviewStatus='',babyPortraitModel=null;
   let babyPortraitWidth=BABY_REFERENCE_WIDTH,babyPortraitHeight=BABY_REFERENCE_HEIGHT,babyFrontCanvas=null;
+  let babyPortraitPlacementRatio=.5; // Pixel-placement readout only.
+  let babyGripAnchors=window.FamilyBabyCarryPose.anchorsForAvatar({},BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT); // Initial placeholder anatomy.
   ${source.slice(start,end)}
   return {randomBaby,availableBabyIdentities,get status(){return babyPreviewStatus;},
     exit(){editingBaby=false;babyRenderTicket++;},
     enter(){editingBaby=true;},get count(){return babyPreviewRolls;},
     get dimensions(){return [babyPortraitWidth,babyPortraitHeight];},
+    get anchors(){return babyGripAnchors;},
+    get placement(){return babyPortraitPlacementRatio;},
     get portrait(){return babyFrontCanvas;},
     get current(){return babyPortraitModel;}};
 `)(window,mockDocument,three,Math,id=>controls[id],reference,guide,()=>syncs++,()=>frames++,
@@ -86,13 +98,17 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   state,()=>refreshes++,()=>refreshes++);
 
 (async () => {
-  const originalGrips = window.FamilyBabyCarryPose.toProfile(state.carryable,.3,.3); // Portrait U/V/depth must survive every species reroll.
+  const initialAnchors=window.FamilyBabyCarryPose.anchorsForAvatar({},.3,.3);
+  const originalGrips = window.FamilyBabyCarryPose.toProfile(state.carryable,.3,.3,initialAnchors); // Anatomical offsets must survive every species reroll.
   const stable = value => JSON.stringify(value,(_key,item)=>typeof item==='number'?Number(item.toFixed(8)):item); // Ignore harmless IEEE-754 division/multiplication rounding.
   assert.equal(environment.availableBabyIdentities().length,3,'only gender-valid loaded portrait species can be rolled');
   assert.equal(await environment.randomBaby(),true);
   const first = environment.current;
   assert(first && children.length===1,'one real portrait model replaces the reference silhouette');
-  assert.equal(first.headFactor,.58/.32,'newborn head proportions follow actual family configuration');
+  assert(Math.abs(first.headFactors.x-(.7/.8)*(.58/.32))<1e-9,'newborn head X uses rig/head vs body X compensation');
+  assert(Math.abs(first.headFactors.y-(.7/1.2)*(.58/.32))<1e-9,'newborn head Y uses independent body Y compensation');
+  assert(Math.abs(first.userData.neckRig.headScaleJoint.position.y+.03*.288)<1e-9,
+    'authored head-Y nudge from character rig defaults matches the live newborn');
   assert.equal(first.options.npcRecord.childBodyScale,.32,'newborn body uses shared family phase scale');
   assert.equal(first.options.neckRig,true,'infant portrait uses the existing head scaling bone');
   assert.equal(colorSource.noOutline,true,'PNG already has author ink and must not receive generated shell');
@@ -100,16 +116,20 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   assert.equal(first.scale.x,1,'a newborn already scaled by PNGPlaneAvatar must not be scaled to the arbitrary .30 reference');
   assert.equal(first.position.y,.288/2,'newborn stays at its actual portrait-height placement');
   assert.equal(environment.dimensions[0],.288,'initial portrait width comes from the existing PNGPlaneAvatar dimensions');
-  assert.equal(state.carryable.handTargets.left.x,.288*.4,'the grip uses the actual baby width');
-  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288)),stable(originalGrips),
-    'baby grip U/V/depth remain unchanged while resolving a placeholder into a real baby');
+  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-.12)<1e-9,
+    'left grip remains .12 baby-local units from its actual posterior');
+  assert(Math.abs(state.carryable.handTargets.right.x-environment.anchors.neck.x+.12)<1e-9,
+    'right grip remains .12 baby-local units left of its neck');
+  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.288,.288,environment.anchors)),stable(originalGrips),
+    'real newborn changes hand origin locations but preserves saved posterior/neck local distances');
   assert.equal(await environment.randomBaby(),true,'subsequent random baby replaces the current preview');
   assert(environment.current!==first,'two rolls create different preview model instances');
   assert.equal(environment.dimensions[0],.216,'smaller species keep their physically smaller portrait width');
   assert.equal(environment.current.scale.x,1,'randomizing a smaller species never expands it to .30 units');
-  assert.equal(state.carryable.handTargets.left.x,.216*.4,'grip tracks the new portrait size instead of staying at an arbitrary world X');
-  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216)),stable(originalGrips),
-    'unsaved grip coordinates survive random species size changes');
+  assert(Math.abs(state.carryable.handTargets.left.x-environment.anchors.posterior.x-.12)<1e-9,
+    'grip is not scaled by the second baby portrait width');
+  assert.equal(stable(window.FamilyBabyCarryPose.toProfile(state.carryable,.216,.216,environment.anchors)),stable(originalGrips),
+    'unsaved baby hand offsets survive random species changes without portrait percentage scaling');
   assert(disposed.includes(first),'previous preview geometry is released');
   assert.equal(children.length,1,'no accumulating portraits between random rolls');
 
