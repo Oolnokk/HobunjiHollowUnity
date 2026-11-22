@@ -119,6 +119,17 @@ public class AndroidDrivePublicationTest {
         assertTrue(drive.get("oldId").startsWith(".hobunji-previous-world.json-"));
     }
 
+    @Test public void pruningNeverRecognizesForeignOrCanonicalFiles() {
+        String valid = ".hobunji-previous-world.json-123e4567-e89b-12d3-a456-426614174000";
+        assertTrue(AndroidDrivePublication.isOwnedBackup(valid, "world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup("world.json", "world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup(".hobunji-pending-123e4567-e89b-12d3-a456-426614174000", "world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup(valid, "other-world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup(valid + "-copied", "world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup(".hobunji-previous-world.json-user-backup", "world.json"));
+        assertFalse(AndroidDrivePublication.isOwnedBackup(null, "world.json"));
+    }
+
     @Test public void raceWithAnotherWriterDoesNotClobberTheirCanonical() throws Exception {
         Fake drive = new Fake(true);
         drive.anotherWriterPublishes = true;
