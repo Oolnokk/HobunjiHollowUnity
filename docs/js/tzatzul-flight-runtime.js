@@ -118,7 +118,7 @@
         segment: null, struck: false, captive: null, scoutIndex: slot * 3,
         delivered: false, nestUntil: null, retreating: false, orbitDirection: slot % 2 ? -1 : 1,
         orbitLegs: 0, roostUnavailable: false, fallbackFoe: null,
-         readyingReleaseArmed: false, readyingActivity: null }; // Persistent hunt/cave phases per parent. // Independent phase per animal.
+         readyingReleaseArmed: false, readyingWarning: false, readyingActivity: null }; // Tracks whether the bird owes a visible post-interaction warning chord. // Persistent hunt/cave phases per parent. // Independent phase per animal.
       deps.hostileObjects.add(bird);
       actors.add(bird);
       spawnedThisDay.add(roost.id);
@@ -435,7 +435,7 @@
     bird.state = 'idle'; // Avoid an additional ground-pathfinding owner for aerial movement.
     bird.facing = Math.atan2(end.y - start.y, end.x - start.x);
     stats.flights++;
-    mark(bird, phase);
+    if (phase !== 'readying') mark(bird, phase); // Long minigames must not flood the mobile log every short circling leg.
     return true;
   }
   function swoop(bird, target) {
@@ -467,6 +467,7 @@
     const ok = startLeg(bird, endpoint, 'swoop', target);
     if (ok) {
       bird._tzFlight.readyingReleaseArmed = false;
+      bird._tzFlight.readyingWarning = false;
       bird._tzFlight.readyingActivity = null; // A newly committed dive is never blocked by a stale completed interaction.
       stats.swoops++;
     }
@@ -475,7 +476,7 @@
   function returnHome(bird) {
     const state = bird?._tzFlight;
     if (state) {
-      state.readyingReleaseArmed = false; state.readyingActivity = null; // Returning to a real perch abandons the old readying session.
+      state.readyingReleaseArmed = false; state.readyingWarning = false; state.readyingActivity = null; // Returning to a real perch abandons the old readying session.
     }
     if (state?.roost && startLeg(bird, state.roost, 'return')) return true;
     if (state?.captive) releaseCaptive(state.captive, 'roost lost'); // Never leave live prey trapped on a nonexistent return path.
@@ -501,6 +502,7 @@
     const busy = playerNeedsTime(bird, foe); // Shared activity registry, independent of the kind of flying enemy.
     const staging = busy || purpose === 'readying'; // A final release chord also uses the non-attacking readying path.
     if (busy) {
+      state.readyingWarning = false;
       state.readyingReleaseArmed = true; // One visible extra orbit chord after an interaction ends, not an instantaneous grab.
       state.readyingActivity = window.AttackReadiness?.activityFor?.(deps.player) || 'interaction'; // Exposed in mobile wildlife diagnostics.
     }
@@ -520,7 +522,10 @@
         if (!startLeg(bird, endpoint, staging ? 'readying' : 'orbit', foe)) continue;
         state.orbitDirection = side; state.orbitLegs = (state.orbitLegs || 0) + 1;
         stats.orbits++;
-        if (staging) stats.readiedLegs++; // Existing flight support, no second update loop or extra collision owner.
+        if (staging) {
+          stats.readiedLegs++; // Existing flight support, no second update loop or extra collision owner.
+          state.readyingWarning = !busy; // Only a completed activity's final chord is a release warning.
+        }
         return true; // Next short flight leg curves around a LIVE foe, without a separate ticking loop.
       }
     }
@@ -569,11 +574,11 @@
   }
   function advance(bird, dt) {
     const state = bird._tzFlight;
-    if (!state.segment) { retryCombatOrbit(bird, dt); return; }
+    if (!state.segment) { retryCombatOrbit(bird, dt); return; } // An indoor mother must also recover after blocked orbit chords.
     if (state.phase === 'swoop' && playerNeedsTime(bird, state.target)) {
       state.readyingReleaseArmed = true; // The interaction can begin after the dive was committed.
       if (startCombatOrbit(bird, 'readying', state.target)) return; // Redirect smoothly from the current airborne position before contact.
-    } // An indoor mother must also recover after all orbit chords are blocked.
+    }
     state.elapsed = Math.min(state.segment.duration, state.elapsed + dt);
     const limit = state.segment.travelFraction; // Indoor dive ends at the cave rim, with its original speed and distance commitment.
     const t = Math.max(0, Math.min(limit, state.elapsed / state.segment.duration));
@@ -609,7 +614,7 @@
     if (state.phase === 'readying') {
       const foe = state.target; // Keep circling the selected player; do not retarget to another actor during the activity.
       if (!foe || !(foe.health > 0) || (foe.areaId && foe.areaId !== bird.areaId) || foe._denHidden) {
-        state.readyingActivity = null; state.readyingReleaseArmed = false;
+        state.readyingActivity = null; state.readyingReleaseArmed = false; state.readyingWarning = false;
         returnHome(bird); return;
       }
       if (playerNeedsTime(bird, foe)) {
@@ -722,7 +727,7 @@
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
-         readyingActivity: c._tzFlight?.readyingActivity || null, releaseChord: !!c._tzFlight?.readyingReleaseArmed,
+        readyingActivity: c._tzFlight?.readyingActivity || null, releaseChord: !!c._tzFlight?.readyingWarning,
         nestMinutesLeft: c._tzFlight?.phase === 'in-nest' && now !== null
           && Number.isFinite(c._tzFlight.nestUntil) ? Math.max(0, Math.ceil((c._tzFlight.nestUntil - now) * 60)) : null,
         target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null,
