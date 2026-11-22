@@ -1024,6 +1024,11 @@
       // freshly interrupted airborne lunge or cliff climb, transfer the height
       // to that same cliff-fall resolver instead of snapping the portrait down.
       function beginProneAirFall(entity, isPlayer) {
+        const perchedAirY = (entity.onBranch || entity.onPerch) && Number.isFinite(entity.branchSurfaceY)
+          ? entity.branchSurfaceY : null; // Snapshot the carrier's talon/branch height before detaching either support.
+        if (entity.tzatzulCapturedBy) window.TzatzulFlightRuntime?.releaseProneCaptive?.(entity);
+        if (entity.onBranch || entity.onPerch) window.PerchSupport?.release?.(
+          entity, 'knocked prone in air', { deferLegacyKnockback: true }); // No immediate flat injury: gravity and the cliff resolver will charge it once.
         if (isPlayer) {
           if (window.PlayerJump?.knockProne?.()) return true;
           if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // Releasing a horizontal cliff crossing must begin its vertical descent immediately.
@@ -1045,7 +1050,7 @@
             return falling;
           }
           const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
-          const currentY = Number(entity.lungeFlightWorldY);
+          const currentY = perchedAirY ?? Number(entity.lungeFlightWorldY);
           if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
             entity.lunging = false;
             entity.lungeFlightWorldY = null;
@@ -1073,7 +1078,7 @@
           }
         }
         const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
-        const airborneY = snapshotY ?? (Number.isFinite(entity._climbLeap?.surfaceY) ? entity._climbLeap.surfaceY
+        const airborneY = snapshotY ?? perchedAirY ?? (Number.isFinite(entity._climbLeap?.surfaceY) ? entity._climbLeap.surfaceY
           : Number.isFinite(groundY) ? groundY + Math.max(0, Number(entity._banditLungeHopCurrent) || 0) : null);
         if (!Number.isFinite(groundY) || !Number.isFinite(airborneY)
           || airborneY <= groundY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false;
