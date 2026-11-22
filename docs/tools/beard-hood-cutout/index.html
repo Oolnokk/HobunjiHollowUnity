@@ -273,10 +273,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }
     throw Error((failure?.message||'Image load failed')+'. Use the PNG override if neither asset host permits canvas access.');
   }
-  function cosmeticLayers(doc){
+  function cosmeticLayers(doc,frontHoodOnly=false){
     const parts=doc?.speciesVariants?.[variant]?.parts||doc?.parts||{};
     const head=parts.head||{};
-    if(head.layers) return Object.values(head.layers).filter(layer=>layer?.image?.url);
+    if(head.layers)return Object.entries(head.layers)
+      .filter(([layerName,layer])=>layer?.image?.url&&(!frontHoodOnly||layerName!=='back'))
+      .map(([,layer])=>layer); // Only the actual front hood participates in beard/cloth negotiation.
     if(head.image?.url)return [head];
     return [];
   }
@@ -285,11 +287,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     const cx=SIZE/2+xform.ay*80,cy=SIZE/2-xform.ax*80;
     ctx.drawImage(image,cx-w/2,cy-h/2,w,h); // Same 80px B-preset alignment as portrait-utils.js.
   }
-  async function drawCosmetic(doc,localOverride){
+  async function drawCosmetic(doc,localOverride,frontHoodOnly=false){
     const target=blank(); // Each async attempt owns its own canvas; a stale request cannot taint the active editor.
     const ctx=target.getContext('2d');ctx.imageSmoothingEnabled=true;
     if(localOverride){ctx.drawImage(localOverride,0,0,SIZE,SIZE);return target;}
-    const layers=cosmeticLayers(doc);
+    const layers=cosmeticLayers(doc,frontHoodOnly);
     if(!layers.length)throw Error('No artwork for '+variant+' in the selected cosmetic');
     const loaded=await Promise.all(layers.map(layer=>loadImage(assetUrl(layer.image.url))));
     for(const image of loaded)drawAsset(ctx,image);
@@ -333,7 +335,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     lastError='';
     try{
       const [beardArt,hoodArt]=await Promise.all([
-        drawCosmetic(beardDoc,overrideBeard),drawCosmetic(hoodDoc,overrideHood)
+        drawCosmetic(beardDoc,overrideBeard),drawCosmetic(hoodDoc,overrideHood,true)
       ]);
       if(ticket!==generation)return;
       // Validate origin cleanliness BEFORE touching the active canvases. If a
