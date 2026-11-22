@@ -2153,6 +2153,21 @@
     return rec;
   }
 
+  function releaseBanditApproach(c) {
+    const slot = _banditSlotForActor.get(c); // A fighter that switches to ranged/flask/staged combat must release its previous melee sector.
+    if (slot) {
+      const index = _banditAttackSlots.indexOf(slot);
+      if (index >= 0) _banditAttackSlots.splice(index, 1);
+      _banditSlotForActor.delete(c);
+    }
+    const ring = _banditQueueForActor.get(c); // Do not leave a stale waiting ring pinning the next squad to an unnecessary outer ring.
+    if (ring) {
+      const index = _banditQueueRings.indexOf(ring);
+      if (index >= 0) _banditQueueRings.splice(index, 1);
+      _banditQueueForActor.delete(c);
+    }
+  }
+
   // A point on a ring of the given radius around the target, at the
   // given world angle -- moving toward this (rather than straight at
   // the target) is what actually draws a bandit around to its assigned
@@ -2480,11 +2495,13 @@
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     if (c?.tzatzulCapturedBy) {
       if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
+      releaseBanditApproach(c);
       return { aimAngle: c.facing || 0, moving: false };
     }
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
     if (!targetPlayer || Number(targetPlayer.health) <= 0 || targetPlayer.tzatzulCapturedBy) {
       if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // The previous target is no longer a valid charge recipient.
+      releaseBanditApproach(c);
       return { aimAngle: c.facing || 0, moving: false };
     }
     if (c._banditPreparedCharge && (c._banditPreparedCharge.target !== targetPlayer || c.prone || c.state !== 'chase')) {
@@ -2505,12 +2522,12 @@
         ghoulWyrmApiByActor.set(c, witchApi);
       }
       const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
-      if (witchResult?.handled) return witchResult;
+      if (witchResult?.handled) { releaseBanditApproach(c); return witchResult; }
     }
     const flaskResult = c._banditPreparedCharge || c._banditAction ? null : updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Do not let a flask throw interrupt a held or committed melee windup.
-    if (flaskResult?.handled) return flaskResult;
+    if (flaskResult?.handled) { releaseBanditApproach(c); return flaskResult; }
     const rangedResult = c._banditPreparedCharge || c._banditAction ? null : window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
-    if (rangedResult?.handled) return rangedResult;
+    if (rangedResult?.handled) { releaseBanditApproach(c); return rangedResult; }
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
     if (c._banditChargeDecisionCdS > 0) c._banditChargeDecisionCdS = Math.max(0, c._banditChargeDecisionCdS - dt); // One random charge decision per short interval, never every frame.
     if (c._banditFlankRetryS > 0) c._banditFlankRetryS = Math.max(0, c._banditFlankRetryS - dt); // Backstab contenders may reattempt a flank after a short normal-combat fallback.
@@ -2581,7 +2598,7 @@
     // js/combat/npc-duel-staging.js replaces the decision step below with a
     // cheap staged duel and hands back here (null) once the player gets involved.
     const stagedDuel = npcDuelStagingUpdate(c, dt, targetPlayer, distToPlayer, towardAngle);
-    if (stagedDuel) return stagedDuel;
+    if (stagedDuel) { releaseBanditApproach(c); return stagedDuel; }
 
     // banditPersonalSpaceAdjust only nudges a MOVEMENT TARGET away from
     // other bandits -- once a bandit is "in range" (below) it stops
