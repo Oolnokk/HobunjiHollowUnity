@@ -153,6 +153,37 @@ assert.equal(carryPrey.tzatzulCapturedBy,null,'no stale capture owner');
 assert.equal(farBird.tzatzulCarrying,false,'gripping pose cleared');
 assert.equal(w.TzatzulFlightRuntime.__test.releaseCaptive(carryPrey,'duplicate'),false,'release is idempotent');
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().captures,1,'mobile capture census counts only one event');
+// Regression: an NPC grabbed in the middle of a bandit-vs-tribe fight must relinquish ALL ground movement owners.
+const cancellations={ dodge:0, lunge:0, swing:0, ranged:0, impact:0 }; // Counts the actual subsystem handoffs on the live captive.
+w.EnemyDodge={cancel(c){c._enemyDodgePending=null;c.dodging=false;cancellations.dodge++;}};
+w.BanditCombat={cancelLunge(c){c._banditLunging=false;cancellations.lunge++;},finishAction(c){c._banditAction=null;cancellations.swing++;}};
+w.RangedWeapons.cancelBanditAction=c=>{c._rangedAction=null;cancellations.ranged++;};
+w.KnockbackCollisionImpact={cancel(){cancellations.impact++;}};
+const liftedBandit={creatureKey:'bandit',isBandit:true,health:40,areaId:zone,
+  x:farBird.x+64,y:farBird.y,state:'chase',knockbackT:.6,knockbackVX:120,knockbackVY:-30,
+  vx:80,vy:-40,dodging:true,_enemyDodgePending:{remainingS:.2},_banditLunging:true,
+  _banditAction:{cancelled:false},_rangedAction:{kind:'fire'}}; // Existing hostile, not a copied carry proxy.
+const liftStartX=liftedBandit.x; // Simulates the former duel's ground position trying to reassert itself midflight.
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,liftedBandit));
+assert.deepEqual(cancellations,{dodge:1,lunge:1,swing:1,ranged:1,impact:1},
+  'capture cancels pending dodge, lunge, swing, ranged shot and collision impulse');
+assert.equal(liftedBandit.knockbackT,0,'damage from the initiating swoop cannot continue to move the captive');
+assert.equal(liftedBandit.knockbackVX,0);
+assert.equal(liftedBandit.knockbackVY,0);
+assert.equal(liftedBandit.vx,0);
+assert.equal(liftedBandit.vy,0);
+assert.equal(liftedBandit.state,'tzatzul-carried');
+liftedBandit.x=liftStartX; liftedBandit.state='chase'; liftedBandit.prone=true; liftedBandit.knockbackT=.5;
+assert(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),'carrier reasserts its support after a stale ground-combat write');
+assert.strictEqual(liftedBandit.onPerch,farBird.onPerch);
+assert.notEqual(liftedBandit.x,liftStartX,'a combatant cannot drag the captive back to its former duel position');
+assert.equal(liftedBandit.state,'tzatzul-carried');
+assert.equal(liftedBandit.prone,false);
+assert.equal(liftedBandit.knockbackT,0);
+assert.equal(w.TzatzulFlightRuntime.carrierOf(liftedBandit),farBird);
+assert(w.TzatzulFlightRuntime.__test.releaseCaptive(liftedBandit,'returned to roost'));
+assert.equal(liftedBandit.state,'chase','a surviving released bandit returns to its prior AI state');
+
 const dyingPrey={creatureKey:'gar-wolf',health:10,areaId:zone,x:farBird.x,y:farBird.y,state:'chase'};
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,dyingPrey));
 dyingPrey.health=0;dyingPrey.state='dying';
