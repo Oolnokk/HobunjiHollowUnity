@@ -292,23 +292,90 @@
     return encodeMask(warped);
   }
 
-  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA) {
+  function normalizeConeSpread(value) {
+    const n = Number(value); // Cone widening in horizontal pixels per pixel below the lower opening edge.
+    return value == null || !Number.isFinite(n) ? 0 : Math.max(0,Math.min(2,n));
+  }
+
+  function lowerHoodOpeningSegment(hoodRGBA, options = {}) {
+    // Sample the FIRST opaque pixel on radial rays from the face opening.
+    // Using the final lower hit in each column isolates the lower inner rim;
+    // scanning the hood's bottom silhouette instead would pick outer cloth.
+    const alphaLimit=alphaFloor(options.alphaLimit,64);
+    if(!hoodRGBA || hoodRGBA.length!==PIXELS*4) return {points:[],seed:null};
+    const seed=openingSeed(hoodRGBA,alphaLimit);
+    if(!seed)return {points:[],seed:null};
+    const bottom=new Int16Array(SIZE);
+    bottom.fill(-1);
+    const samples=512,maxRadius=Math.min(SIZE,Math.max(20,Number(options.maxRadius)||85));
+    for(let ray=0;ray<samples;ray++){
+      const angle=2*Math.PI*ray/samples;
+      const stepX=Math.cos(angle),stepY=Math.sin(angle);
+      let prior=-1;
+      for(let d=.5;d<=maxRadius;d+=.5){
+        const x=Math.floor(seed.x+stepX*d),y=Math.floor(seed.y+stepY*d);
+        if(x<0||x>=SIZE||y<0||y>=SIZE)break;
+        const i=y*SIZE+x;
+        if(i===prior)continue;
+        prior=i;
+        if(hoodRGBA[i*4+3]<alphaLimit)continue;
+        // Ignore the upper ring arc; permission starts on the lower opening.
+        if(y+1>=seed.y && y>bottom[x])bottom[x]=y;
+        break;
+      }
+    }
+    const points=[];
+    for(let x=0;x<SIZE;x++)if(bottom[x]>=0)points.push({x,y:bottom[x]});
+    return {points,seed};
+  }
+
+  function autoHoodAllowanceMask(hoodRGBA, coneSpread = 0, options = {}) {
+    // At zero widening, paint all columns vertically beneath the detected
+    // bottom opening segment; positive widening grows the area like a cone.
+    const spread=normalizeConeSpread(coneSpread),rim=lowerHoodOpeningSegment(hoodRGBA,options);
+    const bits=new Uint8Array(PIXELS);
+    if(!rim.points.length)return {mask:encodeMask(bits),bottomPoints:[],openingSeed:rim.seed,
+      coneSpread:spread,allowedPixels:0};
+    let allowedPixels=0;
+    for(let y=0;y<SIZE;y++){
+      let left=SIZE,right=-1;
+      for(const point of rim.points){
+        if(point.y>y)continue;
+        const expansion=(y-point.y)*spread;
+        left=Math.min(left,Math.floor(point.x-expansion));
+        right=Math.max(right,Math.ceil(point.x+expansion));
+      }
+      if(right<left)continue;
+      const first=Math.max(0,left),last=Math.min(SIZE-1,right);
+      if(last<first)continue;
+      bits.fill(1,y*SIZE+first,y*SIZE+last+1);
+      allowedPixels+=last-first+1;
+    }
+    return {mask:encodeMask(bits),bottomPoints:rim.points,
+      openingSeed:rim.seed,coneSpread:spread,allowedPixels};
+  }
+
+  function partitionBeardHood(requestMask, allowanceMask, beardRGBA, hoodRGBA, whiskerMask = null) {
     // No authored hood permission mask means legacy permissive behavior.
     // An explicit EMPTY mask means no hood pixel may be removed.
     const request = decodeMask(requestMask);
+    const whiskers = decodeMask(whiskerMask); // Explicit beard override defeats otherwise protected hood areas.
     const allowed = allowanceMask == null ? null : decodeMask(allowanceMask);
     const approved = new Uint8Array(PIXELS);
     const refused = new Uint8Array(PIXELS);
-    let requested = 0, approvedPixels = 0, refusedPixels = 0;
+    let requested = 0, approvedPixels = 0, refusedPixels = 0, whiskerWins = 0;
     if (!beardRGBA || !hoodRGBA || beardRGBA.length !== PIXELS * 4 || hoodRGBA.length !== PIXELS * 4)
-      return {approved, refused, requested, approvedPixels, refusedPixels};
+      return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins};
     for (let i = 0; i < PIXELS; i++) {
-      if (!request[i] || beardRGBA[i * 4 + 3] < 8 || hoodRGBA[i * 4 + 3] < 8) continue;
+      if ((!request[i]&&!whiskers[i]) || beardRGBA[i * 4 + 3] < 8 || hoodRGBA[i * 4 + 3] < 8) continue;
       requested++;
-      if (!allowed || allowed[i]) {approved[i] = 1;approvedPixels++;}
+      if (!allowed || allowed[i] || whiskers[i]) {
+        approved[i] = 1;approvedPixels++;
+        if (whiskers[i] && allowed && !allowed[i]) whiskerWins++;
+      }
       else {refused[i] = 1;refusedPixels++;}
     }
-    return {approved, refused, requested, approvedPixels, refusedPixels};
+    return {approved, refused, requested, approvedPixels, refusedPixels, whiskerWins};
   }
 
   function applyRefusedBeardOutline(beardRGBA, refused) {
@@ -347,15 +414,19 @@
     // only the two supplied layers; never punch holes into a full portrait.
     const empty = {applied:false,requested:0,approvedPixels:0,refusedPixels:0,
       erasedPixels:0,outlinedPixels:0};
-    if (!beardCanvas || !hoodCanvas || !normalizeMask(requestMask)?.runs.length) return empty;
+    if (!beardCanvas || !hoodCanvas ||
+        (!normalizeMask(requestMask)?.runs.length && !normalizeMask(options.whiskerMask)?.runs.length)) return empty;
     try {
       const beardCtx = beardCanvas.getContext('2d',{willReadFrequently:true});
       const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
       const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
       const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
-      const fittedAllowance = deformHoodPermissionMask(allowanceMask,options.hoodMoves);
-      const partition = partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data);
-      const {approved,refused,requested,approvedPixels,refusedPixels} = partition;
+      const automatic=options.permissionMode==='auto'
+        ? autoHoodAllowanceMask(hood.data,options.coneSpread) : null;
+      const fittedAllowance=automatic?.mask ??
+        (options.permissionMode==='all' ? null : deformHoodPermissionMask(allowanceMask,options.hoodMoves));
+      const partition=partitionBeardHood(requestMask,fittedAllowance,beard.data,hood.data,options.whiskerMask);
+      const {approved,refused,requested,approvedPixels,refusedPixels,whiskerWins} = partition;
       // Permission applies ONLY where the transformed front hood actually has
       // pixels. No hood at that coordinate means nothing to erase from beard.
       for (let i = 0; i < PIXELS; i++) if (approved[i]) {
@@ -372,7 +443,9 @@
         outlinedPixels = outlined.outlinedPixels;
       }
       const stats = {applied:approvedPixels>0||refusedPixels>0,
-        requested,approvedPixels,refusedPixels,erasedPixels,outlinedPixels};
+        requested,approvedPixels,refusedPixels,erasedPixels,outlinedPixels,whiskerWins,
+        automaticOpeningPixels:automatic?.allowedPixels??null,
+        bottomRingPoints:automatic?.bottomPoints.length??null};
       if (options.includeMasks) {
         stats.approvedMask = encodeMask(approved);
         stats.refusedMask = encodeMask(refused);
@@ -386,6 +459,7 @@
   window.PortraitBeardHoodCutout = Object.freeze({
     SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
+    normalizeConeSpread, lowerHoodOpeningSegment, autoHoodAllowanceMask,
     planTuftStretch, stretchHoodToRoots, applyToHood,
     partitionBeardHood, deformHoodPermissionMask, applyRefusedBeardOutline, negotiateBeardHood,
   });
