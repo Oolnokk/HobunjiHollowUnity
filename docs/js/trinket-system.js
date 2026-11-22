@@ -28,8 +28,9 @@
   const LOOT_KEY_PREFIX = 'trinket_'; // Loot-pool itemKeys of the form trinket_<id> grant a gear trinket instead of an inventory stack.
 
   // attunementCost reflects broad usefulness: general-purpose power is
-  // expensive, narrow/gimmicky effects are cheap, strong-with-a-drawback sits
-  // in the middle. Three town Icons (9) deliberately exceed the 8 budget.
+  // expensive, narrow/gimmicky effects are cheap. A meaningful drawback
+  // discounts a comparable clean bonus unless the upside is much stronger.
+  // Three town Icons (9) deliberately exceed the 8 budget.
   const DEFINITIONS = Object.freeze({
     // ── Town Icons (Funji & Son's General Store) ──────────────────────
     iconNaoung: {
@@ -187,9 +188,10 @@
       effects: { stats: { flaskPower: 1.25, flaskRadius: 1.15, shatterPower: 1.25, shatterRadius: 1.15 } },
     },
     // ── Double-edged combat trinkets (definitions only; no acquisition source) ──
-    // Trade-offs consume 1-2 Attunement rather than the 2-3 of pure bonuses.
+    // Trade-offs consume 1-2 Attunement. Risky alternatives with comparable
+    // upside to a clean 2-point trinket cost 1, not 2.
     unstableBalance: {
-      id: 'unstableBalance', displayName: 'Unstable Balance', icon: '⚖️', attunementCost: 2,
+      id: 'unstableBalance', displayName: 'Unstable Balance', icon: '⚖️', attunementCost: 1,
       category: 'combat', description: 'Your weapon hits deal 25% more Footing damage, but you receive 25% more Footing damage.',
       effects: { stats: { outgoingFootingDamage: 1.25, incomingFootingDamage: 1.25 } },
     },
@@ -199,7 +201,7 @@
       effects: { stats: { outgoingHealthDamage: 1.40, incomingHealthDamage: 1.30 } },
     },
     leadKnuckles: {
-      id: 'leadKnuckles', displayName: 'Lead Knuckles', icon: '✊', attunementCost: 2,
+      id: 'leadKnuckles', displayName: 'Lead Knuckles', icon: '✊', attunementCost: 1,
       category: 'combat', description: 'Heavy weapon hits deal 60% more Footing damage, but heavy attacks cost 50% more Stamina.',
       effects: { stats: { heavyFootingDamage: 1.60, heavyAttackStaminaCost: 1.50 } },
     },
@@ -214,7 +216,7 @@
       effects: { stats: { knockbackDistance: 0.40, dodgeTravel: 0.60 } },
     },
     hollowLungs: {
-      id: 'hollowLungs', displayName: 'Hollow Lungs', icon: '🫁', attunementCost: 2,
+      id: 'hollowLungs', displayName: 'Hollow Lungs', icon: '🫁', attunementCost: 1,
       category: 'combat', description: 'Black-Stamina Exhaustion debt recovers 75% faster, but maximum Stamina is reduced by 25%.',
       effects: { stats: { exhaustionRecovery: 1.75, maxStamina: 0.75 } },
     },
