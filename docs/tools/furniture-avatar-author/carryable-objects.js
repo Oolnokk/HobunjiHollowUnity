@@ -605,7 +605,7 @@
     babyReference.visible=mode==='carry'&&editingBaby;
     document.querySelectorAll('[data-left-tab]').forEach(tab=>
       tab.classList.toggle('active',tab.dataset.leftTab===mode));
-    if(mode==='carry')select(editingBaby?'left':'anchor');
+    if(mode==='carry')select('anchor'); // Entering the Carryable tab retains the usual furniture starting guide; editBaby selects the baby hand grip explicitly.
     setHoldingVisibility();
     if(mode==='carry')frameHoldingPreview();
     return result;
