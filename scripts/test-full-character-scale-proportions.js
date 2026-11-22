@@ -104,6 +104,20 @@ assert.equal(handRefreshes, 2, 'reverting both edited hands in one batch costs o
 partRuntimes.restorePartRuntimeDefaults();
 assert.equal(handRefreshes, 2, 'repeating Reset all cannot trigger redundant hand rebuilds');
 
+// A shipped per-species exception is not the same as an absent fallback:
+// reset must restore its exact original hand AND foot scale, never force 100%.
+handConfigData.speciesScaleOverrides.nuhongan = { female: .83 }; // Simulates a canonical authored hand-size exception.
+authorWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale.nuhongan = { female: 1.18 }; // Existing authored foot exception, separate from hands.
+const originalException = { species: 'nuhongan', gender: 'female', anatomy: { handScale: 1.44, footScale: .66 } };
+configureAnatomy(originalException);
+assert.equal(handConfigData.speciesScaleOverrides.nuhongan.female, 1.44);
+assert.equal(authorWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale.nuhongan.female, .66);
+partRuntimes.restorePartRuntimeDefaults();
+assert.equal(handConfigData.speciesScaleOverrides.nuhongan.female, .83,
+  'Reset all restores the shipped 83% hand scale for that species instead of erasing it');
+assert.equal(authorWindow.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.footScale.nuhongan.female, 1.18,
+  'Reset all restores the shipped 118% foot scale without changing the hand scale');
+
 const characters = { 'mao-ao::male': { species: 'mao-ao', gender: 'male', anatomy: {
   portraitScale: 1.1, handScale: .9, footScale: 1.05, rigScaleY: 1.12,
 } } }; // Canonical authored part sizes must be recoverable after Reset.
