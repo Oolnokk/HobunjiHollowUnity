@@ -1925,6 +1925,10 @@
     { name: 'rear', offset: Math.PI },
   ]); // Static target-relative sectors; all bandits reuse this four-element definition.
   const BANDIT_STANDOFF_RANGE_MUL = 1.8;
+  function banditPersonalSpacePx() { return deps.TILE * 0.85; } // Reuse the established world-scale body spacing; evaluated only after init supplies deps.
+  const BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD = 30 * Math.PI / 180; // Stable authored 30° idle sway for close-in and queued melee fighters.
+  const BANDIT_STRAFE_HZ = 0.14; // Authored slow formation breathing cadence, reused by waiting-ring decisions.
+  const BANDIT_STRAFE_SPEED_PX_S = 55; // Final positioning speed after pursuing the assigned sector; never replaces chase sprint.
   const _banditAttackSlots = []; // [{ bandit, target, sector, angle }] The existing mobile arena log reads the same array.
   const _banditSlotForActor = new WeakMap(); // Constant-time existing-sector lookup; the strong debug collection is still pruned of dead/unloaded actors.
   let _banditSlotsPrunedAt = -Infinity; // Shared once-per-frame cleanup rather than scanning every combatant's peers on every AI decision.
