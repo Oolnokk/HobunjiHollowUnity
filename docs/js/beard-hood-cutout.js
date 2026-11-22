@@ -431,7 +431,7 @@
     const spread=normalizeConeSpread(coneSpread),rim=lowerHoodOpeningSegment(hoodRGBA,options);
     const bits=new Uint8Array(PIXELS);
     if(!rim.points.length)return {mask:encodeMask(bits),bottomPoints:[],openingSeed:rim.seed,
-      coneSpread:spread,allowedPixels:0};
+      coneSpread:spread,allowedPixels:0,clockwiseSteps:0,counterClockwiseSteps:0,edgeFollowed:false};
     for(let y=0;y<SIZE;y++){
       for(const point of rim.points){
         if(point.y>y)continue;
@@ -447,7 +447,9 @@
     let allowedPixels=0;
     for(const bit of bits)allowedPixels+=bit;
     return {mask:encodeMask(bits),bottomPoints:rim.points,
-      openingSeed:rim.seed,coneSpread:spread,allowedPixels};
+      openingSeed:rim.seed,coneSpread:spread,allowedPixels,
+      clockwiseSteps:rim.clockwiseSteps,counterClockwiseSteps:rim.counterClockwiseSteps,
+      edgeFollowed:rim.edgeFollowed};
   }
 
   function upperHoodOpeningSegment(hoodRGBA, options = {}) {
