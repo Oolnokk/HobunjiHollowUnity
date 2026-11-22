@@ -29,7 +29,10 @@ const THREE = {
   MeshBasicMaterial: Material, SpriteMaterial: Material,
   PlaneGeometry: class { constructor(width, height) { this.width = width; this.height = height; } },
   CanvasTexture: class { constructor(canvas) { this.image = canvas; } },
-  TextureLoader: class { load(path, done) { const map = { image: { width: 20, height: 60 }, path }; done(map); return map; } },
+  TextureLoader: class { load(path, done) { const map = {
+    image:{width:450,height:1204}, path, dispose(){this.disposed=true;},
+    clone(){ return { image:this.image, source:this, dispose(){this.disposed=true;} }; },
+  }; loadedMap = map; done(map); return map; } },
   DoubleSide: 2, AdditiveBlending: 3, LinearFilter: 4,
 }; // Minimal geometric API: the test cares about attachment ownership, not rasterization.
 const document = {
@@ -44,6 +47,8 @@ const document = {
 }; // Allows the real tiny flame to be created without requiring WebGL.
 
 let now = 0; // Virtual monotonic time for the shared 30-second burning deadline.
+let loadedMap = null; // Original uncolored PNG returned to the stow effects path, not the already-colored held material.
+let fireStarts = 0, fireTicks = 0, fireDisposals = 0; // Instrument the exact shared layered-effects adapter used by game.
 let heldMode = 'tool'; // Simulates tool draw/put-away while keeping the selected torch.
 let player = new Group(); // Player roots may be replaced when an avatar respawns or loads.
 player.userData = { speciesId:'mao-ao', gender:'male', portraitModelHeight:1 };
@@ -70,8 +75,39 @@ const world = {
   },
   CharacterMetaSave: { update() {} },
   WeaponToolStances: { poses:{ torchHold:{ scale:.68 } } }, // Simulates the same idle stance consumed by the game and editor.
+  HobunjiLayeredWeaponEffects: {
+    registerLayer(state, mesh, layer, image) {
+      assert.equal(layer.material, 'marker', 'stowed cloth uses the held torch marker material');
+      assert.equal(layer.markerReferenceValue, 179, 'stowed torch uses the authored wick shade reference');
+      assert.equal(image, loadedMap.image, 'mask is scanned from the original torch PNG, never the lit held canvas');
+      assert.notEqual(mesh.material.map, handMap, 'belt has its own texture clone instead of mutating the carried torch');
+      state.materialLayers = [{mesh,config:layer,image}];
+    },
+    activateStatic(state, base, layers, meshes, image, unit) {
+      assert.equal(base.vfx.litOnly, true, 'torch VFX retains ignition-only emission');
+      assert.equal(base.vfx.worldRise, true, 'torch VFX still rises in world space');
+      assert.equal(base.vfx.fixedMasteryRank, 5, 'torch VFX retains the same particle mastery rank');
+      assert.equal(image, loadedMap.image);
+      assert.equal(unit, .5 / 450);
+      const group = new Group();
+      state.plane.add(group);
+      state.fireEmitters = [{ group, particles:[] }];
+      fireStarts++;
+    },
+    stepFire(state, dt) {
+      assert(dt >= 0 && dt <= .05, 'particle time step is capped after stalls');
+      assert.equal(state.fireEmitters.length, 1);
+      fireTicks++;
+    },
+    dispose(state) {
+      for (const fx of state.fireEmitters || []) fx.group.parent?.remove(fx.group);
+      state.fireEmitters = [];
+      fireDisposals++;
+    },
+  },
 };
 const context = vm.createContext({ window:world, performance:{now:() => now}, document, Date });
+vm.runInContext(fs.readFileSync('docs/config/weapon-sprite-assemblies.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/adventuring-tools.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8'), context);
@@ -101,29 +137,41 @@ heldMode = 'none';
 now = 1000;
 sync({timestamp:now});
 assert.equal(belt.visible, true, 'the stowed torch appears on the actual player');
-assert.equal(belt.children[0].material.map, handMap, 'belt shares the already-colored held PNG');
+assert.notEqual(belt.children[0].material.map, handMap, 'belt owns its own separately recolored PNG map');
+assert.equal(belt.children[0].material.map.source, loadedMap, 'belt recolors a clone of the original authored torch PNG');
+assert.equal(belt.children.length, 1, 'no extra decorative flame; real particles are children of the PNG plane');
+assert.equal(fireStarts, 1, 'one regular layer-effects fire is attached on stow');
+assert.equal(torch.debug.belt.fireEmitters, 1, 'Pixel Probe reports the actual reused particle emitter');
 assert.equal(belt.children[0].rotation.z, Math.PI, 'authored -Y torch tip is upright on the belt');
 assert.equal(belt.children[0].scale.x, .68, 'belt torch reads the authored idle scale, not its raw size');
 assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .5 * .68) < 1e-8, 'belt width matches the held tool width multiplied by Neutral scale');
 assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - realTorchHeight * .68) < 1e-8, 'belt height follows the real torch PNG aspect and Neutral scale');
-assert(Math.abs(belt.children[0].position.y - realTorchHeight * .68 / 2) < 1e-8, 'the handle stays exactly on the hip anchor');
-assert(Math.abs(belt.children[1].position.y - (realTorchHeight + .05) * .68) < 1e-8, 'flame reaches the true upright tip rather than an old miniature offset');
+assert(Math.abs(belt.children[0].position.y + .025 * .68) < 1e-8, 'the sprite is centered around the grip-to-emitter midpoint');
+const originScale = .68; // Checks equal-magnitude distances from the pivot to grip and particle emitter.
+const midpoint = (realTorchHeight + .05) * originScale / 2;
+const gripY = belt.children[0].position.y - realTorchHeight * originScale / 2;
+const emitterY = belt.children[0].position.y + realTorchHeight * originScale / 2 + .05 * originScale;
+assert(Math.abs(gripY + midpoint) < 1e-8 && Math.abs(emitterY - midpoint) < 1e-8,
+  'grip and emitter lie on opposite sides of the same origin');
 assert.equal(torch.debug.belt.idleScale, .68, 'Pixel Probe exposes the actual belt multiplier');
 assert(Math.abs(torch.debug.belt.visibleDimensions.height - realTorchHeight * .68) < 1e-8, 'mobile debug reports the full sized visible art');
 assert.equal(torch.debug.onBelt, true, 'only a lit, stowed torch is reported on the belt');
 world.WeaponToolStances.poses.torchHold.scale = .81; sync({timestamp:now});
 assert.equal(belt.children[0].scale.x, .81, 'editing Neutral scale changes the stowed sprite without rebuilding it');
-assert(Math.abs(belt.children[1].position.y - (realTorchHeight + .05) * .81) < 1e-8, 'flame follows the resized actual tip');
+assert(Math.abs(belt.children[0].position.y + .025 * .81) < 1e-8, 'neutral scale preserves the torch midpoint pivot');
 sourcePlane.geometry.parameters.width = .44; sourcePlane.geometry.parameters.height = .99; // Live species/tool geometry can update after the PNG has already loaded.
 sync({timestamp:now});
 assert(Math.abs(belt.children[0].geometry.width * belt.children[0].scale.x - .44 * .81) < 1e-8, 'live held plane width changes without mesh rebuild');
 assert(Math.abs(belt.children[0].geometry.height * belt.children[0].scale.y - .99 * .81) < 1e-8, 'live held plane aspect changes without mesh rebuild');
-assert(Math.abs(belt.children[0].position.y - .99 * .81 / 2) < 1e-8, 'updated geometry keeps the handle on the belt anchor');
+assert(Math.abs(belt.children[0].position.y + .025 * .81) < 1e-8, 'updated geometry still rotates around the grip/emitter midpoint');
 sourcePlane.geometry.parameters.width = .5; sourcePlane.geometry.parameters.height = realTorchHeight; // Restore the authored shape for the burn/respawn checks.
 world.WeaponToolStances.poses.torchHold.scale = .68; sync({timestamp:now});
-assert.equal(belt.children[1].visible, true, 'belt flame continues burning after stow');
-assert.equal(world.AdventuringTorchBelt.debug.placement, 'animated pants-belt spline');
-assert(belt.position.x > .21, 'belt attaches to the rightmost live waist anchor');
+assert.equal(torch.debug.belt.fireVisible, true, 'real torch emitter remains active after stow');
+assert.equal(world.AdventuringTorchBelt.debug.placement, 'anatomical posterior, behind portrait');
+assert.equal(belt.position.x, 0, 'anatomical posterior uses the central anchor, not the hip');
+assert.equal(belt.position.y, .5, 'posterior tracks the composer');
+assert.equal(belt.position.z, -.04, 'stowed torch sits behind the portrait plane');
+assert(Math.abs(belt.rotation.z + Math.PI / 4) < 1e-8, 'torch is angled 45 degrees about its midpoint');
 const displayCount = player.children.length; // Repeated frames must not allocate or duplicate meshes.
 for (let frame = 1; frame < 150; frame++) sync({timestamp:1000 + frame * 17});
 assert.equal(player.children.length, displayCount, 'the belt artwork is cached, not respawned');
@@ -131,7 +179,8 @@ now = 30000;
 sync({timestamp:now});
 assert.equal(torch.isLit(), false, 'exact expiry operates even when stowed');
 assert.equal(belt.visible, false, 'a burned-out torch and its belt sprite disappear together');
-assert.equal(belt.children[1].visible, false, 'the stowed flame visibly goes out');
+assert.equal(torch.debug.belt.fireVisible, false, 'burnout retires the real fire emitter');
+assert.equal(fireDisposals, 1, 'burnout disposes pooled fire sprites and their states');
 assert.equal(torch.debug.onBelt, false, 'mobile debug reports the hidden expired torch');
 heldMode = 'tool';
 sync({timestamp:now});
@@ -145,7 +194,7 @@ avatar = new Group(); player.add(avatar);
 sync({timestamp:now});
 assert.equal(belt.parent, player, 'player rebuild moves the single cached belt root');
 assert.equal(formerPlayer.children.includes(belt), false, 'old character scene no longer owns the belt mesh');
-assert.equal(belt.children[1].visible, true, 'respawn/reparent does not reset an unexpired flame');
+assert.equal(torch.debug.belt.fireVisible, true, 'respawn recreates the shared torch fire without resetting burn expiry');
 assert.equal(torch.debug.belt.attachedToPlayer, true, 'status reports actual new player attachment');
 world.HOBUNJI_ATTACHMENT_RIG_PROFILES = { characters:{
   'mao-ao::male': { anchors:{ beltStow:{
@@ -158,8 +207,9 @@ assert.equal(Number(belt.position.x.toFixed(2)), -.31, 'authored left/right hip 
 assert.equal(Number(belt.position.y.toFixed(2)), .44);
 assert.equal(Number(belt.scale.x.toFixed(2)), 1.5, 'authored item scale affects the actual belt mesh');
 assert(Math.abs(belt.rotation.z - (24 * Math.PI / 180)) < 1e-6, 'authored 3D rotation is used in gameplay');
-assert.equal(world.AdventuringTorchBelt.debug.placement, 'authored species/gender belt-stow rig');
+assert.equal(world.AdventuringTorchBelt.debug.placement, 'authored beltStow override');
+assert(fireTicks > 100, 'real shared fire updates throughout stowed rendering without spawning duplicate sources');
 
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
 assert.match(manifest, /js\/adventuring-torch-belt\.js/, 'gameplay parser loads this presenter before game.js');
-console.log('torch belt: real state, colored PNG, visible flame, 30s expiry, draw, avatar-rebuild and mobile debug PASS');
+console.log('torch stow: independent recolored PNG, shared torch fire, posterior midpoint, 45 degrees, 30s expiry, draw/respawn and debug PASS');
