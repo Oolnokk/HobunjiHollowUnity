@@ -510,7 +510,7 @@
     }
     if(editingBaby)return true;
     savedFurnitureCarry=state.carryable; // The existing furniture record is not mutated by baby grip editing.
-    state.carryable=babyDraft||pose.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);
+    state.carryable=normalized(babyDraft||pose.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)); // Supply the existing editor's hitbox and guide defaults.
     editingBaby=true;root.visible=false;babyReference.visible=activeEditorMode==='carry';
     createGuides();select('left');setHoldingVisibility();frameHoldingPreview();
     return true;
@@ -553,7 +553,7 @@
       if(!api?.save)throw Error('Shared baby pose module unavailable');
       api.save(JSON.parse(await file.text())); // Import is an explicit action; validate and persist on this device.
       babyDraft=null;
-      if(editingBaby){state.carryable=api.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT);createGuides();renderControls();syncHoldingPreview();}
+      if(editingBaby){state.carryable=normalized(api.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT));createGuides();renderControls();syncHoldingPreview();}
       el('carryBabyStatus').textContent='Imported and applied baby profile. Reload gameplay to see the new grips.';
     }catch(error){
       el('carryBabyStatus').textContent='Baby profile import failed: '+(error?.message||error);
