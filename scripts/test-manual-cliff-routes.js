@@ -13,6 +13,7 @@ const html = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8')
 const cliffClimb = fs.readFileSync(path.join(__dirname, '../docs/js/climb-system.js'), 'utf8');
 const wildlife = fs.readFileSync(path.join(__dirname, '../docs/js/creature-cliff-climb.js'), 'utf8');
 const npcPath = fs.readFileSync(path.join(__dirname, '../docs/js/npc-pathfinding.js'), 'utf8');
+const wildlifeThreat = fs.readFileSync(path.join(__dirname, '../docs/js/wildlife-threat-response.js'), 'utf8'); // Panic AI must reach the cliff planner despite its preliminary ground clearance check.
 
 function gridWithCliffs(rows = 28, thirdTier = false) {
   return Array.from({ length: rows }, () => Array.from({ length: thirdTier ? 19 : 14 }, (_, col) => ({
@@ -139,6 +140,26 @@ const vm = require('node:vm');
   assert(Math.abs(fleeing.x / 55 - 5.5) < 0.01, 'the creature lands on the lower real tile');
   assert.equal(landings, 1, 'the deliberate fall costs Footing exactly once');
   assert.equal(actorWin.CreatureCliffClimb.debug.intentionalDrops, 1);
+
+  vm.runInNewContext(wildlifeThreat, { window: actorWin, Date, performance: { now: () => 1000 } });
+  const panic = { x: 7.5 * 55, y: 10.5 * 55, areaId: 'slope', health: 10,
+    def: { moveSpeed: 110 }, creatureKey: 'moot', state: 'herd-panic',
+    _herdThreat: { predatorX: 10.5 * 55, predatorY: 10.5 * 55 },
+  }; // Predator east of the upper ledge: flee west over the cliff.
+  let blockedPanicMoves = 0; // A blocked ground probe must not start ordinary walking through the wall.
+  const panicResult = actorWin.WildlifeThreatResponse.tickPanic(panic, .03, {
+    tile: 55, canOccupyAt: () => false,
+    moveCreatureToward: () => { blockedPanicMoves++; return false; },
+  });
+  assert(panicResult.handled && panicResult.moving, 'panic AI deliberately chooses a downhill escape over an impassable cliff face');
+  assert(panic._cliffClimb?.intentionalDrop, 'panic jump uses existing creature animation');
+  assert.equal(blockedPanicMoves, 0, 'blocked ground walking is not attempted through the cliff');
+  assert.equal(actorWin.CreatureCliffClimb.tryIntentionalLedgeDrop(panic, 4.5 * 55, 10.5 * 55), false,
+    'a second panic tick cannot restart the existing airborne jump');
+  for (let i = 0; i < 30; i++) if (panic._cliffClimb) actorWin.CreatureCliffClimb.update(panic, .03, null);
+  assert.equal(panic.state, 'herd-panic', 'landing preserves the herd escape rather than starting an attack');
+  assert.equal(panic._cliffClimb, null, 'panic cliff jump completes on the lower shelf');
+  assert.equal(landings, 2, 'both deliberate creature falls invoke the common landing policy once each');
 
   vm.runInNewContext(npcPath, { window: actorWin, Date });
   actorWin.NpcPathfinding.init(fixture);
