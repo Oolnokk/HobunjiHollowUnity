@@ -58,6 +58,7 @@ const carry = window.FamilyBabyBurdens, persist = () => persistCount++;
 assert(carry.sync(child, babyWalker, 'basket', persist));
 assert.equal(registered, 1, 'one shared physical baby burden registered');
 assert.equal(carry.isProxyActive(child.id), false, 'the baby NPC is command-targetable in its basket');
+assert.equal(carry.ambientAnchorFor(child.id), null, 'basket babble attaches to the visible baby walker, not an invisible burden');
 areaRecords.clear(); // Simulate Shattercasks.releaseZone('interior') and a rebuilt home scene.
 assert.equal(carry.sync(child, babyWalker, 'basket', persist).burden, areaRecords.get('family_baby_test-baby'),
   'the same Burden is re-registered after an interior scene rebuild');
@@ -66,24 +67,30 @@ assert.equal(babyRoot.visible, true, 'baby NPC is visible in cradle');
 assert.equal(carry.takeIntoArms(child, babyWalker, persist), true);
 assert.equal(babyRoot.visible, false, 'baby NPC hides while player holds its lightweight proxy');
 assert.equal(child.carryBy, 'player'); assert.equal(child.carryPose, 'arms');
+assert.equal(carry.ambientAnchorFor(child.id).group.visible, true, 'baby speech anchors to the same visible proxy while held');
+assert.equal(carry.ambientAnchorFor(child.id).mapId, 'interior', 'baby speech follows the active burden area');
 assert.equal(carry.isProxyActive(child.id), true, 'an invisible carried baby cannot open its ordinary NPC wheel');
 assert.equal(carry.sync(child, babyWalker, 'basket', persist).burden.id, 'family_baby_test-baby');
 back = held; held = null; carry.sync(child, babyWalker, 'basket', persist);
 assert.equal(child.carryPose, 'back', 'player stowing is observed without a second carry implementation');
+assert(carry.ambientAnchorFor(child.id), 'stowed baby speaks from its real back-carried sprite');
 held = back; back = null; carry.sync(child, babyWalker, 'basket', persist);
 assert.equal(child.carryPose, 'arms', 'player retrieving from back returns to arms');
 const item = held; held = null; item.carried = false; item.flying = true;
 item.onThrow(item);
 carry.sync(child, babyWalker, 'basket', persist);
 assert.equal(babyRoot.visible, false, 'airborne child remains a single proxy; no duplicate NPC returns during flight');
+assert.equal(carry.ambientAnchorFor(child.id), null, 'thrown babies must not greet from an airborne projectile');
 assert.equal(child.carryBy, 'player', 'spouse does not take over until the flight safely lands');
 item.col = 7; item.row = 8; item.group.position.set(7.5, 0, 8.5); item.onImpact(item);
 assert.equal(item.flying, false, 'shared physical impact stops the baby flight');
 assert.equal(babyRoot.visible, true, 'original baby NPC returns only after landing');
 assert.equal(child.carryBy, null); assert.equal(child.carrySpot.area, 'interior'); assert.equal(babyRoot.visible, true);
+assert.equal(carry.ambientAnchorFor(child.id), null, 'landed baby speech returns to the normal visible NPC');
 assert.equal(carry.isProxyActive(child.id), false, 'the baby NPC becomes command-targetable after landing');
 assert.equal(carry.spouseCarry(child, babyWalker, spouseWalker, 'back', persist), true);
 assert.equal(child.carryBy, 'spouse'); assert.equal(child.carryPose, 'back');
+assert(carry.ambientAnchorFor(child.id)?.group === item.group, "spouse's back-stowed baby uses the same carried speech anchor");
 assert.equal(carry.snapshot().babies[0].parent, portrait.name || null);
 assert.equal(carry.takeIntoArms(child, babyWalker, persist), true, 'shared physical burden hands off from spouse to player');
 assert.equal(child.carryBy, 'player'); assert.equal(registered, 1, 'handoff does not duplicate baby');
@@ -126,6 +133,7 @@ assert.equal(rebound.burden.group.children[0].geometry.width, .37, 'reloaded bab
 assert.equal(rebound.burden.data.carryable.handTargets.left.x, .37 * .40, 'hand grips follow new infant dimensions');
 carry.sync(child, rebuiltWalker, 'toddler', persist);
 assert.equal(carry.snapshot().babies.length, 0, 'toddler transition retires carrying proxy');
+assert.equal(carry.ambientAnchorFor(child.id), null, 'toddler ordinary speech no longer needs a baby burden anchor');
 assert.equal(newerRoot.visible, true);
 child.carryBy = 'spouse'; // Restore a save made while an NPC was holding the baby.
 carry.sync(child, rebuiltWalker, 'basket', persist);
