@@ -415,6 +415,11 @@
     const phase = phaseOf(child);
     const hour = H.clockHour();
     if (phase === 'basket') {
+      const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
+      if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
+          && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
+        return { area: carry.area, c: carry.c, r: carry.r, activity: 'resting after being carried' };
+      }
       const basket = basketObject(child);
       if (basket) return { area: 'interior', c: basket.col, r: basket.row, activity: 'napping in the basket' };
       const anchor = interiorAnchor();
@@ -476,6 +481,7 @@
       return;
     }
     walker._childPhase = phase;
+    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
       const now = performance.now();
@@ -879,6 +885,7 @@
   function serialize() { return JSON.parse(JSON.stringify(fam)); }
   function restore(saved) {
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
+    window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
@@ -902,7 +909,7 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
   }
 

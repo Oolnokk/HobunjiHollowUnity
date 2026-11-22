@@ -940,6 +940,9 @@
       meshColliders:collectMeshColliders(group),meshBounds:THREE.Box3?new THREE.Box3():null,
       emitters:null,exploded:false,carried:false,hanging:options.hanging!==false,flying:false,
       impactHandler:typeof options.onImpact==='function'?options.onImpact:null,
+      invulnerable:options.invulnerable===true, // Family babies never inherit pottery damage or destruction.
+      noHang:options.noHang===true, // Living carryables cannot be hung from puzzle ropes.
+      onThrow:typeof options.onThrow==='function'?options.onThrow:null,
       onPickup:typeof options.onPickup==='function'?options.onPickup:null,
       onDrop:typeof options.onDrop==='function'?options.onDrop:null,
       onLost:typeof options.onLost==='function'?options.onLost:null,
@@ -1004,6 +1007,9 @@
       displayName:built?.displayName||options.displayName||kind,
       mechanismId:options.mechanismId,
       onImpact:built?.onImpact||options.onImpact,
+      invulnerable:options.invulnerable??built?.invulnerable,
+      noHang:options.noHang??built?.noHang,
+      onThrow:built?.onThrow||options.onThrow,
       onPickup:built?.onPickup||options.onPickup,
       onDrop:built?.onDrop||options.onDrop,
       onLost:built?.onLost||options.onLost,
@@ -1326,8 +1332,8 @@
       impactBackOnCarrierHit('carrier-direct-hit');
     }else if(Number.isFinite(receivedAt))observedAttackAt=receivedAt;
   }
-  function transferBackToArea(mapId){
-    const burden=backCarried,targetScene=scene();
+  function transferBackToArea(mapId,burden=backCarried){
+    const targetScene=scene(); // Both hand-carried and back-stowed babies share the ordinary burden migration.
     if(!burden||burden.mapId===mapId||!mapId||!targetScene)return;
     const oldMapId=burden.mapId,oldId=burden.id; // Used to retire the original static spawn before changing the physical object's identity.
     const oldRecord=records.get(oldMapId);
@@ -1355,6 +1361,7 @@
     burden.mapId=mapId;
     burden.group.userData.shattercaskId=nextId;
     burden.group.userData.shattercaskMap=mapId;
+    try{burden.onTransfer?.(burden,oldMapId,mapId);}catch(error){console.warn('[burden] transfer callback failed',error);}
     lastEvent='carried '+nextId+' into '+mapId;
   }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
@@ -1638,6 +1645,7 @@
     flight={vase:c,origin,target,distanceTiles,
       duration:window.AlchemyFlasks?.flightDuration?.(distanceTiles)
         ??Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
+    try{c.onThrow?.(c,active);}catch(error){console.warn('[burden] throw callback failed',error);}
     lastEvent='launched ' + c.displayName + ' ' + c.id;
     return true;
   }
@@ -1700,13 +1708,18 @@
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shares action IDs; only burden-specific labels and impact payload change.
+  const CARRIED_BABY_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({icon:'↗',label:'Throw Baby',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
+    Object.freeze({icon:'⬇',label:'Put Baby Down',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
+  ]); // Baby-specific labels; the same burden input IDs and motions do all the work.
   const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
   const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_CRATE_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   function actionButtons(){
     if(!held)return null;
-    const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
+    const canHang=!held.noHang&&window.HangingRopes?.findHook?.(held); // Living burdens never become hanging puzzle payloads.
+    if(held.kind==='familyBaby')return CARRIED_BABY_ACTION_BUTTONS;
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
     if(held.kind==='looseCrate')return canHang?CARRIED_CRATE_HANG_ACTION_BUTTONS:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
@@ -1796,7 +1809,7 @@
     return pile?collectPile(pile):false;
   }
   function interact() {
-    if(held)return window.HangingRopes?.tryHang?.(held)===true||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
+    if(held)return (!held.noHang&&window.HangingRopes?.tryHang?.(held)===true)||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
     const target=nearInteraction();
     if(target?.type==='vase')return pickUp(target.obj);
     if(target?.type==='cratePile')return !!window.CratePiles?.takeCrate?.(target.obj);
@@ -1865,7 +1878,7 @@
     const target=held?null:nearInteraction();
     const vase=target?.type==='vase'?target.obj:null;
     const crate=target?.type==='cratePile'?target.obj:null;
-    const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
+    const hang=held&&!held.noHang&&window.HangingRopes?.findHook?.(held); // Do not offer rope hooks for living carryables.
     const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:crate?'crate:'+crate.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
@@ -2317,6 +2330,7 @@
   }
   function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
+    if(cask.invulnerable && !String(cause).startsWith('throw-')) return false; // Impacts may land, but attacks and chain blasts never hurt a baby.
     if(cask.kind!=='soursap'&&cask.kind!=='shattercask'&&cask.kind!=='flameShattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
       return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
@@ -2383,7 +2397,7 @@
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
-      if(vase.exploded||vase.carried||(vase.hanging&&vase.kind==='soursap'))continue; // Rope and ceiling burdens are strikeable; hanging Soursap still requires a fall.
+      if(vase.exploded||vase.carried||vase.invulnerable||(vase.hanging&&vase.kind==='soursap'))continue; // Rope and ceiling burdens are strikeable; hanging Soursap still requires a fall.
       if(Number.isFinite(stamp) && stamp>0
         && vase.lastLungeContactStamp===stamp
         && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
@@ -2442,7 +2456,7 @@
     let result=null;
     meshRaycastQueries++;
     for(const vase of rec.vases.values()){
-      if(vase.exploded || vase===backCarried || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A back-stowed Burden is hit only when its carrier is hit, not via its own projectile mesh.
+      if(vase.exploded || vase.invulnerable || vase===backCarried || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A back-stowed Burden is hit only when its carrier is hit, not via its own projectile mesh.
       if(vase.carried)refreshMeshBounds(vase);
       else vase.group.updateWorldMatrix?.(true,true);
       if(vase.meshBounds && shatterRayBox && shatterRayBoxPoint) {
@@ -2486,7 +2500,7 @@
     return result;
   }
   function hitProjectile(candidate,playerProjectile=false) { // RangedWeapons reports real projectile ownership after its own collision routing.
-    if(!candidate?.vase||candidate.vase===backCarried)return false; // An old raycast result must not independently hit a Burden after it is stowed.
+    if(!candidate?.vase||candidate.vase===backCarried||candidate.vase.invulnerable)return false; // An old raycast result must not independently hit a Burden after it is stowed.
     const burden=candidate.vase;
     if(burden.kind==='soursap'&&burden.hanging)return startFruitFall(burden,'projectile'); // Shot branch fruit falls before exploding at terrain contact.
     const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;
@@ -2518,7 +2532,18 @@
   }
   function tick(dt=0) {
     const mapId=area();
-    if(held && held.mapId!==mapId)drop();
+    // The family-baby burden is confined to the settlement. Other carried items keep their original zone rules.
+    for(const baby of [held,backCarried]){
+      if(baby?.kind==='familyBaby' && baby.mapId!==mapId
+          && !window.FamilyBabyBurdens?.isAllowedArea?.(mapId)){
+        discardBurden(baby); // onLost returns the real family child safely to their basket.
+        deps()?.showToast?.('The baby must stay near home. You leave them safely in their basket.',false);
+      }
+    }
+    if(held && held.mapId!==mapId){
+      if(held.kind==='familyBaby')transferBackToArea(mapId,held); // Allow farm ↔ town ↔ farmhouse without dropping the child.
+      else drop();
+    }
     if(backCarried&&backCarried.mapId!==mapId)transferBackToArea(mapId);
     if(backCarried)alignHeldVase(backCarried); // Reattach after avatar and area rebuilds.
     if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
@@ -2724,7 +2749,7 @@
   window.Targetables?.addSource?.('shattercasks',scope=>{
     const out=[];
     for(const burden of records.get(String(scope))?.vases?.values()||[]){
-      if(!burden||burden.exploded||burden.carried||!burden.group?.parent)continue; // Exploded or held burdens are not targets.
+      if(!burden||burden.exploded||burden.invulnerable||burden.carried||!burden.group?.parent)continue; // Babies are not combat targets.
       out.push(targetableFor(burden));
     }
     return out;
