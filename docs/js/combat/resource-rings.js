@@ -420,8 +420,9 @@
     const healthRisk = resourceKey === "health"
       ? q(RS.getAffliction(entity, "woundedStamina")) + ":" + q(RS.getAffliction(entity, "infectedStamina")) : "";
     const exhaustion = resourceKey === "stamina"
-      ? String(!!entity.exhaustion.active) + ":" + entity.exhaustion.blackStamina : "";
-    return [q(current), max, radius, afflictionParts.join(","), healthRisk, exhaustion].join("|");
+      ? (entity.exhaustion.active ? "1:" + q(entity.exhaustion.blackStamina) : "0") : "";
+    const effectiveMax = RS.getEffectiveMax(entity, resourceKey); // Stat modifiers can change a rendered capacity mark while the raw maximum stays fixed.
+    return [q(current), max, effectiveMax, radius, afflictionParts.join(","), healthRisk, exhaustion].join("|");
   }
 
   function buildGroundRingForFighter(entity, radius, previous = null) {
@@ -533,7 +534,8 @@
   // "should I rebuild at all" decision is quantized.
   function makeHudKey(entity) {
     const q = v => Math.round(v);
-    return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${q(entity.footing ?? 0)}|${entity.maxFooting ?? 0}|${entity.exhaustion.active}|${entity.exhaustion.blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
+    const blackStamina = entity.exhaustion.active ? q(entity.exhaustion.blackStamina) : ""; // The Black-Stamina arc needs only whole-point changes while exhausted.
+    return `${q(entity.health)}|${entity.maxHealth}|${q(entity.stamina)}|${entity.maxStamina}|${q(entity.footing ?? 0)}|${entity.maxFooting ?? 0}|${entity.exhaustion.active}|${blackStamina}|${Object.values(entity.afflictions).map(q).join(",")}`;
   }
 
   const HOMEOSTASIS_KEY = "homeostasis";

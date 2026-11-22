@@ -10,7 +10,12 @@ each resource now has its own status-aware signature and reuses its existing
 mesh tree whenever unchanged. The Health signature additionally includes
 Wounded/Infected Stamina because those create orange Health-risk dashes.
 Target halo meshes survive every resource change, and rebuild only on
-target selection or ring radius changes. Full homeostasis and despawn still
+target selection or ring radius changes. A second-pass review added effective
+maximum capacity to each arc's signature: changed trinket/gear stat modifiers
+no longer leave an old cap marker when another resource triggers refresh.
+Active Black Stamina is now rounded to the same whole-point step as other
+HUD resources, avoiding a new arc every fractional-regeneration frame.
+Full homeostasis and despawn still
 dispose the geometry. No new rendering pass or idle per-frame scene walk.
 
 `ResourceRings.debugSnapshot()` exposes `resourceArcRebuilds`,

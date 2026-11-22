@@ -180,6 +180,34 @@ assert(ResourceRings.debugSnapshot().resourceArcReuses > 0, 'incremental arc reu
 ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
 assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'changing radius correctly invalidates the arc');
 assert.equal(ringHud.children[1].userData.hobunjiTargetRadius, 0.7, 'changing radius rebuilds target indicator to match');
+const staminaAfterRadius = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Check rounded Black-Stamina updates preserve geometry between whole points.
+ringActor.exhaustion.blackStamina = 61.2;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRadius, 'sub-point Black Stamina recovery reuses its arc');
+ringActor.exhaustion.blackStamina = 62;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRadius, 'whole-point Black Stamina recovery refreshes its arc');
+const healthBeforeEquipment = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Tracks a resource arc before stat-modifier changes.
+const healthMeshCountBeforeEquipment = healthBeforeEquipment.children.length; // Store before the old arc's children are disposed.
+let externalHealthMultiplier = 1; // Simulates changing the existing equipment/perk stat modifiers mid-combat.
+const unregisterHealthModifier = ResourceSystem.registerStatModifierProvider((actor, key) => actor === ringActor && key === 'maxHealth' ? externalHealthMultiplier : 1);
+externalHealthMultiplier = 0.65;
+ringActor.exhaustion.blackStamina = 63;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+const healthWithEquipment = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Should gain a capacity cap marker from its reduced effective maximum.
+assert.notEqual(healthWithEquipment, healthBeforeEquipment, 'equipment-derived Health maximum invalidates the cached Health arc when Stamina changes');
+assert.equal(healthWithEquipment.children.length, healthMeshCountBeforeEquipment + 1, 'reduced maximum adds the formerly missing Health cap marker');
+unregisterHealthModifier();
+ringActor.exhaustion.blackStamina = 64;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthWithEquipment, 'un-equipping restores the normal capacity display');
+const priorRoot = ringActor._ringHud; // Checks the established scene-transfer behavior remains intact.
+const alternateScene = new Group(); // New scene for a real creature changing zones.
+ResourceRings.updateRingHud(ringActor, alternateScene, 0.7, { isTarget: true });
+assert.equal(ringActor._ringHud, priorRoot, 'scene transfer reuses the existing HUD root');
+assert.equal(ringScene.children.length, 0, 'scene transfer removes the old parent');
+assert.equal(alternateScene.children[0], priorRoot, 'scene transfer attaches to the destination');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
 ResourceRings.disposeRingHud(ringActor);
 assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geometry');
 assert.equal(ringScene.children.length, 0);
