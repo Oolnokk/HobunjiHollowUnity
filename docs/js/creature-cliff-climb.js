@@ -164,10 +164,17 @@
     c.knockbackT = 0; c.knockbackVX = 0; c.knockbackVY = 0;
     window.KnockbackCollisionImpact?.cancel?.(c);
     if (fell) {
-      const health = Number(c.health);
-      const impact = Math.min(FALL_HEALTH_MAX, Math.max(0, (Number.isFinite(health) ? health : 1) - 1));
-      if (impact > 0) window.ResourceSystem?.applyDamage?.(c, impact, { tag: 'blunt', source: 'fell from cliff' });
-      window.ResourceSystem?.spendFooting?.(c, FALL_FOOTING, 'fell from cliff');
+      const dropWorld = Math.max(0, climb.surfaceStartY - climb.surfaceEndY);
+      const resolved = c.prone ? window.HobunjiCliffFallImpact?.resolve?.(c, {
+        dropWorld, dropTiers: window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5,
+        dirX: 0, dirY: 0,
+      }) : null; // A knockdown during a cliff crossing uses height-scaled cliff effects once.
+      if (!resolved) {
+        const health = Number(c.health);
+        const impact = Math.min(FALL_HEALTH_MAX, Math.max(0, (Number.isFinite(health) ? health : 1) - 1));
+        if (impact > 0) window.ResourceSystem?.applyDamage?.(c, impact, { tag: 'blunt', source: 'fell from cliff' });
+        window.ResourceSystem?.spendFooting?.(c, FALL_FOOTING, 'fell from cliff');
+      }
       c._cliffClimbCooldownT = RETRY_COOLDOWN_S;
     } else {
       debug.completed++;
