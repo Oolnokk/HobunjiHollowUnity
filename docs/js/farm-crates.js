@@ -104,7 +104,12 @@
     lifecycleBusy = true;
     try {
       captureMidnightCutoff();
-      window.PendingAnimalSales?.settle?.(reason); // Animal sale collection shares the shipping cutoff and never needs a second timer.
+      try {
+        window.PendingAnimalSales?.settle?.(reason); // Animal sale collection shares the shipping cutoff and never needs a second timer.
+      } catch (error) {
+        window.__farmLog?.('Animal sale collection failed: ' + String(error?.message || error), 'livestock'); // Mobile-visible diagnostics without interrupting item shipping.
+        console.error('[FarmCrates] animal collection failed', error);
+      }
       if (!shippingBoxInstance || pendingSaleTotal() < 1) return { sold: 0, earned: 0 };
 
       const bin = shippingBoxInstance.getContents();
