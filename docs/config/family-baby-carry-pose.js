@@ -68,11 +68,13 @@
       (finite(data?.portraitVerticalPlacementRatio, .5, 2) - .5) * h);
     const centerX = finite(plane.x, 0), centerZ = finite(plane.z, finite(data?.visualCentroidLocalZ, 0));
     const posteriorY = Number(rig.spinePosteriorY);
+    const spineRoot=rig.splineNodes?.[0]?.position||{}; // Actual pinned spine root (node 0), preferred to a calculated/fallback posterior height.
+    const rootY=Number(spineRoot.y);
     const neck = rig.neckLocal || {}; // Raw plane-local neck pivot, BEFORE applying head scale.
     return {
-      posterior: { x: centerX, // CharacterSpine.layoutFor pins node 0 (posterior) at plane-local X=0. spineBase.x is the NECK BASE, not the hip.
-        y: centerY + (Number.isFinite(posteriorY) ? posteriorY : -h * .23),
-        z: centerZ },
+      posterior: { x: centerX + finite(spineRoot.x, 0), // CharacterSpine.layoutFor pins node 0 at x=0. spineBase.x belongs to the NECK.
+        y: centerY + (Number.isFinite(rootY) ? rootY : Number.isFinite(posteriorY) ? posteriorY : -h * .23),
+        z: centerZ + finite(spineRoot.z, 0) },
       neck: { x: centerX + finite(neck.x, 0),
         y: centerY + finite(neck.y, h * .22),
         z: centerZ + finite(neck.z, 0) },
