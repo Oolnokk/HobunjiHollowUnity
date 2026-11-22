@@ -64,7 +64,7 @@ unwear(stackA);unwear(stackB);
 stackA=wear('falseCourage');stackB=wear('defendersBrooch');
 close(R.statModifier(player,'incomingHealthDamage'),0.48,'40% + 12% damage reduction must add to 52%');
 player.health=100;R.applyDamage(player,10);
-close(player.health,94.8,'additive defensive stacking changes real incoming damage');
+close(player.health,95.2,'additive defensive stacking changes real incoming damage');
 const stackC=wear('falseCourage');
 close(R.statModifier(player,'incomingHealthDamage'),0.1,'excess defensive reductions hit the nonzero safety floor');
 unwear(stackC);unwear(stackA);unwear(stackB);
