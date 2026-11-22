@@ -1608,10 +1608,10 @@
   // animal directly, a visiting farmhand buys one the owner priced for
   // sale, or a visiting farmhand takes one the owner flagged stable-able
   // (free). All three converge on the same removal + stabling shape.
-  function _removeWorldLivestockAndCleanup(id, { collectPendingSale = false } = {}) {
+  function _removeWorldLivestockAndCleanup(id) {
     const livestock = deps._loadWorldLivestock();
     const idx = livestock.findIndex(l => l.id === id);
-    if (idx < 0 || (livestock[idx].pendingAnimalSale && !collectPendingSale)) return null;
+    if (idx < 0 || livestock[idx].pendingAnimalSale) return null; // A queued animal can only leave through WorldMetaStore's atomic paid collection.
     const [entry] = livestock.splice(idx, 1);
     deps._saveWorldLivestock(livestock);
     const ref = { source: 'world', id };
@@ -1627,6 +1627,16 @@
       deps.animalObjects.delete(animal);
     }
   }
+  function onAnimalSalesCollected(ids) {
+    // WorldMetaStore has ALREADY committed the roster, breeding cleanup and
+    // seller gold together. Only dispose the live views and stale selection
+    // handles here; never perform a second persistence write.
+    for (const id of ids || []) {
+      farmPairPicks.delete('world:' + id);
+      removeLiveAnimalEntity(id);
+    }
+  }
+
   function refreshGoldHud() {
     const amount = deps.spGold?.querySelector('#spGoldAmount'); // Update the live amount without detaching the wallet icon or currency suffix.
     if (amount) amount.textContent = deps.inventory.gold;
@@ -1965,7 +1975,7 @@
     showMap: showFarmMap,
     renderStablePanel,
     renderFarmProcessors,
-    removeLivestockAndCleanup: id => _removeWorldLivestockAndCleanup(id, { collectPendingSale: true }), // Shipping collection reuses the same cleanup as a farm-to-Stable transfer.
+    onAnimalSalesCollected, // Mirrors atomically collected animals out of the farm scene without re-saving.
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,
     closeLayoutEditor: closeHouseLayoutModal,
