@@ -6,6 +6,7 @@ on:
       - 'docs/js/attack-readiness.js'
       - 'docs/js/tzatzul-flight-runtime.js'
       - 'docs/js/puzzle-cave-entrances.js'
+      - 'docs/js/wildlife-debug-panel.js'
       - 'docs/js/bootstrap/classic-groups/cave-sites.js'
       - 'docs/index.html'
       - 'scripts/test-tzatzul-flight-runtime.js'
@@ -28,6 +29,7 @@ jobs:
           node --check docs/js/attack-readiness.js
           node --check docs/js/tzatzul-flight-runtime.js
           node --check docs/js/puzzle-cave-entrances.js
+          node --check docs/js/wildlife-debug-panel.js
           node --check scripts/test-tzatzul-flight-runtime.js
       - name: Exercise real Tzatzul flight AI and activity deferral
         run: node scripts/test-tzatzul-flight-runtime.js
