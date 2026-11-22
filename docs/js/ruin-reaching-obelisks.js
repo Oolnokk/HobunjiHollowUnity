@@ -164,6 +164,13 @@
     const inner=base.shaft-10,pitSize=inner;
     const basin=mesh(new THREE.BoxGeometry(pitSize,.4,pitSize),basic(0x211c1b),'obelisk-death-pit');
     basin.position.set(base.originX+side+base.shaft/2,pitY-.22,base.originZ+side+base.shaft/2);
+    const Faces=root.RuinWallFaces||(typeof module==='object'&&module.exports?require('./ruin-wall-faces.js'):null); // The basin's four stone sides up to the ground gallery; without them the drop was open to the void.
+    if(Faces?.pitWallQuads&&THREE.BufferGeometry){
+      const wallStone=root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})||basic(0x726d63);
+      if(!materials.includes(wallStone))materials.push(wallStone);
+      const walls=mesh(Faces.toGeometry(THREE,Faces.pitWallQuads({minX:basin.position.x-pitSize/2,minZ:basin.position.z-pitSize/2,size:pitSize,bottom:pitY-.42,top:Number(base.baseY)||0})),wallStone,'obelisk-death-pit-walls');
+      walls.layers?.disable?.(1); // Stretched carved-stone patches carry their own ink: no generated shell outline.
+    }
     const tradition=traditionOf(deps.tradition);
     const plane=mesh(new THREE.PlaneGeometry(pitSize,pitSize),tradition==='hronal'?basic(0xff4215)
       :tradition==='tothal'?basic(0xb7ecfa):basic(0x241536),'obelisk-'+tradition+'-hazard');

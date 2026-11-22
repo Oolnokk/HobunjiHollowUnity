@@ -5951,7 +5951,7 @@
         if (desktopLockOnActive && !target) releaseLockOn(); // computeAutoTarget tries hostile succession before disengaging a dead lock.
         const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
-          || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
+          || window.__mapEditorOrbitActive || window.DevInspectTools?.ownsCamera?.(); // Scripted/menu/editor camera owners remain authoritative.
         mobileAutoCameraActive = false;
         mobileAutoCameraResponseS = 0;
         if (suppressed || !autoTargetVisible(target)) return; // Temporary obstruction pauses camera tracking without selecting another target.
@@ -7111,8 +7111,9 @@
           patchPrey.push(c);
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
+        const devEnemiesFrozen = window.DevInspectTools?.enemiesFrozen?.() === true; // Developer "Enemies off" (js/dev-inspect-tools.js) reuses the stationary-target branch below.
         for (const c of currentHostilesFrame) {
-          if (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview) {
+          if (devEnemiesFrozen || (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview)) {
             updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the humanoid renderer and real hitboxes.
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
@@ -7261,7 +7262,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
+          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'herd-panic' && c.state !== 'chase' && c.state !== 'searching' &&
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
@@ -7596,7 +7597,7 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.herdKey && herdNight) {
+          } else if (c.herdKey && herdNight && c.state !== 'herd-panic') { // A spotted predator overrides the open-air herd's nightly settle/sleep schedule.
             // Roaming herds do not use dens. At night every member returns to
             // its own small slot around the herd's shared sleep center, stays
             // visible, and opts into AnimalSleepPresentation via
@@ -7737,6 +7738,7 @@
               && !c.prone
               && !c._animalSleeping
               && c.state !== 'return'
+              && c.state !== 'herd-panic' // Predators take movement/head-look priority; don't keep glancing back at the player during escape.
               && c.state !== 'patrol-chase'
               && !window.Combat?.telegraph?.isBusy(c)
               && !window.Combat?.animalAttacks?.isBusy(c);
@@ -11246,7 +11248,7 @@
                 // constantly throughout Northern Cliffs — not what was asked.
                 // Tag the lowest point of the leaf canopy so the camera can be
                 // kept from rising above it while the player is nearby (see
-                // canopyZoomFloor) — mirrors the standalone foliage tool's own
+                // js/camera-canopy-zoom.js) — mirrors the standalone foliage tool's own
                 // camera-vs-canopy obstruction concept. canopyLocal is computed
                 // once per shared tree variant (see foliage-generator.js's
                 // getTreeVariants), not per instance — just scale it by this
@@ -11561,7 +11563,7 @@
         zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
 
         // Canopy zones (tree crowns) whose underside should temporarily hard-limit
-        // manual zoom-out — see canopyZoomFloor. Plain data, not raycast targets.
+        // manual zoom-out — see js/camera-canopy-zoom.js. Plain data, not raycast targets.
         const canopyZones = [];
         zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
 
@@ -21906,6 +21908,7 @@
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       window.PngPlaneOutlineOccluder.init({ renderer, camera }); // Registry pruning + depth-only PNG silhouette replay: js/png-plane-outline-occluder.js.
+      window.DevInspectTools?.init?.({ THREE, camera, renderer, showToast, player, TILE, getCurrentArea: () => currentArea }); // Developer fly camera + enemy freeze (dev mode only): js/dev-inspect-tools.js.
       // Outline materials, render targets, composite and the per-frame pass
       // order (js/world-render-pipeline.js). Settings are read live each frame.
       window.WorldRenderPipeline.init({
@@ -22600,33 +22603,12 @@
         return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.
       }
 
-      // How far under a tree canopy's own recorded influence radius the player
-      // has to be before manual zoom-out gets hard-limited to its underside
-      // height — ports the standalone foliage tool's camera-vs-canopy
-      // obstruction concept (see buildZoneScene's canopyZones / the
-      // vegGroup.userData.canopyClamp tagging in _buildZoneFloorMeshes).
-      // Only ever raises the effective zoom used for THIS frame's distance —
-      // never mutates s_zoomScale itself, so the player's own wheel/slider
-      // setting is restored the instant they step out of every canopy's radius.
-      function canopyZoomFloor(tx, tz, lookY) {
-        if (!_isZoneArea(currentArea)) return 0;
-        const zones = _zoneScenes.get(currentArea)?.canopyZones;
-        if (!zones || !zones.length) return 0;
-        const modeCfg = cameraModeConfig(activeCameraMode);
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
-        const distanceTiles = modeCfg.distanceTiles ?? 14;
-        const sinAngle = Math.sin(angle);
-        const CANOPY_CLEARANCE = 0.3;
-        let floor = 0;
-        for (const z of zones) {
-          const dx = tx - z.x, dz = tz - z.z;
-          if (dx * dx + dz * dz > z.radius * z.radius) continue;
-          const headroom = z.undersideY - CANOPY_CLEARANCE - lookY;
-          const required = headroom > 1e-4 ? (sinAngle * distanceTiles) / headroom : Infinity;
-          if (required > floor) floor = required;
-        }
-        return floor;
-      }
+      // How far under a tree canopy the zoom-out is limited (canopyZoomFloor) now lives in js/camera-canopy-zoom.js.
+      window.CameraCanopyZoom.init({
+        isZoneArea: _isZoneArea, getCurrentArea: () => currentArea,
+        getZoneInfo: area => _zoneScenes.get(area), getModeConfig: () => cameraModeConfig(activeCameraMode),
+        getPitchOffsetDeg: baseAngleDeg => clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, baseAngleDeg),
+      });
       window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
       // Where the camera was ACTUALLY looking last frame. Cinematic blends
       // start from this rather than camTargetX/Y/Z: camTargetY is ground
@@ -22637,7 +22619,7 @@
       // Authored camera interpolation now lives in the shared camera runtime, also used by the Director.
       const cinematicBlend = window.CinematicCameraRuntime.createBlendController({ camera, lookPoint: _lastCameraLookPoint, safePosition: occlusionSafeCameraPosition, aspect: cameraContainerAspect, framing: (view, shot) => window.DialogueCameraFraming?.apply(view, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming)) }); // Retains one blend clock across consecutive lines of the same shot.
       function applyAuthoredCinematicCamera() {
-        if (window.__mapEditorOrbitActive) { cinematicBlend.reset(); return false; }
+        if (window.__mapEditorOrbitActive || window.DevInspectTools?.ownsCamera?.()) { cinematicBlend.reset(); return false; }
         return cinematicBlend.apply();
       }
 
@@ -22678,7 +22660,7 @@
         let effectiveZoomScale = ignoreGlobalZoom ? 1 : s_zoomScale;
         if (!ignoreGlobalZoom && !cutscenePreviewActive && !dialogueZoomActive()) {
           const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
-          const floor = canopyZoomFloor(tx, tz, approxLookY);
+          const floor = window.CameraCanopyZoom.floor(tx, tz, approxLookY);
           if (floor > effectiveZoomScale) {
             const cfg = desktopControlsConfig();
             const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
@@ -22714,7 +22696,7 @@
           if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
         const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, player.x / TILE, player.y / TILE,
-          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
+          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive && !window.DevInspectTools?.ownsCamera?.(),
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
         if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
         const melodyFrame=window.MelodyCameraFraming?.update?.({
@@ -22722,7 +22704,7 @@
           baseTarget:{x:lookAtX,y:lookY,z:lookAtZ},baseDistance:distance,azimuth,angle,
           fovDeg:modeCfg.fovDeg??42,aspect:cameraContainerAspect(),
           enabled:!cutscenePreviewActive&&!dialogueZoomActive()&&!dialogueOpen
-            &&!window.__mapEditorOrbitActive&&!window.CinematicCameraRuntime?.isActive?.()
+            &&!window.__mapEditorOrbitActive&&!window.DevInspectTools?.ownsCamera?.()&&!window.CinematicCameraRuntime?.isActive?.()
             &&activeCameraMode!=='fishing'&&activeCameraMode!=='fishCatch',
           now:performance.now(),
         }); // Shared gameplay camera remains authoritative; the score supplies only a discovery-gated framing correction.
@@ -22739,7 +22721,8 @@
         // runtime.js) owns camera.position/lookAt directly while a placement
         // is selected — skip the normal player-follow pose so this per-frame
         // recompute doesn't fight it, while still keeping fov/aspect current.
-        if (!window.__mapEditorOrbitActive) {
+        // The developer fly camera (js/dev-inspect-tools.js) owns it the same way.
+        if (!window.__mapEditorOrbitActive && !window.DevInspectTools?.ownsCamera?.()) {
           camera.position.set(safe.x, safe.y, safe.z);
           camera.lookAt(safe.lookAtX, lookY, safe.lookAtZ);
           _lastCameraLookPoint.set(safe.lookAtX, lookY, safe.lookAtZ); // Interaction rays track the collision-adjusted camera aim.

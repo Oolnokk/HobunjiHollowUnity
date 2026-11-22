@@ -61,7 +61,7 @@ assert(animalStart>0);
 new Function('window','localStorage',avatarSource.slice(animalStart))(windowStub,storage);
 const headRig={enabled:true,pivot:{x:.35,y:.5},meshResolution:48,minDeg:-30,maxDeg:30,restDeg:0,
   weightMap:{width:128,height:75,data:Array.from({length:128*75},(_,i)=>
-    i%128<40&&Math.floor(i/128)<40?255:0)}}; // Authored head cutout: chest/legs stay unpainted even ahead of the neck.
+    i%128<40&&Math.floor(i/128)<40?255:0)}}; // This paint only controls pitch; the neck-forward region controls yaw.
 const animal=windowStub.PNGPlaneAvatar.buildAnimalPlaneAvatarModel(THREE,'animal.png',
   {name:'gar-wolf',modelWidth:2.1,modelHeight:.95,headRig});
 assert(animal.frontPlane.isSkinnedMesh&&animal.backPlane.isSkinnedMesh,'both faces upgraded to skinned live cards');
@@ -69,7 +69,7 @@ assert.equal(animal.headRig.yawMode, 'paper-fold', 'yaw mode is visible to the m
 for (const face of [animal.frontPlane, animal.backPlane]) {
   assert.equal(face.skeleton.bones.length, 4, 'each card has separate pitch, yaw and combined transforms');
   assert.equal(face.geometry.userData.hobunjiAnimalYawFold, true, 'material response can preserve independent yaw weights');
-  assert.equal(face.geometry.userData.hobunjiAnimalYawMask, 'binary-head', 'rigid yaw excludes non-head anatomy');
+  assert.equal(face.geometry.userData.hobunjiAnimalYawMask, 'neck-forward-card', 'head yaw is a single neck-forward paper flap');
   const weights = face.geometry.getAttribute('skinWeight').array;
   const width = face.geometry.userData.segmentsX + 1;
   const faceCol = face === animal.frontPlane ? 0 : width - 1;
@@ -80,12 +80,14 @@ for (const face of [animal.frontPlane, animal.backPlane]) {
   const legFold = weights[legOffset + 2] + weights[legOffset + 3];
   assert(Math.abs(faceFold - 1) < 1e-5, 'authored head pixels fold rigidly at the neck');
   assert(Math.abs(bodyFold) < 1e-5, 'unpainted torso pixels remain independent of yaw');
-  assert(Math.abs(legFold) < 1e-5, 'unpainted front leg pixels ahead of the neck remain unaffected');
+  assert(Math.abs(legFold - 1) < 1e-5, 'unpainted pixels ahead of the neck turn with the paper flap');
   for (let i = 0; i < weights.length; i += 4) {
     const yaw = weights[i + 2] + weights[i + 3];
     const head = weights[i + 1] + weights[i + 3];
-    assert(yaw === 0 || yaw === 1, 'each head vertex turns like one rigid paper card');
-    assert.equal(yaw, +(head >= .5), 'yaw is a binary cutout classification, not graded Influence');
+    const sourceU=face===animal.frontPlane?face.geometry.getAttribute('uv').getX(i/4):1-face.geometry.getAttribute('uv').getX(i/4); // Shared forward axis on either face.
+    assert(Math.abs(yaw-Math.round(yaw))<1e-6,'each neck-forward vertex turns rigidly');
+    assert(Math.abs(yaw-+(sourceU<headRig.pivot.x))<1e-6,'yaw follows the neck, not painted Influence');
+    if(sourceU>.8&&head<.001)assert(yaw<1e-6,'unpainted rear torso stays still');
   }
   for (let i = 0; i < weights.length; i += 4) {
     assert(Math.abs(weights[i] + weights[i + 1] + weights[i + 2] + weights[i + 3] - 1) < 1e-5,

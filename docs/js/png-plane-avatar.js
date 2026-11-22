@@ -2175,9 +2175,10 @@
     return u >= r.x && u <= r.x + r.width && topV >= r.y && topV <= r.y + r.height ? 1 : 0;
   }
 
-  // Treat the painted head as a rigid, cut-out paper card hinged at the authored neck.
-  // The Influence map decides head/body membership, NOT the amount of yaw: every
-  // head vertex receives the same yaw rotation, while chest and legs remain fixed.
+  // Turn the entire sprite region forward of the authored neck pivot as one
+  // rigid paper flap. Yaw membership follows the vertical neck fold, not
+  // irregular head Influence/Compressibility/Stretchability paint. Painted
+  // weights continue to control pitch; the rear/body region stays unturned.
   // Keep two existing mesh columns near the vertical hinge without adding vertices.
   function alignAnimalYawFoldColumns(geometry, pivotU, mirrorX, segmentsX, segmentsY, width) {
     const position = geometry.getAttribute('position'); // Columns are moved to the crisp crease without allocating another mesh.
@@ -2225,7 +2226,7 @@
     }
     const uv = geometry.getAttribute('uv');
     const skinIndices = new Uint16Array(uv.count * 4); // Root/pitch/yaw/combined bone indices for every plane vertex.
-    const skinWeights = new Float32Array(uv.count * 4); // Pitch follows graded paint; yaw follows a binary head cutout.
+    const skinWeights = new Float32Array(uv.count * 4); // Graded Influence controls pitch; the neck-forward half-plane controls yaw.
     const sourceCoordinates = spriteWarp ? new Float32Array(uv.count * 2) : null; // Keep original rig-paint UVs alongside the rendered sprite UVs.
     const source = {}; // Reused for each vertex when sampling the baby pixel warp.
     for (let i = 0; i < uv.count; i++) {
@@ -2237,7 +2238,7 @@
         sourceCoordinates[i * 2 + 1] = source.y;
       }
       const headWeight = sampleWeight(rig, sourceCoordinates ? source.x : sourceU, sourceCoordinates ? source.y : sourceTopV); // Irregular Influence remains pitch-only.
-      const yawWeight = headWeight >= 0.5 ? 1 : 0; // Binary head ownership only: never yaw unpainted front legs/chest, and never grade yaw by irregular material weight.
+      const yawWeight = sourceU < pivotU ? 1 : 0; // Rendered-space neck seam stays rigid, including mirrored and baby-warped art; paint is pitch-only.
       const offset = i * 4;
       skinIndices[offset] = 0;
       skinIndices[offset + 1] = 1;
@@ -2256,7 +2257,7 @@
     geometry.userData.segmentsX = segmentsX; geometry.userData.segmentsY = segmentsY; // Shared density controller compares actual live geometry without a duplicate animal-specific rule.
     geometry.userData.hobunjiAnimalWeightRig = { segmentsX, segmentsY }; // Visible to debug tooling without relying on console-only state.
     geometry.userData.hobunjiAnimalYawFold = true; // Material-response adapter must preserve the separate yaw skin weights.
-    geometry.userData.hobunjiAnimalYawMask = 'binary-head'; // Debug confirms no irregular yaw blending or body-front bending.
+    geometry.userData.hobunjiAnimalYawMask = 'neck-forward-card'; // Debug identifies the paint-independent vertical hinge across the entire forward sprite region.
     geometry.userData.hobunjiAnimalYawFoldPivotX = pivotU; // Pixel Probe/debugging can inspect the neck hinge on warped sprites.
     return geometry;
   }
@@ -2334,7 +2335,7 @@
       frontYawBone: front.yawBone, backYawBone: back.yawBone,
       frontCombinedBone: front.combinedBone, backCombinedBone: back.combinedBone,
       yawMode: 'paper-fold', // Mobile diagnostics and corpse rendering identify the independent yaw axis.
-      yawMask: 'binary-head', // The species' painted Influence is a cutout mask, never a graded yaw deformation.
+      yawMask: 'neck-forward-card', // The forward side of the authored neck pivot rotates together, independent of all painted material maps.
       currentDeg: rig.restDeg, targetDeg: rig.restDeg, additiveDeg: 0, appliedDeg: rig.restDeg,
       currentYawDeg: 0, targetYawDeg: 0,
     }; // Runtime rotation state shared by base-pose setters, additive animation layers, and the yaw axis.

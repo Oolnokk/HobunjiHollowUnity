@@ -883,7 +883,13 @@
       if (typeof nest.onEggCollected === 'function') nest.onEggCollected(nest);
       else window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Cave clutches keep their original persistence contract.
       deps.inventory[nest.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[nest.itemKey] || 0) + 1);
-      window.HobunjiActivityEvents?.emit('nest_stolen', { liveBirth: !!nest.liveBirth, itemKey: nest.itemKey });
+      window.HobunjiActivityEvents?.emit('nest_stolen', {
+        liveBirth: !!nest.liveBirth, itemKey: nest.itemKey,
+        speciesKind: _babyKindForNest(nest), // Nearby wild adults are alerted only for their own stolen offspring.
+        areaId: deps.getCurrentArea(),
+        x: Number.isFinite(nest.x) ? nest.x : (nest.col + nest.w / 2) * deps.TILE,
+        y: Number.isFinite(nest.y) ? nest.y : (nest.row + nest.h / 2) * deps.TILE,
+      });
       window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
       deps.clampInventoryStack(nest.itemKey);
       deps.buildInventoryGrid(); deps.refreshItemScroll(); deps.refreshActionBar();

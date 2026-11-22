@@ -126,7 +126,7 @@ assert(coreAuthor.includes('lerp(current,base,amount)'), 'material restore moves
 assert(coreAuthor.includes("$('toolEraser').textContent=material?'Toward Influence':'Eraser'"), 'material eraser is Toward Influence');
 assert(coreAuthor.includes("paintCanvas.addEventListener('pointermove'") && !coreAuthor.includes("previewCanvas.addEventListener('pointer"), 'only upper canvas accepts paint input');
 assert(coreAuthor.includes('requestAnimationFrame(draw)'), 'brush redraw remains frame-coalesced');
-assert(shell.includes('Yaw turns use a rigid paper-cutout hinge'), 'editor explains binary head ownership and pitch-only material maps');
+assert(shell.includes('Yaw turns use a rigid paper-cutout hinge') && shell.includes('entire sprite region forward of the neck pivot'), 'editor explains neck-forward yaw and pitch-only paint');
 
 // Exercise the paint core without loading the shoulder module; shoulder behavior has
 // its own runtime regression and should not make material painting tests DOM-heavy.
