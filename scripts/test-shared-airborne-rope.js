@@ -228,6 +228,37 @@ function world() {
   assert.equal(rope.length,4.14,'braking must not shorten the authored shaft rope');
   assert.deepEqual(riderPoint,rope.bob);
 }
+// Every generated ruin rope is also the SAME object consumed by the burden
+// attachment system; registering one does not create a second pendulum.
+{
+  const t=world();
+  const core=t.window.RopeCore;
+  const sourceStart=ruinSource.indexOf('  function registerRuinRope(rope) {');
+  const sourceEnd=ruinSource.indexOf('  function disposeRopeObject(rope) {',sourceStart);
+  assert(sourceStart>=0&&sourceEnd>sourceStart,'the ruin shares one rope registration hook');
+  const sharedScene={add(){}};
+  const state={ropes:[],context:{scene:sharedScene}};
+  const register=new Function('state','window','MAP_ID',
+    ruinSource.slice(sourceStart,sourceEnd)+'\nreturn registerRuinRope;')(
+      state,t.window,'zone-test');
+  const rope={...core.create({anchor:{x:3.1,y:2.1,z:3.5},length:1.7}),
+    id:'ruin-burden-hook'};
+  rope.bob=core.bobAt(rope);
+  assert.strictEqual(register(rope),rope);
+  assert.strictEqual(state.ropes[0],rope,'the traversal runtime retains the exact registered rope');
+  assert.strictEqual(t.window.HangingRopes.ropes[0],rope,'HangingRopes adopts that same rope without cloning its state');
+  assert.equal(rope.external,true,'adopted ropes are stepped only once by the ruin owner');
+  const burden={id:'swing-cask',mapId:'zone-test',carried:false,exploded:false,
+    group:{quaternion:{identity(){}},scale:{setScalar(){}},position:{set(){}}}};
+  assert(t.window.HangingRopes.attach(rope,burden),'the shared rope accepts a carried/placed burden');
+  assert.strictEqual(rope.burden,burden);
+  assert.strictEqual(burden.rope,rope);
+  assert.equal(t.window.HangingRopes.catchAirborneRope({...rope.bob,vx:0,vy:0,vz:0}),false,
+    'a burden-occupied rope is never a competing player grab');
+  assert(t.window.HangingRopes.removeRope(rope));
+  assert.equal(burden.rope,null,'removing a ruin rope releases the burden registry reference');
+  assert.equal(t.window.HangingRopes.ropes.length,0,'a reroll cannot leave a stale burden hook');
+}
 // Ruin ledge falls use the same entry point when directional movement is held.
 {
   const interior=read('docs/js/dev-random-ruin-interior-map.js'); // Native ruin ledge/floor owner.
