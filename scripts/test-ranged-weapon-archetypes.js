@@ -646,7 +646,7 @@ assert.strictEqual(windowObject.HobunjiRangedWeaponArchetypes.activeThrownCharge
   assert(aimContext.solveTorchAim('torch',heldPosition).direction.y>.4,'a raised camera pitch changes the torch elevation');
   centeredAvailable=false;
   const fallback=aimContext.solveTorchAim('torch',heldPosition);
-  assert.equal(fallback.cameraRaySource,'ranged-aim-fallback','a missing centered camera ray falls back without throwing');
-  assert(fallback.direction.x<-.95);
+  assert.equal(fallback.cameraRaySource,'facing-fallback','a missing camera ray falls back to player facing, never the stale ranged-slot ray');
+  assert(fallback.direction.z>.95,'camera-less torch throws follow player facing instead of the westward equipped ranged ray');
   console.log('torch aim chooses live camera-centered east/west/north/south/pitch rather than stale equipped-ranged slot');
 }
