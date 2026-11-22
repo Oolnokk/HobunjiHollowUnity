@@ -129,4 +129,73 @@ assert.equal(specialShooter.x,0);
 assert.match(arenaLog,/quickChance=/,'mobile arena diagnostics expose tier Quick Attack chance');
 assert.match(arenaLog,/tactic=/,'mobile arena diagnostics expose pursuit versus flanking');
 
+
+// Run the live melee decision function through the same flank, pursuit and Quick Attack paths.
+const meleeMoves=[]; // Records real tactical movement commands and their requested speed for regression.
+let quickFires=0,comboFires=0; // Counts which of the real ability dispatch branches the enemy chose.
+let hasSlot=true; // Models the existing two-attacker slot authority without duplicating its separate implementation.
+const movingDeps={
+  TILE:55,rnd:()=>0,
+  angleDiff:flankDeps.angleDiff,
+  moveCreatureToward(c,x,y,speed,dt){
+    meleeMoves.push({speed,x,y});
+    const dx=x-c.x,dy=y-c.y,distance=Math.hypot(dx,dy),distanceStep=Math.min(distance,speed*dt);
+    if(distance>0){c.x+=dx/distance*distanceStep;c.y+=dy/distance*distanceStep;}
+    return distanceStep>0;
+  },
+}; // Real AI's injected creature mover; only terrain collision/animation are replaced by unobstructed test movement.
+const noSpacing=(c,point,result)=>{result.x=point.x;result.y=point.y;return result;}; // No neighbor in this isolated combat fixture.
+const meleeContext={
+  deps:movingDeps,Number,Math,performance:{now:()=>1000},
+  window:{ResourceSystem:{spendStamina(){}}},
+  resolvedBanditCombatTarget:(c,target)=>target,
+  _updateBanditLookAtTarget(){},updateBanditFlaskAI:()=>null,updateBanditLunge:()=>false,
+  enforceBanditPlayerCollision(){},npcDuelStagingUpdate:()=>null,
+  banditPersonalSpaceAdjust:noSpacing,banditEngagementReachPx:()=>170,
+  claimBanditAttackSlot:()=>hasSlot?{angle:0}:null,
+  claimBanditQueueRing:()=>({angle:0,ringIndex:0}),
+  banditBehindTarget:behind,banditBackstabFlankPoint:flankPoint,
+  banditQuickAttackConditions:(c,target)=>({behind:behind(c,target),exhausted:false,lowHealth:false}),
+  banditQuickAttackChance:quickChance,
+  banditRingPoint:(target,angle,radius,result)=>{result.x=target.x+Math.cos(angle)*radius;result.y=target.y+Math.sin(angle)*radius;return result;},
+  fireBanditQuickAttack(){quickFires++;return true;},
+  fireBanditComboStep(){comboFires++;return true;},
+  fireBanditChargedBreaker:()=>false,
+  BANDIT_STANDOFF_RANGE_MUL:1.8,BANDIT_QUEUE_RING_STEP_MUL:.6,
+  BANDIT_STRAFE_HZ:.14,BANDIT_STRAFE_ANGLE_AMPLITUDE_RAD:Math.PI/6,BANDIT_STRAFE_SPEED_PX_S:55,
+}; // Only collaborators outside the movement/decision function are stubbed; the real function drives their selection.
+const updateMelee=vm.runInNewContext(
+  '(function(){'+section(bandit,'  function updateBanditCombatAI(', '  // ── Bandit weapon visuals')+
+  'return updateBanditCombatAI;})()',meleeContext
+);
+const meleeDef={banditAbilityLoadout:{tap1:'swingCombo',tap2:'backstabFlick',hold1:null,hold2:null},
+  backstabFlankMaxSeconds:2,backstabRetrySeconds:2.5,banditStandoffMaxTiles:3.6,banditStandoffTierStepTiles:.2,
+  chaseSpeed:290,moveSpeed:118,attackRangePx:55,attackStaminaCost:12}; // One actual ordinary bandit definition with no ranged slot.
+const actualFighter={x:300,y:0,state:'chase',facing:0,def:meleeDef,stamina:100,attackCooldownT:0,
+  _banditComboIndex:0,_banditStrafePhase:.5}; // Starts in front and is not already executing an attack.
+const actualTarget={x:0,y:0,angle:0,health:100,maxHealth:100,stamina:100,maxStamina:100}; // Fixed-facing enemy lets flanking succeed.
+for(let tick=0;tick<20 && !quickFires;tick++)updateMelee(actualFighter,.1,actualTarget,Math.hypot(actualFighter.x,actualFighter.y));
+assert(quickFires===1,'real bandit AI should flank and choose Backstab Flick when behind');
+assert(comboFires===0,'a successful rear flank must not downgrade itself into a normal combo');
+assert(meleeMoves.some(move=>move.speed===290),'backstab orbit uses chase speed, not the 55px/s waiting sway');
+assert.equal(actualFighter._banditTactic,'backstabFlick','mobile tactic log identifies the selected attack');
+const pursuitFighter={...actualFighter,x:800,y:0,_banditComboIndex:0,_banditFlankElapsedS:0,_banditFlankRetryS:0,
+  _banditMovementPoint:null}; // A much farther enemy should pursue first rather than attempt an impossible distant flank.
+meleeMoves.length=0;hasSlot=false; // Queued enemy must not consume an attack slot, but should continue following.
+const pursuitResult=updateMelee(pursuitFighter,.1,actualTarget,800);
+assert(pursuitResult.moving,'queued enemy must advance toward the target instead of freezing far away');
+assert.equal(meleeMoves.at(-1).speed,290,'distant queued bandit must advance at chase speed');
+assert.equal(pursuitFighter._banditTactic,'pursuing');
+hasSlot=true;
+quickFires=0;comboFires=0;
+const watchfulTarget={...actualTarget}; // Turns to keep the fighter in its forward cone, denying the backstab angle.
+const frustrated={...actualFighter,x:180,y:0,_banditComboIndex:0,_banditFlankElapsedS:0,_banditFlankRetryS:0,
+  _banditMovementPoint:null}; // If circling cannot win, this bandit must eventually attack normally.
+for(let tick=0;tick<30 && !comboFires;tick++){
+  watchfulTarget.angle=Math.atan2(frustrated.y-watchfulTarget.y,frustrated.x-watchfulTarget.x);
+  updateMelee(frustrated,.1,watchfulTarget,Math.hypot(frustrated.x,frustrated.y));
+}
+assert(comboFires>0,'a target who keeps tracking the flank cannot stall the bandit indefinitely');
+assert(frustrated._banditFlankRetryS>0,'failed flanking must start its cooldown before trying again');
+
 console.log('PASS bandit tactical pursuit: fast tier-scaled chase, matching Quick Attack opportunities, real backstab orbit, ranged pursuit and mobile diagnostics.');
