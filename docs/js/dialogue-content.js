@@ -478,6 +478,8 @@
             ['Encounter', (st.heardTrees || []).length ? 'returning' : 'first'],
             ['Trees heard', `${heardTrees} of ${trees.length}`],
             ['Pool lines heard', String((st.heardPoolEntries || []).length)],
+            ['Shared voice family', rec.dialoguePersonalityFamily || 'none'], // Mobile diagnostics expose the same family used by ambient reactions.
+            ['Scoped shared lines', String((rec.sharedDialogueTrees || []).length)], // Distinguishes a missing config from a heard/conditioned line.
           ],
           actions: [
             { id: 'favor', label: '−1 heart', args: { hearts: -1 }, group: 'Relationship' },
@@ -539,11 +541,20 @@
         && (!chatOnly || !t.generatedFromShopAccess));
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
+    const sharedEligible = (rec?.sharedDialogueTrees || []).filter(t => deps.canAccessContent(t.visibility) && _dlgEntryEligible(t, world)); // Pre-filter once using the same condition registry as authored dialogue.
+    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // An eligible named-character pool replaces the inherited family pool for this encounter.
+    const scopedSpeech = characterSpeech.length ? characterSpeech : sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // Unmatched named conditions fall through to the personality family.
     let picked = _pickBestEntry(all, world, heard);
+    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // The NPC's last-resort tree should not silence personality-specific ordinary speech.
+    const isHeardGeneral = picked && heard.includes(picked.id) && !picked.generatedFromShopAccess
+      && !(picked.priority > 0) && _dlgEntrySpecificity(picked) === 0; // Repeated unconditioned chatter can alternate with scoped dialogue, while story/conditioned trees keep their priority.
+    if (scopedSpeech.length && (!picked || isFallback || isHeardGeneral)) {
+      picked = _pickBestEntry([...scopedSpeech, ...(picked ? [picked] : [])], world, heard) || picked; // Existing unheard-first rotation and history are still per speaker.
+    }
     // Keep eligible shops accessible even after their tree was heard and general chat was not:
-    // the shared unheard-first selector must not hide the merchant's Shop option.
-    if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
-      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when a fallback would displace a merchant's Shop menu.
+    // family or named shared speech must not hide a merchant's Shop option.
+    if (!chatOnly && (picked?.id === `tree_${rec?.id}_fallback` || picked?.sharedDialogueScope)) {
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when fallback/shared chatter would displace a merchant's Shop menu.
       if (shops.length) picked = _pickBestEntry(shops, world, heard);
     }
     for (const [id, context] of _contextProviders) {
@@ -554,7 +565,7 @@
         return provided;
       } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
     }
-    if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
+    if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: picked?.sharedDialogueScope ? `config/dialogue/shared-dialogue.json (${picked.sharedDialogueScope}:${picked.sharedDialogueOwner})` : _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection([...all, ...scopedSpeech], world, heard, picked) };
     return picked;
   }
 
