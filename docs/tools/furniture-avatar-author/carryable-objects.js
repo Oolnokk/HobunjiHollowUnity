@@ -143,6 +143,7 @@
   babyRotateProxy.visible=false;helperRoot.add(babyRotateProxy);
   const guides={baby:babyRotateProxy};
   let babyPoseView='anchor'; // Whether Rotate Baby edits the held or back-carried gameplay anchor.
+  babyPivotAxes.visible=false; // The pivot cross only appears when direct rotation is selected.
   // Transient reference model, kept outside root and never included in the exported furniture.
   const heldPreview=new THREE.Group();
   heldPreview.name='carry_avatar_preview_only';
@@ -478,6 +479,7 @@
     if(id==='anchor'||id==='back')babyPoseView=id; // The next Rotate Baby operation edits whichever carry mode was selected.
     state.selectedType='carry';
     state.selectedId=id;
+    babyPivotAxes.visible=id==='baby'; // Don't overlay an unrelated axis cross on hand/anchor editing.
     transform.detach();
     transform.enabled=true;
     transform.visible=true;
@@ -796,7 +798,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:babyPoseIsBack(),preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource,babyPoseView,infantWorldPosition:editingBaby?babyPoseFrame.position.toArray():null,infantWorldQuaternion:editingBaby?babyPoseFrame.quaternion.toArray():null,adultStationary:editingBaby}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
