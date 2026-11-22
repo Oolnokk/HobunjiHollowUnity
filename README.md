@@ -175,6 +175,47 @@ materials in place once the config loads.
   `equippedTrinkets`. Town Icons sell at Funji's; Harlyao trinkets drop from
   ruin dungeon chests (`trinket_<id>` loot entries); the Engraved Whistle is a
   Porakaneki daily-gift return (high Favor gains can roll unique rewards).
+  Trinket percentage effects, whether bonuses or drawbacks, add relative to
+  their unmodified baseline rather than multiplying each other (minimum final
+  multiplier 0.1 for stacked reductions); other stat providers retain their
+  separate stacking. BanditCombat draws enemy trinket loadouts once per spawn
+  from this same catalog using `config/bandits/bandit-gang-config.json`
+  rank/tier odds, up to three on captains. Enemy modifiers are cached per
+  actor; the normal resource system and shared hit scaling apply them in combat,
+  and the Testing Arena log exposes `trinkets=` for mobile inspection. This
+  changes enemy combat equipment, not their guaranteed corpse loot.
+- `docs/js/combat/combat-bandit.js` and `docs/js/combat/ranged-weapons.js` —
+  ordinary bandits now see foes from farther away, pursue them more decisively,
+  and maintain short coordinated standoff rings rather than drifting at 55 px/s
+  when a foe retreats. Chase speed starts at 290 px/s plus 6 per wilderness
+  danger tier and rank bonuses, before existing armor/debuff movement modifiers;
+  aggro begins at 8.5 tiles and leash at 16 tiles (plus rank bonuses). Ranged
+  bandits close ground beyond projectile range and between shots. Backstab
+  Flick fighters actively orbit behind their foe, with a two-second attempt and
+  retry timeout so a continuously turning target cannot stall combat. Exhaust
+  Cutter and Mercy Spike only roll when *their own* bonus condition holds,
+  scaling from 20% at tier zero to 83% at tier seven; Backstab Flick takes the
+  hit when it earns the behind condition. Non-bandit special humanoids and mine
+  encounters retain their existing chase/orbit behaviors. Four stable melee
+  approach sectors (front, left, right, rear) follow the opponent's facing,
+  with the rear preferentially claimed by Backstab Flick wielders. Only one
+  fighter per target may run a committed melee windup/strike at a time; its
+  turn frees immediately after the resolved hit, without waiting for the
+  weapon's cosmetic recovery. One other fighter may prepare a visibly held
+  Charged Breaker alongside that attack. Its charge uses the existing shared
+  weapon pose, then converts to the actual staged Charged Breaker when the
+  turn opens, with a timeout so blocked preparers cannot starve the gang.
+  A ready charge only gets priority within its actual safe strike reach.
+  Canceled charges restore authored idle weapon/hand stances, and both the
+  Light/Heavy stance adapter and dodge AI recognize the separate charging
+  phase. Fey Hyped double-strikes keep the turn through their second physical
+  hit. Counter Shield ripostes obey the same attack serialization. Both
+  close-in slots and outer waiting rings use WeakMap actor lookups with
+  frame-batched stale cleanup rather than repeated global scans; changing
+  to ranged/flask/staged combat releases stale melee assignments immediately.
+  Non-bandit special humanoids still use the original two-angle slots.
+  Testing Arena logs `tactic=`, `quickChance=`, `chasePxS=`, `flankT=`,
+  `sector=`, `attackOwner=`, `chargeOwner=`, and `chargeT=` for mobile diagnosis.
 - `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
   Longsword/Broadsword with random, partial enchantments into the world
   inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,

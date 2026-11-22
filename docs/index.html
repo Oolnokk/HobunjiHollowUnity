@@ -166,7 +166,7 @@
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261119h8c212ef"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261122hRigAnimal28"></script>
   <link rel="stylesheet" href="style.css?v=20261118instrumentLoadout1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -201,7 +201,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261122hc3370fb"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261122bandageAction1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261122hAnimalRig28"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -233,7 +233,7 @@
   <script src="js/pingdort-registration.js?v=20261119dairyWild1"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
   <script src="js/skeeri-livestock-registration.js?v=20261115skeeriEgg1"></script> <!-- Register fertile ruin eggs before the game snapshots livestock item kinds. -->
   <script src="js/moot-registration.js?v=20261122mootCharge1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
-  <script src="js/creature-genetics.js?v=20261120grehlrBaseBeard1"></script>
+  <script src="js/creature-genetics.js?v=20261122hCreatureVariants28"></script>
   <script src="js/animal-hides.js?v=20261119dairyWild1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
@@ -381,7 +381,7 @@
   <script src="js/skill-system.js?v=20261112he5ffaa9"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + base 8-point Attunement budget (expanded by character-owned Lich-hearts). -->
-  <script src="js/trinket-system.js?v=20261115buriedCurios3"></script>
+  <script src="js/trinket-system.js?v=20261122enemyTrinketAdd1"></script>
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
@@ -398,7 +398,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261109craftHours1"></script>
-  <script src="js/persistent-ground-fire.js?v=20261119visualauthRain1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261122h525babc"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/throw-cover-trajectory.js?v=20261107burdenCombined1"></script> <!-- Shared height-aware throw cover and outlined ground previews; loads before both consumers. -->
   <script src="js/alchemy-flasks.js?v=20261119cheapGeometry1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
@@ -535,7 +535,7 @@
        then), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
-  <script src="js/bandit-combat-log.js?v=20261018h99fb547"></script>
+  <script src="js/bandit-combat-log.js?v=20261122banditSurround1"></script>
   <!-- Wilderness AI snapshot capture, AI/Claude review tool for the whole
        Porakaneki camp network + den wildlife (window.WildernessAiSnapshot) —
        reads window.PorakanekiCamps/window.CalendarSystem at capture time
@@ -571,7 +571,7 @@
   <script src="js/ruin-reaching-obelisks.js?v=20261122h9db07df"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/ruin-shaft-support-pillars.js?v=20261120h4fa8451"></script> <!-- Original square furniture, vertical IKMC-style span, slim square bases. -->
   <script src="js/ruin-jump-shaft.js?v=20261122hbfb3947"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
-  <script src="js/ruin-rope-shaft.js?v=20261122ropeSwings1"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
+  <script src="js/ruin-rope-shaft.js?v=20261122h3c9a090"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261122h7fb6f80"></script>
   <script src="js/ruin-layer-plan.js?v=20261122hdf993f1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
@@ -2977,7 +2977,7 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="game.js?v=20261122h7e96092"></script>
+  <script src="game.js?v=20261122h415545c"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

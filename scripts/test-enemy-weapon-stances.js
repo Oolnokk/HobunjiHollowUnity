@@ -221,6 +221,32 @@ function approx(actual, expected, epsilon = 1e-9) {
   approx(renderCalls[0].pose.strike.z, spacedStrike.z);
 }
 
+// A visually prepared held charge must retain the authored Light/Heavy neutral even
+// while its previous weapon tail is still in the settle window. No registered
+// _banditAction exists until the released Charged Breaker commits to the attack.
+{
+  renderCalls.length = 0;
+  const preparedPreview = { windupS: 0.65, strikeS: 0.01, t: 0.3 };
+  const entity = makeEntity({
+    weaponKey: 'heavy_weapon', anim: 'sweep',
+    pose: { neutral: { ...sweepNeutral }, windup: { ...sweepNeutral }, strike: { ...sweepNeutral } },
+    settleUntil: nowMs + 500,
+  });
+  entity._banditPreparedCharge = { action: preparedPreview, t: 0.3, duration: 0.65, chargeT: 0.75 };
+  const result = window.BanditCombat.updateToolMesh(entity);
+  assert.strictEqual(result, 'rendered');
+  assert.strictEqual(renderCalls.length, 1);
+  assert.strictEqual(renderCalls[0].anim, 'sweep', 'the charge preview is an active heavy-weapon pose, not an idle fallback');
+  assert.deepStrictEqual(renderCalls[0].pose.neutral, { ...heavyPose, bodySink: 6 }, 'prepared held windup uses the authored heavyweight neutral');
+  assert.strictEqual(entity._enemyWeaponStanceDebug.applied, true);
+  const saved = window.EnemyWeaponStances.preparedEnemyPose(entity);
+  preparedPreview.t = 0.6;
+  assert.strictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), saved, 'held windup reuses the baked pose while its timer advances');
+  entity._banditPreparedCharge = null;
+  entity._banditAction = { windupS: 0.12, strikeS: 0.15, t: 0 };
+  assert.notStrictEqual(window.EnemyWeaponStances.preparedEnemyPose(entity), saved, 'the actual charged release gets a new attack pose and clock');
+}
+
 // The existing post-strike settle and ranged paths stay completely untouched.
 {
   renderCalls.length = 0;

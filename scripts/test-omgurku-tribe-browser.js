@@ -166,10 +166,47 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
       const omg=await spawn('omgurku',-0.4),pora=await spawn('porakaneki',0.4); // Start within hatchet reach so the smoke tests attack dispatch, not arena navigation.
-      window.__tribeQa={omg,pora,sawMutualTargets:false}; // Remember engagement even if a hit breaks targeting.
+      window.__tribeQa={omg,pora,sawMutualTargets:false,aiCalls:{omg:0,pora:0},toolCalls:{omg:0,pora:0},lastAi:{},aiErrors:[]}; // A game-loop catch must not turn an actual AI ReferenceError into a silent 12s visual-wait timeout. // Live counters distinguish a skipped hostile frame from a blocked melee decision.
+      if (!window.__tribeQaObserverInstalled) {
+        const originalAi=window.BanditCombat.updateCombatAI,originalToolMesh=window.BanditCombat.updateToolMesh; // Production implementations stay untouched; the browser QA only observes their dispatches.
+        window.BanditCombat.updateCombatAI=function(actor,dt,target,...rest){
+          const qa=window.__tribeQa;
+          if(actor===qa?.omg||actor===qa?.pora) {
+            const id=actor===qa.omg?'omg':'pora';
+            qa.aiCalls[id]++;
+            qa.lastAi[id]={dt,lastTargetIsRival:target===(id==='omg'?qa.pora:qa.omg),lastTargetIsPlayer:target===window.Combat?.deps?.player,atMs:performance.now()};
+          }
+          try { return originalAi.call(this,actor,dt,target,...rest); }
+          catch(error) {
+            if(actor===qa?.omg||actor===qa?.pora) {
+              const id=actor===qa.omg?'omg':'pora';
+              qa.aiErrors.push({actor:id,message:String(error),stack:String(error?.stack||'').slice(0,1800)}); // The failing actor, not a generic idle snapshot, now identifies the broken production helper.
+            }
+            throw error; // Preserve real game-loop exception semantics; the test observes without suppressing failures.
+          }
+        };
+        window.BanditCombat.updateToolMesh=function(actor,...rest) {
+          const qa=window.__tribeQa;
+          if(actor===qa?.omg)qa.toolCalls.omg++;
+          else if(actor===qa?.pora)qa.toolCalls.pora++;
+          return originalToolMesh.call(this,actor,...rest);
+        };
+        window.__tribeQaObserverInstalled=true;
+      }
       const ref=omg.avatarRef;
-      for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
-      const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
+      const rider=new THREE.Vector3(); // Reused during an observational wait for the real hostile tool-pose update.
+      const toolPoseReady=()=>{
+        ref.riderMount.riderFrame.updateWorldMatrix?.(true,false);
+        ref.riderMount.riderFrame.getWorldPosition(rider);
+        const holder=omg._banditToolHolder?.position;
+        return !!holder && window.__tribeQa.toolCalls.omg>0
+          && Math.hypot(holder.x-rider.x,holder.z-rider.z)<0.9;
+      }; // The three-RAF heuristic was nondeterministic on software WebGL; accept the pose only after gameplay really updated it.
+      const poseDeadline=performance.now()+12000; // Bounded browser wait; failures remain failures and report the real missing hostile update.
+      while(!toolPoseReady()&&performance.now()<poseDeadline) {
+        if(window.__tribeQa.aiErrors.length) throw new Error('Rival fighter AI failed before its tool pose was updated: '+JSON.stringify(window.__tribeQa.aiErrors.slice(0,3)));
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+      }
       const holder=omg._banditToolHolder?.position;
       const floorY=ref.group.position.y-omg.halfHeight;
       const poseY=Number(omg._banditMountedPoseY); // Actual last authored Y, including an elevated Heavy Neutral or active windup; a weapon is not required to sit at its unanimated hand anchor.
@@ -192,6 +229,11 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         : mappedCentroidY+(handY+poseY-centroidY)*height.heightRatio*axes.y+shiftY-sinkWorld; // The mounted height follows the actual 3D shoulder sphere whenever available.
       const expectedAboveFloor=rider.y-floorY+riderScale*mappedPoseY; // The mount re-expresses a floor-relative pose from the actual saddle, scaling its height only once.
       return {omg:!!omg,pora:!!pora,species:omg.rosterRecord?.appearance?.speciesId,compound:!!ref.riderMount,
+        areaIds:[omg.areaId,pora.areaId],activeArea:window.GridTileAccessors.getCurrentArea(),
+        aiCalls:window.__tribeQa.aiCalls,toolCalls:window.__tribeQa.toolCalls,
+        aiFrozen:window.DevTestingSwitchbox?.flags?.noNpcBehavior===true||window.DevInspectTools?.enemiesFrozen?.()===true,
+        isProne:[!!omg.prone,!!pora.prone],knockback:[omg.knockbackT,pora.knockbackT],
+        poseReady:toolPoseReady(),lastAi:window.__tribeQa.lastAi,
         enemyClass:omg.enemyClass,backChildren:ref.backPlane.children.length,
         holderToRider:holder?Math.hypot(holder.x-rider.x,holder.z-rider.z):null,
         holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
@@ -203,8 +245,30 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     // Retry if a world reset removes the fighters while the smoke is running.
     const explainStall=async(stage,error)=>{ // A bare "Timeout exceeded" says nothing about WHY the fighters never fought.
       const state=await page.evaluate(()=>{const {omg,pora}=window.__tribeQa||{},live=window.Combat.deps.hostileObjects,T=window.Combat.deps.TILE;
-        const pick=(e,rival)=>e?{state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,hasWeaponHolder:!!e._banditToolHolder,targetsRival:e._chunkCombatTarget===rival,attackBusy:!!e._enemyAttackBusyLastFrame,stamina:e.stamina,staminaCost:e.def?.attackStaminaCost,cooldown:e.attackCooldownT,retreat:e.retreatT,comboStep:e._banditComboIndex,stagedAction:!!e._banditAction,rangeTiles:+(Number(e.def?.attackRangePx||0)/T).toFixed(2),distanceToRival:rival?+(Math.hypot(e.x-rival.x,e.y-rival.y)/T).toFixed(2):null,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2)}:null;
-        return {omg:pick(omg,pora),pora:pick(pora,omg),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size};}).catch(()=>null);
+        const pick=(e,rival)=>{if(!e)return null;
+          const slot=window.BanditCombat?.attackSlots?.find?.(s=>s.bandit===e);
+          const queued=window.BanditCombat?.queueRings?.find?.(s=>s.bandit===e);
+          const alignment=rival?window.Combat?.attackAlignmentStep?.(e,rival,0):null; // Read-only probe: zero dt cannot rotate the actor during a diagnostic snapshot.
+          const rivalSlots=window.BanditCombat?.attackSlots?.filter?.(s=>s.target===rival)||[];
+          const qa=window.__tribeQa,id=e===qa?.omg?'omg':'pora';
+          return {state:e.state,hp:e.health+'/'+e.maxHealth,inHostileSet:live.has(e),avatarAttached:!!e.avatarRef?.group?.parent,
+            areaId:e.areaId,isBandit:e.isBandit,prone:!!e.prone,knockbackT:e.knockbackT,ledgeFall:!!e._knockbackLedgeFall,
+            isPlayerTarget:e.targetPlayer===window.Combat?.deps?.player,hasPlayerLock:!!e.targetPlayer,aiCalls:qa?.aiCalls?.[id],
+            toolCalls:qa?.toolCalls?.[id],lastAi:qa?.lastAi?.[id],
+            hasWeaponHolder:!!e._banditToolHolder,targetsRival:e._chunkCombatTarget===rival,attackBusy:!!e._enemyAttackBusyLastFrame,
+            stamina:e.stamina,staminaCost:e.def?.attackStaminaCost,cooldown:e.attackCooldownT,retreat:e.retreatT,comboStep:e._banditComboIndex,
+            stagedAction:!!e._banditAction,rangeTiles:+(Number(e.def?.attackRangePx||0)/T).toFixed(2),
+            distanceToRival:rival?+(Math.hypot(e.x-rival.x,e.y-rival.y)/T).toFixed(2):null,x:+(e.x/T).toFixed(2),y:+(e.y/T).toFixed(2),
+            tactic:e._banditTactic,enemyLoadoutKind:e.enemyLoadoutKind,standoffTiles:e.def?.banditStandoffMaxTiles,
+            loadout:e.def?.banditAbilityLoadout,hasMeleeSlot:!!slot,sector:slot?.sector??null,queueRing:queued?.ringIndex??null,
+            competingSlots:rivalSlots.map(s=>s.bandit?.id||s.bandit?.name||'?'),npcDuel:!!e._npcDuel,
+            facing:Number(e.facing?.toFixed?.(3)),toward:rival?Number(Math.atan2(rival.y-e.y,rival.x-e.x).toFixed(3)):null,
+            alignment:alignment?{eligible:alignment.eligible,aligned:alignment.aligned,desiredFacing:alignment.desiredFacing,deltaRad:alignment.deltaRad}:null,
+            otherCombatTarget:e.targetPlayer===rival};};
+        return {omg:pick(omg,pora),pora:pick(pora,omg),area:window.GridTileAccessors.getCurrentArea(),hostiles:live.size,
+          noNpcBehavior:window.DevTestingSwitchbox?.flags?.noNpcBehavior===true,
+          devEnemiesFrozen:window.DevInspectTools?.enemiesFrozen?.()===true,
+          gameStarted:window.__hobunjiGameStarted===true};}).catch(()=>null);
       return new Error(`${error.message}\n[${stage}] fighter state at timeout: ${JSON.stringify(state)}`); // New Error: a mutated message would not show in the already-captured stack that console.error prints.
     };
     const discardStalledPair=async()=>{ // A timed-out pair must not crowd or consume attack slots during a retry.
@@ -225,12 +289,15 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         spawned=await page.evaluate(()=>window.__spawnTribeQa());
         if(spawned.holderToRider==null)continue; // Wiped between spawn and measurement.
         assert(spawned.omg&&spawned.pora,'both tribe hunters build through BanditCombat');
+        assert(spawned.areaIds.every(id=>id===spawned.activeArea),'arena actors must be registered in the same area as updateHostiles: '+JSON.stringify(spawned.areaIds)+' vs '+spawned.activeArea);
+        assert(!spawned.aiFrozen,'tribe duel cannot run while a dev AI-freeze setting is enabled');
         assert(spawned.openingBudgets.every(({max,cost})=>Number.isFinite(max)&&Number.isFinite(cost)&&cost>0&&max>=cost*2),
           'tribe duelists must spawn with capacity for two opening attacks: '+JSON.stringify(spawned.openingBudgets)); // Fail before three 30s timeouts when stamina scaled below a weapon cost.
         assert.equal(spawned.species,'omgurku');
         assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
         assert.equal(spawned.enemyClass,'omgurku-hunter');
         assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
+        assert(spawned.poseReady,`Omgurku must receive a real hostile-frame tool update before its rider weapon is validated (tool ticks ${JSON.stringify(spawned.toolCalls)}, AI ticks ${JSON.stringify(spawned.aiCalls)}, distance ${spawned.holderToRider})`);
         assert(spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
         assert(Number.isFinite(spawned.poseY)&&Number.isFinite(spawned.expectedAboveFloor),'mounted rider pose and expected height must be finite');
         assert(Number.isFinite(spawned.orbitDiameter)&&spawned.orbitDiameter>0,'mounted Omgurku must derive an orbit from the two shoulder targets');

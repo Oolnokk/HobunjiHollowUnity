@@ -36,6 +36,7 @@
     const DS=options.DynamicSurfaces||root.DynamicSurfaces; // Ordinary room collision, not a new pathing layer.
     const bus=root.DevRandomRuinSimplePuzzles; // Canonical swept projectile intersections and target hum.
     const fire=root.DungeonFire; // Lit torch melee and flaming projectile contact share this one receiver.
+    const area=options.mapId||MAP_ID; // Scope collision and ignition to the owning ruin.
     const floor=Number(room.y)||0; // The real stone floor anchors every bonus switch, chest, cover and hatchling plinth.
     const supportedSite=(corner,dx,dz)=>{
       const left=(corner&1)===0,top=(corner&2)===0;
@@ -82,7 +83,20 @@
     const accent=stoneFinish('#b08d57'); // The main treasure/glyph mechanisms' bronze-coloured stone.
     const ice=stoneFinish('#bcecff',true,.72); // Texture-backed translucent fallback if the authored ice growth system is absent.
     const materials=[mat,dark,accent,ice]; // Only these per-secret authored finishes belong to the optional room puzzle.
-    const colliders=[]; // Precise per-floor optional barriers; cleared when the ruin session ends.
+    const colliders=[]; // Shared volume records for the movement and dynamic-surface queries.
+    const surfaces=[]; // Pressure-plate support is removed independently of the solid props.
+    const removeFootprints=root.AreaFootprintBlockers?.register?.(spec.id,{
+      area,
+      blocksBox:(x,z,half,worldY)=>{
+        const probeY=worldY??getPlayerY?.()??NaN; // Walking uses ground support. Projectiles pass their actual height.
+        for(const record of colliders){
+          const {bounds,minY,maxY}=record; // Skip distant props before reading their animated state.
+          if(x+half>bounds.minX&&x-half<bounds.maxX&&z+half>bounds.minZ&&z-half<bounds.maxZ
+            &&probeY+half>=minY&&probeY-half<maxY&&record.enabled())return true;
+        }
+        return false;
+      },
+    });
     const controls=[]; // Interactions participate in the existing ruin resolver and its teardown.
     const links=[]; // Projectile and fire target disposers, tied to this room's lifetime.
     const art=[]; // Asynchronously loaded baby rigs and audio emitters that have their own dispose().
@@ -103,17 +117,19 @@
       return mesh;
     };
     const registerControl=control=>{if(!control)return;addControl?.(control);controls.push(control);};
-    function blocker(name,x,z,w,d,enabled){
-      if(!DS?.registerBlocker)return;
-      const id=rec.id+':'+name;
-      DS.registerBlocker({id,scope:'ruin-hidden-secrets',
+    function blocker(name,x,z,w,d,height,enabled=()=>true){
+      const record={
+        id:rec.id+':'+name,scope:'ruin-hidden-secrets',
         bounds:{minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2},
+        minY:floor,maxY:floor+height,
         enabled:()=>!rec.disposed&&enabled(),
-        blocksAt:(_x,_z,_h,_record,_radius,query)=>{
-          const height=Number(query?.y??query?.floorY??query?.worldY);
-          return !Number.isFinite(height)||height>=floor-.35&&height<=floor+3.2;
-        }});
-      colliders.push(id);
+        blocksAt:(_x,_z,actorHeight,_record,radius,query)=>{
+          const y=query?.worldY??query?.y??query?.floorY??getPlayerY?.(); // Dynamic queries can include the pusher's height.
+          return Number.isFinite(y)&&y+Math.max(actorHeight,radius)>=floor&&y-radius<floor+height;
+        },
+      };
+      DS?.registerBlocker?.(record);
+      colliders.push(record);
     }
     function unlock(){
       if(rec.unlocked||rec.disposed)return false;
@@ -130,6 +146,8 @@
       const chest=chests.create({id:rec.id+':chest',parent:group,x,z,y,tier:spec.tier,theme:spec.theme,secret:true});
       if(chest){
         rec.chest=chest;
+        chest.group.userData.devRuinFootprintManaged=true; // The chest keeps one stable body collider while its lid opens.
+        blocker('chest',x,z,.8,.54,.42);
         const control=chest.control;
         control.available=()=>!rec.disposed&&!chest.opened&&rec.unlocked&&rec.gateProgress>=.98&&nearFloor(getPlayerY,floor);
         control.floorY=floor;
@@ -149,7 +167,19 @@
       rec.targets.push(target);
       return target;
     }
-    function fireAt(x,z,onBurn){
+    function fireAt(x,z,source){
+      const sourceBase=box('secret-lit-brazier-base-'+rec.id,.66,.42,.66,source.x,floor+.21,source.z);
+      box('secret-lit-brazier-bowl-'+rec.id,.70,.18,.70,source.x,floor+.51,source.z,dark);
+      const flame=new THREE.Group(); // Same authored campfire particles as the main ruin fire challenge.
+      flame.position.set(source.x,floor+.61,source.z);group.add(flame);
+      const contact=new THREE.Mesh(new THREE.BoxGeometry(.72,.94,.72),new THREE.MeshBasicMaterial({visible:false}));
+      contact.name='Secret alcove fire source';
+      contact.position.set(0,.33,0);contact.userData.fireHazard=true;
+      contact.userData.devRuinFootprintIgnore=true;sourceBase.add(contact);
+      rec.ignitionSource=source; // Pixel Probe reports the available flame's coordinates.
+      rec.sourceFlame=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:.9,rateScale:.8})||null;
+      blocker('fire-source',source.x,source.z,.70,.70,.60);
+      blocker('brazier',x,z,.82,.82,.90);
       box('secret-brazier-grounded-base-'+rec.id,.82,.54,.82,x,floor+.27,z);
       const vessel=box('secret-unlit-brazier-'+rec.id,.6,.32,.6,x,floor+.69,z,accent);
       const ember=box('secret-brazier-ember-'+rec.id,.4,.08,.4,x,floor+.89,z,dark);
@@ -169,7 +199,7 @@
       const support=DS?.pressurePlateSurface?.(plate,{
         id:rec.id+':plate',scope:options.scope||options.mapId||MAP_ID,plateArea:options.mapId||MAP_ID,
       }); // Supports the stone in either the native ruin or a stacked wing.
-      if(support){DS.registerSurface(support);colliders.push(support.id);}
+      if(support){DS.registerSurface(support);surfaces.push(support.id);}
       rec.plate=plate;rec.platePoint={x,z}; // Same one-tile grounded circular trigger as the main timed melody puzzles.
       rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
         width:.12,height:.12,idleColor:'#e5aa55',activeColor:'#65ffaf'
@@ -208,7 +238,7 @@
     if(spec.kind==='pillar'){
       const pillar=at(2.6,2.55);
       box('secret-sightline-pillar-'+rec.id,.85,2.55,.85,pillar.x,floor+1.275,pillar.z);
-      blocker('pillar',pillar.x,pillar.z,.85,.85,()=>true);
+      blocker('pillar',pillar.x,pillar.z,.85,.85,2.55);
       chestAt(center.x,center.z,floor);
       targetAt(pillar.x+sx*.44,floor+1.28,pillar.z+sz*.44,unlock); // The hidden target is built onto the stone pillar's room-facing corner.
       rec.gateProgress=0; // The loot is optional but must still be earned with the shared projectile mechanism.
@@ -216,24 +246,29 @@
       // L-shaped partition occupies existing floor cells: no new doorway, dead tile, or
       // exterior mesh leak. Its only opening faces the room and has an actual blocker.
       const xWall=edgeX+sx*3.3,zWall=edgeZ+sz*3.3;
-      const wallZ1=edgeZ+sz*1.0,wallZ2=edgeZ+sz*2.85;
-      const wallX=edgeX+sx*1.9;
+      const wallZ1=edgeZ+sz*.765,wallZ2=edgeZ+sz*2.85; // The first wall meets the room perimeter.
+      const wallX=edgeX+sx*1.70; // Close the seam between the back wall and the room perimeter.
       for(const [name,x,z,w,d] of [
-        ['narrow-wall-a',xWall,wallZ1,.2,1.05],
+        ['narrow-wall-a',xWall,wallZ1,.2,1.53],
         ['narrow-wall-b',xWall,wallZ2,.2,.7],
-        ['back-wall',wallX,zWall,2.9,.2]
+        ['back-wall',wallX,zWall,3.4,.2]
       ]){
         box(rec.id+':'+name,w,2.8,d,x,floor+1.4,z);
-        blocker(name,x,z,w,d,()=>true);
+        blocker(name,x,z,w,d,2.8);
       }
       const gate=box('secret-closet-stone-door-'+rec.id,.21,2.8,1.2,mouth.x,floor+1.4,mouth.z,dark);
-      blocker('gate',mouth.x,mouth.z,.24,1.2,()=>rec.gateProgress<.92);
+      blocker('gate',mouth.x,mouth.z,.21,1.2,2.8,()=>rec.gateProgress<.92);
       rec.gate=gate;rec.gateY=gate.position.y;
       chestAt(center.x,center.z,floor);
       const switchAt=at(4.6,3.4);
-      if(spec.trigger==='projectile')targetAt(switchAt.x,floor+1.5,switchAt.z,unlock);
-      else if(spec.trigger==='fire')fireAt(switchAt.x,switchAt.z,unlock);
-      else if(!melodyAt(switchAt.x,switchAt.z,unlock))targetAt(switchAt.x,floor+1.5,switchAt.z,unlock);
+      const source=spec.trigger==='fire'
+        ?[[7.6,1.6],[2.2,6.6],[7.5,5.9]].find(([x,z])=>supportedSite(spec.corner,x,z))
+        :null; // Use room-side floor away from the trigger so a player can carry fire between them.
+      if(source)fireAt(switchAt.x,switchAt.z,at(...source));
+      else if(spec.trigger!=='melody'||!melodyAt(switchAt.x,switchAt.z,unlock)){
+        rec.trigger='projectile';
+        targetAt(switchAt.x,floor+1.5,switchAt.z,unlock);
+      }
     }else if(spec.kind==='suspended'){
       chestAt(center.x,center.z,floor);
       box('secret-clasp-grounded-plinth-'+rec.id,.65,.9,.65,center.x+sx*.95,floor+.45,center.z+sz*.35);
@@ -270,7 +305,7 @@
           rec.netSkin=netSkin; // The real rope_long.png atlas hangs from four solid carved-stone columns.
         } // Without the sprite module, the supported stone enclosure remains visible, never a floating bare net.
       }
-      blocker('cache-cover',center.x,center.z,1.3,1.3,()=>!rec.unlocked);
+      blocker('cache-cover',center.x,center.z,1.3,1.3,1.75,()=>!rec.unlocked);
       // A visible ice/net enclosure also physically blocks approach until the shared projectile clasp is struck.
       targetAt(center.x+sx*.95,floor+1.11,center.z+sz*.35,unlock); // Clasp rests on the stone plinth, not unsupported air.
     }
@@ -326,6 +361,7 @@
     rec.tick=dt=>{
       if(rec.disposed)return;
       const t=Math.min(.05,Math.max(0,Number(dt)||0));
+      rec.sourceFlame?.update?.(t);
       if(rec.nest?.anim.length){
         rec.nest.elapsed+=t;
         const camera=cameraForBrood(); // One camera lookup per active-room tick, not one per hatchling.
@@ -340,7 +376,7 @@
         rec.gate.position.y=rec.gateY+rec.gateProgress*3;
       }
       if(rec.fireRecord&&!rec.unlocked&&rec.firePoint&&nearFloor(getPlayerY,floor)
-        &&root.PersistentGroundFire?.intersects?.(options.mapId||MAP_ID,rec.firePoint.x,rec.firePoint.z,.38))unlock(); // A burning patch on another stacked story is NOT this switch.
+        &&root.PersistentGroundFire?.intersects?.(area,rec.firePoint.x,rec.firePoint.z,.38,floor))rec.fireRecord.onBurn(); // Only fire on the switch's floor can light it.
       if(rec.melody&&!rec.unlocked){
         const p=getPlayerPosition?.(),standing=p&&nearFloor(getPlayerY,floor)
           &&Math.hypot(p.x-rec.platePoint.x,p.z-rec.platePoint.z)<.48;
@@ -368,7 +404,7 @@
       if(spec.kind==='suspended'&&rec.cover)rec.cover.visible=false;
     }
     rec.snapshot=()=>({id:rec.id,kind:rec.kind,trigger:rec.kind==='closet'?rec.trigger:rec.suspension,
-      tier:rec.tier,unlocked:rec.unlocked,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
+      tier:rec.tier,unlocked:rec.unlocked,gateProgress:rec.gateProgress,ignitionSource:rec.ignitionSource||null,projectileLinked:rec.linked,fireLinked:!!rec.fireId,
       art:{stone:'carved_smooth.png',mapped:!!root.HobunjiSurfaceStretchUV?.mapMesh,
         cover:rec.icePlacement?.iceLayer?'authored-ice-growth'
           :rec.netSkin?.userData?.dungeonNetAtlas|| (spec.kind==='suspended'?'textured-stone-fallback':null)},
@@ -376,6 +412,7 @@
       chestOpened:rec.chest?.opened??null,babies:rec.babies,nestLoaded:rec.nest?.loaded||0,
       eggsRemaining:rec.nest?.eggsRemaining??0,
       nestDiscovered:rec.discovered});
+    group.userData.ruinSecretSnapshot=rec.snapshot; // Pixel Probe resolves any clicked secret prop back to this room.
     rec.dispose=()=>{
       if(rec.disposed)return;rec.disposed=true;
       for(const control of controls)removeControl?.(control);
@@ -386,7 +423,10 @@
       rec.plateArt?.dispose?.(); // Hao'uun plate decoration follows the same lifecycle as the main melody plates.
       rec.plateSignal?.dispose?.();
       for(const a of art)a.dispose?.();
-      for(const id of colliders)DS?.remove?.(id);
+      removeFootprints?.();
+      rec.sourceFlame?.dispose?.();
+      for(const record of colliders)DS?.remove?.(record.id);
+      for(const id of surfaces)DS?.remove?.(id);
       const geometries=new Set(); // Destroy detached secret meshes in both layer and V50 sessions; neither owner traverses them after removal.
       const ownMaterials=new Set(materials);
       group.traverse?.(node=>{

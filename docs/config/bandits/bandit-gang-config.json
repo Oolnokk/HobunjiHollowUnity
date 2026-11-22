@@ -160,6 +160,36 @@
     "captain": 2,
     "flasker": 0
   },
+  "trinketLoadout": {
+    "_comment": "Enemy trinkets are rolled once per generated humanoid, from the same TrinketSystem catalog and base 8-point budget as players. Only effects supported by the shared ResourceSystem or bandit hit path are eligible. No new rigs, AI scans, guaranteed loot, or independent stat copies.",
+    "chanceByRank": {
+      "grunt": 0.1,
+      "flasker": 0.12,
+      "lieutenant": 0.38,
+      "captain": 0.65
+    },
+    "chancePerTier": 0.06,
+    "extraChancePerTier": 0.1,
+    "maxByRank": {
+      "grunt": 1,
+      "flasker": 1,
+      "lieutenant": 2,
+      "captain": 3
+    },
+    "pool": [
+      "wanderersAnklet",
+      "herbalistsPendant",
+      "guardiansBrooch",
+      "runnersCord",
+      "masonsRing",
+      "defendersBrooch",
+      "brawlersRing",
+      "unstableBalance",
+      "hollowLungs",
+      "falseCourage",
+      "glassFang"
+    ]
+  },
   "statWeakenMultiplierByRank": {
     "_comment": "Applied to attackDamage/maxHealth relative to the tier-scaled captain baseline -- 'their abilities are weakened for all except their camp's bandit captain'. Grunts in particular should read as genuinely weak fodder next to a captain, not just a smaller version of the same fighter.",
     "grunt": 0.35,
@@ -172,6 +202,22 @@
     "tierDistanceTiles": 12,
     "maxTier": 7,
     "tierStatBonusPerTier": 0.06
+  },
+  "combatPursuit": {
+    "_comment": "Ordinary bandits pursue faster than the starting player's run, rather than standing on distant waiting rings. Movement still passes through the existing terrain/armor/debuff and player collision systems. Mine Ghouls/special non-bandit callers retain their own stat curves.",
+    "baseChaseSpeedPxS": 290,
+    "chaseBonusPerTierPxS": 6,
+    "aggroRangeTiles": 8.5,
+    "leashRangeTiles": 16,
+    "standoffMaxTiles": 3.6,
+    "standoffTierStepTiles": 0.2
+  },
+  "quickAttackTuning": {
+    "_comment": "Only an equipped Quick Attack's own bonus condition enables it. Exhaust Cutter / Mercy Spike select more often with difficulty tier; Backstab Flick instead attempts tactical flanking and fires when behind. Flank and pursuit behavior preserves the existing two active melee slots.",
+    "baseChance": 0.2,
+    "bonusPerTier": 0.09,
+    "backstabFlankMaxSeconds": 2,
+    "backstabRetrySeconds": 2.5
   },
   "campLifecycle": {
     "_comment": "How many simultaneous camps a wilderness zone with bandit_camp locales can host, and camp-clearing state used by docs/js/temporary-locales.js release()/re-stamp.",
