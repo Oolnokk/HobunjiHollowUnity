@@ -147,7 +147,7 @@
     return entity?.isPorakanekiHunter ? 'porakaneki' : '';
   }
   function ecologyRole(entity) {
-    if (!entity || entity.health <= 0 || entity.isCompanion) return null;
+    if (!entity || entity.health <= 0 || entity.isCompanion || entity.tzatzulCapturedBy) return null; // Carried actors are no longer available to either side of a faction fight.
     if (tribeOf(entity)) return 'tribe';
     if (entity.isBandit || entity.banditCompanion) return 'bandit';
     if (entity.wildlifeRole === 'predator' || entity.wildlifeRole === 'prey') return entity.wildlifeRole;
@@ -178,6 +178,7 @@
   }
   function validChunkCombatTarget(entity, target) {
     return !!entity && !!target && target.health > 0
+      && !entity.tzatzulCapturedBy && !target.tzatzulCapturedBy // Flight support supersedes both actors' ground-combat goals.
       && entity.areaId === currentArea() && target.areaId === currentArea()
       && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target);
   }
@@ -236,6 +237,10 @@
   }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
+    if (entity.tzatzulCapturedBy) {
+      entity._chunkCombatTarget = null; // Release the old duel without resetting the carrier-owned state to chase/return.
+      return;
+    }
     const prior = entity._chunkCombatTarget;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
     if (!target) {
@@ -255,6 +260,10 @@
   }
   function setPredatorEcologyTarget(entity, target) {
     if (!entity) return;
+    if (entity.tzatzulCapturedBy) {
+      entity._chunkFactionEcologyTarget = null; entity.targetCreature = null; // Don't restart prey pathfinding while suspended.
+      return;
+    }
     const prior = entity._chunkFactionEcologyTarget;
     entity._chunkFactionEcologyTarget = target || null; // Tracks ownership so clearing this encounter never erases unrelated wildlife targets.
     if (target) {
@@ -1950,6 +1959,7 @@
     const entity = hunter.entity;
     if (!entity || entity.health <= 0) return;
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
+    if (entity.tzatzulCapturedBy) return; // Camp agendas must never overwrite the airborne actor's 'tzatzul-carried' state.
     if ((!peacefulRapport() && favor() <= num(cfg?.reputation?.attackOnSightFavor, -5)) || campProvoked(hunter.camp)) {
       entity._chunkCombatTarget = null;
       makeHostile(entity);
@@ -1990,6 +2000,10 @@
   function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
     if (hunter.slain) return; // Killed off-screen (slayHunter); stays dead for this world generation like an observed death.
     if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) return;
+    if (hunter.entity?.tzatzulCapturedBy) {
+      hunter.x = hunter.entity.x / combatDeps.TILE; hunter.y = hunter.entity.y / combatDeps.TILE;
+      return; // Moving beyond the player's chunk must not retire, teleport or rematerialize a carried hunter.
+    }
     const observed = sharesPlayerChunk(hunter); // Shared distance/hysteresis gate for daytime and nighttime residents.
     if (!observed) {
       retireDormantEntity(hunter);
