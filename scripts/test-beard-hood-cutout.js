@@ -701,11 +701,17 @@ assert.equal(beardPaths.length,10,'every distinct beard in the indexed cosmetics
 assert.equal(hoodPaths.length,6,'every indexed active hood uses one shared preset per cosmetic');
 const readCosmetic=path=>JSON.parse(fs.readFileSync(path,'utf8'));
 const grandPath='docs/config/cosmetics/appearance/mao-ao/grandbeard.json';
+const paintedGrandBeards={
+  'docs/config/cosmetics/appearance/kenkari/grandbeard.json':
+    {runs:120,pixels:3940,alpha:1,subdivision:4,first:[18259,1],last:[34513,2]},
+  'docs/config/cosmetics/appearance/mashtzarr-m/grandbeard.json':
+    {runs:123,pixels:5697,alpha:242,subdivision:14,first:[20089,5],last:[39725,1]}
+}; // Dedicated imported authoring for these two Grand Beards; all other beards keep their own silhouette.
 for(const path of beardPaths){
-  const doc=readCosmetic(path);
+  const doc=readCosmetic(path),custom=paintedGrandBeards[path];
   assert.deepEqual(doc.hoodTuftRoots,[],'beard uses reference zero tuft roots: '+path);
   assert.equal(doc.hoodTuftMaxStretch,36,'reference stretch budget: '+path);
-  assert.equal(doc.hoodTuftSubdivision,4,'reference subdivision: '+path);
+  assert.equal(doc.hoodTuftSubdivision,custom?.subdivision??4,'authored beard subdivision: '+path);
   assert.equal(doc.hoodTuftAboveInfluence,100,'upper influence: '+path);
   assert.equal(doc.hoodTuftBelowInfluence,100,'lower influence: '+path);
   if(path===grandPath){
@@ -713,6 +719,15 @@ for(const path of beardPaths){
     assert.equal(doc.hoodWhiskerMask?.runs.length,89,'only Grandbeard gets the painted whisker layer');
     assert.equal(Cut.countMask(doc.hoodCutoutMask),4087,'Grandbeard request pixel count matches supplied authoring');
     assert.equal(Cut.countMask(doc.hoodWhiskerMask),1560,'Grandbeard whisker pixel count matches supplied authoring');
+  }else if(custom){
+    assert.equal(doc.hoodCutoutRequestMode,'painted','the provided beard request is painted: '+path);
+    assert.equal(doc.hoodCutoutMask?.size,200,'200px request resolution: '+path);
+    assert.equal(doc.hoodCutoutMask?.runs.length,custom.runs,'complete painted RLE: '+path);
+    assert.equal(Cut.countMask(doc.hoodCutoutMask),custom.pixels,'complete painted pixel count: '+path);
+    assert.deepEqual(doc.hoodCutoutMask.runs[0],custom.first,'first authored run: '+path);
+    assert.deepEqual(doc.hoodCutoutMask.runs.at(-1),custom.last,'last authored run: '+path);
+    assert.equal(doc.beardPaintAlphaFloor,custom.alpha,'beard-owned opacity floor: '+path);
+    assert.deepEqual(doc.hoodWhiskerMask,{size:200,runs:[]},'no priority whiskers for either beard: '+path);
   }else{
     assert.equal(doc.hoodCutoutRequestMode,'silhouette','other beards adapt requests to own opaque art: '+path);
     assert(!doc.hoodWhiskerMask?.runs?.length,'non-Grandbeard never receives priority whiskers: '+path);
@@ -729,6 +744,30 @@ for(const path of hoodPaths){
   assert.equal(doc.beardCutoutPaintAlphaFloor,128,'reference hood alpha floor: '+path);
   assert(!doc.beardCutoutAllowedMask,'do not freeze automatically detected hood permission: '+path);
 }
+const ragged=readCosmetic('docs/config/cosmetics/ragged_hood.json');
+for(const [variant,expected] of Object.entries({
+  kenkari_male:{spread:.5,alpha:2,runs:57,pixels:2036,first:[22546,2],last:[31707,8]},
+  mashtzarr_male:{spread:.625,alpha:247,runs:118,pixels:33647,first:[0,12107],last:[27867,12133]}
+})){
+  const policy=ragged.speciesVariants?.[variant]; // Explicitly scoped to this hood's male sprite, not other species.
+  assert(policy?.parts?.head?.layers?.front,'original hood art still present: '+variant);
+  assert.equal(policy.beardCutoutPermissionMode,'painted','hood painted policy: '+variant);
+  assert.equal(policy.beardCutoutConeSpread,expected.spread,'saved lower cone: '+variant);
+  assert.equal(policy.beardCutoutTopConeSpread,null,'strict upper overhang remains disabled: '+variant);
+  assert.equal(policy.beardCutoutTopUpConeSpread,3,'unused upward cone setting preserved: '+variant);
+  assert.equal(policy.beardCutoutTopDownConeLength,0,'saved downward overhang length: '+variant);
+  assert.equal(policy.beardCutoutPaintAlphaFloor,expected.alpha,'hood opacity floor: '+variant);
+  assert.equal(policy.beardCutoutAllowedMask?.size,200,'permission mask size: '+variant);
+  assert.equal(policy.beardCutoutAllowedMask?.runs.length,expected.runs,'permission RLE count: '+variant);
+  assert.equal(Cut.countMask(policy.beardCutoutAllowedMask),expected.pixels,'permission pixels: '+variant);
+  assert.deepEqual(policy.beardCutoutAllowedMask.runs[0],expected.first,'first permission run: '+variant);
+  assert.deepEqual(policy.beardCutoutAllowedMask.runs.at(-1),expected.last,'last permission run: '+variant);
+}
+assert(!Object.hasOwn(ragged.speciesVariants['mao-ao_male'],'beardCutoutPermissionMode'),
+  'other Ragged Hood variants retain the shared automatic permission');
+const ownerCount=beardPaths.filter(p=>readCosmetic(p).hoodWhiskerMask?.runs?.length).length;
+assert.equal(ownerCount,1,'Mao Grandbeard remains the only beard with winning whisker paint');
+
 const facewrap=readCosmetic('docs/config/cosmetics/facewrap.json');
 assert(facewrap.tags.includes('hides-facial-hair')&&!facewrap.beardCutoutTopConeSpread,
   'facewrap keeps its deliberate hide-beard behavior');
@@ -853,6 +892,9 @@ assert(portrait.includes('variantBeardCutoutTopConeSpread')
 assert(portrait.includes('variantBeardCutoutPaintAlphaFloor')
   && portrait.includes('hoodAlphaFloor:hoodPolicy.alphaFloor'),
   'game renderer passes variant-resolved hood alpha floor into automatic ring geometry');
+assert(html.includes('beardPaintAlphaFloor:selectedAlphaFloor()')
+  && html.includes('beardDoc?.beardPaintAlphaFloor'),
+  'editor round-trips beard-specific opacity independently of hood paint opacity');
 assert(html.includes('beardRequestAutomatic')
   && html.includes('Cut.autoBeardRequestMask(beardPixels,242)')
   && html.includes("requestMode:beardRequestAutomatic?'silhouette':null")
@@ -899,5 +941,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: 10 beard/6 hood presets, exact Mao Grandbeard masks, per-art auto requests, one whisker owner, bidirectional cones and portrait order pass.');
+  console.log('Beard/hood: Kenkari and Mashtzarr painted Grand Beard/Ragged Hood masks, variant scoping, no extra whiskers and original draw order pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
