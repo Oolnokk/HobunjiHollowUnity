@@ -274,6 +274,8 @@ const festivalLayouts=new Map([[festivalArea,{localeInstances:[
 festivalBrowser.GridTileAccessors={getActiveScene:()=>festivalScene};
 festivalBrowser.LocaleRiddleGenerator={positionOf:instance=>({col:instance.objects[0].x,row:instance.objects[0].y})};
 festivalBrowser.FestivalBlossomPetals={attach(){},detach(){},setContext(){}}; // Keep the existing particles out of collision/outline testing.
+let cleanedNativeTrees=0; // Simulates the game's existing vegetation fade owner for unconditional headless teardown checks.
+festivalBrowser.ZoneTreeFade={forget(){cleanedNativeTrees++;}}; // In real gameplay forget restores and disposes temporary fade materials.
 festivalBrowser.FoliageGenerator={buildWildernessBlossomTreeMesh(){
   const tree=new TestGroup();tree.isGroup=true;tree.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
   const trunk=new TestMesh({},{});trunk.name='native-bark';
@@ -304,8 +306,10 @@ festivalLayouts.set(festivalArea,{localeInstances:[{localeId:'locale_five_blosso
 hunt.update();
 assert(block.blocksPoint(festivalArea,4.5,7.5),'a newly loaded zone receives its one native blossom trunk');
 assert.equal(block.blocksPoint(festivalArea,10.5,12.5),false,'the previous region\'s collision rectangles are discarded');
+assert.equal(cleanedNativeTrees,2,'changing wilderness region forgets both old native tree fade states');
 festivalArea='map_farm';hunt.update();
 assert.equal(block.providerIds().includes('five-blossoms-trunks'),false,'leaving wilderness removes collision and does not leave a ghost trunk');
+assert.equal(cleanedNativeTrees,3,'leaving wilderness also forgets the last rendered native tree');
 assert.equal(hunt.debugSnapshot().treeTrunkCollision.registered,false,'mobile debug reports cleaned-up blossom collisions');
 
 console.log('wilderness generated-object footprint and collision-preservation tests passed');
