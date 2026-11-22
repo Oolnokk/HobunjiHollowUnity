@@ -665,7 +665,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodPermissionScope:hoodScopeKey(),hoodTuftRoots:roots,
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
-      hoodPaintAlphaFloor:selectedAlphaFloor()
+      beardPaintAlphaFloor:selectedAlphaFloor()
     });
     $('status').textContent=(lastError?lastError+'\n':'')
       +'Beard requests: '+Cut.countMask(mask)+(beardRequestAutomatic?' (from art)':' (painted)')
@@ -1084,6 +1084,20 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
           ||Cut.deformationWeight(upper.moves[0],140.5,104.5)>=Cut.deformationWeight(lower.moves[0],140.5,104.5)
           ||Cut.deformationWeight(upper.moves[0],140.5,94.5)!==1)
         throw Error('Above/below sliders are not independently changing the influence or the corner pin drifted');
+      const autoAlpha=new Uint8ClampedArray(SIZE*SIZE*4);
+      autoAlpha[(85*SIZE+101)*4+3]=241;autoAlpha[(85*SIZE+102)*4+3]=242;
+      const autoMask=Cut.autoBeardRequestMask(autoAlpha,242),autoBits=Cut.decodeMask(autoMask);
+      if(autoBits[85*SIZE+101]!==0||autoBits[85*SIZE+102]!==1)
+        throw Error('Auto beard request ignored the 95% alpha floor');
+      const autoBeard=blank(),autoHood=blank();
+      const autoBeardCtx=autoBeard.getContext('2d'),autoHoodCtx=autoHood.getContext('2d');
+      autoBeardCtx.fillStyle='#a87352';autoHoodCtx.fillStyle='#516fa3';
+      autoBeardCtx.fillRect(102,85,1,1);autoHoodCtx.fillRect(102,85,1,1);
+      const autoResult=Cut.negotiateBeardHood(autoBeard,autoHood,null,null,{
+        requestMode:'silhouette',permissionMode:'all'
+      });
+      if(autoResult.approvedPixels!==1||autoHoodCtx.getImageData(102,85,1,1).data[3]!==0)
+        throw Error('Auto silhouette beard did not request the matching hood cutout');
       const testBeard=blank(),testHood=blank(); // Isolated actual Canvas2D test; never touches loaded user sprites.
       const tb=testBeard.getContext('2d'),th=testHood.getContext('2d');
       tb.fillStyle='#bd8a65';tb.fillRect(78,115,24,10);
@@ -1182,7 +1196,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         ||wh.getImageData(92,92,1,1).data[3]!==0
         ||wb.getImageData(92,92,1,1).data[3]!==255)
         throw Error('Priority whisker did not defeat protected hood pixels');
-      status('2D Canvas self-test PASS: all three cones widen to horizontal lines, downward length still caps the droop, 95% alpha and whisker precedence.');
+      status('2D Canvas self-test PASS: own-beard silhouette requests, 95% alpha, Grandbeard whiskers and hood cones reaching lines.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
@@ -1210,7 +1224,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   window.BeardHoodCutoutDebug=()=>({
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),
-    maskPixels:Cut.countMask(mask),whiskerPixels:Cut.countMask(whiskerMask),
+    beardRequestAutomatic,maskPixels:Cut.countMask(mask),whiskerPixels:Cut.countMask(whiskerMask),
     hoodPermissionMode,coneSpread,topConeSpread,topUpConeSpread,topDownConeLength,
     hoodPaintAlphaFloor:selectedHoodAlphaFloor(),
     lowerRimPoints:automaticPermission?.bottomPoints?.length||0,
