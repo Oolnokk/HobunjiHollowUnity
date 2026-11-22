@@ -376,7 +376,7 @@
         rec.gate.position.y=rec.gateY+rec.gateProgress*3;
       }
       if(rec.fireRecord&&!rec.unlocked&&rec.firePoint&&nearFloor(getPlayerY,floor)
-        &&root.PersistentGroundFire?.intersects?.(options.mapId||MAP_ID,rec.firePoint.x,rec.firePoint.z,.38))unlock(); // A burning patch on another stacked story is NOT this switch.
+        &&root.PersistentGroundFire?.intersects?.(area,rec.firePoint.x,rec.firePoint.z,.38,floor))rec.fireRecord.onBurn(); // Only fire on the switch's floor can light it.
       if(rec.melody&&!rec.unlocked){
         const p=getPlayerPosition?.(),standing=p&&nearFloor(getPlayerY,floor)
           &&Math.hypot(p.x-rec.platePoint.x,p.z-rec.platePoint.z)<.48;
