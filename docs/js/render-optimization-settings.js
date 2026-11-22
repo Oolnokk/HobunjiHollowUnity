@@ -64,6 +64,12 @@
 
   // group, id, name, desc, default (on = the shipped optimisation), available(), read(), write(on), ownsPersistence.
   const TOGGLES = [
+    { group: 'Character rendering', id: 'frozenPortraits', name: 'Frozen NPC and animal portraits', on: true,
+      desc: 'Use rigid portrait geometry for neutral, hunched and weapon-ready poses. Independent head motion uses the live rig.',
+      available: () => !!window.PNGPlaneAvatar?.meshBudget?.frozenSnapshot,
+      read: () => window.PNGPlaneAvatar.meshBudget.frozenSnapshot().enabled,
+      write: on => window.PNGPlaneAvatar.meshBudget.setFrozenEnabled(on) },
+
     { group: 'Batching (fewer draw calls)', id: 'propBatches', name: 'Merge still wilderness props', on: true,
       desc: 'Tents, camp furniture, berry bushes, herbs, totems, nests and ore-rock stones that stand still are drawn as one merged mesh per 8×8 tiles.',
       available: () => typeof window.ZonePropRenderBatches?.setEnabled === 'function',

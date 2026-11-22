@@ -645,6 +645,239 @@
     };
   }
 
+  // Keep the authoritative rig and mesh so attachment, texture, and x-ray
+  // consumers retain their existing references. Only native world draws use
+  // the cached rigid geometry, and only for a supported stable pose.
+  const frozenPortraits = new WeakMap(); // Mesh -> pose cache, released with its avatar.
+  const sharedPortraitMaterials = new WeakSet(); // Shared visitor materials may also draw live skins in the same pass.
+  const frozenCandidates = []; // Frame-local records prepared after presentation hooks.
+  const frozenDraws = []; // Restored before the compositor evaluates another pass.
+  const frozenMaterials = new Set(); // Materials whose r128 program must be refreshed after the frame.
+  const frozenStats = { flat: 0, posed: 0, builds: 0, trianglesSaved: 0 };
+  const POSE_EPSILON = 1e-6; // Avoid freezing an independently moving head or accumulating visible pose error.
+  let frozenPortraitsEnabled = true; // Mobile render-optimization A/B switch.
+  let frozenFrame = null; // Prevents auxiliary renders from using the world's pose snapshot.
+  let frozenBuildsRemaining = 0; // Bounds one-time CPU skinning work across the visible crowd.
+
+  function disposeFrozenPortrait(mesh) {
+    const cache = frozenPortraits.get(mesh);
+    if (!cache) return;
+    for (const pose of cache.poses) pose.geometry.dispose();
+    frozenPortraits.delete(mesh);
+  }
+
+  function visibleInPortraitScene(mesh, scene) {
+    for (let node = mesh; node; node = node.parent) {
+      if (!node.visible) return false;
+      if (node === scene) return true;
+    }
+    return false;
+  }
+
+  function savePortraitPose(mesh, values) {
+    let index = 0;
+    for (const bone of mesh.skeleton.bones) {
+      const p = bone.position, q = bone.quaternion, s = bone.scale; // Local pose is independent of actor movement and whole-body facing.
+      values[index++] = p.x; values[index++] = p.y; values[index++] = p.z;
+      values[index++] = q.x; values[index++] = q.y; values[index++] = q.z; values[index++] = q.w;
+      values[index++] = s.x; values[index++] = s.y; values[index++] = s.z;
+    }
+  }
+
+  function samePortraitPose(a, b) {
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > POSE_EPSILON) return false;
+    return true;
+  }
+
+  function bakePortrait(THREE, mesh) {
+    const source = mesh.geometry;
+    const geometry = source.clone(); // Preserves face groups, UV orientation, draw range and authored custom attributes.
+    const original = source.attributes.position, positions = geometry.attributes.position;
+    const sourceNormals = source.attributes.normal, normals = geometry.attributes.normal;
+    const weights = source.attributes.skinWeight, indices = source.attributes.skinIndex;
+    const skinMatrices = mesh.skeleton.bones.map(() => new THREE.Matrix4()); // Same local matrices used by the skin-normal vertex shader.
+    const point = new THREE.Vector3(); // One scratch point per bounded, transition-only bake.
+    let rigid = true;
+    mesh.updateWorldMatrix(true, false);
+    mesh.updateMatrixWorld(true);
+    for (let i = 0; i < skinMatrices.length; i++) {
+      skinMatrices[i].copy(mesh.bindMatrixInverse)
+        .multiply(mesh.skeleton.bones[i].matrixWorld).multiply(mesh.skeleton.boneInverses[i]).multiply(mesh.bindMatrix);
+    }
+    for (let i = 0; i < positions.count; i++) {
+      mesh.boneTransform(i, point);
+      rigid &&= Math.abs(point.x - original.getX(i)) < POSE_EPSILON &&
+        Math.abs(point.y - original.getY(i)) < POSE_EPSILON && Math.abs(point.z - original.getZ(i)) < POSE_EPSILON;
+      positions.setXYZ(i, point.x, point.y, point.z);
+      if (!sourceNormals) continue;
+      const x = sourceNormals.getX(i), y = sourceNormals.getY(i), z = sourceNormals.getZ(i);
+      let nx = 0, ny = 0, nz = 0; // Transform directions without each bone's translation.
+      for (let axis = 0; axis < 4; axis++) {
+        const slot = i * 4 + axis, weight = weights.array[slot];
+        if (!weight) continue;
+        const e = skinMatrices[indices.array[slot]].elements;
+        nx += weight * (e[0] * x + e[4] * y + e[8] * z);
+        ny += weight * (e[1] * x + e[5] * y + e[9] * z);
+        nz += weight * (e[2] * x + e[6] * y + e[10] * z);
+      }
+      normals.setXYZ(i, nx, ny, nz);
+    }
+    geometry.deleteAttribute('skinIndex');
+    geometry.deleteAttribute('skinWeight');
+    if (rigid && (original.version === 0 || (source.userData.hobunjiAnimalYawFold && original.version === 1)) && !source.getAttribute('hobunjiRigSourceUv')
+        && source.boundingBox?.min.z === 0 && source.boundingBox.max.z === 0
+        && Math.abs(source.boundingBox.min.x + source.boundingBox.max.x) < POSE_EPSILON
+        && Math.abs(source.boundingBox.min.y + source.boundingBox.max.y) < POSE_EPSILON) {
+      geometry.dispose();
+      // Both portrait faces have independent material groups and opposite winding.
+      const bounds = source.boundingBox;
+      const plane = new THREE.PlaneGeometry(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y);
+      if (source.groups.length < 2) return { geometry: plane, flat: true };
+      const quad = plane.toNonIndexed();
+      plane.dispose();
+      const position = [], normal = [], uv = []; // Two triangles per face, matching the skinned portrait's local UVs.
+      for (const facing of [1, -1]) {
+        for (let i = 0; i < 6; i++) {
+          const at = facing === 1 ? i : 5 - i;
+          position.push(quad.attributes.position.getX(at), quad.attributes.position.getY(at), 0);
+          normal.push(0, 0, facing);
+          uv.push(quad.attributes.uv.getX(at), quad.attributes.uv.getY(at));
+        }
+      }
+      quad.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+      quad.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+      quad.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      quad.addGroup(0, 6, 0);
+      quad.addGroup(6, 6, 1);
+      return { geometry: quad, flat: true };
+    }
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return { geometry, flat: false };
+  }
+
+  function frozenPoseFor(mesh, spec) {
+    const bones = mesh.skeleton.bones;
+    const data = mesh.userData;
+    const neck = spec.animal ? bones[1] : bones[NECK_BONE]; // Animal pitch and yaw occupy separate bones.
+    if (!neck) return null;
+    const forwardYaw = data.hobunjiPortraitForwardYaw;
+    const yaw = spec.animal ? bones[2]?.rotation.y : neck.rotation.y;
+    const restPitch = spec.animal ? data.hobunjiPortraitRestPitch : 0;
+    const pitch = spec.animal ? neck.rotation.z : neck.rotation.x;
+    // A weapon's authored body yaw can twist the neck to keep the face forward.
+    // A genuine glance or nod returns to the live rig immediately.
+    if (forwardYaw === null || Math.abs(yaw - (forwardYaw ?? 0)) > POSE_EPSILON ||
+        Math.abs(pitch - restPitch) > POSE_EPSILON || (!spec.animal && Math.abs(neck.rotation.z) > POSE_EPSILON)) {
+      const old = frozenPortraits.get(mesh);
+      if (old) old.stable = 0;
+      return null;
+    }
+    let cache = frozenPortraits.get(mesh);
+    const { skinWeight: weights, position, uv } = mesh.geometry.attributes; // In-place animal response or shoulder edits invalidate a bake.
+    if (!weights) return null;
+    if (!cache || cache.source !== mesh.geometry || cache.weightVersion !== weights.version || cache.positionVersion !== position.version || cache.uvVersion !== uv.version) {
+      disposeFrozenPortrait(mesh);
+      cache = {
+        source: mesh.geometry, weightVersion: weights.version, positionVersion: position.version, uvVersion: uv.version, poses: [], stable: 0,
+        current: new Float64Array(bones.length * 10), previous: new Float64Array(bones.length * 10),
+      };
+      frozenPortraits.set(mesh, cache);
+    }
+    savePortraitPose(mesh, cache.current);
+    for (const pose of cache.poses) if (samePortraitPose(pose.values, cache.current)) return pose;
+    cache.stable = samePortraitPose(cache.current, cache.previous) ? cache.stable + 1 : 0;
+    cache.previous.set(cache.current);
+    if (cache.stable < 2 || frozenBuildsRemaining <= 0) return null; // Blend through live poses and cap first-use work in a crowd.
+    frozenBuildsRemaining--;
+    const pose = bakePortrait(spec.THREE, mesh);
+    pose.values = cache.current.slice();
+    if (cache.poses.length >= 6) cache.poses.shift().geometry.dispose(); // Neutral, hunch, and recurring weapon rest sides per mesh.
+    cache.poses.push(pose);
+    frozenStats.builds++;
+    return pose;
+  }
+
+  function prepareFrozenPortraits(ctx) {
+    frozenFrame = ctx.frame;
+    frozenBuildsRemaining = 2;
+    frozenStats.flat = frozenStats.posed = frozenStats.trianglesSaved = 0;
+    for (const ref of portraitMeshRefs) {
+      const mesh = ref.deref();
+      if (!mesh) { portraitMeshRefs.delete(ref); continue; }
+      const spec = portraitMeshBuilds.get(mesh);
+      if (!spec?.freeze || !visibleInPortraitScene(mesh, ctx.scene)) continue;
+      const originalMaterial = mesh.material; // Same live materials keep portrait alpha, tint, and replay state authoritative.
+      if (Array.isArray(originalMaterial)
+        ? originalMaterial.some(material => !material?.skinning || sharedPortraitMaterials.has(material))
+        : !originalMaterial?.skinning || sharedPortraitMaterials.has(originalMaterial)) continue;
+      // Some specialized animal portraits use live helper skins for shoulder
+      // deformation. Keep their source and helper on the same representation.
+      if (mesh.parent?.userData?.hobunjiShoulderRest?.enabled || mesh.children.some(child => child.isMesh && child.visible)) continue;
+      const pose = frozenPoseFor(mesh, spec);
+      if (!pose) continue;
+      const cache = frozenPortraits.get(mesh);
+      if (cache.draw?.originalMaterial !== originalMaterial) {
+        cache.draw = { mesh, originalMaterial, materials: Array.isArray(originalMaterial) ? originalMaterial : [originalMaterial] };
+      }
+      cache.draw.pose = pose;
+      cache.draw.source = mesh.geometry;
+      frozenCandidates.push(cache.draw);
+      if (pose.flat) frozenStats.flat++;
+      else frozenStats.posed++;
+      const sourceCount = mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count;
+      const frozenCount = pose.geometry.index?.count ?? pose.geometry.attributes.position.count;
+      frozenStats.trianglesSaved += (sourceCount - frozenCount) / 3;
+    }
+  }
+
+  function beginFrozenDraw(ctx) {
+    // Override materials have their own skinning contract (outline/perception).
+    if (ctx.scene.overrideMaterial || !ctx.camera?.layers) return;
+    for (const entry of frozenCandidates) {
+      const { mesh, source, pose, originalMaterial, materials } = entry;
+      if (mesh.material !== originalMaterial || mesh.geometry !== source || !(mesh.layers.mask & ctx.camera.layers.mask) || !mesh.visible) continue;
+      for (const material of materials) {
+        if (!frozenMaterials.has(material)) {
+          material.needsUpdate = true; // r128 caches the program by material version, not by the mesh's skinning flag.
+          frozenMaterials.add(material);
+        }
+        material.skinning = false;
+      }
+      mesh.geometry = pose.geometry;
+      mesh.isSkinnedMesh = false; // Native renderer skips skeleton updates and skinning uniforms.
+      frozenDraws.push(entry);
+    }
+  }
+
+  function endFrozenDraw() {
+    for (const { mesh, source, materials } of frozenDraws) {
+      mesh.geometry = source;
+      delete mesh.isSkinnedMesh;
+      for (const material of materials) material.skinning = true;
+    }
+    frozenDraws.length = 0;
+  }
+
+  window.RenderHooks?.register({
+    id: 'frozen-portrait-preparation', owner: 'png-plane-avatar.js', order: 6000, scope: 'frame',
+    appliesTo: ctx => frozenPortraitsEnabled && !portraitWireframeEnabled && ctx.worldScene && ctx.frame.renderer === ctx.renderer,
+    before: prepareFrozenPortraits,
+    after() {
+      frozenStats.trianglesSaved = Math.round(frozenStats.trianglesSaved);
+      for (const material of frozenMaterials) material.needsUpdate = true;
+      frozenMaterials.clear();
+      frozenCandidates.length = 0;
+      frozenFrame = null;
+    },
+  });
+  window.RenderHooks?.register({
+    id: 'frozen-portrait-draw', owner: 'png-plane-avatar.js', order: 6100,
+    appliesTo: ctx => frozenFrame !== null && ctx.frame === frozenFrame && ctx.worldScene && ctx.frame.renderer === ctx.renderer && ctx.depth === 0,
+    before: beginFrozenDraw,
+    after: endFrozenDraw,
+  });
+
   function registerSkinnedPortrait(mesh, THREE, width, height, neckLocal, options, mode, hostileMask = false, hooks = null) {
     if (typeof WeakRef !== 'function' || !mesh) return false; // Build-time density still works if live tracking is unavailable.
     const previous = portraitMeshBuilds.get(mesh);
@@ -664,6 +897,7 @@
   function unregisterSkinnedPortrait(mesh) {
     const spec = portraitMeshBuilds.get(mesh);
     if (!spec) return false;
+    disposeFrozenPortrait(mesh);
     releasePortraitWireframe(mesh); // Restore source materials before any portrait-owned disposal.
     portraitMeshBuilds.delete(mesh); // Used by avatar, hostile and cloned-visitor disposal.
     portraitMeshRefs.delete(spec.ref);
@@ -677,6 +911,9 @@
     // Doorstep visitors share the source mesh's geometry but own separate bones;
     // both users must change to the SAME new geometry before the old buffer is freed.
     const sourceOriginal = portraitWireframeOriginals.get(source)?.original;
+    for (const material of Array.isArray(sourceOriginal || source.material) ? (sourceOriginal || source.material) : [sourceOriginal || source.material]) {
+      if (material) sharedPortraitMaterials.add(material);
+    }
     if (sourceOriginal) clone.material = sourceOriginal; // The visitor copied a debug material; it must restore the real texture when the toggle is turned off.
     return registerSkinnedPortrait(clone, spec.THREE, spec.width, spec.height, spec.neckLocal,
       spec.options, spec.mode, spec.hostileMask);
@@ -689,7 +926,7 @@
       {}, config.mode || 'full', false,
       { buildGeometry: config.buildGeometry, resolveGrid: config.resolveGrid || null,
         afterGeometryChange: config.afterGeometryChange || null, onWireframeChanged: config.onWireframeChanged || null,
-        animal: config.animal === true });
+        animal: config.animal === true, freeze: config.freeze === true });
     if (registered) config.onWireframeChanged?.(portraitWireframeEnabled);
     return registered;
   }
@@ -764,6 +1001,8 @@
     portraitDensityPercent: () => portraitDensityPercent,
     setPortraitDensityPercent,
     portraitDensityDebug,
+    frozenSnapshot: () => ({ enabled: frozenPortraitsEnabled, ...frozenStats }),
+    setFrozenEnabled(value) { frozenPortraitsEnabled = value !== false; return frozenPortraitsEnabled; },
     wireframeEnabled: () => portraitWireframeEnabled,
     originalPortraitMaterial: mesh => portraitWireframeOriginals.get(mesh)?.original || mesh?.material, // Split animal overlay clones need the real texture even if their source is temporarily wireframed.
     setPortraitWireframeEnabled,
@@ -942,7 +1181,7 @@
     skinnedPlane.bind(skeleton);
     registerSkinnedPortrait(skinnedPlane, THREE, modelWidth, modelHeight, neckLocal, {
       pixelWidth: pxW, pixelHeight: pxH, headBoundsPx: gatedHeadBounds, posteriorY, spineBaseY: spineBase.y,
-    }, config.meshBudget === 'npc' ? 'npc' : 'full');
+    }, config.meshBudget === 'npc' ? 'npc' : 'full', false, { freeze: config.freezePortrait === true });
 
     const group = new THREE.Group();
     group.name = config.name || 'npc_avatar_skinned_plane_assembly_group';
@@ -1065,7 +1304,7 @@
     skinned.add(splineNodes[0]);
     const skeleton = new THREE.Skeleton([...splineNodes, neckBone, headScaleBone]);
     skinned.bind(skeleton);
-    registerSkinnedPortrait(skinned, THREE, planeWidth, planeHeight, neckLocal, skinOptions, hostileMode, hostileMasked);
+    registerSkinnedPortrait(skinned, THREE, planeWidth, planeHeight, neckLocal, skinOptions, hostileMode, hostileMasked, { freeze: fallbackDimensions.freezePortrait === true });
     // Keep the disposer bound to the current geometry after a developer slider retessellation.
     return { mesh: skinned, get weightedGeometry() { return skinned.geometry; }, skeleton, neckBone, headScaleBone, splineNodes, spinePosteriorY: posteriorY, spineBase, neckLocal };
   }
@@ -1578,7 +1817,7 @@
           headCanvas: options.headCanvas, alphaThreshold: options.neckAlphaThreshold,
           speciesId, headGate,
           cosmeticIds: options.cosmeticIds || ['mask', 'hat', 'hood', 'upperFace', 'facialHair'].map(key => options.profile?.[key]?.id).filter(Boolean), // Worn pieces that can override the species head gate.
-          name: `${root.name}_skinned_plane_assembly`, meshBudget: options.meshBudget,
+          name: `${root.name}_skinned_plane_assembly`, meshBudget: options.meshBudget, freezePortrait: !!(options.npcRecord || options.profile?.npcRecord),
         })
       : null;
     const assembly = skinnedRig ? skinnedRig.group : createSinglePlaneAssembly(THREE, {
@@ -2074,6 +2313,8 @@
       return composedDeg;
     };
     applyDegrees(rig.restDeg);
+    front.mesh.userData.hobunjiPortraitRestPitch = rig.restDeg * RAD;
+    back.mesh.userData.hobunjiPortraitRestPitch = -rig.restDeg * RAD;
 
     // Yaw ("shaking its head" side-to-side) is a separate axis from the
     // pitch/nod bone rotation.z above — the yaw bone's local Y, which
@@ -2171,13 +2412,13 @@
       : canonicalDimensions.width / Math.max(0.0001, canonicalDimensions.height); // Same source aspect used by buildAnimalWeightedGeometry.
     const resolveGrid = () => meshBudget?.animalGrid?.(rig.meshResolution, sourceAspect); // Recomputed when the slider changes, without reauthoring the rig.
     meshBudget?.registerExternalSkinnedPortrait?.(front.mesh, {
-      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
+      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, freeze: true, resolveGrid,
       buildGeometry: grid => rebuildFace(frontPlane, false, grid),
       afterGeometryChange: refreshDependentGeometry,
       onWireframeChanged(enabled) { avatarRef.refreshAnimalWireframe?.(enabled); },
     });
     meshBudget?.registerExternalSkinnedPortrait?.(back.mesh, {
-      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, resolveGrid,
+      THREE, width: canonicalDimensions.width, height: canonicalDimensions.height, animal: true, freeze: true, resolveGrid,
       buildGeometry: grid => rebuildFace(backPlane, true, grid),
     });
     avatarRef.dispose = () => {

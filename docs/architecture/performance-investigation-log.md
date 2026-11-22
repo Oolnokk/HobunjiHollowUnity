@@ -19,6 +19,18 @@ before the next eligible draw. The Performance Profiler shows ground cache
 hits and builds alongside AutoLOD source checks and swaps. These counters
 verify work reuse. Fresh device traces are needed to measure the FPS effect.
 
+## 21 Nov 2026: static portrait poses for NPCs and animals
+
+The game can draw an unskinned quad for a flat neutral portrait or cache the
+existing deformed geometry for a fixed hunch or weapon stance. The bandit's
+live Light, Heavy, and ranged pose data supply the matching face-forward
+counter-turn. Real glances, nods, and active weapon animations use the live skin.
+Native color and PNG depth draws share the same presentation. Stable caches
+are bounded per portrait and first-use bakes are limited per world frame.
+The Performance Profiler reports flat and baked counts and avoided triangles.
+The Render optimizations toggle allows an in-place A/B comparison. Combat-save
+frame timing is still unmeasured.
+
 ## 21 Nov 2026: pants added to existing feet x-ray replay (PR #2049)
 
 Pants join the existing selectively ground-exempt feet replay, not a new pass.

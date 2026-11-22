@@ -2175,7 +2175,9 @@
       }
     }
     const group = c.avatarRef.group;
-    const vθ = θ + THREE.MathUtils.degToRad(pose.bodyYaw || 0);
+    const bodyYawRad = THREE.MathUtils.degToRad(pose.bodyYaw || 0); // Shared idle head counter-turn follows the authored ranged stance.
+    window.BanditCombat?.setBanditBodyYaw?.(c, bodyYawRad);
+    const vθ = θ + bodyYawRad;
     group.rotation.y = vθ - (c.def.aimAngleOffset || 0);
     c.groupRot = group.rotation.y;
     const attach = window.SharedAttackPose;

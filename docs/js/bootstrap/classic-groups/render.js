@@ -21,7 +21,7 @@
     "js/wilderness-tree-instancer.js?v=20261120h2375ea0", // Render scope: drawn, non-fading procedural trees as InstancedMeshes (world-render-pipeline.js).
     "js/shoulder-pet-attachment-runtime.js?v=20261122shoulderHeadOnly1", // Shared pin solver, before game.js starts.
     "js/adventuring-torch-belt.js?v=20261118beltTrueSize4", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
-    "js/render-optimization-settings.js?v=20261121h2382071" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
+    "js/render-optimization-settings.js?v=20261122h7470023" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.
