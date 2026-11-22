@@ -24,6 +24,8 @@ const context = vm.createContext({ window: W, performance: { now: () => clock },
 vm.runInContext(fs.readFileSync('docs/js/wildlife-threat-response.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/wildlife-food-web.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('docs/js/combat/animal-scent-targeting.js', 'utf8'), context); // Real scent module must not hijack predator flight.
+vm.runInContext(fs.readFileSync('docs/js/moot-registration.js', 'utf8'), context); // Test the actual species registrations, not only their runtime reactions.
+vm.runInContext(fs.readFileSync('docs/js/voorg-ass-registration.js', 'utf8'), context);
 const R = W.WildlifeThreatResponse;
 const F = W.WildlifeFoodWeb;
 const movement = [];
@@ -40,6 +42,20 @@ function animal(kind, x, y, overrides = {}) {
   };
 }
 assert.equal(typeof nestListener, 'function', 'nest theft uses existing activity event, not a separate inventory poll');
+const speciesDefs = { 'uumkaoii-wild': { hostile: false, moveSpeed: 110, chaseSpeed: 110 } }; // Minimal live CREATURE_DB baseline used by both original registration adapters.
+W.MootRegistration.ensureCreatureDefs(speciesDefs, ctx.tile);
+W.VoorgAssRegistration.ensureCreatureDefs(speciesDefs, ctx.tile);
+for (const kind of ['moot', 'moot-herd-mother']) {
+  assert.equal(speciesDefs[kind].attackTag, 'blunt', 'Moot family inflicts blunt charge damage');
+  assert.equal(speciesDefs[kind].guardChargeDamage, 18, 'Moot family explicitly enables damaging guard charges');
+  assert(speciesDefs[kind].attacks.includes('guardCharge'), 'Moot family reuses registered frontal cone attack');
+}
+for (const kind of ['voorg-ass', 'voorg-ass-herd-mother']) {
+  assert(speciesDefs[kind].attacks.includes('rearKick'), 'Voorg-Ass family reuses the existing native rear kick');
+  assert.equal(speciesDefs[kind].hostile, false, 'Voorg-Asses remain passive until threatened');
+}
+assert(speciesDefs['voorg-ass'].chaseSpeed >= ctx.tile * 9.2, 'Voorg-Ass authored sprint is fast enough to retreat');
+
 
 // A Moot responds immediately to a close player; a Voorg-Ass picks the existing rear-kick retaliation path.
 const moot = animal('moot', 0, 0);
