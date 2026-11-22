@@ -284,6 +284,41 @@ assert.equal(Cut.decodeMask(upperZero.mask)[at(50,95)],0,
   'zero widening does not spread outside its vertical top rim columns');
 assert(upperWide.coverPixels>upperZero.coverPixels,
   'widening the top cone grows the protected upper-hood footprint');
+const upOnly=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:0
+});
+const upWide=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:1,downLength:0
+});
+const downShort=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:8
+});
+const downLong=Cut.autoHoodTopCoverMask(ringBefore,0,{
+  bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:20
+});
+const downWide=Cut.autoHoodTopCoverMask(ringBefore,1,{
+  bottomPoints:autoZero.bottomPoints,upSpread:0,downLength:8
+});
+assert(Cut.decodeMask(upOnly.mask)[at(100,50)]===1,
+  'upper cone protects fabric ABOVE the detected overhang');
+assert.equal(Cut.decodeMask(upOnly.mask)[at(100,80)],0,
+  'downward reach zero covers nothing below the rim');
+assert(upWide.coverPixels>upOnly.coverPixels,
+  'upper widening expands coverage independently of downward droop length');
+assert(downShort.coverPixels>upOnly.coverPixels,
+  'positive downward length adds a lower protection cone');
+assert.equal(Cut.decodeMask(downShort.mask)[at(100,80)],0,
+  'whisker root 17 pixels below rim is unaffected by an 8px downward length');
+assert.equal(Cut.decodeMask(downLong.mask)[at(100,80)],1,
+  'whisker root becomes protected when downward length reaches it');
+assert(downWide.coverPixels>downShort.coverPixels,
+  'changing downward widening affects lower cone with fixed upper geometry');
+assert.equal(Cut.decodeMask(downLong.mask)[at(100,145)],0,
+  'even a long downward cone is hard-capped by the lower inner rim');
+assert.equal(Cut.normalizeCoverLength(-20),0,'negative downward length clamps to zero');
+assert.equal(Cut.normalizeCoverLength(400),200,'downward length cannot exceed portrait size');
+assert.equal(Cut.normalizeCoverLength(undefined),200,
+  'legacy upper cone setting preserves full-to-lower-rim downward reach');
 assert.equal(Cut.autoHoodTopCoverMask(new Uint8ClampedArray(SIZE*SIZE*4),1).coverPixels,0,
   'missing opening does not invent an upper protection region');
 const fadedTop=Cut.autoHoodTopCoverMask(fadedRing,.3,{alphaLimit:242});
@@ -308,6 +343,24 @@ assert.equal(topFight.whiskerWins,1,'whisker below upper cover still defeats nor
 assert.equal(alpha(topBeard,100,80),0,'upper root whisker is erased under drooping hood cloth');
 assert.equal(alpha(topHood,100,80),255,'upper hood is left intact where it overrules whiskers');
 assert.equal(alpha(topHood,100,145),0,'lower whisker still removes normally protected hood');
+const shortBeard=new Canvas(),shortHood=new Canvas();
+for(const y of [50,80]){
+  setPixel(shortBeard,100,y,255);setPixel(shortHood,100,y,255);
+}
+const bothWhiskers=new Uint8Array(SIZE*SIZE);
+for(const y of [50,80])bothWhiskers[at(100,y)]=1;
+const split=Cut.negotiateBeardHood(shortBeard,shortHood,null,{size:SIZE,runs:[]},{
+  permissionMode:'painted',whiskerMask:Cut.encodeMask(bothWhiskers),
+  topConeSpread:0,topUpConeSpread:0,topDownConeLength:8,
+  includeMasks:true
+});
+assert.equal(split.topCoverWhiskers,1,
+  'upward overhang protects a whisker while downward droop is limited');
+assert.equal(split.whiskerWins,1,
+  'whisker just below short downward cover can still cut protected hood');
+assert.equal(alpha(shortBeard,100,50),0,'upward cover erases whisker beneath upper cloth');
+assert.equal(alpha(shortBeard,100,80),255,'whisker past downward length survives');
+assert.equal(alpha(shortHood,100,80),0,'past the downward length, whisker still opens the hood');
 assert.equal(Cut.decodeMask(topFight.refusedMask)[at(100,80)],1,'upper protected whisker is visibly refused');
 assert.equal(Cut.decodeMask(topFight.topCoverMask)[at(100,145)],0,'top cover preview excludes lower beard');
 // Null option is backward compatible: existing hoods still let priority whiskers win.
@@ -427,6 +480,10 @@ assert.equal(policyResolver({},null).topConeSpread,null,
   'unconfigured hood does not silently override existing whiskers');
 assert.equal(policyResolver({beardCutoutTopConeSpread:0},null).topConeSpread,0,
   'authored zero still enables the narrow upper cover');
+assert.equal(policyResolver({},null).topUpConeSpread,0,
+  'upward widening defaults to straight vertical columns');
+assert.equal(policyResolver({},null).topDownConeLength,200,
+  'missing downward length keeps old full-to-bottom-ring coverage');
 assert.equal(policyResolver({beardCutoutPaintAlphaFloor:191},null).alphaFloor,191,
   'a previously authored hood alpha value is not overwritten by the new default');
 assert.equal(policyResolver({beardCutoutAllowedMask:permission},null).mode,'painted',
@@ -441,6 +498,10 @@ const overridePolicy=policyResolver({
   variantBeardCutoutConeSpread:{'mao-ao_male':1.25},
   beardCutoutTopConeSpread:.5,
   variantBeardCutoutTopConeSpread:{'mao-ao_male':1.5},
+  beardCutoutTopUpConeSpread:.2,
+  variantBeardCutoutTopUpConeSpread:{'mao-ao_male':.6},
+  beardCutoutTopDownConeLength:90,
+  variantBeardCutoutTopDownConeLength:{'mao-ao_male':14},
   beardCutoutPaintAlphaFloor:242,
   variantBeardCutoutPaintAlphaFloor:{'mao-ao_male':250},
 }, {speciesId:'mao-ao',gender:'male'});
@@ -449,6 +510,10 @@ assert.equal(overridePolicy.coneSpread,1.25,'variant-specific cone spread wins o
 assert.equal(overridePolicy.alphaFloor,250,'species-variant hood alpha overrides the shared opacity floor');
 assert.equal(overridePolicy.topConeSpread,1.5,
   'species variant upper cover spread overrides the shared cone');
+assert.equal(overridePolicy.topUpConeSpread,.6,
+  'species variant upward cone widening overrides shared value');
+assert.equal(overridePolicy.topDownConeLength,14,
+  'species variant downward length overrides shared droop depth');
 const disabledInheritedTop=policyResolver({
   beardCutoutTopConeSpread:1,
   variantBeardCutoutTopConeSpread:{'mao-ao_male':null}
@@ -525,6 +590,7 @@ for(const text of [original,studio,attack])
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
   'hoodAutoMode','coneSpread','coneSpreadLabel','topConeEnabled','topConeSpread','topConeSpreadLabel',
+  'topConeUpSpread','topConeUpSpreadLabel','topConeDownLength','topConeDownLengthLabel',
   'whiskerMode','whiskerEraseMode','clearWhiskers',
   'alphaFloor','hoodAlphaFloor','hoodAlphaFloorLabel','maxStretch','subdivision','aboveInfluence','belowInfluence',
   'removeRoot','clearRoots','hoodAllowMode','hoodProtectMode','protectWholeHood',
@@ -571,7 +637,12 @@ assert(html.includes('beardCutoutPaintAlphaFloor=selectedHoodAlphaFloor()')
 assert(portrait.includes('variantBeardCutoutTopConeSpread')
   && portrait.includes('topConeSpread:hoodPolicy.topConeSpread')
   && html.includes('destination.beardCutoutTopConeSpread=Cut.normalizeConeSpread(topConeSpread)')
-  && html.includes('topCover:topCoverPermission'),
+  && html.includes('topCover:topCoverPermission')
+  && html.includes('upSpread:topUpConeSpread,downLength:topDownConeLength')
+  && html.includes('destination.beardCutoutTopUpConeSpread=Cut.normalizeConeSpread(topUpConeSpread)')
+  && html.includes('destination.beardCutoutTopDownConeLength=Cut.normalizeCoverLength(topDownConeLength)')
+  && portrait.includes('topUpConeSpread:hoodPolicy.topUpConeSpread')
+  && portrait.includes('topDownConeLength:hoodPolicy.topDownConeLength'),
   'top cone works in the portrait renderer, editor preview, and hood JSON variants');
 assert(portrait.includes('variantBeardCutoutPaintAlphaFloor')
   && portrait.includes('hoodAlphaFloor:hoodPolicy.alphaFloor'),
@@ -616,5 +687,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: upper rim cover overrules whiskers without blocking lower beard, bottom cone, variant metadata, 95% alpha, outlines, draw order and CORS retry pass.');
+  console.log('Beard/hood: bidirectional overhang cones, configurable downward length, strict whisker refusal, lower beard preservation, variants, 95% alpha and draw order pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
