@@ -155,9 +155,51 @@ const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36});
 assert.equal(inside.insideRing,1,'tuft already inside the ring does not stretch the hood');
 assert.equal(inside.stretched,0,'no active deformation for interior tuft');
 assert.deepEqual(Array.from(noMove.pixels),Array.from(ringBefore),'inside ring leaves hood exactly unchanged');
-const constrained=Cut.stretchHoodToRoots(noMove,[{x:164,y:94}],{maxStretch:12});
-assert.equal(constrained.stretched,0,'too-distant tuft cannot pull the whole hood across the face');
-assert.equal(constrained.tooFar,1,'overstretch is surfaced in diagnostics');
+// Previously the cap acted as a hard gate: e.g. 17px -> no deformation,
+ // 18px -> full deformation. It must now move smoothly, even below 1px.
+const partialRoot={x:140.5,y:94.5};
+const originalPlan=Cut.planTuftStretch(ringBefore,[partialRoot],{maxStretch:64});
+const needed=originalPlan.moves[0].requestedLength;
+assert(needed>4,'test has a substantial original tuft-to-ring distance');
+function stretchedCopy(limit){
+  const copy=new Canvas();copy.pixels.set(ringBefore);
+  const result=Cut.stretchHoodToRoots(copy,[partialRoot],{maxStretch:limit});
+  return {copy,result};
+}
+const none=stretchedCopy(0);
+assert.equal(none.result.stretched,0,'0px explicitly disables the deformation');
+assert.equal(none.result.limited,1,'disabled root is reported as limited, not silently lost');
+assert.deepEqual(Array.from(none.copy.pixels),Array.from(ringBefore),'0px keeps all hood pixels unchanged');
+const quarter=stretchedCopy(.25),half=stretchedCopy(.5),onePx=stretchedCopy(1);
+for(const [limit,run] of [[.25,quarter],[.5,half],[1,onePx]]){
+  assert.equal(run.result.stretched,1,'fractional stretch '+limit+' activates without a hard cutoff');
+  assert.equal(run.result.limited,1,'fractional stretch '+limit+' reports partial progress');
+  assert(Math.abs(run.result.moves[0].appliedLength-limit)<1e-8,
+    'fractional limit '+limit+' applies the exact requested displacement');
+}
+function alphaDifference(canvas){
+  let difference=0,translucent=0;
+  for(let i=3;i<canvas.pixels.length;i+=4){
+    const a=canvas.pixels[i];difference+=Math.abs(a-ringBefore[i]);
+    if(a>0&&a<255)translucent++;
+  }
+  return {difference,translucent};
+}
+const quarterDiff=alphaDifference(quarter.copy),halfDiff=alphaDifference(half.copy);
+assert(quarterDiff.difference>0,'0.25px stretch visibly changes hood alpha at the edge');
+assert(quarterDiff.translucent>0,'subpixel stretch uses fractional silhouette opacity, not nearest-neighbor jumps');
+assert(halfDiff.difference>quarterDiff.difference,
+  'increasing a partial budget from 0.25px to 0.5px increases visible movement');
+const capBefore=stretchedCopy(needed-.25),full=stretchedCopy(needed);
+assert.equal(capBefore.result.stretched,1,'stretch is already active just before the full requested length');
+assert.equal(full.result.stretched,1,'stretch remains active at the full length');
+assert.equal(capBefore.result.limited,1,'before the full length the slider is still limiting');
+assert.equal(full.result.limited,0,'at the full length the ring reaches its authored root');
+assert(Math.abs(full.result.moves[0].to.x-partialRoot.x)<1e-8,
+  'the full budget meets the original tuft marker');
+const constrained=stretchedCopy(2);
+assert.equal(constrained.result.limited,1,'an undersized cap is a partial movement, not a rejected entire root');
+assert.equal(constrained.result.stretched,1,'small caps never trigger a large all-or-nothing jump');
 const rootInput=[{x:140,y:94}],rootSnapshot=JSON.stringify(rootInput);
 Cut.stretchHoodToRoots(new Canvas(),rootInput);
 assert.equal(JSON.stringify(rootInput),rootSnapshot,'root normalization never mutates authored JSON');
@@ -201,6 +243,12 @@ for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode',
   'alphaFloor','maxStretch','subdivision','aboveInfluence','belowInfluence',
   'removeRoot','clearRoots','download','maskJson'])
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
+assert(html.includes('min="0" max="64" step="0.25"')
+  && html.includes("Number($('maxStretch').value)")
+  && !html.includes("Number($('maxStretch').value)||36"),
+  'editor slider supports 0 and quarter-pixel movement with no truthiness fallback');
+assert(portrait.includes('Math.max(0,Math.min(64,Number(json.hoodTuftMaxStretch)))'),
+  'cosmetic parser retains zero and fractional stretch limits');
 assert(html.includes('subdivision:selectedSubdivision()')
   && html.includes('aboveInfluence:selectedAboveInfluence()')
   && html.includes('belowInfluence:selectedBelowInfluence()')
@@ -245,5 +293,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood cutout: alpha floor, RLE, inner-ring stretch, broad/local subdivision, independently weighted above/below influence, pinned root, draw-order and CORS fallback pass.');
+  console.log('Beard/hood cutout: quarter-pixel stretch onset, continuous partial cap, no-all-or-nothing threshold, subpixel alpha sampling, asymmetric falloff, draw order and CORS fallback pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
