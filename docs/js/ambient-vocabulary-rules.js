@@ -56,7 +56,7 @@
     const settings = normalizeSliders(sliders);
     let hits = 0, swaps = 0; // Diagnostics distinguish a missed coin flip from a missing entry.
     const text = original.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})/g).map(segment => {
-      if (segment.startsWith('{')) return segment; // Tokens such as {targetName} and {{playerName}} remain unchanged.
+      if (/^(?:\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})$/.test(segment)) return segment; // Only complete dialogue placeholders are protected; normal text starting with a brace remains eligible.
       pattern.lastIndex = 0;
       return segment.replace(pattern, (whole, prefix, raw) => {
         const candidates = table[raw.toLocaleLowerCase()];
