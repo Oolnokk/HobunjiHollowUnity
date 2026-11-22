@@ -94,4 +94,31 @@ actions.get('pointerdown')(pointer(.05,.05));
 assert.equal(state.carryable.handTargets.right.x,originalX,
   'the portrait canvas cannot mutate furniture or child positions after leaving baby authoring');
 
-console.log('PASS baby portrait U/V/depth controls, touch drawing/dragging, live updates, resize and mode exit');
+// Header Download JSON must not silently export unrelated furniture while authoring a child.
+const headerStart=source.indexOf("  const mainJsonButton=el('downloadJsonBtn');");
+const headerEnd=source.indexOf("  el('carryBabyEdit').onclick=editBaby;",headerStart);
+assert(headerStart>0&&headerEnd>headerStart,'the main JSON download is intercepted only in baby editing mode');
+let headerClick=null,babyDownloads=0;
+const header={textContent:'Download JSON',addEventListener(type,fn,capture){
+  assert.equal(type,'click');assert.equal(capture,true,'baby export must capture the click before the furniture export handler');
+  headerClick=fn;
+}};
+const headerHarness=new Function('el','exportBaby',`
+  let editingBaby=false;
+  ${source.slice(headerStart,headerEnd)}
+  return {setMode(value){editingBaby=value;syncBabyDownloadButton();}};
+`)(id=>id==='downloadJsonBtn'?header:null,()=>babyDownloads++);
+headerHarness.setMode(true);
+assert.equal(header.textContent,'Download Baby JSON','mobile header explicitly labels the actual exported profile');
+let prevented=false,stopped=false;
+headerClick({preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;}});
+assert(prevented&&stopped&&babyDownloads===1,
+  'while editing baby, main JSON button downloads the baby profile rather than an unrelated furniture item');
+headerHarness.setMode(false);
+assert.equal(header.textContent,'Download JSON','leaving baby mode restores the original furniture export label');
+prevented=false;stopped=false;
+headerClick({preventDefault(){prevented=true;},stopImmediatePropagation(){stopped=true;}});
+assert(!prevented&&!stopped&&babyDownloads===1,
+  'ordinary furniture export remains untouched outside baby mode');
+
+console.log('PASS baby portrait U/V/depth, touch grips, real-size reroll, mode exit and unambiguous export');
