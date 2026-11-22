@@ -19,7 +19,8 @@ class Mesh extends Group {constructor(geometry,material){super();this.geometry=g
 globalThis.THREE={Group,Mesh,BoxGeometry,MeshBasicMaterial};
 
 const nodes=new Map(); // Verifies the native puzzle registration receives the correct authored piece and override.
-const ropes=new Map(); // Verifies real rope options and removal.
+const ropes=new Map(); // Records the exact ruin rider rope registered for burden use and subsequent disposal.
+let ropeRuntimeReady=false; // Simulates the native V50 traversal runtime initializing after the composed wing mounts.
 const surfaces=new Map(), pits=new Map(); // Verifies solid shore support and explicit chasm fall volume.
 const encounters=new Map(); // Verifies encounter receives world coordinates, not local room coordinates.
 const statuary=new Map(), tubes=new Map(); // Verifies Key Statue and Witch-bomb dispenser registration.
@@ -62,14 +63,21 @@ globalThis.FurniturePuzzleRuntime={
   interactKeyStatue:()=>({ok:true,message:'Key Statue acquired.'}),
 };
 globalThis.HangingRopes={
-  registerRope(rope){ropes.set(rope.id,rope);return rope;},
-  removeRope(id){return ropes.delete(id);},
+  registerRope(){throw new Error('Composed ruin ropes must not start a second outdoor rope controller');},
 };
 globalThis.HronalWitchBombs={
   registerDispenser(_map,id,root){tubes.set(id,root);return true;},
   dispenseFromMechanism:async()=>{dispenseRequests++;return {id:'witch-bomb-test'};},
 };
 globalThis.DevRandomRuinSimplePuzzles={
+  hasActiveRuinState(){return ropeRuntimeReady;},
+  addFurnitureRope(spec,mount){
+    assert(ropeRuntimeReady && mount,'rope can only register into the live ruin traversal runtime');
+    const rope={...spec,attached:false,burden:null}; // Shared instance that would be adopted by HangingRopes in production.
+    ropes.set(rope.id,rope);
+    return rope;
+  },
+  removeFurnitureRope(rope){return ropes.delete(rope.id);},
   registerExternalProjectileTarget(target){if(!rangedRuntimeReady)return null;rangedTargets.add(target);return ()=>rangedTargets.delete(target);},
 };
 globalThis.KeyStatues={registerDispenser(_map,id,root,_puzzle,options={}){statuary.set(id,{root,feedPlinthId:options.feedPlinthId});return true;}};
@@ -125,7 +133,16 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   pillarNode.setBlocked(pillarNode.record,false); // Real FurniturePuzzleRuntime does this at collisionOpenProgress.
   assert.equal(rec.grid[footRow][footCol].type,'grass','a toppled pillar releases the far-bank collision tile');
   assert.equal(pillarNode.group.userData.furniturePuzzle.standingSurface?.partId,'part_mvzye4ag_g0i3g');
-  assert(ropes.size>0 && [...ropes.values()].every(r=>r.mapId==='map_i_dev_random_ruin'),'rope mounts become real hanging rope records');
+  assert.equal(ropes.size,0,'an early-mounted wing defers rope registration until the ruin traversal runtime is ready');
+  assert.equal(wing.update(),false);
+  assert.equal(ropes.size,0,'retries before player entry do not create an outdoor-only rope');
+  ropeRuntimeReady=true;
+  assert.equal(wing.update(),false);
+  assert(ropes.size>0 && [...ropes.values()].every(r=>r.anchor && Number.isFinite(r.length)),
+    'composed rope mounts register with the real ruin airborne rider data shape');
+  const initialRopeCount=ropes.size; // Confirms update idempotence while V50 continues to tick.
+  wing.update();
+  assert.equal(ropes.size,initialRopeCount,'repeated ticks never create duplicate ropes');
   assert.equal(tubes.size,1,'Witch-bomb tubes are registered with the live factory');
   assert.equal(statuary.size,1,'Key Statue mount is registered with the live factory');
   assert.equal(wing.feedPlinthId,composition.records.find(r=>r.piece==='plinth').id,'the composer publishes its own defense plinth as the statue destination');
