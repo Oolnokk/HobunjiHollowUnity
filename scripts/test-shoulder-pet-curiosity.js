@@ -171,9 +171,12 @@ assert.match(source,
 assert.match(source,
   /const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14/,
   'shoulder poses retain their independent head turn rather than rotating the body planes');
-assert.match(source,
-  /const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7/,
-  'the whole-body lean stays subtle and scale-stable');
+assert.doesNotMatch(source, /SHOULDER_PET_CURIOUS_BODY_LEAN_(?:MIN|MAX)_DEG/,
+  'no randomized whole-body curiosity lean remains in gameplay');
+assert.match(source, /state\.currentLeanDeg = 0;[\s\S]{0,90}state\.targetLeanDeg = 0;/,
+  'legacy saved curiosity lean is reset instead of animated');
+assert.match(source, /c\.avatarRef\.updateHeadYaw\(state\.currentYawDeg, dt\)/,
+  'head yaw still animates on the animal head rig');
 assert.match(source, /const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1;/,
   'shoulder head yaw uses one fixed pet-local-left sign in both body poses');
 assert.match(source,
