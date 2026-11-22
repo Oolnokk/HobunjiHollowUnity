@@ -30,14 +30,16 @@ function slice(source, from, to) {
   vm.runInContext(`${registryClass}
     const heldRegistry = new SceneRegistry(), groundRegistry = new SceneRegistry(), topFaceGroundRegistry = new SceneRegistry(),
       tintCoverRegistry = new SceneRegistry(), protectedCoverRegistry = new SceneRegistry(), waterOccludedRegistry = new SceneRegistry(), pngDepthRegistry = new SceneRegistry(), frontPortraitRegistry = new SceneRegistry(), waterPortraitRegistry = new SceneRegistry(), backgroundDepthRegistry = new SceneRegistry();
+    const actorXrayRoots = new Map(); // Used by the immediately preceding world frame.
+    let actorXrayScene = null;
     const lastSceneScan = new WeakMap();
     const groundElevationCache = new WeakMap();
     let lastGroundElevationMaterials = null;
 
     const pendingClassification = new Set(); // The deferred add queue also holds scene members until the next flush.
     ${forgetFn}
-    this.api = { forgetScene, pendingClassification, groundElevationCache, lastMaterials: () => lastGroundElevationMaterials, setLastMaterials: value => { lastGroundElevationMaterials = value; }, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry } };`, context);
-  const { forgetScene, pendingClassification, groundElevationCache, lastMaterials, setLastMaterials, registries } = context.api;
+    this.api = { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene: scene => { actorXrayScene = scene; }, groundElevationCache, lastMaterials: () => lastGroundElevationMaterials, setLastMaterials: value => { lastGroundElevationMaterials = value; }, registries: { heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry } };`, context);
+  const { forgetScene, pendingClassification, actorXrayRoots, setActorXrayScene, groundElevationCache, lastMaterials, setLastMaterials, registries } = context.api;
   const scene = children => ({ children, traverse(fn) { children.forEach(fn); } });
   const meshesA = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], meshesB = [{ id: 'b1' }, { id: 'b2' }];
   const sceneA = scene(meshesA), sceneB = scene(meshesB);
@@ -53,7 +55,10 @@ function slice(source, from, to) {
   groundElevationCache.set(sceneA, { materials: oldMaterials });
   groundElevationCache.set(sceneB, { materials: new Set() });
   setLastMaterials(oldMaterials);
+  setActorXrayScene(sceneA);
+  actorXrayRoots.set(meshesA[0], 'animals');
   const removed = forgetScene(sceneA);
+  assert.equal(actorXrayRoots.size, 0, 'eviction releases the actor x-ray roots');
   assert.equal(groundElevationCache.has(sceneA), false, 'the evicted scene also releases its ground material cache');
   assert.equal(groundElevationCache.has(sceneB), true, 'another scene keeps its cached ground materials');
   assert.equal(lastMaterials(), null, 'eviction releases the recent replay diagnostic reference');
