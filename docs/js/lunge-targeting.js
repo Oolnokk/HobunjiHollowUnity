@@ -33,6 +33,11 @@
       yaw: Math.atan2(player.lungeDirY, player.lungeDirX),
       pitch: player.lungeAimPitch || 0,
     };
+    // Camera alignment freezes a reticle endpoint when the attack starts. Use
+    // that same direction for enemies, crates, burdens and the committed AOE.
+    const aimed = root.Combat?.deps?.getPlayerMeleeAimDirection?.(); // Shared camera-aware bearing used by this lunge's exact collision probes.
+    if (Number.isFinite(aimed?.x) && Number.isFinite(aimed?.y) && Number.isFinite(aimed?.z)
+      && Math.hypot(aimed.x, aimed.y, aimed.z) > 1e-6) opts.direction = aimed;
     let hostileHit = false;
     for (const c of deps.getHostiles()) {
       if (c.health <= 0 || c.areaId !== area || c._denHidden) continue;
