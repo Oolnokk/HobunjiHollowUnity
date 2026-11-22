@@ -147,6 +147,55 @@ async function testStandaloneEditorInteraction(rules) {
     'Oy have moy things.', 'Edited phonetic rules must take effect without a reload');
 }
 
+async function testFamilyBabyAmbient() {
+  let day = 10; // Simulated in-game calendar; validates exact newborn-to-toddler boundary.
+  const assigned = new Map(); // Captures the real RomanceFamily calls into AmbientDialogue's runtime-child greeting pool.
+  const familyWindow = {
+    addEventListener() {},
+    AmbientDialogue: { setNpcGreetings(id, lines) { if (lines) assigned.set(id, lines); else assigned.delete(id); return true; } },
+    DialogueContent: { registerTreeProvider() {} },
+  }; // Tiny real-module host: only the existing family/ambient interfaces are stubbed.
+  vm.runInNewContext(file('docs/config/romance-config.js'), { window: familyWindow });
+  vm.runInNewContext(file('docs/js/romance-family.js'), { window: familyWindow, console });
+  const family = familyWindow.RomanceFamily;
+  const child = { id: 'child_babble_fixture', name: 'Pip', bornRawDay: 10, gender: 'male', speciesId: 'mao-ao' };
+  family.init({ helpers: {
+    rawDay: () => day,
+    cfg: () => familyWindow.SCRATCHBONES_CONFIG.game.romance,
+    deps: () => ({}),
+  }, getSpouse: () => null });
+  family.restore({ children: [child] });
+  const sounds = familyWindow.HobunjiRomanceConfig.family.babyAmbientNoises;
+  assert.ok(sounds.length >= 6 && sounds.every(text => /^[A-Za-z?! .-]+$/.test(text)),
+    'Newborn ambient sounds must be speech-like syllables, not narrative stage directions or actual adult sentences');
+  assert.equal(family.isBasketBaby(child.id), true);
+  assert.equal(family.babyAmbientSound(child.id, () => 0), sounds[0]);
+  assert.equal(family.babyAmbientSound(child.id, () => 0.9999), sounds.at(-1));
+  assert.equal(family.babyAmbientSound('gantami_ginju'), null, 'Only the player\'s saved infant has baby babble');
+  assert.equal(family._test.childRecord(child).ambientGreetings, true, 'Basket babies should no longer be mute in ambient greetings');
+  assert.deepEqual(plain(assigned.get(child.id).player), plain(sounds), 'Newborn registers only the short phonetic pool');
+  day = 10 + 27;
+  assert.equal(family.isBasketBaby(child.id), true, 'Last basket day must still be newborn-only');
+  day = 10 + 28;
+  assert.equal(family.isBasketBaby(child.id), false, 'The first toddler day stops baby-phonetic overrides immediately');
+  assert.equal(family.babyAmbientSound(child.id, () => 0), null, 'Toddlers no longer use baby sounds');
+  family._test.syncChildAmbientGreetings(child);
+  assert.deepEqual(plain(assigned.get(child.id).player), plain(familyWindow.HobunjiRomanceConfig.family.toddlerAmbientGreetings),
+    'Toddler transitions to short, age-appropriate first-word greetings without a restart');
+  assert.equal(family._test.childRecord(child).ambientGreetings, true, 'Toddler floating greetings stay enabled');
+  day = 10 + 168;
+  family._test.syncChildAmbientGreetings(child);
+  assert.ok(assigned.get(child.id).player.includes('Can we play later?'), 'Older child returns to the established child greeting pool');
+  family.restore({ children: [] });
+  assert.equal(assigned.has(child.id), false, 'World/character changes remove old child greeting pools');
+  const ambientSource = file('docs/js/ambient-dialogue.js');
+  assert.ok(ambientSource.includes('!isNewborn && options.vocabulary !== false'), 'Baby babble bypasses all adult synonym and regional dialogue');
+  assert.ok(ambientSource.includes('babyAmbientSound?.(speakerId)'), 'Automatic proximity greetings take their speech from authoritative family stage');
+  assert.ok(ambientSource.includes('babyAnchor?.group || walker.root'), 'Held newborn greetings use the visible carry proxy rather than the hidden walker');
+  assert.ok(ambientSource.includes('runtimeGreetings'), 'Dynamic family greeting pools must survive the async ambient configuration load');
+  assert.ok(!file('docs/js/dialogue-content.js').includes('babyAmbientSound'), 'The ordinary Talk renderer is not replaced by ambient baby noises');
+}
+
 async function main() {
   vm.runInContext(file('docs/js/ambient-vocabulary-rules.js'), context);
   vm.runInContext(file('docs/js/ambient-vocabulary.js'), context);
@@ -406,6 +455,7 @@ async function main() {
   assert.ok(editor.includes('previewResult'));
   new Function('window', editor); // Parse actual integration script even without a browser DOM.
   await testStandaloneEditorInteraction(rules);
-  console.log('Ambient vocabulary tests passed: authored NPC identity snapshots, sampled greetings, regional slang, Pahu phonetics, semantic safeguards, shared checkbox references and editor.');
+  await testFamilyBabyAmbient();
+  console.log('Ambient vocabulary tests passed: authored NPC identity snapshots, sampled greetings, regional slang, Pahu phonetics, semantic safeguards, baby/toddler stage transitions, carry speech and editor.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
