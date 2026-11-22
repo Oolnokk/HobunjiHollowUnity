@@ -7976,8 +7976,6 @@
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
       const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
       const SHOULDER_PET_POSE_HOLD_MIN_S = 1.5; // Both local facing poses are sustained, but switch often enough to keep the perched animal lively.
       const SHOULDER_PET_POSE_HOLD_MAX_S = 3.0;
       const SHOULDER_PET_INWARD_CHANCE = 0.5; // No idle/moving bias: each sustained pose selection is an even 50/50 roll.
@@ -8185,15 +8183,12 @@
         state.timer -= dt;
         if (state.timer <= 0) {
           const facingInward = rnd() < SHOULDER_PET_INWARD_CHANCE; // One 50/50 pose roll only when the current multi-second hold expires.
-          const leanSide = rnd() < 0.5 ? -1 : 1; // Body lean can vary independently; head yaw below always turns away from the character.
           state.facingInward = facingInward;
           state.inwardChance = SHOULDER_PET_INWARD_CHANCE;
           state.phase = facingInward ? 'inward' : 'outward';
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetLeanDeg = leanSide * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
           state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
             + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
@@ -8206,7 +8201,10 @@
           c.__hobunjiShoulderFacingInward = state.facingInward; // Cheap hot-reload/state repair; no random work or transform traversal.
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentLeanDeg += window.FormatUtils.clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        // Old curiosity snapshots may still contain body-lean values. Neutralize them;
+        // the attachment root changes only for the two observation orientations.
+        state.currentLeanDeg = 0;
+        state.targetLeanDeg = 0;
         state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
         state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
@@ -8214,9 +8212,8 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        // updateShoulderPetMeshPin applies this state to the pet root around the
-        // authored grip. Rotating the two image cards here would pivot each
-        // around its image center and then get cleared by the final pin.
+        // The attachment root applies only the inward/outward observation flip.
+        // Continuous curiosity pitch/yaw belongs exclusively to the head bones.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
