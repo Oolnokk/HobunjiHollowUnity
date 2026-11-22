@@ -187,8 +187,16 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         window.__tribeQaObserverInstalled=true;
       }
       const ref=omg.avatarRef;
-      for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
-      const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
+      const rider=new THREE.Vector3(); // Reused during an observational wait for the real hostile tool-pose update.
+      const toolPoseReady=()=>{
+        ref.riderMount.riderFrame.updateWorldMatrix?.(true,false);
+        ref.riderMount.riderFrame.getWorldPosition(rider);
+        const holder=omg._banditToolHolder?.position;
+        return !!holder && window.__tribeQa.toolCalls.omg>0
+          && Math.hypot(holder.x-rider.x,holder.z-rider.z)<0.9;
+      }; // The three-RAF heuristic was nondeterministic on software WebGL; accept the pose only after gameplay really updated it.
+      const poseDeadline=performance.now()+12000; // Bounded browser wait; failures remain failures and report the real missing hostile update.
+      while(!toolPoseReady()&&performance.now()<poseDeadline)await new Promise(resolve=>requestAnimationFrame(resolve));
       const holder=omg._banditToolHolder?.position;
       const floorY=ref.group.position.y-omg.halfHeight;
       const poseY=Number(omg._banditMountedPoseY); // Actual last authored Y, including an elevated Heavy Neutral or active windup; a weapon is not required to sit at its unanimated hand anchor.
@@ -215,6 +223,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         aiCalls:window.__tribeQa.aiCalls,toolCalls:window.__tribeQa.toolCalls,
         aiFrozen:window.DevTestingSwitchbox?.flags?.noNpcBehavior===true||window.DevInspectTools?.enemiesFrozen?.()===true,
         isProne:[!!omg.prone,!!pora.prone],knockback:[omg.knockbackT,pora.knockbackT],
+        poseReady:toolPoseReady(),lastAi:window.__tribeQa.lastAi,
         enemyClass:omg.enemyClass,backChildren:ref.backPlane.children.length,
         holderToRider:holder?Math.hypot(holder.x-rider.x,holder.z-rider.z):null,
         holderAboveFloor:holder?holder.y-floorY:null,riderFloorY:rider.y-floorY,
@@ -278,6 +287,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         assert(spawned.compound,'Omgurku hostile keeps a compound rider+quadruped avatar');
         assert.equal(spawned.enemyClass,'omgurku-hunter');
         assert.equal(spawned.backChildren,0,'no rigid back plane is extracted from the compound');
+        assert(spawned.poseReady,`Omgurku must receive a real hostile-frame tool update before its rider weapon is validated (tool ticks ${JSON.stringify(spawned.toolCalls)}, AI ticks ${JSON.stringify(spawned.aiCalls)}, distance ${spawned.holderToRider})`);
         assert(spawned.holderToRider<0.9,`Omgurku weapon stays at the mounted rider (${spawned.holderToRider})`);
         assert(Number.isFinite(spawned.poseY)&&Number.isFinite(spawned.expectedAboveFloor),'mounted rider pose and expected height must be finite');
         assert(Number.isFinite(spawned.orbitDiameter)&&spawned.orbitDiameter>0,'mounted Omgurku must derive an orbit from the two shoulder targets');
