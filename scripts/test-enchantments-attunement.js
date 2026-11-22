@@ -934,6 +934,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
       },
       cancelBanditLunge(c){c._banditLunging=false;},
       finishBanditAction(c){c._banditAction=null;},
+      releaseBanditAttackTurn(){}, // Real coordinator tested separately; this extracted Fey-damage fixture supplies its lifecycle dependency.
       banditAttackBaseline:def=>({damage:def.attackDamage,rangePx:def.attackRangePx,knockbackPxS:200}),
       spawnBanditTrailArc(){},banditRetreatDurationS:()=>.2,
       BANDIT_COMBO_CHAIN_GAP_S:.1,BANDIT_LUNGE_HALT_MARGIN:.68,
