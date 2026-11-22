@@ -575,15 +575,17 @@
     const child = fam.children.find(entry => entry.id === workerId);
     const spouse = R?.getSpouse?.();
     const isSpouse = spouse?.npcId === workerId;
-    if (!isSpouse && (!child || phaseOf(child) === 'basket')) return [];
+    const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // The same held-NPC wheel offers Hold Baby / spouse handoffs.
+    if (child && phaseOf(child) === 'basket') return infantOptions;
+    if (!isSpouse && !child) return [];
     const vatId = isSpouse ? fam.spouseVatId : child.vatId;
-    if (vatId) return [{ id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+    if (vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
       window.DewVats?.setExternalWorker?.(vatId, null);
       if (isSpouse) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; } else child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
     } }];
     const vats = (window.DewVats?.listSqueezingVats?.() || []).filter(vat => !window.DewVats.assignedWorkerForVat(vat.id));
-    return [{ id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
+    return [...infantOptions, { id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
       const available = (window.DewVats?.listSqueezingVats?.() || []).find(vat => !window.DewVats.assignedWorkerForVat(vat.id));
       if (!available) { H.toast('There is no free squeezing vat on the farm.', false); return; }
       if (isSpouse) { fam.spouseVatId = available.id; fam.spouseVatWorkerId = workerId; } else child.vatId = available.id;
@@ -598,6 +600,8 @@
       const bed = (bedSpot || H.bedSpot)();
       return bed ? { ...bed, activity: 'keeping the egg warm in bed', stationId: 'spouse_egg_bed' } : null;
     }
+    const babyCare = window.FamilyBabyCare?.spouseTarget?.(rec, { bedSpot }); // Nursery time precedes idle wandering, not assigned farmwork.
+    if (babyCare) return babyCare;
     if (fam.spouseVatId && R.getSpouse()?.npcId === rec.id && H.clockHour() >= 8 && H.clockHour() < 18) {
       const vat = (window.DewVats?.listSqueezingVats?.() || []).find(entry => entry.id === fam.spouseVatId);
       if (vat) {
@@ -865,6 +869,7 @@
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
     for (const child of fam.children) updateChild(child);
+    window.FamilyBabyCare?.tick?.(); // One lightweight family update, not a new per-frame character behavior.
     if (R.getSpouse()?.npcId && fam.spouseVatId) {
       const available = (window.DewVats?.listSqueezingVats?.() || []).some(vat => vat.id === fam.spouseVatId);
       if (!available) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; H.persist(); }
@@ -886,6 +891,7 @@
   function restore(saved) {
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
+    window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
@@ -909,6 +915,7 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
     };
   }
@@ -916,6 +923,7 @@
   const api = {
     init, tick, serialize, restore, snapshot,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby,
+    careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality,
     isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
     openDreamPicker, openNamingPrompt, createChild,
