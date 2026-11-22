@@ -79,6 +79,12 @@
     entry.persist?.();
     debug.lastError = null;
   }
+  function disposeProxy(entry) {
+    const geometry = entry.burden?.group?.children?.[0]?.geometry; // Both planes share the same immutable baby-quad geometry.
+    entry.burden?.group?.traverse?.(node => node.material?.dispose?.()); // Sprite textures belong to the live NPC, not this carry proxy.
+    geometry?.dispose?.();
+    entry.burden?.group?.parent?.remove?.(entry.burden.group);
+  }
   function ensure(child, walker, persist) {
     if (!child?.id) return null;
     let entry = entries.get(child.id);
@@ -114,12 +120,17 @@
       onLost: item => {
         if (entry.disposing) return;
         settle(entry, item, true); // Out-of-settlement transitions always return the infant to the basket.
+        disposeProxy(entry); // The registry already removed this burden; do not strand an invisible mesh in the old scene.
         entries.delete(child.id);
       },
     });
     if (!burden) { group.parent?.remove(group); debug.lastError = 'burden registration failed'; return null; }
     entry.burden = burden;
     entries.set(child.id, entry);
+    if (child.carryBy === 'spouse') {
+      child.carryBy = null; child.carryPose = null; child.carrySpot = null;
+      entry.persist?.(); // Spouse carry is a live attachment: after reload, walk to the cradle again rather than teleport the baby.
+    }
     return entry;
   }
   function sync(child, walker, phase, persist) {
@@ -176,7 +187,7 @@
     entry.burden.carried = true;
     if (entry.burden.mapId !== spouse.area && spouse.area === currentArea())
       api?.transferCarriedBurdenToArea?.(spouse.area, entry.burden);
-    portrait.add(entry.burden.group);
+    if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group); // Avoid reordering the NPC's visual children every scheduling tick.
     entry.burden.group.position.set(back ? 0 : height * .13,
       centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48),
       height * (back ? -.22 : .23));
@@ -203,9 +214,8 @@
     entry.disposing = true;
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
-    const geometry = entry.burden.group.children[0]?.geometry;
-    entry.burden.group.traverse?.(node => node.material?.dispose?.());
-    geometry?.dispose?.(); // Only materials/geometry owned by this small proxy; portrait textures remain live.
+    disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
+    entry.child.carryBy = null; entry.child.carryPose = null;
     entries.delete(id);
   }
   function clear() { for (const id of [...entries.keys()]) discard(id); }
