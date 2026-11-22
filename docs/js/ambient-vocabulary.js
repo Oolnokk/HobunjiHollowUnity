@@ -17,13 +17,16 @@
     if (!family && !character) return null;
     const familySliders = normalizeSliders({ ...DEFAULT_SLIDERS, ...(family?.sliders || {}) }); // Existing personality defines the center of the vocabulary range.
     const seeded = window.AmbientVocabularyRules?.seedSliders?.(familySliders, id) || familySliders; // Same stable per-NPC variation as the editor's slider preview.
-    const sliders = normalizeSliders({ ...seeded, ...(character?.sliders || {}) }); // An explicitly generated NPC table/sliders always overrides the initial variation.
-    return { sliders, familyId, character: character || null, family, characterId: id }; // Selection references stay in the central word catalog; per-NPC text copies are not retained.
+    const traits = window.AmbientVocabularyRules?.speakerTraits?.(config, id) || { sliders: {}, dialects: [], selections: {}, phoneticPreset: null }; // A voice group adds region-specific diction without replacing the named character's personality.
+    const sliders = normalizeSliders({ ...seeded, ...traits.sliders, ...(character?.sliders || {}) }); // Explicit character overrides win over a shared family dialect.
+    const dialects = Array.isArray(character?.dialects) ? character.dialects : traits.dialects;
+    const phoneticPreset = character?.phoneticPreset ?? traits.phoneticPreset; // Pahu's doorstep orthography remains isolated to Pahu unless explicitly assigned.
+    return { sliders, familyId, character: character || null, family, traits, dialects, phoneticPreset, characterId: id };
   }
   function sourceMatcher(lexicon) {
     const words = Object.keys(lexicon || {}).filter(word => word.length > 0 && word.length <= 80 && !/[{}]/.test(word));
     if (!words.length) return null;
-    const escape = word => word.replace(/([^\p{L}\p{N}\s])/gu, '\\$1'); // Escape editor-authored punctuation before composing a safe source-word matcher.
+    const escape = word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Unicode regex must keep apostrophes unescaped for Southern contractions.
     words.sort((a, b) => b.length - a.length);
     return new RegExp('(^|[^\\p{L}\\p{N}_])(?:' + words.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'iu');
   }
@@ -43,24 +46,31 @@
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!selected || !source) return source;
-    if (config === state.config && (!state.matchPattern || !state.matchPattern.test(source))) return source; // Most speech contains no configured vocabulary and skips all per-NPC generation.
+    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(source) : true; // Keeps most animal and NPC bubbles allocation-free.
+    if (!hasLexicalMatch && !selected.phoneticPreset) return source; // Only Pahu's assigned orthography can alter otherwise unmatched lines.
     const rules = window.AmbientVocabularyRules; // Existing pure rules are shared by the game, standalone editor, and tests.
     if (!rules?.generateSelections || !rules?.resolveSelections) return source;
     const compile = () => {
-      const generated = rules.generateSelections(config.lexicon, selected.sliders, selected.characterId); // One lazy generation per NPC, not one per frame or bubble.
-      const legacy = selected.character?.table ? rules.migrateLegacyTable(config.lexicon, selected.character.table) : null; // Old exported tables migrate into canonical references.
-      const overrides = selected.character?.selections || legacy || selected.family?.selections || null; // Explicit character checkboxes outrank inherited family choices.
-      return rules.resolveSelections(config.lexicon, rules.mergeSelections(generated, overrides)); // Only ephemeral, cached render strings; never duplicated in config.
+      const generated = rules.generateSelections(config.lexicon, selected.sliders, selected.characterId, selected.dialects); // Only declared regional dialects can generate Southern or West Country alternatives.
+      const legacy = selected.character?.table ? rules.migrateLegacyTable(config.lexicon, selected.character.table) : null; // Previous exports still read as canonical references.
+      const inherited = rules.mergeSelections(generated, selected.family?.selections);
+      const regional = rules.mergeSelections(inherited, selected.traits.selections); // Shared Ginju/Pahu defaults come after ordinary personality suggestions.
+      const personal = rules.mergeSelections(regional, selected.character?.selections || legacy); // Individual authored checkboxes remain authoritative.
+      return rules.resolveSelections(config.lexicon, personal); // Transient strings only; the shared JSON never copies synonyms per speaker.
     };
-    const table = config === state.config
+    const table = hasLexicalMatch ? (config === state.config
       ? cachedTable(selected.characterId, compile)
-      : compile();
-    const transformed = window.AmbientVocabularyRules?.rewriteLine?.(source, table, selected.sliders, random, selected.characterId); // Shares token-safe, one-pass rendering with the editor preview.
-    if (!transformed) return source;
-    const { text: output, hits, swaps } = transformed;
-    state.last = { speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: output, hits, swaps }; // Available on mobile through AmbientVocabulary.getDebug().
-    state.changed += swaps;
-    state.skipped += hits - swaps;
+      : compile()) : null; // A purely phonetic Pahu line skips semantic generation and the LRU.
+    const transformed = table ? rules.rewriteLine(source, table, selected.sliders, random, selected.characterId)
+      : { text: source, hits: 0, swaps: 0 };
+    const phonetic = selected.phoneticPreset
+      ? rules.applyPhoneticPreset(transformed.text, config, selected.phoneticPreset, selected.characterId)
+      : { text: transformed.text, hits: 0, swaps: 0 }; // Doorstep-specific phonetics never touch Talk or any unassigned speaker.
+    const output = phonetic.text;
+    state.last = { speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
+      original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps };
+    state.changed += transformed.swaps + phonetic.swaps;
+    state.skipped += transformed.hits - transformed.swaps;
     return output;
   }
   async function load() {
