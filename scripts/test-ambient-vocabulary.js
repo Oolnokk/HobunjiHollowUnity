@@ -23,6 +23,11 @@ async function main() {
   const rules = window.AmbientVocabularyRules;
   assert.equal(engine.getDebug().ready, true, engine.getDebug().error);
   assert.ok(Object.keys(config.lexicon).length >= 30);
+  const beforeUnmatched = engine.getDebug().cachedSpeakers;
+  assert.equal(engine.rewrite('Arf! Rrruf!', 'test-wildlife-1'), 'Arf! Rrruf!');
+  assert.equal(engine.getDebug().cachedSpeakers, beforeUnmatched, 'Unmatched animal speech must not allocate NPC vocabulary tables');
+  for (let index = 0; index < 145; index++) engine.rewrite('Lovely tune!', 'test-speaker-' + index, () => 0);
+  assert.ok(engine.getDebug().cachedSpeakers <= 128, 'Speaker cache must be bounded in crowded scenes');
   for (const [id, family] of Object.entries(config.families)) {
     assert.ok(profiles.profiles[id], 'Unrecognized existing personality family: ' + id);
     for (const axis of Object.keys(rules.DEFAULT_SLIDERS)) {
