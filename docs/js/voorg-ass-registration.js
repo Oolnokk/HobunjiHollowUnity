@@ -54,6 +54,10 @@
       ...existing,
       label: 'Voorg-Ass',
       hostile: false,
+      diet: 'herbivore',
+      moveSpeed: Math.max(Number(existing.moveSpeed) || 0, tile * 3.4),
+      chaseSpeed: Math.max(Number(existing.chaseSpeed) || 0, tile * 9.2), // Rear-kick approach and predator escape are sprints, not grazing movement.
+      aggroRangePx: tile * 8, leashRangePx: tile * 8.5,
       defaultSizeClass: 'large',
       modelWidth: Number(existing.modelWidth) || Number(preyBaseline.modelWidth) || 1.5,
       spriteAspect: Number(existing.spriteAspect) || Number(preyBaseline.spriteAspect) || (600 / 1375),

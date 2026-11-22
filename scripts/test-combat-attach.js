@@ -13,6 +13,7 @@ const read = file => fs.readFileSync(file, 'utf8');
 
 const TILE = 40;
 function world() {
+  let timeMs = 0; // Deterministic emergency rescue cooldown, advanced only by the regression scenario.
   const calls = { creature: [], player: [], spent: [] };
   const player = { x: 400, y: 400, health: 100, facing: 0, areaId: 'z' };
   const hostileObjects = new Set(), companionObjects = new Set();
@@ -23,14 +24,15 @@ function world() {
     damagePlayer: (amount, fx, fy, kb, opts) => { calls.player.push({ amount, fx, fy, kb, opts }); },
     requestThreatGrowl() {},
   };
-  const context = { console, Math, performance: { now: () => 0 }, Combat: { deps } };
+  const context = { console, Math, performance: { now: () => timeMs }, Combat: { deps } };
   context.window = context;
   context.ResourceSystem = { afflictionBonusesForTag: tag => (tag === 'poison' ? { poisonedHealth: 0.28 } : null), spendStamina: (c, n) => calls.spent.push(n) };
   vm.createContext(context);
   vm.runInContext(read('docs/js/combat/combat-animal-attacks.js'), context, { filename: 'combat-animal-attacks.js' });
   vm.runInContext(read('docs/js/combat/combat-attach.js'), context, { filename: 'combat-attach.js' });
   const make = (props = {}) => ({ x: 0, y: 0, health: 30, facing: 0, areaId: 'z', halfHeight: 0.6, visualScaleY: 1, groundLift: 0.3, def: { attackDamage: 5, attackTag: 'poison' }, attackCooldownT: 0, ...props });
-  return { context, calls, deps, player, hostileObjects, companionObjects, make, Combat: context.Combat };
+  return { context, calls, deps, player, hostileObjects, companionObjects, make, Combat: context.Combat,
+    advanceClock: ms => { timeMs += ms; } }; // Move only the wall clock; the existing animation test helper owns simulation seconds.
 }
 const same = (list, expected, message) => assert(list.length === expected.length && expected.every((item, i) => list[i] === item), message || 'same members'); // Entities are cyclic and cross a vm context; compare by identity.
 const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt) w.Combat.animalAttacks.update(c, dt); };
@@ -233,7 +235,55 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.calls.creature.find(hit => hit.target === swarm).opts.attacker, ally, 'only same-camp ally attacks');
 }
 
-// ---- rescue priority: available fighters must beat mounts, interrupted or cooling allies ----
+// ---- an engaged Nelk can interrupt its own attack to strike swarms off its owner ----
+{
+  const w = world();
+  let interrupted = 0; // Ensures that the pre-existing attack actually yields to the emergency rescue.
+  const nelk = w.make({
+    creatureKey: 'nelk', x: 405, y: 400,
+    isCompanion: true, master: w.player, stableRole: 'companion',
+    def: { attackDamage: 24, attackTag: 'sharp', attackCooldownS: 1.2 },
+    _stage: { mode: 'backingUp', t: 0.4 },
+    attackCooldownT: 2.8, // Real named attacks have already paid their ordinary cooldown when a swarm lands.
+    _animalAttack: { id: 'pounce', state: {}, def: { cancel() { interrupted++; } } },
+  }); // Simulates an already-committed named strike against nearby honeyfuzzles.
+  const swarm = w.make({ x: 407, y: 400 });
+  w.companionObjects.add(nelk); w.hostileObjects.add(swarm);
+  assert(w.Combat.animalAttacks.isBusy(nelk), 'Nelk is initially busy fighting another opponent');
+  assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
+  run(w, swarm, 0.15);
+  assert.equal(interrupted, 1, 'Nelk preempts its ordinary attack even while the normal cooldown remains active');
+  assert.equal(w.Combat.animalAttacks.isBusy(nelk), false, 'no old attack remains committed');
+  assert.equal(w.Combat.attach.isAttached(swarm), false, 'busy Nelk still knocks the swarm loose');
+  assert.equal(w.calls.creature[0].amount, 24, 'swarm takes a full Nelk strike');
+  assert.equal(w.calls.player[0].amount, 6, 'owner takes one quarter of that damage');
+  assert.equal(nelk._stage, null, 'old retreat beat does not resume after the rescue');
+}
+
+// ---- one rescuer clears sequential swarms, never several in one instantaneous action ----
+{
+  const w = world();
+  const nelk = w.make({
+    x: 404, y: 400, isCompanion: true, master: w.player, stableRole: 'companion',
+    attackCooldownT: 2.4, def: { attackDamage: 16, attackTag: 'blunt', attackCooldownS: 1.3 },
+  }); // Already cooling after ordinary combat when multiple swarms arrive.
+  const first = w.make({ x: 407, y: 400 });
+  const second = w.make({ x: 409, y: 400 });
+  w.companionObjects.add(nelk);
+  w.hostileObjects.add(first); w.hostileObjects.add(second);
+  assert(w.Combat.animalAttacks.start(first, 'swarm', { target: w.player }));
+  assert(w.Combat.animalAttacks.start(second, 'swarm', { target: w.player }));
+  run(w, first, 0.15); run(w, second, 0.15);
+  assert.equal(w.Combat.attach.isAttached(first), false, 'first emergency rescue ignores the old ordinary cooldown');
+  assert.equal(w.Combat.attach.isAttached(second), true, 'rescue-specific cooldown prevents same-instant multi-hit');
+  assert.equal(w.calls.player.length, 1, 'only one quarter-strength owner hit is applied immediately');
+  w.advanceClock(500);
+  run(w, second, 0.1);
+  assert.equal(w.Combat.attach.isAttached(second), false, 'another swarm is freed after brief emergency recovery');
+  assert.equal(w.calls.player.length, 2, 'a second actual rescue applies the second quarter-strength hit');
+}
+
+// ---- rescue priority: live companions, including normally cooling fighters, beat mounts and prone animals ----
 {
   const w = world();
   const mount = w.make({ x: 401, y: 400, isCompanion: true, master: w.player, stableRole: 'mount' });
@@ -247,9 +297,9 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
   run(w, swarm, 0.15);
   assert(!w.Combat.attach.isAttached(swarm), 'a ready pet rescues despite closer unavailable companions');
-  assert.equal(w.calls.creature[0].opts.attacker, ready, 'the ready fighter, not a mount or cooling pet, lands the rescue');
-  assert(!mount._honeyfuzzleRescueTarget && !prone._honeyfuzzleRescueTarget && !cooling._honeyfuzzleRescueTarget,
-    'ineligible companions never receive a temporary friendly-fire target');
+  assert.equal(w.calls.creature[0].opts.attacker, cooling, 'the closest able pet may override its ordinary cooldown to rescue');
+  assert(!mount._honeyfuzzleRescueTarget && !prone._honeyfuzzleRescueTarget && !ready._honeyfuzzleRescueTarget,
+    'mounts and prone pets cannot rescue, and a nonselected ally keeps no temporary friendly target');
 }
 {
   const w = world();
