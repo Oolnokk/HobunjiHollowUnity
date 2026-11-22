@@ -2145,7 +2145,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const result = cutoutApi.applyToHood(cloth, paintedBeardMask);
     ctx.drawImage(cloth, 0, 0, PORTRAIT_CW, PORTRAIT_CH);
     canvas.hobunjiBeardHoodCutout = {applied: result.applied, maskPixels: result.cutPixels,
-      requestedRoots:stretch.requested, stretchedRoots:stretch.stretched, skippedRoots:stretch.tooFar+stretch.missingRing,
+      requestedRoots:stretch.requested, stretchedRoots:stretch.stretched, limitedRoots:stretch.limited,
+      skippedRoots:stretch.missingRing,
       deformationError:stretch.error||null};
   } else {
     drawBreathingLayers(hoodLayers);
