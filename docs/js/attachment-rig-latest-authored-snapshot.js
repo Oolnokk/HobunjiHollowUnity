@@ -30,7 +30,7 @@
     new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
-    new URL('character-scale-comparison-host-bridge.js?v=20261122independentAnatomy3', base).href,
+    new URL('character-scale-comparison-host-bridge.js?v=20261122independentAnatomy4', base).href,
     new URL('character-scale-comparison.js?v=20261122independentAnatomy3', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20261122independentAnatomy1', base).href,
     new URL('character-scale-comparison-presentation.js?v=20261122independentAnatomy1', base).href,
