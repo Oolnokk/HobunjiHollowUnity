@@ -1370,6 +1370,20 @@
     transferBackToArea(mapId, burden);
     return burden.mapId === mapId;
   }
+  // A zone scene may be rebuilt while a nonpersistent physical Burden lives on a family NPC.
+  // Repair only the registry entry; never create a duplicate Burden, move a held object, or reset its grip.
+  function rebindRegisteredBurden(burden) {
+    const mapId=area(),targetScene=scene();
+    if(!burden||burden.exploded||burden.mapId!==mapId||!targetScene)return false;
+    const existing=records.get(mapId);
+    if(existing?.scene===targetScene&&existing.vases.get(burden.id)===burden)return true;
+    const rec=recordFor(mapId,targetScene); // Shared scene identity already handles old-zone record invalidation.
+    const conflicting=rec.vases.get(burden.id);
+    if(conflicting&&conflicting!==burden&&!conflicting.exploded)return false;
+    rec.vases.set(burden.id,burden);
+    lastEvent='rebound Burden '+burden.id+' after scene rebuild';
+    return true;
+  }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
   // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
   function detachHeldBurden() {
@@ -2763,7 +2777,7 @@
 
   window.Shattercasks=Object.freeze({
     init,releaseZone,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
-    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,transferCarriedBurdenToArea,
+    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,transferCarriedBurdenToArea,rebindRegisteredBurden,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
