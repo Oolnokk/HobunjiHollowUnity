@@ -13,7 +13,8 @@ class Attribute {
   constructor(array, size) { this.array = array; this.itemSize = size; this.count = array.length / size; }
   getX(i) { return this.array[i * this.itemSize]; }
   getY(i) { return this.array[i * this.itemSize + 1]; }
-  setX(i, value) { this.array[i * this.itemSize] = value; } // Fold columns must move positions and UVs together.
+  setX(i, value) { this.array[i * this.itemSize] = value; } // Fold columns keep positions and UVs together.
+  setY(i, value) { this.array[i * this.itemSize + 1] = value; } // Fold rows keep the neck cut crisp at low mesh density.
 }
 class PlaneGeometry {
   constructor(width, height, nx = 1, ny = 1) {
@@ -67,7 +68,7 @@ assert.equal(frontWeights.getY(0)+frontWeights.array[3],0,'front samples origina
 assert.equal(backWeights.getY(0)+backWeights.array[3],1,'rear samples mirrored head pitch Influence');
 for(const geo of [front,back]) {
   assert.equal(geo.userData.hobunjiAnimalYawFold,true,'four-bone paper fold survives mesh budget');
-  assert.equal(geo.userData.hobunjiAnimalYawMask,'binary-head','yaw ownership is binary, never gradient-painted');
+  assert.equal(geo.userData.hobunjiAnimalYawMask,'neck-bounded-head','yaw ownership uses geometry rather than Influence paint');
   const weights=geo.getAttribute('skinWeight'), stride=weights.itemSize;
   const width=geo.userData.segmentsX+1;
   for(let i=0;i<weights.count;i++){
@@ -76,13 +77,20 @@ for(const geo of [front,back]) {
     const gate=a[k+2]+a[k+3]; // Only head-owned vertices may participate in 3D yaw.
     assert(Math.abs(a[k]+a[k+1]+a[k+2]+a[k+3]-1)<1e-6,'all four skin weights normalize at every cell');
     assert(Math.abs(gate-Math.round(gate))<1e-6,'yaw uses no graded irregular skin weights');
-    assert(Math.abs(gate-+(headInfluence>=.5))<1e-6,'3D yaw follows binary head ownership, not the horizontal neck half-plane');
+    const uv=geo.getAttribute('uv'); // Original geometry coordinates, not painted Influence, own head yaw.
+    const sourceU=geo===back?1-uv.getX(i):uv.getX(i); // Back card mirrors the same authored neck.
+    const topV=1-uv.getY(i); // Head/leg seam is measured from the top of the sprite.
+    const expectedGate=+(sourceU<rig.pivot.x&&topV<rig.pivot.y+.035); // Independent of any head paint value.
+    assert(Math.abs(gate-expectedGate)<1e-6,'3D yaw follows only the geometric neck, even where pitch Influence disagrees');
   }
   const uv=geo.getAttribute('uv'), columns=geo.userData.segmentsX;
   const columnGaps=[];
   for(let col=0;col<columns;col++) columnGaps.push(Math.abs(uv.getX(col+1)-uv.getX(col)));
   assert(Math.min(...columnGaps)<.0061,'mesh still has nearby hinge columns even at low density');
-  const faceCol=geo===front?columns:0; // Painted upper-right head is mirrored on the reverse face.
+  const rowGaps=[]; // The small lower-head cut must not stretch one coarse triangle all the way into the foreleg.
+  for(let row=0;row<geo.userData.segmentsY;row++) rowGaps.push(Math.abs(uv.getY(row*width)-uv.getY((row+1)*width)));
+  assert(Math.min(...rowGaps)<.0061,'neck-bounded head uses a narrow horizontal fold at low density');
+  const faceCol=geo===front?0:columns; // Geometric head lies left of the neck on both mirrored sprite faces.
   const upperIndex=faceCol*stride, lowerIndex=(geo.userData.segmentsY*width+faceCol)*stride;
   assert(Math.abs(weights.array[upperIndex+2]+weights.array[upperIndex+3]-1)<1e-6,'head pixels rotate as a rigid cutout');
   assert(Math.abs(weights.array[lowerIndex+2]+weights.array[lowerIndex+3])<1e-6,'chest/legs beneath the head stay still even at the same X');
@@ -93,6 +101,42 @@ const lastColumn = front.userData.segmentsX;
 for (let col = 0; col <= lastColumn; col++) {
   assert(Math.abs(frontUv.getX(col) + backUv.getX(lastColumn - col) - 1) < 1e-6,
     'front and back hinge geometry must mirror exactly, even when the centered pivot rounds halfway between columns');
+}
+// Nelk's pitch painting extends down the front silhouette. It must NEVER choose
+// which part yaws, and editing the painter must not change the rigid head cut.
+const nelkAuthoredSource=fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'); // The same authored Nelk rig the game installs.
+const nelkMarker='const EXPORTED_HEAD_RIGS = Object.freeze('; // Extract the already committed painter export, not a duplicated fixture.
+const nelkStart=nelkAuthoredSource.indexOf(nelkMarker); // Game's published Nelk map is embedded in this literal.
+assert(nelkStart>=0,'authored Nelk map is available');
+const nelkExport=JSON.parse(nelkAuthoredSource.slice(nelkStart+nelkMarker.length,nelkAuthoredSource.indexOf(');',nelkStart))).nelk; // Original published Nelk data.
+const nelkPixels=new Uint16Array(nelkExport.weightMap.width*nelkExport.weightMap.height); // Decoded pitch Influence, intentionally covering lower-body pixels.
+let nelkOffset=0; // Cursor through Nelk's RLE map.
+for(let i=0;i<nelkExport.weightMap.data.length;i+=2){
+  nelkPixels.fill(nelkExport.weightMap.data[i+1],nelkOffset,nelkOffset+nelkExport.weightMap.data[i]);
+  nelkOffset+=nelkExport.weightMap.data[i];
+}
+assert.equal(nelkOffset,nelkPixels.length,'Nelk author map decodes completely');
+const nelkRig={...nelkExport,weightMap:{...nelkExport.weightMap,values:nelkPixels}}; // Live-equivalent head rig input to the production geometry builder.
+const blankRig={...nelkRig,weightMap:{...nelkRig.weightMap,values:new Uint16Array(nelkPixels.length)}}; // Changing every Influence pixel tests yaw independence.
+const nelkSource=new PlaneGeometry(.89,.89*.65625); // Actual Nelk sprite/model proportions from the bestiary.
+for(const mirror of [false,true]){
+  const painted=makeWeighted(THREE,nelkSource,nelkRig,mirror); // Nelk as the game currently renders it.
+  const unpainted=makeWeighted(THREE,nelkSource,blankRig,mirror); // Same neck, radically different pitch paint.
+  const pw=painted.getAttribute('skinWeight').array,uw=unpainted.getAttribute('skinWeight').array;
+  const uv=painted.getAttribute('uv'); // Locates lower-head/leg vertices in the actual Nelk skin.
+  let paintedLegVertices=0,headVertices=0; // Regression counters exposed in failure messages.
+  for(let i=0;i<uv.count;i++){
+    const j=i*4, paintedYaw=pw[j+2]+pw[j+3], blankYaw=uw[j+2]+uw[j+3];
+    assert.equal(paintedYaw,blankYaw,'Nelk head yaw must remain identical after completely repainting Influence');
+    const sourceU=mirror?1-uv.getX(i):uv.getX(i), topV=1-uv.getY(i); // Paint is sampled independently of this neck boundary.
+    if(sourceU<nelkRig.pivot.x&&topV>nelkRig.pivot.y+.035&&pw[j+1]+pw[j+3]>.5){
+      paintedLegVertices++;
+      assert.equal(paintedYaw,0,'Nelk front leg with strong head pitch paint never turns in yaw');
+    }
+    if(sourceU<nelkRig.pivot.x&&topV<nelkRig.pivot.y+.035){headVertices++;assert.equal(paintedYaw,1,'Nelk head yaw remains rigid');}
+  }
+  assert(paintedLegVertices>0,'Nelk regression must sample its actual painted lower front leg');
+  assert(headVertices>0,'Nelk regression must sample a turning head region');
 }
 const babyWarp={
   destinationFor(p){return {x:.65,y:p.y};},
