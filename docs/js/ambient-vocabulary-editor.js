@@ -1,10 +1,14 @@
-// Integrated Vocabulary tab for the Ambient Dialogue Editor; exports a separate JSON
-// so adding synonyms cannot overwrite greetings, reactions, or personality assignments.
+// Standalone vocabulary workshop. Authoring is deliberately separate from Ambient Dialogue.
+// Exports an independent JSON so no action can overwrite NPC greetings or reactions.
 (() => {
   'use strict';
-  if (window.AmbientVocabularyEditor?.installed || typeof listItems !== 'function' || typeof render !== 'function') return;
+  if (window.AmbientVocabularyEditor?.installed) return;
+  const state = { npcs: [] }; // Standalone editor owns only its NPC catalogue, independent from the Ambient Dialogue Editor.
+  const $ = id => document.getElementById(id);
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const CONFIG_URL = '../../config/dialogue/ambient-vocabulary.json'; // Independent user-authored word dictionary, family defaults and per-character generated tables.
-  const PROFILE_URL = '../../config/dialogue/npc-reaction-profiles.json'; // Existing NPC assignments, not duplicated or modified here.
+  const PROFILE_URL = '../../config/dialogue/npc-reaction-profiles.json';
+  const NPC_URL = '../../config/npcs/hobunji-starter-npc-database.json'; // Dropdown, search and batch generation share the canonical NPC IDs. // Existing NPC assignments, not duplicated or modified here.
   const SLIDERS = Object.freeze([
     ['verbosity', 'Simplicity', 'Verbosity', 'Prefers brief everyday words or longer, more elaborate expressions'],
     ['color', 'Technical', 'Colorful', 'Prefers clinical or technical synonyms versus vivid, evocative words'],
@@ -14,8 +18,6 @@
     ['frequency', 'Rarely swaps', 'Frequently swaps', 'Probability of substituting each matched word'],
   ]); // Editor presents independent axes; a verbose NPC may still be highly technical or casual.
   const model = { config: null, profiles: null, selected: 'dictionary', term: 'lovely', currentWord: '', preview: "That's a lovely tune. I could listen to that all day.", result: '', error: null, loading: true }; // Editor-only selection and unsaved settings.
-  const oldListItems = listItems; // Retains the existing NPC, Animal, Crowd and Reactions sidebar renderers.
-  const oldRender = render; // Keeps all existing ambient authoring unchanged.
   const rules = () => window.AmbientVocabularyRules;
   const safe = value => esc(String(value ?? ''));
   const cfg = () => model.config;
@@ -247,49 +249,29 @@
     else if (selected.startsWith('family:')) editFamily(selected.slice(7));
     else if (selected.startsWith('npc:')) editCharacter(selected.slice(4));
   }
-  function installTab() {
-    const tabs = document.querySelector('.tabs');
-    if (!tabs || tabs.querySelector('[data-mode="vocabulary"]')) return;
-    tabs.style.display = 'flex'; // Horizontally scrolling tabs remain legible on mobile with five authoring modes.
-    tabs.style.overflowX = 'auto';
-    tabs.style.gridTemplateColumns = 'none';
-    for (const tab of tabs.querySelectorAll('button')) { tab.style.flex = '0 0 auto'; tab.style.minWidth = '62px'; }
-    const button = document.createElement('button');
-    button.dataset.mode = 'vocabulary';
-    button.textContent = 'Words';
-    button.title = 'Vocabulary tables';
-    button.style.flex = '0 0 auto';
-    button.style.minWidth = '72px';
-    button.onclick = () => {
-      state.mode = 'vocabulary';
-      document.querySelectorAll('[data-mode]').forEach(tab => tab.classList.toggle('active', tab === button));
-      listItems();
-      render();
-    };
-    tabs.appendChild(button);
-  }
   async function load() {
     model.loading = true;
     try {
-      const [a, b] = await Promise.all([fetch(CONFIG_URL, { cache: 'no-store' }), fetch(PROFILE_URL, { cache: 'no-store' })]);
-      if (!a.ok || !b.ok) throw new Error('HTTP ' + a.status + '/' + b.status);
-      const [config, profiles] = await Promise.all([a.json(), b.json()]);
+      const [a, b, n] = await Promise.all([
+        fetch(CONFIG_URL, { cache: 'no-store' }),
+        fetch(PROFILE_URL, { cache: 'no-store' }),
+        fetch(NPC_URL, { cache: 'no-store' }),
+      ]); // One-time authoring load: no background polling or game-frame overhead.
+      if (!a.ok || !b.ok || !n.ok) throw new Error('HTTP ' + a.status + '/' + b.status + '/' + n.status);
+      const [config, profiles, database] = await Promise.all([a.json(), b.json(), n.json()]);
+      state.npcs = Array.isArray(database?.npcs) ? database.npcs : (Array.isArray(database) ? database : []); // Only canonical named NPCs appear in the editor.
       if (!config?.lexicon || !config?.families || !config?.characters || !profiles?.profiles) throw new Error('Vocabulary/personality data is incomplete');
       model.config = config;
       model.profiles = profiles;
       model.error = null;
     } catch (error) { model.error = error?.message || String(error); }
     model.loading = false;
-    if (state.mode === 'vocabulary') { listItems(); render(); }
+    sidebar();
+    renderVocabulary();
+    $('status').textContent = model.error ? 'Load failed · ' + model.error : 'Vocabulary ready · export to save';
   }
-  listItems = function vocabularyAwareListItems() {
-    return state.mode === 'vocabulary' ? sidebar() : oldListItems();
-  };
-  render = function vocabularyAwareRender() {
-    return state.mode === 'vocabulary' ? renderVocabulary() : oldRender();
-  };
-  installTab();
-  $('search').oninput = listItems;
+  $('search').oninput = sidebar;
+  renderVocabulary();
   load();
   window.AmbientVocabularyEditor = Object.freeze({
     installed: true,
