@@ -322,10 +322,19 @@
     reload() { activeIdentity = null; return ensureLoaded(); },
     getDebug() {
       ensureLoaded();
+      const ids = currentIds(); // Identifies the saved character whose Pack count should back each retained bloodline.
+      const member = (loadMeta()?.worlds || []).find(world => world.id === ids.worldId)?.members?.[ids.characterId];
+      const savedBag = member?.nonGearInventory || {}; // Read-only forensic check: never mint missing babies automatically.
+      const unbackedLineages = Object.fromEntries(Object.entries(queues).flatMap(([itemKey, list]) => {
+        const backed = Math.max(0, Math.floor(Number(savedBag[itemKey]) || 0));
+        const excess = Math.max(0, list.length - backed);
+        return excess ? [[itemKey, { queuedGenes: list.length, savedInventory: backed, missingBagUnits: excess }]] : [];
+      })); // Mobile Pixel Probe can identify old vanished offspring if their genotype FIFO survived.
       return {
         ...debug,
         queuedNow: queuedCount(),
         queues: serializedQueues(),
+        unbackedLineages,
         errors: [...debug.errors],
       };
     },
