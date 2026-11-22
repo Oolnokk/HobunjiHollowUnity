@@ -18,6 +18,10 @@ for (const axis of ['X', 'PortraitHeight', 'LegLength', 'Hand', 'Foot', 'Head', 
   assert.match(comparison, new RegExp("scaleRow\\('"+axis+"'"), 'editor has the '+axis+' control');
 }
 assert.doesNotMatch(comparison, /scaleRow\('Y', 'Height'/, 'old combined Height slider is gone');
+assert.doesNotMatch(comparison, /function applyBodyHeadSliders\(/,
+  'old all-fields slider writer must be removed: single-field input guard owns all dimension changes');
+assert.match(comparison, /HobunjiFullScaleBodyInputGuard\?\.applyScaleField/,
+  'mobile preview must report an unavailable guard rather than falling back to destructive legacy writes');
 assert.match(headAdapter, /maaFullScaleRangePortraitHeight/, 'raw-PNG Head adapter observes the new Portrait height slider');
 assert.match(guardSource, /maaFullScaleRangeLegLength/, 'mobile input guard owns independent leg scale');
 assert.match(guardSource, /maaFullScaleRangeHand/, 'mobile input guard owns hand size');
