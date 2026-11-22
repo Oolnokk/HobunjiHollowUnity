@@ -2501,16 +2501,21 @@
     window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
+    let attackChoice = 'combo'; // Mobile AI diagnostics distinguish the actual selected ability, not simply whether a swing fired.
     if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < BANDIT_HOLD1_CHANCE) {
       fired = fireBanditChargedBreaker(c, def, targetPlayer);
+      if (fired) attackChoice = 'charged-breaker';
     }
     if (!fired) {
       const cond = banditQuickAttackConditions(c, targetPlayer);
       const chance = banditQuickAttackChance(c, loadout, cond); // Tier changes the decision only when THIS equipped technique's bonus can trigger.
-      if (chance > 0 && deps.rnd() < chance) fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+      if (chance > 0 && deps.rnd() < chance) {
+        fired = fireBanditQuickAttack(c, def, loadout, targetPlayer);
+        if (fired) attackChoice = loadout.tap2;
+      }
     }
-    c._banditTactic = fired ? 'quick-or-heavy' : 'combo'; // A compact decision trace is available without opening the browser console.
     if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
+    c._banditTactic = fired ? attackChoice : 'attack-blocked';
     if (!fired) window.FeyHypedAttacks?.clearCredit?.(c, 'npcMelee'); // No authored attack started: its enhanced points cannot leak into an unrelated future action.
     // The staged action just created above (inside whichever fire*
     // call ran) gets its own first tick later THIS SAME FRAME --
