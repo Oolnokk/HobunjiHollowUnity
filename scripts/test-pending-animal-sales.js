@@ -184,6 +184,34 @@ assert.equal(atomic.read().livestock.length, 0);
 assert.equal(atomic.read().members.seller.nonGearInventory.gold, 92);
 assert.equal(atomic.win.WorldMetaStore.completeAnimalSales('farm_1', 'seller', 92, 31, ['animal_7']).earned, 0);
 
+// A serializer that reports success but silently fails to write the live
+// wallet cannot be allowed to remove an animal based on stale member gold.
+const stale = harness({ animals: [original], day: 50, gold: 9 });
+assert.equal(stale.win.PendingAnimalSales.queue('animal_7', 44).ok, true);
+stale.changeDay(51);
+stale.inventory.gold = 10; // Simulates an unsaved 1g pickup before leaving the farm.
+const realMemberSave = stale.deps.saveMemberWorldData; // Restored after simulating a faulty save adapter.
+stale.deps.saveMemberWorldData = () => true;
+assert.equal(stale.win.PendingAnimalSales.settle().sold, 0, 'unsaved active wallet must block collection');
+assert.equal(stale.read().livestock.length, 1);
+assert.equal(stale.read().members.seller.nonGearInventory.gold, 9);
+stale.deps.saveMemberWorldData = realMemberSave;
+assert.equal(stale.win.PendingAnimalSales.settle().earned, 44, 'sale retries after the wallet flush recovers');
+assert.equal(stale.read().members.seller.nonGearInventory.gold, 54);
+
+// A receipt-save failure happens AFTER the combined animal/payment write.
+// It must not roll back the payout or permit a second sale.
+const receipt = harness({ animals: [original], day: 60, gold: 5 });
+assert.equal(receipt.win.PendingAnimalSales.queue('animal_7', 25).ok, true);
+receipt.changeDay(61);
+const saveReceipt = receipt.deps.saveMemberWorldData; // Delegates the successful pre-collection flush.
+let receiptSaveAttempts = 0;
+receipt.deps.saveMemberWorldData = () => (++receiptSaveAttempts === 2 ? false : saveReceipt());
+assert.equal(receipt.win.PendingAnimalSales.settle().earned, 25);
+assert.equal(receipt.read().members.seller.nonGearInventory.gold, 30);
+assert.equal(receipt.read().livestock.length, 0);
+assert.equal(receipt.win.PendingAnimalSales.settle().earned, 0, 'a failed receipt save cannot double-credit gold');
+
 // The actual Shipping Box cutoff/area logic must perform the collection.
 const shipping = harness({ animals: [original], day: 41, gold: 6 });
 assert.equal(shipping.win.PendingAnimalSales.queue('animal_7', 44).ok, true);
