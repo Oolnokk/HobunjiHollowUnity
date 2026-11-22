@@ -2624,6 +2624,7 @@
     const context=window.DevRandomRuin?.getRuntimeContext?.()||null;
     if(!context?.root||!context?.scene)return;
     if(!state||state.root!==context.root)buildForContext(context);
+    window.RopeFurniture?.flushPending?.(); // Resolve early-loaded authored mounts through this same ruin rope owner once its scene is live.
 
     updateSafeGrids(now);
     updateChordPlateSets(melodyDt);
