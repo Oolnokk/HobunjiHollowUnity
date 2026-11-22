@@ -1309,6 +1309,7 @@
   function finishBanditAction(c) {
     const action = c._banditAction;
     c._banditAction = null;
+    c._banditChargeReleaseAction = null; // A released held charge only holds its full windup pose until its own stage finishes.
     c.telegraphState = null;
     if (!c._banditLunging) c._banditLungeHopCurrent = 0;
     // The player's swing doesn't stop when its strike lands: it holds the strike pose, then eases back to
@@ -1971,6 +1972,32 @@
       resetBanditSwingToNatural(actor); // A canceled charge restores the true weapon stance, including the hand rig.
     }
   }
+  function beginBanditPreparedCharge(c, target) {
+    if (!banditDirectional(c) || banditChargeOwner(target)) return false; // At most one preview charge exists for each opponent.
+    const cb = window.Combat?.chargedBreakerData;
+    if (!cb || c._banditPreparedCharge || c._banditAction) return false;
+    const chargeT = 0.5 + deps.rnd() * 0.5; // Once per charge, matching the existing Charged Breaker roll (not a random draw every frame).
+    const speed = c.def?.weaponShapeStats?.speed || 1;
+    const rawWindup = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
+    const duration = Math.max(0.25, Number(rawWindup) / speed || 0.5); // The visible preparatory windup runs even while a second bandit attacks.
+    const preview = { windupS: duration, strikeS: 0.01, t: 0, phase: 'windup' }; // Draw-only stage: Combat.beginStagedAction is not called until attack permission becomes free.
+    const charge = { target, t: 0, duration, chargeT, action: preview }; // A single per-actor state object, reused until release/cancel; no per-frame allocations.
+    banditTurnState(target).charge = { actor: c, target };
+    c._banditPreparedCharge = charge;
+    c._rangedMode = false; // The held melee weapon, not a stowed crossbow, represents the charge.
+    c._banditToolTail = null;
+    c.telegraphState = 'windup';
+    c._banditSwingAnim = 'sweep'; c._banditSwingPose = window.Combat?.poses?.SWEEP_POSE || null;
+    c._banditSwingDirSign = 1; c._banditSwingPower = cb.POWER || 1.7;
+    c._banditSwingPoseScale = chargeT; // Uses the same partial-charge weapon and procedural-hand transformations as the real attack.
+    const fullChargeS = Number(cb.MAX_CHARGE_S ?? cb.WINDUP_S) || 0;
+    c._banditSwingWindupCurve = fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
+      ? { slowdown: cb.WINDUP_SLOWDOWN, span: Math.min(1, duration * speed / fullChargeS), action: preview } : null;
+    c._banditSwingHoldS = 0; c._banditSwingReturnS = 0;
+    c._banditTactic = 'charging';
+    return true;
+  }
+
   function banditFacingSlotAngle(slot, target) {
     return slot?.sector == null ? slot?.angle : banditSectorAngle(target, slot.sector);
   }
@@ -2865,7 +2892,7 @@
       if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
       if (c._banditFlaskToolHolder) c._banditFlaskToolHolder.visible = false;
     }
-    const action = c._banditAction;
+    const action = c._banditAction || c._banditPreparedCharge?.action || null; // Draw-only held-charge windup uses the existing SharedAttackPose clock without registering an extra combat attack.
     // The player's swing clock, shared (SharedAttackPose.swingTimeline): windup, strike travel, an ability's
     // own post-strike hold, then an eased return to neutral. Elapsed time comes from the live staged action,
     // then from the tail finishBanditAction hands over once the action completes.
@@ -2933,6 +2960,7 @@
         const curveEnd = windupCurve(curve.span, curve.slowdown);
         if (curveEnd > 1e-6) progress = wf * windupCurve((progress / wf) * curve.span, curve.slowdown) / curveEnd;
       }
+      if (c._banditChargeReleaseAction === action && progress < wf) progress = wf; // The held weapon stays fully drawn during the short release telegraph instead of snapping back to Neutral.
       if (handDriverRoot?.userData) {
         // Same timing AND weapon the player's hands get for the same swing: the tool key picks the hand mode, so a dual-wield
         // weapon swings with both hands and a thrown flask with one. poseScale is the partial-charge fraction (the player's
