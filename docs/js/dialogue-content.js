@@ -478,6 +478,8 @@
             ['Encounter', (st.heardTrees || []).length ? 'returning' : 'first'],
             ['Trees heard', `${heardTrees} of ${trees.length}`],
             ['Pool lines heard', String((st.heardPoolEntries || []).length)],
+            ['Shared voice family', rec.dialoguePersonalityFamily || 'none'], // Mobile diagnostics expose the same family used by ambient reactions.
+            ['Scoped shared lines', String((rec.sharedDialogueTrees || []).length)], // Distinguishes a missing config from a heard/conditioned line.
           ],
           actions: [
             { id: 'favor', label: '−1 heart', args: { hearts: -1 }, group: 'Relationship' },
@@ -512,6 +514,19 @@
     queuedConversationTrees.set(npcId, tree);
     return true;
   }
+  function _hasUnheardAuthoredFallbackLine(rec, tree, world, heardPoolEntries) {
+    const start = (tree?.nodes || []).find(node => node.id === tree.entryNode); // Only the spoken fallback node links to the NPC's ordinary phrase pool.
+    const poolId = /\{\{pool:([^}]+)\}\}/.exec(String(start?.text || ''))?.[1]; // Existing dialogue-token syntax remains the authority for identifying the pool.
+    if (!poolId) return false;
+    const pool = (rec?.phrasePools || []).find(item => item.id === poolId || item.name === poolId); // Reuses this NPC's genuine authored phrases, never a second greeting catalog.
+    const heard = heardPoolEntries || []; // The existing per-NPC pool history determines when family chatter becomes a supplement.
+    return (Array.isArray(pool?.entries) ? pool.entries : []).some(entry => { // Malformed imported pool data is treated as empty, not as a reason to abort all dialogue.
+      const line = String(entry?.text || '').trim(); // Author-facing <placeholder> hint copy does not indefinitely prevent family speech.
+      return entry?.id && line && !/^<[^<>]+>$/.test(line)
+        && !heard.includes(entry.id) && _dlgEntryEligible(entry, world);
+    });
+  }
+
   function _pickDialogueTree(rec, options = {}) {
     const chatOnly = options.chatOnly === true; // Used by Shop/Chat's Chat action to bypass generated shop menus for this conversation.
     if (queuedConversationTrees.has(rec?.id)) {
@@ -540,21 +555,39 @@
     const world = _dlgWorldState(rec);
     const heard = getNpcDlgState(rec?.id).heardTrees || [];
     let picked = _pickBestEntry(all, world, heard);
-    // Keep eligible shops accessible even after their tree was heard and general chat was not:
-    // the shared unheard-first selector must not hide the merchant's Shop option.
+    // Shop access and event-owned dialogue are chosen against the original
+    // authored tree. A shared line must never disguise the fallback from
+    // spouse, family, festival, or other context providers.
     if (!chatOnly && picked?.id === `tree_${rec?.id}_fallback`) {
-      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Used only when a fallback would displace a merchant's Shop menu.
+      const shops = all.filter(t => t.generatedFromShopAccess && _dlgEntryEligible(t, world)); // Existing merchant fast access must remain available even once heard.
       if (shops.length) picked = _pickBestEntry(shops, world, heard);
     }
     for (const [id, context] of _contextProviders) {
       try {
-        const provided = context.treeFor?.(rec, { world, defaultTree: picked });
+        const provided = context.treeFor?.(rec, { world, defaultTree: picked }); // Authored choice, before optional personality supplementation.
         if (!provided) continue;
         if (_traceActive()) _dlgTraceSelection = { mode: 'context', source: id, reason: 'Contextual content replaced the normal fallback', world, candidates: [] };
         return provided;
       } catch (error) { console.warn('[npc-dialogue] context tree failed', id, rec?.id, error); }
     }
-    if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection(all, world, heard, picked) };
+
+    const sharedEligible = (rec?.sharedDialogueTrees || []).filter(t => deps.canAccessContent(t.visibility) && _dlgEntryEligible(t, world)); // Only ordinary Talk uses inherited family or named lines.
+    const characterSpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'character'); // Character-specific copy has first opportunity.
+    const familySpeech = sharedEligible.filter(t => t.sharedDialogueScope === 'personality'); // The existing reaction family is the secondary voice.
+    const scopedSpeech = characterSpeech.some(t => !heard.includes(t.id)) ? characterSpeech
+      : familySpeech.some(t => !heard.includes(t.id)) ? familySpeech
+      : [...characterSpeech, ...familySpeech]; // Unheard named → unheard family → repeat either, per speaker.
+    const isFallback = picked?.id === `tree_${rec?.id}_fallback`; // All other authored trees retain their priority, even when already heard.
+    const stillHasNamedLines = isFallback && _hasUnheardAuthoredFallbackLine(rec, picked, world, getNpcDlgState(rec?.id).heardPoolEntries); // Do not replace unplayed, eligible personal greetings.
+    const firstAuthoredFallback = isFallback && !heard.includes(picked.id); // Literal single-line fallback is still heard once.
+    const sharedExhausted = scopedSpeech.length > 0 && scopedSpeech.every(t => heard.includes(t.id)); // Original character copy remains in the rotation on later repeats.
+    const hasStandaloneLines = !picked && Array.isArray(rec?.dialogueLines) && rec.dialogueLines.some(line => typeof line === 'string' && line.trim() && !/^<[^<>]+>$/.test(line.trim())); // An NPC's explicit standalone dialogue is authored speech, not empty space for a personality replacement.
+    const maySupplement = scopedSpeech.length > 0 && !hasStandaloneLines && (!picked || (isFallback && !stillHasNamedLines && !firstAuthoredFallback)); // No broad override of authored non-fallback or standalone character content.
+    const keepAuthoredThisTime = maySupplement && isFallback && sharedExhausted && Math.random() < 0.5; // Randomize only when a family-versus-personal choice is actually needed.
+    if (maySupplement && !keepAuthoredThisTime) {
+      picked = _pickBestEntry(scopedSpeech, world, heard) || picked; // Standard unheard-first selector; shared history stays per NPC.
+    }
+    if (_traceActive()) _dlgTraceSelection = { mode: 'conditions', source: picked?.sharedDialogueScope ? `config/dialogue/shared-dialogue.json (${picked.sharedDialogueScope}:${picked.sharedDialogueOwner})` : _npcDatabaseSource(), heard: heard.slice(), ..._explainSelection([...all, ...scopedSpeech], world, heard, picked) };
     return picked;
   }
 
@@ -571,12 +604,17 @@
   // cycles through its unheard entries before repeating.
   function _pickPoolEntry(poolId, rec) {
     const pool = (rec?.phrasePools || []).find(p => p.id === poolId || p.name === poolId);
-    if (!pool || !pool.entries?.length) return null;
+    if (!Array.isArray(pool?.entries) || !pool.entries.length) return null;
+    const playable = pool.entries.filter(item => {
+      const line = String(item?.text || '').trim(); // Writer-facing <placeholder> hints are not player dialogue until actually authored.
+      return line && !/^<[^<>]+>$/.test(line);
+    }); // Shares the same playable-line rule used when determining if personal speech remains before personality supplements.
+    if (!playable.length) return null;
     const world = _dlgWorldState(rec);
     const st    = getNpcDlgState(rec?.id);
-    const entry = _pickBestEntry(pool.entries, world, st.heardPoolEntries || []);
+    const entry = _pickBestEntry(playable, world, st.heardPoolEntries || []);
     if (_traceActive()) {
-      _dlgTracePools.push({ poolId, poolName: pool.name || pool.id, npcId: rec?.id || null, pickedId: entry?.id || null, pickedText: entry?.text || '', ..._explainSelection(pool.entries, world, st.heardPoolEntries || [], entry) });
+      _dlgTracePools.push({ poolId, poolName: pool.name || pool.id, npcId: rec?.id || null, pickedId: entry?.id || null, pickedText: entry?.text || '', ..._explainSelection(playable, world, st.heardPoolEntries || [], entry) });
       if (_dlgTracePools.length > 20) _dlgTracePools.splice(0, _dlgTracePools.length - 20);
     }
     if (entry && !st.heardPoolEntries.includes(entry.id)) st.heardPoolEntries.push(entry.id);
