@@ -880,7 +880,7 @@
       const itemDef = itemKey ? deps.ITEM_DEFS?.[itemKey] : null; // A missing catalog item would otherwise be silently hidden by the Pack inventory filter.
       _nestContentDebug.lastCollectionItemKey = itemKey || null;
       _nestContentDebug.lastCollectionSaveOk = false;
-      if (!itemKey || !itemDef || typeof window.FarmAnimals?.queueItemGenotype !== 'function') {
+      if (!itemKey || !itemDef || typeof window.LivestockItemGenotypePersistence?.acquireNestItem !== 'function') {
         const reason = 'Unregistered nest reward: key=' + String(nest.itemKey) + ', species=' + String(nest.speciesKey || 'unknown') + ', registered=' + !!itemDef;
         _nestContentDebug.lastError = reason;
         _nestContentDebug.lastChange = 'Collection blocked; baby/egg remains in nest.';
@@ -895,45 +895,41 @@
         deps.showToast('No room in your bag for this baby or egg.', false);
         return;
       }
-      // First commit the real bag unit, then its inherited lineage; only after BOTH succeed may the nest lose a member.
-      // This protects saved babies from disappearing when localStorage/quota or the save member identity fails.
-      let bagSaved = false; // Tracks whether a lineage error requires restoring an already-persisted bag count.
+      // Atomically commit the bag count, exact family genotype, and (for caverns) consumed clutch count.
+      // Only ONE durable metadata write occurs; a rejected write cannot leave a saved phantom or missing baby.
+      const areaId = deps.getCurrentArea(); // Used as the stable cave ID in world den-turnover metadata.
+      const remainingAfterPickup = Math.max(0, Number(nest.remaining) - 1); // Target clutch count, staged without removing a visible baby.
+      let committed = false; // Failed acquisition restores the live bag and leaves both nest count and visuals untouched.
       try {
         deps.inventory[itemKey] = beforeCount + 1;
-        if (typeof deps.saveMemberWorldData !== 'function' || deps.saveMemberWorldData() !== true) {
-          throw new Error('The member inventory could not be saved.');
-        }
-        bagSaved = true;
-        if (window.FarmAnimals.queueItemGenotype(itemKey, nest.genotype) === false) {
-          throw new Error('The inherited animal genotype could not be saved.');
-        }
+        committed = window.LivestockItemGenotypePersistence.acquireNestItem(itemKey, nest.genotype, beforeCount + 1, {
+          areaId, liveBirth: !!nest.liveBirth, remaining: remainingAfterPickup,
+        }) === true;
       } catch (error) {
+        _nestContentDebug.lastError = 'Nest pickup threw: ' + String(error?.message || error);
+        window.__farmLog?.('[nest-content] ' + _nestContentDebug.lastError, 'warn');
+      }
+      if (!committed) {
         deps.inventory[itemKey] = beforeCount;
         deps.clampInventoryStack?.(itemKey);
-        let rollbackOk = true; // Only a committed interim bag write needs a compensating save on lineage failure.
-        if (bagSaved) {
-          try { rollbackOk = deps.saveMemberWorldData() === true; }
-          catch (_) { rollbackOk = false; }
-        }
-        const message = String(error?.message || error);
-        _nestContentDebug.lastError = message + (rollbackOk ? '' : ' (inventory rollback save also failed)');
+        _nestContentDebug.lastError ||= 'The inventory/lineage/cave transaction was not committed; check carried animal lineage diagnostics.';
         _nestContentDebug.lastChange = 'Collection aborted; nest contents left intact.';
-        _nestContentDebug.lastCollectionBagAfter = Number(deps.inventory[itemKey]) || 0;
+        _nestContentDebug.lastCollectionBagAfter = beforeCount;
         window.__farmLog?.('[nest-content] pickup transaction failed key=' + itemKey + ': ' + _nestContentDebug.lastError, 'warn');
-        deps.showToast('Could not save the baby or egg. It is still in the nest; check Pixel Probe.', false);
+        deps.showToast('Could not save this baby or egg. It remains in the nest; check Pixel Probe.', false);
         return;
       }
       _nestContentDebug.lastCollectionSaveOk = true;
-      _nestContentDebug.lastCollectionBagAfter = Number(deps.inventory[itemKey]) || 0;
+      _nestContentDebug.lastCollectionBagAfter = beforeCount + 1;
       _nestContentDebug.lastError = null;
-      const state = focused.state; // The captured visual state is removed only after a durable successful inventory grant.
+      const state = focused.state; // Visuals are destroyed only after the saved transaction succeeds.
       _removeContentRecord(state, content);
-      nest.remaining = Math.max(0, Number(nest.remaining) - 1);
+      nest.remaining = remainingAfterPickup;
       try {
         if (typeof nest.onEggCollected === 'function') nest.onEggCollected(nest);
-        else window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Cave clutches keep their original persistence contract.
+        else window.WildlifeSpawn?.updateDenClutchState?.(areaId, nest, { persist: false }); // Already saved atomically; only refresh the in-memory turnover owner.
       } catch (error) {
-        _nestContentDebug.lastError = 'Pickup saved, but nest clutch update failed: ' + String(error?.message || error);
+        _nestContentDebug.lastError = 'Pickup saved, but nest runtime sync failed: ' + String(error?.message || error);
         window.__farmLog?.('[nest-content] ' + _nestContentDebug.lastError, 'warn');
       }
       window.HobunjiActivityEvents?.emit('nest_stolen', {
