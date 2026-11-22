@@ -145,10 +145,14 @@ const vm = require('node:vm');
   const walker = { area: 'slope', state: 'moving',
     root: { position: { x: 7.5, z: 10.5, y: 9, set(x,y,z) { this.x=x; this.y=y; this.z=z; } } },
     moveToward(x,z) { this.root.position.x=x; this.root.position.z=z; return true; },
+    _tryStartGridPath() { return false; }, // Scheduler path requests must not interrupt committed airborne motion.
   }; // Actual collision decorator keeps a committed jump separate from ordinary path movement.
   actorWin.NpcPathfinding.decorateWalkerCollision(walker);
   walker.moveToward(2.5, 10.5, .03);
   assert(walker._npcCliffClimb?.drop, 'NPC chooses the same safe descent rather than walking into the wall');
+  const inFlight = walker._npcCliffClimb; // Scheduler cannot discard or restart this active jump.
+  assert.equal(walker._tryStartGridPath({ c: 2, r: 10 }), false, 'schedule replans pause until landing');
+  assert.equal(walker._npcCliffClimb, inFlight, 'a replan preserves the current jump ownership');
   for (let i = 0; i < 30; i++) if (walker._npcCliffClimb) actorWin.NpcPathfinding.updateCliffClimb(walker, .03);
   assert.equal(walker._npcCliffClimb, null, 'NPC jump has released path ownership on landing');
   assert(Math.abs(walker.root.position.x - 5.5) < 0.01, 'NPC lands on a real lower-shelf tile');
