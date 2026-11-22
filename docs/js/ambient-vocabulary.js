@@ -5,7 +5,7 @@
   const CONFIG_PATH = 'config/dialogue/ambient-vocabulary.json'; // The Vocabulary tab exports this independent authored configuration.
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
   const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55 }); // Used for an unassigned NPC or incomplete imported settings.
-  const state = { config: null, profiles: null, compiled: null, last: null, error: null, ready: false, changed: 0, skipped: 0 }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
+  const state = { config: null, profiles: null, compiled: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
   const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
   const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
   const normalizeSliders = value => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(hasOwn(value, key) ? value[key] : DEFAULT_SLIDERS[key])])); // Every slider is bounded before selecting vocabulary.
@@ -25,31 +25,8 @@
     const sliders = normalizeSliders({ ...DEFAULT_SLIDERS, ...(family?.sliders || {}), ...(character?.sliders || {}) }); // Independent axes never derive formality from sophistication.
     return { sliders, familyId, table: character?.table || family?.table || null, characterId: id };
   }
-  function scoredAlternatives(alternatives, sliders, seed) {
-    const valid = (Array.isArray(alternatives) ? alternatives : []).filter(entry => entry && typeof entry.text === 'string' && entry.text.trim()); // Invalid or empty authoring records never enter a runtime table.
-    const selected = valid.map(entry => ({
-      text: entry.text.trim(),
-      distance: Math.abs(clamp(entry.verbosity ?? 50) - sliders.verbosity) * 0.9
-        + Math.abs(clamp(entry.color ?? 50) - sliders.color) * 1.0
-        + Math.abs(clamp(entry.formality ?? 50) - sliders.formality) * 0.7,
-    })).sort((a, b) => a.distance - b.distance || a.text.localeCompare(b.text)); // The independent sliders rank only editor-approved synonyms.
-    const count = Math.max(1, Math.ceil(selected.length * (0.12 + sliders.breadth / 115))); // Breadth controls how many candidate forms a speaker knows for each entry.
-    const eligible = selected.slice(0, count);
-    const best = eligible.filter(candidate => candidate.distance <= eligible[0].distance + 42);
-    const choices = best.length ? best : eligible;
-    if (sliders.variety < 15) return choices.length ? [choices[hash(seed) % choices.length].text] : [];
-    return choices.map(candidate => candidate.text);
-  }
   function generateTable(lexicon, sliders, speakerId) {
-    const table = {}; // Snapshot of allowed alternatives is exported for direct manual editing and never recomputed during rendering.
-    const normalized = normalizeSliders(sliders);
-    for (const [term, entries] of Object.entries(lexicon || {})) {
-      const key = normalizedWord(term); // One original word/phrase is the unit of an authored Mad-Libs-style substitution.
-      if (!key || /[{}]/.test(key) || key.length > 80) continue;
-      const alternatives = scoredAlternatives(entries, normalized, speakerId + ':' + key).filter(text => normalizedWord(text) !== key);
-      if (alternatives.length) table[key] = alternatives;
-    }
-    return table;
+    return window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, speakerId) || {}; // Editor and runtime use exactly the same table generator.
   }
   function compile(config) {
     const terms = Object.keys(config?.lexicon || {}).map(normalizedWord).filter(term => term && !/[{}]/.test(term) && term.length <= 80).sort((a, b) => b.length - a.length); // Longest phrase wins, so 'very nice' is not intercepted by 'nice'.
@@ -71,7 +48,13 @@
     if (!selected || !source) return source;
     const pattern = config === state.config ? state.compiled : compile(config);
     if (!pattern) return source;
-    const table = selected.table || generateTable(config.lexicon, selected.sliders, selected.characterId);
+    const table = selected.table || (config === state.config
+      ? (state.tableCache.get(selected.characterId) || (() => {
+          const generated = generateTable(config.lexicon, selected.sliders, selected.characterId); // Generated family fallback is cached per speaker rather than rebuilt for every bubble.
+          state.tableCache.set(selected.characterId, generated);
+          return generated;
+        })())
+      : generateTable(config.lexicon, selected.sliders, selected.characterId));
     const chance = selected.sliders.frequency / 100;
     let hits = 0; // Included in Dev Companion diagnostics for failed or overly aggressive vocabulary configurations.
     let swaps = 0; // Counts actual substitutions, not merely words encountered.
@@ -109,6 +92,7 @@
       state.config = config;
       state.profiles = profiles;
       state.compiled = compile(config);
+      state.tableCache.clear();
       state.ready = true;
       state.error = null;
       return true;
