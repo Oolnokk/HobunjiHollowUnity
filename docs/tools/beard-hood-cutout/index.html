@@ -664,6 +664,20 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }catch(error){status('Import failed: '+error.message);}
     $('beardJson').value='';
   };
+  $('hoodJson').onchange=async()=>{
+    const file=$('hoodJson').files?.[0];if(!file)return;
+    try {
+      const imported=JSON.parse(await file.text());
+      if(!imported||typeof imported!=='object'||Array.isArray(imported)
+        ||(!imported.parts&&!imported.speciesVariants))
+        throw Error('Expected a complete hood cosmetic JSON with parts or speciesVariants');
+      remember();hoodDoc=imported;hoodDrafts.delete(hoodDraftKey());
+      hoodAllowanceMask=originalHoodPermission();
+      await prepare(false,false);
+      status('Imported '+file.name+'. Hood permission mask is ready to edit.');
+    }catch(error){status('Hood import failed: '+error.message);}
+    $('hoodJson').value='';
+  };
   $('clearOverrides').onclick=()=>{overrideBeard=null;overrideHood=null;$('beardPng').value='';$('hoodPng').value='';prepare(true);};
   $('reload').onclick=()=>loadCatalog().catch(e=>status('Catalog failed: '+e.message));
   function exportedJson(){
@@ -680,18 +694,38 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }
     return json;
   }
+  function exportedHoodJson(){
+    if(!hoodDoc)throw Error('No hood cosmetic loaded');
+    const json=JSON.parse(JSON.stringify(hoodDoc)); // Preserve every existing material, variant and cosmetic field.
+    const scope=hoodScopeKey();
+    const destination=scope==='shared'?json:
+      (json.speciesVariants[variant]={...(json.speciesVariants[variant]||{})});
+    if(hoodAllowanceMask===null)delete destination.beardCutoutAllowedMask; // Absence retains legacy all-removable behavior.
+    else destination.beardCutoutAllowedMask=Cut.normalizeMask(hoodAllowanceMask)||empty();
+    return json;
+  }
+  function downloadCosmetic(json,filename){
+    const body=JSON.stringify(json,null,2)+'\n',blob=new Blob([body],{type:'application/json'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=filename.replace(/^\(HA\)/,'');
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
+  }
   $('download').onclick=()=>{
     try{
       if(!artReady)throw Error('Cannot export a cutout until the beard image is readable');
-      const body=JSON.stringify(exportedJson(),null,2)+'\n',blob=new Blob([body],{type:'application/json'});
-      const url=URL.createObjectURL(blob),a=document.createElement('a');
-      a.href=url;a.download=(beardEntry?.path.split('/').pop()||'beard.json').replace(/^\(HA\)/,'');
-      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
+      downloadCosmetic(exportedJson(),beardEntry?.path.split('/').pop()||'beard.json');
       status('Exported complete cosmetic JSON with cutout, tuft corners, locality subdivision, and upper/lower influence.');
     }catch(error){status(error.message);}
   };
+  $('downloadHood').onclick=()=>{
+    try{
+      if(!artReady)throw Error('Cannot export hood permissions until hood artwork is readable');
+      downloadCosmetic(exportedHoodJson(),hoodEntry?.path.split('/').pop()||'hood.json');
+      status('Exported complete hood cosmetic JSON with independent beard-removal permissions.');
+    }catch(error){status('Hood export failed: '+error.message);}
+  };
   $('copy').onclick=async()=>{
-    try{await navigator.clipboard.writeText($('maskJson').value);status('Copied RLE mask, tuft roots, and settings.');}
+    try{await navigator.clipboard.writeText($('maskJson').value);status('Copied beard requests, hood permissions, tuft roots, and settings.');}
     catch(_){$('maskJson').focus();$('maskJson').select();status('Clipboard unavailable; select and copy the mask text.');}
   };
   $('selfTest').onclick=()=>{
