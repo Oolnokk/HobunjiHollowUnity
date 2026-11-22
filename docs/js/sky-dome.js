@@ -128,17 +128,26 @@
   function currentCloudCover() {
     const calendar = deps?.calendar;
     if (!calendar) return CLEAR_CLOUD_COVER;
-    const rainStrength = calendar.isRaining ? Number(calendar.rainStrength) || 0 : 0; // Active rain intensity drives the steep darkness curve, rather than the day's forecast label.
+    if (calendar.rainStrength >= 3 || calendar.weather === 'storm') return 1;
+    if (calendar.rainStrength >= 2) return 0.78;
+    if (calendar.rainStrength >= 1 || calendar.isRaining || calendar.weather === 'rain') return 0.62;
+    return CLEAR_CLOUD_COVER;
+  }
+
+  function currentLightingCloudCover() {
+    const calendar = deps?.calendar;
+    if (!calendar) return CLEAR_CLOUD_COVER;
+    const rainStrength = calendar.isRaining ? Number(calendar.rainStrength) || 0 : 0; // Drives weather darkness independently of the cloud atlas, avoiding large texture rebuilds at rain-window boundaries.
     if (rainStrength >= 3) return 1;
     if (rainStrength >= 2) return 0.78;
     if (rainStrength >= 1) return 0.62;
-    if (calendar.weather === 'storm') return 0.78; // Between storm windows, heavy cloud persists without pretending maximum lightning-storm darkness.
-    if (calendar.weather === 'rain') return 0.62; // Keep rain-day overcast even when a shower is not currently falling.
+    if (calendar.weather === 'storm') return 0.78; // Forecast storm: heavy clouds during dry intervals, not peak downpour darkness.
+    if (calendar.weather === 'rain') return 0.62; // Rainy days remain a little overcast between showers.
     return CLEAR_CLOUD_COVER;
   }
 
   function rawOvercastLevel() {
-    return smoothstep(CLEAR_CLOUD_COVER, 1, currentCloudCover());
+    return smoothstep(CLEAR_CLOUD_COVER, 1, currentLightingCloudCover());
   }
 
   function currentOvercastLevel() {
