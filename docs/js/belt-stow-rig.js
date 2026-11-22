@@ -14,8 +14,8 @@
     const height = Number.isFinite(Number(modelHeight)) && Number(modelHeight) > 0
       ? Number(modelHeight) : .9; // Fallback only; saved profiles use literal local-world coordinates.
     return {
-      position: { x: .22 * height, y: .5 * height, z: .1 * height },
-      rotationDeg: { x: 0, y: 0, z: -6.875 },
+      position: { x: 0, y: .5 * height, z: -.04 * height },
+      rotationDeg: { x: 0, y: 0, z: -45 },
       scale: { x: 1, y: 1, z: 1 },
     };
   }
@@ -80,7 +80,7 @@
     return map;
   }
 
-  function createTorchDisplay(THREE) {
+  function createTorchDisplay(THREE, { previewFlame = true } = {}) {
     if (!THREE?.Group || !THREE?.Mesh) return null;
     const root = new THREE.Group(); // A render-only attachment that may be parented to a game body or authoring gizmo.
     root.name = 'adventuring_torch_belt';
@@ -90,12 +90,13 @@
       new THREE.MeshBasicMaterial({ transparent:true, depthTest:true, depthWrite:false, side:THREE.DoubleSide }));
     art.name = 'stowed_torch_png';
     art.rotation.z = Math.PI; // The existing torch.png's burning end points along image -Y.
-    art.renderOrder = 2.32;
+    art.renderOrder = 2.16; // Between the rear and front portrait passes, like other back-stowed gear.
+    art.userData.noOutline = true; // The PNG already contains its own ink.
     art.raycast = () => {}; // Never intercept item selection, editor actor picking, or world interactions.
     root.add(art);
 
     let flame = null; // A single tiny billboard instead of gameplay fire emitters or point lights.
-    const fireMap = createFlameTexture(THREE);
+    const fireMap = previewFlame ? createFlameTexture(THREE) : null; // Gameplay instead attaches the actual layered-weapon fire emitter.
     if (fireMap && THREE.Sprite && THREE.SpriteMaterial) {
       flame = new THREE.Sprite(new THREE.SpriteMaterial({
         map:fireMap, transparent:true, depthTest:true, depthWrite:false,
@@ -104,7 +105,7 @@
       flame.name = 'stowed_torch_flame';
       flame.position.set(0, .24, .035);
       flame.scale.set(.13, .23, 1);
-      flame.renderOrder = 2.34;
+      flame.renderOrder = 2.17;
       flame.raycast = () => {};
       root.add(flame);
     }
@@ -114,9 +115,9 @@
     let sourceHeight = TORCH_HEIGHT; // Live held-plane height, used to preserve the PNG aspect and handle-end position.
     function applyDimensions() {
       art.scale.set(sourceWidth / TORCH_WIDTH * idleScale, sourceHeight / TORCH_HEIGHT * idleScale, 1);
-      art.position.y = sourceHeight * idleScale * .5; // Anchor the handle's lower end at the belt rig, not the enlarged sprite center.
+      art.position.y = -.025 * idleScale; // The root is halfway from grip (0) to emitter (sourceHeight + .05), so the full torch rotates around that midpoint.
       if (flame) {
-        flame.position.y = (sourceHeight + .05) * idleScale; // Sit just above the -Y torch-tip PNG after its 180° upright rotation.
+        flame.position.y = (sourceHeight + .05) * idleScale * .5; // Editor-only fire preview uses the same grip-to-emitter midpoint pivot.
         flame.scale.set(.13 * idleScale, .23 * idleScale, 1);
       }
     }
@@ -135,7 +136,7 @@
       idleScale = next;
       applyDimensions();
     }
-    applyDimensions(); // Both neutral and custom-rig previews begin with the grip/handle at the authored belt anchor.
+    applyDimensions(); // Game and authoring both rotate the torch around the midpoint between grip and emitter.
     setIdleScale(Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1);
     return {
       root, art, flame, setIdleScale, setSourceDimensions,
