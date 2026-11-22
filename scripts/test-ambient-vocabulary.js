@@ -50,6 +50,10 @@ async function main() {
   assert.equal(engine.rewrite('Lovely', 'pahu', () => 0.999, {
     ...explicit, characters: { pahu: { sliders: { frequency: 0 }, table: { lovely: ['splendid'] } } },
   }, assignments), 'Lovely'); // Authored fallback is always available.
+  assert.notEqual(JSON.stringify(rules.seedSliders(config.families.playful.sliders, 'pahu')),
+    JSON.stringify(rules.seedSliders(config.families.playful.sliders, 'sloomi'))); // Same family, distinct stable individual vocabulary axes.
+  assert.deepEqual(rules.seedSliders(config.families.playful.sliders, 'pahu'),
+    rules.seedSliders(config.families.playful.sliders, 'pahu')); // Restored sessions do not change a character's vocabulary.
   const generated = rules.generateTable(config.lexicon, config.families.playful.sliders, 'pahu');
   assert.ok(Object.keys(generated).length >= 25);
   assert.deepEqual(generated, rules.generateTable(config.lexicon, config.families.playful.sliders, 'pahu'));
