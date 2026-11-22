@@ -1417,8 +1417,15 @@
     }
 
     parent.add(root);
-    const authoredLegRatio = window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Includes the legacy Height migration for newly spawned game/author NPCs.
-    if (Number.isFinite(Number(authoredLegRatio))) setLegLengthMultiplier(authoredLegRatio); // Initial spawn uses independent legs without waiting for a subsequent Head slider event.
+    let authoredLegRatio = window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Species/gender default includes legacy Height migration.
+    for (let owner = parent; owner; owner = owner.parent) {
+      const scaleState = owner.userData?.hobunjiCharacterRigScaleState; // A hostile's explicit parent scale can differ from species defaults.
+      if (!scaleState) continue;
+      authoredLegRatio = (Number(scaleState.legLength) || Number(scaleState.factor?.y) || 1)
+        / (Number(scaleState.factor?.y) || 1);
+      break;
+    }
+    if (Number.isFinite(Number(authoredLegRatio))) setLegLengthMultiplier(authoredLegRatio); // Initial spawn honors the CURRENT parent scale, not a possibly different default.
 
     function applyPose(side, contactY, idleX, pose, response, dt) {
       const target = state[`${side}Target`];
