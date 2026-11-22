@@ -149,16 +149,26 @@
   }
 
   function queuePersistedGenotype(itemKey, genotype) {
-    if (!itemKey || !genotype || !ensureLoaded()) return;
-    const copy = clonePlain(genotype);
-    if (!copy) return;
-    (queues[itemKey] || (queues[itemKey] = [])).push(copy);
+    if (!itemKey || !genotype) return; // A generic item without inherited genes has no lineage record to commit.
+    if (!ensureLoaded()) return false; // A wild offspring must not be removed from its nest without a valid saved character identity.
+    const copy = clonePlain(genotype); // The persisted copy is the only lineage state saved into the member record.
+    if (!copy) return false;
+    const list = queues[itemKey] || (queues[itemKey] = []); // Pending wild offspring remain ordered by acquisition for legacy Farm consumers.
+    list.push(copy);
     groupCache.delete(itemKey);
+    if (!saveQueues()) {
+      list.pop(); // Undo a failed durable write so the next pickup does not acquire a phantom genetic unit.
+      if (!list.length) delete queues[itemKey];
+      groupCache.delete(itemKey);
+      debug.errors.push('queue: failed to persist ' + itemKey + '; nest pickup may retry safely');
+      debug.lastAction = 'queue-failed';
+      return false;
+    }
     debug.queued++;
     debug.lastItemKey = itemKey;
     debug.lastAction = 'queue';
-    saveQueues();
-    window.__farmLog?.(`[genotype] persisted carried lineage for ${itemKey} (${queues[itemKey].length} queued)`, 'wildlife');
+    window.__farmLog?.('[genotype] persisted carried lineage for ' + itemKey + ' (' + list.length + ' queued)', 'wildlife');
+    return true;
   }
 
   function seedOriginalQueueIfNeeded(itemKey) {
