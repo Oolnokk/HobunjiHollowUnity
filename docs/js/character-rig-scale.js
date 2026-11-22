@@ -86,7 +86,9 @@
     const normalizedGender = normalizeGender(gender);
     const configured = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(transformed, normalizedGender); // Preferred canonical default source loaded by attachment-rig bootstrap.
     if (configured && Number.isFinite(Number(configured.x)) && Number(configured.x) > 0) {
-      return { x: clampScale(configured.x), y: clampScale(configured.y), head: clampScale(configured.head), offsetY: clampOffset(configured.offsetY) };
+      const legLength = Number(configured.legLength); // Optional: lanky species author hip-to-foot reach separately from portrait height.
+      return { x: clampScale(configured.x), y: clampScale(configured.y), head: clampScale(configured.head), offsetY: clampOffset(configured.offsetY),
+        ...(Number.isFinite(legLength) && legLength > 0 ? { legLength: clampScale(legLength) } : {}) };
     }
     const legacy = Number(window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS?.[`${transformed}::${normalizedGender}`]?.x
       ?? window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS?.[`${transformed}::${normalizedGender}`]);
@@ -124,7 +126,9 @@
       x: clampScale(Number.isFinite(x) && x > 0 ? x : (hasLegacy ? legacy : defaults.x)),
       y: legacyHeight, // Compatibility alias: older callers use y for portrait height.
       portraitHeight: legacyHeight, // Explicit editor label and scale export.
-      legLength: clampScale(Number.isFinite(leg) && leg > 0 ? leg : legacyHeight),
+      legLength: clampScale(Number.isFinite(leg) && leg > 0 ? leg
+        : (Number.isFinite(y) && y > 0) || hasLegacy || !(Number(defaults.legLength) > 0) ? legacyHeight
+          : Number(defaults.legLength)), // Saved Height keeps driving legs; otherwise the species' authored leg default (lanky Longorans) applies.
       head: clampScale(Number.isFinite(head) && head > 0 ? head : (hasLegacy ? legacy : defaults.head)),
       offsetY: clampOffset(Number.isFinite(offsetY) ? offsetY : defaults.offsetY),
     };
@@ -141,6 +145,8 @@
       const resolved = scaleFor(profile.species || keySpecies, profile.gender || keyGender, profile);
       profile.anatomy.rigScaleX ??= resolved.x;
       profile.anatomy.rigScaleY ??= resolved.y;
+      if (Number(defaultScaleFor(profile.species || keySpecies, profile.gender || keyGender).legLength) > 0)
+        profile.anatomy.legLengthScale ??= resolved.legLength; // Seeded with rigScaleY, or the seeded height would read as a legacy save and override the species' leg default.
       profile.anatomy.headScale ??= resolved.head;
       profile.anatomy.headOffsetY ??= resolved.offsetY;
       if (Number.isFinite(Number(profile.anatomy.rigScaleX))) installed += 1;
@@ -287,7 +293,12 @@
       && Array.isArray(rig.splineNodes) && rig.splineNodes.length === spineApi?.splineNodes
       && typeof spineApi?.applyNeckReach === 'function'; // Only complete seven-node, separately placed game rigs can spread head offsets through the spine; mock/legacy partial rigs keep their prior behavior.
     if (distributeToSpine) {
-      const reachY = clampOffset(baseOffset) * modelHeight + scaledNeckDeltaY; // Authored head height and scale-induced chin movement now stretch the whole spine.
+      // The 10-bone head-scale joint hangs off the neck joint at the chin pivot,
+      // so head size never moves the chin: only the authored head height
+      // stretches/compresses the spine. Adding the centroid-based chin delta
+      // here lifted the whole head (e.g. +8% height on 200% Longorans) and left
+      // a stretched torso with nothing to fill it (verified in Full Character Scale).
+      const reachY = clampOffset(baseOffset) * modelHeight;
       applyHeadYOffset(offsetTarget, 0, modelHeight); // Restore the short 2.5px head/neck connection; never drag the pseudo-neck through the torso.
       spineApi.applyNeckReach(rig, reachY, modelHeight, composedHunch); // Rebuild rest→scaled spine→hunch in that order, idempotent on touch-slider edits.
       if (found.node?.userData && rig.appliedSpineProfile) {

@@ -33,12 +33,13 @@ const tletinganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tle
 const tletinganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tletingan', 'female'); // Female ratio donor.
 const nuhonganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'male'); // Male Nuhongan proportions.
 const nuhonganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'female'); // Female Nuhongan proportions.
-assert(Math.abs(nuhonganMale.x - tletinganMale.x * 0.8) < 1e-9);
-assert(Math.abs(nuhonganMale.y - tletinganMale.y * 0.75) < 1e-9);
-assert.equal(nuhonganMale.head, tletinganMale.head);
-assert(Math.abs(nuhonganFemale.x - tletinganFemale.x * 0.8) < 1e-9);
-assert(Math.abs(nuhonganFemale.y - tletinganFemale.y * 0.75) < 1e-9);
-assert.equal(nuhonganFemale.head, tletinganFemale.head);
+// Nov 22 visual pass: Nuhongans are Ewok-like (shorter, stubbier, relatively
+// bigger-headed) and no longer a fixed 0.8x/0.75x copy of the stocky Tletingan.
+for (const [nuhongan, tletingan] of [[nuhonganMale, tletinganMale], [nuhonganFemale, tletinganFemale]]) {
+  assert(nuhongan.x < tletingan.x && nuhongan.y < tletingan.y, 'Nuhongans stay smaller than Tletingans');
+  assert(nuhongan.legLength < tletingan.legLength, 'Nuhongans have stubbier legs');
+  assert(nuhongan.head / nuhongan.y > tletingan.head / tletingan.y, 'Nuhongan heads are relatively larger');
+}
 
 const runtimeWindow = { // Models the real inheritance registries closely enough to catch lost hands/feet and direct-lookup systems.
   HobunjiCharacterRigScaleDefaults: scaleWindow.HobunjiCharacterRigScaleDefaults,

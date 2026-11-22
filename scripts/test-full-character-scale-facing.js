@@ -1,24 +1,28 @@
 #!/usr/bin/env node
 'use strict';
 
-// Full Character Scale's visual forward axis must be consistent for both
-// procedural feet and the actual skinned seven-bone spine, without changing
-// gameplay's original orientation.
+// Full Character Scale must face the same way as gameplay. The lineup camera
+// sits at +Z looking at portrait fronts, so toes and the Longoran hunch must
+// also point +Z. A preview-only reversal (spine sign -1 + mirrored foot depth)
+// was verified in headless screenshots to show heels under every face and to
+// make Longorans lurch backward, so the lineup must not opt into it. The
+// opt-in mechanism itself stays tested below for isolation from gameplay.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const comparison = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8'); // Lineup-only call site for the two preview-facing overrides.
+const comparison = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8'); // Lineup call sites.
 const feetSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Actual shared foot runtime, not a test-side copy.
 const spineSource = fs.readFileSync('docs/js/character-spine.js', 'utf8'); // Actual gameplay/shared spine solver.
 
-assert.match(comparison, /neckRig\.previewForwardSign = -1/, 'the lineup explicitly reverses the spine forward direction');
-assert.equal((comparison.match(/previewReverseFootDepth: true/g) || []).length, 2,
-  'initial lineup feet and rebuilt Longoran feet share the preview-only orientation');
+assert.doesNotMatch(comparison, /previewForwardSign\s*=\s*-1/, 'the lineup keeps the gameplay spine forward direction');
+assert.doesNotMatch(comparison, /previewReverseFootDepth:\s*true/, 'lineup feet keep gameplay toe direction (toes toward the camera, like the faces)');
+assert.match(comparison, /attachPreviewPants\(entry, avatar\.front\)/, 'initial lineup covers the hip-to-foot span with pants like gameplay');
+assert.match(comparison, /attachPreviewPants\(entry\); \/\/ Disposing the old leg handle/, 'rebuilt Longoran feet get their pants back');
 assert.match(feetSource, /alignPreviewFootFacing\(THREE, leftMesh, options\.previewReverseFootDepth\)/,
-  'asynchronously loaded foot GLBs retain the preview orientation after replacing placeholders');
+  'opt-in preview orientation still covers asynchronously loaded GLBs');
 assert.match(feetSource, /alignPreviewFootFacing\(THREE, rightMesh, options\.previewReverseFootDepth\)/,
-  'both anatomical feet receive the same visual correction');
+  'both anatomical feet receive the same opt-in correction');
 
 function extract(source, name) {
   const start = source.indexOf('function ' + name + '(');
@@ -92,4 +96,4 @@ assert.ok(tipZ(preview) < 0, 'recalculation after head scaling keeps the preview
 spine.applyNeckReach(preview, -.04, H, .65);
 assert.equal(tipZ(preview), first, 'repeated scale and hunch evaluation does not accumulate direction errors');
 assert.equal(preview.splineNodes[0].position.z, 0, 'the pelvis remains pinned');
-console.log('Full Character Scale facing: preview feet, async GLBs, spine, scale/hunch and gameplay isolation PASS');
+console.log('Full Character Scale facing: lineup matches gameplay (+Z face, toes, hunch), pants attached; opt-in preview reversal stays isolated PASS');

@@ -251,7 +251,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <b>Longoran spine — hunch &amp; kyphosis</b>
           <span class="longoranIntro">Hunch lowers the shoulders; kyphosis curls the neck forward. Both are independently authored for males and females.</span>
           <div class="longoranRows">
-            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 7)}
+            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 15)}
             ${longoranRow('Kyphosis', 'Kyphosis (%)', 0, 100, 1, 100)}
           </div>
           <div class="longoranTuningActions">
@@ -464,6 +464,44 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the actual scale/hunch result immediately.
   }
 
+  // Same garment rule as gameplay NPCs (game.js): the NPC's authored leg
+  // garment, else basic pants for humanoids with a pants rig. Without this the
+  // lineup showed an empty hip-to-foot gap that gameplay always covers, which
+  // made Leg length and lanky species proportions impossible to judge.
+  function pantsAssetUrl(path) {
+    const value = String(path || '').trim();
+    if (!value || /^(?:https?:|data:|blob:|\/)/i.test(value)) return value;
+    return new URL(`../../${value.replace(/^\.\//, '')}`, location.href).href; // Tool pages live two folders below docs/.
+  }
+
+  function attachPreviewPants(entry, frontCanvas) {
+    const Renderer = window.PantsGarmentRenderer;
+    if (!THREE || !entry?.feet || !entry.model || !Renderer?.attachToLegs) return null;
+    const exportNpc = portraitExportFor(entry.npc);
+    const equipped = Renderer.garmentForCosmetics?.(exportNpc.equippedCosmetics) || null;
+    const garmentId = equipped || (entry.npc?.noPants !== true && Renderer.hasRigFor?.(entry.species, entry.gender, 'pants_basic') ? 'pants_basic' : null);
+    const source = garmentId ? window.HOBUNJI_PANTS_RIGS?.garments?.[garmentId] : null;
+    if (!source) return null; // Pantless/unsupported species stay uncovered, exactly as in gameplay.
+    const garmentRecord = clone(source);
+    if (garmentRecord.image) garmentRecord.image = pantsAssetUrl(garmentRecord.image);
+    if (Array.isArray(garmentRecord.imageLayers)) garmentRecord.imageLayers = garmentRecord.imageLayers.map(layer => ({ ...layer, url: pantsAssetUrl(layer?.url) }));
+    const bodyColors = entry.avatarProfile?.bodyColors || exportNpc.appearance?.bodyColors || {};
+    const pants = Renderer.attachToLegs(THREE, entry.feet, {
+      avatarGroup: entry.model, speciesId: entry.species, gender: entry.gender, garmentId, garmentRecord, meshBudget: 'npc',
+      appearance: Renderer.appearanceFromBodyColors?.(bodyColors) || {}, name: `${entry.group?.name || entry.key}_pants`,
+    }) || null;
+    const front = frontCanvas || entry.frontCanvas;
+    if (pants && front && entry.avatarProfile && Renderer.buildOverlayMask) {
+      Renderer.buildOverlayMask(front, entry.avatarProfile, { forceEyesOpen: true }).then(mask => {
+        if (pants.disposed || entry.feet?.pants !== pants) return;
+        pants.setOverlayMask?.(mask); // Arm clothing, overwear and hoods stay in front of the pants like gameplay.
+        pants.update?.();
+      }).catch(() => {});
+    }
+    pants?.update?.();
+    return pants;
+  }
+
   function rebuildLongoranFeet(entry) {
     if (entry?.species !== 'longoran' || !THREE || !entry?.group || !entry.model) return;
     entry.feet?.dispose?.();
@@ -475,8 +513,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       profile: entry.avatarProfile, spine: window.HobunjiLongoranSpecies?.spineFor?.(entry.gender),
       gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(entry.gender),
       name: `${entry.group.name}_feet`, portraitSize: 200,
-      previewReverseFootDepth: true, // Rebuilt Longoran feet inherit the same preview-only forward orientation.
     }) || null; // Recreates just the comparison feet, never gameplay actors or other species.
+    attachPreviewPants(entry); // Disposing the old leg handle disposed its pants too.
     entry.feet?.update?.(0, 0, false, null);
     syncLegPortraitAlignment(entry); // A rebuilt species foot rig retains its independent hip height and torso connection.
   }
@@ -806,6 +844,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     rigProfile.anatomy.rigScaleY ??= initialScale.y;
     rigProfile.anatomy.headScale ??= initialScale.head;
     rigProfile.anatomy.headOffsetY ??= initialScale.offsetY;
+    rigProfile.anatomy.legLengthScale ??= initialScale.legLength; // Seed alongside rigScaleY so the species' authored leg default survives later scaleFor reads.
     applyAnatomyConfig(rigProfile);
 
     const avatar = await buildPortrait(rep.npc);
@@ -827,9 +866,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       name: `${group.name}_portrait`,
       userData: { source: 'full-character-scale-preview', nonInteractive: true, npcId: rep.npc.id || null },
     });
-    if (model.userData?.neckRig?.available) {
-      model.userData.neckRig.previewForwardSign = -1; // Comparison-only reversed anatomical forward, evaluated by the same real spine skinning solver.
-    }
     model.userData.proceduralHandParent = group; // Exact Rig reference-NPC contract: the normal free-hand runtime owns hand placement under this floor-relative parent.
     model.userData.rigAvatarProfile = avatar.profile;
     group.add(model);
@@ -849,9 +885,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       profile: avatar.profile,
       ...(rep.species === 'longoran' ? { spine: window.HobunjiLongoranSpecies?.spineFor?.(rep.gender), gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(rep.gender) } : {}), // Uses the identical authored gait when building the lineup.
       portraitSize: avatar.front.width || 200,
-      previewReverseFootDepth: true, // Reverse foot geometry depth in the lineup without rotating anatomical left/right or IK.
-    }) || null;
-    feet?.update?.(0, 0, false, null);
+    }) || null; // Same orientation as gameplay: the portrait front, toes and spine hunch all face +Z (toward the lineup camera).
 
     previewRoot.add(group);
     const ageFraction = rep.npc?.id ? (host()?.npcAgeFor?.(rep.npc.id) || 0) : 0;
@@ -861,8 +895,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
-    const entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile,
+    const entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
       basePortraitY: model.position.y }; // Original floor-relative portrait center; leg-length edits move only its hip anchor, not its height scale.
+    attachPreviewPants(entry, avatar.front); // Gameplay covers the hip-to-foot span with the NPC's leg garment.
+    feet?.update?.(0, 0, false, null);
     syncLegPortraitAlignment(entry); // The lineup starts with any previously authored independent leg length without separating hips from the torso.
     if (rep.species === 'longoran') refreshLongoranSpine(entry); // Gameplay-static back curvature is visible on the initial lineup, not only after touching a slider.
     return entry;
@@ -1182,7 +1218,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
         spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
-        facing: { portraitFrontZ: 1, spineForwardSign: selected?.model?.userData?.neckRig?.previewForwardSign ?? null, reverseFootVisualDepth: true }, // Mobile-visible orientation contract for Full Character Scale.
+        facing: { portraitFrontZ: 1, spineForwardSign: 1, reverseFootVisualDepth: false, pants: selected?.feet?.pants?.garmentId || null }, // Lineup matches gameplay orientation: face, toes and hunch all point +Z.
         spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible,
           nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0,
           restGapSourcePixels: spineGapSourcePixels(selected), // Verify the real sprite-height conversion yields the intended 2.5px connection.

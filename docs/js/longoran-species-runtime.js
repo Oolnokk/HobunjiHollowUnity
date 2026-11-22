@@ -5,10 +5,10 @@
 
   const ID = 'longoran'; // Distinct saved/runtime species id so Longoran retain their own whole-rig scale.
   const DONOR = 'tletingan'; // Single appearance/anatomy authority for every non-scale Longoran system.
-  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 1.632601, female: 1.733272 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
+  const AUTHORED_PERCH_SCALES = Object.freeze({ male: 1.429497, female: 1.772385 }); // Fixed world-space portrait-plane area relative to Mao-ao male 1x; never recalculated at runtime.
   const GENDERS = Object.freeze(['male', 'female']); // Used by all same-gender inheritance passes below.
   const DEFAULT_GAIT_PROFILE = Object.freeze({ style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66, stance: 0.74, dragLift: 0.09, lurchDegrees: 19 }); // Bulwark's strongest existing forward lurch.
-  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.07, sway: 0, kyphosis: 1 }); // Approved male/female author export; independent of walking gait.
+  const DEFAULT_SPINE_PROFILE = Object.freeze({ hunch: 0.15, sway: 0, kyphosis: 1 }); // Slightly worse, lurching posture (Nov 22 pass; was 0.07); independent of walking gait.
   // The approved male/female export starts a new authoring generation: old v1
   // localStorage profiles (including custom edits) must not override this baseline.
   // New editor changes still persist in v2 and are deliberately applied on reload.

@@ -46,10 +46,10 @@ state.set('hobunjiLongoranSpeciesTuning.v1', JSON.stringify(previousShared));
 state.set('hobunjiLongoranAuthorTuning.v1', JSON.stringify(previousGenders));
 const approved = makeContext('/index.html');
 const approvedApi = approved.HobunjiLongoranSpecies;
-assert.equal(approvedApi.spineProfile.hunch, .07, 'legacy species-wide posture no longer overrides the approved 7%');
+assert.equal(approvedApi.spineProfile.hunch, .15, 'legacy species-wide posture no longer overrides the approved 15%');
 assert.equal(approvedApi.gaitProfile.cadence, .66, 'legacy species-wide walking speed no longer overrides approved gait');
 for (const gender of ['male', 'female']) {
-  assert.deepEqual(JSON.parse(JSON.stringify(approvedApi.spineFor(gender))), { hunch: .07, sway: 0, kyphosis: 1 }, gender + ' loads exact approved spine');
+  assert.deepEqual(JSON.parse(JSON.stringify(approvedApi.spineFor(gender))), { hunch: .15, sway: 0, kyphosis: 1 }, gender + ' loads exact approved spine');
   assert.deepEqual(JSON.parse(JSON.stringify(approvedApi.gaitFor(gender))), {
     style: 'maskbound-lurch', dragSide: 'right', cadence: .66,
     stance: .74, dragLift: .09, lurchDegrees: 19,
@@ -61,7 +61,7 @@ assert.equal(state.get('hobunjiLongoranSpeciesTuning.v1'), JSON.stringify(previo
 assert.equal(state.get('hobunjiLongoranAuthorTuning.v1'), JSON.stringify(previousGenders), 'old per-gender storage is left untouched');
 approved.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.longoranSpine = { hunch: .9, sway: .6, kyphosis: .4 }; // A stale rig save is not a third authoring source.
 approved.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.longoranGait = { style: 'maskbound-lurch', dragSide: 'left', cadence: 1, stance: .6, dragLift: .3, lurchDegrees: 7 };
-assert.equal(approvedApi.spineFor('male').hunch, .07, 'stale rig anatomy cannot override the approved spine');
+assert.equal(approvedApi.spineFor('male').hunch, .15, 'stale rig anatomy cannot override the approved spine');
 assert.equal(approvedApi.gaitFor('male').lurchDegrees, 19, 'stale rig anatomy cannot override approved gait');
 
 const speciesWriter = makeContext('/index.html').HobunjiLongoranSpecies; // New post-approval tuning still works through the shipped public API.
@@ -71,7 +71,7 @@ const speciesReader = makeContext('/index.html').HobunjiLongoranSpecies;
 assert.equal(speciesReader.spineFor('female').hunch, .12, 'new species-wide posture persists on reload');
 assert.equal(speciesReader.gaitFor('male').cadence, .61, 'new species-wide gait persists on reload');
 state.delete('hobunjiLongoranSpeciesTuning.v2'); // Reset only the current generation; the old keys remain inert.
-assert.equal(makeContext('/index.html').HobunjiLongoranSpecies.spineFor('female').hunch, .07, 'retired v1 stays ignored after v2 is cleared');
+assert.equal(makeContext('/index.html').HobunjiLongoranSpecies.spineFor('female').hunch, .15, 'retired v1 stays ignored after v2 is cleared');
 
 const author = makeContext('/tools/animation-author/index.html');
 const api = author.HobunjiLongoranSpecies;
@@ -79,12 +79,12 @@ assert(api, 'Longoran bridge must load in Animation Author');
 for (const gender of ['male','female']) {
   assert(author.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::' + gender], 'Longoran ' + gender + ' needs a rig descriptor in the full-character lineup');
   assert.equal(api.gaitFor(gender).lurchDegrees, 19);
-  assert.equal(api.spineFor(gender).hunch, .07);
+  assert.equal(api.spineFor(gender).hunch, .15);
   assert.equal(api.spineFor(gender).kyphosis, 1); // Canonical 100% hook applies to both genders.
 }
 assert.equal(api.setAuthorTuning('male', { spine: { hunch: .91, kyphosis: .94 }, gait: { lurchDegrees: 22.5, cadence: .59, dragSide: 'left' } }), true);
 assert.equal(api.spineFor('male').hunch, .91);
-assert.equal(api.spineFor('female').hunch, .07, 'The female profile must not inherit male editor changes');
+assert.equal(api.spineFor('female').hunch, .15, 'The female profile must not inherit male editor changes');
 assert.equal(api.gaitFor('male').lurchDegrees, 22.5);
 assert.equal(api.gaitFor('male').dragSide, 'left');
 assert.equal(api.gaitFor('female').lurchDegrees, 19);
@@ -127,10 +127,10 @@ assert(bones.at(-1).position.y < 0, 'Hunch must lower the neck alongside the for
 
 vm.runInNewContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), { window: gameplay });
 assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'male' }).hunch, .91);
-assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'female' }).hunch, .07);
+assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'female' }).hunch, .15);
 assert.equal(gameplay.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', gender: 'male', spine: { hunch: .2 } }).hunch, .2, 'Explicit NPC/Maskbound posture must win');
 
-assert(authored.includes("longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 7)") && authored.includes("longoranRow('Kyphosis'"), 'Full Character Scale starts with the approved 7% Longoran hunch');
+assert(authored.includes("longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 15)") && authored.includes("longoranRow('Kyphosis'"), 'Full Character Scale starts with the approved 15% Longoran hunch');
 assert(!authored.includes("longoranRow('Lurch'") && !authored.includes('maaLongoranDragSide'), 'Maskbound gait stays in the shared solver, not extra posture sliders');
 assert(authored.includes('focusSelected') && authored.includes('distance * 0.7'), 'explicit focus action exposes forward-curved Longoran Z posture');
 assert(!authored.includes('frameLongoran()') && !authored.includes('longoranFocused'), 'editing a Longoran cannot force automatic camera framing');

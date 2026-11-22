@@ -8,12 +8,12 @@
   const selfUrl = document.currentScript?.src ? new URL('./', document.currentScript.src) : null;
   const base = selfUrl || new URL('./js/', location.href);
   const urls = [
-    new URL('../config/character-rig-scale-defaults.js?v=20261113uniformRigStride2', base).href,
+    new URL('../config/character-rig-scale-defaults.js?v=20261122haae5569', base).href,
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261116maoPerch2', base).href,
-    new URL('nuhongan-species-runtime.js?v=20261116maoPerch2', base).href,
-    new URL('longoran-species-runtime.js?v=20261120longoranApprovedV2', base).href,
+    new URL('nuhongan-species-runtime.js?v=20261122hbfe3b84', base).href,
+    new URL('longoran-species-runtime.js?v=20261122h76a9f21', base).href,
     new URL('harlyao-species-runtime.js?v=20261116maoPerch2', base).href,
     new URL('omgurku-connector-rig.js?v=20261022pantsFallback1', base).href,
     new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,

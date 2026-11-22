@@ -108,3 +108,12 @@ assert.match(authorSource, /entry\.spineGuide\.dispose\(\);/, 'previously select
 assert.match(authorSource, /entry\.spineGuide\?\.dispose\?\.\(\)/,
   'leaving the editor disposes its diagnostic mesh');
 console.log('Spine preview: seven real joints, scaled-neck endpoint, live hunch, toggle, disposal and update order PASS');
+
+// Nov 22: the 10-bone head-scale joint pivots at the chin (child of the neck joint), so head
+// size must not stretch the spine. Adding the centroid chin delta lifted 200%-height Longoran
+// heads by ~8% of their height in Full Character Scale screenshots.
+{
+  const spinePath = compensation.slice(compensation.indexOf('if (distributeToSpine) {'), compensation.indexOf('} else {', compensation.indexOf('if (distributeToSpine) {')));
+  assert.match(spinePath, /const reachY = clampOffset\(baseOffset\) \* modelHeight;/, 'spine reach comes only from the authored head height');
+  assert.doesNotMatch(spinePath, /reachY[^;]*scaledNeckDeltaY/, 'head scale never stretches the spine on chin-pivoted rigs');
+}
