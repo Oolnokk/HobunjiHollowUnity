@@ -32,17 +32,15 @@ assert.match(runtimeSource,
   'the pet root is re-solved after rotation so shoulderGrip remains pinned to shoulderPerch');
 assert.match(runtimeSource, /authoritativeRootTransform: true/,
   'final attachment remains authoritative');
-assert.match(runtimeSource,
-  /const shoulderLeanDeg = Number\(pet\?\.shoulderCuriosity\?\.currentLeanDeg\);[\s\S]{0,260}worldQuaternion\.multiply\(SHOULDER_PET_LEAN_QUATERNION\.setFromAxisAngle\(SHOULDER_PET_LEAN_AXIS, THREE\.MathUtils\.degToRad\(shoulderLeanDeg\)\)\)/,
-  'whole-pet curiosity lean participates in the final root rotation before grip translation');
-assert.match(runtimeSource,
-  /const SHOULDER_PET_LEAN_AXIS = new THREE\.Vector3\(1, 0, 0\)/,
-  'sprite-plane Z roll is represented as a pet-local X rotation without foreshortening');
+assert.match(runtimeSource, /const shoulderLeanDeg = 0;/,
+  'curiosity never applies a whole-body lean to the shoulder-pet root');
+assert.doesNotMatch(runtimeSource, /SHOULDER_PET_LEAN_AXIS|SHOULDER_PET_LEAN_QUATERNION/,
+  'the retired whole-body curiosity rotation is not reachable');
 const curiositySource = gameSource.slice(gameSource.indexOf('function _applyShoulderPetCuriosity'), gameSource.indexOf('function _isPlayerGenuinelyIdle'));
 assert.doesNotMatch(curiositySource, /frontPlane\.rotation\.z|backPlane\.rotation\.z|baseFrontRoll|baseBackRoll/,
   'curiosity does not rotate the visible image planes about their centers');
 assert.match(runtimeSource, /shoulderLeanDeg: Number\(finalTransform\.shoulderLeanDeg\) \|\| 0/,
-  'mobile attachment debug reports the lean included in the grip pin');
+  'mobile attachment debug reports the neutralized body lean');
 console.log('shoulder pet direction-signed rotation tests passed');
 
 
@@ -193,7 +191,7 @@ for (const skinned of [true, false]) {
         const pose = pinAt(lean);
         const localGrip = new TestVector3(rawGrip.x, rawGrip.y, rawGrip.z); // Native grip coordinates before THREE's nonuniform group scale.
         const worldGrip = localGrip.multiply(renderedScale).applyQuaternion(pose.worldQuaternion).add(pose.worldPosition);
-        closeness(worldGrip, perchWorld, 'actual rendered shoulderGrip stays on shoulderPerch through breathing and lean');
+        closeness(worldGrip, perchWorld, 'actual rendered shoulderGrip stays on shoulderPerch through breathing and head-only curiosity');
         assert.ok(pose.gripLocalPosition, 'production solver exposes native grip for a real matrix measurement');
         const fakeGroup = {
           parent: null, position: new TestVector3(), quaternion: new TestQuaternion(), scale: renderedScale,
@@ -216,11 +214,14 @@ for (const skinned of [true, false]) {
         const lateralHeading = heading.x * ownerRight.x + heading.z * ownerRight.z;
         assert.equal(lateralHeading * renderedPerchX < 0, facingInward,
           'the nose points toward the midline in the inward pose, including on the UV-flipped shoulder');
-        assert.equal(pose.shoulderLeanDeg, lean, 'runtime exposes the exact applied lean');
-        if (lean !== 0) {
-          assert.ok(pose.worldPosition.distanceTo(neutral.worldPosition) > 1e-5,
-            'the root translates around an off-center grip rather than pivoting about its image center');
-        }
+        assert.equal(pose.shoulderLeanDeg, 0, 'head-only curiosity never changes the rendered body lean');
+        closeness(pose.worldPosition, neutral.worldPosition,
+          'the whole body stays fixed as curiosity changes, without shifting its perch');
+        assert.ok(Math.abs(pose.worldQuaternion.x - neutral.worldQuaternion.x) < 1e-9
+          && Math.abs(pose.worldQuaternion.y - neutral.worldQuaternion.y) < 1e-9
+          && Math.abs(pose.worldQuaternion.z - neutral.worldQuaternion.z) < 1e-9
+          && Math.abs(pose.worldQuaternion.w - neutral.worldQuaternion.w) < 1e-9,
+          'body yaw/pitch/roll remains exactly fixed across the head-only curiosity animation');
       }
       const withoutCuriosity = solve(perch, grip, {
         __hobunjiShoulderFacingInward: facingInward, avatarRef: { group: { scale: renderedScale } },
