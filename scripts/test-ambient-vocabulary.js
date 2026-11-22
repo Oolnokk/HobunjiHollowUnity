@@ -32,11 +32,13 @@ async function main() {
   const explicit = {
     enabled: true,
     lexicon: {
-      lovely: [{ text: 'pleasant', verbosity: 30, color: 20, formality: 60 }],
-      'good to see you': [{ text: 'glad to see you', verbosity: 40, color: 30, formality: 40 }],
+      lovely: [{ id: 'pleasant', text: 'pleasant', verbosity: 30, color: 20, formality: 60 },
+        { id: 'splendid', text: 'splendid', verbosity: 80, color: 80, formality: 80 }],
+      'good to see you': [{ id: 'glad', text: 'glad to see you', verbosity: 40, color: 30, formality: 40 },
+        { id: 'delighted', text: 'delighted to see you', verbosity: 90, color: 90, formality: 85 }],
     },
     families: { neighborly: { sliders: { frequency: 100, variety: 100 } } },
-    characters: { pahu: { sliders: { frequency: 100 }, table: { lovely: ['splendid'], 'good to see you': ['delighted to see you'] } } },
+    characters: { pahu: { sliders: { frequency: 100 }, selections: { lovely: ['splendid'], 'good to see you': ['delighted'] } } },
   };
   const assignments = { defaultProfile: 'neighborly', assignments: { pahu: 'neighborly' } };
   assert.equal(engine.rewrite('Lovely, LOVELY!', 'pahu', () => 0, explicit, assignments), 'Splendid, SPLENDID!');
@@ -48,7 +50,7 @@ async function main() {
   assert.equal(engine.rewrite('Lovely', 'player-progression', () => 0, explicit, assignments), 'Lovely');
   assert.equal(engine.rewrite('Lovely', null, () => 0, explicit, assignments), 'Lovely');
   assert.equal(engine.rewrite('Lovely', 'pahu', () => 0.999, {
-    ...explicit, characters: { pahu: { sliders: { frequency: 0 }, table: { lovely: ['splendid'] } } },
+    ...explicit, characters: { pahu: { sliders: { frequency: 0 }, selections: { lovely: ['splendid'] } } },
   }, assignments), 'Lovely'); // Authored fallback is always available.
   assert.notEqual(JSON.stringify(rules.seedSliders(config.families.playful.sliders, 'pahu')),
     JSON.stringify(rules.seedSliders(config.families.playful.sliders, 'sloomi'))); // Same family, distinct stable individual vocabulary axes.
