@@ -1438,7 +1438,7 @@
     let targetPoint = null;
     let reticleTarget = null;
     const centeredRay = itemKey === 'torch' ? normalizedAimRay(deps.getPlayerInteractionRay?.()) : null; // Adventuring torches must never inherit a stale ranged-slot camera/focus wrapper.
-    const cameraRay = centeredRay || normalizedAimRay(deps.getPlayerAimRay?.()); // Other weapons keep their existing ranged-focus targeting authority.
+    const cameraRay = itemKey === 'torch' ? centeredRay : normalizedAimRay(deps.getPlayerAimRay?.()); // A torch never falls through to a stale equipped-ranged ray; when camera data is missing it uses the normal facing fallback.
     const aimRadius = projectileAimRadiusWorld(def); // Reticle prediction shares the decoded opaque hitbox once the projectile art has loaded.
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
