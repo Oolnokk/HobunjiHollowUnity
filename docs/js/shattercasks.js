@@ -2699,7 +2699,7 @@
   // dispatcher and accidentally recall equipment after pickup.
   // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
   // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
-  // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
+  // (burden.lungeStop === true) or applies to hanging non-fruit burdens, so a ceiling burden cannot be overshot.
   const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb','tothalWitchBomb','kanthicWitchBomb']);
   const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
   function targetableFor(burden) {
@@ -2708,7 +2708,7 @@
     entry={
       id:burden.id,scope:burden.mapId,owner:burden,_actor:null,
       position:()=>({x:burden.col+.5,z:burden.row+.5}),
-      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
+      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&(burden.lungeStop===true||(burden.hanging&&burden.kind!=='soursap'))),
       hitbox:()=>{
         if(burden===backCarried)return null; // Invalidate even previously cached Targetables wrappers while stowed.
         const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
