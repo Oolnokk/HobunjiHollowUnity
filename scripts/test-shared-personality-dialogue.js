@@ -88,18 +88,25 @@ function fallback(id) { // The canonical last-resort NPC tree used to test share
   return { id: treeId, label: 'Fallback', trigger: 'interact', priority: 0, entryNode: 'speak', nodes: [{ id: 'speak', type: 'text', text: 'UNSCOPED FALLBACK' }] };
 }
 for (const npc of Object.values(byId)) npc.dialogueTrees = [fallback(npc.id)];
-assert.ok(config.characters.pahu.some(entry => entry.text === say(byId.pahu)), 'Pahu speaks his named dialogue instead of an unrelated personality line');
-assert.ok(config.characters.spearhead_unumanuk.some(entry => entry.text === say(byId.spearhead_unumanuk)), 'Spearhead selects his own character dialogue');
-assert.ok(config.personalityFamilies.reserved.some(entry => entry.text === say(byId.sloomi)), 'Sloomi draws from Reserved, not general/shared world copy');
-assert.ok(config.personalityFamilies.child.some(entry => entry.text === say(byId.child_ab12)), 'generated children receive child-appropriate dialogue');
-assert.ok(config.personalityFamilies.neighborly.some(entry => entry.text === say(byId.unassigned_wanderer)), 'unassigned NPCs use the existing default family');
+const firstPahuLine = say(byId.pahu); // Conversation starts exactly once; .some() must not consume extra unheard entries while asserting.
+assert.ok(config.characters.pahu.some(entry => entry.text === firstPahuLine), 'Pahu speaks his named dialogue instead of an unrelated personality line');
+const firstSpearheadLine = say(byId.spearhead_unumanuk); // Named-only dialogue precedes the stern family.
+assert.ok(config.characters.spearhead_unumanuk.some(entry => entry.text === firstSpearheadLine), 'Spearhead selects his own character dialogue');
+const firstSloomiLine = say(byId.sloomi); // Reserved family should speak without accessing other families.
+assert.ok(config.personalityFamilies.reserved.some(entry => entry.text === firstSloomiLine), 'Sloomi draws from Reserved, not general/shared world copy');
+const firstChildLine = say(byId.child_ab12); // Generated children have no per-save authored NPC record.
+assert.ok(config.personalityFamilies.child.some(entry => entry.text === firstChildLine), 'generated children receive child-appropriate dialogue');
+const firstUnassignedLine = say(byId.unassigned_wanderer); // Missing assignment uses the existing default family.
+assert.ok(config.personalityFamilies.neighborly.some(entry => entry.text === firstUnassignedLine), 'unassigned NPCs use the existing default family');
 weather = 'rain';
-assert.ok(config.personalityFamilies.playful.some(entry => entry.text === say(byId.dzibim_khibu)), 'weather-conditioned family dialogue is eligible');
+const rainyPlayfulLine = say(byId.dzibim_khibu); // Rain condition is read at conversation time, not while iterating test assertions.
+assert.ok(config.personalityFamilies.playful.some(entry => entry.text === rainyPlayfulLine), 'weather-conditioned family dialogue is eligible');
 const scripted = { id: 'story_first', label: 'Story', trigger: 'interact', priority: 12, conditions: { encounter: ['first'] },
   entryNode: 'story', nodes: [{ id: 'story', type: 'text', text: 'SCRIPTED CHARACTER SCENE' }] }; // A specific authored tree should outrank ordinary family chatter.
 byId.garanki_gabu.dialogueTrees.unshift(scripted);
 assert.equal(say(byId.garanki_gabu), 'SCRIPTED CHARACTER SCENE', 'important NPC-specific story dialogue remains first');
-assert.ok(config.characters.garanki_gabu.some(entry => entry.text === say(byId.garanki_gabu)), 'named chatter becomes available after the scripted first encounter');
+const garankiChatter = say(byId.garanki_gabu); // The prior scripted tree advanced Garanki's per-NPC encounter history once.
+assert.ok(config.characters.garanki_gabu.some(entry => entry.text === garankiChatter), 'named chatter becomes available after the scripted first encounter');
 const shop = { id: 'shop_access', trigger: 'interact', generatedFromShopAccess: true, priority: 0, entryNode: 'shop',
   nodes: [{ id: 'shop', type: 'text', text: 'SHOP ACCESS' }] }; // Existing shop access stays reachable even when shared chatter is eligible.
 byId.unassigned_wanderer.dialogueTrees.push(shop);
