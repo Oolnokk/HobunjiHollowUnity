@@ -694,14 +694,6 @@
         "id": "i'd be delighted"
       },
       {
-        "id": "yes-please",
-        "text": "yes please",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
-      },
-      {
         "id": "glad-i-ly",
         "text": "glad-i-ly",
         "verbosity": 38,
@@ -931,14 +923,6 @@
         "kind": "old-slang",
         "firstRecorded": 1680,
         "source": "https://www.etymonline.com/word/chum"
-      },
-      {
-        "id": "my-buddies",
-        "text": "my buddies",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
       },
       {
         "id": "pal-friends",
@@ -1223,7 +1207,7 @@
         "color": 75,
         "formality": 25,
         "kind": "old-slang",
-        "firstRecorded": 1834,
+        "firstRecorded": 1839,
         "source": "https://www.etymonline.com/word/bosh"
       },
       {
@@ -1243,7 +1227,7 @@
         "color": 75,
         "formality": 25,
         "kind": "old-slang",
-        "firstRecorded": 1750,
+        "firstRecorded": 1751,
         "source": "https://www.etymonline.com/word/humbug"
       },
       {
@@ -1461,8 +1445,8 @@
         "color": 75,
         "formality": 25,
         "kind": "old-slang",
-        "firstRecorded": 1837,
-        "source": "https://www.etymonline.com/word/A-1"
+        "firstRecorded": 1812,
+        "source": "https://www.etymonline.com/word/first-rate"
       },
       {
         "id": "really-good",
@@ -1527,7 +1511,7 @@
         "color": 75,
         "formality": 25,
         "kind": "old-slang",
-        "firstRecorded": 1750,
+        "firstRecorded": 1751,
         "source": "https://www.etymonline.com/word/humbug"
       },
       {
@@ -2437,24 +2421,6 @@
       {
         "id": "niceful",
         "text": "niceful",
-        "verbosity": 38,
-        "color": 88,
-        "formality": 15,
-        "kind": "near-miss"
-      }
-    ],
-    "happy to see you": [
-      {
-        "id": "i-m-happy-you-re-here",
-        "text": "I'm happy you're here",
-        "verbosity": 12,
-        "color": 45,
-        "formality": 12,
-        "kind": "simple"
-      },
-      {
-        "id": "i-am-gladder-to-see-you",
-        "text": "I am gladder to see you",
         "verbosity": 38,
         "color": 88,
         "formality": 15,
