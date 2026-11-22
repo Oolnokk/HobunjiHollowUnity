@@ -175,6 +175,9 @@
         sharedFire: !!fireState,
         fireError,
         pivot: 'grip-emitter midpoint',
+        emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
+        posteriorPosition: root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Author override and live anatomy are visible on Pixel Probe.
+        stowAngleDeg: root ? Math.round(root.rotation.z * 18000 / Math.PI) / 100 : null,
         textureReady: !!art?.material?.map?.image,
         placement,
         idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
