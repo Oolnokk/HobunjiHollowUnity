@@ -687,6 +687,17 @@ function hunterDebug(api, zoneId, campId, index) {
     chunk: '2,2', porakaneki: 1, omgurku: 0, bandits: 1, predators: 1, prey: 1, humanoidTargets: 2, predatorTargets: 1,
   }, 'debug snapshot exposes the active 16x16 ecology chunk and assignment counts for mobile verification');
   assert.equal(api.hasSharedEnemyNearby(pora), true, 'bandit/predator in the player chunk activates crossfire forgiveness');
+  bandit.tzatzulCapturedBy = 'tzatzul:carry-test'; bandit.state = 'tzatzul-carried';
+  api.__test.updateChunkEcology(); // The 5 Hz ecology pass used to overwrite the live talon attachment with 'chase'.
+  assert.equal(bandit.state, 'tzatzul-carried', 'ecology must not restore chase while the bandit is airborne');
+  assert.equal(bandit._chunkCombatTarget, null, 'capture relinquishes its previous tribal-combat target');
+  assert.notEqual(pora._chunkCombatTarget, bandit, 'tribe fighters stop pursuing a bandit after its pickup');
+  assert.notEqual(predator.targetCreature, bandit, 'predators also stop selecting a captive as prey');
+  assert.equal(api.debugSnapshot().ecology.bandits, 0, 'mobile ecology diagnostics exclude carried actors from ground combat');
+  bandit.tzatzulCapturedBy = null; bandit.state = 'return'; // Release restores normal target selection on the next ecology pass.
+  api.__test.updateChunkEcology();
+  assert.equal(pora._chunkCombatTarget, bandit, 'a surviving released bandit can rejoin the fight');
+
 
   hostileObjects.delete(bandit);
   hostileObjects.delete(predator);
