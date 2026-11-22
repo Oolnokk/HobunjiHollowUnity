@@ -56,6 +56,27 @@
     return Number.isFinite(anchorX) && Number.isFinite(anchorY) && Math.hypot(col - anchorX, row - anchorY) < 6; // Preserve the original seed's anchor-only compatibility policy.
   }
 
+  const sceneryReservationCells = new WeakMap(); // One already-indexed set per live zone layout; unrelated maps never share rock reservations.
+
+  function reserveScenery(zone, sites) {
+    if (!zone || typeof zone !== 'object') return 0;
+    const cells = new Set(); // Flatten small decorative overhangs into blocked tile keys for O(1) temporary-locale lookups.
+    for (const site of sites || []) {
+      const col = Number(site?.point?.col), row = Number(site?.point?.row); // Exact planned scene coordinates, not the nearest locale entrance.
+      if (!Number.isInteger(col) || !Number.isInteger(row)) continue;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const c = col + dx, r = row + dy;
+        if (c >= 0 && r >= 0 && c < zone.cols && r < zone.rows) cells.add(c + ',' + r);
+      }
+    }
+    sceneryReservationCells.set(zone, cells);
+    return cells.size;
+  }
+
+  function isSceneryReserved(zone, col, row) {
+    return !!sceneryReservationCells.get(zone)?.has(col + ',' + row); // Queried once per tile while TemporaryLocales builds its existing summed-area blockers.
+  }
+
   function clearExportedObjects(workspace, objectIds) {
     const ids = new Set([...(objectIds || [])].filter(id => id !== undefined && id !== null && id !== '')); // All selected generated objects are cleared by identity.
     if (!ids.size) return { objects: 0, tiles: 0 };
@@ -80,5 +101,5 @@
     return { objects: ids.size, tiles };
   }
 
-  return { isBoulder, boulderCells, localeBlocksSite, clearExportedObjects };
+  return { isBoulder, boulderCells, localeBlocksSite, reserveScenery, isSceneryReserved, clearExportedObjects };
 });
