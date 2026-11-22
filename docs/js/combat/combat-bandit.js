@@ -1197,13 +1197,8 @@
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
     const echo = window.FeyHypedAttacks?.npcDamagePayload?.(c, target, amount, knockbackPxS, opts); // Real hit owner, including NPC→player and offscreen NPC→NPC, scales one independently tested second contact.
     if (echo) { amount = echo.damage; knockbackPxS = echo.knockback; opts = echo.opts; }
-    const healthMultiplier = window.TrinketSystem?.statMultiplier?.(c, 'outgoingHealthDamage') ?? 1; // Enemy-worn offensive trinkets use the same additive stat authority as the player's gear.
-    const footingMultiplier = window.TrinketSystem?.statMultiplier?.(c, 'outgoingFootingDamage') ?? 1; // Keep Footing distinct from Health even when both are rolled on an enemy.
-    if (healthMultiplier !== 1 || footingMultiplier !== 1) {
-      const existingFooting = Number(opts.footingDamageMultiplier); // Existing attack-specific Footing scaling is preserved.
-      opts = { ...opts, footingDamageMultiplier: (Number.isFinite(existingFooting) ? existingFooting : 1) * footingMultiplier / healthMultiplier };
-      amount *= healthMultiplier;
-    }
+    const trinketHit = window.TrinketSystem?.scaleEnemyHit?.(c, amount, opts); // Shared trinket authority keeps Health and Footing separate for NPC→player and NPC→NPC hits.
+    if (trinketHit) { amount = trinketHit.amount; opts = trinketHit.options; }
     const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
